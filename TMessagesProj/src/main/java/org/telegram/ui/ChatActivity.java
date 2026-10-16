@@ -31178,7 +31178,6 @@ public class ChatActivity extends BaseFragment implements
                         && !isQuickRepliesOrWelcomeMessagesMode()
                         && !isInScheduleMode()
                         && primaryMessage.isReactionsAvailable()
-                       
                         && (chatInfo != null && (
                             !(chatInfo.available_reactions instanceof TLRPC.TL_chatReactionsNone)
                             || chatInfo.paid_reactions_available)
@@ -31189,7 +31188,6 @@ public class ChatActivity extends BaseFragment implements
                     && !isQuickRepliesOrWelcomeMessagesMode()
                     && !isInScheduleMode()
                     && primaryMessage.isReactionsAvailable()
-                   
                     && !message.isSecretMedia()
                     && (chatInfo != null && (
                         !(chatInfo.available_reactions instanceof TLRPC.TL_chatReactionsNone)

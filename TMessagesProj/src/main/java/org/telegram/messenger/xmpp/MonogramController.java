@@ -474,6 +474,7 @@ public final class MonogramController {
         final java.util.Set<Long> rescan = new java.util.HashSet<>();
         final java.util.Set<Long> pending = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
         boolean supported,directChecked,running,waitingRooms;
+        int fingerprintStage;
         final java.util.Set<Long> metadataPending=new java.util.HashSet<>();
         final java.util.ArrayDeque<Long> fingerprintsReady=new java.util.ArrayDeque<>();
         final java.util.Map<Long,Integer> requestedPages=new java.util.HashMap<>();
@@ -514,6 +515,14 @@ public final class MonogramController {
     }
     private void startFingerprintStage(ArchiveSync sync) {
         if(!currentArchive(sync) || sync.waitingRooms || !sync.metadataPending.isEmpty()) return;
+        if(!sync.fingerprintsReady.isEmpty()) {
+            final int stage=++sync.fingerprintStage;
+            sync.session.fingerprints.afterTimeout(() -> worker.execute(() -> {
+                if(!currentArchive(sync) || stage!=sync.fingerprintStage || !sync.metadataPending.isEmpty()) return;
+                for(long peer:new java.util.HashSet<>(sync.preparing)) { sync.preparing.remove(peer); sync.add(peer); }
+                nextArchivePage(sync);
+            }));
+        }
         Long next;
         while((next=sync.fingerprintsReady.pollFirst())!=null) {
             final long peer=next;
@@ -523,15 +532,13 @@ public final class MonogramController {
                     if(peer>0) addresses.add(store.jid(peer));
                     else if(peer<0 && encrypted(peer)) try { for(org.jxmpp.jid.BareJid member:sync.session.rooms.members(store.jid(peer))) addresses.add(member.toString()); } catch(Exception unsupported) {}
                     addresses.add(store.jid(self));
-                    for(String address:addresses) {
-                        if(!currentArchive(sync)) return;
-                        if(address.indexOf('/')>=0) continue;
-                        try {
-                            if(modernEncryption(peer) && sync.session.modernAvailable()) sync.session.modern().discover(address);
-                            else for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:sync.session.devices(address)) sync.session.fingerprint(device);
-                        } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram fingerprint prefetch: "+failed.getClass().getSimpleName()); }
-                    }
-                } finally { worker.execute(() -> { if(currentArchive(sync)) { sync.preparing.remove(peer); sync.add(peer); nextArchivePage(sync); } }); }
+                    addresses.removeIf(address -> address.indexOf('/')>=0);
+                    if(!currentArchive(sync)) return;
+                    // The shared discovery pool has a deadline; an unavailable member cannot hold all history.
+                    sync.session.fingerprints.load(addresses,modernEncryption(peer) && sync.session.modernAvailable(),false,snapshot -> {
+                        if(snapshot.complete) worker.execute(() -> { if(currentArchive(sync)) { sync.preparing.remove(peer); sync.add(peer); nextArchivePage(sync); } });
+                    });
+                } catch(Exception failed) { worker.execute(() -> { if(currentArchive(sync)) { sync.preparing.remove(peer); sync.add(peer); nextArchivePage(sync); } }); }
             });
         }
         nextArchivePage(sync);
@@ -815,6 +822,12 @@ public final class MonogramController {
     }
     public TLRPC.User ownUser() { return store.user(self, self); }
     public String jid(long peer) { return store.jid(peer); }
+    public java.util.Set<String> knownFingerprintAddresses(long peer) {
+        java.util.Set<String> addresses=new java.util.LinkedHashSet<>(); if(self>0) addresses.add(store.jid(self));
+        if(peer>0) addresses.add(store.jid(peer));
+        else for(TLRPC.User user:store.roomUsers(peer,self)) { String address=store.jid(user.id); if(address.indexOf('/')<0) addresses.add(address); }
+        return addresses;
+    }
     public XmppSession session() {
         XmppSession current = session;
         if (current == null || !current.connection().isAuthenticated()) throw new IllegalStateException("XMPP is disconnected");

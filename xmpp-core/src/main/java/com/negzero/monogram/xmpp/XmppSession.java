@@ -64,6 +64,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
     public final XmppChatStates chatStates;
+    public final XmppFingerprints fingerprints;
     private final OmemoManager omemo;
     private final IdentityTrust trust;
     private final XmppOmemo2 modern;
@@ -123,6 +124,20 @@ public final class XmppSession implements AutoCloseable {
         trust = new IdentityTrust(trustFile);
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
+        fingerprints=new XmppFingerprints((address,useModern) -> {
+            java.util.Map<OmemoDevice,OmemoFingerprint> found=new java.util.LinkedHashMap<>();
+            if(useModern) for(java.util.Map.Entry<Integer,Omemo2Bundle> entry:modern().discover(address).entrySet())
+                found.put(new OmemoDevice(JidCreate.entityBareFrom(address),entry.getKey()),new OmemoFingerprint(hex(entry.getValue().identity())));
+            else {
+                boolean failed=false;
+                for(OmemoDevice device:devices(address)) {
+                    if(device.getJid().toString().equals(ownJid()) && device.getDeviceId()==ownDeviceId()) continue;
+                    try { found.put(device,fingerprint(device)); } catch(Exception missingBundle) { failed=true; }
+                }
+                if(failed) throw new XmppFingerprints.Partial(found);
+            }
+            return found;
+        });
         rooms=new XmppRooms(connection,omemo,listener);
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
@@ -466,6 +481,7 @@ public final class XmppSession implements AutoCloseable {
         }
     }
     public OmemoFingerprint fingerprint(OmemoDevice device) throws Exception { return omemo.getFingerprint(device); }
+    private static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
     public String ownJid() { return omemo.getOwnJid().toString(); }
     public int ownDeviceId() { return omemo.getDeviceId(); }
     public org.jivesoftware.smackx.omemo.trust.TrustState trustState(OmemoDevice device, OmemoFingerprint fingerprint) { return trust.getTrust(device, fingerprint); }
@@ -477,7 +493,7 @@ public final class XmppSession implements AutoCloseable {
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
         if (modern != null) modern.close(); crypto.shutdownNow();
-        chatStates.close(); rooms.close(); bookmarks.close();
+        chatStates.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

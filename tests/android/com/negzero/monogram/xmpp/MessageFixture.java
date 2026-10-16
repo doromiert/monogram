@@ -68,5 +68,8 @@ public final class MessageFixture {
         message.setFrom(JidCreate.entityFullFrom(room+"/"+nick)); message.setStanzaId(wire); new MessageReactions(target,emojis).addTo(message);
         return XmppRoomMessage.archived(message,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom("alice@example.org"),"Alice",null,false,true,wire,new Date(time)).withOccupantId(occupant);
     }
+    public static XmppRoomMessage disclosedReaction(String room,String nick,String wire,String target,String occupant,String real,java.util.Collection<String> emojis,long time) throws Exception {
+        return roomReaction(room,nick,wire,target,occupant,emojis,time).identified(real,JidCreate.entityBareFrom("alice@example.org"));
+    }
 
 }

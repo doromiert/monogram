@@ -49,6 +49,7 @@ public class MonogramArchiveTest {
         final List<String> calls = new ArrayList<>();
         final CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         boolean block,expireBob,failBob,windowMode;
+        String blockPeer;
         @Implementation public XMPPTCPConnection connection() { return connection; }
         @Implementation public boolean hasArchive() { return true; }
         @Implementation public java.util.Set<org.jivesoftware.smackx.omemo.internal.OmemoDevice> devices(String jid) { stages.add("fingerprint:"+jid); return java.util.Collections.emptySet(); }
@@ -64,8 +65,10 @@ public class MonogramArchiveTest {
                 for(int i=first;i<end;i++) messages.add(MessageFixture.replyMessage("wire-"+i,"origin-"+i,"m"+i,"Message "+i,true,false,100000L+i*1000,"phone",false,null));
                 return MessageFixture.page(first==0,"m"+first,"m"+(end-1),messages.toArray(new com.negzero.monogram.xmpp.XmppMessage[0]));
             }
-            entered.countDown();
-            if (block && !release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Test did not release archive");
+            if(blockPeer==null || blockPeer.equals(peer)) {
+                entered.countDown();
+                if (block && !release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Test did not release archive");
+            }
             if (failBob && "bob@example.org".equals(peer)) throw new java.io.IOException("Test archive timeout");
             if ("bob@example.org".equals(peer) && before == null) return MessageFixture.page(false, "b1", "b2");
             return MessageFixture.page(true, before == null ? "first" : "b0", before == null ? "last" : "b0");
@@ -94,6 +97,7 @@ public class MonogramArchiveTest {
         bob = store.peer("bob@example.org"); other = store.peer("other@example.org");
         session = Shadow.newInstanceOf(XmppSession.class);
         network = Shadow.extract(session);
+        ReflectionHelpers.setField(session,"fingerprints",new com.negzero.monogram.xmpp.XmppFingerprints((address,modern) -> { stages.add("fingerprint:"+address); return java.util.Collections.emptyMap(); }));
         ReflectionHelpers.setField(session,"profiles",Shadow.newInstanceOf(com.negzero.monogram.xmpp.XmppProfiles.class));
         network.connection = new XMPPTCPConnection(XMPPTCPConnectionConfiguration.builder()
                 .setXmppDomain("example.org").setUsernameAndPassword("test", "test").build());
@@ -102,6 +106,7 @@ public class MonogramArchiveTest {
         archives = ReflectionHelpers.getField(controller, "archiveWorker");
     }
     @After public void cleanup() {
+        session.fingerprints.close();
         network.release.countDown();
         for (String name : new String[]{"worker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker", "fingerprintWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
@@ -173,7 +178,7 @@ public class MonogramArchiveTest {
         assertNull(store.archiveCursor(bob, false)); assertTrue(store.archiveComplete(other)); assertTrue(store.archiveComplete());
     }
     @Test public void trustApprovalRescansAfterTheInFlightPageWithoutCancellingIt() throws Exception {
-        network.block=true; start(); assertTrue(network.entered.await(5,TimeUnit.SECONDS));
+        network.block=true; network.blockPeer="bob@example.org"; start(); assertTrue(network.entered.await(5,TimeUnit.SECONDS));
         controller.retryEncryptedHistory(bob,false); controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);
         network.release.countDown(); finished();
         assertEquals(2,java.util.Collections.frequency(network.calls,"before:bob@example.org:null"));

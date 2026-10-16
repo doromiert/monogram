@@ -233,6 +233,7 @@ public class Emoji {
             code = code.subSequence(0, code.length() - 2);
         }
         DrawableInfo info = rects.get(code);
+        if (info == null && code != null) info = rects.get(code.toString().replace("\ufe0f", ""));
         if (info == null) {
             CharSequence newCode = EmojiData.emojiAliasMap.get(code);
             if (newCode != null) {

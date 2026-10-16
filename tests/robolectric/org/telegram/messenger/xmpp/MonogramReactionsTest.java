@@ -65,13 +65,14 @@ public class MonogramReactionsTest {
         assertEquals(0,store.save(MessageFixture.modern("cipher-control",null,null,false,350000,null,null,null)));
         react("forged-plain-replacement","protected",450000,false,false,"👎"); assertEquals(Collections.singletonMap("🔥",1),counts(protectedOriginal));
         assertFalse(store.history(peer,self,0,100).stream().anyMatch(m -> m.id==placeholder));
+        assertEquals(0,store.newerMessages(peer,protectedOriginal));
     }
     @Test public void roomTargetsRequireRoomIdsAndStableActorsSurviveRenamesAndNicknameReuse() throws Exception {
         String room="friends@conference.example.org"; long dialog=store.room(room,"Alice");
         int original=store.saveRoom(MessageFixture.roomArchive(room,"Bob","client-original","room-original","mam-original","Hello room",100000,false),self);
         assertEquals("room-original",store.reactions.target(original,dialog,self));
         store.reactions.save(MessageFixture.roomReaction(room,"Bob","r1","room-original","bob-stable",Arrays.asList("👍"),200000),self);
-        store.reactions.save(MessageFixture.roomReaction(room,"NewNick","r2","room-original","bob-stable",Arrays.asList("❤️"),300000),self);
+        store.reactions.save(MessageFixture.roomReaction(room,"NewNick","r2","room-original","bob-stable",Arrays.asList("❤","❤️"),300000),self);
         store.reactions.save(MessageFixture.roomReaction(room,"Bob","r3","room-original","different-person",Arrays.asList("❤️"),400000),self);
         assertEquals(Collections.singletonMap("❤️",2),counts(original));
         store.reactions.save(MessageFixture.roomReaction(room,"Bob","unknown","client-original","different-person",Arrays.asList("🔥"),500000),self);
@@ -79,5 +80,8 @@ public class MonogramReactionsTest {
         int noRoomId=store.saveRoom(MessageFixture.roomArchive(room,"Bob","not-yet-echoed",null,"archive-only","No stable room ID",150000,false),self);
         try { store.reactions.target(noRoomId,dialog,self); fail("A MAM UID is not a room stanza ID"); } catch(IllegalArgumentException expected) {}
         assertEquals(2,store.history(dialog,self,0,100).size());
+        store.reactions.save(MessageFixture.disclosedReaction(room,"CarolPhone","c1","room-original","carol-phone","carol@example.org",Arrays.asList("👍"),600000),self);
+        store.reactions.save(MessageFixture.disclosedReaction(room,"CarolLaptop","c2","room-original","carol-laptop","carol@example.org",Arrays.asList("🔥"),700000),self);
+        assertFalse(counts(original).containsKey("👍")); assertEquals(Integer.valueOf(1),counts(original).get("🔥"));
     }
 }

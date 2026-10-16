@@ -17,7 +17,16 @@ final class MonogramReactions {
             for(String[] section:source) for(String emoji:section) { UNICODE.add(emoji); UNICODE.add(emoji.replace("\ufe0f","")); }
         for(CharSequence alias:EmojiData.emojiAliasMap.keySet()) UNICODE.add(alias.toString());
     }
-    static boolean isEmoji(String emoji) { return emoji!=null && UNICODE.contains(emoji); }
+    static boolean isEmoji(String emoji) { return emoji!=null && UNICODE.contains(emoji.replace("\ufe0f","")); }
+    private static String canonicalEmoji(String emoji) {
+        StringBuilder result=new StringBuilder();
+        emoji.replace("\ufe0f","").codePoints().forEach(code -> {
+            result.appendCodePoint(code);
+            if(code<=Character.MAX_VALUE && EmojiData.emojiToFE0FMap.containsKey((char)code)
+                    || code==0x1f22f || code==0x1f004 || code==0x1f21a || code==0x1f17f) result.append('\ufe0f');
+        });
+        return result.toString();
+    }
     private final MonogramStore store;
     MonogramReactions(MonogramStore store) { this.store=store; }
     static void create(SQLiteDatabase db) {
@@ -35,8 +44,8 @@ final class MonogramReactions {
     Set<Integer> save(XmppRoomMessage message,long self) {
         long peer=store.knownRoom(message.room.toString());
         if(peer==0) throw new IllegalArgumentException("Unknown room");
-        String actor=message.outgoing ? "jid:"+store.jid(self) : message.occupantId!=null ? "occupant:"+message.occupantId
-                : message.realSender!=null ? "jid:"+message.realSender : null;
+        String actor=message.outgoing ? "jid:"+store.jid(self) : message.realSender!=null ? "jid:"+message.realSender
+                : message.occupantId!=null ? "occupant:"+message.occupantId : null;
         // An anonymous nickname without server-backed continuity cannot identify a reaction sender.
         if(actor==null) return Collections.emptySet();
         long user=message.outgoing ? self : store.roomUser(peer,message.sender,message.realSender,self);
@@ -45,7 +54,7 @@ final class MonogramReactions {
     private Set<Integer> save(long peer,String actor,long user,String wire,MessageReactions reactions,long stamp,int protocol,String sender,boolean outgoing) {
         if(reactions==null || wire==null || wire.isEmpty() || stamp<0 || stamp>System.currentTimeMillis()+300000) return Collections.emptySet();
         LinkedHashSet<String> emojis=new LinkedHashSet<>();
-        for(String emoji:reactions.emojis) if(isEmoji(emoji)) emojis.add(emoji);
+        for(String emoji:reactions.emojis) if(isEmoji(emoji)) emojis.add(canonicalEmoji(emoji));
         SQLiteDatabase db=store.getWritableDatabase(); db.beginTransaction();
         try {
             List<Integer> sources=new ArrayList<>();
