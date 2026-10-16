@@ -4,7 +4,8 @@ An XMPP/Jabber port of the current official Telegram Android client, branded Mon
 
 **Experimental, migration in progress.** The prototype on Telegram-FOSS 10.14.3 was installed and tested on Android. The current branch ports that work to official Telegram 13.0.2 (`f32ffeec763f0bdbf4bec25b52d654f77bff733d`); its Android build, FOSS dependency replacements and runtime behavior still require verification. See [TODO.md](TODO.md) for current status.
 
-Intended public home: https://monogram.neg-zero.com. The optional helper will be deployable on 192.168.1.24. Neither address is required for ordinary Jabber messaging.
+telegram x monocles = holy chatting
+![shitpost.png](shitpost.png)
 
 ## Development with Nix
 
