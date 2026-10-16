@@ -32,7 +32,8 @@ public final class XmppOmemo2 implements AutoCloseable {
     private final XMPPConnection connection;
     public final Omemo2Device device;
     private final SecureRandom random = new SecureRandom();
-    private final ConcurrentHashMap<String,Omemo2Bundle> bundles = new ConcurrentHashMap<>();
+    // Use Map's keySet signature: Android desugaring lacks ConcurrentHashMap's covariant overload.
+    private final Map<String,Omemo2Bundle> bundles = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String,Set<Integer>> lists = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String,Long> refreshed=new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String,Long> watchAttempts=new ConcurrentHashMap<>();

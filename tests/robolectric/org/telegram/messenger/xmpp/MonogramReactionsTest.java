@@ -84,4 +84,21 @@ public class MonogramReactionsTest {
         store.reactions.save(MessageFixture.disclosedReaction(room,"CarolLaptop","c2","room-original","carol-laptop","carol@example.org",Arrays.asList("🔥"),700000),self);
         assertFalse(counts(original).containsKey("👍")); assertEquals(Integer.valueOf(1),counts(original).get("🔥"));
     }
+    @Test public void ownRoomReactionCanBeRemovedReaddedAndRestored() throws Exception {
+        String room="friends@conference.example.org"; long dialog=store.room(room,"Alice");
+        int original=store.saveRoom(MessageFixture.roomArchive(room,"Bob","original","room-id","mam-id","Hello",100000,false),self);
+        store.reactions.save(MessageFixture.disclosedReaction(room,"Alice","add","room-id","alice-stable","alice@example.org",Collections.singletonList("👍"),200000),self);
+        assertTrue(store.getMessage(original,self).reactions.results.get(0).chosen);
+        store.reactions.save(MessageFixture.disclosedReaction(room,"Alice","remove","room-id","alice-stable","alice@example.org",Collections.emptyList(),300000),self);
+        TLRPC.Message empty=store.getMessage(original,self);
+        assertTrue(empty.reactions.results.isEmpty()); assertTrue(empty.reactions.recent_reactions.isEmpty());
+        SerializedData bytes=new SerializedData(); empty.serializeToStream(bytes);
+        SerializedData input=new SerializedData(bytes.toByteArray());
+        assertTrue(TLRPC.Message.TLdeserialize(input,input.readInt32(true),true).reactions.results.isEmpty()); bytes.cleanup(); input.cleanup();
+        store.reactions.save(MessageFixture.disclosedReaction(room,"NewNick","again","room-id","alice-stable","alice@example.org",Collections.singletonList("🔥"),400000),self);
+        store.close(); store=new MonogramStore(context,"reactions.db");
+        assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        assertTrue(store.getMessage(original,self).reactions.results.get(0).chosen);
+        assertEquals(1,store.history(dialog,self,0,50).size());
+    }
 }
