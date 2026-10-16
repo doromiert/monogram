@@ -505,6 +505,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private boolean downloadsItemVisible;
     public ActionBarMenuItem searchItem;
     private ActionBarMenuItem optionsItem;
+    private ActionBarMenuItem monogramReconnectItem;
     private ActionBarMenuItem speedItem;
     public static boolean switchingTheme;
     private ActionBarMenuItem doneItem;
@@ -3217,6 +3218,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         topPanelLayout = null;
 
         ActionBarMenu menu = actionBar.createMenu();
+        monogramReconnectItem = null;
         menu.setTranslationX(-dp(5));
         searchItem = menu.addItem(0, R.drawable.outline_header_search).setIsSearchField(true, false);
         searchItem.setOnClickListener(v -> {
@@ -3251,6 +3253,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         searchItem.setVisibility(View.GONE);
 
         if (!onlySelect && searchString == null && folderId == 0 && communityId == 0) {
+            monogramReconnectItem = menu.addItem(91002, R.drawable.msg_retry);
+            monogramReconnectItem.setContentDescription(getString(R.string.MonogramReconnect));
+            checkUi_monogramReconnectVisibility();
             doneItem = new ActionBarMenuItem(context, null, getThemedColor(Theme.key_actionBarDefaultSelector), getThemedColor(Theme.key_actionBarDefaultIcon), true);
             doneItem.setText(LocaleController.getString(R.string.Done).toUpperCase());
             actionBar.addView(doneItem, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT, 0, 0, 10, 0));
@@ -3864,6 +3869,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
+                if (id == 91002) {
+                    presentFragment(new MonogramConnectionActivity(currentAccount));
+                    return;
+                }
                 if ((id == SearchViewPager.forwardItemId || id == SearchViewPager.gotoItemId || id == SearchViewPager.deleteItemId || id == SearchViewPager.speedItemId) && searchViewPager != null) {
                     searchViewPager.onActionBarItemClick(id);
                     return;
@@ -10674,6 +10683,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
         } else if (id == NotificationCenter.didUpdateConnectionState) {
             int state = AccountInstance.getInstance(account).getConnectionsManager().getConnectionState();
+            checkUi_monogramReconnectVisibility();
             if (currentConnectionState != state) {
                 currentConnectionState = state;
                 updateProxyButton(true, false);
@@ -14068,6 +14078,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void checkUi_menuItems() {
+        checkUi_monogramReconnectVisibility();
         checkUi_itemBackButtonVisibility();
         checkUi_itemOptionsVisibility();
         checkUi_itemDownloadsVisibility();
@@ -14094,6 +14105,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         final float factor3 = 1f - animatorDoneButtonVisible.getFloatValue();
         final float factor = factor1 * factor2 * factor3;
         FragmentFloatingButton.setAnimatedVisibility(optionsItem, factor);
+    }
+
+    private void checkUi_monogramReconnectVisibility() {
+        final boolean connected = getConnectionsManager().getConnectionState() == ConnectionsManager.ConnectionStateConnected;
+        final float factor = connected ? 0 : (1f - animatorSearchVisible.getFloatValue())
+                * (1f - getRightSlidingProgress()) * (1f - animatorDoneButtonVisible.getFloatValue())
+                * (1f - Math.max(progressToActionMode, animatorActionModeVisible.getFloatValue()));
+        FragmentFloatingButton.setAnimatedVisibility(monogramReconnectItem, factor);
     }
 
     private void checkUi_itemPasscodeVisibility() {

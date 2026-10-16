@@ -604,6 +604,7 @@ public class FileLoader extends BaseController {
         } else {
             fileName = name;
         }
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelFile(fileName);
         LoadOperationUIObject uiObject = loadOperationPathsUI.remove(fileName);
         Runnable runnable = uiObject != null ? uiObject.loadInternalRunnable : null;
         boolean removed = uiObject != null;
@@ -742,7 +743,8 @@ public class FileLoader extends BaseController {
     }
 
     public boolean isLoadingFile(final String fileName) {
-        return fileName != null && loadOperationPathsUI.containsKey(fileName);
+        return fileName != null && (loadOperationPathsUI.containsKey(fileName)
+                || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isFileLoading(fileName));
     }
 
     public float getBufferedProgressFromPosition(final float position, final String fileName) {
@@ -788,6 +790,10 @@ public class FileLoader extends BaseController {
     }
 
     public void loadFile(ImageLocation imageLocation, Object parentObject, String ext, int priority, int cacheType) {
+        if (parentObject instanceof MessageObject && org.telegram.messenger.xmpp.MonogramAttachments.has(((MessageObject) parentObject).messageOwner)) {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).download((MessageObject) parentObject);
+            return;
+        }
         if (imageLocation == null) {
             return;
         }
@@ -805,6 +811,10 @@ public class FileLoader extends BaseController {
     }
 
     public void loadFile(TLRPC.Document document, Object parentObject, int priority, int cacheType) {
+        if (parentObject instanceof MessageObject && org.telegram.messenger.xmpp.MonogramAttachments.has(((MessageObject) parentObject).messageOwner)) {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).download((MessageObject) parentObject);
+            return;
+        }
         if (document == null) {
             return;
         }
@@ -1274,6 +1284,7 @@ public class FileLoader extends BaseController {
     }
 
     public File getPathToMessage(TLRPC.Message message, boolean forceCache, boolean useFileDatabaseQueue) {
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message) && !TextUtils.isEmpty(message.attachPath)) return new File(message.attachPath);
         if (message == null) {
             return new File("");
         }
@@ -1337,6 +1348,19 @@ public class FileLoader extends BaseController {
      * Return real file name. Used before file.exist()
      */
     public File getPathToAttach(TLObject attach, String size, String ext, boolean forceCache, boolean useFileDatabaseQueue) {
+        if (attach instanceof TLRPC.PhotoSize) {
+            TLRPC.FileLocation location = ((TLRPC.PhotoSize) attach).location;
+            if (location != null && location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
+                File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(location.local_id);
+                if (local != null) return local;
+            }
+        }
+        TLRPC.FileLocation profileLocation = attach instanceof TLRPC.PhotoSize ? ((TLRPC.PhotoSize) attach).location
+                : attach instanceof TLRPC.FileLocation ? (TLRPC.FileLocation) attach : null;
+        if (profileLocation != null && profileLocation.volume_id == org.telegram.messenger.xmpp.MonogramProfiles.PHOTO_VOLUME) {
+            File avatar = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(profileLocation.local_id);
+            return avatar == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-avatar-missing") : avatar;
+        }
         File dir = null;
         long documentId = 0;
         int dcId = 0;

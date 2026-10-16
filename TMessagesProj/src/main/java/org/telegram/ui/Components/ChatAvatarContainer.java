@@ -1086,7 +1086,11 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
 
     public void updateSubtitle(boolean animated) {
         if (parentFragment != null && parentFragment.getCurrentUser() != null && parentFragment.getDialogId() > 0 && !UserObject.isUserSelf(parentFragment.getCurrentUser())) {
-            setSubtitle(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).encrypted(parentFragment.getDialogId()) ? "Sending with OMEMO" : "Sending without OMEMO");
+            org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+            int state = controller.state();
+            setSubtitle(state == org.telegram.tgnet.ConnectionsManager.ConnectionStateConnecting ? "Connecting to XMPP…"
+                    : state != org.telegram.tgnet.ConnectionsManager.ConnectionStateConnected ? "Disconnected from XMPP"
+                    : controller.encrypted(parentFragment.getDialogId()) ? "Sending with OMEMO" : "Sending without OMEMO");
             return;
         }
         if (parentFragment == null) {

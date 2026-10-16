@@ -12,12 +12,15 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+https_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
 mkdir -p "$state/data" "$state/certs"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj '/CN=localhost' \
     -addext 'subjectAltName=DNS:localhost' -keyout "$state/certs/localhost.key" \
     -out "$state/certs/localhost.crt" >"$state/cert.log" 2>&1
 keytool -importcert -noprompt -alias local-prosody -file "$state/certs/localhost.crt" \
     -keystore "$state/trust.p12" -storepass monogram-test >"$state/trust.log" 2>&1
+openssl pkcs12 -export -in "$state/certs/localhost.crt" -inkey "$state/certs/localhost.key" \
+    -out "$state/certs/server.p12" -passout pass:monogram-test >"$state/server-key.log" 2>&1
 cat > "$state/prosody.cfg.lua" <<CONFIG
 run_as_root = false
 daemonize = false
@@ -28,16 +31,21 @@ interfaces = { "127.0.0.1" }
 c2s_ports = { $port }
 s2s_ports = {}
 http_ports = {}
-https_ports = {}
+https_ports = { $https_port }
+ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhost.crt" }
 c2s_require_encryption = true
 allow_registration = false
 log = { { levels = { min = "info" }; to = "console" } }
-modules_enabled = { "roster"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule" }
+modules_enabled = { "roster"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule" }
 VirtualHost "localhost"
 authentication = "internal_hashed"
 ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhost.crt" }
 archive_expires_after = "1d"
 default_archive_policy = true
+Component "upload.localhost" "http_file_share"
+http_host = "localhost"
+http_file_share_size_limit = 1024*1024
+http_file_share_daily_quota = 10*1024*1024
 CONFIG
 for user in alice bob; do
     prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-test
@@ -53,6 +61,9 @@ for _ in range(100):
     except OSError: time.sleep(.1)
 else: raise SystemExit('Prosody did not start')
 PY
-export MONOGRAM_IT=1 MONOGRAM_IT_PORT="$port" MONOGRAM_IT_STATE="$state"
-mvn -f xmpp-core/pom.xml test -DargLine="-Djavax.net.ssl.trustStore=$state/trust.p12 -Djavax.net.ssl.trustStorePassword=monogram-test"
+export MONOGRAM_IT=1 MONOGRAM_IT_PORT="$port" MONOGRAM_IT_STATE="$state" MONOGRAM_IT_HTTPS_PORT="$https_port"
+mvn -f xmpp-core/pom.xml clean test -DargLine="-Djavax.net.ssl.trustStore=$state/trust.p12 -Djavax.net.ssl.trustStorePassword=monogram-test"
+if [ -n "${MONOGRAM_ANDROID_DEVICE:-}" ]; then
+    ./scripts/test-android-store.sh "$MONOGRAM_ANDROID_DEVICE"
+fi
 printf 'Integration server log: %s\n' "$state/server.log"

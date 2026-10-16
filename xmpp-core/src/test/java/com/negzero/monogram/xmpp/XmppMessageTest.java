@@ -34,6 +34,12 @@ class XmppMessageTest {
         assertEquals("mam-id", archive.ids.get("archive"));
         XmppMessage sent = XmppMessage.sent(own, "bob@example.org", "sent-id", "outgoing", true);
         assertTrue(sent.outgoing); assertEquals("sent-id", sent.ids.get("origin"));
+        String fileUrl = "aesgcm://example.org/photo.jpg#" + new String(new char[88]).replace('\0', 'a');
+        assertNotNull(XmppMessage.from(stanza, own, fileUrl, true, true, null, null).attachment);
+        assertNotNull(XmppMessage.from(stanza, own, fileUrl + "\ndata:image/jpeg;base64,/9j/2Q==", true, true, null, null).attachment);
+        assertNull(XmppMessage.from(stanza, own, fileUrl + "\ndata:image/jpeg,not-a-thumbnail", true, true, null, null).attachment);
+        assertNull(XmppMessage.from(stanza, own, fileUrl + "\nextra text", true, true, null, null).attachment);
+        assertNull(XmppMessage.from(stanza, own, fileUrl, false, true, null, null).attachment);
         stanza.setTo((org.jxmpp.jid.Jid) null);
         assertNotNull(XmppMessage.from(stanza, own, "delivered without to", false, true, null, null));
         stanza.setType(Message.Type.groupchat);

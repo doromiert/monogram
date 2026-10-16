@@ -36,6 +36,9 @@ public final class XmppSession implements AutoCloseable {
     public interface Listener {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
+        default void profileChanged(EntityBareJid jid) {}
+        default void disconnected() {}
+        default void reconnected(boolean resumed) {}
         default void message(XmppMessage message) {
             if (!message.readable) return;
             String id = message.ids.get("stanza");
@@ -44,9 +47,16 @@ public final class XmppSession implements AutoCloseable {
         }
     }
     private static File keyRoot;
-    private final XMPPTCPConnection connection;
+    private static final class ManagedConnection extends XMPPTCPConnection {
+        ManagedConnection(XMPPTCPConnectionConfiguration config) { super(config); }
+        void pingTimedOut() { notifyConnectionError(new java.io.IOException("XMPP server ping timed out")); }
+    }
+    private final ManagedConnection connection;
+    public final XmppProfiles profiles;
     private final OmemoManager omemo;
     private final IdentityTrust trust;
+    private volatile boolean started, closed;
+    private final java.util.concurrent.atomic.AtomicLong lifecycle = new java.util.concurrent.atomic.AtomicLong();
 
     public static synchronized void initializeOmemo(File privateDirectory) throws Exception {
         File root = privateDirectory.getCanonicalFile();
@@ -71,13 +81,40 @@ public final class XmppSession implements AutoCloseable {
                 .setResource(account.resource).setSecurityMode(SecurityMode.required)
                 .setSendPresence(false).setCompressionEnabled(false).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
-        connection = new XMPPTCPConnection(config.build());
+        connection = new ManagedConnection(config.build());
+        ReplyReference.initialize();
+        profiles = new XmppProfiles(connection, listener::profileChanged);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
         DeliveryReceiptManager receipts = DeliveryReceiptManager.getInstanceFor(connection);
         receipts.setAutoReceiptMode(DeliveryReceiptManager.AutoReceiptMode.ifIsSubscribed);
         trust = new IdentityTrust(trustFile);
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
+        connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
+            @Override public void connectionClosed() { disconnected(); }
+            @Override public void connectionClosedOnError(Exception error) { disconnected(); }
+            private void disconnected() {
+                lifecycle.incrementAndGet();
+                if (!closed) listener.disconnected();
+            }
+            @Override public void authenticated(org.jivesoftware.smack.XMPPConnection ignored, boolean resumed) {
+                if (!started || closed) return;
+                long generation = lifecycle.incrementAndGet();
+                org.jivesoftware.smack.util.Async.go(() -> {
+                    try {
+                        if (!resumed) enableFeatures();
+                        if (!closed && lifecycle.get() == generation && connection.isAuthenticated()) listener.reconnected(resumed);
+                    } catch (Exception failed) {
+                        if (!closed && lifecycle.get() == generation) connection.pingTimedOut();
+                    }
+                }, "Monogram reconnect setup");
+            }
+        });
+        org.jivesoftware.smackx.ping.PingManager ping = org.jivesoftware.smackx.ping.PingManager.getInstanceFor(connection);
+        ping.setPingInterval(120);
+        ping.registerPingFailedListener(() -> { if (!closed) connection.pingTimedOut(); });
         omemo.addOmemoMessageListener(new OmemoMessageListener() {
             @Override public void onOmemoMessageReceived(Stanza stanza, OmemoMessage.Received decrypted) {
                 if (!decrypted.isKeyTransportMessage() && stanza instanceof Message) {
@@ -170,15 +207,33 @@ public final class XmppSession implements AutoCloseable {
     public void connect() throws Exception {
         try {
             connection.connect().login();
-            if (org.jivesoftware.smackx.pep.PepManager.getInstanceFor(connection).isSupported()) omemo.initialize();
-            CarbonManager carbons = CarbonManager.getInstanceFor(connection);
-            if (carbons.isSupportedByServer()) carbons.enableCarbons();
-            connection.sendStanza(new org.jivesoftware.smack.packet.Presence(org.jivesoftware.smack.packet.Presence.Type.available));
-        } catch (Exception e) { connection.disconnect(); throw e; }
+            enableFeatures(); started = true;
+        } catch (Exception e) { close(); throw e; }
+    }
+    private void enableFeatures() throws Exception {
+        if (org.jivesoftware.smackx.pep.PepManager.getInstanceFor(connection).isSupported()) omemo.initialize();
+        CarbonManager carbons = CarbonManager.getInstanceFor(connection);
+        if (carbons.isSupportedByServer()) carbons.enableCarbons();
+        connection.sendStanza(new org.jivesoftware.smack.packet.Presence(org.jivesoftware.smack.packet.Presence.Type.available));
     }
     public String send(String jid, String body, boolean encrypted) throws Exception {
+        return send(jid, body, encrypted, false, null);
+    }
+    public String send(String jid, String body, boolean encrypted, ReplyReference reply) throws Exception {
+        return send(jid, body, encrypted, false, reply);
+    }
+    public String sendFile(String jid, FileLink link, boolean encrypted) throws Exception {
+        return sendFile(jid, link, encrypted, null);
+    }
+    public String sendFile(String jid, FileLink link, boolean encrypted, ReplyReference reply) throws Exception {
+        if (link.encrypted() != encrypted) throw new IllegalArgumentException("Attachment encryption mode mismatch");
+        return send(jid, link.wireUrl, encrypted, !encrypted, reply);
+    }
+    private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply) throws Exception {
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         EntityBareJid recipient = JidCreate.entityBareFrom(jid);
+        String attachmentUrl = body;
+        if (reply != null) body = reply.wireBody(body);
         Message message;
         if (encrypted) {
             try {
@@ -205,6 +260,9 @@ public final class XmppSession implements AutoCloseable {
             message = new Message(recipient, Message.Type.chat);
             message.setBody(body);
         }
+        if (attachment) message.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("x", "jabber:x:oob")
+                .addElement("url", attachmentUrl).build());
+        if (reply != null) reply.addTo(message);
         String id = UUID.randomUUID().toString();
         message.setStanzaId(id);
         message.addExtension(new OriginIdElement(id));
@@ -231,5 +289,10 @@ public final class XmppSession implements AutoCloseable {
     public void decideAll(java.util.Map<OmemoDevice, OmemoFingerprint> identities, boolean trusted) { trust.setTrustAll(identities, trusted); }
     public boolean hasArchive() throws Exception { return MamManager.getInstanceFor(connection).isSupported(); }
     public XMPPTCPConnection connection() { return connection; }
-    @Override public void close() { connection.disconnect(); }
+    @Override public void close() {
+        closed = true; started = false; lifecycle.incrementAndGet();
+        ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
+        manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
+        connection.disconnect();
+    }
 }

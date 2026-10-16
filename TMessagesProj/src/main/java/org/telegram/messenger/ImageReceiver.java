@@ -569,7 +569,31 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
         setImage(null, null, fileLocation, fileFilter, thumbLocation, thumbFilter, thumb, size, ext, parentObject, cacheType);
     }
 
+    private ImageLocation localProfileImage(ImageLocation image) {
+        if (image == null) return null;
+        TLRPC.FileLocation location = image.location != null ? image.location : image.photoSize != null ? image.photoSize.location : null;
+        if (location == null || location.volume_id != org.telegram.messenger.xmpp.MonogramProfiles.PHOTO_VOLUME) return image;
+        java.io.File avatar = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(location.local_id);
+        return avatar != null && avatar.isFile() ? ImageLocation.getForPath(avatar.getAbsolutePath()) : null;
+    }
+
     public void setImage(ImageLocation mediaLocation, String mediaFilter, ImageLocation imageLocation, String imageFilter, ImageLocation thumbLocation, String thumbFilter, Drawable thumb, long size, String ext, Object parentObject, int cacheType) {
+        imageLocation = localProfileImage(imageLocation);
+        mediaLocation = localProfileImage(mediaLocation);
+        thumbLocation = localProfileImage(thumbLocation);
+        if (imageLocation != null && imageLocation.photoSize != null && imageLocation.photoSize.location != null
+                && imageLocation.photoSize.location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
+            java.io.File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(imageLocation.photoSize.location.local_id);
+            if (local != null && local.isFile()) { imageLocation = ImageLocation.getForPath(local.getAbsolutePath()); mediaLocation = null; thumbLocation = null; }
+        }
+        if (parentObject instanceof MessageObject && imageLocation != null) {
+            MessageObject message = (MessageObject) parentObject;
+            if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner) && message.messageOwner.media != null
+                    && message.messageOwner.media.photo != null && message.messageOwner.attachPath != null
+                    && new java.io.File(message.messageOwner.attachPath).isFile()) {
+                imageLocation = ImageLocation.getForPath(message.messageOwner.attachPath); mediaLocation = null; thumbLocation = null;
+            }
+        }
         if (allowLoadingOnAttachedOnly && !attachedToWindow) {
             if (setImageBackup == null) {
                 setImageBackup = new SetImageBackup();

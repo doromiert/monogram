@@ -1,146 +1,123 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package org.telegram.ui;
 
-import android.content.Context;
 import android.view.View;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
 import org.telegram.messenger.xmpp.MonogramController;
-import org.telegram.ui.ActionBar.*;
-import org.telegram.ui.Cells.TextCheckCell;
-import org.telegram.ui.Cells.TextSettingsCell;
-import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
+import org.telegram.ui.Components.UniversalFragment;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
 
-public final class MonogramSecurityActivity extends BaseFragment {
+public final class MonogramSecurityActivity extends UniversalFragment {
     private final long peer;
+    private final Map<OmemoDevice, OmemoFingerprint> identities = new LinkedHashMap<>();
+    private final Map<OmemoDevice, String> states = new LinkedHashMap<>();
+    private com.negzero.monogram.xmpp.XmppSession loadedSession;
+    private String ownFingerprint;
+    private String status = "Loading fingerprints…";
+    private boolean saving;
     public MonogramSecurityActivity(int account, long peer) { currentAccount = account; this.peer = peer; }
-    private TextView text(Context context, String value) {
-        TextView view = new TextView(context); view.setText(value); view.setTextSize(16);
-        view.setTextIsSelectable(true); view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        int padding = AndroidUtilities.dp(20); view.setPadding(padding, padding, padding, padding);
-        return view;
-    }
-    @Override public View createView(Context context) {
-        actionBar.setTitle("Conversation security"); actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override public void onItemClick(int id) { if (id == -1) finishFragment(); }
-        });
+    private void refresh() { if (listView != null) listView.adapter.update(true); }
+    @Override public boolean onFragmentCreate() {
+        super.onFragmentCreate();
         MonogramController controller = MonogramController.get(currentAccount);
-        LinearLayout body = new LinearLayout(context); body.setOrientation(LinearLayout.VERTICAL);
-        body.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        ScrollView scroll = new ScrollView(context); scroll.addView(body);
-        body.addView(text(context, controller.jid(peer)));
-        TextCheckCell enabled = new TextCheckCell(context);
-        enabled.setTextAndCheck("Use OMEMO encryption", controller.encrypted(peer), false);
-        body.addView(enabled);
-        enabled.setOnClickListener(v -> {
-            if (controller.encrypted(peer)) {
-                showDialog(new AlertDialog.Builder(context).setTitle("Send without OMEMO?")
-                        .setMessage("New messages in this conversation will be readable by the XMPP servers. Transport encryption remains enabled.")
-                        .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); enabled.setChecked(false); })
-                        .setNegativeButton("Cancel", null).create());
-            } else { controller.setEncrypted(peer, true); enabled.setChecked(true); }
-        });
-        body.addView(text(context, "Compare fingerprints with your contact through another trusted channel before trusting their devices. New devices and changed keys require a new decision."));
-        TextView status = text(context, "Loading fingerprints…"); body.addView(status);
-        TextSettingsCell trustAll = new TextSettingsCell(context);
-        trustAll.setText("Trust all fingerprints", false);
-        trustAll.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
-        trustAll.setBackground(Theme.getSelectorDrawable(false));
-        trustAll.setVisibility(View.GONE);
-        body.addView(trustAll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         controller.worker.execute(() -> {
             try {
                 com.negzero.monogram.xmpp.XmppSession session = controller.session();
                 String own = session.ownFingerprint().toString();
-                java.util.Map<OmemoDevice, OmemoFingerprint> identities = new java.util.LinkedHashMap<>();
-                java.util.Map<OmemoDevice, String> states = new java.util.HashMap<>();
+                Map<OmemoDevice, OmemoFingerprint> found = new LinkedHashMap<>();
+                Map<OmemoDevice, String> trust = new LinkedHashMap<>();
                 boolean contactHasDevices = false;
                 for (String jid : new String[]{controller.jid(peer), session.ownJid()}) {
                     for (OmemoDevice device : session.devices(jid)) {
                         if (device.getJid().toString().equals(session.ownJid()) && device.getDeviceId() == session.ownDeviceId()) continue;
                         if (jid.equals(controller.jid(peer))) contactHasDevices = true;
-                        OmemoFingerprint fingerprint = session.fingerprint(device);
-                        identities.put(device, fingerprint);
+                        OmemoFingerprint fingerprint = session.fingerprint(device); found.put(device, fingerprint);
                         switch (session.trustState(device, fingerprint)) {
-                            case trusted: states.put(device, "Trusted"); break;
-                            case untrusted: states.put(device, "Distrusted"); break;
-                            default: states.put(device, "Not reviewed");
+                            case trusted: trust.put(device, "Trusted"); break;
+                            case untrusted: trust.put(device, "Distrusted"); break;
+                            default: trust.put(device, "Not reviewed");
                         }
                     }
                 }
-                final boolean hasContact = contactHasDevices;
+                boolean hasContact = contactHasDevices;
                 AndroidUtilities.runOnUIThread(() -> {
-                    if (getParentActivity() == null) return;
-                    status.setText("Your fingerprint\n" + own + (!hasContact ? "\n\nThis contact has not published a compatible OMEMO device." : ""));
-                    java.util.Map<OmemoDevice, TextView> rows = new java.util.LinkedHashMap<>();
-                    for (java.util.Map.Entry<OmemoDevice, OmemoFingerprint> entry : identities.entrySet()) {
-                        OmemoDevice device = entry.getKey(); OmemoFingerprint fingerprint = entry.getValue();
-                        TextView row = text(context, device.getJid() + " · device " + device.getDeviceId() + "\n" + fingerprint + "\n" + states.get(device) + " · tap to review");
-                        row.setTextIsSelectable(false); row.setMinHeight(AndroidUtilities.dp(88));
-                        body.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-                        rows.put(device, row);
-                        row.setOnClickListener(v -> showDialog(new AlertDialog.Builder(context).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint)
-                                .setPositiveButton("Trust", (d, w) -> decide(controller, session, device, fingerprint, true, row))
-                                .setNegativeButton("Distrust", (d, w) -> decide(controller, session, device, fingerprint, false, row)).create()));
-                    }
-                    if (!identities.isEmpty()) {
-                        trustAll.setVisibility(View.VISIBLE);
-                        trustAll.setOnClickListener(v -> showDialog(new AlertDialog.Builder(context)
-                                .setTitle("Trust all fingerprints?")
-                                .setMessage("Trust the " + identities.size() + " fingerprints currently shown, including any marked Distrusted. New devices and changed keys will still need review.")
-                                .setPositiveButton("Trust all", (dialog, which) -> trustAll(controller, session, identities, rows, trustAll))
-                                .setNegativeButton("Cancel", null).create()));
-                    }
+                    loadedSession = session; ownFingerprint = own; identities.putAll(found); states.putAll(trust);
+                    status = hasContact ? null : "This contact has not published a compatible OMEMO device."; refresh();
                 });
-            } catch (Exception e) {
-                AndroidUtilities.runOnUIThread(() -> status.setText("Could not load fingerprints. Check your connection and the contact's OMEMO support."));
+            } catch (Exception failed) {
+                AndroidUtilities.runOnUIThread(() -> { status = "Could not load fingerprints. Check your connection and the contact's OMEMO support."; refresh(); });
             }
         });
-        fragmentView = scroll; return fragmentView;
+        return true;
     }
-    private void trustAll(MonogramController controller, com.negzero.monogram.xmpp.XmppSession expectedSession,
-            java.util.Map<OmemoDevice, OmemoFingerprint> identities, java.util.Map<OmemoDevice, TextView> rows, TextSettingsCell button) {
-        button.setEnabled(false); button.setText("Trusting fingerprints…", false);
+    @Override protected CharSequence getTitle() { return "Conversation security"; }
+    @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        MonogramController controller = MonogramController.get(currentAccount);
+        items.add(UItem.asHeader(controller.jid(peer)));
+        items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
+        items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
+        items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
+        items.add(UItem.asShadow(null));
+        if (status != null) items.add(UItem.asShadow(status));
+        if (ownFingerprint != null) {
+            items.add(UItem.asButton(3, "Your fingerprint")); items.add(UItem.asShadow(ownFingerprint));
+        }
+        if (!identities.isEmpty()) {
+            items.add(UItem.asButton(2, saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
+            items.add(UItem.asShadow(null));
+            int id = 100;
+            for (Map.Entry<OmemoDevice, OmemoFingerprint> entry : identities.entrySet()) {
+                OmemoDevice device = entry.getKey();
+                items.add(UItem.asButton(id++, device.getJid() + " · device " + device.getDeviceId(), states.get(device)).setEnabled(!saving));
+                items.add(UItem.asShadow(entry.getValue().toString()));
+            }
+        }
+    }
+    @Override protected void onClick(UItem item, View view, int position, float x, float y) {
+        MonogramController controller = MonogramController.get(currentAccount);
+        if (item.id == 1) {
+            if (controller.encrypted(peer)) showDialog(new AlertDialog.Builder(getContext()).setTitle("Send without OMEMO?")
+                    .setMessage("New messages in this conversation will be readable by the XMPP servers. Transport encryption remains enabled.")
+                    .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); refresh(); })
+                    .setNegativeButton("Cancel", null).create());
+            else { controller.setEncrypted(peer, true); refresh(); }
+        } else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));
+        else if (item.id == 3) showDialog(new AlertDialog.Builder(getContext()).setTitle("Your fingerprint").setMessage(ownFingerprint)
+                .setPositiveButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(ownFingerprint)).setNegativeButton("Close", null).create());
+        else if (item.id == 2 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("Trust all fingerprints?")
+                .setMessage("Trust the " + identities.size() + " fingerprints currently shown, including any marked Distrusted. New devices and changed keys will still need review.")
+                .setPositiveButton("Trust all", (dialog, which) -> decide(new LinkedHashMap<>(identities), true))
+                .setNegativeButton("Cancel", null).create());
+        else if (item.id >= 100 && !saving && item.id - 100 < identities.size()) {
+            OmemoDevice device = new ArrayList<>(identities.keySet()).get(item.id - 100);
+            OmemoFingerprint fingerprint = identities.get(device);
+            Map<OmemoDevice, OmemoFingerprint> selected = new LinkedHashMap<>(); selected.put(device, fingerprint);
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint)
+                    .setPositiveButton("Trust", (d, w) -> decide(selected, true)).setNegativeButton("Distrust", (d, w) -> decide(selected, false))
+                    .setNeutralButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(fingerprint.toString())).create());
+        }
+    }
+    private void decide(Map<OmemoDevice, OmemoFingerprint> selected, boolean trusted) {
+        saving = true; refresh();
+        MonogramController controller = MonogramController.get(currentAccount);
         controller.worker.execute(() -> {
             try {
-                if (controller.session() != expectedSession) throw new IllegalStateException("Account session changed");
-                expectedSession.decideAll(identities, true);
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (getParentActivity() == null) return;
-                    for (java.util.Map.Entry<OmemoDevice, OmemoFingerprint> identity : identities.entrySet()) {
-                        OmemoDevice device = identity.getKey();
-                        rows.get(device).setText(device.getJid() + " · device " + device.getDeviceId() + "\n" + identity.getValue() + "\nTrusted · tap to review");
-                    }
-                    button.setText("Trust all fingerprints", false); button.setEnabled(true);
-                    button.announceForAccessibility("All displayed fingerprints trusted");
-                });
-            } catch (Exception e) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (getParentActivity() == null) return;
-                    button.setText("Trust all fingerprints", false); button.setEnabled(true);
-                    showDialog(new AlertDialog.Builder(getParentActivity()).setTitle("Could not save trust decisions")
-                            .setMessage("Nothing was changed. Check your connection and try again.")
-                            .setPositiveButton("OK", null).create());
-                });
+                if (controller.session() != loadedSession) throw new IllegalStateException("Account session changed");
+                loadedSession.decideAll(selected, trusted);
+                AndroidUtilities.runOnUIThread(() -> { for (OmemoDevice device : selected.keySet()) states.put(device, trusted ? "Trusted" : "Distrusted"); saving = false; refresh(); });
+            } catch (Exception failed) {
+                AndroidUtilities.runOnUIThread(() -> { saving = false; refresh(); if (getParentActivity() != null) showDialog(new AlertDialog.Builder(getContext())
+                        .setTitle("Could not save trust decisions").setMessage("Nothing was changed. Check your connection and try again.").setPositiveButton("OK", null).create()); });
             }
         });
     }
-    private void decide(MonogramController controller, com.negzero.monogram.xmpp.XmppSession expectedSession,
-            OmemoDevice device, OmemoFingerprint fingerprint, boolean trust, TextView row) {
-        controller.worker.execute(() -> {
-            try {
-                if (controller.session() != expectedSession) throw new IllegalStateException("Account session changed");
-                expectedSession.decide(device, fingerprint, trust);
-                AndroidUtilities.runOnUIThread(() -> row.setText(device.getJid() + " · device " + device.getDeviceId() + "\n" + fingerprint + "\n" + (trust ? "Trusted" : "Distrusted")));
-            } catch (Exception e) {
-                AndroidUtilities.runOnUIThread(() -> row.setText("Could not save trust decision. Tap to try again."));
-            }
-        });
-    }
+    @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
 }

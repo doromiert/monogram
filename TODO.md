@@ -3,10 +3,11 @@
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
 Work only in `~/Projects/monogram`, using Git branches. Do not create separate source checkouts in other project folders.
+Reuse the existing upstream feature implementations and redesigned UI components (`MainTabsActivity`, `UniversalFragment`, native settings/presets); do not add parallel custom settings for features Telegram already supplies.
 
 The goal is a Monogram Android client based on current official Telegram source, using ordinary XMPP/Jabber and interoperable OMEMO, with an optional server helper for features that need it. Nix is the development/build environment. Planned public home: https://monogram.neg-zero.com. Helper host: 192.168.1.24.
 
-## Current priority: official Telegram base
+## Official Telegram base
 
 - [x] Reapply the Monogram changes onto `DrKLO/Telegram` 13.0.2, commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d` (2026-10-13). The Git rebase is complete; build/runtime validation is tracked below.
 - [x] Update the pinned Nix environment for Java 21, SDK/build tools 35 and 36, NDK 27.2, CMake 3.22.1 and Rust 1.96.1.
@@ -16,7 +17,24 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [x] Compile the current-base Android Java sources with the XMPP adapter and Jabber account routes (138 tasks; BUILD SUCCESSFUL).
 - [x] Build the rebased arm64 APK 0.2.0 (71759) with Nix (301 tasks, BUILD SUCCESSFUL).
 - [o] Verify the current Telegram UI, Monogram branding and security button on Android. The current-base chat renders and exposes the separate Conversation security control; complete branding and deliberate lock/confirmation touch checks remain pending.
+- [o] Use the redesigned main tabs after Jabber sign-in, and migrate Monogram's sign-in/new-chat/security/connection pages to the upstream universal lists and editable cells. Source wiring is updated; verify the rebuilt UI on Android.
 - [x] Install 0.2.0 through wireless ADB with the same signing key; verify the saved account/credential, all 53 existing local message rows, and the OMEMO device ID and identity key remain intact.
+
+## Current priority: XMPP user profiles
+
+- [o] Fix the profile-opening crash and restore cached avatars immediately after process restart: retain native gallery metadata and resolve persisted XMPP photo markers to private files. Installed 0.2.8 first, then 0.2.9 with gallery-cache serialization fixed too. Serialized-user/gallery regressions and isolated Android checks pass. All 1,508 pre-update messages, 9 existing avatar files, saved login and OMEMO identity survive; current message count 1,513. Profile touch verification remains.
+- [o] Replace phone-number identity displays with the account's full Jabber address. Installed 0.2.9: native settings subtitle and account-profile identity row/search show/copy the address without phone formatting or a change-number flow. Visual verification remains.
+- [o] Keep the account display name separate from its address: use the published nickname/name, falling back to the username part for an unnamed account. Installed 0.2.9: publish the cached native account model before reconnect/profile fetch; Android assertions verify fallback and published-name precedence. Visual verification remains.
+- [o] Move Reconnect from the chat header to the Monogram home screen, and move per-chat encryption settings into the chat overflow menu. Installed 0.2.9 uses native home header visibility and the existing chat menu/security page; touch verification remains.
+
+- [o] Prepare profiles before replies: load and cache display names, avatars and standard Jabber profile details; reuse the upstream profile, edit-account and avatar-picker UI. Installed in 0.2.6 (71819); profile UI interaction still needs checking.
+- [o] Read and publish vCards without deleting fields supplied by other clients; support nickname and avatar PEP updates, with vCard avatar fallback. Local Prosody round trips, incoming PEP notifications and field-preservation checks pass; independent-client verification remains.
+- [o] Show the Jabber address separately from the display name, retain local roster names, and keep cached profiles available offline. Native profile/edit-account rows and schema 5 are wired. Isolated Android tests verify profile/avatar persistence, roster aliases and separate account caches; visual UI checks remain.
+- [o] Verify profile edits, avatar replacement/removal, incoming updates, malformed/oversized images, account isolation and database migration with a local server and an independent client. Twelve core tests and isolated Android database/image/transport checks pass, including schema 1/2/3/4 migrations to 5, malformed images, avatar removal and profile metadata serialization. Independent-client and touch checks remain.
+
+- [x] Build and install 0.2.6 with Nix and the same signing key; preserve all 1,502 pre-update message rows, the saved login and OMEMO identity. The live database is still schema 4 until the app starts: Android rejected background service startup; no foreground navigation was performed.
+- [x] Verify first-launch profile/reply migration: live database is schema 6 with 1,508 messages; profile names and 7 private avatar files are loaded. Native avatar reference/cache reuse and profile touch verification are tracked above.
+- [ ] Extend editing beyond name/bio/avatar to the remaining received vCard fields; evaluate vCard4 (XEP-0292/0294) support and external/avatar-pointer formats. Current display covers nickname/full name, website, birthday, organization/department, role/title, email, phone and address fields.
 
 ## Messaging and existing conversations
 
@@ -26,9 +44,14 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [o] Handle incoming/outgoing carbons, multiple devices, offline messages and reconnects in the Android storage/UI adapter. Carbon direction/delays and forward archive catch-up are implemented and tested locally; automatic reconnect synchronization, unread state and independent-client Android checks remain.
 - [ ] Refresh already displayed history when an archive import corrects a timestamp or replaces an unreadable placeholder; cover jump-to-message/date navigation.
 - [ ] Implement delivery receipts and accurate pending/sent/delivered/failed states, with useful errors and retry behavior.
+- [ ] Implement XEP-0085 typing indicators: send composing/paused/active states without message bodies, display incoming typing in direct chats and MUCs, and clear stale state on timeout, disconnect or leaving a room. Verify independent-client behavior and encryption/privacy preferences.
 - [ ] Implement roster management, subscription requests, presence and contact display names.
-- [ ] Port replies, editing, reactions and other applicable messaging actions using standard XMPP extensions.
+- [o] Fix replies in both directions using XEP-0461: send a reference to the original XMPP message, resolve incoming references to local messages, handle quoted fallback text and missing originals, and verify Android reply previews with an independent client. Installed in 0.2.7: plain/OMEMO text and attachment references, native previews, exact author/ID matching, missing-original fallbacks, late/recovered-original refresh, and navigation around the original. Seventeen core tests and isolated Android checks pass; touch and independent-client verification remain.
+- [x] Verify reply wire metadata for plain/encrypted text and attachments, MAM and outgoing carbons on local Prosody; enforce Unicode code-point fallback bounds, author/resource scope and ambiguity handling. Replace Smack’s outdated fallback parser so current ranges survive parsing.
+- [o] Rescan existing archive reply metadata after schema 6 migration while preserving local messages, known plaintext, profiles and attachment paths. Isolated Android tests verify schema 1/2/3/4/5 migrations, metadata enrichment from an unreadable encrypted replay, cyclic-reference limits and account cleanup. Verify the real-account rescan after first launch.
+- [ ] Port editing, reactions and other applicable messaging actions using standard XMPP extensions.
 - [ ] Complete account management, request cancellation, logout isolation and background notification behavior.
+- [o] Fix silent/random disconnections: lifecycle callbacks, idle pings, bounded Android retries and a native Reconnect page are installed. Local cut/unresponsive-stream tests verify reauthentication, restored features and encrypted delivery with the same identity. Verify the Android button and prolonged background behavior.
 
 ## Multi-user chats (MUCs)
 
@@ -52,11 +75,17 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Images and other attachments
 
-- [ ] Replace the Telegram upload pipeline with XMPP HTTP File Upload (XEP-0363).
-- [ ] Implement interoperable encrypted file upload/download for OMEMO conversations.
-- [ ] Connect photo/image selection, sending, receiving, previews and opening to that pipeline.
+- [x] Build the 0.2.7 (71829) arm64 APK with Nix; seventeen core tests and Android storage/profile/reply/transport checks pass. Installed through wireless ADB with the same signing key; all 1,502 existing messages, login and OMEMO identity survive. Live schema 6 migration and metadata rescan await the user opening the app; no foreground navigation was performed.
+- [x] Install 0.2.5 (71809) with the native settings integration and redesigned Monogram pages. Ten core tests and Android database/metadata/transport checks pass; all 1,487 previous message rows, saved credential and OMEMO identity survive.
+- [o] Use the existing Data and Storage auto-download settings and DownloadController presets for XMPP photos, videos and files/music. Remove the duplicate custom page/preferences; pass HTTP size/type metadata to the existing policy, expose the existing size slider for photos too, and verify network/category limits, unknown sizes, cancellation and manual fallback.
+- [x] Build and install 0.2.3 (71789) through wireless ADB with the same signing key; schema 3 → 4 preserves all 1,457 previous message rows, the saved credential and OMEMO identity.
+- [x] Verify shared HTTPS plain/encrypted upload/download on local Prosody and Android's networking stack, including server limits, wrong-key preservation, cancellation during transfer and partial-file cleanup. Eight core tests and isolated Android transport/database checks pass.
+- [o] Replace the Telegram upload pipeline with XMPP HTTP File Upload (XEP-0363). Android photo/document sending is wired; complete picker/send/download/viewer verification remains pending.
+- [o] Implement encrypted file upload/download using the documented XEP-0454 aesgcm format. Local round trips, independent-provider decryption and failed-authentication preservation pass; independent-client image exchange remains pending.
+- [o] Connect photo/image selection, sending, receiving, previews and opening to that pipeline. Schema 4 stores media references and verified local paths; Android tests cover schema 1/2/3 migrations, real bitmap preview metadata and database reopen. Full picker/download/viewer interaction remains pending.
 - [ ] Cover documents, video and voice messages using the same transport where applicable.
-- [ ] Surface server limits, missing upload support, progress, cancellation and retry clearly.
+- [ ] Replace the provisional 100 MiB transport ceiling with limits consistent with the existing file UI and server capabilities; verify large streaming transfers and cancellation without buffering the entire file.
+- [o] Surface server limits, missing upload support, progress, cancellation and retry. Transport limits/cancellation and error messages are implemented; verify the complete UI paths, including cancellation before worker dispatch.
 
 ## Optional helper and feature compatibility
 
@@ -75,6 +104,18 @@ Reference APK: `~/extera/exteraGram-full-universal-20261004.apk`. The user repor
 - [ ] Compare the available source with the APK; inspect/decompile APK code and resources where the source does not cover the shipped behavior.
 - [ ] Map selected features to local client changes, standard XMPP extensions or optional helper capabilities, accounting for OMEMO and MUCs.
 - [ ] Implement and verify the selected features on the current official Telegram base, recording attribution and applicable license requirements.
+
+## Watch version
+
+- [ ] Plan a Monogram watch app; confirm the target watch platform and whether it should work independently or through a paired phone.
+- [ ] Design watch-sized conversations, notifications, replies and input, with account setup and OMEMO trust/key handling appropriate to the chosen architecture.
+- [ ] Implement and verify the watch app, including background connectivity, reconnection, battery use and interoperability with phone Monogram and other XMPP clients.
+
+## Premium features and monetization
+
+- [ ] Inventory Telegram Premium/Pro features; make every frontend-only feature and every feature that translates to XMPP available free in Monogram, without premium gates or upsells.
+- [ ] Remove monetization features that cannot be ported to XMPP, including the Telegram wallet, purchase/subscription flows and their UI entry points. Audit Stars, paid media/messages, gifts, ads and related Telegram-only service requests.
+- [ ] Verify that supported features work without a paid Telegram account and that removed monetization controls cannot be reached through settings, navigation, notifications or links.
 
 ## Release verification
 

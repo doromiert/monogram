@@ -4282,9 +4282,6 @@ public class ChatActivity extends BaseFragment implements
         });
 
         ActionBarMenu menu = actionBar.createMenu();
-        if (dialog_id > 0 && currentEncryptedChat == null) {
-            menu.addItem(91001, R.drawable.msg_secret).setContentDescription("Conversation security");
-        }
 
         if (chatMode == MODE_QUICK_REPLIES && !QuickRepliesController.isSpecial(quickReplyShortcut)) {
             menu.addItem(edit_quick_reply, R.drawable.group_edit).setContentDescription(LocaleController.getString(R.string.Edit));
@@ -4364,6 +4361,10 @@ public class ChatActivity extends BaseFragment implements
             });
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
+
+            if (dialog_id > 0 && currentEncryptedChat == null) {
+                headerItem.lazilyAddSubItem(91001, R.drawable.msg_secret, getString(R.string.MonogramConversationSecurity));
+            }
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));
@@ -22017,7 +22018,7 @@ public class ChatActivity extends BaseFragment implements
                 pinnedMessageButton[1].invalidate();
             }
         } else if (id == NotificationCenter.didUpdateConnectionState) {
-            int state = ConnectionsManager.getInstance(account).getConnectionState();
+            if (avatarContainer != null) avatarContainer.updateSubtitle();
         } else if (id == NotificationCenter.chatOnlineCountDidLoad) {
             Long chatId = (Long) args[0];
             if (chatInfo == null || currentChat == null || currentChat.id != chatId) {
@@ -29807,9 +29808,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private int getAvatarRightMargin(boolean expanded) {
-        int margin = expanded && chatMode != MODE_SAVED ? 92 : 52;
-        if (dialog_id > 0 && currentEncryptedChat == null) margin += 48;
-        return margin;
+        return expanded && chatMode != MODE_SAVED ? 92 : 52;
     }
 
     @Override

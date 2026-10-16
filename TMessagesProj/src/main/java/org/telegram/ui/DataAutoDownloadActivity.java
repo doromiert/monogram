@@ -381,6 +381,11 @@ public class DataAutoDownloadActivity extends BaseFragment {
                         linearLayout.addView(cells[a], LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50));
                     }
 
+                    if (position == photosRow) {
+                        sizeCell[0] = new MaxFileSizeCell(getParentActivity());
+                        sizeCell[0].setSize(currentPreset.sizes[index]);
+                        linearLayout.addView(sizeCell[0], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+                    }
                     if (position != photosRow) {
                         TextInfoPrivacyCell infoCell = new TextInfoPrivacyCell(getParentActivity());
 

@@ -8938,6 +8938,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void deleteUserPhoto(TLRPC.InputPhoto photo) {
+        if (photo != null) {
+            TLRPC.User own = getUserConfig().getCurrentUser();
+            if (own != null && own.photo != null && own.photo.photo_id == photo.id) deleteUserPhoto(null);
+            return;
+        }
         long dialogId = getUserConfig().getClientUserId();
         if (photo == null) {
 
@@ -9008,13 +9013,8 @@ public class MessagesController extends BaseController implements NotificationCe
                         getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_AVATAR);
                         getUserConfig().saveConfig(true);
                     });
-                }
+                } else AndroidUtilities.runOnUIThread(() -> org.telegram.ui.Components.BulletinFactory.showError(error));
             });
-        } else {
-            TLRPC.TL_photos_deletePhotos req = new TLRPC.TL_photos_deletePhotos();
-            req.id.add(photo);
-            getDialogPhotos(dialogId).removePhoto(photo.id);
-            getConnectionsManager().sendRequest(req, null);
         }
     }
 

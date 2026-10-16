@@ -11535,4 +11535,10 @@
     <string name="CreateManagedBotUsernameBotLimit">This bot already has a Premium username. Remove it before adding another.</string>
     <string name="CreateManagedBotUsernameSuffixMissing">The username must end in %1$s.</string>
     <string name="CreateManagedBotUsernameCheckFailed">Couldn\'t check this username. Please try again.</string>
+    <string name="MonogramDisconnected">Disconnected</string>
+    <string name="MonogramReconnect">Reconnect XMPP</string>
+    <string name="MonogramConversationSecurity">Conversation security</string>
+    <string name="MonogramJabberId">Jabber ID</string>
+    <string name="MonogramJabberAddress">Jabber profile</string>
+    <string name="MonogramProfilePublished">Published in your Jabber profile. Other profile fields are preserved when you save.</string>
 </resources>

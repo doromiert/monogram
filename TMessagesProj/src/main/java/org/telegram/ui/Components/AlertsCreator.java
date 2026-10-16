@@ -289,7 +289,7 @@ public class AlertsCreator {
         if (error == null || error.code == 406 || error.text == null) {
             return null;
         }
-        if (request instanceof TLRPC.TL_messages_sendMessage && error.text.startsWith("MONOGRAM_")) {
+        if ((request instanceof TLRPC.TL_messages_sendMessage || request instanceof org.telegram.messenger.xmpp.MonogramFileRequest) && error.text.startsWith("MONOGRAM_")) {
             BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragment();
             if (target == null || target.getParentActivity() == null) return null;
             String text;
@@ -304,14 +304,30 @@ public class AlertsCreator {
                     text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
                 case "MONOGRAM_XMPP_DISCONNECTED":
                     text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
+                case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":
+                    text = "Your Jabber provider does not offer HTTP File Upload. This file was not sent."; break;
+                case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":
+                    text = "This file exceeds the upload service's size limit. Choose a smaller file and retry."; break;
+                case "MONOGRAM_FILE_FILE_SIZE":
+                    text = "Choose a non-empty file up to 100 MiB. Your provider may have a smaller limit."; break;
+                case "MONOGRAM_FILE_AUTHENTICATION":
+                    text = "The encrypted file could not be verified. It has not been opened. You can retry the download."; break;
+                case "MONOGRAM_FILE_TRANSFER_FAILED":
+                    text = "The file transfer failed. Check your connection and retry."; break;
+                case "MONOGRAM_REPLY_UNAVAILABLE":
+                    text = "The original message or selected quote is unavailable in this conversation. Load its history and try again.";
+                    break;
                 case "MONOGRAM_FEATURE_UNAVAILABLE":
                     text = "This action is not supported by Monogram yet. Your message was not sent."; break;
                 default:
-                    text = "The XMPP request failed. Your message was not sent.\n" + error.text.substring("MONOGRAM_".length());
+                    text = error.text.startsWith("MONOGRAM_FILE_") ? "The file transfer failed. You can retry.\n" + error.text.substring("MONOGRAM_FILE_".length())
+                            : "The XMPP request failed. Your message was not sent.\n" + error.text.substring("MONOGRAM_".length());
             }
-            AlertDialog.Builder builder = new AlertDialog.Builder(target.getParentActivity()).setTitle("Message not sent").setMessage(text);
+            AlertDialog.Builder builder = new AlertDialog.Builder(target.getParentActivity()).setTitle(request instanceof org.telegram.messenger.xmpp.MonogramFileRequest ? "File transfer failed" : "Message not sent").setMessage(text);
             if (error.text.startsWith("MONOGRAM_OMEMO_")) {
-                long peer = ((TLRPC.TL_messages_sendMessage) request).peer.user_id;
+                long peer = request instanceof org.telegram.messenger.xmpp.MonogramFileRequest
+                        ? ((org.telegram.messenger.xmpp.MonogramFileRequest) request).message.dialog_id
+                        : ((TLRPC.TL_messages_sendMessage) request).peer.user_id;
                 builder.setPositiveButton("Review devices", (dialog, which) -> target.presentFragment(new org.telegram.ui.MonogramSecurityActivity(currentAccount, peer)));
                 builder.setNegativeButton("Close", null);
             } else builder.setPositiveButton("OK", null);

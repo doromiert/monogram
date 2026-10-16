@@ -211,6 +211,11 @@ public class ImageLocation {
             imageLocation.photoSize.bytes = user.photo.stripped_thumb;
             return imageLocation;
         }
+        // dc_id survives native user-cache serialization; the synthetic file locations do not.
+        if (user.photo.dc_id == Integer.MIN_VALUE) {
+            return org.telegram.messenger.xmpp.MonogramProfiles.imageLocation(user,
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(user.id));
+        }
         TLRPC.FileLocation fileLocation = type == TYPE_BIG ? user.photo.photo_big : user.photo.photo_small;
         if (fileLocation == null) {
             return null;

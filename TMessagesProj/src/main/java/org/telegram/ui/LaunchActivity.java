@@ -8193,8 +8193,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         Runnable action = null;
         currentConnectionState = ConnectionsManager.getInstance(currentAccount).getConnectionState();
         if (currentConnectionState == ConnectionsManager.ConnectionStateWaitingForNetwork) {
-            title = "WaitingForNetwork";
-            titleId = R.string.WaitingForNetwork;
+            title = "MonogramDisconnected";
+            titleId = R.string.MonogramDisconnected;
         } else if (currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
             title = "Updating";
             titleId = R.string.Updating;
@@ -8204,24 +8204,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         } else if (currentConnectionState == ConnectionsManager.ConnectionStateConnecting) {
             title = "Connecting";
             titleId = R.string.Connecting;
-        }
-        if (currentConnectionState == ConnectionsManager.ConnectionStateConnecting || currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy) {
-            action = () -> {
-                BaseFragment lastFragment = null;
-                if (AndroidUtilities.isTablet()) {
-                    if (!layerFragmentsStack.isEmpty()) {
-                        lastFragment = layerFragmentsStack.get(layerFragmentsStack.size() - 1);
-                    }
-                } else {
-                    if (!mainFragmentsStack.isEmpty()) {
-                        lastFragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
-                    }
-                }
-                if (lastFragment instanceof ProxyListActivity || lastFragment instanceof ProxySettingsActivity) {
-                    return;
-                }
-                presentFragment(new ProxyListActivity());
-            };
         }
         actionBarLayout.setTitleOverlayText(title, titleId, action);
     }

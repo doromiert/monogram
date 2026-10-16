@@ -656,6 +656,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int phoneRow;
     private int noteRow;
     private int locationRow;
+    private int monogramProfileStart = -1;
+    private final ArrayList<java.util.Map.Entry<String, String>> monogramProfileDetails = new ArrayList<>();
+    private boolean isMonogramProfileRow(int position) { return monogramProfileStart >= 0 && position >= monogramProfileStart && position < monogramProfileStart + monogramProfileDetails.size(); }
     private int userInfoRow;
     private int channelInfoRow;
     private int usernameRow;
@@ -2145,12 +2148,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 isBot = true;
                 getMediaDataController().loadBotInfo(user.id, user.id, true, classGuid);
             }
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshProfile(userId);
             userInfo = getMessagesController().getUserFull(userId);
             getMessagesController().loadFullUser(getMessagesController().getUser(userId), classGuid, true);
             participantsMap = null;
 
             if (UserObject.isUserSelf(user)) {
-                imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
+                imageUpdater = new ImageUpdater(false, ImageUpdater.FOR_TYPE_USER, false);
                 imageUpdater.setOpenWithFrontfaceCamera(true);
                 imageUpdater.parentFragment = this;
                 imageUpdater.setDelegate(this);
@@ -4330,6 +4334,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 return;
             }
             listView.stopScroll();
+            if (isMonogramProfileRow(position)) {
+                AndroidUtilities.addToClipboard(monogramProfileDetails.get(position - monogramProfileStart).getValue());
+                BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
+                return;
+            }
             if (position == affiliateRow) {
                 TLRPC.User user = getMessagesController().getUser(userId);
                 if (userInfo != null && userInfo.starref_program != null) {
@@ -4584,7 +4593,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else if (position == bioRow) {
                 presentFragment(new UserInfoActivity());
             } else if (position == numberRow) {
-                presentFragment(new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER));
+                AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
+                BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
             } else if (position == setAvatarRow) {
                 onWriteButtonClick();
             } else if (position == premiumRow) {
@@ -7293,6 +7303,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private boolean processOnClickOrPress(final int position, final View view, final float x, final float y) {
+        if (position == numberRow) {
+            AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
+            BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
+            return true;
+        }
         if (position == usernameRow || position == setUsernameRow) {
             final String username;
             final TLRPC.TL_username usernameObj;
@@ -10453,6 +10468,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         int prevRowsCount = rowCount;
         rowCount = 0;
+        monogramProfileStart = -1;
+        monogramProfileDetails.clear();
+        if (userId > 0) monogramProfileDetails.addAll(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).profileDetails(userId).entrySet());
 
         setAvatarRow = -1;
         setAvatarSectionRow = -1;
@@ -10708,7 +10726,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
                 infoStartRow = rowCount;
-                if (!isBot && (hasPhone || !hasInfo)) {
+                monogramProfileStart = rowCount; rowCount += monogramProfileDetails.size();
+                if (!isBot && hasPhone) {
                     phoneRow = rowCount++;
                 }
                 if (userInfo != null && !TextUtils.isEmpty(userInfo.about)) {
@@ -12795,6 +12814,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     int avatarUploadingRequest;
 
+    @Override public boolean isMonogramAccountAvatar() { return userId == getUserConfig().getClientUserId(); }
+
     @Override
     public void didUploadPhoto(final TLRPC.InputFile photo, final TLRPC.InputFile video, double videoStartTimestamp, String videoPath, TLRPC.PhotoSize bigSize, final TLRPC.PhotoSize smallSize, boolean isVideo, TLRPC.VideoSize emojiMarkup) {
         AndroidUtilities.runOnUIThread(() -> {
@@ -12844,7 +12865,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             user.photo.photo_big = big.location;
                         }
 
-                        if (small != null && avatar != null) {
+                        if (small != null && avatar != null && !(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile)) {
                             File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(small, true);
                             File src = FileLoader.getInstance(currentAccount).getPathToAttach(avatar, true);
                             src.renameTo(destFile);
@@ -12857,7 +12878,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(videoSize, "mp4", true);
                             File src = new File(videoPath);
                             src.renameTo(destFile);
-                        } else if (big != null && avatarBig != null) {
+                        } else if (big != null && avatarBig != null && !(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile)) {
                             File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(big, true);
                             File src = FileLoader.getInstance(currentAccount).getPathToAttach(avatarBig, true);
                             src.renameTo(destFile);
@@ -12873,6 +12894,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         }
                     }
 
+                    if (error != null) org.telegram.ui.Components.BulletinFactory.showError(error);
                     allowPullingDown = !AndroidUtilities.isTablet() && !isInLandscapeMode && avatarImage.getImageReceiver().hasNotThumb() && !AndroidUtilities.isAccessibilityScreenReaderEnabled();
                     avatar = null;
                     avatarBig = null;
@@ -13463,7 +13485,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     TextDetailCell detailCell = (TextDetailCell) holder.itemView;
                     boolean containsQr = false;
                     boolean containsGift = false;
-                    if (position == birthdayRow) {
+                    if (isMonogramProfileRow(position)) {
+                        java.util.Map.Entry<String, String> field = monogramProfileDetails.get(position - monogramProfileStart);
+                        detailCell.setTextAndValue(field.getValue(), field.getKey(), false);
+                    } else if (position == birthdayRow) {
                         TLRPC.UserFull userFull = getMessagesController().getUserFull(userId);
                         if (userFull != null && userFull.birthday != null) {
                             final boolean today = BirthdayController.isToday(userFull);
@@ -13589,14 +13614,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             detailCell.setTextAndValue(location.address, LocaleController.getString(R.string.AttachLocation), false);
                         }
                     } else if (position == numberRow) {
-                        TLRPC.User user = UserConfig.getInstance(currentAccount).getCurrentUser();
-                        String value;
-                        if (user != null && user.phone != null && user.phone.length() != 0) {
-                            value = PhoneFormat.getInstance().format("+" + user.phone);
-                        } else {
-                            value = LocaleController.getString(R.string.NumberUnknown);
-                        }
-                        detailCell.setTextAndValue(value, LocaleController.getString(R.string.TapToChangePhone), true);
+                        detailCell.setTextAndValue(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid(),
+                                getString(R.string.MonogramJabberId), true);
                         detailCell.setContentDescriptionValueFirst(false);
                     } else if (position == setUsernameRow) {
                         TLRPC.User user = UserConfig.getInstance(currentAccount).getCurrentUser();
@@ -14321,7 +14340,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (position == infoHeaderRow || position == membersHeaderRow || position == settingsSectionRow2 ||
                     position == numberSectionRow || position == helpHeaderRow || position == debugHeaderRow || position == botPermissionsHeader) {
                 return VIEW_TYPE_HEADER;
-            } else if (position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
+            } else if (isMonogramProfileRow(position) || position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
                 return VIEW_TYPE_TEXT_DETAIL;
             } else if (position == usernameRow || position == setUsernameRow) {
                 return VIEW_TYPE_TEXT_DETAIL_MULTILINE;
@@ -14549,7 +14568,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             final Theme.ResourcesProvider resourcesProvider = f.getResourceProvider();
             return new SearchResult[]{
                     new SearchResult(500, getString(R.string.EditName), 0, () -> f.presentFragment(new ChangeNameActivity(resourcesProvider))),
-                    new SearchResult(501, getString(R.string.ChangePhoneNumber), 0, () -> f.presentFragment(new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER))).withLink("tg://settings/edit/change-number"),
+                    new SearchResult(501, getString(R.string.MonogramJabberId), 0, () -> {
+                        AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
+                        BulletinFactory.of(f).createCopyBulletin(getString(R.string.TextCopied)).show();
+                    }),
                     new SearchResult(502, getString(R.string.AddAnotherAccount), 0, () -> {
                         int freeAccount = -1;
                         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {

@@ -490,6 +490,8 @@ public class ProfileActivity2 extends BaseFragment implements
         items.add(UItem.asSpace(ID_MUSIC, dp(30)));
 
         if (user != null) {
+            for (java.util.Map.Entry<String, String> field : org.telegram.messenger.xmpp.MonogramController.get(currentAccount).profileDetails(user.id).entrySet())
+                items.add(TextDetailCell.Factory.of(0, field.getValue(), field.getKey()));
             addPhoneRow(items);
             addUsernameRow(items);
             if (userInfo != null) {

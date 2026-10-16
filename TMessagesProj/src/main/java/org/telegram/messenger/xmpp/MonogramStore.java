@@ -4,6 +4,7 @@ package org.telegram.messenger.xmpp;
 import android.content.ContentValues;
 import android.content.Context;
 import com.negzero.monogram.xmpp.XmppMessage;
+import com.negzero.monogram.xmpp.ReplyReference;
 import com.negzero.monogram.xmpp.XmppSession;
 import java.util.Map;
 import android.database.Cursor;
@@ -16,12 +17,15 @@ import java.util.UUID;
 
 /** Local IDs adapt XMPP addresses and stanza IDs to Telegram's existing views and storage. */
 final class MonogramStore extends SQLiteOpenHelper {
+    private final Context storeContext;
+    private final String database;
+    private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 3); }
+    MonogramStore(Context context, String name) { super(context, name, null, 6); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -33,10 +37,27 @@ final class MonogramStore extends SQLiteOpenHelper {
         db.execSQL("INSERT INTO message_ids SELECT peer,outgoing,'legacy-stanza',stanza,id FROM messages");
         db.execSQL("CREATE TABLE archive_state (scope TEXT PRIMARY KEY, oldest TEXT, newest TEXT, complete INTEGER NOT NULL DEFAULT 0)");
     }
+    private void addAttachments(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE attachments (message INTEGER PRIMARY KEY, url TEXT NOT NULL, path TEXT, media BLOB)");
+        db.execSQL("INSERT INTO attachments(message,url) SELECT id,body FROM messages WHERE encrypted=1 AND readable=1 AND body LIKE 'aesgcm://%' AND instr(body,char(10))=0");
+    }
+    private void addProfiles(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE profiles (peer INTEGER PRIMARY KEY, card TEXT, nickname TEXT, avatar TEXT, roster_name TEXT NOT NULL DEFAULT '')");
+    }
+    private void addReplies(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE message_senders (message INTEGER NOT NULL, sender TEXT NOT NULL, PRIMARY KEY(message,sender))");
+        db.execSQL("INSERT OR IGNORE INTO message_senders SELECT message,substr(value,1,instr(value,char(10))-1) FROM message_ids WHERE kind='stanza' AND instr(value,char(10))>0");
+        db.execSQL("CREATE TABLE replies (message INTEGER PRIMARY KEY, author TEXT, target TEXT NOT NULL, fallback TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0)");
+        // Re-read archive metadata; keep every local message, ID, attachment and known plaintext.
+        db.execSQL("DELETE FROM archive_state WHERE scope='direct'");
+    }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (oldVersion == 1 && newVersion == 3) addMessageMetadata(db);
-        else if (oldVersion == 2 && newVersion == 3) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
-        else throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 6 || oldVersion < 1 || oldVersion > 5) throw new IllegalStateException("Unknown database migration");
+        if (oldVersion == 1) addMessageMetadata(db);
+        else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
+        if (oldVersion < 4) addAttachments(db);
+        if (oldVersion < 5) addProfiles(db);
+        addReplies(db);
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -47,6 +68,9 @@ final class MonogramStore extends SQLiteOpenHelper {
             return c.getLong(0);
         }
     }
+    synchronized long knownPeer(String jid) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT id FROM peers WHERE jid=?", new String[]{jid})) { return c.moveToFirst() ? c.getLong(0) : 0; }
+    }
     synchronized String jid(long id) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT jid FROM peers WHERE id=?", new String[]{Long.toString(id)})) {
             if (!c.moveToFirst()) throw new IllegalArgumentException("Unknown XMPP peer");
@@ -55,17 +79,73 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized void clear() {
         SQLiteDatabase db = getWritableDatabase();
+        profileCache.clear();
         db.beginTransaction();
-        try { db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
-    TLRPC.User user(long id, long self) {
+    synchronized com.negzero.monogram.xmpp.XmppProfile profile(long peer) {
+        if (profileCache.containsKey(peer)) return profileCache.get(peer);
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT card,nickname FROM profiles WHERE peer=?", new String[]{Long.toString(peer)})) {
+            if (!c.moveToFirst() || c.isNull(0)) return null;
+            com.negzero.monogram.xmpp.XmppProfile result = new com.negzero.monogram.xmpp.XmppProfile(c.getString(0), c.getString(1), new byte[0]);
+            profileCache.put(peer, result); return result;
+        } catch (Exception invalid) { return null; }
+    }
+    synchronized void rosterName(long peer, String name) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues empty = new ContentValues(); empty.put("peer", peer);
+        db.insertWithOnConflict("profiles", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
+        ContentValues value = new ContentValues(); value.put("roster_name", name == null ? "" : name);
+        db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
+    }
+    synchronized void profile(long peer, com.negzero.monogram.xmpp.XmppProfile profile) throws Exception {
+        byte[] png;
+        try { png = MonogramProfiles.png(profile.avatar); }
+        catch (IllegalArgumentException invalid) { png = new byte[0]; }
+        java.io.File avatar = png.length == 0 ? null : MonogramProfiles.cache(storeContext, database, png);
+        ContentValues empty = new ContentValues(); empty.put("peer", peer);
+        SQLiteDatabase db = getWritableDatabase();
+        db.insertWithOnConflict("profiles", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
+        ContentValues value = new ContentValues(); value.put("card", profile.xml()); value.put("nickname", profile.nickname);
+        if (avatar == null) value.putNull("avatar"); else value.put("avatar", avatar.getAbsolutePath());
+        db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
+        profileCache.remove(peer);
+    }
+    synchronized java.io.File avatar(long peer) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT avatar FROM profiles WHERE peer=?", new String[]{Long.toString(peer)})) {
+            return c.moveToFirst() && !c.isNull(0) ? new java.io.File(c.getString(0)) : null;
+        }
+    }
+    synchronized TLRPC.User user(long id, long self) {
         TLRPC.TL_user user = new TLRPC.TL_user();
-        user.id = id; user.first_name = jid(id); user.last_name = ""; user.phone = "";
+        String jid = jid(id), roster = "";
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT roster_name FROM profiles WHERE peer=?", new String[]{Long.toString(id)})) {
+            if (c.moveToFirst()) roster = c.getString(0);
+        }
+        com.negzero.monogram.xmpp.XmppProfile profile = profile(id);
+        user.id = id; user.first_name = profile == null ? (id == self || roster.isEmpty() ? jid : roster) : profile.displayName(id == self ? "" : roster, jid);
+        if (id == self && user.first_name.equals(jid) && jid.indexOf('@') > 0) user.first_name = jid.substring(0, jid.indexOf('@'));
+        user.last_name = ""; user.phone = "";
         user.self = id == self; user.contact = id != self; user.flags = 2;
-        user.photo = new TLRPC.TL_userProfilePhotoEmpty();
+        java.io.File avatar = avatar(id);
+        if (avatar != null && avatar.isFile()) {
+            user.photo = new TLRPC.TL_userProfilePhoto(); user.flags |= 32;
+            user.photo.photo_id = MonogramProfiles.photo(id, avatar).id;
+            user.photo.photo_small = user.photo.photo_big = MonogramProfiles.location(id); user.photo.dc_id = Integer.MIN_VALUE;
+        } else user.photo = new TLRPC.TL_userProfilePhotoEmpty();
         user.status = new TLRPC.TL_userStatusEmpty();
         return user;
+    }
+    synchronized TLRPC.UserFull fullUser(long id, long self) {
+        TLRPC.TL_userFull full = new TLRPC.TL_userFull(); full.id = id; full.user = user(id, self);
+        full.settings = new TLRPC.TL_peerSettings(); full.notify_settings = new TLRPC.TL_peerNotifySettings();
+        com.negzero.monogram.xmpp.XmppProfile profile = profile(id);
+        full.about = profile == null ? "" : profile.field("DESC");
+        if (!full.about.isEmpty()) full.flags |= 2;
+        full.profile_photo = MonogramProfiles.photo(id, avatar(id));
+        if (full.profile_photo instanceof TLRPC.TL_photo) full.flags |= 4;
+        return full;
     }
     synchronized int save(XmppMessage message) {
         long peer = peer(message.peer.toString());
@@ -120,6 +200,24 @@ final class MonogramStore extends SQLiteOpenHelper {
                 identity.put("kind", alias.getKey()); identity.put("value", aliasValue(message, alias)); identity.put("message", id);
                 db.insertWithOnConflict("message_ids", null, identity, SQLiteDatabase.CONFLICT_IGNORE);
             }
+            ContentValues sender = new ContentValues(); sender.put("message", id); sender.put("sender", message.sender);
+            db.insertWithOnConflict("message_senders", null, sender, SQLiteDatabase.CONFLICT_IGNORE);
+            if (message.reply != null) {
+                ContentValues reply = new ContentValues(); reply.put("message", id); reply.put("author", message.reply.to);
+                reply.put("target", message.reply.id); reply.put("fallback", message.reply.ranges);
+                changed |= db.insertWithOnConflict("replies", null, reply, SQLiteDatabase.CONFLICT_IGNORE) != -1;
+                if (!message.reply.ranges.isEmpty()) {
+                    ContentValues fallback = new ContentValues(); fallback.put("fallback", message.reply.ranges);
+                    String authorClause = message.reply.to == null ? "author IS NULL" : "author=?";
+                    String[] args = message.reply.to == null ? new String[]{Integer.toString(id), message.reply.id}
+                            : new String[]{Integer.toString(id), message.reply.id, message.reply.to};
+                    changed |= db.update("replies", fallback, "message=? AND target=? AND fallback='' AND " + authorClause, args) > 0;
+                }
+            }
+            if (message.attachment != null) {
+                ContentValues attachment = new ContentValues(); attachment.put("message", id); attachment.put("url", message.attachment.wireUrl);
+                db.insertWithOnConflict("attachments", null, attachment, SQLiteDatabase.CONFLICT_IGNORE);
+            }
             if (legacy != null) db.delete("message_ids", "kind='legacy-stanza' AND message=? AND value=?", new String[]{Integer.toString(id), legacy});
             db.setTransactionSuccessful();
             return changed ? id : 0;
@@ -148,7 +246,8 @@ final class MonogramStore extends SQLiteOpenHelper {
             return c.moveToFirst() && c.getInt(0) == 1;
         }
     }
-    synchronized boolean saveArchive(XmppSession.ArchivePage page, boolean backwards) {
+    synchronized boolean saveArchive(XmppSession.ArchivePage page, boolean backwards) { return saveArchive(page, backwards, null); }
+    synchronized boolean saveArchive(XmppSession.ArchivePage page, boolean backwards, java.util.Set<Integer> updated) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
@@ -158,7 +257,8 @@ final class MonogramStore extends SQLiteOpenHelper {
                 c.moveToFirst(); order = backwards ? Math.min(0, c.getLong(0)) - page.messages.size() : Math.max(0, c.getLong(0)) + 1;
             }
             for (XmppMessage message : page.messages) {
-                changed |= save(message) != 0;
+                int saved = save(message); changed |= saved != 0;
+                if (updated != null && saved != 0) updated.add(saved);
                 db.execSQL("UPDATE messages SET archive_order=? WHERE archive_order=0 AND id=(SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind='archive' AND value=?)",
                         new Object[]{order++, peer(message.peer.toString()), message.outgoing ? 1 : 0, message.ids.get("archive")});
             }
@@ -178,13 +278,157 @@ final class MonogramStore extends SQLiteOpenHelper {
         } finally { db.endTransaction(); }
     }
     TLRPC.Message message(int id, long peer, long self, String body, boolean outgoing, int time) {
+        return message(id, peer, self, body, outgoing, time, true);
+    }
+    private TLRPC.Message message(int id, long peer, long self, String body, boolean outgoing, int time, boolean embedReply) {
         TLRPC.TL_message message = new TLRPC.TL_message();
         message.id = id; message.date = time; message.message = body; message.out = outgoing; message.unread = !outgoing;
         message.peer_id = new TLRPC.TL_peerUser(); message.peer_id.user_id = outgoing ? peer : self;
         message.from_id = new TLRPC.TL_peerUser(); message.from_id.user_id = outgoing ? self : peer;
         message.flags = 256; message.dialog_id = peer;
         message.media = new TLRPC.TL_messageMediaEmpty();
+        decorate(message);
+        decorateReply(message, self, body, embedReply);
         return message;
+    }
+    private int resolveReply(long peer, long self, ReplyReference reply) {
+        String author = reply.to;
+        boolean full = false;
+        Integer direction = null;
+        if (author != null) {
+            try {
+                org.jxmpp.jid.Jid jid = org.jxmpp.jid.impl.JidCreate.from(author);
+                String bare = jid.asBareJid().toString(); full = jid.hasResource();
+                if (bare.equals(jid(self))) direction = 1;
+                else if (bare.equals(jid(peer))) direction = 0;
+                else return 0;
+            } catch (Exception invalid) { return 0; }
+        }
+        int found = 0;
+        String sql = "SELECT DISTINCT i.message FROM message_ids i WHERE i.peer=? AND ((i.kind='origin' AND i.value=?) OR (i.kind='stanza' AND instr(i.value,char(10))>0 AND substr(i.value,instr(i.value,char(10))+1)=?))";
+        ArrayList<String> args = new ArrayList<>(); args.add(Long.toString(peer)); args.add(reply.id); args.add(reply.id);
+        if (direction != null) { sql += " AND i.outgoing=?"; args.add(Integer.toString(direction)); }
+        if (full) { sql += " AND EXISTS(SELECT 1 FROM message_senders s WHERE s.message=i.message AND s.sender=?)"; args.add(author); }
+        try (Cursor c = getReadableDatabase().rawQuery(sql, args.toArray(new String[0]))) {
+            while (c.moveToNext()) { if (found != 0 && found != c.getInt(0)) return 0; found = c.getInt(0); }
+        }
+        return found;
+    }
+    private synchronized void decorateReply(TLRPC.Message message, long self, String body, boolean embedReply) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT r.author,r.target,r.fallback,m.readable FROM replies r JOIN messages m ON m.id=r.message WHERE r.message=?", new String[]{Integer.toString(message.id)})) {
+            if (!c.moveToFirst()) return;
+            ReplyReference reply = new ReplyReference(c.getString(0), c.getString(1), c.getString(2));
+            int target = resolveReply(message.dialog_id, self, reply);
+            if (target == message.id) return;
+            if (target == 0) {
+                // Keep the fallback when the original is missing; never invent a local target ID.
+                if (MonogramAttachments.has(message) && !reply.ranges.isEmpty()) {
+                    message.message = reply.fallbackText(body);
+                    if (message.message.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) message.message = "Reply to an unavailable attachment";
+                }
+                return;
+            }
+            message.reply_to = new TLRPC.TL_messageReplyHeader(); message.reply_to.flags = 16;
+            message.reply_to.reply_to_msg_id = target; message.flags |= TLRPC.MESSAGE_FLAG_REPLY;
+            if (!MonogramAttachments.has(message) && c.getInt(3) != 0) message.message = reply.withoutFallback(body);
+            if (embedReply) message.replyMessage = getMessage(target, self, false);
+        }
+    }
+    synchronized ReplyReference replyTo(int target, long peer, long self, boolean encrypted, String quote, int quoteOffset) {
+        TLRPC.Message original = getMessage(target, self, false);
+        if (original.dialog_id != peer) throw new IllegalArgumentException("Reply target belongs to another conversation");
+        String author = null, id = null;
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT kind,value FROM message_ids WHERE message=? AND kind IN ('origin','stanza') ORDER BY CASE kind WHEN 'origin' THEN 0 ELSE 1 END,rowid", new String[]{Integer.toString(target)})) {
+            if (c.moveToFirst()) {
+                id = c.getString(1);
+                if ("stanza".equals(c.getString(0))) {
+                    int split = id.indexOf('\n'); if (split < 1) throw new IllegalArgumentException("Reply target has no author");
+                    author = id.substring(0, split); id = id.substring(split + 1);
+                }
+            }
+        }
+        if (id == null) throw new IllegalArgumentException("Reply target has no XMPP ID");
+        if (author == null) {
+            try (Cursor c = getReadableDatabase().rawQuery("SELECT sender FROM message_senders WHERE message=? ORDER BY instr(sender,'/') DESC LIMIT 1", new String[]{Integer.toString(target)})) {
+                if (c.moveToFirst()) author = c.getString(0);
+            }
+        }
+        if (author == null) author = jid(original.out ? self : peer);
+        ReplyReference reference = new ReplyReference(author, id);
+        // An encrypted original must never be quoted into a plaintext reply.
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT encrypted,readable FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
+            c.moveToFirst(); if (!encrypted && c.getInt(0) == 1 || c.getInt(1) == 0) return reference;
+        }
+        String text = MonogramAttachments.has(original) ? "Attachment" : original.message;
+        if (quote != null && !quote.isEmpty()) {
+            if (quoteOffset < 0 || quoteOffset > text.length() || !text.startsWith(quote, quoteOffset)) throw new IllegalArgumentException("Reply quote does not match the original");
+            text = quote;
+        }
+        if (text != null && text.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) text = "Attachment";
+        return reference.quoted(text);
+    }
+    synchronized ArrayList<TLRPC.Message> changedReplies(long peer, long self) { return changedReplies(peer, self, java.util.Collections.emptySet()); }
+    synchronized ArrayList<TLRPC.Message> changedReplies(long peer, long self, java.util.Set<Integer> updated) {
+        ArrayList<TLRPC.Message> result = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT r.message,r.author,r.target,r.fallback,r.resolved FROM replies r JOIN messages m ON m.id=r.message WHERE m.peer=?", new String[]{Long.toString(peer)})) {
+            while (c.moveToNext()) {
+                int target = resolveReply(peer, self, new ReplyReference(c.getString(1), c.getString(2), c.getString(3)));
+                if (target == c.getInt(0)) target = 0;
+                if (target != c.getInt(4) || target != 0 && updated.contains(target)) {
+                    ContentValues values = new ContentValues(); values.put("resolved", target);
+                    getWritableDatabase().update("replies", values, "message=?", new String[]{Integer.toString(c.getInt(0))});
+                    result.add(getMessage(c.getInt(0), self));
+                }
+            }
+        }
+        return result;
+    }
+    synchronized java.io.File attachmentFile(String url) throws Exception {
+        return MonogramAttachments.cache(storeContext, database, url);
+    }
+    synchronized java.io.File attachmentPath(int id) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
+            if (!c.moveToFirst()) return null;
+            return c.isNull(1) ? attachmentFile(c.getString(0)) : new java.io.File(c.getString(1));
+        } catch (Exception e) { return null; }
+    }
+    synchronized void attach(int id, String url, java.io.File path, TLRPC.MessageMedia media) {
+        ContentValues values = new ContentValues(); values.put("message", id); values.put("url", url); values.put("path", path.getAbsolutePath());
+        org.telegram.tgnet.SerializedData bytes = new org.telegram.tgnet.SerializedData();
+        media.serializeToStream(bytes); values.put("media", bytes.toByteArray()); bytes.cleanup();
+        getWritableDatabase().insertWithOnConflict("attachments", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+    synchronized TLRPC.Message getMessage(int id, long self) { return getMessage(id, self, true); }
+    private TLRPC.Message getMessage(int id, long self, boolean embedReply) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT peer,body,outgoing,time FROM messages WHERE id=?", new String[]{Integer.toString(id)})) {
+            if (!c.moveToFirst()) throw new IllegalArgumentException("Unknown XMPP message");
+            return message(id, c.getLong(0), self, c.getString(1), c.getInt(2) == 1, c.getInt(3), embedReply);
+        }
+    }
+    private synchronized void decorate(TLRPC.Message message) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media FROM attachments WHERE message=?", new String[]{Integer.toString(message.id)})) {
+            if (c.moveToFirst()) {
+                com.negzero.monogram.xmpp.FileLink link = com.negzero.monogram.xmpp.FileLink.parse(c.getString(0));
+                java.io.File file = c.isNull(1) ? attachmentFile(link.wireUrl) : new java.io.File(c.getString(1));
+                TLRPC.MessageMedia media = null;
+                if (!c.isNull(2)) {
+                    org.telegram.tgnet.SerializedData bytes = new org.telegram.tgnet.SerializedData(c.getBlob(2));
+                    media = TLRPC.MessageMedia.TLdeserialize(bytes, bytes.readInt32(true), true); bytes.cleanup();
+                }
+                MonogramAttachments.apply(message, link, file, media);
+            } else if (message.message != null && message.message.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) {
+                message.message = "Encrypted file link in an unsupported format";
+            }
+        } catch (Exception e) { message.message = "Attachment unavailable"; }
+    }
+    synchronized ArrayList<TLRPC.Message> historyAround(long peer, long self, int anchor, int limit) {
+        TLRPC.Message target = getMessage(anchor, self);
+        if (target.dialog_id != peer) throw new IllegalArgumentException("History anchor belongs to another conversation");
+        int count = Math.min(Math.max(limit, 1), 100);
+        ArrayList<TLRPC.Message> newer = count > 1 ? history(peer, self, anchor, count / 2, true) : new ArrayList<>();
+        ArrayList<TLRPC.Message> older = count > newer.size() + 1 ? history(peer, self, anchor, count - newer.size() - 1, false) : new ArrayList<>();
+        if (older.size() + newer.size() + 1 < count && count > 1) newer = history(peer, self, anchor, count - older.size() - 1, true);
+        newer.add(target); newer.addAll(older); return newer;
     }
     synchronized ArrayList<TLRPC.Message> history(long peer, long self, int offset, int limit) {
         return history(peer, self, offset, limit, false);

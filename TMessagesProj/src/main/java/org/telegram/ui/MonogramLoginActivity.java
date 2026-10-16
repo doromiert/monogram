@@ -2,84 +2,69 @@
 package org.telegram.ui;
 
 import android.content.Context;
-import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
-import android.view.Gravity;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
+import java.util.ArrayList;
 import org.telegram.messenger.*;
 import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.ui.ActionBar.*;
-import org.telegram.ui.Components.EditTextBoldCursor;
-import org.telegram.ui.Components.LayoutHelper;
-import java.util.ArrayList;
+import org.telegram.ui.Cells.EditTextCell;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
+import org.telegram.ui.Components.UniversalFragment;
 
-public class MonogramLoginActivity extends BaseFragment {
+public class MonogramLoginActivity extends UniversalFragment {
     private boolean connecting;
+    private EditTextCell jid, password, host, port;
+    private String status;
     public MonogramLoginActivity() { super(); }
     public MonogramLoginActivity(int account) { super(); currentAccount = account; }
-    private TextView text(Context context, String value, int size) {
-        TextView view = new TextView(context); view.setText(value); view.setTextSize(size);
-        view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        return view;
-    }
-    private EditTextBoldCursor input(Context context, LinearLayout parent, String hint, int type) {
-        EditTextBoldCursor view = new EditTextBoldCursor(context);
-        view.setHint(hint); view.setSingleLine(true); view.setInputType(type); view.setTextSize(18);
-        view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        view.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
-        view.setPadding(AndroidUtilities.dp(8), 0, AndroidUtilities.dp(8), 0);
-        parent.addView(view, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56, 0, 8, 0, 0));
-        return view;
+    @Override protected CharSequence getTitle() { return "Monogram"; }
+    private EditTextCell input(Context context, String hint, int type) {
+        EditTextCell cell = new EditTextCell(context, hint, false); cell.editText.setInputType(type); return cell;
     }
     @Override public View createView(Context context) {
-        actionBar.setTitle("Monogram");
-        ScrollView scroll = new ScrollView(context); scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        LinearLayout body = new LinearLayout(context); body.setOrientation(LinearLayout.VERTICAL);
-        int padding = AndroidUtilities.dp(24); body.setPadding(padding, padding, padding, padding);
-        scroll.addView(body);
-        body.addView(text(context, "Your conversations. Your server.", 26), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        body.addView(text(context, "Sign in with your Jabber account. Use your full address, such as you@example.org.", 16), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 16, 0, 16));
-        EditTextBoldCursor jid = input(context, body, "Jabber address", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        EditTextBoldCursor password = input(context, body, "Password", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        password.setSaveEnabled(false);
-        EditTextBoldCursor host = input(context, body, "Server override (optional)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        EditTextBoldCursor port = input(context, body, "Port (5222)", InputType.TYPE_CLASS_NUMBER);
-        TextView status = text(context, "", 15); status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        body.addView(status, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 12));
-        TextView signIn = text(context, "Sign in", 18); signIn.setGravity(Gravity.CENTER);
-        signIn.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-        signIn.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(12), Theme.getColor(Theme.key_featuredStickers_addButton), Theme.getColor(Theme.key_featuredStickers_addButtonPressed)));
-        body.addView(signIn, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 52));
-        signIn.setOnClickListener(v -> {
-            if (connecting) return;
-            int selectedPort;
-            try { selectedPort = port.length() == 0 ? 5222 : Integer.parseInt(port.getText().toString()); }
-            catch (NumberFormatException e) { status.setText("Enter a valid port."); return; }
-            if (jid.length() == 0 || password.length() == 0) { status.setText("Enter your Jabber address and password."); return; }
-            connecting = true; signIn.setEnabled(false); signIn.setText("Connecting…"); status.setText("");
-            MonogramController.get(currentAccount).login(jid.getText().toString().trim(), password.getText().toString(), host.getText().toString().trim(), selectedPort, error -> {
-                connecting = false; signIn.setEnabled(true); signIn.setText("Sign in");
-                if (getParentActivity() == null) return;
-                if (error != null) { status.setText("Could not sign in. Check your address, password and server TLS certificate. (" + error.getClass().getSimpleName() + ")"); return; }
-                password.setText("");
-                TLRPC.User user = MonogramController.get(currentAccount).ownUser();
-                UserConfig.getInstance(currentAccount).setCurrentUser(user);
-                UserConfig.getInstance(currentAccount).syncContacts = false;
-                UserConfig.getInstance(currentAccount).saveConfig(true);
-                ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(user);
-                MessagesStorage.getInstance(currentAccount).putUsersAndChats(users, null, true, true);
-                MessagesController.getInstance(currentAccount).putUser(user, false);
-                if (UserConfig.selectedAccount != currentAccount && getParentActivity() instanceof LaunchActivity) {
-                    ((LaunchActivity) getParentActivity()).switchToAccount(currentAccount, true);
-                } else { presentFragment(new DialogsActivity(null), true); }
-            });
-        });
-        fragmentView = scroll;
-        return fragmentView;
+        jid = input(context, "Jabber address", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS); jid.setDivider(true);
+        password = input(context, "Password", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.editText.setSaveEnabled(false); password.setSaveEnabled(false);
+        host = input(context, "Server override (optional)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI); host.setDivider(true);
+        port = input(context, "Port (5222)", InputType.TYPE_CLASS_NUMBER); port.whenHitEnter(this::login);
+        return super.createView(context);
     }
+    @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        items.add(UItem.asHeader("Your conversations. Your server."));
+        items.add(UItem.asCustom(jid)); items.add(UItem.asCustom(password));
+        items.add(UItem.asShadow("Sign in with your Jabber account. Use your full address, such as you@example.org."));
+        items.add(UItem.asHeader("Advanced connection settings"));
+        items.add(UItem.asCustom(host)); items.add(UItem.asCustom(port));
+        items.add(UItem.asShadow("Leave these empty to discover your provider's server automatically."));
+        items.add(UItem.asButton(1, connecting ? "Connecting…" : "Sign in").accent().setEnabled(!connecting));
+        items.add(UItem.asShadow(status));
+    }
+    private void refresh() { if (listView != null) listView.adapter.update(true); }
+    private void login() {
+        if (connecting) return;
+        int selectedPort;
+        try { selectedPort = port.getText().length() == 0 ? 5222 : Integer.parseInt(port.getText().toString()); }
+        catch (NumberFormatException invalid) { status = "Enter a valid port."; refresh(); return; }
+        if (jid.getText().length() == 0 || password.getText().length() == 0) { status = "Enter your Jabber address and password."; refresh(); return; }
+        connecting = true; status = null; refresh();
+        MonogramController.get(currentAccount).login(jid.getText().toString().trim(), password.getText().toString(), host.getText().toString().trim(), selectedPort, error -> {
+            connecting = false;
+            if (getParentActivity() == null) return;
+            if (error != null) { status = "Could not sign in. Check your address, password and server TLS certificate."; refresh(); return; }
+            password.setText("");
+            TLRPC.User user = MonogramController.get(currentAccount).ownUser();
+            UserConfig.getInstance(currentAccount).setCurrentUser(user); UserConfig.getInstance(currentAccount).syncContacts = false;
+            UserConfig.getInstance(currentAccount).saveConfig(true);
+            ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(user);
+            MessagesStorage.getInstance(currentAccount).putUsersAndChats(users, null, true, true);
+            MessagesController.getInstance(currentAccount).putUser(user, false);
+            if (UserConfig.selectedAccount != currentAccount && getParentActivity() instanceof LaunchActivity)
+                ((LaunchActivity) getParentActivity()).switchToAccount(currentAccount, true);
+            else { MainTabsActivity tabs = new MainTabsActivity(); tabs.setCurrentAccount(currentAccount); presentFragment(tabs, true); }
+        });
+    }
+    @Override protected void onClick(UItem item, View view, int position, float x, float y) { if (item.id == 1) login(); }
+    @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
 }

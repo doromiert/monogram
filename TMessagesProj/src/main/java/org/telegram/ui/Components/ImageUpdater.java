@@ -178,6 +178,8 @@ public class ImageUpdater implements NotificationCenter.NotificationCenterDelega
             return null;
         }
 
+        default boolean isMonogramAccountAvatar() { return false; }
+
         default boolean supportsBulletin() {
             return false;
         }
@@ -866,6 +868,13 @@ public class ImageUpdater implements NotificationCenter.NotificationCenterDelega
         if (bigPhoto != null) {
             UserConfig.getInstance(currentAccount).saveConfig(false);
             uploadingImage = FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE) + "/" + bigPhoto.location.volume_id + "_" + bigPhoto.location.local_id + ".jpg";
+            if (uploadAfterSelect && delegate != null && delegate.isMonogramAccountAvatar()) {
+                delegate.didStartUpload(fromAvatarConstructor, false);
+                delegate.didUploadPhoto(null, null, 0, null, bigPhoto, smallPhoto, false, null);
+                delegate.didUploadPhoto(new org.telegram.messenger.xmpp.MonogramAvatarFile(new java.io.File(uploadingImage)), null, 0, null, bigPhoto, smallPhoto, false, null);
+                cleanup();
+                return;
+            }
             if (uploadAfterSelect) {
                 if (avatarObject != null && avatarObject.videoEditedInfo != null) {
                     if (supportEmojiMarkup && !MessagesController.getInstance(currentAccount).uploadMarkupVideo) {

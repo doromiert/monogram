@@ -1579,6 +1579,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         int topicId = 0;
         for (int c = 0; c < objects.size(); c++) {
             MessageObject object = objects.get(c);
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelFile(object.getId());
             if (object.scheduled) {
                 scheduled = true;
             }
@@ -5258,6 +5259,22 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 isFinalGroupMedia = params.get("final") != null;
             }
 
+            boolean monogramFile = peer > 0 && (photo != null || document != null);
+            String monogramCaption = caption;
+            File monogramSource = null;
+            if (monogramFile) {
+                if (photo != null) {
+                    TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 10000);
+                    monogramSource = size == null ? null : getFileLoader().getPathToAttach(size, true);
+                    if (monogramSource != null && !monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(size);
+                } else if (!TextUtils.isEmpty(newMsg.attachPath)) monogramSource = new File(newMsg.attachPath);
+                if (monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
+                groupId = 0; newMsg.grouped_id = 0; newMsg.flags &= ~131072;
+                if (newMsg.params == null) newMsg.params = new HashMap<>();
+                if (newMsg.params.containsKey("monogramCaption")) monogramCaption = newMsg.params.get("monogramCaption");
+                else if (caption != null && !caption.isEmpty()) newMsg.params.put("monogramCaption", caption);
+                newMsg.message = ""; newMsg.entities.clear(); newMsg.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+            }
             if (stars > 0) {
                 TLRPC.MessageMedia media = newMsg.media;
                 TLRPC.TL_messageMediaPaidMedia paidMedia = new TLRPC.TL_messageMediaPaidMedia();
@@ -5331,6 +5348,17 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objArr, mode);
                 if (scheduleDate == 0) {
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
+                }
+                if (monogramFile) {
+                    String mime = photo != null ? "image/jpeg" : document.mime_type;
+                    boolean supported = scheduleDate == 0 && ttl == 0 && stars == 0 && pollSendParams == null
+                            && quick_reply_shortcut == null && quick_reply_shortcut_id == 0
+                            && (videoEditedInfo == null || !videoEditedInfo.needConvert());
+                    org.telegram.messenger.xmpp.MonogramFileRequest request = new org.telegram.messenger.xmpp.MonogramFileRequest(
+                            newMsg, monogramSource, mime == null ? "application/octet-stream" : mime, monogramCaption, supported);
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).reserveFile(request);
+                    performSendMessageRequest(request, newMsgObj, newMsg.attachPath, null, null, params, false);
+                    return;
                 }
             } else {
                 String key = "group_" + groupId;
