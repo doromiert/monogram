@@ -42,6 +42,8 @@ configurations.all {
 }
 
 dependencies {
+    implementation project(':xmpp-core')
+    implementation 'org.igniterealtime.smack:smack-android-extensions:4.4.8'
     implementation 'androidx.core:core:1.16.0'
     implementation 'androidx.palette:palette:1.0.0'
     implementation 'androidx.exifinterface:exifinterface:1.3.6'
@@ -135,6 +137,9 @@ android {
     }
 
     defaultConfig {
+        if (findProperty("monogramAbi")) {
+            ndk { abiFilters(*findProperty("monogramAbi").split(",")) }
+        }
         minSdkVersion 23
         targetSdkVersion 36
 

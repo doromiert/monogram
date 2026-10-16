@@ -7,9 +7,6 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.2'
-        classpath 'com.google.gms:google-services:4.3.15'
-        classpath 'com.huawei.agconnect:agcp:1.9.1.301'
-        classpath 'com.google.firebase:firebase-crashlytics-gradle:2.9.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
     }
 }
@@ -51,5 +48,11 @@ subprojects {
                 }
             }
         }
+    }
+}
+subprojects {
+    configurations.all {
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk15on'
+        exclude group: 'xpp3', module: 'xpp3_min'
     }
 }

@@ -17,11 +17,6 @@ import androidx.annotation.Keep;
 import androidx.annotation.OptIn;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
-import com.google.android.gms.tasks.Task;
-import com.google.android.play.core.integrity.IntegrityManager;
-import com.google.android.play.core.integrity.IntegrityManagerFactory;
-import com.google.android.play.core.integrity.IntegrityTokenRequest;
-import com.google.android.play.core.integrity.IntegrityTokenResponse;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -129,31 +124,9 @@ public class ConnectionsManager extends BaseController {
     private AtomicInteger lastRequestToken = new AtomicInteger(1);
     private int appResumeCount;
 
-    private static AsyncTask currentTask;
-
-    private static HashMap<String, ResolveHostByNameTask> resolvingHostnameTasks = new HashMap<>();
-
-    public static final Executor DNS_THREAD_POOL_EXECUTOR;
     public static final int CPU_COUNT = Runtime.getRuntime().availableProcessors();
-    private static final int CORE_POOL_SIZE = Math.max(2, Math.min(CPU_COUNT - 1, 4));
-    private static final int MAXIMUM_POOL_SIZE = CPU_COUNT * 2 + 1;
-    private static final int KEEP_ALIVE_SECONDS = 30;
-    private static final BlockingQueue<Runnable> sPoolWorkQueue = new LinkedBlockingQueue<>(128);
-    private static final ThreadFactory sThreadFactory = new ThreadFactory() {
-        private final AtomicInteger mCount = new AtomicInteger(1);
-
-        public Thread newThread(Runnable r) {
-            return new Thread(r, "DnsAsyncTask #" + mCount.getAndIncrement());
-        }
-    };
 
     private boolean forceTryIpV6;
-
-    static {
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAXIMUM_POOL_SIZE, KEEP_ALIVE_SECONDS, TimeUnit.SECONDS, sPoolWorkQueue, sThreadFactory);
-        threadPoolExecutor.allowCoreThreadTimeOut(true);
-        DNS_THREAD_POOL_EXECUTOR = threadPoolExecutor;
-    }
 
     public void setForceTryIpV6(boolean forceTryIpV6) {
         if (this.forceTryIpV6 != forceTryIpV6) {
@@ -163,33 +136,12 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void discardConnection(int dcId, int connectionType) {
-        Utilities.stageQueue.postRunnable(() -> {
-            native_discardConnection(currentAccount, dcId, connectionType);
-        });
+        // XMPP owns its connections; Telegram datacenters are unused.
     }
 
     public void failNotRunningRequest(int requestToken) {
-        Utilities.stageQueue.postRunnable(() -> {
-            native_failNotRunningRequest(currentAccount, requestToken);
-        });
+        // There are no native Telegram requests.
     }
-
-    private static class ResolvedDomain {
-
-        public ArrayList<String> addresses;
-        long ttl;
-
-        public ResolvedDomain(ArrayList<String> a, long t) {
-            addresses = a;
-            ttl = t;
-        }
-
-        public String getAddress() {
-            return addresses.get(Utilities.random.nextInt(addresses.size()));
-        }
-    }
-
-    private static HashMap<String, ResolvedDomain> dnsCache = new HashMap<>();
 
     private static int lastClassGuid = 1;
     
@@ -209,7 +161,7 @@ public class ConnectionsManager extends BaseController {
 
     public ConnectionsManager(int instance) {
         super(instance);
-        connectionState = native_getConnectionState(currentAccount);
+        connectionState = ConnectionStateConnecting;
         String deviceModel;
         String systemLangCode;
         String langCode;
@@ -297,23 +249,23 @@ public class ConnectionsManager extends BaseController {
     }
 
     public long getCurrentTimeMillis() {
-        return native_getCurrentTimeMillis(currentAccount);
+        return System.currentTimeMillis();
     }
 
     public int getCurrentTime() {
-        return native_getCurrentTime(currentAccount);
+        return (int) (System.currentTimeMillis() / 1000);
     }
 
     public int getCurrentDatacenterId() {
-        return native_getCurrentDatacenterId(currentAccount);
+        return 0;
     }
 
     public long getCurrentAuthKeyId() {
-        return native_getCurrentAuthKeyId(currentAccount);
+        return 0;
     }
 
     public int getTimeDifference() {
-        return native_getTimeDifference(currentAccount);
+        return 0;
     }
 
     public <T extends TLObject> int sendRequestTyped(TLMethod<T> method, Utilities.Callback2<T, TLRPC.TL_error> completionBlock) {
@@ -396,102 +348,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("send request " + object + " with token = " + requestToken);
-        }
-        try {
-            NativeByteBuffer buffer = new NativeByteBuffer(object.getObjectSize());
-            object.serializeToStream(buffer);
-            object.freeResources();
-
-            long startRequestTime = 0;
-            if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED || (connectionType & ConnectionTypeDownload) != 0) {
-                startRequestTime = System.currentTimeMillis();
-            }
-            long finalStartRequestTime = startRequestTime;
-            listen(requestToken, (response, errorCode, errorText, networkType, timestamp, requestMsgId, dcId) -> {
-                try {
-                    TLObject resp = null;
-                    TLRPC.TL_error error = null;
-                    int responseSize = 0;
-                    if (response != 0) {
-                        NativeByteBuffer buff = NativeByteBuffer.wrap(response);
-                        buff.setDataSourceType(TLDataSourceType.NETWORK);
-                        buff.reused = true;
-                        responseSize = buff.limit();
-                        int magic = buff.readInt32(true);
-                        try {
-                            resp = object.deserializeResponse(buff, magic, true);
-                        } catch (Exception e2) {
-                            if (BuildVars.DEBUG_PRIVATE_VERSION) {
-                                throw e2;
-                            }
-                            FileLog.fatal(e2);
-                            return;
-                        }
-                    } else if (errorText != null) {
-                        error = new TLRPC.TL_error();
-                        error.code = errorCode;
-                        error.text = errorText;
-                        if (BuildVars.LOGS_ENABLED && error.code != -2000) {
-                            FileLog.e(object + " got error " + error.code + " " + error.text);
-                        }
-                    }
-                    if ((connectionType & ConnectionTypeDownload) != 0 && VideoPlayer.activePlayers.isEmpty()) {
-                        long ping_time = native_getCurrentPingTime(currentAccount);
-                        final long size = responseSize;
-                        final long delta = Math.max(0, (System.currentTimeMillis() - finalStartRequestTime) - ping_time);
-                        DefaultBandwidthMeter.getSingletonInstance(ApplicationLoader.applicationContext).onTransfer(size, delta);
-                    }
-                    if (BuildVars.DEBUG_PRIVATE_VERSION && !getUserConfig().isClientActivated() && error != null && error.code == 400 && Objects.equals(error.text, "CONNECTION_NOT_INITED")) {
-                        if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d("Cleanup keys for " + currentAccount + " because of CONNECTION_NOT_INITED");
-                        }
-                        cleanup(true);
-                        sendRequest(object, onComplete, onCompleteTimestamp, onQuickAck, onWriteToSocket, flags, datacenterId, connectionType, immediate);
-                        return;
-                    }
-                    if (resp != null) {
-                        resp.networkType = networkType;
-                    }
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("java received " + resp + (error != null ? " error = " + error : "") + " messageId = 0x" + Long.toHexString(requestMsgId));
-                        FileLog.dumpResponseAndRequest(currentAccount, object, resp, error, requestMsgId, finalStartRequestTime, requestToken);
-                    }
-                    final TLObject finalResponse = resp;
-                    final TLRPC.TL_error finalError = error;
-                    Utilities.stageQueue.postRunnable(() -> {
-                        if (onComplete != null) {
-                            onComplete.run(finalResponse, finalError);
-                        } else if (onCompleteTimestamp != null) {
-                            onCompleteTimestamp.run(finalResponse, finalError, timestamp);
-                        } else if (finalResponse instanceof TLRPC.Updates) {
-                            KeepAliveJob.finishJob();
-                            AccountInstance.getInstance(currentAccount).getMessagesController().processUpdates((TLRPC.Updates) finalResponse, false);
-                        }
-                        if (finalResponse != null) {
-                            finalResponse.freeResources();
-                        }
-                    });
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            }, onQuickAck, onWriteToSocket);
-            int downloadSize = 0;
-            // Only FileLoadOperation opts in. Live call segments retain their existing scheduling.
-            if ((flags & RequestFlagDownloadByteBudget) != 0 && (connectionType & 0xffff) == ConnectionTypeDownload) {
-                if (object instanceof TLRPC.TL_upload_getFile) {
-                    downloadSize = ((TLRPC.TL_upload_getFile) object).limit;
-                } else if (object instanceof TLRPC.TL_upload_getWebFile) {
-                    downloadSize = ((TLRPC.TL_upload_getWebFile) object).limit;
-                } else if (object instanceof TLRPC.TL_upload_getCdnFile) {
-                    downloadSize = ((TLRPC.TL_upload_getCdnFile) object).limit;
-                }
-            }
-            native_sendRequest(currentAccount, buffer.address, flags, datacenterId, connectionType, immediate, requestToken, downloadSize);
-        } catch (Exception e) {
-            FileLog.e(e);
-        }
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).request(object, (response, error) -> {
+            if (onComplete != null) onComplete.run(response, error);
+            else if (onCompleteTimestamp != null) onCompleteTimestamp.run(response, error, System.currentTimeMillis());
+        });
     }
 
     private final ConcurrentHashMap<Integer, RequestCallbacks> requestCallbacks = new ConcurrentHashMap<>();
@@ -590,112 +450,49 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void cancelRequest(int token, boolean notifyServer, Runnable onCancelled) {
-        Utilities.stageQueue.postRunnable(() -> {
-            if (onCancelled != null) {
-                listenCancel(token, () -> {
-                    Utilities.stageQueue.postRunnable(onCancelled);
-                });
-            }
-            native_cancelRequest(currentAccount, token, notifyServer);
-        });
+        if (onCancelled != null) Utilities.stageQueue.postRunnable(onCancelled);
     }
 
     public void cleanup(boolean resetKeys) {
-        native_cleanUp(currentAccount, resetKeys);
+
     }
 
     public void cancelRequestsForGuid(int guid) {
-        Utilities.stageQueue.postRunnable(() -> {
-            native_cancelRequestsForGuid(currentAccount, guid);
-        });
+
     }
 
     public void bindRequestToGuid(int requestToken, int guid) {
-        if (guid == 0) {
-            return;
-        }
-        native_bindRequestToGuid(currentAccount, requestToken, guid);
+
     }
 
     public void applyDatacenterAddress(int datacenterId, String ipAddress, int port) {
-        native_applyDatacenterAddress(currentAccount, datacenterId, ipAddress, port);
+
     }
 
     public int getConnectionState() {
-        if (connectionState == ConnectionStateConnected && isUpdating) {
-            return ConnectionStateUpdating;
-        }
-        return connectionState;
+        return org.telegram.messenger.xmpp.MonogramController.get(currentAccount).state();
     }
 
     public void setUserId(long id) {
-        native_setUserId(currentAccount, id);
+
     }
 
     public void checkConnection() {
-        byte selectedStrategy = getIpStrategy();
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("selected ip strategy " + selectedStrategy);
-        }
-        native_setIpStrategy(currentAccount, selectedStrategy);
-        native_setNetworkAvailable(currentAccount, ApplicationLoader.isNetworkOnline(), ApplicationLoader.getCurrentNetworkType(), ApplicationLoader.isConnectionSlow());
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
     }
 
     public void setPushConnectionEnabled(boolean value) {
-        native_setPushConnectionEnabled(currentAccount, value);
+
     }
 
     public void init(int version, int layer, int apiId, String deviceModel, String systemVersion, String appVersion, String langCode, String systemLangCode, String configPath, String logPath, String regId, String cFingerprint, int timezoneOffset, long userId, boolean userPremium, boolean enablePushConnection) {
-        final SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        final ProxySettings proxySettings = ProxySettings.fromSharedPreferences(preferences);
-        if (preferences.getBoolean("proxy_enabled", false) && proxySettings.isValid()) {
-            if (proxySettings.getType() == ProxySettings.Type.WEB) {
-                int localPort = WebProxyTransport.start(proxySettings.getAddress(), proxySettings.getSecret());
-                native_setProxySettings(currentAccount, "127.0.0.1", localPort != 0 ? localPort : 9, "", "",
-                        proxySettings.getSecret());
-            } else {
-                native_setProxySettings(currentAccount, proxySettings.getAddress(), proxySettings.getPort(),
-                        proxySettings.getUser(), proxySettings.getPassword(), proxySettings.getSecret());
-            }
-        }
-        String installer = "";
-        try {
-            Context context = ApplicationLoader.applicationContext;
-            if (Build.VERSION.SDK_INT >= 30) {
-                InstallSourceInfo installSourceInfo = context.getPackageManager().getInstallSourceInfo(context.getPackageName());
-                if (installSourceInfo != null) {
-                    installer = installSourceInfo.getInitiatingPackageName();
-                    if (installer == null) {
-                        installer = installSourceInfo.getInstallingPackageName();
-                    }
-                }
-            } else {
-                installer = context.getPackageManager().getInstallerPackageName(context.getPackageName());
-            }
-        } catch (Throwable ignore) {
-
-        }
-        if (installer == null) {
-            installer = "";
-        }
-        String packageId = "";
-        try {
-            packageId = ApplicationLoader.applicationContext.getPackageName();
-        } catch (Throwable ignore) {
-
-        }
-        if (packageId == null) {
-            packageId = "";
-        }
-
-        native_init(currentAccount, version, layer, apiId, deviceModel, systemVersion, appVersion, langCode, systemLangCode, configPath, logPath, regId, cFingerprint, installer, packageId, timezoneOffset, userId, userPremium, enablePushConnection, ApplicationLoader.isNetworkOnline(), ApplicationLoader.getCurrentNetworkType(), SharedConfig.measureDevicePerformanceClass());
-        checkConnection();
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
     }
 
     public static void setLangCode(String langCode) {
         langCode = langCode.replace('_', '-').toLowerCase();
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            native_setLangCode(a, langCode);
+
         }
     }
 
@@ -712,37 +509,35 @@ public class ConnectionsManager extends BaseController {
             pushString = SharedConfig.pushStringStatus = "__" + tag + "_GENERATING_SINCE_" + getInstance(0).getCurrentTime() + "__";
         }
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            native_setRegId(a, pushString);
+
         }
     }
 
     public static void setSystemLangCode(String langCode) {
         langCode = langCode.replace('_', '-').toLowerCase();
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            native_setSystemLangCode(a, langCode);
+
         }
     }
 
     public void switchBackend(boolean restart) {
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        preferences.edit().remove("language_showed2").commit();
-        native_switchBackend(currentAccount, restart);
+
     }
 
     public boolean isTestBackend() {
-        return native_isTestBackend(currentAccount) != 0;
+        return false;
     }
 
     public void resumeNetworkMaybe() {
-        native_resumeNetwork(currentAccount, true);
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
     }
 
     public void updateDcSettings() {
-        native_updateDcSettings(currentAccount);
+
     }
 
     public void setDefaultDatacenterId(int dcId) {
-        native_moveDatacenter(currentAccount, dcId);
+        // XMPP service discovery derives the server from the account JID.
     }
 
     public long getPauseTime() {
@@ -750,19 +545,12 @@ public class ConnectionsManager extends BaseController {
     }
 
     public long checkProxy(ProxySettings settings, RequestTimeDelegate requestTimeDelegate) {
-        if (settings == null || !settings.isValid()) {
-            return 0;
-        }
-        if (settings.getType() == ProxySettings.Type.WEB) {
-            WebProxyConnectionTester.getInstance().checkProxy(settings, requestTimeDelegate, this::checkWebProxyInternal);
-            return 0;
-        }
-
-        return native_checkProxy(currentAccount, settings.getAddress(), settings.getPort(), settings.getUser(), settings.getPassword(), settings.getSecret(), requestTimeDelegate);
+        if (requestTimeDelegate != null) Utilities.stageQueue.postRunnable(() -> requestTimeDelegate.run(-1));
+        return 0;
     }
 
     private void checkWebProxyInternal(ProxySettings settings, int port, RequestTimeDelegate requestTimeDelegate) {
-        native_checkProxy(currentAccount, "127.0.0.1", port, "", "", settings.getSecret(), requestTimeDelegate);
+        if (requestTimeDelegate != null) requestTimeDelegate.run(-1);
     }
 
     public void setAppPaused(final boolean value, final boolean byScreenState) {
@@ -787,7 +575,7 @@ public class ConnectionsManager extends BaseController {
             if (lastPauseTime == 0) {
                 lastPauseTime = System.currentTimeMillis();
             }
-            native_pauseNetwork(currentAccount);
+
         } else {
             if (appPaused) {
                 return;
@@ -799,7 +587,7 @@ public class ConnectionsManager extends BaseController {
                 getContactsController().checkContacts();
             }
             lastPauseTime = 0;
-            native_resumeNetwork(currentAccount, false);
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
         }
     }
 
@@ -874,36 +662,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public static void onRequestNewServerIpAndPort(final int second, final int currentAccount) {
-        Utilities.globalQueue.postRunnable(() -> {
-            boolean networkOnline = ApplicationLoader.isNetworkOnline();
-            Utilities.stageQueue.postRunnable(() -> {
-                FileLog.d("13. currentTask == " + currentTask);
-                if (currentTask != null || second == 0 && Math.abs(lastDnsRequestTime - System.currentTimeMillis()) < 10000 || !networkOnline) {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("don't start task, current task = " + currentTask + " next task = " + second + " time diff = " + Math.abs(lastDnsRequestTime - System.currentTimeMillis()) + " network = " + ApplicationLoader.isNetworkOnline());
-                    }
-                    return;
-                }
-                lastDnsRequestTime = System.currentTimeMillis();
-                if (second == 2) {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("start mozilla txt task");
-                    }
-                    MozillaDnsLoadTask task = new MozillaDnsLoadTask(currentAccount);
-                    task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, null, null, null);
-                    FileLog.d("9. currentTask = mozilla");
-                    currentTask = task;
-                } else {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("start google txt task");
-                    }
-                    GoogleDnsLoadTask task = new GoogleDnsLoadTask(currentAccount);
-                    task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, null, null, null);
-                    FileLog.d("11. currentTask = dnstxt");
-                    currentTask = task;
-                }
-            });
-        });
+        // Telegram DNS bootstrap is disabled. Smack resolves XMPP services.
     }
 
     public static void onProxyError() {
@@ -911,26 +670,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public static void getHostByName(String hostName, long address) {
-        AndroidUtilities.runOnUIThread(() -> {
-            ResolvedDomain resolvedDomain = dnsCache.get(hostName);
-            if (resolvedDomain != null && SystemClock.elapsedRealtime() - resolvedDomain.ttl < 5 * 60 * 1000) {
-                native_onHostNameResolved(hostName, address, resolvedDomain.getAddress());
-            } else {
-                ResolveHostByNameTask task = resolvingHostnameTasks.get(hostName);
-                if (task == null) {
-                    task = new ResolveHostByNameTask(hostName);
-                    try {
-                        task.executeOnExecutor(DNS_THREAD_POOL_EXECUTOR, null, null, null);
-                    } catch (Throwable e) {
-                        FileLog.e(e);
-                        native_onHostNameResolved(hostName, address, "");
-                        return;
-                    }
-                    resolvingHostnameTasks.put(hostName, task);
-                }
-                task.addAddress(address);
-            }
-        });
+        // This callback belongs to the disabled native Telegram transport.
     }
 
     public static void onBytesReceived(int amount, int networkType, final int currentAccount) {
@@ -959,43 +699,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public static void setProxySettings(boolean enabled, ProxySettings settings) {
-        String address = "";
-        int port = 0;
-        String username = "";
-        String password = "";
-        String secret = "";
-
-        if (enabled && settings != null && settings.isValid()) {
-            address = settings.getAddress();
-            port = settings.getPort();
-            username = settings.getUser();
-            password = settings.getPassword();
-            secret = settings.getSecret();
-
-            if (settings.getType() == ProxySettings.Type.WEB) {
-                int localPort = WebProxyTransport.start(address, secret);
-                address = "127.0.0.1";
-                port = localPort != 0 ? localPort : 9;
-                username = "";
-                password = "";
-            } else {
-                WebProxyTransport.stop();
-            }
-        } else {
-            WebProxyTransport.stop();
-        }
-
-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (enabled && settings != null && settings.isValid()) {
-                native_setProxySettings(a, address, port, username, password, secret);
-            } else {
-                native_setProxySettings(a, "", 1080, "", "", "");
-            }
-            AccountInstance accountInstance = AccountInstance.getInstance(a);
-            if (accountInstance.getUserConfig().isClientActivated()) {
-                accountInstance.getMessagesController().checkPromoInfo(true);
-            }
-        }
+        // Telegram proxy protocols cannot carry the XMPP session.
     }
 
     public static native void native_switchBackend(int currentAccount, boolean restart);
@@ -1147,347 +851,6 @@ public class ConnectionsManager extends BaseController {
         return USE_IPV4_ONLY;
     }
 
-    private static class ResolveHostByNameTask extends AsyncTask<Void, Void, ResolvedDomain> {
-
-        private ArrayList<Long> addresses = new ArrayList<>();
-        private String currentHostName;
-
-        public ResolveHostByNameTask(String hostName) {
-            super();
-            currentHostName = hostName;
-        }
-
-        public void addAddress(long address) {
-            if (addresses.contains(address)) {
-                return;
-            }
-            addresses.add(address);
-        }
-
-        protected ResolvedDomain doInBackground(Void... voids) {
-            ByteArrayOutputStream outbuf = null;
-            InputStream httpConnectionStream = null;
-            boolean done = false;
-            try {
-                URL downloadUrl = new URL("https://www.google.com/resolve?name=" + currentHostName + "&type=A");
-                URLConnection httpConnection = downloadUrl.openConnection();
-                httpConnection.addRequestProperty("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0 like Mac OS X) AppleWebKit/602.1.38 (KHTML, like Gecko) Version/10.0 Mobile/14A5297c Safari/602.1");
-                httpConnection.addRequestProperty("Host", "dns.google.com");
-                httpConnection.setConnectTimeout(1000);
-                httpConnection.setReadTimeout(2000);
-                httpConnection.connect();
-                httpConnectionStream = httpConnection.getInputStream();
-
-                outbuf = new ByteArrayOutputStream();
-
-                byte[] data = new byte[1024 * 32];
-                while (true) {
-                    int read = httpConnectionStream.read(data);
-                    if (read > 0) {
-                        outbuf.write(data, 0, read);
-                    } else if (read == -1) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
-
-                JSONObject jsonObject = new JSONObject(new String(outbuf.toByteArray()));
-                if (jsonObject.has("Answer")) {
-                    JSONArray array = jsonObject.getJSONArray("Answer");
-                    int len = array.length();
-                    if (len > 0) {
-                        ArrayList<String> addresses = new ArrayList<>(len);
-                        for (int a = 0; a < len; a++) {
-                            addresses.add(array.getJSONObject(a).getString("data"));
-                        }
-                        return new ResolvedDomain(addresses, SystemClock.elapsedRealtime());
-                    }
-                }
-                done = true;
-            } catch (Throwable e) {
-                FileLog.e(e, false);
-            } finally {
-                try {
-                    if (httpConnectionStream != null) {
-                        httpConnectionStream.close();
-                    }
-                } catch (Throwable e) {
-                    FileLog.e(e, false);
-                }
-                try {
-                    if (outbuf != null) {
-                        outbuf.close();
-                    }
-                } catch (Exception ignore) {
-
-                }
-            }
-            if (!done) {
-                try {
-                    InetAddress address = InetAddress.getByName(currentHostName);
-                    ArrayList<String> addresses = new ArrayList<>(1);
-                    addresses.add(address.getHostAddress());
-                    return new ResolvedDomain(addresses, SystemClock.elapsedRealtime());
-                } catch (Exception e) {
-                    FileLog.e(e, false);
-                }
-            }
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(final ResolvedDomain result) {
-            if (result != null) {
-                dnsCache.put(currentHostName, result);
-                for (int a = 0, N = addresses.size(); a < N; a++) {
-                    native_onHostNameResolved(currentHostName, addresses.get(a), result.getAddress());
-                }
-            } else {
-                for (int a = 0, N = addresses.size(); a < N; a++) {
-                    native_onHostNameResolved(currentHostName, addresses.get(a), "");
-                }
-            }
-            resolvingHostnameTasks.remove(currentHostName);
-        }
-    }
-
-    private static class GoogleDnsLoadTask extends AsyncTask<Void, Void, NativeByteBuffer> {
-
-        private int currentAccount;
-        private int responseDate;
-
-        public GoogleDnsLoadTask(int instance) {
-            super();
-            currentAccount = instance;
-        }
-
-        protected NativeByteBuffer doInBackground(Void... voids) {
-            ByteArrayOutputStream outbuf = null;
-            InputStream httpConnectionStream = null;
-            try {
-                String domain = native_isTestBackend(currentAccount) != 0 ? "tapv3.stel.com" : AccountInstance.getInstance(currentAccount).getMessagesController().dcDomainName;
-                int len = Utilities.random.nextInt(116) + 13;
-                final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-                StringBuilder padding = new StringBuilder(len);
-                for (int a = 0; a < len; a++) {
-                    padding.append(characters.charAt(Utilities.random.nextInt(characters.length())));
-                }
-                URL downloadUrl = new URL("https://dns.google.com/resolve?name=" + domain + "&type=ANY&random_padding=" + padding);
-                URLConnection httpConnection = downloadUrl.openConnection();
-                httpConnection.addRequestProperty("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0 like Mac OS X) AppleWebKit/602.1.38 (KHTML, like Gecko) Version/10.0 Mobile/14A5297c Safari/602.1");
-                httpConnection.setConnectTimeout(5000);
-                httpConnection.setReadTimeout(5000);
-                httpConnection.connect();
-                httpConnectionStream = httpConnection.getInputStream();
-                responseDate = (int) (httpConnection.getDate() / 1000);
-
-                outbuf = new ByteArrayOutputStream();
-
-                byte[] data = new byte[1024 * 32];
-                while (true) {
-                    if (isCancelled()) {
-                        break;
-                    }
-                    int read = httpConnectionStream.read(data);
-                    if (read > 0) {
-                        outbuf.write(data, 0, read);
-                    } else if (read == -1) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
-
-                JSONObject jsonObject = new JSONObject(new String(outbuf.toByteArray()));
-                JSONArray array = jsonObject.getJSONArray("Answer");
-                len = array.length();
-                ArrayList<String> arrayList = new ArrayList<>(len);
-                for (int a = 0; a < len; a++) {
-                    JSONObject object = array.getJSONObject(a);
-                    int type = object.getInt("type");
-                    if (type != 16) {
-                        continue;
-                    }
-                    arrayList.add(object.getString("data"));
-                }
-                Collections.sort(arrayList, (o1, o2) -> {
-                    int l1 = o1.length();
-                    int l2 = o2.length();
-                    if (l1 > l2) {
-                        return -1;
-                    } else if (l1 < l2) {
-                        return 1;
-                    }
-                    return 0;
-                });
-                StringBuilder builder = new StringBuilder();
-                for (int a = 0; a < arrayList.size(); a++) {
-                    builder.append(arrayList.get(a).replace("\"", ""));
-                }
-                byte[] bytes = Base64.decode(builder.toString(), Base64.DEFAULT);
-                NativeByteBuffer buffer = new NativeByteBuffer(bytes.length);
-                buffer.writeBytes(bytes);
-                return buffer;
-            } catch (Throwable e) {
-                FileLog.e(e, !(e instanceof SocketTimeoutException || e instanceof SSLException));
-            } finally {
-                try {
-                    if (httpConnectionStream != null) {
-                        httpConnectionStream.close();
-                    }
-                } catch (Throwable e) {
-                    FileLog.e(e);
-                }
-                try {
-                    if (outbuf != null) {
-                        outbuf.close();
-                    }
-                } catch (Exception ignore) {
-
-                }
-            }
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(final NativeByteBuffer result) {
-            Utilities.stageQueue.postRunnable(() -> {
-                FileLog.d("3. currentTask = null, result = " + result);
-                currentTask = null;
-                if (result != null) {
-                    native_applyDnsConfig(currentAccount, result.address, AccountInstance.getInstance(currentAccount).getUserConfig().getClientPhone(), responseDate);
-                } else {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("failed to get google result");
-                        FileLog.d("start mozilla task");
-                    }
-                    MozillaDnsLoadTask task = new MozillaDnsLoadTask(currentAccount);
-                    task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, null, null, null);
-                    FileLog.d("4. currentTask = mozilla");
-                    currentTask = task;
-                }
-            });
-        }
-    }
-
-    private static class MozillaDnsLoadTask extends AsyncTask<Void, Void, NativeByteBuffer> {
-
-        private int currentAccount;
-        private int responseDate;
-
-        public MozillaDnsLoadTask(int instance) {
-            super();
-            currentAccount = instance;
-        }
-
-        protected NativeByteBuffer doInBackground(Void... voids) {
-            ByteArrayOutputStream outbuf = null;
-            InputStream httpConnectionStream = null;
-            try {
-                String domain = native_isTestBackend(currentAccount) != 0 ? "tapv3.stel.com" : AccountInstance.getInstance(currentAccount).getMessagesController().dcDomainName;
-                int len = Utilities.random.nextInt(116) + 13;
-                final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-                StringBuilder padding = new StringBuilder(len);
-                for (int a = 0; a < len; a++) {
-                    padding.append(characters.charAt(Utilities.random.nextInt(characters.length())));
-                }
-                URL downloadUrl = new URL("https://mozilla.cloudflare-dns.com/dns-query?name=" + domain + "&type=TXT&random_padding=" + padding);
-                URLConnection httpConnection = downloadUrl.openConnection();
-                httpConnection.addRequestProperty("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0 like Mac OS X) AppleWebKit/602.1.38 (KHTML, like Gecko) Version/10.0 Mobile/14A5297c Safari/602.1");
-                httpConnection.addRequestProperty("accept", "application/dns-json");
-                httpConnection.setConnectTimeout(5000);
-                httpConnection.setReadTimeout(5000);
-                httpConnection.connect();
-                httpConnectionStream = httpConnection.getInputStream();
-                responseDate = (int) (httpConnection.getDate() / 1000);
-
-                outbuf = new ByteArrayOutputStream();
-
-                byte[] data = new byte[1024 * 32];
-                while (true) {
-                    if (isCancelled()) {
-                        break;
-                    }
-                    int read = httpConnectionStream.read(data);
-                    if (read > 0) {
-                        outbuf.write(data, 0, read);
-                    } else if (read == -1) {
-                        break;
-                    } else {
-                        break;
-                    }
-                }
-
-                JSONObject jsonObject = new JSONObject(new String(outbuf.toByteArray()));
-                JSONArray array = jsonObject.getJSONArray("Answer");
-                len = array.length();
-                ArrayList<String> arrayList = new ArrayList<>(len);
-                for (int a = 0; a < len; a++) {
-                    JSONObject object = array.getJSONObject(a);
-                    int type = object.getInt("type");
-                    if (type != 16) {
-                        continue;
-                    }
-                    arrayList.add(object.getString("data"));
-                }
-                Collections.sort(arrayList, (o1, o2) -> {
-                    int l1 = o1.length();
-                    int l2 = o2.length();
-                    if (l1 > l2) {
-                        return -1;
-                    } else if (l1 < l2) {
-                        return 1;
-                    }
-                    return 0;
-                });
-                StringBuilder builder = new StringBuilder();
-                for (int a = 0; a < arrayList.size(); a++) {
-                    builder.append(arrayList.get(a).replace("\"", ""));
-                }
-                byte[] bytes = Base64.decode(builder.toString(), Base64.DEFAULT);
-                NativeByteBuffer buffer = new NativeByteBuffer(bytes.length);
-                buffer.writeBytes(bytes);
-                return buffer;
-            } catch (Throwable e) {
-                FileLog.e(e, false);
-            } finally {
-                try {
-                    if (httpConnectionStream != null) {
-                        httpConnectionStream.close();
-                    }
-                } catch (Throwable e) {
-                    FileLog.e(e);
-                }
-                try {
-                    if (outbuf != null) {
-                        outbuf.close();
-                    }
-                } catch (Exception ignore) {
-
-                }
-            }
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(final NativeByteBuffer result) {
-            Utilities.stageQueue.postRunnable(() -> {
-                FileLog.d("5. currentTask = null");
-                currentTask = null;
-                if (result != null) {
-                    native_applyDnsConfig(currentAccount, result.address, AccountInstance.getInstance(currentAccount).getUserConfig().getClientPhone(), responseDate);
-                } else {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("failed to get mozilla txt result");
-                    }
-                }
-            });
-        }
-    }
-
     public static long lastPremiumFloodWaitShown = 0;
     @Keep
     public static void onPremiumFloodWait(final int currentAccount, final int requestToken, boolean isUpload) {
@@ -1520,46 +883,12 @@ public class ConnectionsManager extends BaseController {
 
     @Keep
     public static void onIntegrityCheckClassic(final int currentAccount, final int requestToken, final String project, final String nonce) {
-        AndroidUtilities.runOnUIThread(() -> {
-            long start = System.currentTimeMillis();
-            FileLog.d("account"+currentAccount+": server requests integrity classic check with project = "+project+" nonce = " + nonce);
-            IntegrityManager integrityManager = IntegrityManagerFactory.create(ApplicationLoader.applicationContext);
-            final long project_id;
-            try {
-                project_id = Long.parseLong(project);
-            } catch (Exception e) {
-                FileLog.d("account"+currentAccount+": integrity check failes to parse project id");
-                native_receivedIntegrityCheckClassic(currentAccount, requestToken, nonce, "PLAYINTEGRITY_FAILED_EXCEPTION_NOPROJECT");
-                return;
-            }
-            Task<IntegrityTokenResponse> integrityTokenResponse = integrityManager.requestIntegrityToken(IntegrityTokenRequest.builder().setNonce(nonce).setCloudProjectNumber(project_id).build());
-            integrityTokenResponse
-                .addOnSuccessListener(r -> {
-                    final String token = r.token();
-
-                    if (token == null) {
-                        FileLog.e("account"+currentAccount+": integrity check gave null token in " + (System.currentTimeMillis() - start) + "ms");
-                        native_receivedIntegrityCheckClassic(currentAccount, requestToken, nonce, "PLAYINTEGRITY_FAILED_EXCEPTION_NULL");
-                        return;
-                    }
-
-                    FileLog.d("account"+currentAccount+": integrity check successfully gave token: " + token + " in " + (System.currentTimeMillis() - start) + "ms");
-                    try {
-                        native_receivedIntegrityCheckClassic(currentAccount, requestToken, nonce, token);
-                    } catch (Exception e) {
-                        FileLog.e("receivedIntegrityCheckClassic failed", e);
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    FileLog.e("account"+currentAccount+": integrity check failed to give a token in " + (System.currentTimeMillis() - start) + "ms", e);
-                    native_receivedIntegrityCheckClassic(currentAccount, requestToken, nonce, "PLAYINTEGRITY_FAILED_EXCEPTION_" + LoginActivity.errorString(e));
-                });
-        });
+        // XMPP does not use Google Play Integrity.
     }
 
     @Keep
     public static void onCaptchaCheck(final int currentAccount, final int requestToken, final String action, final String key_id) {
-        CaptchaController.request(currentAccount, requestToken, action, key_id);
+        // Telegram service captcha challenges do not apply to XMPP.
     }
 
     public static native byte[] nativeTestGenerateClientHello(String domain);

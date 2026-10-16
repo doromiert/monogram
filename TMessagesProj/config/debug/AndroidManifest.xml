@@ -20,8 +20,8 @@
     <permission android:name="${applicationId}.permission.MAPS_RECEIVE" android:protectionLevel="signature"/>
 
     <application
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@drawable/monogram_icon"
+        android:roundIcon="@drawable/monogram_icon"
         android:label="@string/AppNameBeta"
         android:theme="@style/Theme.TMessages.Start"
         android:hardwareAccelerated="true"

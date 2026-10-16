@@ -10,7 +10,7 @@ source "$SCRIPT_DIR/common.sh"
 
 require_ndk
 require_command cargo
-require_command rustup
+require_command rustc
 
 # gram-wallet's Cargo manifest pins its path dependency to this submodule.
 ENGINE_DIR="$JNI_DIR/wallet-engine"
@@ -31,7 +31,7 @@ LIB_DIR="$(cd "$LIB_DIR" && pwd)"
 # The app adapter links the engine and reexports its UniFFI scaffolding. Build
 # one archive to avoid linking two copies of Rust and wallet-engine into JNI.
 cd "$ADAPTER_DIR"
-export RUSTC="$(rustup which rustc)"
+export RUSTC="${RUSTC:-$(command -v rustc)}"
 export CARGO_BUILD_JOBS="$JOBS"
 export CARGO_INCREMENTAL=0
 
@@ -45,17 +45,16 @@ rust_target_for_abi() {
     esac
 }
 
-installed_targets="$(rustup target list --installed)"
 missing_targets=()
 for abi in $ABIS; do
     target="$(rust_target_for_abi "$abi")"
-    if [[ $'\n'"$installed_targets"$'\n' != *$'\n'"$target"$'\n'* ]]; then
+    if [[ ! -d "$("$RUSTC" --print target-libdir --target "$target")" ]]; then
         missing_targets+=("$target")
     fi
 done
 if (( ${#missing_targets[@]} )); then
     echo "ERROR: missing Rust Android targets. From $ENGINE_DIR run:" >&2
-    echo "       rustup target add ${missing_targets[*]}" >&2
+    echo "       Install the target standard libraries or use nix develop." >&2
     exit 1
 fi
 

@@ -1,0 +1,19 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.negzero.monogram</groupId><artifactId>xmpp-core</artifactId><version>0.1.0-SNAPSHOT</version>
+  <properties><maven.compiler.release>8</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding><smack.version>4.4.8</smack.version></properties>
+  <dependencies>
+    <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk15to18</artifactId><version>1.80</version></dependency>
+    <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-tcp</artifactId><version>${smack.version}</version></dependency>
+    <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-extensions</artifactId><version>${smack.version}</version></dependency>
+    <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-experimental</artifactId><version>${smack.version}</version></dependency>
+    <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-omemo-signal</artifactId><version>${smack.version}</version></dependency>
+    <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-resolver-minidns</artifactId><version>${smack.version}</version></dependency>
+    <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-java8</artifactId><version>${smack.version}</version><scope>test</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.11.4</version><scope>test</scope></dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin>
+  </plugins></build>
+</project>

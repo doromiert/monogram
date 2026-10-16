@@ -289,6 +289,34 @@ public class AlertsCreator {
         if (error == null || error.code == 406 || error.text == null) {
             return null;
         }
+        if (request instanceof TLRPC.TL_messages_sendMessage && error.text.startsWith("MONOGRAM_")) {
+            BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragment();
+            if (target == null || target.getParentActivity() == null) return null;
+            String text;
+            switch (error.text) {
+                case "MONOGRAM_OMEMO_TRUST_REQUIRED":
+                    text = "Review the OMEMO fingerprints for this contact and your other devices before sending. Your message is still unsent; retry it after reviewing the devices."; break;
+                case "MONOGRAM_OMEMO_NO_DEVICES":
+                    text = "This contact has not published a compatible OMEMO device. Check their encryption support and try again. Your message was not sent."; break;
+                case "MONOGRAM_OMEMO_NO_TRUSTED_DEVICES":
+                    text = "No trusted recipient device is available. Review this contact's device fingerprints before retrying your message."; break;
+                case "MONOGRAM_OMEMO_DEVICE_FAILURE":
+                    text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
+                case "MONOGRAM_XMPP_DISCONNECTED":
+                    text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
+                case "MONOGRAM_FEATURE_UNAVAILABLE":
+                    text = "This action is not supported by Monogram yet. Your message was not sent."; break;
+                default:
+                    text = "The XMPP request failed. Your message was not sent.\n" + error.text.substring("MONOGRAM_".length());
+            }
+            AlertDialog.Builder builder = new AlertDialog.Builder(target.getParentActivity()).setTitle("Message not sent").setMessage(text);
+            if (error.text.startsWith("MONOGRAM_OMEMO_")) {
+                long peer = ((TLRPC.TL_messages_sendMessage) request).peer.user_id;
+                builder.setPositiveButton("Review devices", (dialog, which) -> target.presentFragment(new org.telegram.ui.MonogramSecurityActivity(currentAccount, peer)));
+                builder.setNegativeButton("Close", null);
+            } else builder.setPositiveButton("OK", null);
+            return target.showDialog(builder.create());
+        }
         if ("BALANCE_TOO_LOW".equalsIgnoreCase(error.text)) {
             final long price = StarsController.getAllowedPaidStars(request);
             final long dialogId = StarsController.getPeer(request);

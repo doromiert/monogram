@@ -1,46 +1,24 @@
-## Telegram messenger for Android
+# Monogram
 
-[Telegram](https://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
-This repo contains the official source code for [Telegram App for Android](https://play.google.com/store/apps/details?id=org.telegram.messenger).
+An XMPP/Jabber port of the current official Telegram Android client, branded Monogram. GPL-2.0-or-later upstream; new Monogram code is GPL-3.0-or-later (compatible with the OMEMO Signal backend).
 
-## Creating your Telegram Application
+**Experimental, migration in progress.** The prototype on Telegram-FOSS 10.14.3 was installed and tested on Android. The current branch ports that work to official Telegram 13.0.2 (`f32ffeec763f0bdbf4bec25b52d654f77bff733d`); its Android build, FOSS dependency replacements and runtime behavior still require verification. See [TODO.md](TODO.md) for current status.
 
-We welcome all developers to use our API and source code to create applications on our platform.
-There are several things we require from **all developers** for the moment.
+Intended public home: https://monogram.neg-zero.com. The optional helper will be deployable on 192.168.1.24. Neither address is required for ordinary Jabber messaging.
 
-1. [**Obtain your own api_id**](https://core.telegram.org/api/obtaining_api_id) for your application.
-2. Please **do not** use the name Telegram for your app — or make sure your users understand that it is unofficial.
-3. Kindly **do not** use our standard logo (white paper plane in a blue circle) as your app's logo.
-3. Please study our [**security guidelines**](https://core.telegram.org/mtproto/security_guidelines) and take good care of your users' data and privacy.
-4. Please remember to publish **your** code too in order to comply with the licences.
+## Development with Nix
 
-### API, Protocol documentation
+```sh
+git submodule update --init --recursive --depth 1
+nix develop
+mvn -f xmpp-core/pom.xml test
+./scripts/test-xmpp.sh
+./scripts/build-native.sh arm64-v8a
+./gradlew :TMessagesProj_App:assembleAfatDebug -PmonogramAbi=arm64-v8a
+```
 
-Telegram API manuals: https://core.telegram.org/api
+The pinned flake selects Java 21, Maven, Android SDK 36, NDK 27.2.12479018, CMake 3.22.1, Rust 1.96.1 with Android targets, and Prosody. Gradle/Maven caches and integration server data stay in this checkout. The native wrapper runs the current upstream source build scripts; this migration is still being verified. The lighter `nix develop .#test` shell runs shared-core tests without the Android toolchain. See [upstream source and instructions](docs/UPSTREAM.md).
 
-MTproto protocol manuals: https://core.telegram.org/mtproto
+Work stays in this repository using Git branches. `master` preserves the old prototype; `monogram-current-base` carries the official-source migration.
 
-### Compilation Guide
-
-**Note**: In order to support [reproducible builds](https://core.telegram.org/reproducible-builds), this repo contains dummy release.keystore,  google-services.json and filled variables inside BuildVars.java. Before publishing your own APKs please make sure to replace all these files with your own.
-
-You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android SDK 36.
-
-1. Clone the Telegram source code with its submodules:
-   ```bash
-   git clone --recursive --shallow-submodules https://github.com/DrKLO/Telegram.git Telegram
-   ```
-   In case you forgot the `--recursive` flag, change to the `Telegram` directory and run:
-   ```bash
-   git submodule init && git submodule update --init --recursive --depth=1
-   ```
-2. Copy your release.keystore into TMessagesProj/config
-3. Fill out RELEASE_KEY_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_STORE_PASSWORD in gradle.properties to access your  release.keystore
-4.  Go to https://console.firebase.google.com/, create two android apps with application IDs org.telegram.messenger and org.telegram.messenger.beta, turn on firebase messaging and download google-services.json, which should be copied to the same folder as TMessagesProj.
-5. Open the project in the Studio (note that it should be opened, NOT imported).
-6. Fill out values in TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java – there’s a link for each of the variables showing where and which data to obtain.
-7. You are ready to compile Telegram.
-
-### Localization
-
-We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+The shared `xmpp-core` is a Java library used by the Android project and exercised against a local TLS-enabled Prosody. No Telegram API credentials are needed. See [port status and protocol decisions](docs/PORT.md).

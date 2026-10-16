@@ -13499,7 +13499,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private void openWriteContacts() {
         Bundle args = new Bundle();
         args.putBoolean("destroyAfterSelect", true);
-        presentFragment(new ContactsActivity(args));
+        presentFragment(new MonogramNewChatActivity(currentAccount));
     }
 
     private void openStoriesRecorder() {
