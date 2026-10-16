@@ -41,6 +41,9 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## OMEMO
 
+- [x] Implement and install Trust all fingerprints in 0.2.1 (71769), scoped to the displayed contact/own-device fingerprints, with confirmation and atomic persistence. Six core tests pass, including changed/unseen-key isolation and failed-save rollback.
+- [ ] Verify the new trust-all button, confirmation and cancellation visually on the unlocked phone; no real trust decision was changed by the agent.
+
 - [ ] Verify actual Android encrypted exchange with an independent client such as Monocles, including this user's reported send failure. No successful send to the reported friend has been verified.
 - [ ] Verify persistent identities across a real process restart and app update.
 - [ ] Verify new/changed/distrusted identities and multiple recipient/own devices; never silently downgrade an encrypted send to plaintext.

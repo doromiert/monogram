@@ -40,6 +40,12 @@ Firebase startup, Telegram phone login, SMS retrieval, captcha/Play Integrity an
 
 Before/after update checks verified the saved JID/credential, all 53 existing local message rows, and the OMEMO device ID/identity key unchanged (`.state/android-update-verification.json`). The new process starts. The phone keyguard currently prevents visible UI/security-button verification; that check is still pending. No message was sent or trust decision changed during these checks.
 
+## Bulk fingerprint trust (0.2.1)
+
+`Trust all fingerprints` applies only to the fingerprints displayed in Conversation security, including the contact and other own devices. The confirmation explicitly includes existing distrust decisions. The trust file is replaced atomically; a failed write changes neither the saved file nor in-memory decisions. Keys remain bound to JID, device ID and fingerprint, so new devices and changed keys stay undecided. A session change cancels the pending decision.
+
+The six shared-core tests passed against local TLS-enabled Prosody (`.state/trust-all-core-tests.log`; fixture `.state/integration.6YGee5/server.log`), including bulk persistence/restart, changed/unseen-key isolation and failed-save rollback. The Android APK built successfully with Nix (301 tasks; `.state/trust-all-android-build.log`), and 0.2.1 (71769) was installed successfully with the same signing certificate. The original 53 message rows, saved credential and OMEMO identity/device ID remained intact after this update too. Visible button/confirmation checks are pending an unlocked phone; no real trust decision was changed during testing.
+
 ## Reproducible checks
 
 `nix develop .#test --command ./scripts/test-xmpp.sh` creates an isolated local Prosody server with a temporary trusted TLS certificate, runs actual client connections, then stops the server. Server logs and temporary test data remain under ignored `.state/`. Unit and integration results are in `xmpp-core/target/surefire-reports/`.

@@ -153,6 +153,7 @@ public final class XmppSession implements AutoCloseable {
     public org.jivesoftware.smackx.omemo.trust.TrustState trustState(OmemoDevice device, OmemoFingerprint fingerprint) { return trust.getTrust(device, fingerprint); }
     public OmemoFingerprint ownFingerprint() throws Exception { return omemo.getOwnFingerprint(); }
     public void decide(OmemoDevice device, OmemoFingerprint fingerprint, boolean trusted) { trust.setTrust(device, fingerprint, trusted); }
+    public void decideAll(java.util.Map<OmemoDevice, OmemoFingerprint> identities, boolean trusted) { trust.setTrustAll(identities, trusted); }
     public boolean hasArchive() throws Exception { return MamManager.getInstanceFor(connection).isSupported(); }
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() { connection.disconnect(); }

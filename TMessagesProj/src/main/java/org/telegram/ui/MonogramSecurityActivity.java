@@ -11,6 +11,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.ui.ActionBar.*;
 import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.LayoutHelper;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
@@ -47,6 +48,12 @@ public final class MonogramSecurityActivity extends BaseFragment {
         });
         body.addView(text(context, "Compare fingerprints with your contact through another trusted channel before trusting their devices. New devices and changed keys require a new decision."));
         TextView status = text(context, "Loading fingerprints…"); body.addView(status);
+        TextSettingsCell trustAll = new TextSettingsCell(context);
+        trustAll.setText("Trust all fingerprints", false);
+        trustAll.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+        trustAll.setBackground(Theme.getSelectorDrawable(false));
+        trustAll.setVisibility(View.GONE);
+        body.addView(trustAll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         controller.worker.execute(() -> {
             try {
                 com.negzero.monogram.xmpp.XmppSession session = controller.session();
@@ -71,14 +78,24 @@ public final class MonogramSecurityActivity extends BaseFragment {
                 AndroidUtilities.runOnUIThread(() -> {
                     if (getParentActivity() == null) return;
                     status.setText("Your fingerprint\n" + own + (!hasContact ? "\n\nThis contact has not published a compatible OMEMO device." : ""));
+                    java.util.Map<OmemoDevice, TextView> rows = new java.util.LinkedHashMap<>();
                     for (java.util.Map.Entry<OmemoDevice, OmemoFingerprint> entry : identities.entrySet()) {
                         OmemoDevice device = entry.getKey(); OmemoFingerprint fingerprint = entry.getValue();
                         TextView row = text(context, device.getJid() + " · device " + device.getDeviceId() + "\n" + fingerprint + "\n" + states.get(device) + " · tap to review");
                         row.setTextIsSelectable(false); row.setMinHeight(AndroidUtilities.dp(88));
                         body.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                        rows.put(device, row);
                         row.setOnClickListener(v -> showDialog(new AlertDialog.Builder(context).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint)
-                                .setPositiveButton("Trust", (d, w) -> decide(controller, device, fingerprint, true, row))
-                                .setNegativeButton("Distrust", (d, w) -> decide(controller, device, fingerprint, false, row)).create()));
+                                .setPositiveButton("Trust", (d, w) -> decide(controller, session, device, fingerprint, true, row))
+                                .setNegativeButton("Distrust", (d, w) -> decide(controller, session, device, fingerprint, false, row)).create()));
+                    }
+                    if (!identities.isEmpty()) {
+                        trustAll.setVisibility(View.VISIBLE);
+                        trustAll.setOnClickListener(v -> showDialog(new AlertDialog.Builder(context)
+                                .setTitle("Trust all fingerprints?")
+                                .setMessage("Trust the " + identities.size() + " fingerprints currently shown, including any marked Distrusted. New devices and changed keys will still need review.")
+                                .setPositiveButton("Trust all", (dialog, which) -> trustAll(controller, session, identities, rows, trustAll))
+                                .setNegativeButton("Cancel", null).create()));
                     }
                 });
             } catch (Exception e) {
@@ -87,10 +104,39 @@ public final class MonogramSecurityActivity extends BaseFragment {
         });
         fragmentView = scroll; return fragmentView;
     }
-    private void decide(MonogramController controller, OmemoDevice device, OmemoFingerprint fingerprint, boolean trust, TextView row) {
+    private void trustAll(MonogramController controller, com.negzero.monogram.xmpp.XmppSession expectedSession,
+            java.util.Map<OmemoDevice, OmemoFingerprint> identities, java.util.Map<OmemoDevice, TextView> rows, TextSettingsCell button) {
+        button.setEnabled(false); button.setText("Trusting fingerprints…", false);
         controller.worker.execute(() -> {
             try {
-                controller.session().decide(device, fingerprint, trust);
+                if (controller.session() != expectedSession) throw new IllegalStateException("Account session changed");
+                expectedSession.decideAll(identities, true);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (getParentActivity() == null) return;
+                    for (java.util.Map.Entry<OmemoDevice, OmemoFingerprint> identity : identities.entrySet()) {
+                        OmemoDevice device = identity.getKey();
+                        rows.get(device).setText(device.getJid() + " · device " + device.getDeviceId() + "\n" + identity.getValue() + "\nTrusted · tap to review");
+                    }
+                    button.setText("Trust all fingerprints", false); button.setEnabled(true);
+                    button.announceForAccessibility("All displayed fingerprints trusted");
+                });
+            } catch (Exception e) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (getParentActivity() == null) return;
+                    button.setText("Trust all fingerprints", false); button.setEnabled(true);
+                    showDialog(new AlertDialog.Builder(getParentActivity()).setTitle("Could not save trust decisions")
+                            .setMessage("Nothing was changed. Check your connection and try again.")
+                            .setPositiveButton("OK", null).create());
+                });
+            }
+        });
+    }
+    private void decide(MonogramController controller, com.negzero.monogram.xmpp.XmppSession expectedSession,
+            OmemoDevice device, OmemoFingerprint fingerprint, boolean trust, TextView row) {
+        controller.worker.execute(() -> {
+            try {
+                if (controller.session() != expectedSession) throw new IllegalStateException("Account session changed");
+                expectedSession.decide(device, fingerprint, trust);
                 AndroidUtilities.runOnUIThread(() -> row.setText(device.getJid() + " · device " + device.getDeviceId() + "\n" + fingerprint + "\n" + (trust ? "Trusted" : "Distrusted")));
             } catch (Exception e) {
                 AndroidUtilities.runOnUIThread(() -> row.setText("Could not save trust decision. Tap to try again."));
