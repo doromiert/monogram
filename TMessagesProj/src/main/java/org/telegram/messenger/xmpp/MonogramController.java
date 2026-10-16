@@ -29,6 +29,7 @@ public final class MonogramController {
         return instances[account];
     }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService cacheWorker = Executors.newSingleThreadExecutor();
     private final int account;
     private final ExecutorService fileWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService profileWorker = Executors.newFixedThreadPool(2);
@@ -42,6 +43,7 @@ public final class MonogramController {
     private final AccountVault vault;
     private volatile XmppSession session;
     private volatile long self;
+    private volatile long accountEpoch;
     private volatile int state = ConnectionsManager.ConnectionStateConnecting;
     private boolean restoring;
     private volatile long sessionEpoch;
@@ -49,7 +51,9 @@ public final class MonogramController {
     private boolean archiveResetAttempted;
     private final java.util.concurrent.ConcurrentHashMap<Long, Long> profileVersions = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Long> profileLoads = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
-    private long mediaHistoryPeer;
+    private final java.util.Set<Long> typingPeers = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
+    private final java.util.concurrent.ConcurrentHashMap<Long, String> typingAddresses = new java.util.concurrent.ConcurrentHashMap<>();
+    private volatile long mediaHistoryPeer;
     private long archiveRun;
     private int retrySeconds = 3;
     private final Runnable retryConnection = this::restore;
@@ -58,12 +62,47 @@ public final class MonogramController {
         this.account = account;
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
         store = new MonogramStore(account); vault = new AccountVault(account);
+        if (preferences.contains("jid")) self = store.knownPeer(accountJid());
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
     }
     public int state() { return state; }
     public String accountJid() { return preferences.getString("jid", ""); }
+    public boolean typingEnabled() { return preferences.getBoolean("typing-enabled", true); }
+    public boolean setTypingEnabled(boolean enabled) {
+        if (!preferences.edit().putBoolean("typing-enabled", enabled).commit()) return false;
+        XmppSession current = session;
+        if (current != null) current.chatStates.setEnabled(enabled);
+        return true;
+    }
+    public void chatOpened(long peer) { chatState(peer, 0); }
+    public void typingInput(long peer, boolean composing) { chatState(peer, composing ? 1 : 0); }
+    public void chatInactive(long peer) { chatState(peer, 2); }
+    public void chatGone(long peer) { chatState(peer, 3); }
+    private void chatState(long peer, int action) {
+        XmppSession current = session;
+        if (peer <= 0 || peer == self || current == null || !current.connection().isAuthenticated() || !typingEnabled()) return;
+        try {
+            String jid = typingAddresses.computeIfAbsent(peer, store::jid);
+            if (action == 1) current.chatStates.input(jid, true);
+            else if (action == 2) current.chatStates.inactive(jid);
+            else if (action == 3) current.chatStates.gone(jid);
+            else current.chatStates.open(jid);
+        } catch (IllegalArgumentException unknown) { /* A deleted/local-only conversation has no remote state. */ }
+    }
+    private void publishTyping(long peer, boolean composing) {
+        TL_update.TL_updateUserTyping update = new TL_update.TL_updateUserTyping();
+        update.user_id = peer;
+        update.action = composing ? new TLRPC.TL_sendMessageTypingAction() : new TLRPC.TL_sendMessageCancelAction();
+        ArrayList<TLRPC.Update> updates = new ArrayList<>(); updates.add(update);
+        ArrayList<TLRPC.User> users = new ArrayList<>();
+        if (composing) users.add(store.user(peer, self));
+        Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, now()));
+    }
     private void state(int value) {
         state = value;
+        if (value != ConnectionsManager.ConnectionStateConnected) {
+            for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
+        }
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didUpdateConnectionState));
     }
     public void restore() { restore(false); }
@@ -110,6 +149,15 @@ public final class MonogramController {
                     @Override public void profileChanged(org.jxmpp.jid.EntityBareJid jid) {
                         worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer); } });
                     }
+                    @Override public void typing(org.jxmpp.jid.EntityBareJid jid, boolean composing) {
+                        worker.execute(() -> {
+                            if (sessionEpoch != epoch || session == null || !preferences.contains("jid") || composing && state != ConnectionsManager.ConnectionStateConnected) return;
+                            long peer = store.knownPeer(jid.toString());
+                            if (peer == 0 || peer == self) return;
+                            if (composing) typingPeers.add(peer); else typingPeers.remove(peer);
+                            publishTyping(peer, composing);
+                        });
+                    }
                     @Override public void disconnected() {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
@@ -143,6 +191,7 @@ public final class MonogramController {
             @Override public void entriesDeleted(java.util.Collection<org.jxmpp.jid.Jid> addresses) { changed(addresses); }
             @Override public void presenceChanged(org.jivesoftware.smack.packet.Presence presence) {}
         });
+        connecting.chatStates.setEnabled(typingEnabled());
         connecting.connect();
         session = connecting;
         for (RosterEntry entry : Roster.getInstanceFor(connecting.connection()).getEntries()) {
@@ -214,14 +263,22 @@ public final class MonogramController {
         return result;
     }
     public void loadHistory(long peer, int offset, int count, int loadType, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
-        worker.execute(() -> {
+        long epoch = accountEpoch;
+        cacheWorker.execute(() -> {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             mediaHistoryPeer = peer;
-            result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
-            for (TLRPC.Message message : result.messages) maybeAutoDownload(message);
-            result.users.add(store.user(peer, self)); result.users.add(ownUser());
             boolean end = !archiveLoading;
-            Utilities.stageQueue.postRunnable(() -> completed.accept(result, end));
+            try {
+                result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
+                result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
+                ArrayList<TLRPC.Message> automatic = new ArrayList<>(result.messages);
+                worker.execute(() -> { if (epoch == accountEpoch) for (TLRPC.Message message : automatic) maybeAutoDownload(message); });
+            } catch (RuntimeException failed) {
+                if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram cached history: " + failed.getClass().getSimpleName());
+                result.messages.clear(); result.users.clear(); end = true;
+            }
+            final boolean archiveEnd = end;
+            Utilities.stageQueue.postRunnable(() -> completed.accept(epoch == accountEpoch ? result : new TLRPC.TL_messages_messages(), archiveEnd));
         });
     }
     public void login(String jid, String password, String host, int port, Consumer<Exception> result) {
@@ -243,8 +300,11 @@ public final class MonogramController {
     }
     public void logout() {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
+        accountEpoch++;
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
+            for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
+            typingAddresses.clear();
             if (session != null) { session.close(); session = null; }
             sessionEpoch++; archiveRun++; archiveLoading = false;
             for (FileTransfer.Job job : fileJobs.values()) job.cancel();
@@ -335,6 +395,7 @@ public final class MonogramController {
         update.message = store.getMessage(id, self);
         ArrayList<TLRPC.Update> updates = new ArrayList<>(); updates.add(update);
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date));
+        if (typingPeers.contains(peer)) publishTyping(peer, true);
         maybeAutoDownload(store.getMessage(id, self));
     }
     private void refreshReplies(long peer) { refreshReplies(peer, java.util.Collections.emptySet()); }
@@ -540,7 +601,11 @@ public final class MonogramController {
     }
     public void request(TLObject request, RequestDelegate callback) {
         if (request instanceof MonogramFileRequest) { worker.execute(() -> upload((MonogramFileRequest) request, callback)); return; }
-        worker.execute(() -> {
+        boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
+                || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
+                || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos;
+        long epoch = accountEpoch;
+        (cached ? cacheWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
             try { response = handle(request); }
             catch (Exception e) {
@@ -553,7 +618,12 @@ public final class MonogramController {
                 else error.text = "MONOGRAM_XMPP_FAILED: " + e.getClass().getSimpleName();
             }
             final TLObject completed = response; final TLRPC.TL_error failed = error;
-            if (callback != null) Utilities.stageQueue.postRunnable(() -> callback.run(completed, failed));
+            if (callback != null) Utilities.stageQueue.postRunnable(() -> {
+                if (epoch != accountEpoch) {
+                    TLRPC.TL_error changed = new TLRPC.TL_error(); changed.code = 400; changed.text = "MONOGRAM_ACCOUNT_CHANGED";
+                    callback.run(null, changed);
+                } else callback.run(completed, failed);
+            });
         });
     }
     private TLObject handle(TLObject request) throws Exception {

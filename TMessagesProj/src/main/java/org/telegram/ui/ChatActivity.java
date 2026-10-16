@@ -2268,6 +2268,10 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void onTextChanged(final CharSequence text, boolean bigChange, boolean fromDraft) {
+            if (!fromDraft && !paused && chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode
+                    && dialog_id > 0 && !chatActivityEnterView.isEditingMessage()) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingInput(dialog_id, !TextUtils.isEmpty(text));
+            }
             MediaController.getInstance().setInputFieldHasText(!TextUtils.isEmpty(text) || chatActivityEnterView.isEditingMessage());
             if (mentionContainer != null && mentionContainer.getAdapter() != null) {
                 mentionContainer.getAdapter().searchUsernameOrHashtag(text, chatActivityEnterView.getCursorPosition(), messages, false, false);
@@ -2315,6 +2319,7 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public void needSendTyping() {
             if (isQuickRepliesOrWelcomeMessagesMode() || chatMode == MODE_EDIT_BUSINESS_LINK || chatMode == MODE_SUGGESTIONS) return;
+            if (dialog_id > 0) return; // XMPP uses actual input changes, excluding draft restoration.
             getMessagesController().sendTyping(dialog_id, threadMessageId, 0, classGuid);
         }
 
@@ -3401,6 +3406,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatGone(dialog_id);
         super.onFragmentDestroy();
         if (messageMetricsView != null) {
             messageMetricsView.finish();
@@ -29900,6 +29906,7 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
+        if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatOpened(dialog_id);
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
@@ -30111,6 +30118,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onPause() {
+        if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatInactive(dialog_id);
         super.onPause();
         scrolling = false;
         if (scrimPopupWindow != null) {

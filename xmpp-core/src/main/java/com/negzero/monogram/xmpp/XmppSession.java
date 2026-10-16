@@ -37,6 +37,7 @@ public final class XmppSession implements AutoCloseable {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
         default void profileChanged(EntityBareJid jid) {}
+        default void typing(EntityBareJid jid, boolean composing) {}
         default void disconnected() {}
         default void reconnected(boolean resumed) {}
         default void message(XmppMessage message) {
@@ -53,6 +54,7 @@ public final class XmppSession implements AutoCloseable {
     }
     private final ManagedConnection connection;
     public final XmppProfiles profiles;
+    public final XmppChatStates chatStates;
     private final OmemoManager omemo;
     private final IdentityTrust trust;
     private volatile boolean started, closed;
@@ -84,6 +86,7 @@ public final class XmppSession implements AutoCloseable {
         connection = new ManagedConnection(config.build());
         ReplyReference.initialize();
         profiles = new XmppProfiles(connection, listener::profileChanged);
+        chatStates = new XmppChatStates(connection, listener::typing);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
@@ -96,6 +99,7 @@ public final class XmppSession implements AutoCloseable {
             @Override public void connectionClosed() { disconnected(); }
             @Override public void connectionClosedOnError(Exception error) { disconnected(); }
             private void disconnected() {
+                chatStates.reset();
                 lifecycle.incrementAndGet();
                 if (!closed) listener.disconnected();
             }
@@ -267,7 +271,9 @@ public final class XmppSession implements AutoCloseable {
         message.setStanzaId(id);
         message.addExtension(new OriginIdElement(id));
         DeliveryReceiptManager.addDeliveryReceiptRequest(message);
+        chatStates.decorate(message);
         connection.sendStanza(message);
+        chatStates.sent(message);
         return id;
     }
     public Set<OmemoDevice> devices(String jid) throws Exception {
@@ -291,6 +297,7 @@ public final class XmppSession implements AutoCloseable {
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
+        chatStates.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

@@ -10770,7 +10770,8 @@ public class MessagesController extends BaseController implements NotificationCe
                                 if (user.action instanceof TLRPC.TL_sendMessageGamePlayAction) {
                                     timeToRemove = 30000;
                                 } else {
-                                    timeToRemove = 5900;
+                                    timeToRemove = user.action instanceof TLRPC.TL_sendMessageTypingAction
+                                            ? com.negzero.monogram.xmpp.XmppChatStates.TYPING_TIMEOUT_MILLIS : 5900;
                                 }
                                 if (user.lastTime + timeToRemove < currentTime) {
                                     updated = true;
@@ -11367,6 +11368,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean sendTyping(long dialogId, long threadMsgId, int action, String emojicon, int classGuid) {
+        if (dialogId > 0) {
+            if (threadMsgId != 0 || action != 0 && action != 2 || dialogId == getUserConfig().getClientUserId()) return false;
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingInput(dialogId, action == 0);
+            return true;
+        }
         if (action < 0 || action >= sendingTypings.length || dialogId == 0) {
             return false;
         }
@@ -12550,6 +12556,11 @@ public class MessagesController extends BaseController implements NotificationCe
                     if (onEmptyCallback != null && dialogsRes.dialogs.isEmpty()) {
                         AndroidUtilities.runOnUIThread(onEmptyCallback);
                     }
+                } else {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        loadingDialogs.put(folderId, false);
+                        getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
+                    });
                 }
             });
         }
