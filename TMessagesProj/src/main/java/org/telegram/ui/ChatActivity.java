@@ -3280,6 +3280,10 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(final int id) {
+                if (id == 91001 && dialog_id > 0) {
+                    presentFragment(new MonogramSecurityActivity(currentAccount, dialog_id));
+                    return;
+                }
                 if (id == -1) {
                     if (actionBar.isActionModeShowed()) {
                         clearSelectionMode();
@@ -3738,10 +3742,13 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             });
             getConnectionsManager().bindRequestToGuid(req, classGuid);
         } else {
-            actionBar.addView(avatarContainer, 0, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !inPreviewMode ? 56 : (chatMode == MODE_PINNED ? 10 : 0), 0, 40, 0));
+            actionBar.addView(avatarContainer, 0, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !inPreviewMode ? 56 : (chatMode == MODE_PINNED ? 10 : 0), 0, getAvatarRightMargin(false), 0));
         }
 
         ActionBarMenu menu = actionBar.createMenu();
+        if (dialog_id > 0 && currentEncryptedChat == null) {
+            menu.addItem(91001, R.drawable.msg_secret).setContentDescription("Conversation security");
+        }
 
         if (chatMode == MODE_QUICK_REPLIES && !QuickRepliesController.isSpecial(quickReplyShortcut)) {
             menu.addItem(edit_quick_reply, R.drawable.group_edit).setContentDescription(LocaleController.getString(R.string.Edit));
@@ -16687,11 +16694,11 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 }
                 if (showSearchAsIcon || showAudioCallAsIcon) {
                     if (avatarContainer != null && avatarContainer.getLayoutParams() != null) {
-                        ((ViewGroup.MarginLayoutParams) avatarContainer.getLayoutParams()).rightMargin = AndroidUtilities.dp(chatMode == MODE_SAVED ? 40 : 96);
+                        ((ViewGroup.MarginLayoutParams) avatarContainer.getLayoutParams()).rightMargin = AndroidUtilities.dp(getAvatarRightMargin(true));
                     }
                 } else {
                     if (avatarContainer != null && avatarContainer.getLayoutParams() != null) {
-                        ((ViewGroup.MarginLayoutParams) avatarContainer.getLayoutParams()).rightMargin = AndroidUtilities.dp(40);
+                        ((ViewGroup.MarginLayoutParams) avatarContainer.getLayoutParams()).rightMargin = AndroidUtilities.dp(getAvatarRightMargin(false));
                     }
                 }
                 if (showSearchAsIcon) {
@@ -26802,6 +26809,13 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         super.dismissCurrentDialog();
     }
 
+    private int getAvatarRightMargin(boolean expanded) {
+        int margin = expanded && chatMode != MODE_SAVED ? 96 : 40;
+        // Reserve the complete lock and overflow touch targets, including beside long JIDs.
+        if (dialog_id > 0 && currentEncryptedChat == null) margin = Math.max(48, margin) + 48;
+        return margin;
+    }
+
     @Override
     public void setInPreviewMode(boolean value) {
         super.setInPreviewMode(value);
@@ -26818,7 +26832,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         if (avatarContainer != null) {
             avatarContainer.setOccupyStatusBar(!value);
             avatarContainer.setTitleExpand(showAudioCallAsIcon);
-            avatarContainer.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !value ? 56 : (chatMode == MODE_PINNED ? 10 : 0), 0, 40, 0));
+            avatarContainer.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !value ? 56 : (chatMode == MODE_PINNED ? 10 : 0), 0, getAvatarRightMargin(false), 0));
         }
         if (chatActivityEnterView != null) {
             chatActivityEnterView.setVisibility(!value ? View.VISIBLE : View.INVISIBLE);

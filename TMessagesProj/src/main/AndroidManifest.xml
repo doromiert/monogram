@@ -265,7 +265,7 @@
                 <data android:host="t.me" android:scheme="http" />
                 <data android:host="t.me" android:scheme="https" />
             </intent-filter>
-            <intent-filter android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:priority="1">
+            <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon" android:priority="1">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -308,7 +308,7 @@
             android:stateNotNeeded="true"
             android:theme="@style/Theme.TMessages.Transparent"
             android:exported="true">
-            <intent-filter android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:priority="1">
+            <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon" android:priority="1">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -321,7 +321,7 @@
             android:hardwareAccelerated="@bool/useHardwareAcceleration"
             android:windowSoftInputMode="adjustPan"
             android:exported="true">
-            <intent-filter android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
+            <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon">
                 <action android:name="org.telegram.passport.AUTHORIZE"/>
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
@@ -332,7 +332,7 @@
             android:hardwareAccelerated="@bool/useHardwareAcceleration"
             android:windowSoftInputMode="adjustPan"
             android:exported="true">
-            <intent-filter android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
+            <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon">
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/>
             </intent-filter>
         </activity>
@@ -342,7 +342,7 @@
             android:hardwareAccelerated="@bool/useHardwareAcceleration"
             android:windowSoftInputMode="adjustPan"
             android:exported="true">
-            <intent-filter android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">
+            <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon">
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/>
             </intent-filter>
         </activity>
@@ -351,7 +351,7 @@
 <!--            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"-->
 <!--            android:hardwareAccelerated="@bool/useHardwareAcceleration"-->
 <!--            android:windowSoftInputMode="adjustPan">-->
-<!--            <intent-filter android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round">-->
+<!--            <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon">-->
 <!--                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE"/>-->
 <!--            </intent-filter>-->
 <!--        </activity>-->

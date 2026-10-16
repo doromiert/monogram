@@ -11,3 +11,11 @@ buildscript {
 repositories {
     google()
 }
+
+subprojects {
+    configurations.all {
+        // Smack's Gradle metadata includes an old provider under a different artifact name.
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk15on'
+        exclude group: 'xpp3', module: 'xpp3_min'
+    }
+}

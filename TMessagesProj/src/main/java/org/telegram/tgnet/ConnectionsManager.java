@@ -203,7 +203,7 @@ public class ConnectionsManager extends BaseController {
 
     public ConnectionsManager(int instance) {
         super(instance);
-        connectionState = native_getConnectionState(currentAccount);
+        connectionState = ConnectionStateConnecting;
         String deviceModel;
         String systemLangCode;
         String langCode;
@@ -291,19 +291,19 @@ public class ConnectionsManager extends BaseController {
     }
 
     public long getCurrentTimeMillis() {
-        return native_getCurrentTimeMillis(currentAccount);
+        return System.currentTimeMillis();
     }
 
     public int getCurrentTime() {
-        return native_getCurrentTime(currentAccount);
+        return (int) (System.currentTimeMillis() / 1000);
     }
 
     public int getCurrentDatacenterId() {
-        return native_getCurrentDatacenterId(currentAccount);
+        return 0;
     }
 
     public int getTimeDifference() {
-        return native_getTimeDifference(currentAccount);
+        return 0;
     }
 
     public int sendRequest(TLObject object, RequestDelegate completionBlock) {
@@ -345,79 +345,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("send request " + object + " with token = " + requestToken);
-        }
-        try {
-            NativeByteBuffer buffer = new NativeByteBuffer(object.getObjectSize());
-            object.serializeToStream(buffer);
-            object.freeResources();
-
-            long startRequestTime = 0;
-            if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED) {
-                startRequestTime = System.currentTimeMillis();
-            }
-            long finalStartRequestTime = startRequestTime;
-            listen(requestToken, (response, errorCode, errorText, networkType, timestamp, requestMsgId) -> {
-                try {
-                    TLObject resp = null;
-                    TLRPC.TL_error error = null;
-
-                    if (response != 0) {
-                        NativeByteBuffer buff = NativeByteBuffer.wrap(response);
-                        buff.reused = true;
-                        try {
-                            resp = object.deserializeResponse(buff, buff.readInt32(true), true);
-                        } catch (Exception e2) {
-                            if (BuildVars.DEBUG_PRIVATE_VERSION) {
-                                throw e2;
-                            }
-                            FileLog.fatal(e2);
-                            return;
-                        }
-                    } else if (errorText != null) {
-                        error = new TLRPC.TL_error();
-                        error.code = errorCode;
-                        error.text = errorText;
-                        if (BuildVars.LOGS_ENABLED && error.code != -2000) {
-                            FileLog.e(object + " got error " + error.code + " " + error.text);
-                        }
-                    }
-                    if (BuildVars.DEBUG_PRIVATE_VERSION && !getUserConfig().isClientActivated() && error != null && error.code == 400 && Objects.equals(error.text, "CONNECTION_NOT_INITED")) {
-                        if (BuildVars.LOGS_ENABLED) {
-                            FileLog.d("Cleanup keys for " + currentAccount + " because of CONNECTION_NOT_INITED");
-                        }
-                        cleanup(true);
-                        sendRequest(object, onComplete, onCompleteTimestamp, onQuickAck, onWriteToSocket, flags, datacenterId, connectionType, immediate);
-                        return;
-                    }
-                    if (resp != null) {
-                        resp.networkType = networkType;
-                    }
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("java received " + resp + " error = " + error + " messageId = " + requestMsgId);
-                    }
-                    FileLog.dumpResponseAndRequest(currentAccount, object, resp, error, requestMsgId, finalStartRequestTime, requestToken);
-                    final TLObject finalResponse = resp;
-                    final TLRPC.TL_error finalError = error;
-                    Utilities.stageQueue.postRunnable(() -> {
-                        if (onComplete != null) {
-                            onComplete.run(finalResponse, finalError);
-                        } else if (onCompleteTimestamp != null) {
-                            onCompleteTimestamp.run(finalResponse, finalError, timestamp);
-                        }
-                        if (finalResponse != null) {
-                            finalResponse.freeResources();
-                        }
-                    });
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            }, onQuickAck, onWriteToSocket);
-            native_sendRequest(currentAccount, buffer.address, flags, datacenterId, connectionType, immediate, requestToken);
-        } catch (Exception e) {
-            FileLog.e(e);
-        }
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).request(object, (response, error) -> {
+            if (onComplete != null) onComplete.run(response, error);
+            else if (onCompleteTimestamp != null) onCompleteTimestamp.run(response, error, System.currentTimeMillis());
+        });
     }
 
     private final ConcurrentHashMap<Integer, RequestCallbacks> requestCallbacks = new ConcurrentHashMap<>();
@@ -516,99 +447,49 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void cancelRequest(int token, boolean notifyServer, Runnable onCancelled) {
-        Utilities.stageQueue.postRunnable(() -> {
-            if (onCancelled != null) {
-                listenCancel(token, () -> {
-                    Utilities.stageQueue.postRunnable(onCancelled);
-                });
-            }
-            native_cancelRequest(currentAccount, token, notifyServer);
-        });
+        if (onCancelled != null) Utilities.stageQueue.postRunnable(onCancelled);
     }
 
     public void cleanup(boolean resetKeys) {
-        native_cleanUp(currentAccount, resetKeys);
+        // XMPP account deletion is handled by the account controller.
     }
 
     public void cancelRequestsForGuid(int guid) {
-        Utilities.stageQueue.postRunnable(() -> {
-            native_cancelRequestsForGuid(currentAccount, guid);
-        });
+
     }
 
     public void bindRequestToGuid(int requestToken, int guid) {
-        if (guid == 0) {
-            return;
-        }
-        native_bindRequestToGuid(currentAccount, requestToken, guid);
+
     }
 
     public void applyDatacenterAddress(int datacenterId, String ipAddress, int port) {
-        native_applyDatacenterAddress(currentAccount, datacenterId, ipAddress, port);
+
     }
 
     public int getConnectionState() {
-        if (connectionState == ConnectionStateConnected && isUpdating) {
-            return ConnectionStateUpdating;
-        }
-        return connectionState;
+        return org.telegram.messenger.xmpp.MonogramController.get(currentAccount).state();
     }
 
     public void setUserId(long id) {
-        native_setUserId(currentAccount, id);
+
     }
 
     public void checkConnection() {
-        byte selectedStrategy = getIpStrategy();
-        if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("selected ip strategy " + selectedStrategy);
-        }
-        native_setIpStrategy(currentAccount, selectedStrategy);
-        native_setNetworkAvailable(currentAccount, ApplicationLoader.isNetworkOnline(), ApplicationLoader.getCurrentNetworkType(), ApplicationLoader.isConnectionSlow());
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
     }
 
     public void setPushConnectionEnabled(boolean value) {
-        native_setPushConnectionEnabled(currentAccount, value);
+
     }
 
     public void init(int version, int layer, int apiId, String deviceModel, String systemVersion, String appVersion, String langCode, String systemLangCode, String configPath, String logPath, String regId, String cFingerprint, int timezoneOffset, long userId, boolean userPremium, boolean enablePushConnection) {
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        String proxyAddress = preferences.getString("proxy_ip", "");
-        String proxyUsername = preferences.getString("proxy_user", "");
-        String proxyPassword = preferences.getString("proxy_pass", "");
-        String proxySecret = preferences.getString("proxy_secret", "");
-        int proxyPort = preferences.getInt("proxy_port", 1080);
-
-        if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
-            native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
-        }
-        String installer = "";
-        try {
-            installer = ApplicationLoader.applicationContext.getPackageManager().getInstallerPackageName(ApplicationLoader.applicationContext.getPackageName());
-        } catch (Throwable ignore) {
-
-        }
-        if (installer == null) {
-            installer = "";
-        }
-        String packageId = "";
-        try {
-            packageId = ApplicationLoader.applicationContext.getPackageName();
-        } catch (Throwable ignore) {
-
-        }
-        if (packageId == null) {
-            packageId = "";
-        }
-
-        native_init(currentAccount, version, layer, apiId, deviceModel, systemVersion, appVersion, langCode, systemLangCode, configPath, logPath, regId, cFingerprint, installer, packageId, timezoneOffset, userId, userPremium, enablePushConnection, ApplicationLoader.isNetworkOnline(), ApplicationLoader.getCurrentNetworkType(), SharedConfig.measureDevicePerformanceClass());
-        checkConnection();
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
     }
 
     public static void setLangCode(String langCode) {
         langCode = langCode.replace('_', '-').toLowerCase();
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            native_setLangCode(a, langCode);
+
         }
     }
 
@@ -625,33 +506,31 @@ public class ConnectionsManager extends BaseController {
             pushString = SharedConfig.pushStringStatus = "__" + tag + "_GENERATING_SINCE_" + getInstance(0).getCurrentTime() + "__";
         }
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            native_setRegId(a, pushString);
+
         }
     }
 
     public static void setSystemLangCode(String langCode) {
         langCode = langCode.replace('_', '-').toLowerCase();
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            native_setSystemLangCode(a, langCode);
+
         }
     }
 
     public void switchBackend(boolean restart) {
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        preferences.edit().remove("language_showed2").commit();
-        native_switchBackend(currentAccount, restart);
+
     }
 
     public boolean isTestBackend() {
-        return native_isTestBackend(currentAccount) != 0;
+        return false;
     }
 
     public void resumeNetworkMaybe() {
-        native_resumeNetwork(currentAccount, true);
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
     }
 
     public void updateDcSettings() {
-        native_updateDcSettings(currentAccount);
+
     }
 
     public long getPauseTime() {
@@ -699,7 +578,7 @@ public class ConnectionsManager extends BaseController {
             if (lastPauseTime == 0) {
                 lastPauseTime = System.currentTimeMillis();
             }
-            native_pauseNetwork(currentAccount);
+
         } else {
             if (appPaused) {
                 return;
@@ -711,7 +590,7 @@ public class ConnectionsManager extends BaseController {
                 getContactsController().checkContacts();
             }
             lastPauseTime = 0;
-            native_resumeNetwork(currentAccount, false);
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
         }
     }
 
@@ -892,9 +771,9 @@ public class ConnectionsManager extends BaseController {
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
             if (enabled && !TextUtils.isEmpty(address)) {
-                native_setProxySettings(a, address, port, username, password, secret);
+
             } else {
-                native_setProxySettings(a, "", 1080, "", "", "");
+
             }
             AccountInstance accountInstance = AccountInstance.getInstance(a);
             if (accountInstance.getUserConfig().isClientActivated()) {

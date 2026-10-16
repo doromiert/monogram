@@ -16,6 +16,8 @@ configurations.all {
 }
 
 dependencies {
+    implementation project(':xmpp-core')
+    implementation 'org.igniterealtime.smack:smack-android-extensions:4.4.8'
     implementation 'androidx.fragment:fragment:1.2.0'
     implementation 'androidx.core:core:1.10.1'
     implementation 'androidx.palette:palette:1.0.0'
@@ -48,18 +50,6 @@ dependencies {
 }
 
 def isWindows = String.valueOf(DefaultNativePlatform.currentOperatingSystem.toFamilyName() == OperatingSystemFamily.WINDOWS)
-
-//return an api key from a properties file.
-def getAppId(){
-    Properties properties = new Properties()
-    properties.load(new FileInputStream("./API_KEYS"))
-    return properties.get("APP_ID")
-}
-def getAppHash(){
-    Properties properties = new Properties()
-    properties.load(new FileInputStream("./API_KEYS"))
-    return "\"" + properties.get("APP_HASH") + "\""
-}
 
 android {
     compileSdkVersion 33
@@ -94,14 +84,17 @@ android {
     defaultConfig.versionCode = Integer.parseInt(APP_VERSION_CODE)
 
     defaultConfig {
-        minSdkVersion 19
+        if (findProperty("monogramAbi")) {
+            ndk { abiFilters(*findProperty("monogramAbi").split(",")) }
+        }
+        minSdkVersion 23
         targetSdkVersion 33
         versionName "8.9.0"
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
         //obtain your own keys at https://core.telegram.org/api/obtaining_api_id
-        buildConfigField 'int', 'APP_ID', getAppId()
-        buildConfigField 'String', 'APP_HASH', getAppHash()
+        buildConfigField 'int', 'APP_ID', '0'
+        buildConfigField 'String', 'APP_HASH', '""'
 
         multiDexEnabled true
 

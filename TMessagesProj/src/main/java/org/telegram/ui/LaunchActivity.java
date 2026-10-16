@@ -560,7 +560,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     freeAccounts -= (UserConfig.MAX_ACCOUNT_COUNT - UserConfig.MAX_ACCOUNT_DEFAULT_COUNT);
                 }
                 if (freeAccounts > 0 && availableAccount != null) {
-                    presentFragment(new LoginActivity(availableAccount));
+                    presentFragment(new MonogramLoginActivity(availableAccount));
                     drawerLayoutContainer.closeDrawer(false);
                 } else if (!UserConfig.hasPremiumOnAccounts()) {
                     if (actionBarLayout.getFragmentStack().size() > 0) {
@@ -1210,10 +1210,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private BaseFragment getClientNotActivatedFragment() {
-        if (LoginActivity.loadCurrentState(false, currentAccount).getInt("currentViewNum", 0) != 0) {
-            return new LoginActivity();
-        }
-        return new IntroActivity();
+        return new MonogramLoginActivity(currentAccount);
     }
 
     public void showSelectStatusDialog() {
@@ -1457,7 +1454,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 layersActionBarLayout.rebuildLogout();
                 rightActionBarLayout.rebuildLogout();
             }
-            presentFragment(new IntroActivity().setOnLogout());
+            presentFragment(new MonogramLoginActivity(currentAccount));
         }
     }
 

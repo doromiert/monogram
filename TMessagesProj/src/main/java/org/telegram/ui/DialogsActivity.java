@@ -4490,6 +4490,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         floatingButtonContainer.setVisibility(onlySelect && initialDialogsType != 10 || folderId != 0 ? View.GONE : View.VISIBLE);
         contentView.addView(floatingButtonContainer, LayoutHelper.createFrame((Build.VERSION.SDK_INT >= 21 ? 56 : 60), (Build.VERSION.SDK_INT >= 21 ? 56 : 60), (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM, LocaleController.isRTL ? 14 : 0, 0, LocaleController.isRTL ? 0 : 14, 14));
         floatingButtonContainer.setOnClickListener(v -> {
+            if (!onlySelect && initialDialogsType == 0) {
+                presentFragment(new MonogramNewChatActivity(currentAccount));
+                return;
+            }
             if (parentLayout != null && parentLayout.isInPreviewMode()) {
                 finishPreviewFragment();
                 return;

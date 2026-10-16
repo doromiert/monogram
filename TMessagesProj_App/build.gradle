@@ -94,7 +94,7 @@ android {
     productFlavors {
         bundleAfat {
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                abiFilters(*((findProperty("monogramAbi") ?: "armeabi-v7a,arm64-v8a,x86,x86_64").split(",")))
             }
             ext {
                 abiVersionCode = 1
@@ -102,7 +102,7 @@ android {
         }
         bundleAfat_SDK23 {
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                abiFilters(*((findProperty("monogramAbi") ?: "armeabi-v7a,arm64-v8a,x86,x86_64").split(",")))
             }
             sourceSets.debug {
                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
@@ -117,7 +117,7 @@ android {
         }
         afat {
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                abiFilters(*((findProperty("monogramAbi") ?: "armeabi-v7a,arm64-v8a,x86,x86_64").split(",")))
             }
             sourceSets.debug {
                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
@@ -151,7 +151,7 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 19
+        minSdkVersion 23
         targetSdkVersion 33
         versionName APP_VERSION_NAME
         ndkVersion "21.4.7075529"

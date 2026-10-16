@@ -20,3 +20,6 @@ TMessagesProj/.externalNativeBuild/
 TMessagesProj/jni/ffmpeg/android/
 TMessagesProj/jni/ffmpeg/build/
 TMessagesProj/jni/boringssl/build/
+.m2/
+.state/
+**/target/

@@ -1,0 +1,12 @@
+plugins { id 'java-library' }
+repositories { mavenCentral() }
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+dependencies {
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.80'
+    api 'org.igniterealtime.smack:smack-tcp:4.4.8'
+    api 'org.igniterealtime.smack:smack-extensions:4.4.8'
+    api 'org.igniterealtime.smack:smack-experimental:4.4.8'
+    api 'org.igniterealtime.smack:smack-omemo-signal:4.4.8'
+    api 'org.igniterealtime.smack:smack-resolver-minidns:4.4.8'
+}

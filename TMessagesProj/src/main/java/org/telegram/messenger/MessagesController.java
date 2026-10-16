@@ -14127,6 +14127,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void performLogout(int type) {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).logout();
         if (type == 1) {
             unregistedPush();
             TLRPC.TL_auth_logOut req = new TLRPC.TL_auth_logOut();
