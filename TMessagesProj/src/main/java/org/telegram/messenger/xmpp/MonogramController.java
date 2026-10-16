@@ -632,7 +632,8 @@ public final class MonogramController {
         if (request instanceof MonogramFileRequest) { worker.execute(() -> upload((MonogramFileRequest) request, callback)); return; }
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
-                || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos;
+                || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
+                || request instanceof TLRPC.TL_messages_getMessageEditData;
         long epoch = accountEpoch;
         (cached ? cacheWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
@@ -640,7 +641,8 @@ public final class MonogramController {
             catch (Exception e) {
                 error = new TLRPC.TL_error(); error.code = 400;
                 if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
-                else if (request instanceof TLRPC.TL_messages_editMessage && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
+                else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
+                        && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
                 else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
                 else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = "MONOGRAM_OMEMO_" + ((com.negzero.monogram.xmpp.OmemoSendException) e).reason.name();
                 else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
@@ -743,6 +745,12 @@ public final class MonogramController {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             result.messages.addAll(store.history(query.peer.user_id, self, query.offset_id, query.limit));
             result.users.add(store.user(query.peer.user_id, self)); result.users.add(ownUser()); return result;
+        }
+        if (request instanceof TLRPC.TL_messages_getMessageEditData) {
+            TLRPC.TL_messages_getMessageEditData query = (TLRPC.TL_messages_getMessageEditData) request;
+            if (query.peer == null || query.peer.user_id <= 0) throw new IllegalArgumentException("Direct chat required");
+            store.editTarget(query.id, query.peer.user_id, self);
+            return new TLRPC.TL_messages_messageEditData();
         }
         if (request instanceof TLRPC.TL_messages_editMessage) {
             TLRPC.TL_messages_editMessage edit = (TLRPC.TL_messages_editMessage) request;

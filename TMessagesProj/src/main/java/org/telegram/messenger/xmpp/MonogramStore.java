@@ -146,6 +146,8 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized TLRPC.UserFull fullUser(long id, long self) {
         TLRPC.TL_userFull full = new TLRPC.TL_userFull(); full.id = id; full.user = user(id, self);
+        // Telegram's private read-date lookup has no XMPP implementation.
+        full.read_dates_private = true;
         full.settings = new TLRPC.TL_peerSettings(); full.notify_settings = new TLRPC.TL_peerNotifySettings();
         com.negzero.monogram.xmpp.XmppProfile profile = profile(id);
         full.about = profile == null ? "" : profile.field("DESC");
