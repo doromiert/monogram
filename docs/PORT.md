@@ -190,6 +190,8 @@ The idle archive queue retains each conversation's current window until scrollin
 
 Verification: seven Android controller checks cover stage order, bounded 150-message preload, one-page scroll advancement, restart from the latest page, cancellation, cursor recovery and chat isolation. Seven room-store checks cover persistence, identity, permissions and avatar serialization. Four core checks include direct/profile and room transport against disposable local Prosody. The arm64 APK builds through Nix with the existing signing identity. Actual phone smoothness and scroll interaction remain unverified; no phone UI navigation or real-contact test messages were performed.
 
+[0.2.17](https://github.com/doromiert/monogram/releases/tag/v0.2.17) is published from `cd45a66f84d49674c040028433d9541808ad2c47` and installed through ADB on `192.168.1.128:42659` (71929). The APK is 68,834,059 bytes, SHA-256 `dcd591a58c7b7a447a75e1b13793ba32e95257801947be51e830b2a2942dc4ef`; GitHub's asset digest and source tag match. Read-only verification confirms the original first-install timestamp, saved account/credential, OMEMO device/identity, all 2,750 existing message identities and seven rooms survive. The cache remains schema 12. Proof is recorded under `.state/history-window-*`; reactions are checkpointed and pushed separately on `reactions` and are not included in this release.
+
 
 ## Room permissions, identities and avatars (0.2.16)
 
