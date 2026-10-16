@@ -38,8 +38,10 @@ public final class XmppRoomMessage {
         Date delay=archiveTime!=null ? archiveTime : DelayInformationManager.getDelayTimestamp(wire);
         MUCUser user=MUCUser.from(wire);
         Jid real=user==null || user.getItem()==null ? null : user.getItem().getJid();
-        boolean outgoing=real!=null ? own.equals(real.asBareJid())
-                : delay==null && wire.getFrom().getResourceOrNull().toString().equals(nickname);
+        boolean liveSelf=delay==null && wire.getFrom().getResourceOrNull().toString().equals(nickname);
+        // A reflected message may contain a sender-supplied item claiming our account.
+        if(real!=null && own.equals(real.asBareJid()) && !liveSelf) real=null;
+        boolean outgoing=real!=null ? own.equals(real.asBareJid()) : liveSelf;
         Map<String,String> ids=new LinkedHashMap<>();
         if (wire.getStanzaId()!=null) ids.put("stanza",wire.getStanzaId());
         OriginIdElement origin=OriginIdElement.getOriginId(wire);
@@ -52,6 +54,10 @@ public final class XmppRoomMessage {
         if (ids.isEmpty()) ids.put("local",UUID.randomUUID().toString());
         return new XmppRoomMessage(room,wire.getFrom().toString(),body,ids,outgoing,encrypted,readable,
                 delay==null ? System.currentTimeMillis() : delay.getTime(),wire.hasExtension("encrypted",XmppOmemo2.NS),archiveTime!=null,real==null ? null : real.asBareJid().toString(),reactions);
+    }
+    XmppRoomMessage identified(String real,EntityBareJid own) {
+        return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),own.toString().equals(real),encrypted,readable,
+                timestamp,encryption==XmppMessage.Encryption.OMEMO2,archived,real,reactions);
     }
     static XmppRoomMessage sent(EntityBareJid room,EntityBareJid own,String nickname,String id,String body,boolean encrypted) throws Exception {
         Message message=new Message(own,Message.Type.groupchat);

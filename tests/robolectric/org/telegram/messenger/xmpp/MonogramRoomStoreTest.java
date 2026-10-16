@@ -18,6 +18,9 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
 public class MonogramRoomStoreTest {
+    @org.junit.Before public void nativeSerializationEnvironment() {
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+    }
     final String room="friends@conference.example.org", own="alice@example.org";
     XmppRoomMessage event(String nick,String stanza,String archive,String body,boolean encrypted,boolean readable) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom(own),Message.Type.groupchat);
@@ -71,7 +74,7 @@ public class MonogramRoomStoreTest {
                 db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.setVersion(9);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(11,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
+                assertEquals(12,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
                 assertEquals("newest",store.archiveCursor(false)); assertTrue(store.rooms().isEmpty()); assertTrue(store.room(room,"Alice")<0);
             }
         } finally { context.deleteDatabase(file); }
@@ -85,7 +88,7 @@ public class MonogramRoomStoreTest {
                 store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().setVersion(10);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(11,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
+                assertEquals(12,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
                 XmppBookmarks.Bookmark bookmark=XmppBookmarks.Bookmark.parse(room,"<conference xmlns='urn:xmpp:bookmarks:1' name='My existing group' autojoin='true'><nick>ExistingNick</nick></conference>");
                 store.importBookmark(bookmark,"vault-encrypted-xml","Alice");
                 assertTrue(store.pendingBookmarks().isEmpty()); assertEquals("ExistingNick",store.room(dialog).nickname); assertEquals("My existing group",store.roomChat(dialog).title);
@@ -117,4 +120,62 @@ public class MonogramRoomStoreTest {
             assertEquals("mam-id",store.archiveCursor(dialog,false)); assertEquals(2,store.history(dialog,self,0,100).size());
         } finally { context.deleteDatabase(file); }
     }
+    XmppRoomMessage identified(String nick,String stanza,String archive,String real) throws Exception {
+        Message wire=org.jivesoftware.smack.util.PacketParserUtils.parseStanza("<message type='groupchat' from='"+room+"/"+nick+"' to='"+own+"'><x xmlns='http://jabber.org/protocol/muc#user'><item jid='"+real+"' affiliation='member' role='participant'/></x></message>");
+        wire.setStanzaId(stanza); wire.addExtension(new OriginIdElement(stanza)); wire.addExtension(new StanzaIdElement(archive,room));
+        return XmppRoomMessage.from(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom(own),nick,"Identity preserved",false,true);
+    }
+    @Test public void realMembersShareDmProfilesAndOwnEchoRepairsCachedDirection() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-identities.db"; context.deleteDatabase(file);
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer(own),bob=store.peer("bob@example.org"),dialog=store.room(room,"Alice");
+            store.rosterName(bob,"My friend");
+            int incoming=store.saveRoom(identified("RoomNickname","bob-wire","bob-server","bob@example.org/phone"),self);
+            assertEquals(bob,store.getMessage(incoming,self).from_id.user_id); assertEquals("My friend",store.user(bob,self).first_name);
+            int original=store.saveRoom(event("OtherDevice","mine","mine-server","Identity preserved",false,true),self);
+            assertFalse(store.getMessage(original,self).out);
+            assertEquals(original,store.saveRoom(identified("OtherDevice","mine","mine-server",own+"/laptop"),self));
+            assertTrue(store.getMessage(original,self).out); assertEquals(self,store.getMessage(original,self).from_id.user_id);
+            assertEquals(2,store.history(dialog,self,0,100).size());
+        } finally { context.deleteDatabase(file); }
+    }
+    @Test public void roomRightsAndAvatarSurviveNativeSerializationAndReopen() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-avatar.db"; context.deleteDatabase(file); long dialog;
+        try {
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                store.peer(own); dialog=store.room(room,"Alice");
+                TLRPC.Chat chat=store.roomChat(dialog);
+                assertTrue(org.telegram.messenger.ChatObject.canUserDoAction(chat,org.telegram.messenger.ChatObject.ACTION_SEND_PLAIN)); assertTrue(org.telegram.messenger.ChatObject.canUserDoAction(chat,org.telegram.messenger.ChatObject.ACTION_SEND_PHOTO));
+                android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(4,4,android.graphics.Bitmap.Config.ARGB_8888);
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream(); bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,bytes); bitmap.recycle();
+                store.profile(dialog,new XmppProfile("<vCard xmlns='vcard-temp'/>",null,bytes.toByteArray()));
+            }
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                TLRPC.Chat chat=store.roomChat(dialog);
+                SerializedData encoded=new SerializedData(); chat.serializeToStream(encoded); SerializedData input=new SerializedData(encoded.toByteArray());
+                TLRPC.Chat restored=TLRPC.Chat.TLdeserialize(input,input.readInt32(true),true); encoded.cleanup(); input.cleanup();
+                assertTrue(org.telegram.messenger.ChatObject.canUserDoAction(restored,org.telegram.messenger.ChatObject.ACTION_SEND_PLAIN)); assertEquals(Integer.MIN_VALUE,restored.photo.dc_id);
+                assertTrue(store.avatar(dialog).isFile()); assertNotNull(MonogramProfiles.imageLocation(restored,store.avatar(dialog)));
+                assertEquals(dialog,(long)MonogramProfiles.imageLocation(restored,store.avatar(dialog)).location.local_id);
+                assertTrue(store.roomFull(dialog,store.knownPeer(own)).full_chat.chat_photo instanceof TLRPC.TL_photo);
+                store.getWritableDatabase().execSQL("INSERT INTO room_permissions VALUES(?, 'visitor', 'none')",new Object[]{-dialog});
+                assertFalse(org.telegram.messenger.ChatObject.canUserDoAction(store.roomChat(dialog),org.telegram.messenger.ChatObject.ACTION_SEND_PLAIN));
+            }
+        } finally { context.deleteDatabase(file); }
+    }
+    @Test public void schemaElevenKeepsMessagesAndRescansRoomAuthors() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-authors-migration.db"; context.deleteDatabase(file); long self,dialog; int message;
+        try {
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                self=store.peer(own); dialog=store.room(room,"Alice"); message=store.saveRoom(event("Bob","existing","existing-server","Keep me",false,true),self);
+                store.getWritableDatabase().execSQL("INSERT INTO archive_state VALUES(?, 'oldest', 'newest', 1)",new Object[]{"room:"+(-dialog)});
+                store.getWritableDatabase().execSQL("DROP TABLE room_permissions"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); store.getWritableDatabase().setVersion(11);
+            }
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                assertEquals(12,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
+                assertNull(store.archiveCursor(dialog,false)); assertEquals(dialog,store.knownRoom(room));
+            }
+        } finally { context.deleteDatabase(file); }
+    }
+
 }

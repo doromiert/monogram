@@ -55,6 +55,20 @@ class XmppRoomsIntegrationTest {
             XmppRoomMessage incoming=readable(bobMessages,"room hello");
             assertEquals(room+"/Alice",incoming.sender); assertFalse(incoming.outgoing); assertFalse(incoming.encrypted);
             assertEquals(sent.ids.get("origin"),incoming.ids.get("origin"));
+            assertEquals("roomalice@localhost",incoming.realSender);
+            assertEquals("participant",alice.rooms.state(room).role);
+            assertTrue(alice.rooms.archive(room,"",null,10).messages.stream().anyMatch(m -> sent.ids.get("origin").equals(m.ids.get("origin")) && m.outgoing));
+            byte[] avatar=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+            bob.profiles.avatar(avatar);
+            assertArrayEquals(avatar,alice.profiles.load(room+"/Bob").avatar);
+            org.jivesoftware.smack.packet.IQ roomCard=new org.jivesoftware.smack.packet.IQ("vCard",XmppProfile.VCARD) {
+                @Override protected IQChildElementXmlStringBuilder getIQChildElementBuilder(IQChildElementXmlStringBuilder xml) {
+                    xml.rightAngleBracket(); xml.append("<PHOTO><TYPE>image/png</TYPE><BINVAL>"+java.util.Base64.getEncoder().encodeToString(avatar)+"</BINVAL></PHOTO>"); return xml;
+                }
+            };
+            roomCard.setTo(JidCreate.entityBareFrom(room)); roomCard.setType(org.jivesoftware.smack.packet.IQ.Type.set);
+            bob.connection().createStanzaCollectorAndSend(roomCard).nextResultOrThrow();
+            assertArrayEquals(avatar,alice.profiles.loadRoom(room).avatar);
             assertThrows(org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException.class,() -> alice.rooms.send(room,"requires trust",true));
             for(String jid:new String[]{"roomalice@localhost","roombob@localhost"}) {
                 for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:alice.devices(jid)) {

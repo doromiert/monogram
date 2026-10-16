@@ -25,13 +25,16 @@ public final class XmppRooms implements AutoCloseable {
     }
     public static final class State {
         public final EntityBareJid room;
-        public final String nickname,subject,title;
+        public final String nickname,subject,title,role,affiliation;
         public final boolean joined;
         public final List<Occupant> occupants;
         State(MultiUserChat chat) { this(chat,null); }
         State(MultiUserChat chat,String title) {
             this.title=title; room=chat.getRoom(); nickname=chat.getNickname()==null ? "" : chat.getNickname().toString();
             subject=chat.getSubject()==null ? "" : chat.getSubject(); joined=chat.isJoined();
+            org.jivesoftware.smackx.muc.Occupant own=chat.getNickname()==null ? null : chat.getOccupant(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()));
+            role=own==null || own.getRole()==null ? "" : own.getRole().toString();
+            affiliation=own==null || own.getAffiliation()==null ? "" : own.getAffiliation().toString();
             List<Occupant> found=new ArrayList<>();
             for (EntityFullJid jid:chat.getOccupants()) found.add(new Occupant(jid,chat.getOccupant(jid)));
             occupants=Collections.unmodifiableList(found);
@@ -42,8 +45,12 @@ public final class XmppRooms implements AutoCloseable {
     private final XmppSession.Listener listener;
     private final Map<EntityBareJid,MultiUserChat> chats=new ConcurrentHashMap<>();
     private final Map<EntityBareJid,String> passwords=new ConcurrentHashMap<>();
+    private static final String OCCUPANT_ID="urn:xmpp:occupant-id:0";
+    private final Set<EntityBareJid> stableOccupants=ConcurrentHashMap.newKeySet();
     XmppRooms(XMPPConnection connection,OmemoManager omemo,XmppSession.Listener listener) {
         this.connection=connection; this.omemo=omemo; this.listener=listener;
+        org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
+                org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         MultiUserChatManager.getInstanceFor(connection).setAutoJoinOnReconnect(false);
         omemo.addOmemoMucMessageListener((chat,stanza,clear) -> {
             if (!clear.isKeyTransportMessage() && stanza instanceof Message && !stanza.hasExtension("encrypted",XmppOmemo2.NS) && chats.get(chat.getRoom())==chat)
@@ -78,6 +85,8 @@ public final class XmppRooms implements AutoCloseable {
     public State join(String jid,String nickname,String password) throws Exception {
         MultiUserChat chat=managed(jid);
         RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
+        if(org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(chat.getRoom()).containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
+        else stableOccupants.remove(chat.getRoom());
         if (!chat.isJoined()) chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
                 .withPassword(password).requestMaxStanzasHistory(100).build());
         if(password!=null) passwords.put(chat.getRoom(),password);
@@ -87,7 +96,29 @@ public final class XmppRooms implements AutoCloseable {
         if (!encrypted && body==null && !wire.hasExtension("reactions",MessageReactions.NAMESPACE)) return;
         XmppRoomMessage message=XmppRoomMessage.from(wire,chat.getRoom(),connection.getUser().asEntityBareJid(),
                 chat.getNickname()==null ? "" : chat.getNickname().toString(),body,encrypted,readable);
-        if (message!=null) listener.roomMessage(message);
+        if (message!=null) listener.roomMessage(identify(chat,wire,message));
+    }
+    private XmppRoomMessage identify(MultiUserChat chat,Message wire,XmppRoomMessage message) {
+        if(message.realSender!=null) return message;
+        EntityBareJid own=connection.getUser().asEntityBareJid();
+        if(stableOccupants.contains(chat.getRoom()) && chat.getNickname()!=null) {
+            Presence self=chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()));
+            String expected=occupantId(self),received=occupantId(wire);
+            if(expected!=null && expected.equals(received)) return message.identified(own.toString(),own);
+        }
+        // Current presence cannot identify a delayed message sent by a former holder of this nickname.
+        if(!message.archived && org.jivesoftware.smackx.delay.DelayInformationManager.getDelayTimestamp(wire)==null) {
+            org.jivesoftware.smackx.muc.Occupant occupant=chat.getOccupant(wire.getFrom().asEntityFullJidIfPossible());
+            if(occupant!=null && occupant.getJid()!=null) return message.identified(occupant.getJid().asBareJid().toString(),own);
+        }
+        return message;
+    }
+    private static String occupantId(Stanza stanza) {
+        if(stanza==null) return null;
+        List<ExtensionElement> found=stanza.getExtensions("occupant-id",OCCUPANT_ID);
+        if(found.size()!=1 || !(found.get(0) instanceof StandardExtensionElement)) return null;
+        String id=((StandardExtensionElement)found.get(0)).getAttributeValue("id");
+        return id==null || id.isEmpty() || id.length()>128 ? null : id;
     }
     public static final class ArchivePage {
         public final List<XmppRoomMessage> messages;
@@ -132,7 +163,7 @@ public final class XmppRooms implements AutoCloseable {
                 }
             }
             XmppRoomMessage message=XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time);
-            if(message!=null) messages.add(message);
+            if(message!=null) messages.add(identify(chat,wire,message));
         }
         org.jivesoftware.smackx.rsm.packet.RSMSet rsm=query.getPage().getMamFinIq().getRSMSet();
         return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete());
@@ -198,5 +229,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return id;
     }
-    @Override public void close() { chats.clear(); passwords.clear(); }
+    @Override public void close() { chats.clear(); passwords.clear(); stableOccupants.clear(); }
 }
