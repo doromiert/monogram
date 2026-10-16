@@ -39,6 +39,7 @@ public final class XmppSession implements AutoCloseable {
         default void profileChanged(EntityBareJid jid) {}
         default void roomMessage(XmppRoomMessage message) {}
         default void roomChanged(XmppRooms.State room) {}
+        default void bookmarksChanged() {}
         default void typing(EntityBareJid jid, boolean composing) {}
         default void disconnected() {}
         default void reconnected(boolean resumed) {}
@@ -59,6 +60,7 @@ public final class XmppSession implements AutoCloseable {
     private final ManagedConnection connection;
     public final XmppProfiles profiles;
     public final XmppRooms rooms;
+    public final XmppBookmarks bookmarks;
     public final XmppChatStates chatStates;
     private final OmemoManager omemo;
     private final IdentityTrust trust;
@@ -118,6 +120,7 @@ public final class XmppSession implements AutoCloseable {
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
         rooms=new XmppRooms(connection,omemo,listener);
+        bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
             @Override public void connectionClosed() { disconnected(); }
             @Override public void connectionClosedOnError(Exception error) { disconnected(); }
@@ -450,7 +453,7 @@ public final class XmppSession implements AutoCloseable {
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
         if (modern != null) modern.close(); crypto.shutdownNow();
-        chatStates.close(); rooms.close();
+        chatStates.close(); rooms.close(); bookmarks.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

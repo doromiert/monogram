@@ -50,4 +50,10 @@ public final class MessageFixture {
         if (corrected != null) new MessageCorrection(corrected).addTo(stanza);
         return XmppMessage.from(stanza, JidCreate.entityBareFrom("alice@example.org"), body, encrypted, readable, archiveId, new Date(time));
     }
+    public static XmppRoomMessage roomArchive(String room,String nick,String stanza,String sid,String mam,String body,long time,boolean encrypted) throws Exception {
+        org.jivesoftware.smack.packet.Message wire=new org.jivesoftware.smack.packet.Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(room),org.jivesoftware.smack.packet.Message.Type.groupchat);
+        wire.setFrom(org.jxmpp.jid.impl.JidCreate.entityFullFrom(room+"/"+nick)); wire.setStanzaId(stanza);
+        if(sid!=null) wire.addExtension(new org.jivesoftware.smackx.sid.element.StanzaIdElement(sid,room));
+        return XmppRoomMessage.archived(wire,org.jxmpp.jid.impl.JidCreate.entityBareFrom(room),org.jxmpp.jid.impl.JidCreate.entityBareFrom("alice@example.org"),"",body,encrypted,body!=null,mam,new java.util.Date(time));
+    }
 }

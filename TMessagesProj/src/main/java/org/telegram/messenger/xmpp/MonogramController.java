@@ -31,6 +31,10 @@ public final class MonogramController {
         return instances[account];
     }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService bookmarkWorker = Executors.newSingleThreadExecutor();
+    private final java.util.Set<Long> joinedRooms = new java.util.HashSet<>();
+    private volatile BookmarkSync bookmarkSync;
+    private volatile String bookmarkStatus="Room bookmarks have not synced yet.";
     private final ExecutorService roomWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService cacheWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService archiveWorker = Executors.newSingleThreadExecutor();
@@ -131,6 +135,7 @@ public final class MonogramController {
     }
     private void connect(Account details, String password) throws Exception {
         if (session != null) { session.close(); session = null; }
+        joinedRooms.clear(); bookmarkSync=null;
         final long epoch = ++sessionEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
@@ -160,8 +165,12 @@ public final class MonogramController {
                     }
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
-                            store.roomState(room,self); long dialog=store.knownRoom(room.room.toString()); if(dialog!=0) publishRoom(dialog);
+                            store.roomState(room,self); long dialog=store.knownRoom(room.room.toString());
+                            if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) queueRoomArchive(dialog,session); else if(!room.joined) joinedRooms.remove(dialog); }
                         } });
+                    }
+                    @Override public void bookmarksChanged() {
+                        worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
                     @Override public void profileChanged(org.jxmpp.jid.EntityBareJid jid) {
                         worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer); } });
@@ -178,7 +187,7 @@ public final class MonogramController {
                     @Override public void disconnected() {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
-                            archiveSync = null;
+                            archiveSync = null; joinedRooms.clear(); bookmarkSync=null;
                             state(ConnectionsManager.ConnectionStateWaitingForNetwork); retryConnection();
                         });
                     }
@@ -186,7 +195,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); startArchiveSync(session); if (!resumed) rejoinRooms(session,epoch);
+                            state(ConnectionsManager.ConnectionStateConnected); startArchiveSync(session); syncBookmarks(session,epoch,null);
                         });
                     }
                 });
@@ -219,17 +228,116 @@ public final class MonogramController {
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
         state(ConnectionsManager.ConnectionStateConnected);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-        startArchiveSync(connecting); rejoinRooms(connecting,epoch);
+        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null);
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
         roomWorker.execute(() -> {
             for (long dialog:store.rooms()) {
                 if (session!=expected || sessionEpoch!=epoch || !expected.connection().isAuthenticated()) return;
-                MonogramStore.Room room=store.room(dialog); if(!room.autojoin) continue;
-                try { String encrypted=preferences.getString("room-password-"+dialog,""); expected.rooms.join(room.jid,room.nickname,encrypted.isEmpty() ? null : vault.decrypt(encrypted)); }
-                catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room rejoin: "+failed.getClass().getSimpleName()); }
+                try {
+                    MonogramStore.Room room=store.room(dialog);
+                    com.negzero.monogram.xmpp.XmppRooms.State current=expected.rooms.state(room.jid);
+                    if(!room.autojoin) { if(current.joined) expected.rooms.leave(room.jid); continue; }
+                    if(current.joined) { if(!room.nickname.equals(current.nickname)) expected.rooms.nickname(room.jid,room.nickname); continue; }
+                    String encrypted=preferences.getString("room-password-"+dialog,"");
+                    expected.rooms.join(room.jid,room.nickname,encrypted.isEmpty() ? null : vault.decrypt(encrypted));
+                } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room rejoin: "+failed.getClass().getSimpleName()); }
             }
         });
+    }
+    private static final class BookmarkSync {
+        final XmppSession session; final long epoch,owner;
+        final ArrayList<RequestDelegate> callbacks=new ArrayList<>(); boolean again; Exception cacheFailure;
+        BookmarkSync(XmppSession session,long epoch,long owner) { this.session=session; this.epoch=epoch; this.owner=owner; }
+    }
+    private boolean currentBookmarks(BookmarkSync sync) { return bookmarkSync==sync && session==sync.session && sessionEpoch==sync.epoch && accountEpoch==sync.owner && sync.session.connection().isAuthenticated(); }
+    public String bookmarkStatus() { return bookmarkStatus; }
+    public void syncRoomBookmarks(RequestDelegate callback) { worker.execute(() -> {
+        try { syncBookmarks(session(),sessionEpoch,callback); } catch(Exception failed) { bookmarkStatus="Reconnect your XMPP account before syncing rooms."; if(callback!=null) roomResult(callback,failed); }
+    }); }
+    private void syncBookmarks(XmppSession expected,long epoch,RequestDelegate callback) {
+        if(session!=expected || sessionEpoch!=epoch) return;
+        if(bookmarkSync!=null && currentBookmarks(bookmarkSync)) {
+            bookmarkSync.again=true; if(callback!=null) bookmarkSync.callbacks.add(callback); return;
+        }
+        BookmarkSync sync=new BookmarkSync(expected,epoch,accountEpoch); bookmarkSync=sync;
+        if(callback!=null) sync.callbacks.add(callback); loadBookmarks(sync);
+    }
+    private void loadBookmarks(BookmarkSync sync) {
+        bookmarkStatus="Synchronizing room bookmarks…";
+        bookmarkWorker.execute(() -> {
+            try {
+                com.negzero.monogram.xmpp.XmppBookmarks.Snapshot snapshot=sync.session.bookmarks.load();
+                worker.execute(() -> {
+                    if(!currentBookmarks(sync)) return;
+                    if(sync.again) { sync.again=false; loadBookmarks(sync); return; }
+                    try {
+                        java.util.Set<String> present=new java.util.HashSet<>();
+                        for(com.negzero.monogram.xmpp.XmppBookmarks.Bookmark bookmark:snapshot.bookmarks) {
+                            present.add(bookmark.jid);
+                            store.importBookmark(bookmark,vault.encrypt(bookmark.xml()),ownUser().first_name);
+                            long dialog=store.knownRoom(bookmark.jid); sync.session.rooms.remember(bookmark.jid);
+                            String passwordKey="room-password-"+dialog,localKey="room-password-local-"+dialog;
+                            boolean local=preferences.getBoolean(localKey,!preferences.getString(passwordKey,"").isEmpty());
+                            if(!local && !preferences.edit().putString(passwordKey,bookmark.password.isEmpty() ? "" : vault.encrypt(bookmark.password)).putBoolean(localKey,false).commit())
+                                throw new java.io.IOException("Cannot save imported room password");
+                            publishRoom(dialog);
+                        }
+                        store.missingBookmarks(present);
+                        rejoinRooms(sync.session,sync.epoch);
+                        TLRPC.TL_messages_dialogs cached=dialogs();
+                        AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==sync.owner && sessionEpoch==sync.epoch) MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false); });
+                        ArrayList<MonogramStore.PendingBookmark> pending=store.pendingBookmarks();
+                        if(!snapshot.writable) { finishBookmarks(sync,"Using older server bookmarks; local changes stay on this device.",null); return; }
+                        publishBookmarks(sync,pending);
+                    } catch(Exception failed) { rejoinRooms(sync.session,sync.epoch); finishBookmarks(sync,"Could not sync bookmarks. Cached rooms remain available.",failed); }
+                });
+            } catch(Exception failed) { worker.execute(() -> {
+                if(!currentBookmarks(sync)) return; rejoinRooms(sync.session,sync.epoch);
+                finishBookmarks(sync,"Could not sync bookmarks. Cached rooms remain available.",failed);
+            }); }
+        });
+    }
+    private void publishBookmarks(BookmarkSync sync,ArrayList<MonogramStore.PendingBookmark> pending) {
+        // Decode private cached XML on the account worker, then perform only network calls on the bookmark worker.
+        ArrayList<com.negzero.monogram.xmpp.XmppBookmarks.Bookmark> values=new ArrayList<>();
+        try {
+            for(MonogramStore.PendingBookmark row:pending) {
+                com.negzero.monogram.xmpp.XmppBookmarks.Bookmark bookmark=row.payload==null
+                        ? com.negzero.monogram.xmpp.XmppBookmarks.Bookmark.create(row.jid,row.nickname,row.autojoin)
+                        : com.negzero.monogram.xmpp.XmppBookmarks.Bookmark.parse(row.jid,vault.decrypt(row.payload)).edit(row.nickname,row.autojoin);
+                values.add(bookmark);
+            }
+        } catch(Exception failed) { finishBookmarks(sync,"Could not read saved bookmarks. Local room choices are retained.",failed); return; }
+        bookmarkWorker.execute(() -> {
+            Exception error=null;
+            for(int i=0;i<values.size();i++) {
+                if(!currentBookmarks(sync)) return;
+                MonogramStore.PendingBookmark row=pending.get(i); com.negzero.monogram.xmpp.XmppBookmarks.Bookmark value=values.get(i);
+                try {
+                    com.negzero.monogram.xmpp.XmppBookmarks.Bookmark published=sync.session.bookmarks.save(value);
+                    worker.execute(() -> { if(currentBookmarks(sync)) try { store.bookmarkSaved(row.dialog,row.revision,vault.encrypt(published.xml())); }
+                        catch(Exception failed) { sync.cacheFailure=failed; } });
+                } catch(Exception failed) { error=failed; break; }
+            }
+            final Exception failed=error;
+            worker.execute(() -> { if(currentBookmarks(sync)) {
+                Exception problem=failed!=null ? failed : sync.cacheFailure;
+                finishBookmarks(sync,problem==null ? "Room bookmarks are synchronized with your account." : "Could not finish syncing bookmarks. Local changes will retry on reconnect.",problem);
+            } });
+        });
+    }
+    private void finishBookmarks(BookmarkSync sync,String status,Exception error) {
+        if(!currentBookmarks(sync)) return;
+        if(error==null && sync.again) { sync.again=false; loadBookmarks(sync); return; }
+        bookmarkStatus=status; bookmarkSync=null;
+        for(RequestDelegate callback:sync.callbacks) {
+            if(error==null) AndroidUtilities.runOnUIThread(() -> callback.run(new TLRPC.TL_boolTrue(),null)); else roomResult(callback,error);
+        }
+    }
+    private void dirtyRoomBookmark(long dialog) {
+        store.dirtyBookmark(dialog); XmppSession expected=session;
+        if(expected!=null && expected.connection().isAuthenticated()) syncBookmarks(expected,sessionEpoch,null);
     }
     public boolean isRoom(long dialog) { return dialog<0 && store.rooms().contains(dialog); }
     public String roomNickname(long dialog) { return store.room(dialog).nickname; }
@@ -245,7 +353,9 @@ public final class MonogramController {
                 long saved=store.room(jid,nickname);
                 String roomPassword=password;
                 if(roomPassword==null) { String encrypted=preferences.getString("room-password-"+saved,""); roomPassword=encrypted.isEmpty() ? "" : vault.decrypt(encrypted); }
-                if(!preferences.edit().putString("room-password-"+saved,roomPassword.isEmpty() ? "" : vault.encrypt(roomPassword)).commit()) throw new java.io.IOException("Cannot save room password");
+                boolean localPassword=preferences.getBoolean("room-password-local-"+saved,!preferences.getString("room-password-"+saved,"").isEmpty());
+                if(!preferences.edit().putString("room-password-"+saved,roomPassword.isEmpty() ? "" : vault.encrypt(roomPassword))
+                        .putBoolean("room-password-local-"+saved,password==null ? localPassword : !password.isEmpty()).commit()) throw new java.io.IOException("Cannot save room password");
                 final String secret=roomPassword;
                 roomWorker.execute(() -> {
                     try {
@@ -253,7 +363,7 @@ public final class MonogramController {
                         com.negzero.monogram.xmpp.XmppRooms.State room=expected.rooms.join(jid,nickname,secret.isEmpty() ? null : secret);
                         worker.execute(() -> {
                             if(session!=expected || sessionEpoch!=epoch || accountEpoch!=owner) return;
-                            long dialog=store.room(jid,room.nickname); store.roomState(room,self); publishRoom(dialog);
+                            long dialog=store.room(jid,room.nickname); store.roomState(room,self); dirtyRoomBookmark(dialog); publishRoom(dialog);
                             TLRPC.Chat chat=store.roomChat(dialog); TLRPC.TL_messages_dialogs cached=dialogs();
                             AndroidUtilities.runOnUIThread(() -> {
                                 if(sessionEpoch!=epoch || accountEpoch!=owner) return;
@@ -275,6 +385,7 @@ public final class MonogramController {
         roomWorker.execute(() -> { try {
             if(accountEpoch!=owner || sessionEpoch!=epoch) throw new IllegalStateException("Account changed");
             session().rooms.nickname(store.jid(dialog),nickname);
+            worker.execute(() -> { if(accountEpoch==owner && sessionEpoch==epoch) dirtyRoomBookmark(dialog); });
             AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==owner && sessionEpoch==epoch) callback.run(new TLRPC.TL_boolTrue(),null); });
         } catch(Exception failed) { roomResult(callback,failed); } });
     }
@@ -283,7 +394,7 @@ public final class MonogramController {
         worker.execute(() -> { try {
             if(accountEpoch!=owner) throw new IllegalStateException("Account changed");
             String jid=store.jid(dialog); XmppSession expected=session;
-            store.leaveRoom(dialog); publishRoom(dialog);
+            store.leaveRoom(dialog); dirtyRoomBookmark(dialog); publishRoom(dialog);
             roomWorker.execute(() -> { try {
                 if(accountEpoch!=owner) throw new IllegalStateException("Account changed");
                 if(expected!=null && expected.connection().isAuthenticated() && expected.rooms.state(jid).joined) expected.rooms.leave(jid);
@@ -334,7 +445,8 @@ public final class MonogramController {
         final java.util.Set<Long> peers = new java.util.HashSet<>();
         final java.util.Set<Long> rescan = new java.util.HashSet<>();
         final java.util.Set<Long> pending = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
-        boolean supported;
+        boolean supported,directChecked;
+        final java.util.Set<Long> supportedRooms=new java.util.HashSet<>();
         ArchiveSync(XmppSession session, long epoch) { this.session = session; this.epoch = epoch; }
         boolean add(long peer) {
             if (!peers.add(peer)) return false;
@@ -347,9 +459,49 @@ public final class MonogramController {
     private void startArchiveSync(XmppSession expected) {
         ArchiveSync sync = new ArchiveSync(expected, accountEpoch); archiveSync = sync;
         for (long peer : store.peers()) if (peer != self) sync.add(peer);
+        for(long room:store.rooms()) try { if(store.room(room).autojoin && expected.rooms.state(store.jid(room)).joined) { joinedRooms.add(room); sync.add(room); } } catch(Exception ignored) {}
         // Keep discovery for conversations that exist only in the server archive.
         sync.add(0);
         nextArchivePage(sync);
+    }
+    private void queueRoomArchive(long room,XmppSession expected) {
+        ArchiveSync sync=archiveSync;
+        if(sync!=null && currentArchive(sync)) { sync.add(room); return; }
+        sync=new ArchiveSync(expected,accountEpoch); archiveSync=sync; sync.add(room); nextArchivePage(sync);
+    }
+    private void syncRoomArchive(ArchiveSync sync,ArchiveTask task) throws Exception {
+        String jid=store.jid(task.peer);
+        if(!sync.supportedRooms.contains(task.peer)) {
+            if(!sync.session.rooms.hasArchive(jid)) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); nextArchivePage(sync); } }); return; }
+            sync.supportedRooms.add(task.peer);
+        }
+        String cursor=store.archiveCursor(task.peer,task.backwards);
+        com.negzero.monogram.xmpp.XmppRooms.ArchivePage page=sync.session.rooms.archive(jid,
+                task.backwards || cursor==null ? cursor==null ? "" : cursor : null,!task.backwards && cursor!=null ? cursor : null,100);
+        if(cursor!=null && cursor.equals(task.backwards ? page.firstId : page.lastId) && !page.complete) throw new java.io.IOException("Room archive cursor did not advance");
+        boolean initial=!task.backwards && cursor==null;
+        worker.execute(() -> {
+            if(!currentArchive(sync)) return;
+            try {
+                java.util.Set<Integer> updated=new java.util.HashSet<>();
+                boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
+                if(changed && UserConfig.getInstance(account).isClientActivated()) {
+                    ArrayList<TLRPC.Message> messages=new ArrayList<>(); for(int id:updated) messages.add(store.getMessage(id,self));
+                    MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
+                    TLRPC.TL_messages_dialogs cached=dialogs();
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if(session!=sync.session || accountEpoch!=sync.epoch) return;
+                        MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false);
+                        ArrayList<MessageObject> objects=new ArrayList<>(); for(TLRPC.Message message:messages) objects.add(new MessageObject(account,message,true,true));
+                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,task.peer,objects);
+                    });
+                }
+                boolean older=task.backwards || initial || page.complete;
+                if(older ? !store.archiveComplete(task.peer) : page.lastId!=null) { task.backwards=older; sync.tasks.addLast(task); }
+                else sync.pending.remove(task.peer);
+                nextArchivePage(sync);
+            } catch(Exception failed) { archiveFailed(sync,task,failed); }
+        });
     }
     private void nextArchivePage(ArchiveSync sync) {
         if (!currentArchive(sync)) return;
@@ -370,10 +522,9 @@ public final class MonogramController {
     private void syncArchive(ArchiveSync sync, ArchiveTask task) {
         if (!currentArchive(sync)) return;
         try {
-            if (!sync.supported) {
-                if (!sync.session.hasArchive()) { worker.execute(() -> { if (currentArchive(sync)) archiveSync = null; }); return; }
-                sync.supported = true;
-            }
+            if(task.peer<0) { syncRoomArchive(sync,task); return; }
+            if(!sync.directChecked) { sync.supported=sync.session.hasArchive(); sync.directChecked=true; }
+            if(!sync.supported) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); nextArchivePage(sync); } }); return; }
             String cursor = store.archiveCursor(task.peer, task.backwards);
             String jid = task.peer == 0 ? null : store.jid(task.peer);
             XmppSession.ArchivePage page = !task.backwards && cursor != null
@@ -965,7 +1116,7 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_messages_deleteChatUser) {
             TLRPC.TL_messages_deleteChatUser leave=(TLRPC.TL_messages_deleteChatUser)request;
             if (!(leave.user_id instanceof TLRPC.TL_inputUserSelf) && leave.user_id.user_id!=self) throw new UnsupportedOperationException();
-            session().rooms.leave(store.jid(-leave.chat_id)); store.leaveRoom(-leave.chat_id); publishRoom(-leave.chat_id);
+            session().rooms.leave(store.jid(-leave.chat_id)); store.leaveRoom(-leave.chat_id); dirtyRoomBookmark(-leave.chat_id); publishRoom(-leave.chat_id);
             Updates result=new Updates(); result.date=now(); result.chats.add(store.roomChat(-leave.chat_id)); return result;
         }
         if (request instanceof TLRPC.TL_messages_getDialogs) return dialogs();

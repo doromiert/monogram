@@ -21,11 +21,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 10); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 11); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -77,7 +77,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 10 || oldVersion < 1 || oldVersion > 9) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 11 || oldVersion < 1 || oldVersion > 10) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -86,7 +86,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (oldVersion < 7) addCorrections(db);
         if (oldVersion < 8) addCaptions(db);
         if (oldVersion < 9) addProtocols(db);
-        addRooms(db);
+        if(oldVersion<10) addRooms(db);
+        addBookmarks(db);
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -111,7 +112,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         profileCache.clear();
         db.beginTransaction();
-        try { db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -159,7 +160,11 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
             ContentValues values=new ContentValues(); values.put("subject",state.subject);
-            if(state.title!=null && !state.title.trim().isEmpty()) values.put("title",state.title);
+            if(state.title!=null && !state.title.trim().isEmpty()) {
+                try(Cursor c=db.rawQuery("SELECT name FROM room_bookmarks WHERE room=? AND present=1",new String[]{Long.toString(-dialog)})) {
+                    if(!c.moveToFirst() || c.getString(0).isEmpty()) values.put("title",state.title);
+                }
+            }
             if (!state.nickname.isEmpty()) values.put("nickname",state.nickname);
             db.update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
             db.execSQL("UPDATE room_participants SET active=0 WHERE room=?",new Object[]{-dialog});
@@ -199,7 +204,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         try {
             int existing=0;
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
-                String value=alias.getKey().equals("archive") ? alias.getValue() : message.sender+"\n"+alias.getValue();
+                String value=(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue();
                 try (Cursor c=db.rawQuery("SELECT DISTINCT message FROM message_ids WHERE peer=? AND kind=? AND value=? AND namespace=?",new String[]{Long.toString(dialog),alias.getKey(),value,Integer.toString(message.encryption.ordinal())})) {
                     while(c.moveToNext()) { int match=c.getInt(0); if(existing!=0 && existing!=match) throw new IllegalStateException("Conflicting room IDs"); existing=match; }
                 }
@@ -214,15 +219,92 @@ final class MonogramStore extends SQLiteOpenHelper {
                 long inserted=db.insertOrThrow("messages",null,values); if(inserted>Integer.MAX_VALUE) throw new IllegalStateException("Message ID space exhausted"); id=(int)inserted; changed=true;
                 long sender=message.outgoing ? self : roomUser(dialog,message.sender,null,self);
                 ContentValues author=new ContentValues(); author.put("message",id); author.put("user",sender); db.insertOrThrow("room_senders",null,author);
-            } else try (Cursor c=db.rawQuery("SELECT readable FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
-                if(c.moveToFirst() && c.getInt(0)==0 && message.readable) { db.update("messages",values,"id=?",new String[]{Integer.toString(id)}); changed=true; }
+            } else try (Cursor c=db.rawQuery("SELECT readable,time_ms FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
+                if(c.moveToFirst()) {
+                    if(c.getInt(0)==0 && message.readable) { db.update("messages",values,"id=?",new String[]{Integer.toString(id)}); changed=true; }
+                    else if(message.archived && c.getLong(1)!=message.timestamp) {
+                        ContentValues date=new ContentValues(); date.put("time",seconds); date.put("time_ms",message.timestamp);
+                        db.update("messages",date,"id=?",new String[]{Integer.toString(id)}); changed=true;
+                    }
+                }
             }
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
                 ContentValues identity=new ContentValues(); identity.put("peer",dialog); identity.put("outgoing",message.outgoing); identity.put("kind",alias.getKey());
-                identity.put("value",alias.getKey().equals("archive") ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
+                identity.put("value",(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
                 db.insertWithOnConflict("message_ids",null,identity,SQLiteDatabase.CONFLICT_IGNORE);
             }
             db.setTransactionSuccessful(); return changed ? id : 0;
+        } finally { db.endTransaction(); }
+    }
+    private void addBookmarks(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_bookmarks (room INTEGER PRIMARY KEY,payload TEXT,name TEXT NOT NULL DEFAULT '',revision INTEGER NOT NULL DEFAULT 0,dirty INTEGER NOT NULL DEFAULT 0,present INTEGER NOT NULL DEFAULT 1)");
+        db.execSQL("INSERT OR IGNORE INTO room_bookmarks(room,dirty) SELECT id,1 FROM rooms");
+    }
+    static final class PendingBookmark {
+        final long dialog,revision;
+        final String payload,jid,nickname;
+        final boolean autojoin;
+        PendingBookmark(Cursor c) { dialog=-c.getLong(0); revision=c.getLong(1); payload=c.getString(2); jid=c.getString(3); nickname=c.getString(4); autojoin=c.getInt(5)!=0; }
+    }
+    synchronized void dirtyBookmark(long dialog) {
+        room(dialog);
+        getWritableDatabase().execSQL("INSERT OR IGNORE INTO room_bookmarks(room) VALUES(?)",new Object[]{-dialog});
+        getWritableDatabase().execSQL("UPDATE room_bookmarks SET dirty=1,present=1,revision=revision+1 WHERE room=?",new Object[]{-dialog});
+    }
+    synchronized ArrayList<PendingBookmark> pendingBookmarks() {
+        ArrayList<PendingBookmark> result=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT b.room,b.revision,b.payload,r.jid,r.nickname,r.autojoin FROM room_bookmarks b JOIN rooms r ON r.id=b.room WHERE b.dirty=1",null)) {
+            while(c.moveToNext()) result.add(new PendingBookmark(c));
+        }
+        return result;
+    }
+    synchronized void bookmarkSaved(long dialog,long revision,String encryptedPayload) {
+        getWritableDatabase().execSQL("UPDATE room_bookmarks SET dirty=0,present=1,payload=? WHERE room=? AND revision=?",new Object[]{encryptedPayload,-dialog,revision});
+    }
+    synchronized void importBookmark(com.negzero.monogram.xmpp.XmppBookmarks.Bookmark bookmark,String encryptedPayload,String defaultNickname) {
+        long dialog=knownRoom(bookmark.jid);
+        String nickname=bookmark.nickname.isEmpty() ? defaultNickname : bookmark.nickname;
+        if(dialog==0) dialog=room(bookmark.jid,nickname);
+        SQLiteDatabase db=getWritableDatabase();
+        boolean pending=false;
+        try(Cursor c=db.rawQuery("SELECT dirty,revision FROM room_bookmarks WHERE room=?",new String[]{Long.toString(-dialog)})) { pending=c.moveToFirst() && c.getInt(0)!=0 && c.getLong(1)>0; }
+        ContentValues metadata=new ContentValues(); metadata.put("room",-dialog); metadata.put("payload",encryptedPayload); metadata.put("name",bookmark.name); metadata.put("present",1);
+        db.insertWithOnConflict("room_bookmarks",null,metadata,SQLiteDatabase.CONFLICT_IGNORE);
+        db.update("room_bookmarks",metadata,"room=?",new String[]{Long.toString(-dialog)});
+        if(!pending) {
+            db.execSQL("UPDATE room_bookmarks SET dirty=0 WHERE room=?",new Object[]{-dialog});
+            ContentValues desired=new ContentValues(); desired.put("nickname",nickname); desired.put("autojoin",bookmark.autojoin);
+            if(!bookmark.name.isEmpty()) desired.put("title",bookmark.name);
+            db.update("rooms",desired,"id=?",new String[]{Long.toString(-dialog)});
+        }
+    }
+    synchronized void missingBookmarks(java.util.Set<String> present) {
+        SQLiteDatabase db=getWritableDatabase();
+        try(Cursor c=db.rawQuery("SELECT b.room,r.jid FROM room_bookmarks b JOIN rooms r ON r.id=b.room WHERE b.present=1 AND b.dirty=0 AND b.payload IS NOT NULL",null)) {
+            while(c.moveToNext()) if(!present.contains(c.getString(1))) {
+                db.execSQL("UPDATE room_bookmarks SET present=0 WHERE room=?",new Object[]{c.getLong(0)});
+                db.execSQL("UPDATE rooms SET autojoin=0 WHERE id=?",new Object[]{c.getLong(0)});
+            }
+        }
+    }
+    synchronized boolean saveRoomArchive(long dialog,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page,boolean backwards,long self,java.util.Set<Integer> updated) {
+        SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
+        try {
+            boolean changed=false; long order;
+            try(Cursor c=db.rawQuery("SELECT "+(backwards ? "min" : "max")+"(archive_order) FROM messages WHERE peer=?",new String[]{Long.toString(dialog)})) {
+                c.moveToFirst(); order=backwards ? Math.min(0,c.getLong(0))-page.messages.size() : Math.max(0,c.getLong(0))+1;
+            }
+            for(com.negzero.monogram.xmpp.XmppRoomMessage message:page.messages) {
+                if(!jid(dialog).equals(message.room.toString())) throw new IllegalArgumentException("Room archive belongs to another room");
+                int id=saveRoom(message,self); changed|=id!=0; if(id!=0) updated.add(id);
+                db.execSQL("UPDATE messages SET archive_order=? WHERE archive_order=0 AND id IN (SELECT message FROM message_ids WHERE peer=? AND kind='mam' AND value=? AND namespace=?)",new Object[]{order++,dialog,message.ids.get("mam"),message.encryption.ordinal()});
+            }
+            ContentValues empty=new ContentValues(); empty.put("scope",archiveScope(dialog)); db.insertWithOnConflict("archive_state",null,empty,SQLiteDatabase.CONFLICT_IGNORE);
+            ContentValues cursor=new ContentValues();
+            if(backwards) { if(page.firstId!=null) cursor.put("oldest",page.firstId); cursor.put("complete",page.complete || page.firstId==null); }
+            if(archiveCursor(dialog,false)==null || !backwards) if(page.lastId!=null) cursor.put("newest",page.lastId);
+            if(cursor.size()>0) db.update("archive_state",cursor,"scope=?",new String[]{archiveScope(dialog)});
+            db.setTransactionSuccessful(); return changed;
         } finally { db.endTransaction(); }
     }
     synchronized com.negzero.monogram.xmpp.XmppProfile profile(long peer) {
@@ -499,7 +581,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized String archiveCursor(boolean oldest) {
         return archiveCursor(0, oldest);
     }
-    private static String archiveScope(long peer) { return peer == 0 ? "direct" : "direct:" + peer; }
+    private static String archiveScope(long peer) { return peer == 0 ? "direct" : peer<0 ? "room:"+-peer : "direct:"+peer; }
     synchronized void resetArchiveCursor(long peer) {
         getWritableDatabase().delete("archive_state", "scope=?", new String[]{archiveScope(peer)});
     }

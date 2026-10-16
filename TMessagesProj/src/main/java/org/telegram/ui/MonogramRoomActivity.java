@@ -42,6 +42,7 @@ public final class MonogramRoomActivity extends UniversalFragment {
         } else { items.add(UItem.asHeader(MonogramController.get(currentAccount).jid(dialog))); }
         items.add(UItem.asCustom(nickname));
         items.add(UItem.asCustom(password));
+        items.add(UItem.asShadow("Passwords entered here stay on this device. Saved room addresses, nicknames and autojoin choices sync privately with supported servers."));
         if(dialog!=0) items.add(UItem.asShadow("Leave the password blank to reuse the saved room password."));
         items.add(UItem.asButton(1,busy ? "Connecting…" : dialog==0 ? "Join room" : "Rejoin room").accent().setEnabled(!busy));
         items.add(UItem.asShadow("OMEMO is enabled by default. Encrypted sending requires a members-only room that reveals member addresses, and trusted devices for every member. It never falls back to plain messages."));
@@ -49,7 +50,10 @@ public final class MonogramRoomActivity extends UniversalFragment {
             items.add(UItem.asButton(3,"Change nickname").setEnabled(!busy));
             items.add(UItem.asButton(4,R.drawable.msg_secret,"Conversation security"));
             items.add(UItem.asButton(5,"Leave room").setEnabled(!busy));
+
         }
+        items.add(UItem.asButton(6,R.drawable.msg_retry,"Sync room bookmarks").setEnabled(!busy));
+        items.add(UItem.asShadow(MonogramController.get(currentAccount).bookmarkStatus()));
         if(status!=null) items.add(UItem.asShadow(status));
     }
     private void refresh() { if(listView!=null) listView.adapter.update(true); }
@@ -83,12 +87,15 @@ public final class MonogramRoomActivity extends UniversalFragment {
         MonogramController controller=MonogramController.get(currentAccount);
         if(item.id==1 && !busy) join();
         else if(item.id==2 && !busy) browse();
+        else if(item.id==6 && !busy) {
+            busy=true; refresh(); controller.syncRoomBookmarks((value,error) -> { busy=false; status=controller.bookmarkStatus(); refresh(); });
+        }
         else if(item.id==4) presentFragment(new MonogramSecurityActivity(currentAccount,dialog));
         else if(item.id==3 && !busy) {
             String nick=nickname.getText().toString().trim(); if(nick.isEmpty()) return;
             busy=true; refresh(); controller.changeRoomNickname(dialog,nick,(value,error) -> { busy=false; status=error==null ? "Nickname changed." : "Could not change nickname. Check that it is available and that the room is joined."; refresh(); });
         } else if(item.id==5 && !busy) showDialog(new AlertDialog.Builder(getContext()).setTitle("Leave room?")
-                .setMessage("Cached messages stay on this device. Monogram will stop automatically rejoining this room.")
+                .setMessage("Cached messages stay on this device. Monogram will stop automatically rejoining this room. On supported servers, this choice also syncs to your other clients.")
                 .setPositiveButton("Leave",(d,which) -> { busy=true; refresh(); controller.leaveRoom(dialog,(value,error) -> { busy=false; status=error==null ? "Left the room." : "Could not leave the room. Check your connection and retry."; refresh(); }); })
                 .setNegativeButton("Cancel",null).create());
     }

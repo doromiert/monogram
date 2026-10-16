@@ -83,7 +83,7 @@ public class MonogramArchiveTest {
     }
     @After public void cleanup() {
         network.release.countDown();
-        for (String name : new String[]{"worker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker"}) {
+        for (String name : new String[]{"worker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
         }
         store.close(); ApplicationLoader.applicationContext.deleteDatabase("monogram-0.db");
@@ -137,5 +137,15 @@ public class MonogramArchiveTest {
         network.release.countDown(); finished();
         assertEquals(2,java.util.Collections.frequency(network.calls,"before:bob@example.org:null"));
         assertTrue(store.archiveComplete(bob)); assertTrue(store.archiveComplete(other));
+    }
+    @Test public void serverBookmarksAppearAsNativeDialogsWithoutLocalMessages() throws Exception {
+        String room="already-joined@conference.example.org";
+        com.negzero.monogram.xmpp.XmppBookmarks.Bookmark bookmark=com.negzero.monogram.xmpp.XmppBookmarks.Bookmark.parse(room,"<conference xmlns='urn:xmpp:bookmarks:1' name='My other-client room' autojoin='true'><nick>Alice</nick></conference>");
+        store.importBookmark(bookmark,"private-vault-payload","Alice");
+        TLRPC.TL_messages_dialogs result=ReflectionHelpers.callInstanceMethod(controller,"dialogs");
+        long dialog=store.knownRoom(room); assertTrue(dialog<0);
+        assertTrue(result.dialogs.stream().anyMatch(value -> value.id==dialog && value.peer.chat_id==-dialog));
+        assertTrue(result.chats.stream().anyMatch(value -> value.id==-dialog && "My other-client room".equals(value.title)));
+        assertTrue(store.history(dialog,1,0,100).isEmpty());
     }
 }

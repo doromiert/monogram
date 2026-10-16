@@ -42,7 +42,8 @@ class XmppRoomsIntegrationTest {
             FillableForm form=peer.getConfigurationForm().getFillableForm();
             form.setAnswer("muc#roomconfig_persistentroom",true);
             form.setAnswer("muc#roomconfig_membersonly",true);
-            form.setAnswer("muc#roomconfig_whois","anyone"); peer.sendConfigurationForm(form);
+            form.setAnswer("muc#roomconfig_whois","anyone");
+            form.setAnswer("muc#roomconfig_enablearchiving",true); peer.sendConfigurationForm(form);
             peer.grantMembership(JidCreate.bareFrom("roomalice@localhost"));
             peer.leave();
             bob.rooms.join(room,"Bob",null); alice.rooms.join(room,"Alice",null);
@@ -76,6 +77,21 @@ class XmppRoomsIntegrationTest {
             try { alice.rooms.nickname(room,"Alice2"); } catch(Exception failure) { throw new AssertionError(presence.toString(),failure); }
             alice.rooms.send(room,"after nickname",false);
             assertEquals(room+"/Alice2",readable(bobMessages,"after nickname").sender);
+            assertTrue(bob.rooms.hasArchive(room));
+            for(int i=0;i<120;i++) alice.rooms.send(room,"archive fill "+i,false);
+            readable(bobMessages,"archive fill 119");
+            Set<String> archived=new HashSet<>(); Set<String> bodies=new HashSet<>(); String before=""; int pages=0;
+            while(true) {
+                XmppRooms.ArchivePage page=bob.rooms.archive(room,before,null,30); pages++;
+                for(XmppRoomMessage message:page.messages) { assertTrue(message.archived); assertTrue(archived.add(message.ids.get("mam"))); if(message.readable) bodies.add(message.body); }
+                if(page.complete) break;
+                assertNotNull(page.firstId); assertNotEquals(before,page.firstId); before=page.firstId;
+                assertTrue(pages<10,"Archive pagination must finish");
+            }
+            assertTrue(pages>3); assertTrue(bodies.contains("room hello")); assertTrue(bodies.contains("archive fill 119"));
+            XmppRooms.ArchivePage latest=bob.rooms.archive(room,"",null,1);
+            alice.rooms.send(room,"new archive message",false); readable(bobMessages,"new archive message");
+            assertEquals("new archive message",bob.rooms.archive(room,null,latest.lastId,10).messages.get(0).body);
             alice.rooms.leave(room); assertFalse(alice.rooms.state(room).joined);
             assertThrows(IllegalStateException.class,() -> alice.rooms.send(room,"must not send",false));
         }

@@ -89,6 +89,54 @@ public final class XmppRooms implements AutoCloseable {
                 chat.getNickname()==null ? "" : chat.getNickname().toString(),body,encrypted,readable);
         if (message!=null) listener.roomMessage(message);
     }
+    public static final class ArchivePage {
+        public final List<XmppRoomMessage> messages;
+        public final String firstId,lastId;
+        public final boolean complete;
+        public ArchivePage(List<XmppRoomMessage> messages,String firstId,String lastId,boolean complete) {
+            this.messages=Collections.unmodifiableList(new ArrayList<>(messages)); this.firstId=firstId; this.lastId=lastId; this.complete=complete;
+        }
+    }
+    public boolean hasArchive(String jid) throws Exception {
+        return org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat(jid)).isSupported();
+    }
+    public ArchivePage archive(String jid,String before,String after,int limit) throws Exception {
+        MultiUserChat chat=chat(jid); if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.Builder args=org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.builder()
+                .setResultPageSizeTo(Math.min(Math.max(limit,1),100));
+        if(before!=null) args.beforeUid(before); if(after!=null) args.afterUid(after);
+        org.jivesoftware.smackx.mam.MamManager.MamQuery query=org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat).queryArchive(args.build());
+        List<XmppRoomMessage> messages=new ArrayList<>();
+        EntityBareJid own=connection.getUser().asEntityBareJid();
+        for(org.jivesoftware.smackx.mam.element.MamElements.MamResultExtension result:query.getMamResultExtensions()) {
+            org.jivesoftware.smackx.forward.packet.Forwarded<Message> forwarded=result.getForwarded();
+            if(forwarded.getDelayInformation()==null || result.getId()==null) throw new java.io.IOException("Room archive result has no timestamp or ID");
+            Message wire=forwarded.getForwardedStanza(); Date time=forwarded.getDelayInformation().getStamp();
+            boolean modern=wire.hasExtension("encrypted",XmppOmemo2.NS);
+            org.jivesoftware.smackx.omemo.element.OmemoElement element=wire.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
+            boolean encrypted=modern || element!=null,readable=!encrypted; String body=encrypted ? null : wire.getBody();
+            if(XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time)==null) continue;
+            if(element!=null && !modern) {
+                if(element.isKeyTransportElement()) continue;
+                org.jivesoftware.smackx.muc.packet.MUCUser muc=org.jivesoftware.smackx.muc.packet.MUCUser.from(wire);
+                Jid author=muc==null || muc.getItem()==null ? null : muc.getItem().getJid();
+                // A historical nickname cannot be resolved through today's occupant list.
+                if(author!=null) try {
+                    OmemoMessage.Received clear=omemo.decrypt(author.asBareJid(),element);
+                    if(clear.isKeyTransportMessage()) continue;
+                    body=clear.getBody(); readable=true;
+                } catch(org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
+                        | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
+                        | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException unavailable) {
+                    // Keep an explicit placeholder; the local cache preserves previously decoded content.
+                }
+            }
+            XmppRoomMessage message=XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time);
+            if(message!=null) messages.add(message);
+        }
+        org.jivesoftware.smackx.rsm.packet.RSMSet rsm=query.getPage().getMamFinIq().getRSMSet();
+        return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete());
+    }
     public void leave(String jid) throws Exception {
         MultiUserChat chat=chat(jid); if (chat.isJoined()) chat.leave(); listener.roomChanged(new State(chat));
     }
