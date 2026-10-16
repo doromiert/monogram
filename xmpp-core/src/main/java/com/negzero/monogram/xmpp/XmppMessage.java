@@ -23,17 +23,18 @@ public final class XmppMessage {
     public final String caption;
     public final ReplyReference reply;
     public final MessageCorrection correction;
+    public final MessageReactions reactions;
     public final boolean encrypted, readable, outgoing, archived;
     public final Encryption encryption;
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, Encryption encryption,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions) {
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encryption = encryption; this.encrypted = encryption != Encryption.PLAIN;
         this.readable = readable; this.outgoing = outgoing;
         this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply; this.correction = correction;
-        this.sharing = sharing; this.caption = caption;
+        this.sharing = sharing; this.caption = caption; this.reactions = reactions;
     }
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
@@ -61,7 +62,10 @@ public final class XmppMessage {
         EntityBareJid peer = outgoing ? to : from;
         FileShare sharing = encryption != Encryption.LEGACY_OMEMO && readable ? FileShare.from(content) : null;
         if (sharing != null && sharing.link.encrypted() != encrypted) sharing = null;
-        if (peer == null || (readable && body == null && sharing == null)) return null;
+        MessageReactions reactions = readable && encryption != Encryption.LEGACY_OMEMO && content != null ? MessageReactions.from(content) : null;
+        if (content != null && content.hasExtension("reactions", MessageReactions.NAMESPACE) && reactions == null) return null;
+        if (reactions != null && (body != null || sharing != null || MessageCorrection.from(content) != null || ReplyReference.from(content,body) != null)) return null;
+        if (peer == null || (readable && body == null && sharing == null && reactions == null)) return null;
         if (sharing != null && body == null) body = "";
         Map<String, String> ids = new LinkedHashMap<>();
         put(ids, "stanza", message.getStanzaId());
@@ -97,7 +101,7 @@ public final class XmppMessage {
         if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encryption, readable, outgoing, archiveId != null,
-                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption);
+                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption, reactions);
     }
 
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted) throws Exception {

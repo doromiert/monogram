@@ -11,7 +11,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 - [x] Build and deliver the current encrypted media/captions update: 0.2.13 includes modern OMEMO integration and local interoperability checks, is published, and is installed through wireless ADB. Phone picker/viewer interaction and complete independent Android-client exchange remain tracked below.
 - [o] Next: MUCs, covering the room support and verification listed below.
-- [ ] Then: message reactions in direct chats and MUCs, reusing Telegram's native reaction UI with standard XMPP interoperability.
+- [o] Then: message reactions in direct chats and MUCs, reusing Telegram's native reaction UI with standard XMPP interoperability.
 
 ## Official Telegram base
 
@@ -60,7 +60,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [x] Verify reply wire metadata for plain/encrypted text and attachments, MAM and outgoing carbons on local Prosody; enforce Unicode code-point fallback bounds, author/resource scope and ambiguity handling. Replace Smack’s outdated fallback parser so current ranges survive parsing.
 - [o] Rescan existing archive reply metadata after schema 6 migration while preserving local messages, known plaintext, profiles and attachment paths. Isolated Android tests verify schema 1/2/3/4/5 migrations, metadata enrichment from an unreadable encrypted replay, cyclic-reference limits and account cleanup. Verify the real-account rescan after first launch.
 - [ ] Complete room/media editing and other applicable messaging actions using standard XMPP extensions.
-- [ ] Implement message reactions after MUCs: send, receive, change and remove reactions in direct chats and rooms; reuse native reaction controls/rendering, persist per-sender state, reconcile history/carbon copies, and verify interoperability and encrypted-chat behavior.
+- [o] Implement message reactions after MUCs: send, receive, change and remove reactions in direct chats and rooms; reuse native reaction controls/rendering, persist per-sender state, reconcile history/carbon copies, and verify interoperability and encrypted-chat behavior.
 - [ ] Complete account management, request cancellation, logout isolation and background notification behavior.
 - [o] Fix silent/random disconnections: lifecycle callbacks, idle pings, bounded Android retries and a native Reconnect page are installed. Local cut/unresponsive-stream tests verify reauthentication, restored features and encrypted delivery with the same identity. Verify the Android button and prolonged background behavior.
 

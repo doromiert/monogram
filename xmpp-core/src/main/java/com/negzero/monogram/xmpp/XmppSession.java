@@ -40,13 +40,14 @@ public final class XmppSession implements AutoCloseable {
         default void roomMessage(XmppRoomMessage message) {}
         default void roomChanged(XmppRooms.State room) {}
         default void bookmarksChanged() {}
+        default void reactionRejected(String from,String id) {}
         default void typing(EntityBareJid jid, boolean composing) {}
         default void disconnected() {}
         default void reconnected(boolean resumed) {}
         /** Call accepted only once the message has been stored; ratchet acknowledgements follow it. */
         default void message(XmppMessage message, Runnable accepted) { message(message); accepted.run(); }
         default void message(XmppMessage message) {
-            if (!message.readable) return;
+            if (!message.readable || message.reactions != null) return;
             String id = message.ids.get("stanza");
             if (message.outgoing) sentCarbon(message.peer, id, message.body, message.encrypted);
             else message(message.peer, id, message.body, message.encrypted);
@@ -106,11 +107,13 @@ public final class XmppSession implements AutoCloseable {
         modern = modernDevice == null ? null : new XmppOmemo2(connection,modernDevice,jid -> {});
         ReplyReference.initialize();
         MessageCorrection.initialize();
+        MessageReactions.initialize();
         FileShare.initialize();
         profiles = new XmppProfiles(connection, listener::profileChanged);
         chatStates = new XmppChatStates(connection, listener::typing);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageReactions.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(FileShare.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
@@ -162,6 +165,10 @@ public final class XmppSession implements AutoCloseable {
                 else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false);
             }
         });
+        connection.addAsyncStanzaListener(stanza -> {
+            if(stanza.getFrom()!=null && stanza.getStanzaId()!=null)
+                listener.reactionRejected(stanza.getFrom().toString(),stanza.getStanzaId());
+        }, stanza -> stanza instanceof Message && ((Message)stanza).getType()==Message.Type.error);
         connection.addAsyncStanzaListener(stanza -> {
             Message message = (Message) stanza;
             if (rooms.known(message.getFrom())) return;
@@ -425,6 +432,22 @@ public final class XmppSession implements AutoCloseable {
         connection.sendStanza(message);
         chatStates.sent(message);
         return id;
+    }
+    /** Legacy OMEMO protects bodies only. Callers must explicitly choose plaintext metadata. */
+    public String sendReactions(String jid,MessageReactions reactions,XmppMessage.Encryption encryption) throws Exception {
+        if(encryption==XmppMessage.Encryption.LEGACY_OMEMO)
+            throw new UnsupportedOperationException("Legacy OMEMO cannot encrypt reaction metadata");
+        Message clear=new Message(directRecipient(jid),Message.Type.chat);
+        clear.setFrom(connection.getUser()); String id=UUID.randomUUID().toString(); clear.setStanzaId(id);
+        reactions.addTo(clear);
+        Message wire=clear;
+        if(encryption==XmppMessage.Encryption.OMEMO2) {
+            if(!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
+            wire=modern.encrypt(clear);
+        }
+        wire.addExtension(new OriginIdElement(id));
+        wire.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("store","urn:xmpp:hints").build());
+        connection.sendStanza(wire); return id;
     }
     private EntityBareJid directRecipient(String address) throws Exception {
         org.jxmpp.jid.Jid jid=JidCreate.from(address);
