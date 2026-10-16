@@ -965,6 +965,19 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         RecyclerListView.OnItemLongClickListenerExtended onItemLongClick = new RecyclerListView.OnItemLongClickListenerExtended() {
             @Override
             public boolean onItemClick(View view, int position, float x, float y) {
+                if (view instanceof ImageViewEmoji && (type == TYPE_REACTIONS || type == TYPE_EXPANDABLE_REACTIONS || type == TYPE_STICKER_SET_EMOJI)) {
+                    ImageViewEmoji image = (ImageViewEmoji) view;
+                    if (image.reaction != null && image.reaction.emojicon != null) {
+                        String code = image.reaction.emojicon;
+                        boolean favorite = Emoji.isFavoriteEmoji(code);
+                        new AlertDialog.Builder(context, resourcesProvider).setTitle(code)
+                                .setItems(new CharSequence[]{LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites)}, (dialog, which) -> {
+                                    Emoji.setFavoriteEmoji(code, !favorite);
+                                    updateRows(false, true);
+                                }).show();
+                        return true;
+                    }
+                }
                 if (type == TYPE_TAGS || type == TYPE_STICKER_SET_EMOJI || !isLongPressEnabled) return false;
                 if (view instanceof ImageViewEmoji && (type == TYPE_REACTIONS || type == TYPE_EXPANDABLE_REACTIONS)) {
                     incrementHintUse();
@@ -2647,6 +2660,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 }
 
                 if (type == TYPE_STICKER_SET_EMOJI) {
+                    imageView.setPadding(dp(1), dp(1), dp(1), dp(1));
                     imageView.notDraw = false;
                     imageView.isFirstReactions = true;
                     imageView.reaction = currentReaction;
@@ -3827,6 +3841,14 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
             topReactionsStartRow = totalCount;
             ArrayList<ReactionsLayoutInBubble.VisibleReaction> stickers = null;
             ArrayList<ReactionsLayoutInBubble.VisibleReaction> tmp = new ArrayList<>(recentReactionsToSet);
+            if (type == TYPE_REACTIONS || type == TYPE_EXPANDABLE_REACTIONS || type == TYPE_STICKER_SET_EMOJI) {
+                ArrayList<String> favorites = Emoji.getFavoriteEmoji();
+                for (int i = favorites.size() - 1; i >= 0; i--) {
+                    ReactionsLayoutInBubble.VisibleReaction favorite = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(favorites.get(i));
+                    tmp.remove(favorite);
+                    tmp.add(0, favorite);
+                }
+            }
             if (type == TYPE_STICKER_SET_EMOJI && tmp.size() > 8) {
                 tmp.subList(8, tmp.size()).clear();
             } else if (type == TYPE_EFFECTS) {

@@ -1661,6 +1661,11 @@ public class EmojiView extends FrameLayout implements
                 ImageViewEmoji viewEmoji = (ImageViewEmoji) view;
 
                 if (viewEmoji.isRecent) {
+                    if (viewEmoji.getSpan() == null && viewEmoji.getTag() instanceof String) {
+                        showFavoriteEmojiMenu((String) viewEmoji.getTag(), true);
+                        emojiGridView.clearTouchesFor(view);
+                        return true;
+                    }
                     RecyclerListView.ViewHolder holder = emojiGridView.findContainingViewHolder(view);
                     if (holder != null && holder.getAdapterPosition() <= getRecentEmoji().size()) {
                         delegate.onClearEmojiRecent();
@@ -1716,6 +1721,9 @@ public class EmojiView extends FrameLayout implements
                         emojiGridView.clearTouchesFor(view);
                         return true;
                     }
+                    showFavoriteEmojiMenu((String) viewEmoji.getTag(), false);
+                    emojiGridView.clearTouchesFor(view);
+                    return true;
                 }
             }
             return false;
@@ -4672,25 +4680,23 @@ public class EmojiView extends FrameLayout implements
         }
     }
 
-    private ArrayList<String> lastRecentArray;
-    private int lastRecentCount;
+    private void showFavoriteEmojiMenu(String code, boolean recent) {
+        boolean favorite = Emoji.isFavoriteEmoji(code);
+        CharSequence toggle = getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites);
+        new AlertDialog.Builder(getContext(), resourcesProvider)
+                .setTitle(code)
+                .setItems(recent ? new CharSequence[]{toggle, getString(R.string.ClearRecentEmojiTitle)} : new CharSequence[]{toggle}, (dialog, which) -> {
+                    if (which == 0) {
+                        Emoji.setFavoriteEmoji(code, !favorite);
+                        emojiAdapter.notifyDataSetChanged();
+                    } else {
+                        delegate.onClearEmojiRecent();
+                    }
+                }).show();
+    }
+
     public ArrayList<String> getRecentEmoji() {
-        if (allowAnimatedEmoji) {
-            return Emoji.recentEmoji;
-        }
-        if (lastRecentArray == null) {
-            lastRecentArray = new ArrayList<>();
-        }
-        if (Emoji.recentEmoji.size() != lastRecentCount) {
-            lastRecentArray.clear();
-            for (int i = 0; i < Emoji.recentEmoji.size(); ++i) {
-                if (!Emoji.recentEmoji.get(i).startsWith("animated_")) {
-                    lastRecentArray.add(Emoji.recentEmoji.get(i));
-                }
-            }
-            lastRecentCount = lastRecentArray.size();
-        }
-        return lastRecentArray;
+        return Emoji.getRecentEmojiWithFavorites(allowAnimatedEmoji);
     }
 
     public void addEmojiToRecent(String code) {
@@ -4703,20 +4709,6 @@ public class EmojiView extends FrameLayout implements
             emojiAdapter.notifyDataSetChanged();
         }
         Emoji.saveRecentEmoji();
-
-        if (!allowAnimatedEmoji) {
-            if (lastRecentArray == null) {
-                lastRecentArray = new ArrayList<>();
-            } else {
-                lastRecentArray.clear();
-            }
-            for (int i = 0; i < Emoji.recentEmoji.size(); ++i) {
-                if (!Emoji.recentEmoji.get(i).startsWith("animated_")) {
-                    lastRecentArray.add(Emoji.recentEmoji.get(i));
-                }
-            }
-            lastRecentCount = lastRecentArray.size();
-        }
 
         /*int addedCount = Emoji.recentEmoji.size() - oldCount;
         int position = emojiLayoutManager.findLastVisibleItemPosition();
@@ -7470,7 +7462,7 @@ public class EmojiView extends FrameLayout implements
                     if (position == trendingHeaderRow) {
                         cell.setText(getString(R.string.FeaturedEmojiPacks), R.drawable.msg_close, getString(R.string.AccDescrCloseTrendingEmoji));
                     } else if (position == recentlyUsedHeaderRow) {
-                        cell.setText(getString(R.string.RecentlyUsed), 0);
+                        cell.setText(getString(Emoji.getFavoriteEmoji().isEmpty() ? R.string.RecentlyUsed : R.string.MonogramFavoriteAndRecentEmoji), 0);
                     } else if (index >= emojiTitles.length) {
                         try {
                             cell.setText(emojipacksProcessed.get(index - emojiTitles.length).set.title, 0);

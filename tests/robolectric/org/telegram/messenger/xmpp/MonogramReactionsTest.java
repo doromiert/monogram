@@ -101,4 +101,27 @@ public class MonogramReactionsTest {
         assertTrue(store.getMessage(original,self).reactions.results.get(0).chosen);
         assertEquals(1,store.history(dialog,self,0,50).size());
     }
+    @Test public void reactionWritesAndProfileWritesCompleteTogether() throws Exception {
+        int original=text("concurrent-original",false);
+        java.util.concurrent.ExecutorService tasks=java.util.concurrent.Executors.newFixedThreadPool(2,r -> {
+            Thread t=new Thread(r); t.setDaemon(true); return t;
+        });
+        java.util.concurrent.CyclicBarrier start=new java.util.concurrent.CyclicBarrier(2);
+        try {
+            java.util.concurrent.Future<?> reactions=tasks.submit(() -> {
+                try { for(int i=0;i<64;i++) {
+                    start.await(5,java.util.concurrent.TimeUnit.SECONDS);
+                    react("concurrent-"+i,"concurrent-original",200000+i,false,false,i%2==0 ? new String[]{"👍"} : new String[]{});
+                } } catch(Exception error) { throw new RuntimeException(error); }
+            });
+            java.util.concurrent.Future<?> profiles=tasks.submit(() -> {
+                try { for(int i=0;i<64;i++) {
+                    start.await(5,java.util.concurrent.TimeUnit.SECONDS);
+                    store.rosterName(peer,"Bob "+i);
+                } } catch(Exception error) { throw new RuntimeException(error); }
+            });
+            reactions.get(10,java.util.concurrent.TimeUnit.SECONDS); profiles.get(10,java.util.concurrent.TimeUnit.SECONDS);
+            assertTrue(counts(original).isEmpty());
+        } finally { tasks.shutdownNow(); }
+    }
 }

@@ -55,20 +55,23 @@ final class MonogramReactions {
         if(reactions==null || wire==null || wire.isEmpty() || stamp<0 || stamp>System.currentTimeMillis()+300000) return Collections.emptySet();
         LinkedHashSet<String> emojis=new LinkedHashSet<>();
         for(String emoji:reactions.emojis) if(isEmoji(emoji)) emojis.add(canonicalEmoji(emoji));
-        SQLiteDatabase db=store.getWritableDatabase(); db.beginTransaction();
-        try {
-            List<Integer> sources=new ArrayList<>();
-            try(Cursor c=db.rawQuery("SELECT DISTINCT m.id,m.readable FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND m.outgoing=? AND m.encryption=? AND i.kind='stanza' AND i.value=?",new String[]{Long.toString(peer),outgoing ? "1" : "0",Integer.toString(protocol),sender+"\n"+wire})) {
-                while(c.moveToNext()) { if(c.getInt(1)!=0) return Collections.emptySet(); sources.add(c.getInt(0)); }
-            }
-            int target=resolve(peer,reactions.id);
-            ContentValues values=new ContentValues(); values.put("peer",peer); values.put("target",reactions.id); values.put("actor",actor); values.put("user",user);
-            values.put("stamp",stamp); values.put("wire",wire); values.put("protocol",protocol); values.put("emojis",String.join("\n",emojis)); values.put("message",target);
-            boolean inserted=db.insertWithOnConflict("reaction_events",null,values,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
-            for(int source:sources) { ContentValues hidden=new ContentValues(); hidden.put("message",source); db.insertWithOnConflict("reaction_sources",null,hidden,SQLiteDatabase.CONFLICT_IGNORE); }
-            db.setTransactionSuccessful();
-            return inserted && target!=0 ? Collections.singleton(target) : Collections.emptySet();
-        } finally { db.endTransaction(); }
+        // Match MonogramStore lock order: helper monitor before a SQLite write transaction.
+        synchronized(store) {
+            SQLiteDatabase db=store.getWritableDatabase(); db.beginTransaction();
+            try {
+                List<Integer> sources=new ArrayList<>();
+                try(Cursor c=db.rawQuery("SELECT DISTINCT m.id,m.readable FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND m.outgoing=? AND m.encryption=? AND i.kind='stanza' AND i.value=?",new String[]{Long.toString(peer),outgoing ? "1" : "0",Integer.toString(protocol),sender+"\n"+wire})) {
+                    while(c.moveToNext()) { if(c.getInt(1)!=0) return Collections.emptySet(); sources.add(c.getInt(0)); }
+                }
+                int target=resolve(peer,reactions.id);
+                ContentValues values=new ContentValues(); values.put("peer",peer); values.put("target",reactions.id); values.put("actor",actor); values.put("user",user);
+                values.put("stamp",stamp); values.put("wire",wire); values.put("protocol",protocol); values.put("emojis",String.join("\n",emojis)); values.put("message",target);
+                boolean inserted=db.insertWithOnConflict("reaction_events",null,values,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
+                for(int source:sources) { ContentValues hidden=new ContentValues(); hidden.put("message",source); db.insertWithOnConflict("reaction_sources",null,hidden,SQLiteDatabase.CONFLICT_IGNORE); }
+                db.setTransactionSuccessful();
+                return inserted && target!=0 ? Collections.singleton(target) : Collections.emptySet();
+            } finally { db.endTransaction(); }
+        }
     }
     boolean known(XmppMessage message) {
         String wire=message.ids.get("stanza"); if(wire==null) return false;

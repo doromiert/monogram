@@ -891,6 +891,38 @@ public class Emoji {
         }
     }
 
+    public static ArrayList<String> getFavoriteEmoji() {
+        ArrayList<String> result = new ArrayList<>();
+        String saved = MessagesController.getGlobalEmojiSettings().getString("monogram_favorite_emoji", "");
+        for (String code : saved.split("\n")) {
+            code = fixEmoji(code.replace("\ufe0f", ""));
+            if ((isValidEmoji(code) || isValidEmoji(code.replace("\ufe0f", ""))) && !result.contains(code)) result.add(code);
+        }
+        return result;
+    }
+
+    public static void setFavoriteEmoji(String code, boolean favorite) {
+        if (code == null || !isValidEmoji(code) && !isValidEmoji(code.replace("\ufe0f", ""))) return;
+        code = fixEmoji(code.replace("\ufe0f", ""));
+        ArrayList<String> favorites = getFavoriteEmoji();
+        if (favorite && !favorites.contains(code)) favorites.add(code);
+        else if (!favorite) favorites.remove(code);
+        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji", TextUtils.join("\n", favorites)).apply();
+    }
+
+    public static ArrayList<String> getRecentEmojiWithFavorites(boolean animated) {
+        ArrayList<String> result = getFavoriteEmoji();
+        for (String code : recentEmoji) {
+            if (!code.startsWith("animated_")) code = fixEmoji(code.replace("\ufe0f", ""));
+            if ((animated || !code.startsWith("animated_")) && !result.contains(code)) result.add(code);
+        }
+        return result;
+    }
+
+    public static boolean isFavoriteEmoji(String code) {
+        return code != null && getFavoriteEmoji().contains(fixEmoji(code.replace("\ufe0f", "")));
+    }
+
     public static void addRecentEmoji(String code) {
         Integer count = emojiUseHistory.get(code);
         if (count == null) {

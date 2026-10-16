@@ -1442,6 +1442,13 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 }
             }
         } else {
+            for (String code : Emoji.getFavoriteEmoji()) {
+                ReactionsLayoutInBubble.VisibleReaction favorite = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(code);
+                if (hashSet.add(favorite)) {
+                    visibleReactions.add(favorite);
+                    added++;
+                }
+            }
             for (int i = 0; i < topReactions.size(); i++) {
                 ReactionsLayoutInBubble.VisibleReaction visibleReaction = ReactionsLayoutInBubble.VisibleReaction.fromTL(topReactions.get(i));
                 if (!hashSet.contains(visibleReaction) && (type == TYPE_TAGS || UserConfig.getInstance(currentAccount).isPremium() || visibleReaction.documentId == 0)) {
