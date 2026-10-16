@@ -199,19 +199,8 @@ public final class XmppRooms implements AutoCloseable {
     public Set<BareJid> members(String jid) throws Exception {
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
-        RoomInfo info;
-        try { info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom()); }
-        catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer its room-information query.",timeout); }
-        catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("Room information",rejected); }
-        if(!info.isNonanonymous() || !info.isMembersOnly()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
-        Set<BareJid> members=new HashSet<>();
-        // Include offline members; Smack's encrypt(MultiUserChat,...) covers only present occupants.
-        for(String affiliation:new String[]{"member","admin","owner"}) {
-            try {
-                for(Affiliate member:affiliation.equals("member") ? chat.getMembers() : affiliation.equals("admin") ? chat.getAdmins() : chat.getOwners()) members.add(member.getJid().asBareJid());
-            } catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer its "+affiliation+" list query.",timeout); }
-            catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("Room "+affiliation+" list",rejected); }
-        }
+        Set<BareJid> members=memberLists(connection,chat.getRoom());
+        if(closed || !chat.isJoined()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
         for (EntityFullJid occupant:chat.getOccupants()) {
             org.jivesoftware.smackx.muc.Occupant user=chat.getOccupant(occupant);
             if (user==null || user.getJid()==null || !members.contains(user.getJid().asBareJid()))
@@ -219,6 +208,37 @@ public final class XmppRooms implements AutoCloseable {
         }
         if (!members.contains(connection.getUser().asBareJid())) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
         return members;
+    }
+    static Set<BareJid> memberLists(XMPPConnection connection,EntityBareJid room) throws Exception {
+        Map<MUCAffiliation,org.jivesoftware.smack.StanzaCollector> queries=new LinkedHashMap<>();
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(connection.getReplyTimeout());
+        try {
+            // Pipeline the same Smack affiliation IQs so one complete check needs one network round trip.
+            for(MUCAffiliation affiliation:new MUCAffiliation[]{MUCAffiliation.member,MUCAffiliation.admin,MUCAffiliation.owner}) {
+                org.jivesoftware.smackx.muc.packet.MUCAdmin query=new org.jivesoftware.smackx.muc.packet.MUCAdmin();
+                query.setTo(room); query.setType(IQ.Type.get);
+                query.addItem(new org.jivesoftware.smackx.muc.packet.MUCItem(affiliation));
+                queries.put(affiliation,connection.createStanzaCollectorAndSend(query));
+            }
+            RoomInfo info;
+            try { info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(room); }
+            catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer its room-information query.",timeout); }
+            catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("Room information",rejected); }
+            if(!info.isNonanonymous() || !info.isMembersOnly()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
+            Set<BareJid> members=new HashSet<>();
+            for(Map.Entry<MUCAffiliation,org.jivesoftware.smack.StanzaCollector> query:queries.entrySet()) {
+                try {
+                    long remaining=Math.max(1,java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline-System.nanoTime()));
+                    org.jivesoftware.smackx.muc.packet.MUCAdmin answer=query.getValue().nextResultOrThrow(remaining);
+                    for(org.jivesoftware.smackx.muc.packet.MUCItem member:answer.getItems()) {
+                        if(member.getJid()==null) throw new IllegalArgumentException("Room membership response omitted a member address");
+                        members.add(member.getJid().asBareJid());
+                    }
+                } catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer its "+query.getKey()+" list query.",timeout); }
+                catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("Room "+query.getKey()+" list",rejected); }
+            }
+            return members;
+        } finally { for(org.jivesoftware.smack.StanzaCollector query:queries.values()) query.cancel(); }
     }
     public XmppRoomMessage send(String jid,String body,boolean encrypted) throws Exception { return send(jid,body,encrypted,Collections.emptySet()); }
     public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded) throws Exception { return send(jid,body,encrypted,excluded,false);
