@@ -677,7 +677,7 @@ public class CustomEmojiReactionsWindow {
         for (int i = 0; i < selectAnimatedEmojiDialog.emojiGridView.getChildCount(); i++) {
             if (selectAnimatedEmojiDialog.emojiGridView.getChildAt(i) instanceof SelectAnimatedEmojiDialog.ImageViewEmoji) {
                 SelectAnimatedEmojiDialog.ImageViewEmoji imageViewEmoji = (SelectAnimatedEmojiDialog.ImageViewEmoji) selectAnimatedEmojiDialog.emojiGridView.getChildAt(i);
-                if (imageViewEmoji.reaction != null && imageViewEmoji.notDraw) {
+                if (imageViewEmoji.reaction != null) {
                     imageViewEmoji.notDraw = false;
                     imageViewEmoji.invalidate();
                 }
@@ -917,9 +917,7 @@ public class CustomEmojiReactionsWindow {
             enterTransitionScalePx = 0;
             enterTransitionScalePy = 0;
 
-            if (enterTransitionProgress >= 1f) syncReactionFrames();
-            // Once expanded, the grid owns every row, including the former collapsed strip.
-            if (reactionsContainerLayout != null && enterTransitionProgress < 1f) {
+            if (reactionsContainerLayout != null) {
                 for (int i = selectAnimatedEmojiDialog.emojiGridView.getChildCount() - 1; i >= 0; --i) {
                     if (selectAnimatedEmojiDialog.emojiGridView.getChildAt(i) instanceof SelectAnimatedEmojiDialog.ImageViewEmoji) {
                         SelectAnimatedEmojiDialog.ImageViewEmoji imageViewEmoji = (SelectAnimatedEmojiDialog.ImageViewEmoji) selectAnimatedEmojiDialog.emojiGridView.getChildAt(i);
@@ -984,12 +982,13 @@ public class CustomEmojiReactionsWindow {
                             float toY = toImageView.getY() + selectAnimatedEmojiDialog.getY() + selectAnimatedEmojiDialog.gridViewContainer.getY() + selectAnimatedEmojiDialog.emojiGridView.getY() - holderView.loopImageView.getY();
                             float toImageViewSize = toImageView.getMeasuredWidth();
                             if (reactionsContainerLayout.getWindowType() == SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
-                                // Morph into the compact grid glyph, rather than filling its whole touch target.
-                                toX += toImageView.getPaddingLeft();
-                                toY += toImageView.getPaddingTop();
-                                toImageViewSize -= toImageView.getPaddingLeft() + toImageView.getPaddingRight();
-                            }
-                            if (toImageView.selected || type == TYPE_STICKER_SET_EMOJI) {
+                                // Match the Unicode grid's glyph padding and scale, keeping upstream draw ownership.
+                                float glyphSize = toImageViewSize - toImageView.getPaddingLeft() - toImageView.getPaddingRight();
+                                float sizeAfterScale = glyphSize * .87f * (toImageView.selected ? .86f : 1f);
+                                toX += toImageView.getPaddingLeft() + (glyphSize - sizeAfterScale) / 2f;
+                                toY += toImageView.getPaddingTop() + (glyphSize - sizeAfterScale) / 2f;
+                                toImageViewSize = sizeAfterScale;
+                            } else if (toImageView.selected || type == TYPE_STICKER_SET_EMOJI) {
                                 float sizeAfterScale = toImageViewSize;
                                 if (type == TYPE_STICKER_SET_EMOJI) {
                                     sizeAfterScale *= .87f;
