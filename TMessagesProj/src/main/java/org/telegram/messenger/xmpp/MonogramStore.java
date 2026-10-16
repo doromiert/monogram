@@ -148,6 +148,12 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized long knownRoom(String jid) {
         try (Cursor c=getReadableDatabase().rawQuery("SELECT id FROM rooms WHERE jid=?",new String[]{jid})) { return c.moveToFirst() ? -c.getLong(0) : 0; }
     }
+    synchronized long knownOccupant(String address) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT user FROM room_participants WHERE occupant=? AND active=1",new String[]{address})) { return c.moveToFirst() ? c.getLong(0) : 0; }
+    }
+    synchronized int newerMessages(long peer,int anchor) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM messages m JOIN messages a ON a.id=? WHERE m.peer=? AND (m.time_ms>a.time_ms OR (m.time_ms=a.time_ms AND m.archive_order>a.archive_order) OR (m.time_ms=a.time_ms AND m.archive_order=a.archive_order AND m.id>a.id)) AND NOT EXISTS(SELECT 1 FROM corrections x WHERE x.message=m.id AND x.resolved!=0)",new String[]{Integer.toString(anchor),Long.toString(peer)})) { c.moveToFirst(); return c.getInt(0); }
+    }
     synchronized ArrayList<Long> rooms() {
         ArrayList<Long> result=new ArrayList<>();
         try (Cursor c=getReadableDatabase().rawQuery("SELECT id FROM rooms ORDER BY id",null)) { while(c.moveToNext()) result.add(-c.getLong(0)); }

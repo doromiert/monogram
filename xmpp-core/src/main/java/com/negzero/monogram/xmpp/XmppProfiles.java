@@ -23,6 +23,7 @@ public final class XmppProfiles {
     public static final String META = "urn:xmpp:avatar:metadata", DATA = "urn:xmpp:avatar:data";
     private final XMPPConnection connection;
     private volatile String ownAvatarHash;
+    private final java.util.Map<String,String> presenceAvatars=new java.util.concurrent.ConcurrentHashMap<>();
     private static final class CardIq extends IQ {
         final StandardExtensionElement card;
         CardIq(StandardExtensionElement card) { super("vCard", XmppProfile.VCARD); this.card = card; }
@@ -33,7 +34,7 @@ public final class XmppProfiles {
             return xml;
         }
     }
-    public XmppProfiles(XMPPConnection connection, Consumer<EntityBareJid> changed) {
+    public XmppProfiles(XMPPConnection connection, Consumer<org.jxmpp.jid.Jid> changed) {
         this.connection = connection;
         // Smack's VCard provider drops unknown and repeated fields on save.
         ProviderManager.addIQProvider("vCard", XmppProfile.VCARD, new IQProvider<CardIq>() {
@@ -54,7 +55,15 @@ public final class XmppProfiles {
             }
         }, stanza -> stanza instanceof Presence);
         connection.addAsyncStanzaListener(stanza -> {
-            if (stanza.getFrom() != null && stanza.getFrom().asEntityBareJidIfPossible() != null) changed.accept(stanza.getFrom().asEntityBareJidIfPossible());
+            if(stanza.getFrom()==null || stanza.getFrom().asEntityBareJidIfPossible()==null) return;
+            try {
+                StandardExtensionElement update=StandardExtensionElementProvider.INSTANCE.parse(org.jivesoftware.smack.util.PacketParserUtils.getParserFor(stanza.getExtension("x","vcard-temp:x:update").toXML().toString()));
+                StandardExtensionElement photo=update.getFirstElement("photo","vcard-temp:x:update");
+                if(photo==null) return;
+                String hash=photo.getText()==null ? "" : photo.getText().trim().toLowerCase(java.util.Locale.ROOT);
+                if(!hash.isEmpty() && !hash.matches("[0-9a-f]{40}")) return;
+                if(!hash.equals(presenceAvatars.put(stanza.getFrom().toString(),hash))) changed.accept(stanza.getFrom());
+            } catch(Exception malformed) { /* A malformed avatar hint cannot trigger repeated fetches. */ }
         }, stanza -> stanza instanceof Presence && stanza.hasExtension("x", "vcard-temp:x:update"));
     }
     private XmppProfile card(org.jxmpp.jid.Jid jid, boolean editing) throws Exception {

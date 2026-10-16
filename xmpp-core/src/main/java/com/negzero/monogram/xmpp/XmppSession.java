@@ -37,6 +37,7 @@ public final class XmppSession implements AutoCloseable {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
         default void profileChanged(EntityBareJid jid) {}
+        default void profileChanged(org.jxmpp.jid.Jid jid) { profileChanged(jid.asEntityBareJidIfPossible()); }
         default void roomMessage(XmppRoomMessage message) {}
         default void roomChanged(XmppRooms.State room) {}
         default void bookmarksChanged() {}

@@ -182,6 +182,14 @@ The host JNI/SQLite integration test requires the host library; it explicitly sk
 
 The dedicated Java 11 Nix test shell also passes all 33 core checks (`.state/omemo2-nix-test-shell-tests.log`). Final Android XML reports are preserved in `.state/omemo2-android-results.zip`; native exports, alignment, hashes and zero-skip counts are summarized in `.state/omemo2-component-verification.json`. These are development-component results, not an APK release or complete OMEMO2 interoperability claim.
 
+## Bounded DM and room synchronization (0.2.17)
+
+Connection startup attempts user/room profile metadata before OMEMO fingerprint prefetch, then starts archive loading. DMs and MUCs request newest-to-oldest pages of 50, stopping after three pages per conversation. Scrolling into the next 50-message batch requests another page. Previously loaded messages remain in SQLite and native Telegram views read from that cache; no conversation data is deleted to enforce the preload limit. The existing native view and image caches continue managing memory. Account-wide archive-only conversation discovery is also bounded to three pages at startup, so it no longer automatically scans the whole server archive.
+
+The idle archive queue retains each conversation's current window until scrolling advances it. Requests use session-local page cursors starting at the archive head, preserving cached history independently of the fetch window. MAM-capable rooms suppress duplicate join-history delivery; rooms without MAM request the latest 50 join-history messages. Presence snapshots are coalesced over 200 ms. Full occupant addresses survive avatar notifications, unchanged avatar hashes are ignored, and one occupant's hint no longer reloads every room member. Native user updates are published in batches instead of one UI refresh per profile.
+
+Verification: seven Android controller checks cover stage order, bounded 150-message preload, one-page scroll advancement, restart from the latest page, cancellation, cursor recovery and chat isolation. Seven room-store checks cover persistence, identity, permissions and avatar serialization. Four core checks include direct/profile and room transport against disposable local Prosody. The arm64 APK builds through Nix with the existing signing identity. Actual phone smoothness and scroll interaction remain unverified; no phone UI navigation or real-contact test messages were performed.
+
 
 ## Room permissions, identities and avatars (0.2.16)
 
