@@ -54,10 +54,18 @@ public final class FileTransfer {
         if (!file.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
         long size = length + (encrypted ? 16 : 0);
         HttpFileUploadManager manager = HttpFileUploadManager.getInstanceFor(connection);
-        if (!manager.isUploadServiceDiscovered() && !manager.discoverUploadService()) throw new Failure("NO_UPLOAD_SERVICE");
+        try {
+            if (!manager.isUploadServiceDiscovered() && !manager.discoverUploadService()) throw new Failure("NO_UPLOAD_SERVICE");
+        } catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
+            throw new XmppRequestException("File upload service discovery",error);
+        }
         if (!manager.getDefaultUploadService().acceptsFileOfSize(size)) throw new Failure("SERVER_SIZE_LIMIT");
         String contentType = encrypted ? "application/octet-stream" : mime;
-        Slot slot = manager.requestSlot(filename, size, contentType);
+        Slot slot;
+        try { slot=manager.requestSlot(filename, size, contentType); }
+        catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
+            throw new XmppRequestException("File upload slot",error);
+        }
         FileLink.parse(slot.getPutUrl().toExternalForm());
         FileLink link = FileLink.parse(slot.getGetUrl().toExternalForm());
         byte[] iv = null, key = null;

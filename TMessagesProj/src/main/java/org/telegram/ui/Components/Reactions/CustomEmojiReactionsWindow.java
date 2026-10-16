@@ -825,7 +825,7 @@ public class CustomEmojiReactionsWindow {
                 }
             }
             int height = size;
-            if (type == TYPE_STICKER_SET_EMOJI) {
+            if (reactionsContainerLayout.getWindowType() == SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
                 height = dp(36) * 8 - dp(8);
             } else if (reactionsContainerLayout.showExpandableReactions()) {
                 int rows = (int) Math.ceil(reactions.size() / 8f);

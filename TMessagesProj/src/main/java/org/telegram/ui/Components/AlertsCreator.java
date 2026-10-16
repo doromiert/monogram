@@ -308,6 +308,8 @@ public class AlertsCreator {
                 text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
             case "MONOGRAM_XMPP_DISCONNECTED":
                 text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
+            case "MONOGRAM_XMPP_FAILED":
+                text = "The XMPP request failed. Your message was not sent."; break;
             case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":
                 text = "Your Jabber provider does not offer HTTP File Upload. This file was not sent."; break;
             case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":

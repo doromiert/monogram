@@ -992,7 +992,7 @@ public final class MonogramController {
         else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = omemoSendError((com.negzero.monogram.xmpp.OmemoSendException)e);
         else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
         else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
-        else error.text = "MONOGRAM_FILE_TRANSFER_FAILED";
+        else error.text = "MONOGRAM_FILE_TRANSFER_FAILED|"+com.negzero.monogram.xmpp.XmppRequestException.describe(e);
         return error;
     }
     private void upload(MonogramFileRequest request, RequestDelegate callback) {
@@ -1154,6 +1154,9 @@ public final class MonogramController {
         dispatchRequest(request,(response,error) -> {
             if(peer!=0 && owner==accountEpoch) {
                 SharedPreferences.Editor edit=preferences.edit();
+                String kind=request instanceof MonogramFileRequest || request instanceof TLRPC.TL_messages_sendMedia ? "file" : "text";
+                if(error==null) edit.remove(sendErrorKey(peer)+"-"+kind);
+                else edit.putString(sendErrorKey(peer)+"-"+kind,error.text);
                 if(error==null) edit.remove(sendErrorKey(peer)); else edit.putString(sendErrorKey(peer),error.text);
                 edit.apply();
             }
@@ -1163,6 +1166,7 @@ public final class MonogramController {
     private void dispatchRequest(TLObject request, RequestDelegate callback) {
         if (request instanceof MonogramFileRequest) { worker.execute(() -> upload((MonogramFileRequest) request, callback)); return; }
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
+                || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
                 || request instanceof TLRPC.TL_messages_getMessagesReactions || request instanceof TLRPC.TL_messages_getMessageReactionsList
@@ -1182,7 +1186,7 @@ public final class MonogramController {
                 else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = omemoSendError((com.negzero.monogram.xmpp.OmemoSendException)e);
                 else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
                 else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
-                else error.text = "MONOGRAM_XMPP_FAILED: " + e.getClass().getSimpleName();
+                else error.text = "MONOGRAM_XMPP_FAILED|"+com.negzero.monogram.xmpp.XmppRequestException.describe(e);
             }
             final TLObject completed = response; final TLRPC.TL_error failed = error;
             if (callback != null) Utilities.stageQueue.postRunnable(() -> {
@@ -1236,6 +1240,11 @@ public final class MonogramController {
         cacheWorker.execute(() -> { if(accountEpoch==owner) try { publishReactions(peer,java.util.Collections.singleton(id)); } catch(IllegalArgumentException ignored) {} });
     }
     private TLObject handle(TLObject request) throws Exception {
+        if(request instanceof TLRPC.TL_messages_getEmojiKeywords) return MonogramEmojiKeywords.load(ApplicationLoader.applicationContext.getAssets(),((TLRPC.TL_messages_getEmojiKeywords)request).lang_code,-1);
+        if(request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference) {
+            TLRPC.TL_messages_getEmojiKeywordsDifference query=(TLRPC.TL_messages_getEmojiKeywordsDifference)request;
+            return MonogramEmojiKeywords.load(ApplicationLoader.applicationContext.getAssets(),query.lang_code,query.from_version);
+        }
         if (request instanceof TLRPC.TL_updates_getState) {
             TLRPC.TL_updates_state result = new TLRPC.TL_updates_state(); result.date = now(); return result;
         }

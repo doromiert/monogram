@@ -444,6 +444,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     private ArrayList<TL_stars.TL_starGiftUnique> gifts = new ArrayList<>();
     private ArrayList<TLRPC.Document> recentStickers = new ArrayList<>();
     private ArrayList<String> standardEmojis = new ArrayList<>();
+    private int standardEmojisStartRow;
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> topReactions = new ArrayList<>();
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> recentReactions = new ArrayList<>();
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> stickers = new ArrayList<>();
@@ -1832,6 +1833,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 });
 
                 if (type == TYPE_STICKER_SET_EMOJI) {
+                    if(queryFullyConsistsOfEmojis && Emoji.getEmojiDrawable(query)!=null) emojis.add(Emoji.fixEmoji(query));
                     final Utilities.Callback<Runnable> search = next -> {
                         MediaDataController.getInstance(currentAccount).getEmojiSuggestions(
                             lastSearchKeyboardLanguage, query, false,
@@ -2802,8 +2804,8 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     if (imageView.imageReceiver != null) {
                         imageView.imageReceiver.clearImage();
                     }
-                } else if (type == TYPE_STICKER_SET_EMOJI && position - (searchRow != -1 ? 1 : 0) - (longtapHintRow != -1 ? 1 : 0) < standardEmojis.size()) {
-                    int pos = position - (searchRow != -1 ? 1 : 0) - (longtapHintRow != -1 ? 1 : 0) - (includeEmpty ? 1 : 0);
+                } else if (type == TYPE_STICKER_SET_EMOJI && position >= standardEmojisStartRow && position - standardEmojisStartRow < standardEmojis.size()) {
+                    int pos = position - standardEmojisStartRow;
                     String emoji = standardEmojis.get(pos);
                     imageView.notDraw = false;
                     imageView.isFirstReactions = false;
@@ -3614,6 +3616,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         if (MediaDataController.getInstance(account) == null) {
             return;
         }
+        if(type==TYPE_STICKER_SET_EMOJI) MediaDataController.getInstance(account).fetchNewEmojiKeywords(AndroidUtilities.getCurrentKeyboardLanguage(),true);
         MediaDataController.getInstance(account).checkStickers(MediaDataController.TYPE_EMOJIPACKS);
         if (type == TYPE_EFFECTS) {
             MessagesController.getInstance(currentAccount).getAvailableEffects();
@@ -3705,7 +3708,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         standardEmojis.clear();
         gifts.clear();
 
-        if ((!installedEmojipacks.isEmpty() || type == TYPE_AVATAR_CONSTRUCTOR) && type != TYPE_SET_REPLY_ICON && type != TYPE_SET_REPLY_ICON_BOTTOM && type != TYPE_EXPANDABLE_REACTIONS) {
+        if ((!installedEmojipacks.isEmpty() || type == TYPE_AVATAR_CONSTRUCTOR || type == TYPE_STICKER_SET_EMOJI) && type != TYPE_SET_REPLY_ICON && type != TYPE_SET_REPLY_ICON_BOTTOM && type != TYPE_EXPANDABLE_REACTIONS) {
             searchRow = totalCount++;
             rowHashCodes.add(9L);
         } else {
@@ -4006,6 +4009,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
             }
         }
         if (type == TYPE_STICKER_SET_EMOJI) {
+            standardEmojisStartRow = totalCount;
             for (String[] section : EmojiData.dataColored) {
                 for (String emoji : section) {
                     standardEmojis.add(emoji);
@@ -4951,6 +4955,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.stickersDidLoad);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.recentEmojiStatusesUpdate);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.groupStickersDidLoad);
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.newEmojiSuggestionsAvailable);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
         if (type == TYPE_EMOJI_STATUS || type == TYPE_EMOJI_STATUS_TOP) {
             NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.starUserGiftsLoaded);
@@ -4970,6 +4975,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.stickersDidLoad);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.recentEmojiStatusesUpdate);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.groupStickersDidLoad);
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.newEmojiSuggestionsAvailable);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.emojiLoaded);
         if (type == TYPE_EMOJI_STATUS || type == TYPE_EMOJI_STATUS_TOP) {
             NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.starUserGiftsLoaded);
@@ -4993,7 +4999,9 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.stickersDidLoad) {
+        if(id==NotificationCenter.newEmojiSuggestionsAvailable) {
+            if(type==TYPE_STICKER_SET_EMOJI && !TextUtils.isEmpty(lastQuery)) search(lastQuery,searchedLiftUp,false);
+        } else if (id == NotificationCenter.stickersDidLoad) {
             if (((int) args[0]) == MediaDataController.TYPE_EMOJIPACKS || (((int) args[0]) == MediaDataController.TYPE_IMAGE && showStickers)) {
                 updateRowsDelayed();
             }

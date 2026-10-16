@@ -202,6 +202,7 @@ public final class XmppRooms implements AutoCloseable {
         RoomInfo info;
         try { info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom()); }
         catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer its room-information query.",timeout); }
+        catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("Room information",rejected); }
         if(!info.isNonanonymous() || !info.isMembersOnly()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
         Set<BareJid> members=new HashSet<>();
         // Include offline members; Smack's encrypt(MultiUserChat,...) covers only present occupants.
@@ -209,6 +210,7 @@ public final class XmppRooms implements AutoCloseable {
             try {
                 for(Affiliate member:affiliation.equals("member") ? chat.getMembers() : affiliation.equals("admin") ? chat.getAdmins() : chat.getOwners()) members.add(member.getJid().asBareJid());
             } catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer its "+affiliation+" list query.",timeout); }
+            catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("Room "+affiliation+" list",rejected); }
         }
         for (EntityFullJid occupant:chat.getOccupants()) {
             org.jivesoftware.smackx.muc.Occupant user=chat.getOccupant(occupant);
@@ -235,6 +237,7 @@ public final class XmppRooms implements AutoCloseable {
             for (BareJid recipient:recipients) {
                 try { if(deviceLookup.devices(recipient).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,recipient.toString()); }
                 catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
+                catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
             }
             OmemoMessage.Sent ciphertext;
             try { ciphertext=omemo.encrypt(recipients,body); }
