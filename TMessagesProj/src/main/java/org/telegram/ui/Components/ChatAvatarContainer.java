@@ -1085,20 +1085,6 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     private boolean showingSavedMessagesHint;
 
     public void updateSubtitle(boolean animated) {
-        if (parentFragment!=null && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(parentFragment.getDialogId())) {
-            org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
-            boolean joined=false;
-            try { joined=controller.session().rooms.state(controller.jid(parentFragment.getDialogId())).joined; } catch(Exception ignored) {}
-            setSubtitle(!joined ? "Room disconnected · see Room settings" : controller.encrypted(parentFragment.getDialogId()) ? "Sending with OMEMO" : "Sending without OMEMO"); return;
-        }
-        if (parentFragment != null && parentFragment.getCurrentUser() != null && parentFragment.getDialogId() > 0 && !UserObject.isUserSelf(parentFragment.getCurrentUser())) {
-            org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
-            int state = controller.state();
-            setSubtitle(state == org.telegram.tgnet.ConnectionsManager.ConnectionStateConnecting ? "Connecting to XMPP…"
-                    : state != org.telegram.tgnet.ConnectionsManager.ConnectionStateConnected ? "Disconnected from XMPP"
-                    : controller.encrypted(parentFragment.getDialogId()) ? "Sending with OMEMO" : "Sending without OMEMO");
-            return;
-        }
         if (parentFragment == null) {
             return;
         }
@@ -1252,9 +1238,18 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                 } else if (user.bot) {
                     newStatus = getString(R.string.Bot);
                 } else {
-                    isOnline[0] = false;
-                    newStatus = LocaleController.formatUserStatus(currentAccount, user, isOnline, allowShorterStatus ? statusMadeShorter : null);
-                    useOnlineColor = isOnline[0];
+                    org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                    com.negzero.monogram.xmpp.XmppContacts.PresenceState presence=controller.presence(user.id);
+                    int connection=controller.state();
+                    if(connection!=org.telegram.tgnet.ConnectionsManager.ConnectionStateConnected) {
+                        newStatus=getString(connection==org.telegram.tgnet.ConnectionsManager.ConnectionStateConnecting ? R.string.MonogramConnecting : R.string.MonogramDisconnected);
+                    } else if(presence.online) {
+                        newStatus=getString(R.string.Online); useOnlineColor=true;
+                    } else if(presence.visible && presence.lastSeen>0 && presence.lastSeen<=Integer.MAX_VALUE) {
+                        newStatus=LocaleController.formatDateOnline((int)presence.lastSeen,allowShorterStatus ? statusMadeShorter : null);
+                    } else {
+                        newStatus=getString(presence.visible ? R.string.VoipOfflineTitle : R.string.MonogramPresenceUnavailable);
+                    }
                 }
                 newSubtitle = newStatus;
             } else {

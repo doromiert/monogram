@@ -36,26 +36,41 @@ public final class MonogramAttachments {
         message.params.put(PARAM, link.wireUrl); message.message = caption == null ? "" : caption; message.entities.clear();
         message.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
         message.attachPath = file.getAbsolutePath();
-        message.media = saved != null ? saved : media(message.id, message.date, file, name);
+        message.media = saved != null && !(saved.photo != null && isGif(file)) ? saved : media(message.id, message.date, file, name);
         if (message.media.document != null && file.isFile()) message.media.document.localPath = file.getAbsolutePath();
         message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA;
     }
     static TLRPC.MessageMedia media(int id, int date, File file, String name) {
         BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
         if (file.isFile()) BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
-        if (bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth <= 12000 && bounds.outHeight <= 12000
+        boolean gif = isGif(file);
+        if (!gif && bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth <= 12000 && bounds.outHeight <= 12000
                 && (long) bounds.outWidth * bounds.outHeight <= 50000000) {
             return photo(id, date, bounds.outWidth, bounds.outHeight, file.length());
         }
         TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1;
         TLRPC.TL_document document = new TLRPC.TL_document(); document.id = id; document.date = date;
         document.dc_id = Integer.MIN_VALUE; document.file_reference = new byte[0];
-        document.mime_type = file.isFile() ? java.net.URLConnection.guessContentTypeFromName(name) : null;
+        document.mime_type = gif ? "image/gif" : file.isFile() ? java.net.URLConnection.guessContentTypeFromName(name) : null;
         if (document.mime_type == null) document.mime_type = "application/octet-stream";
         document.size = file.isFile() ? file.length() : 0;
         TLRPC.TL_documentAttributeFilename filename = new TLRPC.TL_documentAttributeFilename(); filename.file_name = name;
-        document.attributes.add(filename); media.document = document;
+        document.attributes.add(filename);
+        if (gif) {
+            TLRPC.TL_documentAttributeImageSize dimensions = new TLRPC.TL_documentAttributeImageSize();
+            dimensions.w = Math.max(1, bounds.outWidth); dimensions.h = Math.max(1, bounds.outHeight);
+            document.attributes.add(dimensions); document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
+        }
+        media.document = document;
         return media;
+    }
+    private static boolean isGif(File file) {
+        if (!file.isFile()) return false;
+        try (java.io.InputStream input = new java.io.FileInputStream(file)) {
+            byte[] header = new byte[6];
+            return input.read(header) == 6 && header[0] == 'G' && header[1] == 'I' && header[2] == 'F'
+                    && header[3] == '8' && (header[4] == '7' || header[4] == '9') && header[5] == 'a';
+        } catch (java.io.IOException unavailable) { return false; }
     }
     private static TLRPC.MessageMedia photo(int id, int date, int width, int height, long length) {
         TLRPC.TL_messageMediaPhoto media = new TLRPC.TL_messageMediaPhoto(); media.flags = 1;
@@ -75,13 +90,14 @@ public final class MonogramAttachments {
             String inferred = dot < 0 ? null : android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
             if (inferred != null) mime = inferred;
         }
-        if (mime.startsWith("image/")) return photo(id, 0, 1, 1, size);
+        if (mime.startsWith("image/") && !mime.equals("image/gif")) return photo(id, 0, 1, 1, size);
         TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1;
         media.document = new TLRPC.TL_document(); media.document.id = id; media.document.mime_type = mime; media.document.size = Math.max(0, size);
         media.document.dc_id = Integer.MIN_VALUE; media.document.file_reference = new byte[0];
         TLRPC.TL_documentAttributeFilename filename = new TLRPC.TL_documentAttributeFilename(); filename.file_name = name;
         media.document.attributes.add(filename);
-        if (mime.startsWith("video/")) media.document.attributes.add(new TLRPC.TL_documentAttributeVideo());
+        if (mime.equals("image/gif")) media.document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
+        else if (mime.startsWith("video/")) media.document.attributes.add(new TLRPC.TL_documentAttributeVideo());
         else if (mime.startsWith("audio/")) media.document.attributes.add(new TLRPC.TL_documentAttributeAudio());
         return media;
     }

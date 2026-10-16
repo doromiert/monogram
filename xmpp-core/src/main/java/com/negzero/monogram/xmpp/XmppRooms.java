@@ -42,6 +42,7 @@ public final class XmppRooms implements AutoCloseable {
     }
     private final XMPPConnection connection;
     private final OmemoManager omemo;
+    XmppChatStates chatStates;
     private final XmppSession.Listener listener;
     private final Map<EntityBareJid,MultiUserChat> chats=new ConcurrentHashMap<>();
     private final Map<EntityBareJid,String> passwords=new ConcurrentHashMap<>();
@@ -69,6 +70,16 @@ public final class XmppRooms implements AutoCloseable {
         return MultiUserChatManager.getInstanceFor(connection).getRoomsHostedBy(JidCreate.domainBareFrom(service)).values();
     }
     public boolean known(Jid jid) { return jid!=null && chats.containsKey(jid.asEntityBareJidIfPossible()); }
+    boolean canSendChatState(EntityBareJid room) {
+        MultiUserChat chat=chats.get(room);
+        if(chat==null || !chat.isJoined() || chat.getNickname()==null) return false;
+        org.jivesoftware.smackx.muc.Occupant own=chat.getOccupant(JidCreate.entityFullFrom(room,chat.getNickname()));
+        return own!=null && own.getRole()!=null && own.getRole()!=MUCRole.visitor && own.getRole()!=MUCRole.none;
+    }
+    boolean acceptsChatState(EntityFullJid from) {
+        MultiUserChat chat=chats.get(from.asEntityBareJid());
+        return chat!=null && chat.isJoined() && !from.getResourcepart().equals(chat.getNickname()) && chat.getOccupant(from)!=null;
+    }
     public State state(String jid) throws Exception { return new State(chat(jid)); }
     private MultiUserChat chat(String jid) throws Exception {
         MultiUserChat chat=chats.get(JidCreate.entityBareFrom(jid));
@@ -317,7 +328,7 @@ public final class XmppRooms implements AutoCloseable {
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
         if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
-        chat.sendMessage(message); return sent.withSkippedRecipients(skipped);
+        chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
     }
     private static final class Unavailable {
         final long until=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(1);

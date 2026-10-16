@@ -19,6 +19,14 @@ public final class XmppContacts implements AutoCloseable {
             sharesOwnPresence=listed && entry.canSeeMyPresence(); outgoingPending=listed && entry.isSubscriptionPending();
         }
     }
+    public static final class PresenceState {
+        public static final PresenceState UNKNOWN = new PresenceState(false, false, 0);
+        public final boolean visible, online;
+        public final long lastSeen;
+        public PresenceState(boolean visible, boolean online, long lastSeen) {
+            this.visible=visible; this.online=online; this.lastSeen=lastSeen;
+        }
+    }
     private final XMPPConnection connection;
     private final XmppRooms rooms;
     private final Roster roster;
@@ -27,6 +35,7 @@ public final class XmppContacts implements AutoCloseable {
     private final StanzaListener cancellations;
     XmppContacts(XMPPConnection connection,XmppRooms rooms,BiConsumer<String,Boolean> incoming) {
         this.connection=connection; this.rooms=rooms; this.incoming=incoming; roster=Roster.getInstanceFor(connection);
+        org.jivesoftware.smackx.iqlast.LastActivityManager.getInstanceFor(connection).disable();
         subscriptions=(from,presence) -> {
             if(connection.getUser()!=null && from.isEntityBareJid() && !rooms.known(from) && !from.equals(connection.getUser().asBareJid())) incoming.accept(from.toString(),true);
             return null;
@@ -44,6 +53,25 @@ public final class XmppContacts implements AutoCloseable {
         return jid.asEntityBareJidIfPossible();
     }
     public State state(String address) throws Exception { return new State(roster.getEntry(contact(address))); }
+    /** Roster aggregates all resources; a room occupant never grants a direct presence subscription. */
+    public PresenceState presence(String address) throws Exception {
+        EntityBareJid jid=contact(address);
+        RosterEntry entry=roster.getEntry(jid);
+        if(!connection.isAuthenticated() || !roster.isLoaded() || entry==null || !entry.canSeeHisPresence()) return PresenceState.UNKNOWN;
+        return new PresenceState(true,roster.getPresence(jid).isAvailable(),0);
+    }
+    public PresenceState lastSeen(String address) throws Exception {
+        PresenceState before=presence(address);
+        if(!before.visible || before.online) return before;
+        long seconds=org.jivesoftware.smackx.iqlast.LastActivityManager.getInstanceFor(connection).getLastActivity(contact(address)).lastActivity;
+        PresenceState after=presence(address);
+        if(!after.visible || after.online) return after;
+        return new PresenceState(true,false,lastSeenTimestamp(System.currentTimeMillis()/1000,seconds));
+    }
+    static long lastSeenTimestamp(long now,long seconds) {
+        // Zero means an available resource, not an offline user's logout time.
+        return seconds>0 && seconds<now ? now-seconds : 0;
+    }
     private void ensureEntry(EntityBareJid jid) throws Exception {
         if(!roster.isLoaded()) roster.reloadAndWait();
         if(roster.getEntry(jid)==null) roster.createItem(jid,null,null);

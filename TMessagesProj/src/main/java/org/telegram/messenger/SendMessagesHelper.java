@@ -2204,6 +2204,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 params = null;
             }
             SendMessageParams sendMessageParams = SendMessageParams.of((TLRPC.TL_document) finalDocument, null, null, peer, replyToMsg, replyToTopMsg, null, null, null, params, notify, scheduleDate, scheduleRepeatPeriod, 0, parentObject, sendAnimationData, updateStickersOrder);
+            sendMessageParams.caption = caption == null ? null : caption.toString();
             sendMessageParams.replyToStoryItem = storyItem;
             sendMessageParams.replyQuote = quote;
             sendMessageParams.sendMessageChatArguments = sendMessageChatArguments;
@@ -5283,6 +5284,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     monogramSource = size == null ? null : getFileLoader().getPathToAttach(size, true);
                     if (monogramSource != null && !monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(size);
                 } else if (!TextUtils.isEmpty(newMsg.attachPath)) monogramSource = new File(newMsg.attachPath);
+                if (document != null && (monogramSource == null || !monogramSource.isFile())) {
+                    monogramSource = getFileLoader().getPathToAttach(document);
+                    if (!monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(document, true);
+                }
                 if (monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
                 groupId = 0; newMsg.grouped_id = 0; newMsg.flags &= ~131072;
                 if (newMsg.params == null) newMsg.params = new HashMap<>();

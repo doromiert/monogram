@@ -44,6 +44,7 @@ public final class XmppSession implements AutoCloseable {
         default void reactionRejected(String from,String id) {}
         default void contactRequest(String address,boolean pending) {}
         default void typing(EntityBareJid jid, boolean composing) {}
+        default void roomTyping(org.jxmpp.jid.EntityFullJid occupant, boolean composing) {}
         default void disconnected() {}
         default void disconnected(Exception error) { disconnected(); }
         default void reconnected(boolean resumed) {}
@@ -119,7 +120,6 @@ public final class XmppSession implements AutoCloseable {
         MessageReactions.initialize();
         FileShare.initialize();
         profiles = new XmppProfiles(connection, listener::profileChanged);
-        chatStates = new XmppChatStates(connection, listener::typing);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageReactions.NAMESPACE);
@@ -147,6 +147,8 @@ public final class XmppSession implements AutoCloseable {
             return found;
         });
         rooms=new XmppRooms(connection,omemo,listener,contact -> sendingDevices(contact.toString()));
+        chatStates = new XmppChatStates(connection, listener::typing, rooms, listener::roomTyping);
+        rooms.chatStates = chatStates;
         contacts=new XmppContacts(connection,rooms,listener::contactRequest);
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {

@@ -64,6 +64,11 @@ public final class MonogramController {
     private final java.util.Set<Long> profileLoads = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.Set<Long> typingPeers = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.concurrent.ConcurrentHashMap<Long, String> typingAddresses = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<Long,com.negzero.monogram.xmpp.XmppContacts.PresenceState> presences=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<Long,Long> lastPresenceQueries=new java.util.HashMap<>();
+    private final java.util.concurrent.atomic.AtomicBoolean presencePublishQueued=new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile long presencePeer;
+    private final java.util.Map<String, long[]> roomTypingPeers = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long mediaHistoryPeer;
     private int retrySeconds = 3;
     private final Runnable retryConnection = this::restore;
@@ -122,13 +127,58 @@ public final class MonogramController {
         if (current != null) current.chatStates.setEnabled(enabled);
         return true;
     }
-    public void chatOpened(long peer) { chatState(peer, 0); }
+    public com.negzero.monogram.xmpp.XmppContacts.PresenceState presence(long peer) {
+        return state==ConnectionsManager.ConnectionStateConnected ? presences.getOrDefault(peer,com.negzero.monogram.xmpp.XmppContacts.PresenceState.UNKNOWN)
+                : com.negzero.monogram.xmpp.XmppContacts.PresenceState.UNKNOWN;
+    }
+    private void presenceChanged(long peer,XmppSession expected,long epoch,boolean query) {
+        if(peer<=0 || peer==self || session!=expected || sessionEpoch!=epoch) return;
+        try {
+            com.negzero.monogram.xmpp.XmppContacts.PresenceState value=expected.contacts.presence(store.jid(peer));
+            com.negzero.monogram.xmpp.XmppContacts.PresenceState old=presences.get(peer);
+            if(value.visible && !value.online && old!=null && old.visible && !old.online && old.lastSeen>0) value=old;
+            presences.put(peer,value); publishPresence();
+            long now=android.os.SystemClock.elapsedRealtime();
+            if(!query || !value.visible || value.online || value.lastSeen>0 || now-lastPresenceQueries.getOrDefault(peer,Long.MIN_VALUE/2)<60000) return;
+            lastPresenceQueries.put(peer,now);
+            String jid=store.jid(peer);
+            final com.negzero.monogram.xmpp.XmppContacts.PresenceState requested=value;
+            profileWorker.execute(() -> {
+                try {
+                    com.negzero.monogram.xmpp.XmppContacts.PresenceState result=expected.contacts.lastSeen(jid);
+                    worker.execute(() -> {
+                        if(session!=expected || sessionEpoch!=epoch || state!=ConnectionsManager.ConnectionStateConnected || presences.get(peer)!=requested) return;
+                        try {
+                            com.negzero.monogram.xmpp.XmppContacts.PresenceState current=expected.contacts.presence(jid);
+                            presences.put(peer,current.visible && !current.online ? result : current); publishPresence();
+                        } catch(Exception unavailable) { }
+                    });
+                } catch(Exception unavailable) { /* Last activity is optional and can be refused. */ }
+            });
+        } catch(Exception unknown) { presences.remove(peer); publishPresence(); }
+    }
+    private void publishPresence() {
+        if(!presencePublishQueued.compareAndSet(false,true)) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            presencePublishQueued.set(false);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_STATUS);
+        },100);
+    }
+    private void refreshPresence() {
+        XmppSession expected=session; long epoch=sessionEpoch;
+        if(expected==null) return;
+        for(long peer:store.peers()) if(peer!=self) presenceChanged(peer,expected,epoch,peer==presencePeer);
+    }
+    public void chatOpened(long peer) {
+        presencePeer=peer; chatState(peer, 0);
+        worker.execute(() -> { XmppSession expected=session; if(expected!=null) presenceChanged(peer,expected,sessionEpoch,true); });
+    }
     public void typingInput(long peer, boolean composing) { chatState(peer, composing ? 1 : 0); }
     public void chatInactive(long peer) { chatState(peer, 2); }
-    public void chatGone(long peer) { chatState(peer, 3); }
+    public void chatGone(long peer) { if(presencePeer==peer) presencePeer=0; chatState(peer, 3); }
     private void chatState(long peer, int action) {
         XmppSession current = session;
-        if (peer <= 0 || peer == self || current == null || !current.connection().isAuthenticated() || !typingEnabled()) return;
+        if (peer == 0 || peer == self || current == null || !current.connection().isAuthenticated() || !typingEnabled()) return;
         try {
             String jid = typingAddresses.computeIfAbsent(peer, store::jid);
             if (action == 1) current.chatStates.input(jid, true);
@@ -137,18 +187,33 @@ public final class MonogramController {
             else current.chatStates.open(jid);
         } catch (IllegalArgumentException unknown) { /* A deleted/local-only conversation has no remote state. */ }
     }
-    private void publishTyping(long peer, boolean composing) {
-        TL_update.TL_updateUserTyping update = new TL_update.TL_updateUserTyping();
-        update.user_id = peer;
-        update.action = composing ? new TLRPC.TL_sendMessageTypingAction() : new TLRPC.TL_sendMessageCancelAction();
+    private void publishTyping(long peer, boolean composing) { publishTyping(peer, peer, composing); }
+    private void publishTyping(long dialog, long user, boolean composing) {
+        TLRPC.SendMessageAction action = composing ? new TLRPC.TL_sendMessageTypingAction() : new TLRPC.TL_sendMessageCancelAction();
+        TLRPC.Update update;
+        if (dialog < 0) {
+            TL_update.TL_updateChatUserTyping room = new TL_update.TL_updateChatUserTyping();
+            room.chat_id = -dialog; room.from_id = new TLRPC.TL_peerUser(); room.from_id.user_id = user; room.action = action;
+            update = room;
+        } else {
+            TL_update.TL_updateUserTyping direct = new TL_update.TL_updateUserTyping();
+            direct.user_id = user; direct.action = action; update = direct;
+        }
         ArrayList<TLRPC.Update> updates = new ArrayList<>(); updates.add(update);
         ArrayList<TLRPC.User> users = new ArrayList<>();
-        if (composing) users.add(store.user(peer, self));
-        Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, now()));
+        if (composing) users.add(store.user(user, self));
+        ArrayList<TLRPC.Chat> chats = new ArrayList<>();
+        if (dialog < 0) chats.add(store.roomChat(dialog));
+        Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, chats, false, now()));
+    }
+    private void clearRoomTyping() {
+        for (long[] entry : roomTypingPeers.values()) publishTyping(entry[0], entry[1], false);
+        roomTypingPeers.clear();
     }
     private void state(int value) {
         state = value;
         if (value != ConnectionsManager.ConnectionStateConnected) {
+            presences.clear(); clearRoomTyping();
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
         }
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didUpdateConnectionState));
@@ -247,6 +312,22 @@ public final class MonogramController {
                             publishTyping(peer, composing);
                         });
                     }
+                    @Override public void roomTyping(org.jxmpp.jid.EntityFullJid occupant, boolean composing) {
+                        worker.execute(() -> {
+                            if (sessionEpoch != epoch || session == null || !preferences.contains("jid") || composing && state != ConnectionsManager.ConnectionStateConnected) return;
+                            String address = occupant.toString();
+                            long[] previous = roomTypingPeers.get(address);
+                            if (!composing) {
+                                if (previous != null) { roomTypingPeers.remove(address); publishTyping(previous[0], previous[1], false); }
+                                return;
+                            }
+                            long room = store.knownRoom(occupant.asBareJid().toString());
+                            long user = store.knownOccupant(address);
+                            if (room == 0 || user == 0 || user == self) return;
+                            if (previous != null && previous[1] != user) publishTyping(previous[0], previous[1], false);
+                            roomTypingPeers.put(address, new long[] {room, user}); publishTyping(room, user, true);
+                        });
+                    }
                     @Override public void disconnected(Exception error) {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
@@ -259,7 +340,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null);
+                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null);
                         });
                     }
                 });
@@ -275,7 +356,7 @@ public final class MonogramController {
                         if(entry!=null && entry.canSeeMyPresence()) recordContactRequest(details.jid.toString(),jid.asBareJid().toString(),false);
                         long peer = store.knownPeer(jid.asBareJid().toString());
                         if (peer == 0 && entry != null) peer = store.peer(jid.asBareJid().toString());
-                        if (peer != 0) { store.rosterName(peer, entry == null ? "" : entry.getName()); publishProfile(peer, epoch); refreshProfile(peer); }
+                        if (peer != 0) { store.rosterName(peer, entry == null ? "" : entry.getName()); publishProfile(peer, epoch); refreshProfile(peer); MonogramController.this.presenceChanged(peer,connecting,epoch,peer==presencePeer); }
                     }
                     contactAuthorizationsChanged();
                 });
@@ -283,7 +364,15 @@ public final class MonogramController {
             @Override public void entriesAdded(java.util.Collection<org.jxmpp.jid.Jid> addresses) { changed(addresses); }
             @Override public void entriesUpdated(java.util.Collection<org.jxmpp.jid.Jid> addresses) { changed(addresses); }
             @Override public void entriesDeleted(java.util.Collection<org.jxmpp.jid.Jid> addresses) { changed(addresses); }
-            @Override public void presenceChanged(org.jivesoftware.smack.packet.Presence presence) {}
+            @Override public void presenceChanged(org.jivesoftware.smack.packet.Presence presence) {
+                if(presence.getFrom()==null) return;
+                String jid=presence.getFrom().asBareJid().toString();
+                worker.execute(() -> {
+                    if(session!=connecting || sessionEpoch!=epoch) return;
+                    long peer=store.knownPeer(jid);
+                    if(peer>0) MonogramController.this.presenceChanged(peer,connecting,epoch,peer==presencePeer);
+                });
+            }
         });
         for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
         connecting.chatStates.setEnabled(typingEnabled());
@@ -294,7 +383,7 @@ public final class MonogramController {
         }
         refreshProfile(self);
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
-        state(ConnectionsManager.ConnectionStateConnected);
+        state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence();
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
         recoverPendingSends();
         startArchiveSync(connecting); syncBookmarks(connecting,epoch,null);
@@ -814,7 +903,7 @@ public final class MonogramController {
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
-            typingAddresses.clear();
+            typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
             if (session != null) { session.close(); session = null; }
             sessionEpoch++; archiveSync = null;
             for (FileTransfer.Job job : fileJobs.values()) job.cancel();

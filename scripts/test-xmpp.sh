@@ -38,7 +38,7 @@ ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhos
 c2s_require_encryption = true
 allow_registration = false
 log = { { levels = { min = "info" }; to = "console" } }
-modules_enabled = { "roster"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule" }
+modules_enabled = { "roster"; "lastactivity"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule" }
 VirtualHost "localhost"
 authentication = "internal_hashed"
 ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhost.crt" }

@@ -1061,20 +1061,8 @@ public class MediaDataController extends BaseController {
                 break;
             }
         }
-        TLRPC.TL_messages_saveGif req = new TLRPC.TL_messages_saveGif();
-        req.id = new TLRPC.TL_inputDocument();
-        req.id.id = document.id;
-        req.id.access_hash = document.access_hash;
-        req.id.file_reference = document.file_reference;
-        if (req.id.file_reference == null) {
-            req.id.file_reference = new byte[0];
-        }
-        req.unsave = true;
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (error != null && FileRefController.isFileRefError(error.text)) {
-                getFileRefController().requestReference("gif", req);
-            }
-        });
+        MessagesController.getEmojiSettings(currentAccount).edit().remove("monogram-gif-path-" + document.id).apply();
+        getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
             try {
                 getMessagesStorage().getDatabase().executeFast("DELETE FROM web_recent_v3 WHERE id = '" + document.id + "' AND type = 2").stepThis().dispose();
@@ -1100,6 +1088,11 @@ public class MediaDataController extends BaseController {
         if (document == null) {
             return;
         }
+        File local = FileLoader.getInstance(currentAccount).getPathToAttach(document);
+        if (local.isFile()) {
+            document.localPath = local.getAbsolutePath();
+            MessagesController.getEmojiSettings(currentAccount).edit().putString("monogram-gif-path-" + document.id, document.localPath).apply();
+        }
         boolean found = false;
         for (int a = 0; a < recentGifs.size(); a++) {
             TLRPC.Document image = recentGifs.get(a);
@@ -1113,7 +1106,7 @@ public class MediaDataController extends BaseController {
         if (!found) {
             recentGifs.add(0, document);
         }
-        if ((recentGifs.size() > getMessagesController().savedGifsLimitDefault && !UserConfig.getInstance(currentAccount).isPremium()) || recentGifs.size() > getMessagesController().savedGifsLimitPremium) {
+        if (recentGifs.size() > Math.max(getMessagesController().savedGifsLimitDefault, getMessagesController().savedGifsLimitPremium)) {
             TLRPC.Document old = recentGifs.remove(recentGifs.size() - 1);
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 try {
@@ -1909,6 +1902,8 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadRecents(int type, boolean gif, boolean cache, boolean force) {
+        if (gif && recentGifsLoaded) return;
+        if (gif) cache = true;
         if (gif) {
             if (loadingRecentGifs) {
                 return;
@@ -1953,6 +1948,10 @@ public class MediaDataController extends BaseController {
                             if (data != null) {
                                 TLRPC.Document document = TLRPC.Document.TLdeserialize(data, data.readInt32(false), false);
                                 if (document != null) {
+                                    if (gif) {
+                                        String path = MessagesController.getEmojiSettings(currentAccount).getString("monogram-gif-path-" + document.id, null);
+                                        if (path != null && new File(path).isFile()) document.localPath = path;
+                                    }
                                     arrayList.add(document);
                                 }
                                 data.reuse();

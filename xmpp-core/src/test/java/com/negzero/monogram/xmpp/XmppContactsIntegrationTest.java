@@ -36,6 +36,8 @@ class XmppContactsIntegrationTest {
                 org.jivesoftware.smackx.pubsub.form.FillableConfigureForm form=published.getNodeConfiguration().getFillableForm(); form.setAccessModel(AccessModel.presence); published.sendConfigurationForm(form);
             }
             assertEquals(org.jivesoftware.smack.packet.StanzaError.Condition.forbidden,assertThrows(org.jivesoftware.smack.XMPPException.XMPPErrorException.class,() -> alice.devices(b)).getStanzaError().getCondition());
+            assertFalse(alice.contacts.presence(b).visible);
+            assertEquals(0,alice.contacts.lastSeen(b).lastSeen);
             Roster roster=Roster.getInstanceFor(alice.connection());
             roster.createItem(JidCreate.bareFrom(b),"Bob alias",new String[]{"Friends"});
             await(() -> roster.getEntry(JidCreate.entityBareFromOrThrowUnchecked(b))!=null && "Bob alias".equals(roster.getEntry(JidCreate.entityBareFromOrThrowUnchecked(b)).getName()));
@@ -54,9 +56,26 @@ class XmppContactsIntegrationTest {
             assertTrue(roster.getEntry(JidCreate.bareFrom(b)).getGroups().stream().anyMatch(group -> "Friends".equals(group.getName())));
             for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:alice.devices(b)) alice.decide(device,alice.fingerprint(device),true);
             alice.send(b,"Encrypted after authorization",true); assertEquals("Encrypted after authorization",messages.poll(10,TimeUnit.SECONDS));
+            await(() -> { try { return alice.contacts.presence(b).online; } catch(Exception unavailable) { return false; } });
+            try(XmppSession phone=session("subscribebob",803,bobRequests,bobCancelled,messages)) {
+                phone.connect();
+                bob.connection().sendStanza(new org.jivesoftware.smack.packet.Presence(org.jivesoftware.smack.packet.Presence.Type.unavailable));
+                await(() -> roster.getPresence(JidCreate.entityBareFromOrThrowUnchecked(b)).getFrom().equals(phone.connection().getUser()));
+                assertTrue(alice.contacts.presence(b).online,"Another available resource must keep the contact online");
+                assertEquals(0,alice.contacts.lastSeen(b).lastSeen,"Never interpret online idle time as an offline last-seen date");
+            }
+            await(() -> { try { return !alice.contacts.presence(b).online; } catch(Exception unavailable) { return false; } });
+            assertTrue(alice.contacts.presence(b).visible);
+            Thread.sleep(1100);
+            XmppContacts.PresenceState offline=alice.contacts.lastSeen(b);
+            assertTrue(offline.lastSeen>0 && offline.lastSeen<=System.currentTimeMillis()/1000);
+            bob.connection().sendStanza(new org.jivesoftware.smack.packet.Presence(org.jivesoftware.smack.packet.Presence.Type.available));
+            await(() -> { try { return alice.contacts.presence(b).online; } catch(Exception unavailable) { return false; } });
             aliceRequests.clear(); bobRequests.clear(); aliceCancelled.clear(); bobCancelled.clear();
             bob.contacts.act(a,XmppContacts.Action.REVOKE);
             await(() -> { try { return !alice.contacts.state(b).seesTheirPresence; } catch(Exception failed) { return false; } });
+            assertFalse(alice.contacts.presence(b).visible);
+            assertEquals(0,alice.contacts.lastSeen(b).lastSeen);
             alice.contacts.act(b,XmppContacts.Action.REQUEST); assertEquals(a,bobRequests.poll(10,TimeUnit.SECONDS));
             alice.contacts.act(b,XmppContacts.Action.CANCEL); assertEquals(a,bobCancelled.poll(10,TimeUnit.SECONDS));
             await(() -> !roster.getEntry(JidCreate.entityBareFromOrThrowUnchecked(b)).isSubscriptionPending());

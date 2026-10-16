@@ -10339,23 +10339,9 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void saveGif(Object parentObject, TLRPC.Document document) {
-        if (parentObject == null || !MessageObject.isGifDocument(document)) {
-            return;
-        }
-        TLRPC.TL_messages_saveGif req = new TLRPC.TL_messages_saveGif();
-        req.id = new TLRPC.TL_inputDocument();
-        req.id.id = document.id;
-        req.id.access_hash = document.access_hash;
-        req.id.file_reference = document.file_reference;
-        if (req.id.file_reference == null) {
-            req.id.file_reference = new byte[0];
-        }
-        req.unsave = false;
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (error != null && FileRefController.isFileRefError(error.text)) {
-                getFileRefController().requestReference(parentObject, req);
-            }
-        });
+        if (!MessageObject.isGifDocument(document)) return;
+        getMediaDataController().addRecentGif(document, (int) (System.currentTimeMillis() / 1000), false);
+        getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
     }
 
     public void saveRecentSticker(Object parentObject, TLRPC.Document document, boolean asMask) {

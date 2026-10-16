@@ -12236,7 +12236,9 @@ public class ChatActivityEnterView extends FrameLayout implements
                 onGifSelected(view, gif, query, parent, notify, scheduleDate, scheduleRepeatPeriod, null, false);
             }
 
-            public void onGifSelected(View view, Object gif, String query, Object parent, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MediaController.PhotoEntry entry, boolean invertMedia) {
+            public void onGifSelected(View view, Object selectedGif, String query, Object parent, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MediaController.PhotoEntry entry, boolean invertMedia) {
+                final Object gif = selectedGif instanceof TLRPC.BotInlineResult && ((TLRPC.BotInlineResult) selectedGif).document != null
+                        ? ((TLRPC.BotInlineResult) selectedGif).document : selectedGif;
                 if (replyingQuote != null && parentFragment != null && replyingQuote.outdated) {
                     parentFragment.showQuoteMessageUpdate();
                     return;
