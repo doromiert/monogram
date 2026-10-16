@@ -84,6 +84,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [o] Implement encrypted file upload/download using the documented XEP-0454 aesgcm format. Local round trips, independent-provider decryption and failed-authentication preservation pass; independent-client image exchange remains pending.
 - [o] Connect photo/image selection, sending, receiving, previews and opening to that pipeline. Schema 4 stores media references and verified local paths; Android tests cover schema 1/2/3 migrations, real bitmap preview metadata and database reopen. Full picker/download/viewer interaction remains pending.
 - [ ] Cover documents, video and voice messages using the same transport where applicable.
+- [ ] Support [XEP-0449 Stickers](https://xmpp.org/extensions/xep-0449.html) (checked version 0.2.0, Experimental): reuse the native sticker picker/rendering and pack previews, implement standalone/pack stickers through XEP-0447 file sharing and XEP-0446 metadata, and cache/verify files and pack hashes. Add PEP/PubSub pack import/sharing with textual fallback and restricted-pack handling; verify interoperability and encrypted-message behavior before claiming support.
 - [ ] Replace the provisional 100 MiB transport ceiling with limits consistent with the existing file UI and server capabilities; verify large streaming transfers and cancellation without buffering the entire file.
 - [o] Surface server limits, missing upload support, progress, cancellation and retry. Transport limits/cancellation and error messages are implemented; verify the complete UI paths, including cancellation before worker dispatch.
 
@@ -110,6 +111,10 @@ Reference APK: `~/extera/exteraGram-full-universal-20261004.apk`. The user repor
 - [ ] Plan a Monogram watch app; confirm the target watch platform and whether it should work independently or through a paired phone.
 - [ ] Design watch-sized conversations, notifications, replies and input, with account setup and OMEMO trust/key handling appropriate to the chosen architecture.
 - [ ] Implement and verify the watch app, including background connectivity, reconnection, battery use and interoperability with phone Monogram and other XMPP clients.
+
+## Stories (backburner)
+
+- [ ] Add Monocles-compatible stories after core messaging/profiles/MUCs are reliable, reusing the existing Telegram stories UI where practical. Stories are outside core XMPP: evaluate [XEP-0501 Pubsub Stories](https://xmpp.org/extensions/xep-0501.html) (Experimental), built on XEP-0472 social feeds and PEP/PubSub. Verify Monocles' actual wire format and interoperability, then implement viewing/publishing, audience/access controls, expiry/retraction and media caching. Do not require the optional Monogram helper for standard stories.
 
 ## Premium features and monetization
 
