@@ -70,6 +70,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppChatStates chatStates;
     public final XmppFingerprints fingerprints;
     private final OmemoManager omemo;
+    private final XmppLegacyDiscovery legacyDiscovery;
     private final java.util.Map<String,Long> deviceListRefresh=new java.util.concurrent.ConcurrentHashMap<>();
     private final IdentityTrust trust;
     private final XmppOmemo2 modern;
@@ -130,17 +131,18 @@ public final class XmppSession implements AutoCloseable {
         trust = new IdentityTrust(trustFile);
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
-        fingerprints=new XmppFingerprints((address,useModern) -> {
+        legacyDiscovery=new XmppLegacyDiscovery(connection,deviceId);
+        fingerprints=new XmppFingerprints((XmppFingerprints.ProgressSource)(address,useModern,progress) -> {
             java.util.Map<OmemoDevice,OmemoFingerprint> found=new java.util.LinkedHashMap<>();
             if(useModern) for(java.util.Map.Entry<Integer,Omemo2Bundle> entry:modern().discover(address).entrySet())
                 found.put(new OmemoDevice(JidCreate.entityBareFrom(address),entry.getKey()),new OmemoFingerprint(hex(entry.getValue().identity())));
             else {
-                boolean failed=false;
-                for(OmemoDevice device:devices(address)) {
-                    if(device.getJid().toString().equals(ownJid()) && device.getDeviceId()==ownDeviceId()) continue;
-                    try { found.put(device,fingerprint(device)); } catch(Exception missingBundle) { failed=true; }
+                java.util.List<String> failures=new java.util.ArrayList<>();
+                for(OmemoDevice device:legacyDiscovery.devices(JidCreate.bareFrom(address))) {
+                    if(device.getJid().toString().equals(ownJid()) && device.getDeviceId()==deviceId) continue;
+                    try { found.put(device,legacyDiscovery.fingerprint(device)); progress.accept(found); } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; } catch(Exception missingBundle) { failures.add("Device "+device.getDeviceId()+": "+XmppRequestException.describe(missingBundle)); }
                 }
-                if(failed) throw new XmppFingerprints.Partial(found);
+                if(!failures.isEmpty()) throw new XmppFingerprints.Partial(found,String.join("; ",failures));
             }
             return found;
         });
@@ -522,7 +524,7 @@ public final class XmppSession implements AutoCloseable {
     public String ownJid() { return omemo.getOwnJid().toString(); }
     public int ownDeviceId() { return omemo.getDeviceId(); }
     public org.jivesoftware.smackx.omemo.trust.TrustState trustState(OmemoDevice device, OmemoFingerprint fingerprint) { return trust.getTrust(device, fingerprint); }
-    public OmemoFingerprint ownFingerprint() throws Exception { return omemo.getOwnFingerprint(); }
+    public OmemoFingerprint ownFingerprint() throws Exception { return legacyDiscovery.ownFingerprint(); }
     public void decide(OmemoDevice device, OmemoFingerprint fingerprint, boolean trusted) { trust.setTrust(device, fingerprint, trusted); }
     public void decideAll(java.util.Map<OmemoDevice, OmemoFingerprint> identities, boolean trusted) { trust.setTrustAll(identities, trusted); }
     public boolean hasArchive() throws Exception { return MamManager.getInstanceFor(connection).isSupported(); }

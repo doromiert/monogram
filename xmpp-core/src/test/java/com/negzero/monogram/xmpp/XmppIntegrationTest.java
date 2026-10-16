@@ -55,6 +55,24 @@ class XmppIntegrationTest {
         iq.setType(type);
         return session.connection().createStanzaCollectorAndSend(iq).nextResultOrThrow();
     }
+    java.util.Map<OmemoDevice,OmemoFingerprint> discoverWithoutEncryptionMonitor(XmppSession session,String address) throws Exception {
+        java.lang.reflect.Field field=XmppSession.class.getDeclaredField("omemo"); field.setAccessible(true);
+        ExecutorService worker=Executors.newSingleThreadExecutor();
+        BlockingQueue<XmppFingerprints.Snapshot> updates=new LinkedBlockingQueue<>();
+        try {
+            synchronized(field.get(session)) {
+                worker.submit(() -> {
+                    try { assertNotNull(session.ownFingerprint());
+                        session.fingerprints.load(java.util.Collections.singleton(address),false,true,updates::add);
+                    } catch(Exception failed) { throw new RuntimeException(failed); }
+                }).get(5,TimeUnit.SECONDS);
+                XmppFingerprints.Snapshot result;
+                do { result=updates.poll(5,TimeUnit.SECONDS); assertNotNull(result,"Discovery waited for the encryption monitor"); } while(!result.complete);
+                assertEquals(0,result.failed); assertFalse(result.identities.isEmpty());
+                return result.identities;
+            }
+        } finally { worker.shutdownNow(); }
+    }
     @Test void tlsPlaintextOmemoPersistenceAndOptionalScheduler() throws Exception {
         XmppSession.initializeOmemo(new File(state, "keys"));
         XmppSession.Listener ignore = (sender, id, body, encrypted) -> {};
@@ -79,8 +97,18 @@ class XmppIntegrationTest {
             assertTrue(alice.connection().isSecureConnection());
             assertTrue(bob.connection().isSecureConnection());
             aliceFingerprint = alice.ownFingerprint();
+            java.util.List<org.jivesoftware.smackx.pubsub.PayloadItem<org.jivesoftware.smackx.omemo.element.OmemoBundleElement>> bundles=
+                    org.jivesoftware.smackx.pubsub.PubSubManager.getInstanceFor(alice.connection(),JidCreate.bareFrom("alice@localhost"))
+                    .getLeafNode(new OmemoDevice(JidCreate.bareFrom("alice@localhost"),101).getBundleNodeName()).getItems();
+            org.jivesoftware.smackx.omemo.element.OmemoBundleElement bundle=bundles.get(bundles.size()-1).getPayload();
+            assertEquals(aliceFingerprint,XmppLegacyDiscovery.fingerprint(bundle));
+            byte[] brokenSignature=bundle.getSignedPreKeySignature().clone(); brokenSignature[0]^=1;
+            org.jivesoftware.smackx.omemo.element.OmemoBundleElement invalid=new org.jivesoftware.smackx.omemo.element.OmemoBundleElement_VAxolotl(
+                    bundle.getSignedPreKeyId(),bundle.getSignedPreKey(),brokenSignature,bundle.getIdentityKey(),bundle.getPreKeys());
+            assertThrows(org.whispersystems.libsignal.InvalidKeyException.class,() -> XmppLegacyDiscovery.fingerprint(invalid));
             Roster.getInstanceFor(alice.connection()).createItemAndRequestSubscription(JidCreate.bareFrom("bob@localhost"), "Bob", null);
             Roster.getInstanceFor(bob.connection()).createItemAndRequestSubscription(JidCreate.bareFrom("alice@localhost"), "Alice", null);
+            java.util.Map<OmemoDevice,OmemoFingerprint> displayed=discoverWithoutEncryptionMonitor(alice,"bob@localhost");
             // Profiles use only the disposable localhost accounts. Seed fields from another client.
             IQ seed = new IQ("vCard", "vcard-temp") {
                 @Override protected IQChildElementXmlStringBuilder getIQChildElementBuilder(IQChildElementXmlStringBuilder xml) {
@@ -120,7 +148,7 @@ class XmppIntegrationTest {
             assertFalse(alice.devices("bob@localhost").isEmpty());
             assertThrows(UndecidedOmemoIdentityException.class, () -> alice.send("bob@localhost", "must not leak", true));
             assertNull(received.poll(300, TimeUnit.MILLISECONDS));
-            verifyDevices(alice, "bob@localhost");
+            for(java.util.Map.Entry<OmemoDevice,OmemoFingerprint> entry:displayed.entrySet()) alice.decide(entry.getKey(),entry.getValue(),true);
             verifyDevices(bob, "alice@localhost");
             AtomicReference<String> outgoing = new AtomicReference<>();
             alice.connection().addStanzaInterceptor(stanza -> outgoing.set(stanza.toXML().toString()), stanza -> stanza instanceof Message && (((Message) stanza).getBody() != null || stanza.hasExtension("encrypted", "eu.siacs.conversations.axolotl")));

@@ -86,7 +86,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                     if(checkingMembers.compareAndSet(true,false) && loading==generation && !Thread.currentThread().isInterrupted()) loadFingerprintAddresses(session,addresses,selectedModern,false,loading,warning);
                 }
             } catch(Exception failed) {
-                AndroidUtilities.runOnUIThread(() -> { if(loading==generation) { status="Could not refresh fingerprints. Cached results remain visible. Check the connection and refresh to retry."; refresh(); } });
+                AndroidUtilities.runOnUIThread(() -> { if(loading==generation) { status="Could not refresh fingerprints: "+com.negzero.monogram.xmpp.XmppRequestException.describe(failed)+". Cached results remain visible. Refresh to retry."; refresh(); } });
             }
         });
     }
@@ -100,7 +100,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         if(fingerprintRequest!=null) fingerprintRequest.close();
         java.util.concurrent.atomic.AtomicReference<com.negzero.monogram.xmpp.XmppFingerprints.Snapshot> latest=new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicBoolean queued=new java.util.concurrent.atomic.AtomicBoolean();
-        fingerprintRequest=session.fingerprints.load(lookupAddresses,selectedModern,force,snapshot -> {
+        fingerprintRequest=session.fingerprints.loadInteractive(lookupAddresses,selectedModern,force,snapshot -> {
             latest.set(snapshot);
             if(!queued.compareAndSet(false,true)) return;
             AndroidUtilities.runOnUIThread(() -> {
@@ -120,6 +120,11 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                 String progress=!found.complete ? "Loading fingerprints: "+found.completed+"/"+found.total+" accounts…"
                     : found.failed>0 ? "Loaded available fingerprints; "+found.failed+" account lookups failed or timed out. Refresh to retry."
                     : identities.isEmpty() ? "No compatible remote OMEMO devices were published by the available accounts." : null;
+                if(found.complete && !found.failures.isEmpty()) {
+                    StringBuilder details=new StringBuilder(progress==null ? "" : progress);
+                    for(Map.Entry<String,String> failure:found.failures.entrySet()) details.append("\n").append(failure.getKey()).append(": ").append(failure.getValue());
+                    progress=details.toString();
+                }
                 status=warning==null ? progress : warning+(progress==null ? "" : "\n"+progress); refresh();
             },100);
         });

@@ -9,6 +9,11 @@ public final class XmppRequestException extends Exception {
         super(operation+": "+describe(cause),cause);
     }
     public static String describe(Throwable error) {
+        if(error instanceof java.util.concurrent.CompletionException || error instanceof java.util.concurrent.ExecutionException) {
+            if(error.getCause()!=null) return describe(error.getCause());
+        }
+        if(error instanceof OmemoSendException && ((OmemoSendException)error).reason==OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED)
+            return "contact authorization is required";
         if(error instanceof XmppRequestException) return error.getMessage();
         if(error instanceof XMPPErrorException) {
             org.jivesoftware.smack.packet.StanzaError stanza=((XMPPErrorException)error).getStanzaError();
