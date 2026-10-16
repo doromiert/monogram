@@ -41,6 +41,8 @@ public final class MonogramController {
     private final int account;
     private final ExecutorService fileWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService profileWorker = Executors.newFixedThreadPool(2);
+    private final ExecutorService fingerprintWorker=Executors.newFixedThreadPool(2);
+    private final java.util.Map<Long,java.util.List<Runnable>> profileCompletions=new java.util.HashMap<>();
     private final ExecutorService autoDownloadWorker = Executors.newSingleThreadExecutor();
     private final java.util.concurrent.ConcurrentHashMap<Integer, FileTransfer.Job> fileJobs = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<String, FileTransfer.Job> fileNames = new java.util.concurrent.ConcurrentHashMap<>();
@@ -135,7 +137,7 @@ public final class MonogramController {
     }
     private void connect(Account details, String password) throws Exception {
         if (session != null) { session.close(); session = null; }
-        joinedRooms.clear(); bookmarkSync=null;
+        joinedRooms.clear(); bookmarkSync=null; pendingProfileUsers.clear(); visibleHistory.clear();
         final long epoch = ++sessionEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
@@ -180,9 +182,14 @@ public final class MonogramController {
                     @Override public void bookmarksChanged() {
                         worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
-                    @Override public void profileChanged(org.jxmpp.jid.EntityBareJid jid) {
-                        worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer);
-                            long room=store.knownRoom(jid.toString()); if(room!=0) { refreshProfile(room); for(TLRPC.User user:store.roomUsers(room,self)) if(user.id!=self) refreshProfile(user.id); } } });
+                    @Override public void profileChanged(org.jxmpp.jid.Jid address) {
+                        worker.execute(() -> { if(sessionEpoch!=epoch || session==null) return;
+                            long peer=address.hasResource() ? store.knownOccupant(address.toString()) : 0;
+                            if(peer==0) peer=store.knownPeer(address.toString());
+                            if(peer==0 && address.hasResource() && store.knownRoom(address.asBareJid().toString())==0) peer=store.knownPeer(address.asBareJid().toString());
+                            if(peer!=0) refreshProfile(peer);
+                            if(!address.hasResource()) { long room=store.knownRoom(address.toString()); if(room!=0) refreshProfile(room); }
+                        });
                     }
                     @Override public void typing(org.jxmpp.jid.EntityBareJid jid, boolean composing) {
                         worker.execute(() -> {
@@ -204,7 +211,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); startArchiveSync(session); syncBookmarks(session,epoch,null);
+                            state(ConnectionsManager.ConnectionStateConnected); startArchiveSync(session); archiveSync.waitingRooms=true; syncBookmarks(session,epoch,null);
                         });
                     }
                 });
@@ -237,7 +244,7 @@ public final class MonogramController {
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
         state(ConnectionsManager.ConnectionStateConnected);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null);
+        startArchiveSync(connecting); archiveSync.waitingRooms=true; syncBookmarks(connecting,epoch,null);
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
         roomWorker.execute(() -> {
@@ -252,6 +259,10 @@ public final class MonogramController {
                     expected.rooms.join(room.jid,room.nickname,encrypted.isEmpty() ? null : vault.decrypt(encrypted));
                 } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room rejoin: "+failed.getClass().getSimpleName()); }
             }
+            worker.execute(() -> {
+                ArchiveSync sync=archiveSync;
+                if(session==expected && sessionEpoch==epoch && sync!=null && currentArchive(sync)) { sync.waitingRooms=false; startFingerprintStage(sync); }
+            });
         });
     }
     private static final class BookmarkSync {
@@ -450,7 +461,9 @@ public final class MonogramController {
     }
     private static final class ArchiveTask {
         final long peer;
-        boolean backwards, resetAttempted;
+        boolean backwards=true,resetAttempted,complete;
+        int loaded,desired=3;
+        String before;
         ArchiveTask(long peer) { this.peer = peer; }
     }
     private static final class ArchiveSync {
@@ -460,12 +473,20 @@ public final class MonogramController {
         final java.util.Set<Long> peers = new java.util.HashSet<>();
         final java.util.Set<Long> rescan = new java.util.HashSet<>();
         final java.util.Set<Long> pending = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
-        boolean supported,directChecked;
+        boolean supported,directChecked,running,waitingRooms;
+        final java.util.Set<Long> metadataPending=new java.util.HashSet<>();
+        final java.util.ArrayDeque<Long> fingerprintsReady=new java.util.ArrayDeque<>();
+        final java.util.Map<Long,Integer> requestedPages=new java.util.HashMap<>();
+        final java.util.Map<Long,ArchiveTask> windows=new java.util.HashMap<>();
+        final java.util.Set<Long> preparing=new java.util.HashSet<>();
         final java.util.Set<Long> supportedRooms=new java.util.HashSet<>();
         ArchiveSync(XmppSession session, long epoch) { this.session = session; this.epoch = epoch; }
         boolean add(long peer) {
-            if (!peers.add(peer)) return false;
-            pending.add(peer); tasks.addLast(new ArchiveTask(peer)); return true;
+            peers.add(peer);
+            ArchiveTask task=windows.computeIfAbsent(peer,ArchiveTask::new);
+            task.desired=Math.max(task.desired,requestedPages.getOrDefault(peer,3));
+            if(task.complete || task.loaded>=task.desired || !pending.add(peer)) return false;
+            tasks.addLast(task); return true;
         }
     }
     private boolean currentArchive(ArchiveSync sync) {
@@ -473,28 +494,64 @@ public final class MonogramController {
     }
     private void startArchiveSync(XmppSession expected) {
         ArchiveSync sync = new ArchiveSync(expected, accountEpoch); archiveSync = sync;
-        for (long peer : store.peers()) if (peer != self) sync.add(peer);
-        for(long room:store.rooms()) try { if(store.room(room).autojoin && expected.rooms.state(store.jid(room)).joined) { joinedRooms.add(room); sync.add(room); } } catch(Exception ignored) {}
+        for (long peer : store.peers()) if (peer != self) prepareArchivePeer(sync,peer);
+        for(long room:store.rooms()) try { if(store.room(room).autojoin && expected.rooms.state(store.jid(room)).joined) { joinedRooms.add(room); prepareArchivePeer(sync,room); } } catch(Exception ignored) {}
         // Keep discovery for conversations that exist only in the server archive.
-        sync.add(0);
+        prepareArchivePeer(sync,0);
+        nextArchivePage(sync);
+    }
+    private void prepareArchivePeer(ArchiveSync sync,long peer) {
+        if(!currentArchive(sync) || sync.windows.containsKey(peer) || !sync.preparing.add(peer)) return;
+        sync.peers.add(peer); sync.metadataPending.add(peer);
+        java.util.Set<Long> profiles=new java.util.LinkedHashSet<>(); if(peer!=0) profiles.add(peer); profiles.add(self);
+        if(peer<0) for(TLRPC.User user:store.roomUsers(peer,self)) profiles.add(user.id);
+        java.util.concurrent.atomic.AtomicInteger remaining=new java.util.concurrent.atomic.AtomicInteger(profiles.size());
+        Runnable profileReady=() -> {
+            if(remaining.decrementAndGet()!=0 || !currentArchive(sync)) return;
+            sync.metadataPending.remove(peer); sync.fingerprintsReady.addLast(peer); startFingerprintStage(sync);
+        };
+        for(long profile:profiles) refreshProfile(profile,profileReady);
+    }
+    private void startFingerprintStage(ArchiveSync sync) {
+        if(!currentArchive(sync) || sync.waitingRooms || !sync.metadataPending.isEmpty()) return;
+        Long next;
+        while((next=sync.fingerprintsReady.pollFirst())!=null) {
+            final long peer=next;
+            fingerprintWorker.execute(() -> {
+                try {
+                    java.util.Set<String> addresses=new java.util.LinkedHashSet<>();
+                    if(peer>0) addresses.add(store.jid(peer));
+                    else if(peer<0 && encrypted(peer)) try { for(org.jxmpp.jid.BareJid member:sync.session.rooms.members(store.jid(peer))) addresses.add(member.toString()); } catch(Exception unsupported) {}
+                    addresses.add(store.jid(self));
+                    for(String address:addresses) {
+                        if(!currentArchive(sync)) return;
+                        if(address.indexOf('/')>=0) continue;
+                        try {
+                            if(modernEncryption(peer) && sync.session.modernAvailable()) sync.session.modern().discover(address);
+                            else for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:sync.session.devices(address)) sync.session.fingerprint(device);
+                        } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram fingerprint prefetch: "+failed.getClass().getSimpleName()); }
+                    }
+                } finally { worker.execute(() -> { if(currentArchive(sync)) { sync.preparing.remove(peer); sync.add(peer); nextArchivePage(sync); } }); }
+            });
+        }
         nextArchivePage(sync);
     }
     private void queueRoomArchive(long room,XmppSession expected) {
         ArchiveSync sync=archiveSync;
-        if(sync!=null && currentArchive(sync)) { sync.add(room); return; }
-        sync=new ArchiveSync(expected,accountEpoch); archiveSync=sync; sync.add(room); nextArchivePage(sync);
+        if(sync!=null && currentArchive(sync)) { prepareArchivePeer(sync,room); return; }
+        sync=new ArchiveSync(expected,accountEpoch); archiveSync=sync; prepareArchivePeer(sync,room);
     }
     private void syncRoomArchive(ArchiveSync sync,ArchiveTask task) throws Exception {
         String jid=store.jid(task.peer);
         if(!sync.supportedRooms.contains(task.peer)) {
-            if(!sync.session.rooms.hasArchive(jid)) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); nextArchivePage(sync); } }); return; }
+            if(!sync.session.rooms.hasArchive(jid)) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); sync.running=false; nextArchivePage(sync); } }); return; }
             sync.supportedRooms.add(task.peer);
         }
-        String cursor=store.archiveCursor(task.peer,task.backwards);
+        String cursor=task.before;
         com.negzero.monogram.xmpp.XmppRooms.ArchivePage page=sync.session.rooms.archive(jid,
-                task.backwards || cursor==null ? cursor==null ? "" : cursor : null,!task.backwards && cursor!=null ? cursor : null,100);
+                cursor==null ? "" : cursor,null,50);
         if(cursor!=null && cursor.equals(task.backwards ? page.firstId : page.lastId) && !page.complete) throw new java.io.IOException("Room archive cursor did not advance");
-        boolean initial=!task.backwards && cursor==null;
+        boolean initial=task.loaded==0;
         worker.execute(() -> {
             if(!currentArchive(sync)) return;
             try {
@@ -509,47 +566,49 @@ public final class MonogramController {
                     AndroidUtilities.runOnUIThread(() -> {
                         if(session!=sync.session || accountEpoch!=sync.epoch) return;
                         MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false);
-                        ArrayList<MessageObject> objects=new ArrayList<>(); for(TLRPC.Message message:messages) objects.add(new MessageObject(account,message,true,true));
-                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,task.peer,objects);
+                        if(mediaHistoryPeer==task.peer) {
+                            ArrayList<MessageObject> objects=new ArrayList<>(); for(TLRPC.Message message:messages) objects.add(new MessageObject(account,message,true,true));
+                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,task.peer,objects);
+                        }
                     });
                 }
-                boolean older=task.backwards || initial || page.complete;
-                if(older ? !store.archiveComplete(task.peer) : page.lastId!=null) { task.backwards=older; sync.tasks.addLast(task); }
-                else sync.pending.remove(task.peer);
-                nextArchivePage(sync);
+                finishArchivePage(sync,task,page.firstId,page.complete);
             } catch(Exception failed) { archiveFailed(sync,task,failed); }
         });
     }
     private void nextArchivePage(ArchiveSync sync) {
-        if (!currentArchive(sync)) return;
+        if (!currentArchive(sync) || sync.running || sync.waitingRooms || !sync.preparing.isEmpty()) return;
         for (long peer:sync.rescan) {
             store.resetArchiveCursor(peer); sync.tasks.removeIf(task -> task.peer==peer);
-            sync.peers.add(peer); sync.pending.add(peer); sync.tasks.addLast(new ArchiveTask(peer));
+            sync.windows.remove(peer); sync.pending.remove(peer); sync.add(peer);
         }
         sync.rescan.clear();
         ArchiveTask task;
         while ((task = sync.tasks.pollFirst()) != null) {
-            if (task.backwards && store.archiveComplete(task.peer)) { sync.pending.remove(task.peer); continue; }
-            final ArchiveTask next = task;
+            if(task.complete || task.loaded>=task.desired) { sync.pending.remove(task.peer); continue; }
+            final ArchiveTask next = task; sync.running=true;
             archiveWorker.execute(() -> syncArchive(sync, next));
             return;
         }
-        archiveSync = null;
+    }
+    private void finishArchivePage(ArchiveSync sync,ArchiveTask task,String first,boolean complete) {
+        task.loaded++; task.before=first; task.complete=complete || first==null; sync.running=false;
+        if(!task.complete && task.loaded<task.desired) sync.tasks.addLast(task); else sync.pending.remove(task.peer);
+        nextArchivePage(sync);
     }
     private void syncArchive(ArchiveSync sync, ArchiveTask task) {
         if (!currentArchive(sync)) return;
         try {
             if(task.peer<0) { syncRoomArchive(sync,task); return; }
             if(!sync.directChecked) { sync.supported=sync.session.hasArchive(); sync.directChecked=true; }
-            if(!sync.supported) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); nextArchivePage(sync); } }); return; }
-            String cursor = store.archiveCursor(task.peer, task.backwards);
+            if(!sync.supported) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); sync.running=false; nextArchivePage(sync); } }); return; }
+            String cursor = task.before;
             String jid = task.peer == 0 ? null : store.jid(task.peer);
-            XmppSession.ArchivePage page = !task.backwards && cursor != null
-                    ? sync.session.archiveAfter(jid, cursor, 100) : sync.session.archiveBefore(jid, cursor, 100);
+            XmppSession.ArchivePage page = sync.session.archiveBefore(jid,cursor,50);
             if (cursor != null && cursor.equals(task.backwards ? page.firstId : page.lastId) && !page.complete) {
                 throw new java.io.IOException("Archive cursor did not advance");
             }
-            boolean initial = !task.backwards && cursor == null;
+            boolean initial = task.loaded==0;
             worker.execute(() -> {
                 if (!currentArchive(sync)) return;
                 try { archivePage(sync, task, page, initial); }
@@ -569,26 +628,21 @@ public final class MonogramController {
             publishCorrections(peer, correctionUpdates(corrections, 0));
             refreshReplies(peer, updated);
             publishReactions(peer,null);
-            if (peer != self && sync.add(peer)) refreshProfile(peer);
+            if(peer!=self && !sync.peers.contains(peer)) prepareArchivePeer(sync,peer);
         }
         if (changed && UserConfig.getInstance(account).isClientActivated()) {
             TLRPC.TL_messages_dialogs dialogs = dialogs();
             AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
                     dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
         }
-        boolean older = task.backwards || initial || page.complete;
-        if (older ? !store.archiveComplete(task.peer) : page.lastId != null) {
-            task.backwards = older;
-            // One page per chat per turn, including account-wide discovery.
-            sync.tasks.addLast(task);
-        } else sync.pending.remove(task.peer);
-        nextArchivePage(sync);
+        finishArchivePage(sync,task,page.firstId,page.complete);
     }
     private void archiveFailed(ArchiveSync sync, ArchiveTask task, Exception error) {
+        sync.running=false;
         if (!task.resetAttempted && error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
                 && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) error).getStanzaError().getCondition()
                 == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
-            task.resetAttempted = true; task.backwards = false;
+            task.resetAttempted=true; task.before=null; task.loaded=0;
             store.resetArchiveCursor(task.peer); sync.tasks.addLast(task);
         } else {
             sync.pending.remove(task.peer);
@@ -619,13 +673,28 @@ public final class MonogramController {
         result.users.add(ownUser());
         return result;
     }
+    private final java.util.concurrent.ConcurrentHashMap<Long,Integer> visibleHistory=new java.util.concurrent.ConcurrentHashMap<>();
+    public void historyVisible(long peer,int message) {
+        if(peer==0 || message<=0 || java.util.Objects.equals(visibleHistory.put(peer,message),message)) return;
+        final long owner=accountEpoch;
+        cacheWorker.execute(() -> {
+            int desired=store.newerMessages(peer,message)/50+3;
+            worker.execute(() -> {
+                ArchiveSync sync=archiveSync;
+                if(owner!=accountEpoch || sync==null || !currentArchive(sync)) return;
+                sync.requestedPages.merge(peer,desired,Math::max);
+                ArchiveTask task=sync.windows.get(peer); if(task==null || task.complete || desired<=task.desired) return;
+                task.desired=desired; sync.add(peer); nextArchivePage(sync);
+            });
+        });
+    }
     public void loadHistory(long peer, int offset, int count, int loadType, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
         long epoch = accountEpoch;
         cacheWorker.execute(() -> {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             mediaHistoryPeer = peer;
             ArchiveSync sync = archiveSync;
-            boolean end = sync == null || !sync.pending.contains(peer);
+            boolean end=store.archiveComplete(peer);
             try {
                 result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
                 if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
@@ -682,42 +751,63 @@ public final class MonogramController {
         catch (IllegalArgumentException unknown) { return java.util.Collections.emptyMap(); }
     }
     public com.negzero.monogram.xmpp.XmppProfile cachedProfile(long peer) { return store.profile(peer); }
-    public void refreshProfile(long peer) {
-        if (peer == 0 || !profileLoads.add(peer)) return;
-        final XmppSession expected = session;
-        final long epoch = sessionEpoch;
+    public void refreshProfile(long peer) { refreshProfile(peer,null); }
+    private void refreshProfile(long peer,Runnable completed) {
+        if(peer==0) { if(completed!=null) completed.run(); return; }
+        synchronized(profileLoads) {
+            if(completed!=null) profileCompletions.computeIfAbsent(peer,key -> new ArrayList<>()).add(completed);
+            if(!profileLoads.add(peer)) return;
+        }
+        final XmppSession expected=session; final long epoch=sessionEpoch;
         final String jid;
-        try { jid = store.jid(peer); }
-        catch (IllegalArgumentException unknown) { profileLoads.remove(peer); return; }
-        final long version = profileVersions.getOrDefault(peer, 0L);
+        try { jid=store.jid(peer); }
+        catch(IllegalArgumentException unknown) { finishProfile(peer); return; }
+        final long version=profileVersions.getOrDefault(peer,0L);
         profileWorker.execute(() -> {
             try {
-                if (sessionEpoch != epoch || expected == null || session != expected) return;
-                com.negzero.monogram.xmpp.XmppProfile profile = peer<0 ? expected.profiles.loadRoom(jid) : expected.profiles.load(jid);
+                if(expected==null || session!=expected || sessionEpoch!=epoch) { worker.execute(() -> finishProfile(peer)); return; }
+                com.negzero.monogram.xmpp.XmppProfile profile=peer<0 ? expected.profiles.loadRoom(jid) : expected.profiles.load(jid);
                 worker.execute(() -> {
-                    if (sessionEpoch != epoch || session != expected || !preferences.contains("jid") || profileVersions.getOrDefault(peer, 0L) != version) return;
-                    try { store.profile(peer, profile); if (peer == self) expected.profiles.useOwnProfile(profile); if(peer<0) publishRoom(peer); else publishProfile(peer, epoch); }
-                    catch (Exception failed) { if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile cache: " + failed.getClass().getSimpleName()); }
+                    try {
+                        if(sessionEpoch!=epoch || session!=expected || profileVersions.getOrDefault(peer,0L)!=version) return;
+                        store.profile(peer,profile); if(peer==self) expected.profiles.useOwnProfile(profile);
+                        if(peer<0) publishRoom(peer); else publishProfile(peer,epoch);
+                    } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile cache: "+failed.getClass().getSimpleName()); }
+                    finally { finishProfile(peer); }
                 });
-            } catch (Exception failed) {
-                if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile: " + failed.getClass().getSimpleName());
-            } finally { profileLoads.remove(peer); }
+            } catch(Exception failed) {
+                worker.execute(() -> finishProfile(peer));
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile: "+failed.getClass().getSimpleName());
+            }
         });
     }
-    private void publishProfile(long peer, long epoch) {
-        TLRPC.User user = store.user(peer, self);
-        ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(user);
-        MessagesStorage.getInstance(account).putUsersAndChats(users, null, false, true);
+    private void finishProfile(long peer) {
+        java.util.List<Runnable> callbacks;
+        synchronized(profileLoads) { profileLoads.remove(peer); callbacks=profileCompletions.remove(peer); }
+        if(callbacks!=null) for(Runnable callback:callbacks) callback.run();
+    }
+    private final java.util.concurrent.ConcurrentHashMap<Long,TLRPC.User> pendingProfileUsers=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicBoolean profilePublishQueued=new java.util.concurrent.atomic.AtomicBoolean();
+    private void publishProfile(long peer,long epoch) {
+        if(!UserConfig.getInstance(account).isClientActivated() || sessionEpoch!=epoch) return;
+        pendingProfileUsers.put(peer,store.user(peer,self)); queueProfilePublication(epoch);
+    }
+    private void queueProfilePublication(long epoch) {
+        if(!profilePublishQueued.compareAndSet(false,true)) return;
         AndroidUtilities.runOnUIThread(() -> {
-            if (sessionEpoch != epoch) return;
-            MessagesController.getInstance(account).putUser(user, false);
-            if (peer == self) {
-                UserConfig.getInstance(account).setCurrentUser(user); UserConfig.getInstance(account).saveConfig(true);
-                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.mainUserInfoChanged);
-            }
-            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_ALL);
-            MessagesController.getInstance(account).loadUserInfo(user, true, 0);
-        });
+            profilePublishQueued.set(false);
+            if(sessionEpoch!=epoch) { if(!pendingProfileUsers.isEmpty()) queueProfilePublication(sessionEpoch); return; }
+            java.util.Map<Long,TLRPC.User> batch=new java.util.LinkedHashMap<>(pendingProfileUsers);
+            for(java.util.Map.Entry<Long,TLRPC.User> entry:batch.entrySet()) pendingProfileUsers.remove(entry.getKey(),entry.getValue());
+            ArrayList<TLRPC.User> users=new ArrayList<>(batch.values()); if(users.isEmpty()) return;
+            MessagesStorage.getInstance(account).putUsersAndChats(users,null,false,true);
+            MessagesController.getInstance(account).putUsers(users,false);
+            TLRPC.User own=batch.get(self);
+            if(own!=null) { UserConfig.getInstance(account).setCurrentUser(own); UserConfig.getInstance(account).saveConfig(true);
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.mainUserInfoChanged); }
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_ALL);
+            if(!pendingProfileUsers.isEmpty()) queueProfilePublication(epoch);
+        },200);
     }
     private TLRPC.TL_users_userFull profileResult(long peer) {
         TLRPC.TL_users_userFull result = new TLRPC.TL_users_userFull();

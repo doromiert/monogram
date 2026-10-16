@@ -6904,6 +6904,17 @@ public class ChatActivity extends BaseFragment implements
                 }
                 scrollUp = dy < 0;
                 int firstVisibleItem = chatLayoutManager.findFirstVisibleItemPosition();
+                int oldestVisiblePosition=-1,oldestVisibleMessage=0;
+                for(int childIndex=0;childIndex<recyclerView.getChildCount();childIndex++) {
+                    View child=recyclerView.getChildAt(childIndex);
+                    int position=recyclerView.getChildAdapterPosition(child);
+                    if(child instanceof ChatMessageCell && position>oldestVisiblePosition) {
+                        MessageObject visible=((ChatMessageCell)child).getMessageObject();
+                        if(visible!=null && visible.getId()>0) { oldestVisiblePosition=position; oldestVisibleMessage=visible.getId(); }
+                    }
+                }
+                if(oldestVisibleMessage!=0) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).historyVisible(dialog_id,oldestVisibleMessage);
+
                 if (dy != 0 && (scrollByTouch && recyclerView.getScrollState() == RecyclerView.SCROLL_STATE_SETTLING) || recyclerView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING) {
                     if (forceNextPinnedMessageId != 0) {
                         if ((!scrollUp || forceScrollToFirst)) {

@@ -47,6 +47,11 @@ public final class XmppRooms implements AutoCloseable {
     private final Map<EntityBareJid,String> passwords=new ConcurrentHashMap<>();
     private static final String OCCUPANT_ID="urn:xmpp:occupant-id:0";
     private final Set<EntityBareJid> stableOccupants=ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.ScheduledExecutorService presenceUpdates=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread=new Thread(r,"Monogram room presence"); thread.setDaemon(true); return thread;
+    });
+    private final Map<EntityBareJid,java.util.concurrent.ScheduledFuture<?>> pendingPresence=new ConcurrentHashMap<>();
+    private volatile boolean closed;
     XmppRooms(XMPPConnection connection,OmemoManager omemo,XmppSession.Listener listener) {
         this.connection=connection; this.omemo=omemo; this.listener=listener;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
@@ -77,18 +82,26 @@ public final class XmppRooms implements AutoCloseable {
                 boolean encrypted=message.hasExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE) || message.hasExtension("encrypted",XmppOmemo2.NS);
                 deliver(created,message,encrypted ? null : message.getBody(),encrypted,!encrypted);
             });
-            created.addParticipantListener(presence -> listener.roomChanged(new State(created)));
-            created.addSubjectUpdatedListener((subject,from) -> listener.roomChanged(new State(created)));
+            created.addParticipantListener(presence -> queueState(created));
+            created.addSubjectUpdatedListener((subject,from) -> queueState(created));
             return created;
         });
+    }
+    private void queueState(MultiUserChat chat) {
+        if(closed) return;
+        try {
+            pendingPresence.compute(chat.getRoom(),(room,pending) -> pending!=null && !pending.isDone() ? pending
+                    : presenceUpdates.schedule(() -> { pendingPresence.remove(room); if(!closed) listener.roomChanged(new State(chat)); },200,java.util.concurrent.TimeUnit.MILLISECONDS));
+        } catch(java.util.concurrent.RejectedExecutionException stopped) { if(!closed) throw stopped; }
     }
     public State join(String jid,String nickname,String password) throws Exception {
         MultiUserChat chat=managed(jid);
         RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
-        if(org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(chat.getRoom()).containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
+        org.jivesoftware.smackx.disco.packet.DiscoverInfo features=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(chat.getRoom());
+        if(features.containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
         else stableOccupants.remove(chat.getRoom());
         if (!chat.isJoined()) chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
-                .withPassword(password).requestMaxStanzasHistory(100).build());
+                .withPassword(password).requestMaxStanzasHistory(features.containsFeature("urn:xmpp:mam:2") ? 0 : 50).build());
         if(password!=null) passwords.put(chat.getRoom(),password);
         State state=new State(chat,info.getName()); listener.roomChanged(state); return state;
     }
@@ -230,5 +243,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { chats.clear(); passwords.clear(); stableOccupants.clear(); }
+    @Override public void close() { closed=true; presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
 }

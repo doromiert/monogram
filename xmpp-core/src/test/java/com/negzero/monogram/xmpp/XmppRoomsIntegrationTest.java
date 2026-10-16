@@ -90,7 +90,7 @@ class XmppRoomsIntegrationTest {
             bob.rooms.leave(room);
             alice.rooms.send(room,"encrypted while Bob is absent",true);
             bob.rooms.join(room,"Bob",null);
-            assertTrue(readable(bobMessages,"encrypted while Bob is absent").encrypted,"Offline room members must receive ciphertext addressed to their device");
+            assertTrue(bob.rooms.archive(room,"",null,50).messages.stream().anyMatch(m -> m.readable && m.encrypted && "encrypted while Bob is absent".equals(m.body)),"Offline members recover their encrypted messages through the separately scheduled archive");
             java.util.List<String> presence=new java.util.concurrent.CopyOnWriteArrayList<>();
             alice.connection().addAsyncStanzaListener(stanza -> presence.add(stanza.toXML().toString()),stanza -> stanza instanceof org.jivesoftware.smack.packet.Presence);
             try { alice.rooms.nickname(room,"Alice2"); } catch(Exception failure) { throw new AssertionError(presence.toString(),failure); }
