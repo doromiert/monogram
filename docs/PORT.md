@@ -2,7 +2,7 @@
 
 Current source base: official `DrKLO/Telegram` 13.0.2 at `f32ffeec763f0bdbf4bec25b52d654f77bff733d`. The `monogram-current-base` branch is being migrated; current-base Android build/runtime and removal of proprietary runtime SDKs remain unverified. See `TODO.md`.
 
-The Android evidence below belongs to the older Telegram-FOSS 10.14.3 prototype saved as `d46543df` on `master`. It does not establish current-base behavior.
+The Android evidence below belongs to the older Telegram-FOSS 10.14.3 prototype saved as `d46543df` on `prototype/telegram-foss`. It does not establish current-base behavior.
 Public URL requested: https://monogram.neg-zero.com. Optional helper host: 192.168.1.24.
 First arm64 debug APK installed successfully through wireless ADB at 192.168.1.128:39127 on 2026-10-16. Package `com.negzero.monogram.beta`, version 0.1.0, version code 49279, minSdk 23. App process and Jabber sign-in screen verified. The initial streamed install was rejected with vendor code -99; file-based installation succeeded. Reconnect before future installations because wireless ADB ports can change.
 

@@ -2,7 +2,7 @@
 
 Current base: [DrKLO/Telegram](https://github.com/DrKLO/Telegram), commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d`, Telegram 13.0.2 (7175), dated 2026-10-13. This is the official Android source linked by [Telegram applications](https://telegram.org/apps#source-code).
 
-The earlier prototype used [Telegram-FOSS-Team/Telegram-FOSS](https://github.com/Telegram-FOSS-Team/Telegram-FOSS) at `10da5406ed92d30c6add3b25d40b2b3b6995d873` (10.14.3). The prototype checkpoint is `d46543df` on `master`. Monogram uses no Telegram API account; upstream Telegram build instructions below describe the unmodified app. Use the root README for the Monogram Nix build.
+The earlier prototype used [Telegram-FOSS-Team/Telegram-FOSS](https://github.com/Telegram-FOSS-Team/Telegram-FOSS) at `10da5406ed92d30c6add3b25d40b2b3b6995d873` (10.14.3). The prototype checkpoint is `d46543df` on `prototype/telegram-foss`. Monogram uses no Telegram API account; upstream Telegram build instructions below describe the unmodified app. Use the root README for the Monogram Nix build.
 
 Upstream code is GPL-2.0-or-later; new Monogram code is GPL-3.0-or-later. Keep upstream copyright notices and publish corresponding source with distributed binaries.
 

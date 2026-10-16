@@ -19,6 +19,6 @@ mvn -f xmpp-core/pom.xml test
 
 The pinned flake selects Java 21, Maven, Android SDK 36, NDK 27.2.12479018, CMake 3.22.1, Rust 1.96.1 with Android targets, and Prosody. Gradle/Maven caches and integration server data stay in this checkout. The native wrapper runs the current upstream source build scripts; this migration is still being verified. The lighter `nix develop .#test` shell runs shared-core tests without the Android toolchain. See [upstream source and instructions](docs/UPSTREAM.md).
 
-Work stays in this repository using Git branches. `master` preserves the old prototype; `monogram-current-base` carries the official-source migration.
+Work stays in this repository using Git branches. `prototype/telegram-foss` preserves the old prototype; `monogram-current-base` carries the official-source migration.
 
 The shared `xmpp-core` is a Java library used by the Android project and exercised against a local TLS-enabled Prosody. No Telegram API credentials are needed. See [port status and protocol decisions](docs/PORT.md).
