@@ -3743,10 +3743,11 @@ public class ChatActivity extends BaseFragment implements
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(final int id) {
-                if (id == 91001 && dialog_id > 0) {
+                if (id == 91001 && (dialog_id > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id))) {
                     presentFragment(new MonogramSecurityActivity(currentAccount, dialog_id));
                     return;
                 }
+                if (id == 91002 && dialog_id<0) { presentFragment(new MonogramRoomActivity(currentAccount,dialog_id)); return; }
                 if (id == -1) {
                     if (isInPollAddOptionMode()) {
                         pollAddOptionModeClose();
@@ -4368,9 +4369,10 @@ public class ChatActivity extends BaseFragment implements
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
 
-            if (dialog_id > 0 && currentEncryptedChat == null) {
+            if ((dialog_id > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) && currentEncryptedChat == null) {
                 headerItem.lazilyAddSubItem(91001, R.drawable.msg_secret, getString(R.string.MonogramConversationSecurity));
             }
+            if (org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) headerItem.lazilyAddSubItem(91002, R.drawable.msg_groups, "Room settings");
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));

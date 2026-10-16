@@ -10,7 +10,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 ## Priority order
 
 - [x] Build and deliver the current encrypted media/captions update: 0.2.13 includes modern OMEMO integration and local interoperability checks, is published, and is installed through wireless ADB. Phone picker/viewer interaction and complete independent Android-client exchange remain tracked below.
-- [ ] Next: MUCs, covering the room support and verification listed below.
+- [o] Next: MUCs, covering the room support and verification listed below.
 - [ ] Then: message reactions in direct chats and MUCs, reusing Telegram's native reaction UI with standard XMPP interoperability.
 
 ## Official Telegram base
@@ -66,13 +66,13 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Multi-user chats (MUCs)
 
-- [ ] Implement XEP-0045 room discovery, joining/leaving, nicknames and room conversation adapters.
+- [o] Implement XEP-0045 room discovery, joining/leaving, nicknames and room conversation adapters. Implemented on branch `mucs`: public service/room discovery, existing-room join/passwords, leave/rejoin, nicknames and native Telegram group conversations, with separate occupant identities. First APK and phone interaction remain pending.
 - [ ] Support room creation/configuration, invitations, occupants, affiliation/role changes and moderation.
-- [ ] Implement persistent room bookmarks and automatic rejoining through standard XMPP extensions.
-- [ ] Import room history/MAM with stable IDs, timestamps and deduplication; keep room state separate from direct messages.
+- [o] Implement persistent room bookmarks and automatic rejoining through standard XMPP extensions. Local saved rooms, encrypted saved passwords and rejoining on a fresh connection/reconnect are implemented. Standard server bookmarks and multi-client synchronization remain.
+- [o] Import room history/MAM with stable IDs, timestamps and deduplication; keep room state separate from direct messages. Schema 10 adds independent room dialogs, participant mappings and author-scoped aliases; native history remains cached after reopen/leave. Join history imports the latest 100 messages and preserves known plaintext on encrypted replay. Paged room MAM remains.
 - [ ] Classify legacy/unmarked MUC private messages before importing them; occupant addresses must not share the direct-message bare-JID model. The direct adapter rejects messages with the modern MUC marker. Room corrections require full occupant/session continuity, including leave/rejoin and nickname reuse; do not rely solely on the optional marker.
-- [ ] Implement interoperable MUC OMEMO for supported non-anonymous, members-only rooms, with explicit participant/device trust and membership changes.
-- [ ] Explain when a room cannot support OMEMO; never silently send plaintext for an encrypted room.
+- [o] Implement interoperable MUC OMEMO for supported non-anonymous, members-only rooms, with explicit participant/device trust and membership changes. Legacy OMEMO text sending includes offline members, refuses failed/untrusted recipients, checks membership again before sending and exposes member fingerprints in the existing security page. Disposable Prosody checks pass for encrypted live/offline delivery without roster subscriptions. Modern OMEMO, full independent-client exchange, membership event handling and media/replies/edits remain.
+- [o] Explain when a room cannot support OMEMO; never silently send plaintext for an encrypted room. Join/security pages explain requirements, unsupported/changed rooms leave messages unsent, and disabling encryption requires the existing confirmation. Phone interaction remains.
 - [ ] Test rooms and encrypted group messages against an independent XMPP client, including reconnect and membership changes.
 
 ## OMEMO

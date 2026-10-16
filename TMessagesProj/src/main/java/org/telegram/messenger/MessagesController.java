@@ -11514,7 +11514,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (BuildVars.LOGS_ENABLED && loaderLogger == null && mode == 0) {
             loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
         }
-        if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && dialogId > 0) {
+        if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && (dialogId > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialogId))) {
             org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadHistory(dialogId, max_id, count, load_type, (result, archiveEnd) ->
                     processLoadedMessages(result, result.messages.size(), dialogId, mergeDialogId, count, max_id, offset_date,
                             false, classGuid, 0, 0, 0, 0, load_type, archiveEnd, mode, 0, loadIndex, false, 0, processMessages, false, null));

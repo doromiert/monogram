@@ -31,6 +31,7 @@ public final class MonogramController {
         return instances[account];
     }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService roomWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService cacheWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService archiveWorker = Executors.newSingleThreadExecutor();
     private final int account;
@@ -154,6 +155,14 @@ public final class MonogramController {
                     @Override public void message(XmppMessage message,Runnable accepted) {
                         worker.execute(() -> { if (sessionEpoch == epoch && session != null) { incoming(message); accepted.run(); } });
                     }
+                    @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
+                        worker.execute(() -> { if (sessionEpoch==epoch && session!=null) incomingRoom(message); });
+                    }
+                    @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
+                        worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
+                            store.roomState(room,self); long dialog=store.knownRoom(room.room.toString()); if(dialog!=0) publishRoom(dialog);
+                        } });
+                    }
                     @Override public void profileChanged(org.jxmpp.jid.EntityBareJid jid) {
                         worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer); } });
                     }
@@ -177,7 +186,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); startArchiveSync(session);
+                            state(ConnectionsManager.ConnectionStateConnected); startArchiveSync(session); if (!resumed) rejoinRooms(session,epoch);
                         });
                     }
                 });
@@ -199,6 +208,7 @@ public final class MonogramController {
             @Override public void entriesDeleted(java.util.Collection<org.jxmpp.jid.Jid> addresses) { changed(addresses); }
             @Override public void presenceChanged(org.jivesoftware.smack.packet.Presence presence) {}
         });
+        for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
         connecting.chatStates.setEnabled(typingEnabled());
         connecting.connect();
         session = connecting;
@@ -209,7 +219,108 @@ public final class MonogramController {
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
         state(ConnectionsManager.ConnectionStateConnected);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-        startArchiveSync(connecting);
+        startArchiveSync(connecting); rejoinRooms(connecting,epoch);
+    }
+    private void rejoinRooms(XmppSession expected,long epoch) {
+        roomWorker.execute(() -> {
+            for (long dialog:store.rooms()) {
+                if (session!=expected || sessionEpoch!=epoch || !expected.connection().isAuthenticated()) return;
+                MonogramStore.Room room=store.room(dialog); if(!room.autojoin) continue;
+                try { String encrypted=preferences.getString("room-password-"+dialog,""); expected.rooms.join(room.jid,room.nickname,encrypted.isEmpty() ? null : vault.decrypt(encrypted)); }
+                catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room rejoin: "+failed.getClass().getSimpleName()); }
+            }
+        });
+    }
+    public boolean isRoom(long dialog) { return dialog<0 && store.rooms().contains(dialog); }
+    public String roomNickname(long dialog) { return store.room(dialog).nickname; }
+    public void openRoom(String address,String nickname,String password,RequestDelegate callback) {
+        long epoch=sessionEpoch,owner=accountEpoch;
+        worker.execute(() -> {
+            try {
+                XmppSession expected=session();
+                if(sessionEpoch!=epoch || accountEpoch!=owner) throw new IllegalStateException("Account changed");
+                String jid=org.jxmpp.jid.impl.JidCreate.entityBareFrom(address).toString();
+                if(org.jxmpp.jid.impl.JidCreate.from(address).hasResource()) throw new IllegalArgumentException("Bare room address required");
+                org.jxmpp.jid.parts.Resourcepart.from(nickname);
+                long saved=store.room(jid,nickname);
+                String roomPassword=password;
+                if(roomPassword==null) { String encrypted=preferences.getString("room-password-"+saved,""); roomPassword=encrypted.isEmpty() ? "" : vault.decrypt(encrypted); }
+                if(!preferences.edit().putString("room-password-"+saved,roomPassword.isEmpty() ? "" : vault.encrypt(roomPassword)).commit()) throw new java.io.IOException("Cannot save room password");
+                final String secret=roomPassword;
+                roomWorker.execute(() -> {
+                    try {
+                        if(session!=expected || sessionEpoch!=epoch || accountEpoch!=owner) throw new IllegalStateException("Account changed");
+                        com.negzero.monogram.xmpp.XmppRooms.State room=expected.rooms.join(jid,nickname,secret.isEmpty() ? null : secret);
+                        worker.execute(() -> {
+                            if(session!=expected || sessionEpoch!=epoch || accountEpoch!=owner) return;
+                            long dialog=store.room(jid,room.nickname); store.roomState(room,self); publishRoom(dialog);
+                            TLRPC.Chat chat=store.roomChat(dialog); TLRPC.TL_messages_dialogs cached=dialogs();
+                            AndroidUtilities.runOnUIThread(() -> {
+                                if(sessionEpoch!=epoch || accountEpoch!=owner) return;
+                                MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false);
+                                callback.run(chat,null);
+                            });
+                        });
+                    } catch(Exception failed) { roomResult(callback,failed); }
+                });
+            } catch(Exception failed) { roomResult(callback,failed); }
+        });
+    }
+    private void roomResult(RequestDelegate callback,Exception failure) {
+        TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400; error.text=failure.getClass().getSimpleName();
+        AndroidUtilities.runOnUIThread(() -> callback.run(null,error));
+    }
+    public void changeRoomNickname(long dialog,String nickname,RequestDelegate callback) {
+        long owner=accountEpoch,epoch=sessionEpoch;
+        roomWorker.execute(() -> { try {
+            if(accountEpoch!=owner || sessionEpoch!=epoch) throw new IllegalStateException("Account changed");
+            session().rooms.nickname(store.jid(dialog),nickname);
+            AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==owner && sessionEpoch==epoch) callback.run(new TLRPC.TL_boolTrue(),null); });
+        } catch(Exception failed) { roomResult(callback,failed); } });
+    }
+    public void leaveRoom(long dialog,RequestDelegate callback) {
+        long owner=accountEpoch;
+        worker.execute(() -> { try {
+            if(accountEpoch!=owner) throw new IllegalStateException("Account changed");
+            String jid=store.jid(dialog); XmppSession expected=session;
+            store.leaveRoom(dialog); publishRoom(dialog);
+            roomWorker.execute(() -> { try {
+                if(accountEpoch!=owner) throw new IllegalStateException("Account changed");
+                if(expected!=null && expected.connection().isAuthenticated() && expected.rooms.state(jid).joined) expected.rooms.leave(jid);
+                AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==owner) callback.run(new TLRPC.TL_boolTrue(),null); });
+            } catch(Exception failed) { roomResult(callback,failed); } });
+        } catch(Exception failed) { roomResult(callback,failed); } });
+    }
+    public void discoverRooms(java.util.function.BiConsumer<java.util.List<org.jivesoftware.smackx.muc.HostedRoom>,Exception> callback) {
+        roomWorker.execute(() -> {
+            java.util.List<org.jivesoftware.smackx.muc.HostedRoom> found=new ArrayList<>(); Exception error=null;
+            try { XmppSession expected=session(); for(org.jxmpp.jid.DomainBareJid service:expected.rooms.services()) found.addAll(expected.rooms.discover(service.toString())); }
+            catch(Exception failed) { error=failed; }
+            final Exception result=error; AndroidUtilities.runOnUIThread(() -> callback.accept(found,result));
+        });
+    }
+    private void publishRoom(long dialog) {
+        TLRPC.Chat chat=store.roomChat(dialog); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(chat);
+        ArrayList<TLRPC.User> users=store.roomUsers(dialog,self);
+        MessagesStorage.getInstance(account).putUsersAndChats(users,chats,true,true);
+        AndroidUtilities.runOnUIThread(() -> { MessagesController.getInstance(account).putUsers(users,false); MessagesController.getInstance(account).putChat(chat,false);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_ALL); });
+    }
+    private void incomingRoom(com.negzero.monogram.xmpp.XmppRoomMessage message) {
+        long dialog=store.knownRoom(message.room.toString()); if(dialog==0) return;
+        int id=store.saveRoom(message,self); if(id==0 || !UserConfig.getInstance(account).isClientActivated()) return;
+        TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=store.getMessage(id,self);
+        ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(update);
+        ArrayList<TLRPC.User> users=store.roomUsers(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
+        long epoch=sessionEpoch;
+        Utilities.stageQueue.postRunnable(() -> {
+            MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now());
+            AndroidUtilities.runOnUIThread(() -> {
+                if(sessionEpoch!=epoch) return;
+                ArrayList<MessageObject> changed=new ArrayList<>(); changed.add(new MessageObject(account,update.message,true,true));
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,dialog,changed);
+            });
+        });
     }
     private static final class ArchiveTask {
         final long peer;
@@ -328,6 +439,13 @@ public final class MonogramController {
             dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
             result.dialogs.add(dialog); result.messages.addAll(history); result.users.add(store.user(peer, self));
         }
+        for (long peer:store.rooms()) {
+            ArrayList<TLRPC.Message> history=store.history(peer,self,0,1);
+            TLRPC.TL_dialog dialog=new TLRPC.TL_dialog(); dialog.id=peer; dialog.peer=new TLRPC.TL_peerChat(); dialog.peer.chat_id=-peer;
+            if(!history.isEmpty()) { dialog.top_message=history.get(0).id; dialog.last_message_date=history.get(0).date; }
+            dialog.notify_settings=new TLRPC.TL_peerNotifySettings(); result.dialogs.add(dialog); result.messages.addAll(history);
+            result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self));
+        }
         result.dialogs.sort((a, b) -> Integer.compare(b.last_message_date, a.last_message_date));
         result.users.add(ownUser());
         return result;
@@ -341,7 +459,8 @@ public final class MonogramController {
             boolean end = sync == null || !sync.pending.contains(peer);
             try {
                 result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
-                result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
+                if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
+                else result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
                 ArrayList<TLRPC.Message> automatic = new ArrayList<>(result.messages);
                 worker.execute(() -> { if (epoch == accountEpoch) for (TLRPC.Message message : automatic) maybeAutoDownload(message); });
             } catch (RuntimeException failed) {
@@ -372,6 +491,9 @@ public final class MonogramController {
     public void logout() {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         accountEpoch++;
+        SharedPreferences.Editor roomPasswords=preferences.edit();
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-")) roomPasswords.remove(key);
+        if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
@@ -440,12 +562,13 @@ public final class MonogramController {
         return current;
     }
     public boolean encrypted(long peer) { return preferences.getBoolean("omemo-" + peer, true); }
-    public boolean modernEncryption(long peer) { return preferences.getInt("omemo-version-"+peer,1)==2; }
+    public boolean modernEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==2; }
     public XmppMessage.Encryption encryption(long peer) {
         return !encrypted(peer) ? XmppMessage.Encryption.PLAIN : modernEncryption(peer)
                 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO;
     }
     public void setEncryption(long peer,XmppMessage.Encryption mode) {
+        if (peer<0 && mode==XmppMessage.Encryption.OMEMO2) throw new UnsupportedOperationException("OMEMO 2 rooms are not implemented");
         if (!preferences.edit().putBoolean("omemo-"+peer,mode!=XmppMessage.Encryption.PLAIN)
                 .putInt("omemo-version-"+peer,mode==XmppMessage.Encryption.OMEMO2 ? 2 : 1).commit()) throw new IllegalStateException("Cannot save encryption preference");
     }
@@ -599,7 +722,7 @@ public final class MonogramController {
         try {
             request.job.check();
             expected = session();
-            if (!request.supported || request.message.dialog_id <= 0)
+            if (!request.supported || request.message.dialog_id <= 0 || store.jid(request.message.dialog_id).contains("/"))
                 throw new UnsupportedOperationException();
             if (request.file == null || !request.file.isFile()) throw new java.io.FileNotFoundException();
         } catch (Exception e) {
@@ -737,7 +860,7 @@ public final class MonogramController {
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
-                || request instanceof TLRPC.TL_messages_getMessageEditData;
+                || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
         long epoch = accountEpoch;
         (cached ? cacheWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
@@ -834,6 +957,17 @@ public final class MonogramController {
             if (photo instanceof TLRPC.TL_photo && query.offset == 0 && query.max_id == 0 && query.limit > 0) result.photos.add(photo);
             result.users.add(store.user(peer, self)); result.count = photo instanceof TLRPC.TL_photo ? 1 : 0; return result;
         }
+        if (request instanceof TLRPC.TL_messages_getChats) {
+            TLRPC.TL_messages_chats result=new TLRPC.TL_messages_chats();
+            for(long id:((TLRPC.TL_messages_getChats)request).id) result.chats.add(store.roomChat(-id)); return result;
+        }
+        if (request instanceof TLRPC.TL_messages_getFullChat) return store.roomFull(-((TLRPC.TL_messages_getFullChat)request).chat_id,self);
+        if (request instanceof TLRPC.TL_messages_deleteChatUser) {
+            TLRPC.TL_messages_deleteChatUser leave=(TLRPC.TL_messages_deleteChatUser)request;
+            if (!(leave.user_id instanceof TLRPC.TL_inputUserSelf) && leave.user_id.user_id!=self) throw new UnsupportedOperationException();
+            session().rooms.leave(store.jid(-leave.chat_id)); store.leaveRoom(-leave.chat_id); publishRoom(-leave.chat_id);
+            Updates result=new Updates(); result.date=now(); result.chats.add(store.roomChat(-leave.chat_id)); return result;
+        }
         if (request instanceof TLRPC.TL_messages_getDialogs) return dialogs();
         if (request instanceof TLRPC.TL_messages_getMessages) {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
@@ -842,13 +976,14 @@ public final class MonogramController {
                 try { TLRPC.Message message = store.getMessage(input, self); result.messages.add(message); peers.add(message.dialog_id); }
                 catch (IllegalArgumentException missing) { /* The requested local message is unavailable. */ }
             }
-            for (long peer : peers) result.users.add(store.user(peer, self)); result.users.add(ownUser()); return result;
+            for (long peer : peers) { if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); } result.users.add(ownUser()); return result;
         }
         if (request instanceof TLRPC.TL_messages_getHistory) {
             TLRPC.TL_messages_getHistory query = (TLRPC.TL_messages_getHistory) request;
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
-            result.messages.addAll(store.history(query.peer.user_id, self, query.offset_id, query.limit));
-            result.users.add(store.user(query.peer.user_id, self)); result.users.add(ownUser()); return result;
+            long peer=query.peer.chat_id!=0 ? -query.peer.chat_id : query.peer.user_id;
+            result.messages.addAll(store.history(peer, self, query.offset_id, query.limit));
+            if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); result.users.add(ownUser()); return result;
         }
         if (request instanceof TLRPC.TL_messages_getMessageEditData) {
             TLRPC.TL_messages_getMessageEditData query = (TLRPC.TL_messages_getMessageEditData) request;
@@ -876,6 +1011,15 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
+            if (send.peer.chat_id!=0) {
+                if (send.schedule_date!=0 || send.reply_to!=null) throw new UnsupportedOperationException();
+                long dialog=-send.peer.chat_id;
+                if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),send.message,encrypted(dialog));
+                int id=store.saveRoom(message,self);
+                TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
+                result.pts_count=1; result.pts=MessagesStorage.getInstance(account).getLastPtsValue()+1; return result;
+            }
             if (send.schedule_date != 0 || send.peer.user_id == 0) throw new UnsupportedOperationException();
             long peer = send.peer.user_id; XmppMessage.Encryption mode = encryption(peer);
             ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);

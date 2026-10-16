@@ -44,12 +44,15 @@ authentication = "internal_hashed"
 ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhost.crt" }
 archive_expires_after = "1d"
 default_archive_policy = true
+Component "conference.localhost" "muc"
+modules_enabled = { "muc_mam" }
+archive_expires_after = "1d"
 Component "upload.localhost" "http_file_share"
 http_host = "localhost"
 http_file_share_size_limit = 1024*1024
 http_file_share_daily_quota = 10*1024*1024
 CONFIG
-for user in alice bob typingalice typingbob modernalice modernbob peeralice peerbob firstpeeralice firstpeerbob devicealice devicebob sessionalice sessionbob fallbackalice fallbackbob; do
+for user in roomalice roombob alice bob typingalice typingbob modernalice modernbob peeralice peerbob firstpeeralice firstpeerbob devicealice devicebob sessionalice sessionbob fallbackalice fallbackbob; do
     prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-test
  done
 prosody --config "$state/prosody.cfg.lua" -F >"$state/server.log" 2>&1 &
@@ -64,7 +67,9 @@ for _ in range(100):
 else: raise SystemExit('Prosody did not start')
 PY
 export MONOGRAM_IT=1 MONOGRAM_IT_PORT="$port" MONOGRAM_IT_STATE="$state" MONOGRAM_IT_HTTPS_PORT="$https_port"
-mvn -f xmpp-core/pom.xml clean test -DargLine="-Xcheck:jni -Djava.library.path=$PWD/.state/omemo2-host -Djavax.net.ssl.trustStore=$state/trust.p12 -Djavax.net.ssl.trustStorePassword=monogram-test"
+test_options=()
+if [ -n "${MONOGRAM_TESTS:-}" ]; then test_options+=("-Dtest=$MONOGRAM_TESTS"); fi
+mvn -f xmpp-core/pom.xml clean test "${test_options[@]}" -DargLine="-Xcheck:jni -Djava.library.path=$PWD/.state/omemo2-host -Djavax.net.ssl.trustStore=$state/trust.p12 -Djavax.net.ssl.trustStorePassword=monogram-test"
 if [ -n "${MONOGRAM_ANDROID_DEVICE:-}" ]; then
     ./scripts/test-android-store.sh "$MONOGRAM_ANDROID_DEVICE"
 fi

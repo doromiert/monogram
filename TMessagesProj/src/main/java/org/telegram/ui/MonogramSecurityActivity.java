@@ -50,7 +50,11 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                 Map<OmemoDevice, OmemoFingerprint> found = new LinkedHashMap<>();
                 Map<OmemoDevice, String> trust = new LinkedHashMap<>();
                 boolean contactHasDevices = false;
-                for (String jid : new String[]{controller.jid(peer), session.ownJid()}) {
+                java.util.Set<String> addresses=new java.util.LinkedHashSet<>();
+                if (peer<0) for(org.jxmpp.jid.BareJid member:session.rooms.members(controller.jid(peer))) addresses.add(member.toString());
+                else addresses.add(controller.jid(peer));
+                addresses.add(session.ownJid());
+                for (String jid : addresses) {
                     if (selectedModern) {
                         for (Map.Entry<Integer,Omemo2Bundle> entry : session.modern().discover(jid).entrySet()) {
                             OmemoDevice device = new OmemoDevice(JidCreate.entityBareFrom(jid),entry.getKey());
@@ -66,7 +70,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                     }
                     for (OmemoDevice device : session.devices(jid)) {
                         if (device.getJid().toString().equals(session.ownJid()) && device.getDeviceId() == session.ownDeviceId()) continue;
-                        if (jid.equals(controller.jid(peer))) contactHasDevices = true;
+                        if (peer<0 || jid.equals(controller.jid(peer))) contactHasDevices = true;
                         OmemoFingerprint fingerprint = session.fingerprint(device); found.put(device, fingerprint);
                         switch (session.trustState(device, fingerprint)) {
                             case trusted: trust.put(device, "Trusted"); break;
@@ -84,7 +88,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
             } catch (Exception failed) {
                 AndroidUtilities.runOnUIThread(() -> {
                     if (loading!=generation) return;
-                    status = selectedModern ? "Could not load OMEMO 2 fingerprints. Check your connection and server support, then refresh. Messages will stay unsent until encryption is ready."
+                    status = peer<0 ? "Could not load room member fingerprints. Join a members-only, non-anonymous room and check your connection. Encrypted messages remain unsent until every member has a compatible trusted device." : selectedModern ? "Could not load OMEMO 2 fingerprints. Check your connection and server support, then refresh. Messages will stay unsent until encryption is ready."
                             : "Could not load legacy OMEMO fingerprints. Check your connection and the contact's support, then refresh."; refresh();
                 });
             }
@@ -95,7 +99,8 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         MonogramController controller = MonogramController.get(currentAccount);
         items.add(UItem.asHeader(controller.jid(peer)));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
-        items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Every member, including offline members, needs a compatible trusted device. OMEMO 2 rooms are not available yet."));
         items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));

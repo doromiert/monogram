@@ -21,11 +21,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 9); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 10); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -77,7 +77,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 9 || oldVersion < 1 || oldVersion > 8) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 10 || oldVersion < 1 || oldVersion > 9) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -85,7 +85,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (oldVersion < 6) addReplies(db);
         if (oldVersion < 7) addCorrections(db);
         if (oldVersion < 8) addCaptions(db);
-        addProtocols(db);
+        if (oldVersion < 9) addProtocols(db);
+        addRooms(db);
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -100,6 +101,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT id FROM peers WHERE jid=?", new String[]{jid})) { return c.moveToFirst() ? c.getLong(0) : 0; }
     }
     synchronized String jid(long id) {
+        if (id < 0) return room(id).jid;
         try (Cursor c = getReadableDatabase().rawQuery("SELECT jid FROM peers WHERE id=?", new String[]{Long.toString(id)})) {
             if (!c.moveToFirst()) throw new IllegalArgumentException("Unknown XMPP peer");
             return c.getString(0);
@@ -109,8 +111,119 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         profileCache.clear();
         db.beginTransaction();
-        try { db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
+    }
+    private void addRooms(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY AUTOINCREMENT,jid TEXT NOT NULL UNIQUE,nickname TEXT NOT NULL,title TEXT NOT NULL,subject TEXT NOT NULL DEFAULT '',autojoin INTEGER NOT NULL DEFAULT 1)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_participants (room INTEGER NOT NULL,occupant TEXT NOT NULL,user INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 0,real_jid TEXT,PRIMARY KEY(room,occupant))");
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_senders (message INTEGER PRIMARY KEY,user INTEGER NOT NULL)");
+    }
+    static final class Room {
+        final long dialog;
+        final String jid,nickname,title,subject;
+        final boolean autojoin;
+        Room(Cursor c) { dialog=-c.getLong(0); jid=c.getString(1); nickname=c.getString(2); title=c.getString(3); subject=c.getString(4); autojoin=c.getInt(5)!=0; }
+    }
+    synchronized Room room(long dialog) {
+        if (dialog>=0) throw new IllegalArgumentException("Room dialog required");
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT id,jid,nickname,title,subject,autojoin FROM rooms WHERE id=?",new String[]{Long.toString(-dialog)})) {
+            if (!c.moveToFirst()) throw new IllegalArgumentException("Unknown room"); return new Room(c);
+        }
+    }
+    synchronized long room(String jid,String nickname) {
+        ContentValues values=new ContentValues(); values.put("jid",jid); values.put("nickname",nickname); values.put("title",jid);
+        getWritableDatabase().insertWithOnConflict("rooms",null,values,SQLiteDatabase.CONFLICT_IGNORE);
+        getWritableDatabase().execSQL("UPDATE rooms SET nickname=?,autojoin=1 WHERE jid=?",new Object[]{nickname,jid});
+        return knownRoom(jid);
+    }
+    synchronized long knownRoom(String jid) {
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT id FROM rooms WHERE jid=?",new String[]{jid})) { return c.moveToFirst() ? -c.getLong(0) : 0; }
+    }
+    synchronized ArrayList<Long> rooms() {
+        ArrayList<Long> result=new ArrayList<>();
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT id FROM rooms ORDER BY id",null)) { while(c.moveToNext()) result.add(-c.getLong(0)); }
+        return result;
+    }
+    synchronized void leaveRoom(long dialog) { getWritableDatabase().execSQL("UPDATE rooms SET autojoin=0 WHERE id=?",new Object[]{-dialog}); }
+    private long roomUser(long dialog,String occupant,String realJid,long self) {
+        if (!occupant.startsWith(room(dialog).jid+"/")) throw new IllegalArgumentException("Occupant belongs to another room");
+        long user=realJid!=null && realJid.equals(jid(self)) ? self : peer(occupant);
+        if (user!=self) rosterName(user,occupant.substring(occupant.indexOf('/')+1));
+        ContentValues values=new ContentValues(); values.put("room",-dialog); values.put("occupant",occupant); values.put("user",user); values.put("real_jid",realJid);
+        getWritableDatabase().insertWithOnConflict("room_participants",null,values,SQLiteDatabase.CONFLICT_IGNORE);
+        return user;
+    }
+    synchronized void roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
+        long dialog=knownRoom(state.room.toString()); if (dialog==0) return;
+        SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
+        try {
+            ContentValues values=new ContentValues(); values.put("subject",state.subject);
+            if(state.title!=null && !state.title.trim().isEmpty()) values.put("title",state.title);
+            if (!state.nickname.isEmpty()) values.put("nickname",state.nickname);
+            db.update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
+            db.execSQL("UPDATE room_participants SET active=0 WHERE room=?",new Object[]{-dialog});
+            for (com.negzero.monogram.xmpp.XmppRooms.Occupant occupant:state.occupants) {
+                roomUser(dialog,occupant.address,occupant.realJid,self);
+                db.execSQL("UPDATE room_participants SET active=1,real_jid=? WHERE room=? AND occupant=?",new Object[]{occupant.realJid,-dialog,occupant.address});
+            }
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
+    synchronized ArrayList<TLRPC.User> roomUsers(long dialog,long self) {
+        java.util.Set<Long> ids=new java.util.LinkedHashSet<>(); ids.add(self);
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT user FROM room_participants WHERE room=? UNION SELECT s.user FROM room_senders s JOIN messages m ON m.id=s.message WHERE m.peer=?",new String[]{Long.toString(-dialog),Long.toString(dialog)})) {
+            while(c.moveToNext()) ids.add(c.getLong(0));
+        }
+        ArrayList<TLRPC.User> result=new ArrayList<>(); for (long id:ids) result.add(user(id,self)); return result;
+    }
+    synchronized TLRPC.Chat roomChat(long dialog) {
+        Room room=room(dialog); TLRPC.TL_chat chat=new TLRPC.TL_chat();
+        chat.id=-dialog; chat.title=room.title; chat.photo=new TLRPC.TL_chatPhotoEmpty(); chat.version=1; chat.left=!room.autojoin;
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT count(DISTINCT user) FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) { c.moveToFirst(); chat.participants_count=c.getInt(0); }
+        return chat;
+    }
+    synchronized TLRPC.TL_messages_chatFull roomFull(long dialog,long self) {
+        Room room=room(dialog); TLRPC.TL_messages_chatFull result=new TLRPC.TL_messages_chatFull();
+        result.chats.add(roomChat(dialog)); result.users.addAll(roomUsers(dialog,self));
+        TLRPC.TL_chatFull full=new TLRPC.TL_chatFull(); full.id=-dialog; full.about=room.jid+(room.subject.isEmpty() ? "" : "\n\n"+room.subject);
+        full.notify_settings=new TLRPC.TL_peerNotifySettings(); full.participants=new TLRPC.TL_chatParticipants(); full.participants.chat_id=-dialog; full.participants.version=1;
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT user FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) {
+            while(c.moveToNext()) { TLRPC.TL_chatParticipant participant=new TLRPC.TL_chatParticipant(); participant.user_id=c.getLong(0); full.participants.participants.add(participant); }
+        }
+        result.full_chat=full; return result;
+    }
+    synchronized int saveRoom(com.negzero.monogram.xmpp.XmppRoomMessage message,long self) {
+        long dialog=knownRoom(message.room.toString()); if (dialog==0) throw new IllegalArgumentException("Unknown room message");
+        SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
+        try {
+            int existing=0;
+            for (Map.Entry<String,String> alias:message.ids.entrySet()) {
+                String value=alias.getKey().equals("archive") ? alias.getValue() : message.sender+"\n"+alias.getValue();
+                try (Cursor c=db.rawQuery("SELECT DISTINCT message FROM message_ids WHERE peer=? AND kind=? AND value=? AND namespace=?",new String[]{Long.toString(dialog),alias.getKey(),value,Integer.toString(message.encryption.ordinal())})) {
+                    while(c.moveToNext()) { int match=c.getInt(0); if(existing!=0 && existing!=match) throw new IllegalStateException("Conflicting room IDs"); existing=match; }
+                }
+            }
+            ContentValues values=new ContentValues(); values.put("body",message.readable ? message.body : "Encrypted room message unavailable on this device");
+            values.put("encrypted",message.encrypted); values.put("encryption",message.encryption.ordinal()); values.put("readable",message.readable);
+            long seconds=message.timestamp/1000; if(seconds<0 || seconds>Integer.MAX_VALUE) throw new IllegalArgumentException("Unsupported date");
+            values.put("time",seconds); values.put("time_ms",message.timestamp);
+            int id=existing; boolean changed=false;
+            if (existing==0) {
+                values.put("peer",dialog); values.put("stanza",UUID.randomUUID().toString()); values.put("outgoing",message.outgoing);
+                long inserted=db.insertOrThrow("messages",null,values); if(inserted>Integer.MAX_VALUE) throw new IllegalStateException("Message ID space exhausted"); id=(int)inserted; changed=true;
+                long sender=message.outgoing ? self : roomUser(dialog,message.sender,null,self);
+                ContentValues author=new ContentValues(); author.put("message",id); author.put("user",sender); db.insertOrThrow("room_senders",null,author);
+            } else try (Cursor c=db.rawQuery("SELECT readable FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
+                if(c.moveToFirst() && c.getInt(0)==0 && message.readable) { db.update("messages",values,"id=?",new String[]{Integer.toString(id)}); changed=true; }
+            }
+            for (Map.Entry<String,String> alias:message.ids.entrySet()) {
+                ContentValues identity=new ContentValues(); identity.put("peer",dialog); identity.put("outgoing",message.outgoing); identity.put("kind",alias.getKey());
+                identity.put("value",alias.getKey().equals("archive") ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
+                db.insertWithOnConflict("message_ids",null,identity,SQLiteDatabase.CONFLICT_IGNORE);
+            }
+            db.setTransactionSuccessful(); return changed ? id : 0;
+        } finally { db.endTransaction(); }
     }
     synchronized com.negzero.monogram.xmpp.XmppProfile profile(long peer) {
         if (profileCache.containsKey(peer)) return profileCache.get(peer);
@@ -452,7 +565,12 @@ final class MonogramStore extends SQLiteOpenHelper {
         TLRPC.TL_message message = new TLRPC.TL_message();
         message.id = id; message.date = time; message.message = body; message.out = outgoing; message.unread = !outgoing;
         message.peer_id = new TLRPC.TL_peerUser(); message.peer_id.user_id = outgoing ? peer : self;
+        if (peer < 0) { message.peer_id = new TLRPC.TL_peerChat(); message.peer_id.chat_id = -peer; }
         message.from_id = new TLRPC.TL_peerUser(); message.from_id.user_id = outgoing ? self : peer;
+        if (peer < 0) try (Cursor sender = getReadableDatabase().rawQuery("SELECT user FROM room_senders WHERE message=?", new String[]{Integer.toString(id)})) {
+            if (!sender.moveToFirst()) throw new IllegalStateException("Missing room sender");
+            message.from_id.user_id=sender.getLong(0);
+        }
         message.flags = 256; message.dialog_id = peer;
         int payload = payload(id);
         if (payload != id) {
@@ -669,7 +787,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized ArrayList<Long> peers() {
         ArrayList<Long> result = new ArrayList<>();
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT id FROM peers ORDER BY id", null)) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT id FROM peers WHERE id NOT IN (SELECT user FROM room_participants WHERE occupant=peers.jid) ORDER BY id", null)) {
             while (c.moveToNext()) result.add(c.getLong(0));
         }
         return result;

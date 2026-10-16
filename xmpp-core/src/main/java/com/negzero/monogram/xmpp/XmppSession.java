@@ -37,6 +37,8 @@ public final class XmppSession implements AutoCloseable {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
         default void profileChanged(EntityBareJid jid) {}
+        default void roomMessage(XmppRoomMessage message) {}
+        default void roomChanged(XmppRooms.State room) {}
         default void typing(EntityBareJid jid, boolean composing) {}
         default void disconnected() {}
         default void reconnected(boolean resumed) {}
@@ -56,6 +58,7 @@ public final class XmppSession implements AutoCloseable {
     }
     private final ManagedConnection connection;
     public final XmppProfiles profiles;
+    public final XmppRooms rooms;
     public final XmppChatStates chatStates;
     private final OmemoManager omemo;
     private final IdentityTrust trust;
@@ -114,6 +117,7 @@ public final class XmppSession implements AutoCloseable {
         trust = new IdentityTrust(trustFile);
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
+        rooms=new XmppRooms(connection,omemo,listener);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
             @Override public void connectionClosed() { disconnected(); }
             @Override public void connectionClosedOnError(Exception error) { disconnected(); }
@@ -140,7 +144,7 @@ public final class XmppSession implements AutoCloseable {
         ping.registerPingFailedListener(() -> { if (!closed) connection.pingTimedOut(); });
         omemo.addOmemoMessageListener(new OmemoMessageListener() {
             @Override public void onOmemoMessageReceived(Stanza stanza, OmemoMessage.Received decrypted) {
-                if (!decrypted.isKeyTransportMessage() && stanza instanceof Message && !isModern((Message)stanza)) {
+                if (!decrypted.isKeyTransportMessage() && stanza instanceof Message && !isModern((Message)stanza) && !rooms.known(stanza.getFrom())) {
                     deliver(listener, (Message) stanza, decrypted.getBody(), true);
                 }
             }
@@ -150,13 +154,14 @@ public final class XmppSession implements AutoCloseable {
             }
         });
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
-            if (validCarbon(wrapping)) {
+            if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
                 if (isModern(carbon)) deliverModern(carbon);
                 else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false);
             }
         });
         connection.addAsyncStanzaListener(stanza -> {
             Message message = (Message) stanza;
+            if (rooms.known(message.getFrom())) return;
             if (isModern(message)) deliverModern(message);
             else if (!encrypted(message)) deliver(listener, message, message.getBody(), false);
         }, stanza -> stanza instanceof Message && (((Message) stanza).getType() == Message.Type.chat
@@ -173,6 +178,7 @@ public final class XmppSession implements AutoCloseable {
                 && ((org.jivesoftware.smack.packet.StandardExtensionElement)extension).getFirstElement("payload",XmppOmemo2.NS) != null;
     }
     private void deliverModern(Message stanza) {
+        if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (closed) return;
         try {
         crypto.execute(() -> {
@@ -210,6 +216,7 @@ public final class XmppSession implements AutoCloseable {
         return connection.getUser() != null && connection.getUser().asEntityBareJid().equals(wrapping.getFrom());
     }
     private void deliver(Listener listener, Message stanza, String body, boolean encrypted) {
+        if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (connection.getUser() == null) return;
         XmppMessage message = XmppMessage.from(stanza, connection.getUser().asEntityBareJid(), body, encrypted, true, null, null);
         if (message != null) listener.message(message);
@@ -254,6 +261,7 @@ public final class XmppSession implements AutoCloseable {
         for (org.jivesoftware.smackx.mam.element.MamElements.MamResultExtension result : query.getMamResultExtensions()) {
             org.jivesoftware.smackx.forward.packet.Forwarded<Message> forwarded = result.getForwarded();
             Message stanza = forwarded.getForwardedStanza();
+            if (rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) continue;
             if (forwarded.getDelayInformation() == null) throw new java.io.IOException("Archive result has no timestamp");
             EntityBareJid own = connection.getUser().asEntityBareJid();
             Date time = forwarded.getDelayInformation().getStamp();
@@ -300,7 +308,20 @@ public final class XmppSession implements AutoCloseable {
         } catch (Exception e) { close(); throw e; }
     }
     private void enableFeatures() throws Exception {
-        if (org.jivesoftware.smackx.pep.PepManager.getInstanceFor(connection).isSupported()) omemo.initialize();
+        if (org.jivesoftware.smackx.pep.PepManager.getInstanceFor(connection).isSupported()) {
+            omemo.initialize();
+            // Room members need public key bundles without requiring a roster subscription.
+            for (String node:new String[]{"eu.siacs.conversations.axolotl.devicelist","eu.siacs.conversations.axolotl.bundles:"+omemo.getDeviceId()}) {
+                try {
+                    org.jivesoftware.smackx.pubsub.Node published=org.jivesoftware.smackx.pubsub.PubSubManager.getInstanceFor(connection,connection.getUser().asEntityBareJid()).getNode(node);
+                    org.jivesoftware.smackx.pubsub.form.FillableConfigureForm form=published.getNodeConfiguration().getFillableForm();
+                    form.setAccessModel(org.jivesoftware.smackx.pubsub.AccessModel.open); published.sendConfigurationForm(form);
+                } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
+                catch (org.jivesoftware.smack.XMPPException.XMPPErrorException unsupported) {
+                    // Providers without configurable PEP can still serve existing roster contacts.
+                }
+            }
+        }
         if (modern != null) {
             try { modern.initialize(); modernFailure = null; }
             catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
@@ -349,7 +370,7 @@ public final class XmppSession implements AutoCloseable {
     private String sendModern(String jid, String body, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
         if (!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
-        Message clear = new Message(JidCreate.entityBareFrom(jid),Message.Type.chat);
+        Message clear = new Message(directRecipient(jid),Message.Type.chat);
         clear.setFrom(connection.getUser()); String id = UUID.randomUUID().toString(); clear.setStanzaId(id);
         if (reply != null) { body = reply.wireBody(body); reply.addTo(clear); }
         clear.setBody(body); if (correction != null) correction.addTo(clear); if (sharing != null) sharing.addTo(clear,body);
@@ -359,7 +380,7 @@ public final class XmppSession implements AutoCloseable {
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
-        EntityBareJid recipient = JidCreate.entityBareFrom(jid);
+        EntityBareJid recipient = directRecipient(jid);
         String attachmentUrl = body;
         if (reply != null) body = reply.wireBody(body);
         Message message;
@@ -402,6 +423,11 @@ public final class XmppSession implements AutoCloseable {
         chatStates.sent(message);
         return id;
     }
+    private EntityBareJid directRecipient(String address) throws Exception {
+        org.jxmpp.jid.Jid jid=JidCreate.from(address);
+        if (jid.hasResource() || rooms.known(jid)) throw new UnsupportedOperationException("Use room messaging for room occupants");
+        return JidCreate.entityBareFrom(address);
+    }
     public Set<OmemoDevice> devices(String jid) throws Exception {
         EntityBareJid contact = JidCreate.entityBareFrom(jid);
         try {
@@ -424,7 +450,7 @@ public final class XmppSession implements AutoCloseable {
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
         if (modern != null) modern.close(); crypto.shutdownNow();
-        chatStates.close();
+        chatStates.close(); rooms.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

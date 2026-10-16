@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package com.negzero.monogram.xmpp;
+
+import java.util.*;
+import org.jivesoftware.smack.packet.Message;
+import org.jivesoftware.smackx.delay.DelayInformationManager;
+import org.jivesoftware.smackx.muc.packet.MUCUser;
+import org.jivesoftware.smackx.sid.element.*;
+import org.jxmpp.jid.*;
+
+/** Room senders are full occupant addresses, never direct-chat contacts. */
+public final class XmppRoomMessage {
+    public final EntityBareJid room;
+    public final String sender, body;
+    public final Map<String,String> ids;
+    public final boolean outgoing, encrypted, readable;
+    public final XmppMessage.Encryption encryption;
+    public final long timestamp;
+    private XmppRoomMessage(EntityBareJid room,String sender,String body,Map<String,String> ids,
+                            boolean outgoing,boolean encrypted,boolean readable,long timestamp,boolean modern) {
+        this.room=room; this.sender=sender; this.body=body; this.ids=Collections.unmodifiableMap(ids);
+        this.encryption=modern ? XmppMessage.Encryption.OMEMO2 : encrypted ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
+        this.outgoing=outgoing; this.encrypted=encrypted; this.readable=readable; this.timestamp=timestamp;
+    }
+    public static XmppRoomMessage from(Message wire,EntityBareJid room,EntityBareJid own,String nickname,
+                                       String body,boolean encrypted,boolean readable) {
+        if (wire.getType()!=Message.Type.groupchat || wire.getFrom()==null || !room.equals(wire.getFrom().asBareJid())
+                || !wire.getFrom().hasResource() || wire.getTo()!=null && !own.equals(wire.getTo().asEntityBareJidIfPossible()) || readable && body==null) return null;
+        Date delay=DelayInformationManager.getDelayTimestamp(wire);
+        MUCUser user=MUCUser.from(wire);
+        Jid real=user==null || user.getItem()==null ? null : user.getItem().getJid();
+        boolean outgoing=real!=null ? own.equals(real.asBareJid())
+                : delay==null && wire.getFrom().getResourceOrNull().toString().equals(nickname);
+        Map<String,String> ids=new LinkedHashMap<>();
+        if (wire.getStanzaId()!=null) ids.put("stanza",wire.getStanzaId());
+        OriginIdElement origin=OriginIdElement.getOriginId(wire);
+        if (origin!=null) ids.put("origin",origin.getId());
+        for (org.jivesoftware.smack.packet.ExtensionElement extension:wire.getExtensions(StanzaIdElement.ELEMENT,StanzaIdElement.NAMESPACE)) {
+            if (extension instanceof StanzaIdElement && room.toString().equals(((StanzaIdElement)extension).getBy()))
+                ids.put("archive",((StanzaIdElement)extension).getId());
+        }
+        if (ids.isEmpty()) ids.put("local",UUID.randomUUID().toString());
+        return new XmppRoomMessage(room,wire.getFrom().toString(),body,ids,outgoing,encrypted,readable,
+                delay==null ? System.currentTimeMillis() : delay.getTime(),wire.hasExtension("encrypted",XmppOmemo2.NS));
+    }
+    static XmppRoomMessage sent(EntityBareJid room,EntityBareJid own,String nickname,String id,String body,boolean encrypted) throws Exception {
+        Message message=new Message(own,Message.Type.groupchat);
+        message.setFrom(org.jxmpp.jid.impl.JidCreate.entityFullFrom(room+"/"+nickname));
+        message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
+        return from(message,room,own,nickname,body,encrypted,true);
+    }
+}

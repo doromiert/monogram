@@ -1085,6 +1085,12 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     private boolean showingSavedMessagesHint;
 
     public void updateSubtitle(boolean animated) {
+        if (parentFragment!=null && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(parentFragment.getDialogId())) {
+            org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+            boolean joined=false;
+            try { joined=controller.session().rooms.state(controller.jid(parentFragment.getDialogId())).joined; } catch(Exception ignored) {}
+            setSubtitle(!joined ? "Room disconnected · see Room settings" : controller.encrypted(parentFragment.getDialogId()) ? "Sending with OMEMO" : "Sending without OMEMO"); return;
+        }
         if (parentFragment != null && parentFragment.getCurrentUser() != null && parentFragment.getDialogId() > 0 && !UserObject.isUserSelf(parentFragment.getCurrentUser())) {
             org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
             int state = controller.state();
