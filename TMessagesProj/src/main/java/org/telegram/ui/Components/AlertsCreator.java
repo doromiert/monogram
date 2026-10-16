@@ -302,6 +302,8 @@ public class AlertsCreator {
                     text = "No trusted recipient device is available. Review this contact's device fingerprints before retrying your message."; break;
                 case "MONOGRAM_OMEMO_DEVICE_FAILURE":
                     text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
+                case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":
+                    text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
                 case "MONOGRAM_XMPP_DISCONNECTED":
                     text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
                 case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":

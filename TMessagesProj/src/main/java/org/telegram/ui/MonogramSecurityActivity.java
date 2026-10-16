@@ -14,6 +14,10 @@ import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
+import com.negzero.monogram.xmpp.XmppMessage;
+import com.negzero.monogram.xmpp.Omemo2Bundle;
+import org.telegram.messenger.Utilities;
+import org.jxmpp.jid.impl.JidCreate;
 
 public final class MonogramSecurityActivity extends UniversalFragment {
     private final long peer;
@@ -23,19 +27,43 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     private String ownFingerprint;
     private String status = "Loading fingerprints…";
     private boolean saving;
+    private boolean modern;
+    private int generation;
     public MonogramSecurityActivity(int account, long peer) { currentAccount = account; this.peer = peer; }
     private void refresh() { if (listView != null) listView.adapter.update(true); }
     @Override public boolean onFragmentCreate() {
         super.onFragmentCreate();
+        loadIdentities();
+        return true;
+    }
+    private void loadIdentities() {
         MonogramController controller = MonogramController.get(currentAccount);
+        final int loading = ++generation;
+        modern = controller.modernEncryption(peer);
+        final boolean selectedModern = modern;
+        identities.clear(); states.clear(); loadedSession=null; ownFingerprint=null; status="Loading fingerprints…"; refresh();
         controller.worker.execute(() -> {
             try {
                 com.negzero.monogram.xmpp.XmppSession session = controller.session();
-                String own = session.ownFingerprint().toString();
+                if (selectedModern && !session.modernAvailable()) throw new IllegalStateException("OMEMO 2 is not initialized");
+                String own = selectedModern ? Utilities.bytesToHex(session.modern().device.prepare().identity()).toLowerCase(java.util.Locale.ROOT) : session.ownFingerprint().toString();
                 Map<OmemoDevice, OmemoFingerprint> found = new LinkedHashMap<>();
                 Map<OmemoDevice, String> trust = new LinkedHashMap<>();
                 boolean contactHasDevices = false;
                 for (String jid : new String[]{controller.jid(peer), session.ownJid()}) {
+                    if (selectedModern) {
+                        for (Map.Entry<Integer,Omemo2Bundle> entry : session.modern().discover(jid).entrySet()) {
+                            OmemoDevice device = new OmemoDevice(JidCreate.entityBareFrom(jid),entry.getKey());
+                            byte[] key = entry.getValue().identity(); found.put(device,new OmemoFingerprint(Utilities.bytesToHex(key).toLowerCase(java.util.Locale.ROOT)));
+                            switch (session.modern().device.trust(jid,entry.getKey(),key)) {
+                                case TRUSTED: trust.put(device,"Trusted"); break;
+                                case REJECTED: trust.put(device,"Distrusted"); break;
+                                default: trust.put(device,"Not reviewed");
+                            }
+                            if (jid.equals(controller.jid(peer))) contactHasDevices=true;
+                        }
+                        continue;
+                    }
                     for (OmemoDevice device : session.devices(jid)) {
                         if (device.getJid().toString().equals(session.ownJid()) && device.getDeviceId() == session.ownDeviceId()) continue;
                         if (jid.equals(controller.jid(peer))) contactHasDevices = true;
@@ -49,26 +77,32 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                 }
                 boolean hasContact = contactHasDevices;
                 AndroidUtilities.runOnUIThread(() -> {
+                    if (loading!=generation) return;
                     loadedSession = session; ownFingerprint = own; identities.putAll(found); states.putAll(trust);
                     status = hasContact ? null : "This contact has not published a compatible OMEMO device."; refresh();
                 });
             } catch (Exception failed) {
-                AndroidUtilities.runOnUIThread(() -> { status = "Could not load fingerprints. Check your connection and the contact's OMEMO support."; refresh(); });
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (loading!=generation) return;
+                    status = selectedModern ? "Could not load OMEMO 2 fingerprints. Check your connection and server support, then refresh. Messages will stay unsent until encryption is ready."
+                            : "Could not load legacy OMEMO fingerprints. Check your connection and the contact's support, then refresh."; refresh();
+                });
             }
         });
-        return true;
     }
     @Override protected CharSequence getTitle() { return "Conversation security"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
         items.add(UItem.asHeader(controller.jid(peer)));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
+        items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
+        items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         items.add(UItem.asShadow(null));
         if (status != null) items.add(UItem.asShadow(status));
         if (ownFingerprint != null) {
-            items.add(UItem.asButton(3, "Your fingerprint")); items.add(UItem.asShadow(ownFingerprint));
+            items.add(UItem.asButton(3,modern ? "Your OMEMO 2 fingerprint" : "Your legacy OMEMO fingerprint")); items.add(UItem.asShadow(ownFingerprint));
         }
         if (!identities.isEmpty()) {
             items.add(UItem.asButton(2, saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
@@ -89,11 +123,16 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                     .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); refresh(); })
                     .setNegativeButton("Cancel", null).create());
             else { controller.setEncrypted(peer, true); refresh(); }
-        } else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));
+        } else if (item.id==5 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
+                .setItems(new CharSequence[]{"OMEMO 2 · encrypted captions","Legacy OMEMO · older clients"},(dialog,which) -> {
+                    controller.setEncryption(peer,which==0 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
+                }).create());
+        else if (item.id==6 && !saving) loadIdentities();
+        else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));
         else if (item.id == 3) showDialog(new AlertDialog.Builder(getContext()).setTitle("Your fingerprint").setMessage(ownFingerprint)
                 .setPositiveButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(ownFingerprint)).setNegativeButton("Close", null).create());
         else if (item.id == 2 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("Trust all fingerprints?")
-                .setMessage("Trust the " + identities.size() + " fingerprints currently shown, including any marked Distrusted. New devices and changed keys will still need review.")
+                .setMessage("Trust the " + identities.size() + (modern ? " OMEMO 2" : " legacy OMEMO") + " fingerprints currently shown, including any marked Distrusted. New devices and changed keys will still need review.")
                 .setPositiveButton("Trust all", (dialog, which) -> decide(new LinkedHashMap<>(identities), true))
                 .setNegativeButton("Cancel", null).create());
         else if (item.id >= 100 && !saving && item.id - 100 < identities.size()) {
@@ -111,7 +150,16 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         controller.worker.execute(() -> {
             try {
                 if (controller.session() != loadedSession) throw new IllegalStateException("Account session changed");
-                loadedSession.decideAll(selected, trusted);
+                if (modern) {
+                    Map<String,Map<Integer,byte[]>> batch=new LinkedHashMap<>();
+                    for (Map.Entry<OmemoDevice,OmemoFingerprint> entry:selected.entrySet()) {
+                        String jid=entry.getKey().getJid().toString();
+                        if (!batch.containsKey(jid)) batch.put(jid,new LinkedHashMap<>());
+                        batch.get(jid).put(entry.getKey().getDeviceId(),Utilities.hexToBytes(entry.getValue().toString()));
+                    }
+                    loadedSession.modern().device.decideAll(batch,trusted);
+                    if (trusted) controller.retryEncryptedHistory(peer,batch.containsKey(loadedSession.ownJid()));
+                } else loadedSession.decideAll(selected, trusted);
                 AndroidUtilities.runOnUIThread(() -> { for (OmemoDevice device : selected.keySet()) states.put(device, trusted ? "Trusted" : "Distrusted"); saving = false; refresh(); });
             } catch (Exception failed) {
                 AndroidUtilities.runOnUIThread(() -> { saving = false; refresh(); if (getParentActivity() != null) showDialog(new AlertDialog.Builder(getContext())

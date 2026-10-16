@@ -77,7 +77,9 @@ class FileShareTest {
                 data[0] ^= 1; Files.write(file.toPath(),data);
             }
             FileShare secret = new FileShare(description("aesgcm://example.org/photo.jpg#" + new String(new char[88]).replace('\0','a'), ""));
-            assertThrows(IllegalArgumentException.class, () -> XmppMessage.sentFile(JidCreate.entityBareFrom("alice@example.org"), "bob@example.org", "file", secret, "Caption", null));
+            XmppMessage modern = XmppMessage.sentFile(JidCreate.entityBareFrom("alice@example.org"), "bob@example.org", "file", secret, "Caption", null);
+            assertEquals(XmppMessage.Encryption.OMEMO2,modern.encryption); assertEquals("Caption",modern.caption);
+            assertEquals(secret.link.wireUrl,modern.sharing.link.wireUrl);
         } finally { file.delete(); }
     }
     @Test void cacheIdentityIncludesSizeAndCanonicalHashes() throws Exception {

@@ -43,6 +43,7 @@ public final class MonogramController {
     private final java.util.Set<Integer> autoAttempted = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Integer, Boolean>());
     private final SharedPreferences preferences;
     private final MonogramStore store;
+    private final MonogramOmemo2Store modernStore;
     private final AccountVault vault;
     private volatile XmppSession session;
     private volatile long self;
@@ -62,7 +63,7 @@ public final class MonogramController {
     private MonogramController(int account) {
         this.account = account;
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
-        store = new MonogramStore(account); vault = new AccountVault(account);
+        store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account); vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
     }
@@ -142,11 +143,17 @@ public final class MonogramController {
         self = store.peer(details.jid.toString());
         if (UserConfig.getInstance(account).isClientActivated() && UserConfig.getInstance(account).getClientUserId() == self
                 && details.jid.toString().equals(accountJid())) publishProfile(self, epoch);
+        final int modernDevice = modernStore.device(details.jid.toString());
         XmppSession connecting = new XmppSession(details, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
+                new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
+                        () -> modernStore.begin(details.jid.toString(),modernDevice)),
                 new XmppSession.Listener() {
                     @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
                     @Override public void message(XmppMessage message) { worker.execute(() -> { if (sessionEpoch == epoch && session != null) incoming(message); }); }
+                    @Override public void message(XmppMessage message,Runnable accepted) {
+                        worker.execute(() -> { if (sessionEpoch == epoch && session != null) { incoming(message); accepted.run(); } });
+                    }
                     @Override public void profileChanged(org.jxmpp.jid.EntityBareJid jid) {
                         worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer); } });
                     }
@@ -214,6 +221,7 @@ public final class MonogramController {
         final long epoch;
         final java.util.ArrayDeque<ArchiveTask> tasks = new java.util.ArrayDeque<>();
         final java.util.Set<Long> peers = new java.util.HashSet<>();
+        final java.util.Set<Long> rescan = new java.util.HashSet<>();
         final java.util.Set<Long> pending = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
         boolean supported;
         ArchiveSync(XmppSession session, long epoch) { this.session = session; this.epoch = epoch; }
@@ -234,6 +242,11 @@ public final class MonogramController {
     }
     private void nextArchivePage(ArchiveSync sync) {
         if (!currentArchive(sync)) return;
+        for (long peer:sync.rescan) {
+            store.resetArchiveCursor(peer); sync.tasks.removeIf(task -> task.peer==peer);
+            sync.peers.add(peer); sync.pending.add(peer); sync.tasks.addLast(new ArchiveTask(peer));
+        }
+        sync.rescan.clear();
         ArchiveTask task;
         while ((task = sync.tasks.pollFirst()) != null) {
             if (task.backwards && store.archiveComplete(task.peer)) { sync.pending.remove(task.peer); continue; }
@@ -268,6 +281,7 @@ public final class MonogramController {
     private void archivePage(ArchiveSync sync, ArchiveTask task, XmppSession.ArchivePage page, boolean initial) {
         java.util.Set<Integer> updated = new java.util.HashSet<>();
         boolean changed = store.saveArchive(task.peer, page, task.backwards || initial, updated);
+        page.stored();
         java.util.Set<Long> replyPeers = new java.util.HashSet<>();
         for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
         for (long peer : replyPeers) {
@@ -426,6 +440,29 @@ public final class MonogramController {
         return current;
     }
     public boolean encrypted(long peer) { return preferences.getBoolean("omemo-" + peer, true); }
+    public boolean modernEncryption(long peer) { return preferences.getInt("omemo-version-"+peer,1)==2; }
+    public XmppMessage.Encryption encryption(long peer) {
+        return !encrypted(peer) ? XmppMessage.Encryption.PLAIN : modernEncryption(peer)
+                ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO;
+    }
+    public void setEncryption(long peer,XmppMessage.Encryption mode) {
+        if (!preferences.edit().putBoolean("omemo-"+peer,mode!=XmppMessage.Encryption.PLAIN)
+                .putInt("omemo-version-"+peer,mode==XmppMessage.Encryption.OMEMO2 ? 2 : 1).commit()) throw new IllegalStateException("Cannot save encryption preference");
+    }
+    public void retryEncryptedHistory(long peer,boolean ownDevices) {
+        worker.execute(() -> {
+            java.util.Set<Long> peers=ownDevices ? store.unreadableModernPeers() : new java.util.HashSet<>(java.util.Collections.singleton(peer));
+            if (peers.isEmpty() || session==null || !session.connection().isAuthenticated()) return;
+            ArchiveSync sync=archiveSync;
+            if (sync!=null && currentArchive(sync)) {
+                // Apply the reset between pages, after the current page's decrypted messages are stored.
+                sync.rescan.addAll(peers); if (sync.pending.isEmpty()) nextArchivePage(sync);
+            } else {
+                for(long id:peers) store.resetArchiveCursor(id);
+                startArchiveSync(session);
+            }
+        });
+    }
     public void autoDownloadSettingsChanged() {
         for (java.util.Map.Entry<Integer, FileTransfer.Job> entry : automaticJobs.entrySet()) {
             entry.getValue().cancel(); fileJobs.remove(entry.getKey(), entry.getValue());
@@ -571,7 +608,8 @@ public final class MonogramController {
             if (!request.job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
             return;
         }
-        boolean encrypted = encrypted(request.message.dialog_id);
+        XmppMessage.Encryption mode = encryption(request.message.dialog_id);
+        boolean encrypted = mode != XmppMessage.Encryption.PLAIN, modern = mode == XmppMessage.Encryption.OMEMO2;
         String peer = store.jid(request.message.dialog_id);
         final ReplyReference reply;
         try {
@@ -589,9 +627,10 @@ public final class MonogramController {
             File snapshot = null;
             try {
                 snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
-                FileLink link = FileTransfer.upload(expected.connection(), snapshot, request.file.getName(), request.mime, encrypted, job,
+                FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : request.file.getName(),
+                        modern ? "application/octet-stream" : request.mime, encrypted, job,
                         (bytes, total) -> progress(progressName, bytes, total, true, encrypted));
-                com.negzero.monogram.xmpp.FileShare sharing = encrypted ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, request.file.getName(), request.mime, job);
+                com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, request.file.getName(), request.mime, job);
                 File cached = sharing == null ? store.attachmentFile(link.wireUrl) : store.attachmentFile(sharing);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
                 job.check();
@@ -599,9 +638,9 @@ public final class MonogramController {
                 worker.execute(() -> {
                     try {
                         job.check();
-                        if (session != expected || encrypted(request.message.dialog_id) != encrypted) throw new IllegalStateException("Sending mode or account changed");
-                        String stanza = encrypted ? expected.sendFile(peer, link, true, reply) : expected.sendFile(peer, sharing, request.caption, reply);
-                        XmppMessage message = encrypted ? XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, link, true, reply)
+                        if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
+                        String stanza = encrypted && !modern ? expected.sendFile(peer, link, true, reply) : expected.sendFile(peer, sharing, request.caption, reply);
+                        XmppMessage message = encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, link, true, reply)
                                 : XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, sharing, request.caption, reply);
                         int id = store.save(message);
                         TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
@@ -615,7 +654,7 @@ public final class MonogramController {
                         Utilities.stageQueue.postRunnable(() -> {
                             callback.run(response, null);
                             // Legacy OMEMO cannot carry SFS content; keep its separate encrypted caption until OMEMO2 is integrated.
-                            if (encrypted && request.caption != null && !request.caption.isEmpty()) AndroidUtilities.runOnUIThread(() ->
+                            if (encrypted && !modern && request.caption != null && !request.caption.isEmpty()) AndroidUtilities.runOnUIThread(() ->
                                     SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
                                             request.caption, request.message.dialog_id, null, null, null, false, null, null, null, true, 0, 0, null, false)));
                         });
@@ -656,7 +695,7 @@ public final class MonogramController {
                 String filename = sharing == null ? link.fileName() : sharing.name;
                 FileTransfer.Progress onProgress = (bytes, total) -> progress(name, bytes, total, false, link.encrypted());
                 FileTransfer.DownloadPolicy policy = automatic ? (mime, size) -> DownloadController.getInstance(account).getMonogramDownloadLimit(
-                        object.messageOwner, MonogramAttachments.remoteMedia(id, filename, mime, size), size) : null;
+                        object.messageOwner, MonogramAttachments.remoteMedia(id, filename, sharing==null ? mime : sharing.mime, size), size) : null;
                 boolean downloaded = sharing == null ? FileTransfer.download(link, path, job, onProgress, policy) : FileTransfer.download(sharing, path, job, onProgress, policy);
                 if (!downloaded) {
                     finishDownload(id, name, job);
@@ -823,10 +862,10 @@ public final class MonogramController {
                     || (edit.flags & 2048) == 0) throw new UnsupportedOperationException();
             long peer = edit.peer.user_id;
             MonogramStore.EditTarget target = store.editTarget(edit.id, peer, self);
-            boolean encrypted = target.encrypted || encrypted(peer);
-            String stanza = session().correct(store.jid(peer), edit.message, encrypted, target.reply, target.correction);
+            XmppMessage.Encryption mode = target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
+            String stanza = session().correct(store.jid(peer), edit.message, mode, target.reply, target.correction);
             int saved = store.save(XmppMessage.sent(session().connection().getUser(), store.jid(peer), stanza, edit.message,
-                    encrypted, target.reply, target.correction));
+                    mode, target.reply, target.correction));
             MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, java.util.Collections.singleton(saved));
             refreshReplies(peer, corrections.edited);
             corrections.edited.remove(edit.id); publishCorrections(peer, correctionUpdates(corrections, saved));
@@ -838,10 +877,10 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
             if (send.schedule_date != 0 || send.peer.user_id == 0) throw new UnsupportedOperationException();
-            long peer = send.peer.user_id; boolean encrypted = encrypted(peer);
-            ReplyReference reply = outgoingReply(send.reply_to, peer, encrypted);
-            String stanza = session().send(store.jid(peer), send.message, encrypted, reply);
-            XmppMessage message = XmppMessage.sent(session().connection().getUser(), store.jid(peer), stanza, send.message, encrypted, reply);
+            long peer = send.peer.user_id; XmppMessage.Encryption mode = encryption(peer);
+            ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);
+            String stanza = session().send(store.jid(peer), send.message, mode, reply);
+            XmppMessage message = XmppMessage.sent(session().connection().getUser(), store.jid(peer), stanza, send.message, mode, reply,null);
             int date = (int) (message.timestamp / 1000); int id = store.save(message);
             refreshReplies(peer);
             TLRPC.TL_updateShortSentMessage result = new TLRPC.TL_updateShortSentMessage();

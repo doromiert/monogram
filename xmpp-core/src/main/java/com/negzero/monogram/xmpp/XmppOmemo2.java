@@ -173,7 +173,7 @@ public final class XmppOmemo2 implements AutoCloseable {
         String peer = plaintext.getTo().asBareJid().toString();
         Map<String,Map<Integer,Omemo2Bundle>> recipients = new LinkedHashMap<>();
         recipients.put(peer,targets(peer)); if (!peer.equals(device.jid)) recipients.put(device.jid,targets(device.jid));
-        if (recipients.get(peer).isEmpty() && !peer.equals(device.jid)) throw new java.security.GeneralSecurityException("No OMEMO2 recipient devices");
+        if (recipients.get(peer).isEmpty() && !peer.equals(device.jid)) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
         int count = recipients.values().stream().mapToInt(Map::size).sum(); if (count == 0 || count > 1000) throw Omemo2Bundle.invalid();
         byte[] envelope = Omemo2Payload.envelope(plaintext,random);
         try (Omemo2Payload.Sealed sealed = Omemo2Payload.seal(envelope,random); Omemo2Records tx = device.records.begin()) {

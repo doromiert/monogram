@@ -89,8 +89,27 @@ public final class Omemo2Device {
         address(peer,device); try (Omemo2Records tx = records.begin()) { return tx.load(SEEN,peer,device); }
     }
     public void decide(String peer, int device, byte[] key, boolean trusted) throws Exception {
-        address(peer,device); if (key == null || key.length != 32) throw new IllegalArgumentException("Invalid identity");
+        decideAll(java.util.Collections.singletonMap(peer,java.util.Collections.singletonMap(device,key)),trusted);
+    }
+    /** One transaction, scoped to the exact fingerprints displayed by the caller. */
+    public void decideAll(Map<String,? extends Map<Integer,byte[]>> identities, boolean trusted) throws Exception {
+        Map<String,Map<Integer,byte[]>> selected = new java.util.LinkedHashMap<>(); int count=0;
+        for (Map.Entry<String,? extends Map<Integer,byte[]>> peer : identities.entrySet()) {
+            Map<Integer,byte[]> devices = new java.util.LinkedHashMap<>();
+            for (Map.Entry<Integer,byte[]> key : peer.getValue().entrySet()) {
+                address(peer.getKey(),key.getKey());
+                if (++count>1000 || key.getValue()==null || key.getValue().length!=32) throw new IllegalArgumentException("Invalid identity selection");
+                devices.put(key.getKey(),key.getValue().clone());
+            }
+            selected.put(peer.getKey(),devices);
+        }
         try (Omemo2Records tx = records.begin()) {
+            for (Map.Entry<String,Map<Integer,byte[]>> peer : selected.entrySet())
+                for (Map.Entry<Integer,byte[]> key : peer.getValue().entrySet()) decide(tx,peer.getKey(),key.getKey(),key.getValue(),trusted);
+            tx.commit();
+        }
+    }
+    private void decide(Omemo2Records tx,String peer,int device,byte[] key,boolean trusted) throws Exception {
             byte[] refused = rejected(tx,peer,device);
             int at = index(refused,key);
             if (trusted) {
@@ -110,8 +129,6 @@ public final class Omemo2Device {
                 }
                 if (Arrays.equals(tx.load(TRUSTED,peer,device),key)) tx.save(TRUSTED,peer,device,null);
             }
-            tx.commit();
-        }
     }
     public Trust trust(String peer, int device, byte[] key) throws Exception {
         address(peer,device); if (key == null || key.length != 32) throw new IllegalArgumentException("Invalid identity");
@@ -136,7 +153,7 @@ public final class Omemo2Device {
     }
     void session(Omemo2Records tx, String peer, int device, Omemo2Bundle bundle) throws Exception {
         address(peer,device);
-        if (!Arrays.equals(tx.load(TRUSTED,peer,device),bundle.identity())) throw new GeneralSecurityException("OMEMO2 identity approval required");
+        if (!Arrays.equals(tx.load(TRUSTED,peer,device),bundle.identity())) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED);
         if (tx.load(SESSION,peer,device) != null) return;
         int[] keys = bundle.preKeys(); int key = keys[random.nextInt(keys.length)];
         Omemo2Native.build(tx,id,peer,device,key,bundle.preKey(key),bundle.signedId,bundle.signedKey(),bundle.signature(),bundle.identity());

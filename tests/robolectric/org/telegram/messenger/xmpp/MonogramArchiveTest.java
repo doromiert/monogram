@@ -131,4 +131,11 @@ public class MonogramArchiveTest {
         assertEquals(java.util.Arrays.asList("before:bob@example.org:null", "before:other@example.org:null", "before:null:null"), network.calls);
         assertNull(store.archiveCursor(bob, false)); assertTrue(store.archiveComplete(other)); assertTrue(store.archiveComplete());
     }
+    @Test public void trustApprovalRescansAfterTheInFlightPageWithoutCancellingIt() throws Exception {
+        network.block=true; start(); assertTrue(network.entered.await(5,TimeUnit.SECONDS));
+        controller.retryEncryptedHistory(bob,false); controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);
+        network.release.countDown(); finished();
+        assertEquals(2,java.util.Collections.frequency(network.calls,"before:bob@example.org:null"));
+        assertTrue(store.archiveComplete(bob)); assertTrue(store.archiveComplete(other));
+    }
 }

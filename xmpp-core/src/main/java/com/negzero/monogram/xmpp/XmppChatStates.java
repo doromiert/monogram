@@ -128,7 +128,7 @@ public final class XmppChatStates implements AutoCloseable {
             }
         }
         boolean content = message.getBody() != null || message.getSubject() != null
-                || message.hasExtension("encrypted", "eu.siacs.conversations.axolotl");
+                || message.hasExtension("encrypted", "eu.siacs.conversations.axolotl") || message.hasExtension("encrypted", "urn:xmpp:omemo:2");
         return content && state != ChatState.active ? null : state;
     }
     synchronized void receive(Message message) {
@@ -141,7 +141,7 @@ public final class XmppChatStates implements AutoCloseable {
                 || message.hasExtension("urn:xmpp:forward:0") || message.hasExtension("urn:xmpp:carbons:2")
                 || message.hasExtension("urn:xmpp:mam:2") || message.hasExtension("urn:xmpp:mam:1")) return;
         ChatState state = read(message);
-        boolean content = message.getBody() != null || message.hasExtension("encrypted", "eu.siacs.conversations.axolotl");
+        boolean content = message.getBody() != null || message.hasExtension("encrypted", "eu.siacs.conversations.axolotl") || message.hasExtension("encrypted", "urn:xmpp:omemo:2");
         if (state == null && !content) return;
         Conversation chat = conversation(peer);
         boolean wasTyping = !chat.composing.isEmpty();

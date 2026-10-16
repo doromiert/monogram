@@ -62,6 +62,19 @@ public class MonogramEditingTest {
         try { handle.invoke(controller, query); fail("Invalid edit preflight accepted"); }
         catch (InvocationTargetException error) { assertTrue(error.getCause() instanceof IllegalArgumentException); }
     }
+    @Test public void modernModeIsExplicitAndSurvivesTemporarilyDisablingEncryption() {
+        assertEquals(com.negzero.monogram.xmpp.XmppMessage.Encryption.LEGACY_OMEMO,controller.encryption(peer));
+        controller.setEncryption(peer,com.negzero.monogram.xmpp.XmppMessage.Encryption.OMEMO2);
+        assertTrue(controller.modernEncryption(peer));
+        controller.setEncrypted(peer,false);
+        assertEquals(com.negzero.monogram.xmpp.XmppMessage.Encryption.PLAIN,controller.encryption(peer));
+        assertTrue(controller.modernEncryption(peer));
+        controller.setEncrypted(peer,true);
+        assertEquals(com.negzero.monogram.xmpp.XmppMessage.Encryption.OMEMO2,controller.encryption(peer));
+        controller.setEncryption(peer,com.negzero.monogram.xmpp.XmppMessage.Encryption.LEGACY_OMEMO);
+        assertFalse(controller.modernEncryption(peer));
+        assertEquals(com.negzero.monogram.xmpp.XmppMessage.Encryption.LEGACY_OMEMO,controller.encryption(peer));
+    }
 
     @Test public void opensOwnOldTextEditorOffline() throws Exception {
         int id = message("own", "Before", true, true, null);

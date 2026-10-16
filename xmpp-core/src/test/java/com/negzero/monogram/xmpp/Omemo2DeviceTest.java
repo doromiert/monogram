@@ -72,4 +72,24 @@ class Omemo2DeviceTest {
         reopened.decide(bob,202,changed.identity(),false);
         assertEquals(Omemo2Device.Trust.REJECTED,reopened.trust(bob,202,changed.identity()));
     }
+    @Test void batchApprovalIsAtomicAndBoundToEveryDisplayedFingerprint() throws Exception {
+        Omemo2TestDatabase database=new Omemo2TestDatabase(); String bob="bob@example.org",own="alice@example.org";
+        Omemo2Device alice=new Omemo2Device(own,101,database);
+        Omemo2Bundle contact=new Omemo2Device(bob,202,new Omemo2TestDatabase()).prepare();
+        Omemo2Bundle other=new Omemo2Device(own,303,new Omemo2TestDatabase()).prepare();
+        Omemo2Bundle changed=new Omemo2Device(own,303,new Omemo2TestDatabase()).prepare();
+        alice.observe(bob,202,contact); alice.observe(own,303,other); alice.decide(bob,202,contact.identity(),false);
+        java.util.Map<String,java.util.Map<Integer,byte[]>> displayed=new java.util.LinkedHashMap<>();
+        displayed.put(bob,java.util.Collections.singletonMap(202,contact.identity())); displayed.put(own,java.util.Collections.singletonMap(303,other.identity()));
+        alice.observe(own,303,changed);
+        assertThrows(java.security.GeneralSecurityException.class,() -> alice.decideAll(displayed,true));
+        assertEquals(Omemo2Device.Trust.REJECTED,alice.trust(bob,202,contact.identity()));
+        alice.observe(own,303,other); database.failCommit=true;
+        assertThrows(java.io.IOException.class,() -> alice.decideAll(displayed,true)); database.failCommit=false;
+        assertEquals(Omemo2Device.Trust.REJECTED,alice.trust(bob,202,contact.identity()));
+        alice.decideAll(displayed,true);
+        assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(bob,202,contact.identity()));
+        assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(own,303,other.identity()));
+        assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust(bob,203,contact.identity()));
+    }
 }

@@ -21,11 +21,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 8); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 9); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -62,15 +62,30 @@ final class MonogramStore extends SQLiteOpenHelper {
         db.execSQL("ALTER TABLE attachments ADD COLUMN sharing TEXT");
         db.execSQL("DELETE FROM archive_state");
     }
+    private void addProtocols(SQLiteDatabase db) {
+        // Older clients imported unsupported encrypted fallbacks as plaintext. Keep that content unclassified.
+        db.execSQL("ALTER TABLE messages ADD COLUMN encryption INTEGER NOT NULL DEFAULT -1");
+        db.execSQL("UPDATE messages SET encryption=1 WHERE encrypted=1");
+        db.execSQL("ALTER TABLE message_ids RENAME TO old_message_ids");
+        db.execSQL("CREATE TABLE message_ids (peer INTEGER NOT NULL,outgoing INTEGER NOT NULL,kind TEXT NOT NULL,value TEXT NOT NULL,message INTEGER NOT NULL,namespace INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(peer,outgoing,kind,value,namespace))");
+        db.execSQL("INSERT INTO message_ids(peer,outgoing,kind,value,message) SELECT peer,outgoing,kind,value,message FROM old_message_ids");
+        db.execSQL("DROP TABLE old_message_ids");
+        db.execSQL("DELETE FROM archive_state");
+    }
+    private static int protocol(XmppMessage message) {
+        return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : message.encrypted ? 1 : 0;
+    }
+    private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 8 || oldVersion < 1 || oldVersion > 7) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 9 || oldVersion < 1 || oldVersion > 8) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
         if (oldVersion < 5) addProfiles(db);
         if (oldVersion < 6) addReplies(db);
         if (oldVersion < 7) addCorrections(db);
-        addCaptions(db);
+        if (oldVersion < 8) addCaptions(db);
+        addProtocols(db);
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -169,8 +184,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         try {
             int existing = 0;
             for (Map.Entry<String, String> alias : message.ids.entrySet()) {
-                try (Cursor c = db.rawQuery("SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind=? AND value=?",
-                        new String[]{Long.toString(peer), message.outgoing ? "1" : "0", alias.getKey(), aliasValue(message, alias)})) {
+                try (Cursor c = db.rawQuery("SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind=? AND value=? AND namespace=?",
+                        new String[]{Long.toString(peer), message.outgoing ? "1" : "0", alias.getKey(), aliasValue(message, alias),Integer.toString(namespace(message))})) {
                     if (c.moveToFirst()) {
                         int matched = c.getInt(0);
                         if (existing != 0 && existing != matched) throw new IllegalStateException("Conflicting XMPP message IDs");
@@ -179,7 +194,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 }
             }
             String legacy = message.ids.get("stanza");
-            if (existing == 0 && legacy != null) {
+            if (existing == 0 && legacy != null && namespace(message) == 0) {
                 try (Cursor c = db.rawQuery("SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind='legacy-stanza' AND value=?",
                         new String[]{Long.toString(peer), message.outgoing ? "1" : "0", legacy})) {
                     if (c.moveToFirst()) existing = c.getInt(0);
@@ -188,6 +203,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             ContentValues values = new ContentValues();
             values.put("body", message.readable ? message.body : "Encrypted message unavailable on this device");
             values.put("encrypted", message.encrypted); values.put("readable", message.readable);
+            values.put("encryption",protocol(message));
             long seconds = message.timestamp / 1000;
             if (seconds < 0 || seconds > Integer.MAX_VALUE) throw new IllegalArgumentException("Unsupported message date");
             values.put("time", (int) seconds); values.put("time_ms", message.timestamp);
@@ -199,9 +215,14 @@ final class MonogramStore extends SQLiteOpenHelper {
                 if (inserted > Integer.MAX_VALUE) throw new IllegalStateException("Local message ID space exhausted");
                 id = (int) inserted;
             } else {
-                try (Cursor c = db.rawQuery("SELECT readable,time_ms,encrypted FROM messages WHERE id=?", new String[]{Integer.toString(existing)})) {
+                try (Cursor c = db.rawQuery("SELECT readable,time_ms,encrypted,encryption FROM messages WHERE id=?", new String[]{Integer.toString(existing)})) {
                     if (!c.moveToFirst()) throw new IllegalStateException("Missing XMPP message");
                     if ((c.getInt(2) == 1) != message.encrypted) throw new IllegalStateException("Conflicting message encryption modes");
+                    if (c.getInt(3) >= 0 && c.getInt(3) != protocol(message)) throw new IllegalStateException("Conflicting message encryption protocols");
+                    if (c.getInt(3) < 0) {
+                        ContentValues classification = new ContentValues(); classification.put("encryption",protocol(message));
+                        db.update("messages",classification,"id=?",new String[]{Integer.toString(existing)});
+                    }
                     // Replaying OMEMO from MAM may fail after its ratchet key was consumed. Keep known plaintext.
                     if (c.getInt(0) == 0 && message.readable) {
                         db.update("messages", values, "id=?", new String[]{Integer.toString(existing)}); changed = true;
@@ -214,6 +235,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             for (Map.Entry<String, String> alias : message.ids.entrySet()) {
                 ContentValues identity = new ContentValues(); identity.put("peer", peer); identity.put("outgoing", message.outgoing);
                 identity.put("kind", alias.getKey()); identity.put("value", aliasValue(message, alias)); identity.put("message", id);
+                identity.put("namespace",namespace(message));
                 db.insertWithOnConflict("message_ids", null, identity, SQLiteDatabase.CONFLICT_IGNORE);
             }
             ContentValues sender = new ContentValues(); sender.put("message", id); sender.put("sender", message.sender);
@@ -244,7 +266,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                     changed |= db.update("attachments", attachment, "message=? AND url=? AND sharing IS NULL", new String[]{Integer.toString(id), message.attachment.wireUrl}) > 0;
                 }
             }
-            if (legacy != null) db.delete("message_ids", "kind='legacy-stanza' AND message=? AND value=?", new String[]{Integer.toString(id), legacy});
+            if (legacy != null && namespace(message) == 0) db.delete("message_ids", "kind='legacy-stanza' AND message=? AND value=?", new String[]{Integer.toString(id), legacy});
             db.setTransactionSuccessful();
             return changed ? id : 0;
         } finally { db.endTransaction(); }
@@ -269,7 +291,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         db.beginTransaction();
         try {
             java.util.Map<Integer, Integer> protectedModes = new java.util.HashMap<>();
-            try (Cursor c = db.rawQuery("SELECT c.message,c.target,c.resolved,m.outgoing,m.encrypted FROM corrections c JOIN messages m ON m.id=c.message WHERE m.peer=? ORDER BY m.time_ms,m.archive_order,m.id", new String[]{Long.toString(peer)})) {
+            try (Cursor c = db.rawQuery("SELECT c.message,c.target,c.resolved,m.outgoing,CASE WHEN m.encryption<0 THEN m.encrypted ELSE m.encryption END FROM corrections c JOIN messages m ON m.id=c.message WHERE m.peer=? ORDER BY m.time_ms,m.archive_order,m.id", new String[]{Long.toString(peer)})) {
                 while (c.moveToNext()) {
                     int event = c.getInt(0), old = c.getInt(2), target = 0;
                     // XEP-0308 uses the client stanza ID, never an archive ID or an origin-only alias.
@@ -278,7 +300,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                         if (matches.moveToFirst()) { target = matches.getInt(0); if (matches.moveToNext()) target = 0; }
                     }
                     if (target != 0) {
-                        try (Cursor original = db.rawQuery("SELECT encrypted FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
+                        try (Cursor original = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
                             if (!original.moveToFirst() || Math.max(original.getInt(0), protectedModes.getOrDefault(target, 0)) > c.getInt(4)) target = 0;
                         }
                         // shortcut: text corrections only; support media replacement with the caption/file-sharing implementation.
@@ -320,21 +342,23 @@ final class MonogramStore extends SQLiteOpenHelper {
     static final class EditTarget {
         final com.negzero.monogram.xmpp.MessageCorrection correction;
         final boolean encrypted;
+        final XmppMessage.Encryption encryption;
         final ReplyReference reply;
-        EditTarget(String id, boolean encrypted, ReplyReference reply) {
-            this.correction = new com.negzero.monogram.xmpp.MessageCorrection(id); this.encrypted = encrypted; this.reply = reply;
+        EditTarget(String id, int protocol, ReplyReference reply) {
+            this.correction = new com.negzero.monogram.xmpp.MessageCorrection(id); this.encrypted = protocol > 0; this.reply = reply;
+            this.encryption = protocol == 2 ? XmppMessage.Encryption.OMEMO2 : protocol == 1 ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
         }
     }
     synchronized EditTarget editTarget(int id, long peer, long self) {
         TLRPC.Message original = getMessage(id, self);
         if (!original.out || original.dialog_id != peer || MonogramAttachments.has(original)) throw new IllegalArgumentException("Only your text messages can be edited");
-        SQLiteDatabase db = getReadableDatabase(); String wire = null; boolean encrypted;
-        try (Cursor c = db.rawQuery("SELECT encrypted,readable FROM messages WHERE id=? AND NOT EXISTS(SELECT 1 FROM corrections WHERE message=?)", new String[]{Integer.toString(id), Integer.toString(id)})) {
-            if (!c.moveToFirst() || c.getInt(1) == 0) throw new IllegalArgumentException("Original message unavailable"); encrypted = c.getInt(0) == 1;
+        SQLiteDatabase db = getReadableDatabase(); String wire = null; int protocol;
+        try (Cursor c = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END,readable FROM messages WHERE id=? AND NOT EXISTS(SELECT 1 FROM corrections WHERE message=?)", new String[]{Integer.toString(id), Integer.toString(id)})) {
+            if (!c.moveToFirst() || c.getInt(1) == 0) throw new IllegalArgumentException("Original message unavailable"); protocol = c.getInt(0);
         }
-        try (Cursor c = db.rawQuery("SELECT readable,encrypted FROM messages WHERE id=?", new String[]{Integer.toString(payload(id))})) {
+        try (Cursor c = db.rawQuery("SELECT readable,CASE WHEN encryption<0 THEN encrypted ELSE encryption END FROM messages WHERE id=?", new String[]{Integer.toString(payload(id))})) {
             if (!c.moveToFirst() || c.getInt(0) == 0) throw new IllegalArgumentException("Latest correction unavailable");
-            encrypted |= c.getInt(1) == 1;
+            protocol = Math.max(protocol,c.getInt(1));
         }
         try (Cursor c = db.rawQuery("SELECT substr(value,instr(value,char(10))+1) FROM message_ids WHERE message=? AND kind='stanza' ORDER BY rowid LIMIT 1", new String[]{Integer.toString(id)})) {
             if (c.moveToFirst()) wire = c.getString(0);
@@ -348,7 +372,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = db.rawQuery("SELECT author,target FROM replies WHERE message=?", new String[]{Integer.toString(payload(id))})) {
             if (c.moveToFirst()) reply = new ReplyReference(c.getString(0), c.getString(1));
         }
-        return new EditTarget(wire, encrypted, reply);
+        return new EditTarget(wire, protocol, reply);
     }
     synchronized void resetArchiveCursor() {
         SQLiteDatabase db = getWritableDatabase();
@@ -365,6 +389,13 @@ final class MonogramStore extends SQLiteOpenHelper {
     private static String archiveScope(long peer) { return peer == 0 ? "direct" : "direct:" + peer; }
     synchronized void resetArchiveCursor(long peer) {
         getWritableDatabase().delete("archive_state", "scope=?", new String[]{archiveScope(peer)});
+    }
+    synchronized java.util.Set<Long> unreadableModernPeers() {
+        java.util.Set<Long> peers=new java.util.HashSet<>();
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT peer FROM messages WHERE encryption=2 AND readable=0",null)) {
+            while(c.moveToNext()) peers.add(c.getLong(0));
+        }
+        return peers;
     }
     synchronized String archiveCursor(long peer, boolean oldest) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT " + (oldest ? "oldest" : "newest") + " FROM archive_state WHERE scope=?", new String[]{archiveScope(peer)})) {
@@ -396,8 +427,8 @@ final class MonogramStore extends SQLiteOpenHelper {
                 if (scope != 0 && !jid(scope).equals(message.peer.toString())) throw new IllegalArgumentException("Archive belongs to another chat");
                 int saved = save(message); changed |= saved != 0;
                 if (updated != null && saved != 0) updated.add(saved);
-                db.execSQL("UPDATE messages SET archive_order=? WHERE archive_order=0 AND id=(SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind='archive' AND value=?)",
-                        new Object[]{order++, peer(message.peer.toString()), message.outgoing ? 1 : 0, message.ids.get("archive")});
+                db.execSQL("UPDATE messages SET archive_order=? WHERE archive_order=0 AND id=(SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind='archive' AND value=? AND namespace=?)",
+                        new Object[]{order++, peer(message.peer.toString()), message.outgoing ? 1 : 0, message.ids.get("archive"),namespace(message)});
             }
             ContentValues empty = new ContentValues(); empty.put("scope", archiveScope(scope));
             db.insertWithOnConflict("archive_state", null, empty, SQLiteDatabase.CONFLICT_IGNORE);

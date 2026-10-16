@@ -6,6 +6,20 @@ import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
+    public static XmppMessage modern(String id, String archive, String body, boolean outgoing, long time,
+                                     ReplyReference reply, String correction, FileShare sharing) throws Exception {
+        Message outer = new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
+        outer.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/phone"));
+        outer.setStanzaId(id); outer.addExtension(new OriginIdElement(id));
+        Message content = null;
+        if (body != null) {
+            content = new Message(outer); content.setBody(body);
+            if (reply != null) reply.addTo(content);
+            if (correction != null) new MessageCorrection(correction).addTo(content);
+            if (sharing != null) sharing.addTo(content,body);
+        }
+        return XmppMessage.modern(outer,content,JidCreate.entityBareFrom("alice@example.org"),archive,new Date(time));
+    }
     public static XmppSession.ArchivePage page(XmppMessage... messages) {
         return new XmppSession.ArchivePage(java.util.Arrays.asList(messages), messages[0].ids.get("archive"),
                 messages[messages.length - 1].ids.get("archive"), true);

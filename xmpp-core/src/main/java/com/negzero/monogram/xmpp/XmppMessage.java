@@ -107,11 +107,16 @@ public final class XmppMessage {
         return sent(own, peer, id, body, encrypted, reply, null);
     }
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted, ReplyReference reply, MessageCorrection correction) throws Exception {
+        return sent(own,peer,id,body,encrypted ? Encryption.LEGACY_OMEMO : Encryption.PLAIN,reply,correction);
+    }
+    public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, Encryption encryption, ReplyReference reply, MessageCorrection correction) throws Exception {
         Message message = new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer), Message.Type.chat);
         message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         if (reply != null) { reply.addTo(message); body = reply.wireBody(body); }
         if (correction != null) correction.addTo(message);
-        return from(message, own.asEntityBareJidIfPossible(), body, encrypted, true, null, null);
+        message.setBody(body);
+        return encryption == Encryption.OMEMO2 ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)
+                : from(message, own.asEntityBareJidIfPossible(), body, encryption != Encryption.PLAIN, true, null, null);
     }
     public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileLink link, boolean encrypted) throws Exception {
         return sentFile(own, peer, id, link, encrypted, null);
@@ -124,13 +129,14 @@ public final class XmppMessage {
         return from(message, own.asEntityBareJidIfPossible(), reply == null ? link.wireUrl : reply.wireBody(link.wireUrl), encrypted, true, null, null);
     }
     public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileShare sharing, String caption, ReplyReference reply) throws Exception {
-        if (sharing.link.encrypted()) throw new IllegalArgumentException("Encrypted metadata requires a content envelope");
         Message message = new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer), Message.Type.chat);
         message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         String body = sharing.body(caption);
         if (reply != null) { reply.addTo(message); body = reply.wireBody(body); }
         sharing.addTo(message, body);
-        return from(message, own.asEntityBareJidIfPossible(), body, false, true, null, null);
+        message.setBody(body);
+        return sharing.link.encrypted() ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)
+                : from(message, own.asEntityBareJidIfPossible(), body, false, true, null, null);
     }
 
     private static boolean validThumbnail(String value) {

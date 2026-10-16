@@ -92,7 +92,7 @@ public final class MonogramReplyStoreDeviceTest {
                     "Reply metadata migration must use retained plaintext to validate fallback ranges");
                 int cycleA = reply(store, "bob@example.org/cycle", "cycle-b", "Cycle A", false);
                 // Add an origin alias for A, then B refers back to it. Rendering must stay bounded.
-                store.getWritableDatabase().execSQL("INSERT INTO message_ids VALUES(?,0,'origin','cycle-a',?)", new Object[]{peer, cycleA});
+                store.getWritableDatabase().execSQL("INSERT INTO message_ids(peer,outgoing,kind,value,message) VALUES(?,0,'origin','cycle-a',?)", new Object[]{peer, cycleA});
                 int cycleB = store.save(MessageFixture.replyMessage("cycle-b", "cycle-b", null, "Cycle B", true, false, 300000, "cycle", true, new ReplyReference("bob@example.org/friend-phone", "cycle-a")));
                 check(store.getMessage(cycleA, self).replyMessage.id == cycleB && store.getMessage(cycleB, self).replyMessage.replyMessage == null, "Reply cycles must not recurse indefinitely");
                 String link = "aesgcm://example.org/image.png#" + new String(new char[88]).replace('\0', 'a');
@@ -109,7 +109,7 @@ public final class MonogramReplyStoreDeviceTest {
                 old.execSQL("INSERT OR REPLACE INTO archive_state VALUES('direct','oldest','newest',1)"); MonogramStoreDeviceTest.legacyAttachments(old); old.setVersion(5);
             }
             try (MonogramStore migrated = new MonogramStore(context, "replies.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 8, "Schema 5 must migrate to 8");
+                check(migrated.getReadableDatabase().getVersion() == 9, "Schema 5 must migrate to 9");
                 check(migrated.getMessage(original, self).message.equals("Original 😀"), "Schema 5 messages must survive migration");
                 check(migrated.profile(peer).nickname.equals("Bobby"), "Schema 5 profiles must survive reply migration");
                 check(migrated.archiveCursor(false) == null && !migrated.archiveComplete(), "Reply migration must rescan archive metadata without deleting messages");
