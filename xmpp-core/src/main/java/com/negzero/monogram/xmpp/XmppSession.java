@@ -86,10 +86,12 @@ public final class XmppSession implements AutoCloseable {
         connection = new ManagedConnection(config.build());
         ReplyReference.initialize();
         MessageCorrection.initialize();
+        FileShare.initialize();
         profiles = new XmppProfiles(connection, listener::profileChanged);
         chatStates = new XmppChatStates(connection, listener::typing);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(FileShare.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
         DeliveryReceiptManager receipts = DeliveryReceiptManager.getInstanceFor(connection);
@@ -243,6 +245,13 @@ public final class XmppSession implements AutoCloseable {
         return send(jid, body, encrypted, false, reply, correction);
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply, MessageCorrection correction) throws Exception {
+        return send(jid, body, encrypted, attachment, reply, correction, null);
+    }
+    public String sendFile(String jid, FileShare sharing, String caption, ReplyReference reply) throws Exception {
+        if (sharing.link.encrypted()) throw new IllegalArgumentException("Encrypted metadata requires a content envelope");
+        return send(jid, sharing.body(caption), false, false, reply, null, sharing);
+    }
+    private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         EntityBareJid recipient = JidCreate.entityBareFrom(jid);
         String attachmentUrl = body;
@@ -277,6 +286,7 @@ public final class XmppSession implements AutoCloseable {
                 .addElement("url", attachmentUrl).build());
         if (reply != null) reply.addTo(message);
         if (correction != null) correction.addTo(message);
+        if (sharing != null) sharing.addTo(message, body);
         String id = UUID.randomUUID().toString();
         message.setStanzaId(id);
         message.addExtension(new OriginIdElement(id));

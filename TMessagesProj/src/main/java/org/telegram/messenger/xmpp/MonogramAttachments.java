@@ -22,12 +22,12 @@ public final class MonogramAttachments {
         for (byte b : hash) name.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
         return new File(context.getFilesDir(), "monogram-attachments/" + database + "/" + name);
     }
-    static void apply(TLRPC.Message message, FileLink link, File file, TLRPC.MessageMedia saved) {
+    static void apply(TLRPC.Message message, FileLink link, File file, TLRPC.MessageMedia saved, String caption, String name) {
         if (message.params == null) message.params = new HashMap<>();
-        message.params.put(PARAM, link.wireUrl); message.message = ""; message.entities.clear();
+        message.params.put(PARAM, link.wireUrl); message.message = caption == null ? "" : caption; message.entities.clear();
         message.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
         message.attachPath = file.getAbsolutePath();
-        message.media = saved != null ? saved : media(message.id, message.date, file, link.fileName());
+        message.media = saved != null ? saved : media(message.id, message.date, file, name);
         if (message.media.document != null && file.isFile()) message.media.document.localPath = file.getAbsolutePath();
         message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA;
     }

@@ -21,11 +21,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 7); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 8); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -57,14 +57,20 @@ final class MonogramStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE applied_corrections (original INTEGER PRIMARY KEY, message INTEGER NOT NULL)");
         db.execSQL("DELETE FROM archive_state WHERE scope='direct'");
     }
+    private void addCaptions(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE attachments ADD COLUMN caption TEXT NOT NULL DEFAULT ''");
+        db.execSQL("ALTER TABLE attachments ADD COLUMN sharing TEXT");
+        db.execSQL("DELETE FROM archive_state WHERE scope='direct'");
+    }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 7 || oldVersion < 1 || oldVersion > 6) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 8 || oldVersion < 1 || oldVersion > 7) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
         if (oldVersion < 5) addProfiles(db);
         if (oldVersion < 6) addReplies(db);
-        addCorrections(db);
+        if (oldVersion < 7) addCorrections(db);
+        addCaptions(db);
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -191,8 +197,9 @@ final class MonogramStore extends SQLiteOpenHelper {
                 if (inserted > Integer.MAX_VALUE) throw new IllegalStateException("Local message ID space exhausted");
                 id = (int) inserted;
             } else {
-                try (Cursor c = db.rawQuery("SELECT readable,time_ms FROM messages WHERE id=?", new String[]{Integer.toString(existing)})) {
+                try (Cursor c = db.rawQuery("SELECT readable,time_ms,encrypted FROM messages WHERE id=?", new String[]{Integer.toString(existing)})) {
                     if (!c.moveToFirst()) throw new IllegalStateException("Missing XMPP message");
+                    if ((c.getInt(2) == 1) != message.encrypted) throw new IllegalStateException("Conflicting message encryption modes");
                     // Replaying OMEMO from MAM may fail after its ratchet key was consumed. Keep known plaintext.
                     if (c.getInt(0) == 0 && message.readable) {
                         db.update("messages", values, "id=?", new String[]{Integer.toString(existing)}); changed = true;
@@ -227,7 +234,13 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
             if (message.attachment != null) {
                 ContentValues attachment = new ContentValues(); attachment.put("message", id); attachment.put("url", message.attachment.wireUrl);
+                attachment.put("caption", message.caption);
+                if (message.sharing != null) attachment.put("sharing", message.sharing.xml());
                 db.insertWithOnConflict("attachments", null, attachment, SQLiteDatabase.CONFLICT_IGNORE);
+                if (message.sharing != null) {
+                    attachment.remove("message"); attachment.remove("url");
+                    changed |= db.update("attachments", attachment, "message=? AND url=? AND sharing IS NULL", new String[]{Integer.toString(id), message.attachment.wireUrl}) > 0;
+                }
             }
             if (legacy != null) db.delete("message_ids", "kind='legacy-stanza' AND message=? AND value=?", new String[]{Integer.toString(id), legacy});
             db.setTransactionSuccessful();
@@ -440,7 +453,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             if (target == 0) {
                 // Keep the fallback when the original is missing; never invent a local target ID.
                 if (MonogramAttachments.has(message) && !reply.ranges.isEmpty()) {
-                    message.message = reply.fallbackText(body);
+                    message.message = reply.fallbackText(body) + message.message;
                     if (message.message.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) message.message = "Reply to an unavailable attachment";
                 }
                 return;
@@ -476,7 +489,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT encrypted,readable FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
             c.moveToFirst(); if (!encrypted && c.getInt(0) == 1 || c.getInt(1) == 0) return reference;
         }
-        String text = MonogramAttachments.has(original) ? "Attachment" : original.message;
+        String text = MonogramAttachments.has(original) && (original.message == null || original.message.isEmpty()) ? "Attachment" : original.message;
         if (quote != null && !quote.isEmpty()) {
             if (quoteOffset < 0 || quoteOffset > text.length() || !text.startsWith(quote, quoteOffset)) throw new IllegalArgumentException("Reply quote does not match the original");
             text = quote;
@@ -509,11 +522,18 @@ final class MonogramStore extends SQLiteOpenHelper {
             return c.isNull(1) ? attachmentFile(c.getString(0)) : new java.io.File(c.getString(1));
         } catch (Exception e) { return null; }
     }
+    synchronized com.negzero.monogram.xmpp.FileShare sharing(int id) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT sharing FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
+            return c.moveToFirst() && !c.isNull(0) ? new com.negzero.monogram.xmpp.FileShare(c.getString(0)) : null;
+        } catch (Exception invalid) { return null; }
+    }
     synchronized void attach(int id, String url, java.io.File path, TLRPC.MessageMedia media) {
-        ContentValues values = new ContentValues(); values.put("message", id); values.put("url", url); values.put("path", path.getAbsolutePath());
+        ContentValues empty = new ContentValues(); empty.put("message", id); empty.put("url", url);
+        getWritableDatabase().insertWithOnConflict("attachments", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
+        ContentValues values = new ContentValues(); values.put("path", path.getAbsolutePath());
         org.telegram.tgnet.SerializedData bytes = new org.telegram.tgnet.SerializedData();
         media.serializeToStream(bytes); values.put("media", bytes.toByteArray()); bytes.cleanup();
-        getWritableDatabase().insertWithOnConflict("attachments", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+        if (getWritableDatabase().update("attachments", values, "message=? AND url=?", new String[]{Integer.toString(id), url}) != 1) throw new IllegalStateException("Attachment reference changed");
     }
     synchronized TLRPC.Message getMessage(int id, long self) { return getMessage(id, self, true); }
     private TLRPC.Message getMessage(int id, long self, boolean embedReply) {
@@ -523,7 +543,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
     }
     private synchronized void decorate(TLRPC.Message message, int payload) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media FROM attachments WHERE message=?", new String[]{Integer.toString(payload)})) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media,caption,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(payload)})) {
             if (c.moveToFirst()) {
                 com.negzero.monogram.xmpp.FileLink link = com.negzero.monogram.xmpp.FileLink.parse(c.getString(0));
                 java.io.File file = c.isNull(1) ? attachmentFile(link.wireUrl) : new java.io.File(c.getString(1));
@@ -532,7 +552,8 @@ final class MonogramStore extends SQLiteOpenHelper {
                     org.telegram.tgnet.SerializedData bytes = new org.telegram.tgnet.SerializedData(c.getBlob(2));
                     media = TLRPC.MessageMedia.TLdeserialize(bytes, bytes.readInt32(true), true); bytes.cleanup();
                 }
-                MonogramAttachments.apply(message, link, file, media);
+                String name = c.isNull(4) ? link.fileName() : new com.negzero.monogram.xmpp.FileShare(c.getString(4)).name;
+                MonogramAttachments.apply(message, link, file, media, c.getString(3), name);
             } else if (message.message != null && message.message.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) {
                 message.message = "Encrypted file link in an unsupported format";
             }

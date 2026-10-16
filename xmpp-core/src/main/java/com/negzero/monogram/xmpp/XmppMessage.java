@@ -18,16 +18,19 @@ public final class XmppMessage {
     public final Map<String, String> ids;
     public final String body;
     public final FileLink attachment;
+    public final FileShare sharing;
+    public final String caption;
     public final ReplyReference reply;
     public final MessageCorrection correction;
     public final boolean encrypted, readable, outgoing, archived;
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, boolean encrypted,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption) {
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encrypted = encrypted; this.readable = readable; this.outgoing = outgoing;
         this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply; this.correction = correction;
+        this.sharing = sharing; this.caption = caption;
     }
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
@@ -40,7 +43,10 @@ public final class XmppMessage {
         if (from == null || (!own.equals(from) && to != null && !own.equals(to))) return null;
         boolean outgoing = own.equals(from);
         EntityBareJid peer = outgoing ? to : from;
-        if (peer == null || (readable && body == null)) return null;
+        FileShare sharing = !encrypted && readable ? FileShare.from(message) : null;
+        if (sharing != null && sharing.link.encrypted()) sharing = null;
+        if (peer == null || (readable && body == null && sharing == null)) return null;
+        if (sharing != null && body == null) body = "";
         Map<String, String> ids = new LinkedHashMap<>();
         put(ids, "stanza", message.getStanzaId());
         OriginIdElement origin = OriginIdElement.getOriginId(message);
@@ -63,6 +69,7 @@ public final class XmppMessage {
                 org.jivesoftware.smack.packet.StandardExtensionElement url = ((org.jivesoftware.smack.packet.StandardExtensionElement) oob).getFirstElement("url");
                 mediaBody = url != null && mediaText.equals(url.getText());
             }
+            if (!encrypted && message.hasExtension("file-sharing", FileShare.NAMESPACE)) mediaBody = false;
             if (mediaBody) {
                 try {
                     FileLink parsed = FileLink.parse(first);
@@ -70,9 +77,11 @@ public final class XmppMessage {
                 } catch (java.io.IOException ignored) { /* Keep malformed references as text, without opening them. */ }
             }
         }
+        String caption = "";
+        if (sharing != null) { attachment = sharing.link; caption = sharing.caption(message, body, reply); }
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encrypted, readable, outgoing, archiveId != null,
-                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, MessageCorrection.from(message));
+                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, MessageCorrection.from(message), sharing, caption);
     }
 
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted) throws Exception {
@@ -97,6 +106,15 @@ public final class XmppMessage {
         if (reply != null) reply.addTo(message);
         if (!encrypted) message.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("x", "jabber:x:oob").addElement("url", link.wireUrl).build());
         return from(message, own.asEntityBareJidIfPossible(), reply == null ? link.wireUrl : reply.wireBody(link.wireUrl), encrypted, true, null, null);
+    }
+    public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileShare sharing, String caption, ReplyReference reply) throws Exception {
+        if (sharing.link.encrypted()) throw new IllegalArgumentException("Encrypted metadata requires a content envelope");
+        Message message = new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer), Message.Type.chat);
+        message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
+        String body = sharing.body(caption);
+        if (reply != null) { reply.addTo(message); body = reply.wireBody(body); }
+        sharing.addTo(message, body);
+        return from(message, own.asEntityBareJidIfPossible(), body, false, true, null, null);
     }
 
     private static boolean validThumbnail(String value) {

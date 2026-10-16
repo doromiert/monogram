@@ -23,4 +23,7 @@ public class MonogramDatabaseTest {
     @Test public void corrections() throws Exception {
         MonogramCorrectionStoreDeviceTest.main(new String[]{temporary.newFolder("corrections").toString()});
     }
+    @Test public void captions() throws Exception {
+        MonogramCaptionStoreDeviceTest.main(new String[]{temporary.newFolder("captions").toString()});
+    }
 }

@@ -58,8 +58,14 @@ class XmppIntegrationTest {
     @Test void tlsPlaintextOmemoPersistenceAndOptionalScheduler() throws Exception {
         XmppSession.initializeOmemo(new File(state, "keys"));
         XmppSession.Listener ignore = (sender, id, body, encrypted) -> {};
+        BlockingQueue<XmppMessage> aliceMessages = new LinkedBlockingQueue<>();
+        XmppSession.Listener aliceListener = new XmppSession.Listener() {
+            @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
+            @Override public void message(XmppMessage message) { aliceMessages.add(message); }
+        };
+        File captionSource = new File(state, "caption-source.png"); java.nio.file.Files.write(captionSource.toPath(), new byte[]{1,2,3});
         OmemoFingerprint aliceFingerprint;
-        try (XmppSession alice = session("alice", 101, ignore);
+        try (XmppSession alice = session("alice", 101, aliceListener);
              XmppSession bob = session("bob", 202, new XmppSession.Listener() {
                  @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {
                      received.add(body); encryption.add(encrypted);
@@ -163,10 +169,18 @@ class XmppIntegrationTest {
                 assertEquals(encryptedFile, fileMessage.encrypted); assertEquals(originalId, fileMessage.reply.id);
                 assertEquals(fileReply.wireBody(url), received.poll(15, TimeUnit.SECONDS)); encryption.poll(1, TimeUnit.SECONDS);
             }
+            FileShare share = FileShare.describe(FileLink.parse("https://localhost/caption.png"), captionSource, "caption.png", "image/png");
+            String captionId = alice.sendFile("bob@localhost", share, "Photo caption 😀", plainReply);
+            XmppMessage captioned = awaitBody(receivedMessages, plainReply.wireBody(share.body("Photo caption 😀")));
+            assertEquals("Photo caption 😀", captioned.caption); assertEquals(3, captioned.sharing.size);
+            assertEquals(plainReply.wireBody(share.body("Photo caption 😀")), received.poll(15, TimeUnit.SECONDS)); encryption.poll(1, TimeUnit.SECONDS);
+            bob.sendFile("alice@localhost", share, "Back the other way 🦄", null);
+            assertEquals("Back the other way 🦄", awaitBody(aliceMessages, share.body("Back the other way 🦄")).caption);
             java.util.List<XmppMessage> replyArchive = alice.archiveBefore(null, null, 100).messages;
             assertTrue(replyArchive.stream().anyMatch(m -> replyId.equals(m.ids.get("origin")) && m.reply != null && originalId.equals(m.reply.id)));
             assertTrue(replyArchive.stream().anyMatch(m -> secretReplyId.equals(m.ids.get("origin")) && m.reply != null && originalId.equals(m.reply.id)));
             assertEquals(4, replyArchive.stream().filter(m -> m.correction != null && (replyId.equals(m.correction.id) || secretReplyId.equals(m.correction.id))).count());
+            assertTrue(replyArchive.stream().anyMatch(m -> captionId.equals(m.ids.get("stanza")) && "Photo caption 😀".equals(m.caption) && m.sharing != null));
             assertTrue(ServiceDiscoveryManager.getInstanceFor(alice.connection()).serverSupportsFeature("urn:monogram:schedule:0"));
             Message scheduled = new Message(JidCreate.entityBareFrom("bob@localhost"), Message.Type.chat);
             scheduled.setStanzaId("scheduled-test"); scheduled.setBody("scheduled hello");
@@ -230,6 +244,10 @@ class XmppIntegrationTest {
             XmppMessage correctionCopy = copies.poll(15, TimeUnit.SECONDS);
             assertNotNull(correctionCopy); assertTrue(correctionCopy.outgoing);
             assertEquals(sentId, correctionCopy.correction.id); assertEquals("Corrected on another device", correctionCopy.body);
+            FileShare carbonShare = FileShare.describe(FileLink.parse("https://localhost/carbon.png"), captionSource, "carbon.png", "image/png");
+            alice.sendFile("bob@localhost", carbonShare, "Captioned carbon", null);
+            XmppMessage fileCopy = copies.poll(15, TimeUnit.SECONDS);
+            assertNotNull(fileCopy); assertTrue(fileCopy.outgoing); assertEquals("Captioned carbon", fileCopy.caption);
             Message forged = new Message(second.connection().getUser(), Message.Type.chat);
             Message inner = new Message(JidCreate.entityBareFrom("alice@localhost"), Message.Type.chat);
             inner.setFrom(JidCreate.entityBareFrom("mallory@localhost")); inner.setBody("forged carbon");

@@ -100,10 +100,10 @@ public final class MonogramCorrectionStoreDeviceTest {
                 check(reopened.hiddenCorrection(second) && reopened.hiddenCorrection(editedReply), "Hidden events must stay consolidated across reopening");
             }
             try (SQLiteDatabase old = SQLiteDatabase.openOrCreateDatabase(database, null)) {
-                old.execSQL("DROP TABLE corrections"); old.execSQL("DROP TABLE applied_corrections"); old.setVersion(6);
+                old.execSQL("DROP TABLE corrections"); old.execSQL("DROP TABLE applied_corrections"); MonogramStoreDeviceTest.legacyAttachments(old); old.setVersion(6);
             }
             try (MonogramStore migrated = new MonogramStore(context, "corrections.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 7 && migrated.archiveCursor(false) == null, "Schema 6 must rescan metadata without losing cached content");
+                check(migrated.getReadableDatabase().getVersion() == 8 && migrated.archiveCursor(false) == null, "Schema 6 must rescan metadata without losing cached content");
                 check(migrated.getMessage(original, self).message.equals("Before 😀"), "Migration must preserve the raw original");
                 migrated.save(event("edit-3", "original", null, false, true, 400000, "phone")); migrated.reconcileCorrections(peer);
                 check(migrated.getMessage(original, self).message.equals("Recovered correction"), "Unreadable MAM metadata rescan must reuse already known edit plaintext");

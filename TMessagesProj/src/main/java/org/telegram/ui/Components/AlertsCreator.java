@@ -312,6 +312,8 @@ public class AlertsCreator {
                     text = "Choose a non-empty file up to 100 MiB. Your provider may have a smaller limit."; break;
                 case "MONOGRAM_FILE_AUTHENTICATION":
                     text = "The encrypted file could not be verified. It has not been opened. You can retry the download."; break;
+                case "MONOGRAM_FILE_INTEGRITY":
+                    text = "The downloaded file does not match its advertised size or hash. It has not replaced the cached file or been opened."; break;
                 case "MONOGRAM_FILE_TRANSFER_FAILED":
                     text = "The file transfer failed. Check your connection and retry."; break;
                 case "MONOGRAM_REPLY_UNAVAILABLE":

@@ -69,6 +69,12 @@ public final class FileTransfer {
     }
     /** The application supplies its existing auto-download policy after receiving size/type headers. */
     public static boolean download(FileLink link, File destination, Job job, Progress progress, DownloadPolicy policy) throws Exception {
+        return download(link, destination, job, progress, policy, null);
+    }
+    public static boolean download(FileShare sharing, File destination, Job job, Progress progress, DownloadPolicy policy) throws Exception {
+        return download(sharing.link, destination, job, progress, policy, sharing);
+    }
+    private static boolean download(FileLink link, File destination, Job job, Progress progress, DownloadPolicy policy, FileShare sharing) throws Exception {
         job.check();
         File parent = destination.getAbsoluteFile().getParentFile();
         if (!parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create attachment directory");
@@ -100,6 +106,8 @@ public final class FileTransfer {
                         copy(in, out, maximum + (link.encrypted() ? 16 : 0), length, link.encrypted() ? cipher(false, link.iv, link.key) : null, job, progress);
                         out.getFD().sync();
                     }
+                    job.check();
+                    if (sharing != null) sharing.verify(partial, job);
                     job.check();
                     if (!partial.renameTo(destination)) throw new IOException("Cannot commit attachment");
                     return true;

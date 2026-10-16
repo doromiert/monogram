@@ -454,7 +454,10 @@ public final class MonogramController {
         return replyTo(reply.reply_to_msg_id, peer, encrypted, reply.quote_text, reply.quote_offset);
     }
     private void maybeAutoDownload(TLRPC.Message message) {
-        if (DownloadController.getInstance(account).getCurrentDownloadMask() == 0 || !MonogramAttachments.has(message) || new File(message.attachPath).isFile() || !autoAttempted.add(message.id)) return;
+        if (DownloadController.getInstance(account).getCurrentDownloadMask() == 0 || !MonogramAttachments.has(message) || new File(message.attachPath).isFile()) return;
+        com.negzero.monogram.xmpp.FileShare sharing = store.sharing(message.id);
+        if (sharing != null && sharing.manual) return;
+        if (!autoAttempted.add(message.id)) return;
         download(new MessageObject(account, message, true, true), true);
     }
     public void openPeer(String address, RequestDelegate callback) {
@@ -538,24 +541,27 @@ public final class MonogramController {
                 File cached = store.attachmentFile(link.wireUrl);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
                 if (!AndroidUtilities.copyFile(request.file, cached)) throw new java.io.IOException("Cannot cache attachment");
+                com.negzero.monogram.xmpp.FileShare sharing = encrypted ? null : com.negzero.monogram.xmpp.FileShare.describe(link, cached, request.file.getName(), request.mime);
                 worker.execute(() -> {
                     try {
                         job.check();
                         if (session != expected || encrypted(request.message.dialog_id) != encrypted) throw new IllegalStateException("Sending mode or account changed");
-                        String stanza = expected.sendFile(peer, link, encrypted, reply);
-                        XmppMessage message = XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, link, encrypted, reply);
+                        String stanza = encrypted ? expected.sendFile(peer, link, true, reply) : expected.sendFile(peer, sharing, request.caption, reply);
+                        XmppMessage message = encrypted ? XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, link, true, reply)
+                                : XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, sharing, request.caption, reply);
                         int id = store.save(message);
                         TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
-                                : MonogramAttachments.media(id, (int) (message.timestamp / 1000), cached, link.fileName());
+                                : MonogramAttachments.media(id, (int) (message.timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
                         store.attach(id, link.wireUrl, cached, media);
                         refreshReplies(request.message.dialog_id);
-                        MonogramAttachments.apply(request.message, link, cached, media);
+                        MonogramAttachments.apply(request.message, link, cached, media, message.caption, sharing == null ? link.fileName() : sharing.name);
                         TLRPC.TL_updateShortSentMessage response = new TLRPC.TL_updateShortSentMessage();
                         response.id = id; response.date = (int) (message.timestamp / 1000); response.out = true; response.pts_count = 1;
                         response.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
                         Utilities.stageQueue.postRunnable(() -> {
                             callback.run(response, null);
-                            if (request.caption != null && !request.caption.isEmpty()) AndroidUtilities.runOnUIThread(() ->
+                            // Legacy OMEMO cannot carry SFS content; keep its separate encrypted caption until OMEMO2 is integrated.
+                            if (encrypted && request.caption != null && !request.caption.isEmpty()) AndroidUtilities.runOnUIThread(() ->
                                     SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
                                             request.caption, request.message.dialog_id, null, null, null, false, null, null, null, true, 0, 0, null, false)));
                         });
@@ -590,22 +596,25 @@ public final class MonogramController {
             try {
                 job.check();
                 FileLink link = FileLink.parse(address); File path = store.attachmentFile(address);
+                com.negzero.monogram.xmpp.FileShare sharing = store.sharing(id);
+                String filename = sharing == null ? link.fileName() : sharing.name;
                 FileTransfer.Progress onProgress = (bytes, total) -> progress(name, bytes, total, false, link.encrypted());
-                if (automatic && !FileTransfer.download(link, path, job, onProgress, (mime, size) ->
-                        DownloadController.getInstance(account).getMonogramDownloadLimit(object.messageOwner, MonogramAttachments.remoteMedia(id, link.fileName(), mime, size), size))) {
+                FileTransfer.DownloadPolicy policy = automatic ? (mime, size) -> DownloadController.getInstance(account).getMonogramDownloadLimit(
+                        object.messageOwner, MonogramAttachments.remoteMedia(id, filename, mime, size), size) : null;
+                boolean downloaded = sharing == null ? FileTransfer.download(link, path, job, onProgress, policy) : FileTransfer.download(sharing, path, job, onProgress, policy);
+                if (!downloaded) {
                     finishDownload(id, name, job);
                     AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0));
                     return;
                 }
-                if (!automatic) FileTransfer.download(link, path, job, onProgress);
                 worker.execute(() -> {
                     try {
                         job.check();
                         if (sessionEpoch != epoch) return;
                         TLRPC.Message saved = store.getMessage(id, self);
-                        store.attach(id, address, path, MonogramAttachments.media(id, saved.date, path, link.fileName()));
+                        store.attach(id, address, path, MonogramAttachments.media(id, saved.date, path, filename));
                         TLRPC.Message updated = store.getMessage(id, self);
-                        MonogramAttachments.apply(object.messageOwner, link, path, updated.media);
+                        MonogramAttachments.apply(object.messageOwner, link, path, updated.media, updated.message, filename);
                         ArrayList<TLRPC.Message> messages = new ArrayList<>(); messages.add(updated);
                         MessagesStorage.getInstance(account).putMessages(messages, false, true, false, 0, 0, 0);
                         AndroidUtilities.runOnUIThread(() -> {

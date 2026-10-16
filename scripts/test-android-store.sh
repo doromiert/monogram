@@ -40,6 +40,7 @@ adb -s "$device" shell run-as "$package" chmod 400 "$remote/tests.zip" "$remote/
 adb -s "$device" shell run-as "$package" sh -c "'CLASSPATH=$remote/tests.zip:$remote/app.apk app_process /system/bin org.telegram.messenger.xmpp.MonogramStoreDeviceTest $remote/databases'"
 adb -s "$device" shell run-as "$package" sh -c "'CLASSPATH=$remote/tests.zip:$remote/app.apk app_process /system/bin org.telegram.messenger.xmpp.MonogramReplyStoreDeviceTest $remote/databases'"
 adb -s "$device" shell run-as "$package" sh -c "'CLASSPATH=$remote/tests.zip:$remote/app.apk app_process /system/bin org.telegram.messenger.xmpp.MonogramCorrectionStoreDeviceTest $remote/databases'"
+adb -s "$device" shell run-as "$package" sh -c "'CLASSPATH=$remote/tests.zip:$remote/app.apk app_process /system/bin org.telegram.messenger.xmpp.MonogramCaptionStoreDeviceTest $remote/databases'"
 
 if [ -n "${MONOGRAM_IT_PORT:-}" ]; then
     adb -s "$device" reverse --no-rebind "tcp:$MONOGRAM_IT_PORT" "tcp:$MONOGRAM_IT_PORT"
