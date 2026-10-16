@@ -152,6 +152,8 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized TLRPC.UserFull fullUser(long id, long self) {
         TLRPC.TL_userFull full = new TLRPC.TL_userFull(); full.id = id; full.user = user(id, self);
+        // Telegram's private read-date lookup has no XMPP implementation.
+        full.read_dates_private = true;
         full.settings = new TLRPC.TL_peerSettings(); full.notify_settings = new TLRPC.TL_peerNotifySettings();
         com.negzero.monogram.xmpp.XmppProfile profile = profile(id);
         full.about = profile == null ? "" : profile.field("DESC");
@@ -358,17 +360,30 @@ final class MonogramStore extends SQLiteOpenHelper {
         } finally { db.endTransaction(); }
     }
     synchronized String archiveCursor(boolean oldest) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT " + (oldest ? "oldest" : "newest") + " FROM archive_state WHERE scope='direct'", null)) {
+        return archiveCursor(0, oldest);
+    }
+    private static String archiveScope(long peer) { return peer == 0 ? "direct" : "direct:" + peer; }
+    synchronized void resetArchiveCursor(long peer) {
+        getWritableDatabase().delete("archive_state", "scope=?", new String[]{archiveScope(peer)});
+    }
+    synchronized String archiveCursor(long peer, boolean oldest) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT " + (oldest ? "oldest" : "newest") + " FROM archive_state WHERE scope=?", new String[]{archiveScope(peer)})) {
             return c.moveToFirst() ? c.getString(0) : null;
         }
     }
     synchronized boolean archiveComplete() {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT complete FROM archive_state WHERE scope='direct'", null)) {
+        return archiveComplete(0);
+    }
+    synchronized boolean archiveComplete(long peer) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT complete FROM archive_state WHERE scope=?", new String[]{archiveScope(peer)})) {
             return c.moveToFirst() && c.getInt(0) == 1;
         }
     }
     synchronized boolean saveArchive(XmppSession.ArchivePage page, boolean backwards) { return saveArchive(page, backwards, null); }
     synchronized boolean saveArchive(XmppSession.ArchivePage page, boolean backwards, java.util.Set<Integer> updated) {
+        return saveArchive(0, page, backwards, updated);
+    }
+    synchronized boolean saveArchive(long scope, XmppSession.ArchivePage page, boolean backwards, java.util.Set<Integer> updated) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
@@ -378,22 +393,23 @@ final class MonogramStore extends SQLiteOpenHelper {
                 c.moveToFirst(); order = backwards ? Math.min(0, c.getLong(0)) - page.messages.size() : Math.max(0, c.getLong(0)) + 1;
             }
             for (XmppMessage message : page.messages) {
+                if (scope != 0 && !jid(scope).equals(message.peer.toString())) throw new IllegalArgumentException("Archive belongs to another chat");
                 int saved = save(message); changed |= saved != 0;
                 if (updated != null && saved != 0) updated.add(saved);
                 db.execSQL("UPDATE messages SET archive_order=? WHERE archive_order=0 AND id=(SELECT message FROM message_ids WHERE peer=? AND outgoing=? AND kind='archive' AND value=?)",
                         new Object[]{order++, peer(message.peer.toString()), message.outgoing ? 1 : 0, message.ids.get("archive")});
             }
-            ContentValues empty = new ContentValues(); empty.put("scope", "direct");
+            ContentValues empty = new ContentValues(); empty.put("scope", archiveScope(scope));
             db.insertWithOnConflict("archive_state", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
             ContentValues cursor = new ContentValues();
             if (backwards) {
                 if (page.firstId != null) cursor.put("oldest", page.firstId);
                 cursor.put("complete", page.complete || page.firstId == null);
             }
-            if (archiveCursor(false) == null || !backwards) {
+            if (archiveCursor(scope, false) == null || !backwards) {
                 if (page.lastId != null) cursor.put("newest", page.lastId);
             }
-            if (cursor.size() > 0) db.update("archive_state", cursor, "scope='direct'", null);
+            if (cursor.size() > 0) db.update("archive_state", cursor, "scope=?", new String[]{archiveScope(scope)});
             db.setTransactionSuccessful();
             return changed;
         } finally { db.endTransaction(); }

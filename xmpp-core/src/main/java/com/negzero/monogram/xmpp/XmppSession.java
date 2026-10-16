@@ -170,8 +170,11 @@ public final class XmppSession implements AutoCloseable {
         return archive(peer, before == null ? "" : before, null, limit);
     }
     public ArchivePage archiveAfter(String after, int limit) throws Exception {
+        return archiveAfter(null, after, limit);
+    }
+    public ArchivePage archiveAfter(String peer, String after, int limit) throws Exception {
         if (after == null || after.isEmpty()) throw new IllegalArgumentException("Missing archive cursor");
-        return archive(null, null, after, limit);
+        return archive(peer, null, after, limit);
     }
     private ArchivePage archive(String peer, String before, String after, int limit) throws Exception {
         MamManager.MamQueryArgs.Builder args = MamManager.MamQueryArgs.builder()
