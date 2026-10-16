@@ -1718,6 +1718,7 @@ public class ReactionsLayoutInBubble {
             if (reaction == null) {
                 reaction = "";
             }
+            reaction = Emoji.fixEmoji(reaction.replace("\ufe0f", ""));
 
             VisibleReaction visibleReaction = new VisibleReaction();
             if (reaction.startsWith("animated_")) {
