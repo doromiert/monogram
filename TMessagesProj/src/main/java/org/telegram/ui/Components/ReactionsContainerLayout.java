@@ -1,6 +1,7 @@
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.messenger.AndroidUtilities.dpf2;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -148,6 +149,9 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
     }
 
     private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint favoriteDividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private List<String> favoriteEmoji = new ArrayList<>();
+    private int favoriteReactionCount;
     private final Paint leftShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG),
             rightShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float leftAlpha, rightAlpha;
@@ -409,6 +413,22 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 if (i == listAdapter.getItemCount() - 1) {
                     outRect.right = dp(8);
                 }
+                if (i >= 0 && i == favoriteDividerPosition()) outRect.left += dp(12);
+            }
+
+            @Override
+            public void onDrawOver(@NonNull Canvas canvas, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+                int boundary = favoriteDividerPosition();
+                if (boundary < 0 || customEmojiReactionsEnterProgress >= 1f) return;
+                for (int i = 0; i < parent.getChildCount(); i++) {
+                    View child = parent.getChildAt(i);
+                    if (parent.getChildAdapterPosition(child) != boundary) continue;
+                    int color = Theme.getColor(Theme.key_divider, resourcesProvider);
+                    favoriteDividerPaint.setColor(color);
+                    favoriteDividerPaint.setAlpha((int) (Color.alpha(color) * (1f - customEmojiReactionsEnterProgress)));
+                    float x = child.getLeft() + child.getTranslationX() - dp(6), y = parent.getHeight() / 2f;
+                    canvas.drawRoundRect(x - dpf2(.5f), y - dp(12), x + dpf2(.5f), y + dp(12), dpf2(.5f), dpf2(.5f), favoriteDividerPaint);
+                }
             }
         });
         recyclerListView.setOnItemClickListener((view, position) -> {
@@ -514,6 +534,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
         invalidateLoopViews();
         reactionsWindow.onDismissListener(() -> {
             reactionsWindow = null;
+            if (type == TYPE_DEFAULT && !favoriteEmoji.equals(Emoji.getFavoriteEmoji())) setMessage(messageObject, null, true);
             invalidateLoopViews();
             if (delegate != null) {
                 delegate.onEmojiWindowDismissed();
@@ -615,6 +636,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
             getLayoutParams().width = ViewGroup.LayoutParams.WRAP_CONTENT;
         }
         listAdapter.updateItems(animated);
+        recyclerListView.invalidateItemDecorations();
     }
 
     private BlurredBackgroundDrawable blurredBackgroundDrawable;
@@ -1107,6 +1129,38 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
         invalidate();
     }
 
+    static final class QuickReactions {
+        final List<ReactionsLayoutInBubble.VisibleReaction> reactions = new ArrayList<>();
+        final int favoriteCount;
+        QuickReactions(List<String> favorites, TLRPC.MessageReactions current) {
+            HashSet<ReactionsLayoutInBubble.VisibleReaction> seen = new HashSet<>();
+            for (String code : favorites) {
+                ReactionsLayoutInBubble.VisibleReaction reaction = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(code);
+                if (seen.add(reaction)) reactions.add(reaction);
+            }
+            favoriteCount = reactions.size();
+            for (String code : new String[]{"👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "👎"}) {
+                ReactionsLayoutInBubble.VisibleReaction reaction = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(code);
+                if (seen.add(reaction)) reactions.add(reaction);
+            }
+            if (current != null) for (TLRPC.ReactionCount count : current.results) {
+                if (!(count.reaction instanceof TLRPC.TL_reactionEmoji)) continue;
+                ReactionsLayoutInBubble.VisibleReaction reaction = ReactionsLayoutInBubble.VisibleReaction.fromTL(count.reaction);
+                if (seen.add(reaction)) reactions.add(reaction);
+            }
+        }
+    }
+
+    static int favoriteBoundary(int favorites, int visible, boolean trailingButton) {
+        if (favorites <= 0 || visible <= 0) return -1;
+        int boundary = Math.min(favorites, visible);
+        return boundary < visible || trailingButton ? boundary : -1;
+    }
+
+    private int favoriteDividerPosition() {
+        return type == TYPE_DEFAULT ? favoriteBoundary(favoriteReactionCount, visibleReactionsList.size(), showUnlockPremiumButton() || showCustomEmojiReaction()) : -1;
+    }
+
     public void setMessage(MessageObject message, TLRPC.ChatFull chatFull, boolean animated) {
         this.messageObject = message;
         int chosenCount = 0;
@@ -1131,12 +1185,13 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
             }
         }
         hasStar = false;
+        favoriteReactionCount = 0;
         if(type==TYPE_DEFAULT) {
             allReactionsAvailable=false;
-            for(String emoji:new String[]{"👍","❤️","😂","😮","😢","🙏","🔥","👎"}) visibleReactions.add(ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(emoji));
-            if(messageObject!=null && messageObject.messageOwner.reactions!=null)
-                for(TLRPC.ReactionCount reaction:messageObject.messageOwner.reactions.results)
-                    if(reaction.reaction instanceof TLRPC.TL_reactionEmoji) visibleReactions.add(ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction.reaction));
+            favoriteEmoji = Emoji.getFavoriteEmoji();
+            QuickReactions quick = new QuickReactions(favoriteEmoji, messageObject == null ? null : messageObject.messageOwner.reactions);
+            favoriteReactionCount = quick.favoriteCount;
+            visibleReactions.addAll(quick.reactions);
         } else if (type == TYPE_TAGS) {
             allReactionsAvailable = UserConfig.getInstance(currentAccount).isPremium();
             fillRecentReactionsList(visibleReactions);
@@ -1532,7 +1587,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
         } else {
             width = dp(36) * itemsCount - dp(4);
         }
-        return width;
+        return width + (favoriteDividerPosition() >= 0 ? dp(12) : 0);
     }
 
     public int getHintTextWidth() {
@@ -1545,6 +1600,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
 
     public void setCustomEmojiEnterProgress(float progress) {
         customEmojiReactionsEnterProgress = progress;
+        recyclerListView.invalidate();
         if (chatScrimPopupContainerLayout != null) {
             chatScrimPopupContainerLayout.setPopupAlpha(1f - progress);
         }
