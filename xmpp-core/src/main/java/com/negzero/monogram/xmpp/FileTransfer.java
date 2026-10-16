@@ -32,7 +32,23 @@ public final class FileTransfer {
         Failure(String reason) { super(reason); this.reason = reason; }
     }
     private FileTransfer() {}
+    /** Private immutable upload input; the caller deletes it after committing or abandoning the transfer. */
+    public static File snapshot(File source, File directory, Job job) throws Exception {
+        job.check(); long length = source.length();
+        if (!source.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot create upload directory");
+        File snapshot = File.createTempFile("monogram-upload-", ".part", directory);
+        try {
+            try (InputStream in = new FileInputStream(source); FileOutputStream out = new FileOutputStream(snapshot)) {
+                copy(in, out, MAX_BYTES, length, null, job, null); out.getFD().sync();
+            }
+            job.check(); return snapshot;
+        } catch (Exception error) { if (!snapshot.delete()) snapshot.deleteOnExit(); throw error; }
+    }
     public static FileLink upload(XMPPConnection connection, File file, String mime, boolean encrypted, Job job, Progress progress) throws Exception {
+        return upload(connection, file, file.getName(), mime, encrypted, job, progress);
+    }
+    public static FileLink upload(XMPPConnection connection, File file, String filename, String mime, boolean encrypted, Job job, Progress progress) throws Exception {
         job.check();
         long length = file.length();
         if (!file.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
@@ -41,7 +57,7 @@ public final class FileTransfer {
         if (!manager.isUploadServiceDiscovered() && !manager.discoverUploadService()) throw new Failure("NO_UPLOAD_SERVICE");
         if (!manager.getDefaultUploadService().acceptsFileOfSize(size)) throw new Failure("SERVER_SIZE_LIMIT");
         String contentType = encrypted ? "application/octet-stream" : mime;
-        Slot slot = manager.requestSlot(file.getName(), size, contentType);
+        Slot slot = manager.requestSlot(filename, size, contentType);
         FileLink.parse(slot.getPutUrl().toExternalForm());
         FileLink link = FileLink.parse(slot.getGetUrl().toExternalForm());
         byte[] iv = null, key = null;

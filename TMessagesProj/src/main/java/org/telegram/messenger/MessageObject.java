@@ -7711,6 +7711,7 @@ public class MessageObject {
                 addUrlsByPattern(isOutOwner(), caption, true, 4, (int) getDuration(), false);
             }
             applyTimestampsHighlightForReplyMsg(caption);
+            org.telegram.messenger.xmpp.MonogramAttachments.suppressEncryptedLinks(caption);
         }
     }
 

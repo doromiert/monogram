@@ -504,7 +504,9 @@ public final class MonogramController {
     }
     private void maybeAutoDownload(TLRPC.Message message) {
         if (DownloadController.getInstance(account).getCurrentDownloadMask() == 0 || !MonogramAttachments.has(message) || new File(message.attachPath).isFile()) return;
-        com.negzero.monogram.xmpp.FileShare sharing = store.sharing(message.id);
+        final com.negzero.monogram.xmpp.FileShare sharing;
+        try { sharing = store.sharing(message.id); }
+        catch (IllegalStateException invalid) { return; }
         if (sharing != null && sharing.manual) return;
         if (!autoAttempted.add(message.id)) return;
         download(new MessageObject(account, message, true, true), true);
@@ -584,13 +586,16 @@ public final class MonogramController {
         fileJobs.put(request.localId, job); fileNames.put(request.message.attachPath, job);
         String progressName = request.message.attachPath;
         fileWorker.execute(() -> {
+            File snapshot = null;
             try {
-                FileLink link = FileTransfer.upload(expected.connection(), request.file, request.mime, encrypted, job,
+                snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
+                FileLink link = FileTransfer.upload(expected.connection(), snapshot, request.file.getName(), request.mime, encrypted, job,
                         (bytes, total) -> progress(progressName, bytes, total, true, encrypted));
-                File cached = store.attachmentFile(link.wireUrl);
+                com.negzero.monogram.xmpp.FileShare sharing = encrypted ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, request.file.getName(), request.mime, job);
+                File cached = sharing == null ? store.attachmentFile(link.wireUrl) : store.attachmentFile(sharing);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
-                if (!AndroidUtilities.copyFile(request.file, cached)) throw new java.io.IOException("Cannot cache attachment");
-                com.negzero.monogram.xmpp.FileShare sharing = encrypted ? null : com.negzero.monogram.xmpp.FileShare.describe(link, cached, request.file.getName(), request.mime);
+                job.check();
+                if (!snapshot.renameTo(cached)) throw new java.io.IOException("Cannot commit attachment cache");
                 worker.execute(() -> {
                     try {
                         job.check();
@@ -623,7 +628,7 @@ public final class MonogramController {
                 TLRPC.TL_error error = fileError(e);
                 if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
                 fileJobs.remove(request.localId, job); fileNames.remove(progressName, job);
-            }
+            } finally { if (snapshot != null && snapshot.exists() && !snapshot.delete()) snapshot.deleteOnExit(); }
         });
     }
     public void download(MessageObject object) {
@@ -644,8 +649,10 @@ public final class MonogramController {
         (automatic ? autoDownloadWorker : fileWorker).execute(() -> {
             try {
                 job.check();
-                FileLink link = FileLink.parse(address); File path = store.attachmentFile(address);
+                FileLink link = FileLink.parse(address);
                 com.negzero.monogram.xmpp.FileShare sharing = store.sharing(id);
+                if (sharing != null && !sharing.link.wireUrl.equals(address)) throw new IllegalStateException("Attachment reference changed");
+                File path = sharing == null ? store.attachmentFile(address) : store.attachmentFile(sharing);
                 String filename = sharing == null ? link.fileName() : sharing.name;
                 FileTransfer.Progress onProgress = (bytes, total) -> progress(name, bytes, total, false, link.encrypted());
                 FileTransfer.DownloadPolicy policy = automatic ? (mime, size) -> DownloadController.getInstance(account).getMonogramDownloadLimit(

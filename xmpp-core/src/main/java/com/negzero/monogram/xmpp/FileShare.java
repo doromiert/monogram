@@ -47,22 +47,24 @@ public final class FileShare {
         StandardExtensionElement url = only(sources, "url-data", URL_DATA);
         if (url == null) throw new IOException("Unsupported or ambiguous file source");
         link = FileLink.parse(url.getAttributeValue("target"));
-        String filename = text(file, "name"), type = text(file, "media-type"), length = text(file, "size");
+        String filename = text(file, "name"), type = text(file, "media-type").trim(), length = text(file, "size").trim();
         name = filename.isEmpty() ? link.fileName() : filename.replaceAll("[\\\\/\\p{Cntrl}]", "_");
         if (name.length() > 200 || name.equals(".") || name.equals("..") || type.length() > 200) throw new IOException("Invalid file metadata");
         mime = type.isEmpty() ? "application/octet-stream" : type;
         size = length.isEmpty() ? -1 : Long.parseLong(length);
         if (size < -1 || !length.isEmpty() && size < 0) throw new IOException("Invalid file size");
-        for (StandardExtensionElement hash : file.getElements("hash", HASHES)) {
+        for (StandardExtensionElement hash : file.getElements()) {
+            if (!"hash".equals(hash.getElementName()) || !HASHES.equals(hash.getNamespace())) continue;
             String algorithm = hash.getAttributeValue("algo"); Digest digest = digest(algorithm);
             if (digest == null) continue;
             if (hash.getText() == null || hash.getText().length() > 128) throw new IOException("Invalid file hash");
-            byte[] value = java.util.Base64.getDecoder().decode(hash.getText());
+            byte[] value = java.util.Base64.getDecoder().decode(hash.getText().replaceAll("[\\t\\n\\r ]", ""));
             if (value.length != digest.getDigestSize() || hashes.put(algorithm, value) != null) throw new IOException("Invalid/duplicate file hash");
         }
     }
     private static StandardExtensionElement only(StandardExtensionElement parent, String name, String namespace) throws IOException {
         List<StandardExtensionElement> matches = parent.getElements(name, namespace);
+        if (matches == null) return null;
         if (matches.size() > 1) throw new IOException("Ambiguous file metadata");
         return matches.isEmpty() ? null : matches.get(0);
     }
@@ -77,12 +79,25 @@ public final class FileShare {
         return null;
     }
     public String xml() { return element.toXML().toString(); }
+    /** A reused URL cannot substitute bytes with different expected integrity metadata. */
+    public String cacheKey() {
+        if (size < 0 && hashes.isEmpty()) return link.wireUrl;
+        StringBuilder key = new StringBuilder("file-share\n").append(link.wireUrl).append('\n').append(size);
+        for (Map.Entry<String, byte[]> hash : new java.util.TreeMap<>(hashes).entrySet()) {
+            key.append('\n').append(hash.getKey()).append(':').append(java.util.Base64.getEncoder().encodeToString(hash.getValue()));
+        }
+        return key.toString();
+    }
     public String body(String caption) { return caption == null || caption.isEmpty() ? link.wireUrl : caption + "\n" + link.wireUrl; }
     public static FileShare describe(FileLink link, File file, String name, String mime) throws Exception {
+        return describe(link, file, name, mime, new FileTransfer.Job());
+    }
+    public static FileShare describe(FileLink link, File file, String name, String mime, FileTransfer.Job job) throws Exception {
+        job.check();
         SHA256Digest digest = new SHA256Digest();
         try (FileInputStream in = new FileInputStream(file)) {
             byte[] buffer = new byte[65536]; int read;
-            while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
+            while ((read = in.read(buffer)) != -1) { job.check(); digest.update(buffer, 0, read); }
         }
         byte[] hash = new byte[32]; digest.doFinal(hash, 0);
         StandardExtensionElement metadata = StandardExtensionElement.builder("file", METADATA)
@@ -155,7 +170,7 @@ public final class FileShare {
                 }
             }
         } catch (RuntimeException malformed) { return reply == null ? body : reply.withoutFallback(body); }
-        if (spans.isEmpty() && body.equals(link.wireUrl)) return "";
+        if (spans.isEmpty() && (body.equals(link.wireUrl) || reply != null && reply.withoutFallback(body).equals(link.wireUrl))) return "";
         if (reply != null && !reply.ranges.isEmpty()) {
             try {
                 for (String range : reply.ranges.split(",")) {

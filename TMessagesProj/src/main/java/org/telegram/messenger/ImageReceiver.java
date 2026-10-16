@@ -581,18 +581,20 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
         imageLocation = localProfileImage(imageLocation);
         mediaLocation = localProfileImage(mediaLocation);
         thumbLocation = localProfileImage(thumbLocation);
+        int attachmentId = 0;
         if (imageLocation != null && imageLocation.photoSize != null && imageLocation.photoSize.location != null
                 && imageLocation.photoSize.location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
-            java.io.File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(imageLocation.photoSize.location.local_id);
-            if (local != null && local.isFile()) { imageLocation = ImageLocation.getForPath(local.getAbsolutePath()); mediaLocation = null; thumbLocation = null; }
-        }
-        if (parentObject instanceof MessageObject && imageLocation != null) {
+            attachmentId = imageLocation.photoSize.location.local_id;
+        } else if (parentObject instanceof MessageObject && imageLocation != null) {
             MessageObject message = (MessageObject) parentObject;
             if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner) && message.messageOwner.media != null
-                    && message.messageOwner.media.photo != null && message.messageOwner.attachPath != null
-                    && new java.io.File(message.messageOwner.attachPath).isFile()) {
-                imageLocation = ImageLocation.getForPath(message.messageOwner.attachPath); mediaLocation = null; thumbLocation = null;
-            }
+                    && message.messageOwner.media.photo != null) attachmentId = message.getId();
+        }
+        if (attachmentId > 0) {
+            java.io.File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(attachmentId);
+            // Use the descriptor's path as the image-cache key even before a verified download exists.
+            imageLocation = local == null ? null : ImageLocation.getForPath(local.getAbsolutePath());
+            mediaLocation = null; thumbLocation = null;
         }
         if (allowLoadingOnAttachedOnly && !attachedToWindow) {
             if (setImageBackup == null) {

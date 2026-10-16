@@ -60,7 +60,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private void addCaptions(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE attachments ADD COLUMN caption TEXT NOT NULL DEFAULT ''");
         db.execSQL("ALTER TABLE attachments ADD COLUMN sharing TEXT");
-        db.execSQL("DELETE FROM archive_state WHERE scope='direct'");
+        db.execSQL("DELETE FROM archive_state");
     }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (newVersion != 8 || oldVersion < 1 || oldVersion > 7) throw new IllegalStateException("Unknown database migration");
@@ -532,16 +532,30 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized java.io.File attachmentFile(String url) throws Exception {
         return MonogramAttachments.cache(storeContext, database, url);
     }
+    synchronized java.io.File attachmentFile(com.negzero.monogram.xmpp.FileShare sharing) throws Exception {
+        return MonogramAttachments.cache(storeContext, database, sharing.cacheKey());
+    }
+    private com.negzero.monogram.xmpp.FileShare sharing(String url, String xml) throws Exception {
+        if (xml == null) return null;
+        com.negzero.monogram.xmpp.FileShare sharing = new com.negzero.monogram.xmpp.FileShare(xml);
+        if (!sharing.link.wireUrl.equals(url)) throw new IllegalArgumentException("File source mismatch");
+        return sharing;
+    }
+    private java.io.File attachmentPath(String url, String path, com.negzero.monogram.xmpp.FileShare sharing) throws Exception {
+        // Metadata enrichment must not reuse old URL-only bytes without checking the new hashes.
+        if (sharing != null) return attachmentFile(sharing);
+        return path == null ? attachmentFile(url) : new java.io.File(path);
+    }
     synchronized java.io.File attachmentPath(int id) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
             if (!c.moveToFirst()) return null;
-            return c.isNull(1) ? attachmentFile(c.getString(0)) : new java.io.File(c.getString(1));
-        } catch (Exception e) { return null; }
+            return attachmentPath(c.getString(0), c.getString(1), sharing(c.getString(0), c.getString(2)));
+        } catch (Exception invalid) { return null; }
     }
     synchronized com.negzero.monogram.xmpp.FileShare sharing(int id) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT sharing FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
-            return c.moveToFirst() && !c.isNull(0) ? new com.negzero.monogram.xmpp.FileShare(c.getString(0)) : null;
-        } catch (Exception invalid) { return null; }
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
+            return c.moveToFirst() ? sharing(c.getString(0), c.getString(1)) : null;
+        } catch (Exception invalid) { throw new IllegalStateException("Invalid cached file description", invalid); }
     }
     synchronized void attach(int id, String url, java.io.File path, TLRPC.MessageMedia media) {
         ContentValues empty = new ContentValues(); empty.put("message", id); empty.put("url", url);
@@ -562,13 +576,20 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media,caption,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(payload)})) {
             if (c.moveToFirst()) {
                 com.negzero.monogram.xmpp.FileLink link = com.negzero.monogram.xmpp.FileLink.parse(c.getString(0));
-                java.io.File file = c.isNull(1) ? attachmentFile(link.wireUrl) : new java.io.File(c.getString(1));
+                com.negzero.monogram.xmpp.FileShare sharing = sharing(link.wireUrl, c.getString(4));
+                java.io.File file = attachmentPath(link.wireUrl, c.getString(1), sharing);
                 TLRPC.MessageMedia media = null;
-                if (!c.isNull(2)) {
+                boolean sameCache = sharing == null || c.getString(1) != null && file.equals(new java.io.File(c.getString(1)));
+                if (!c.isNull(2) && sameCache) {
                     org.telegram.tgnet.SerializedData bytes = new org.telegram.tgnet.SerializedData(c.getBlob(2));
                     media = TLRPC.MessageMedia.TLdeserialize(bytes, bytes.readInt32(true), true); bytes.cleanup();
                 }
-                String name = c.isNull(4) ? link.fileName() : new com.negzero.monogram.xmpp.FileShare(c.getString(4)).name;
+                String name = sharing == null ? link.fileName() : sharing.name;
+                if (media == null && sharing != null && !file.isFile()) {
+                    media = MonogramAttachments.remoteMedia(message.id, name, sharing.mime, sharing.size);
+                    if (media.photo != null) media.photo.date = message.date;
+                    if (media.document != null) media.document.date = message.date;
+                }
                 MonogramAttachments.apply(message, link, file, media, c.getString(3), name);
             } else if (message.message != null && message.message.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) {
                 message.message = "Encrypted file link in an unsupported format";

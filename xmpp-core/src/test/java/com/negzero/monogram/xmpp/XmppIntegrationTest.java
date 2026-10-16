@@ -324,8 +324,14 @@ class XmppIntegrationTest {
             java.nio.file.Path input = new File(state, "test-image.jpg").toPath(); java.nio.file.Files.write(input, image);
             java.util.concurrent.atomic.AtomicLong progress = new java.util.concurrent.atomic.AtomicLong();
             copies.clear();
-            FileLink plain = FileTransfer.upload(alice.connection(), input.toFile(), "image/jpeg", false, new FileTransfer.Job(),
-                    (done, total) -> progress.set(done));
+            File snapshot = FileTransfer.snapshot(input.toFile(), state, new FileTransfer.Job());
+            FileLink plain;
+            try {
+                byte[] replaced = image.clone(); replaced[0] ^= 1; java.nio.file.Files.write(input, replaced);
+                plain = FileTransfer.upload(alice.connection(), snapshot, input.toFile().getName(), "image/jpeg", false, new FileTransfer.Job(),
+                        (done, total) -> progress.set(done));
+                assertTrue(plain.fileName().contains("test-image"), "The upload slot must retain the original name, not the snapshot name");
+            } finally { snapshot.delete(); java.nio.file.Files.write(input, image); }
             assertEquals(image.length, progress.get());
             alice.sendFile("bob@localhost", plain, false);
             XmppMessage plainFile = awaitBody(copies, plain.wireUrl);

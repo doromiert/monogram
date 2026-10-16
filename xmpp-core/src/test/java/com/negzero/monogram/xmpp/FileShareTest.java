@@ -54,6 +54,9 @@ class FileShareTest {
         assertNull(read(stanza(null, ""), false, true, null));
         String oob = "<x xmlns='jabber:x:oob'><url>"+URL+"</url></x>";
         assertEquals("An older client's caption", read(stanza("An older client's caption", oob), false, true, "An older client's caption").caption);
+        ReplyReference reply = new ReplyReference("bob@example.org", "original").quoted("Original 😀");
+        Message repliedFile = stanza(reply.wireBody(URL), oob); reply.addTo(repliedFile);
+        assertEquals("", read(repliedFile, false, true, repliedFile.getBody()).caption, "Legacy file-only replies must not show the file URL as a caption");
         String invalidHash = description(URL, "<hash xmlns='urn:xmpp:hashes:2' algo='sha-256'>invalid</hash>");
         assertNull(read(stanza(URL, oob + invalidHash), false, true, URL).attachment, "Invalid SFS integrity metadata must not fall back to an unchecked OOB download");
     }
@@ -76,5 +79,40 @@ class FileShareTest {
             FileShare secret = new FileShare(description("aesgcm://example.org/photo.jpg#" + new String(new char[88]).replace('\0','a'), ""));
             assertThrows(IllegalArgumentException.class, () -> XmppMessage.sentFile(JidCreate.entityBareFrom("alice@example.org"), "bob@example.org", "file", secret, "Caption", null));
         } finally { file.delete(); }
+    }
+    @Test void cacheIdentityIncludesSizeAndCanonicalHashes() throws Exception {
+        String sha = java.util.Base64.getEncoder().encodeToString(new byte[32]);
+        String sha3 = java.util.Base64.getEncoder().encodeToString(new byte[32]);
+        String first = "<hash xmlns='urn:xmpp:hashes:2' algo='sha-256'>"+sha+"</hash>";
+        String second = "<hash xmlns='urn:xmpp:hashes:2' algo='sha3-256'>"+sha3+"</hash>";
+        assertEquals(URL, new FileShare(description(URL, "")).cacheKey());
+        FileShare expected = new FileShare(description(URL, "<size>4</size>"+first+second));
+        assertEquals(expected.cacheKey(), new FileShare(description(URL, second+first+"<size> 4 </size>")).cacheKey());
+        assertNotEquals(expected.cacheKey(), new FileShare(description(URL, "<size>5</size>"+first+second)).cacheKey());
+        assertNotEquals(expected.cacheKey(), new FileShare(description(URL, "<size>4</size>"+first)).cacheKey());
+        assertNotEquals(expected.cacheKey(), new FileShare(description("https://example.org/other.jpg", "<size>4</size>"+first+second)).cacheKey());
+        assertNotEquals(expected.cacheKey(), new FileShare(description(URL, "<size>4</size>"+first.replace(sha, "AQ"+sha.substring(2))+second)).cacheKey());
+        assertEquals(new FileShare(description(URL, first)).cacheKey(), new FileShare(description(URL, first.replace(sha, "\n "+sha+"\t"))).cacheKey());
+    }
+    @Test void snapshotKeepsStableBytesAndCleansFailedCopies() throws Exception {
+        java.nio.file.Path directory = Files.createTempDirectory("upload-snapshot-");
+        java.io.File source = directory.resolve("source.bin").toFile();
+        try {
+            Files.write(source.toPath(), new byte[]{1,2,3});
+            java.io.File snapshot = FileTransfer.snapshot(source, directory.toFile(), new FileTransfer.Job());
+            Files.write(source.toPath(), new byte[]{4,5,6});
+            assertArrayEquals(new byte[]{1,2,3}, Files.readAllBytes(snapshot.toPath())); snapshot.delete();
+            FileTransfer.Job cancelled = new FileTransfer.Job(); cancelled.cancel();
+            assertThrows(java.io.InterruptedIOException.class, () -> FileTransfer.snapshot(source, directory.toFile(), cancelled));
+            assertThrows(java.io.InterruptedIOException.class, () -> FileShare.describe(FileLink.parse(URL), source, "photo.jpg", "image/jpeg", cancelled));
+            assertEquals(1, directory.toFile().listFiles().length, "Cancelled snapshot must not leave temporary files");
+            java.io.File shortened = new java.io.File(source.getPath()) { @Override public long length() { return super.length() + 1; } };
+            assertThrows(FileTransfer.Failure.class, () -> FileTransfer.snapshot(shortened, directory.toFile(), new FileTransfer.Job()));
+            assertEquals(1, directory.toFile().listFiles().length, "An input that shrinks during copying must not leave a partial snapshot");
+            Files.write(source.toPath(), new byte[0]);
+            assertThrows(FileTransfer.Failure.class, () -> FileTransfer.snapshot(source, directory.toFile(), new FileTransfer.Job()));
+        } finally {
+            for (java.io.File file : directory.toFile().listFiles()) file.delete(); directory.toFile().delete();
+        }
     }
 }

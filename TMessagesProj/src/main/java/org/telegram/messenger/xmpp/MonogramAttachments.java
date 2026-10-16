@@ -16,6 +16,15 @@ public final class MonogramAttachments {
     public static boolean has(TLRPC.Message message) {
         return message != null && message.params != null && message.params.containsKey(PARAM);
     }
+    /** Android may otherwise linkify the host/fragment of an aesgcm URI as a browser URL. */
+    public static void suppressEncryptedLinks(CharSequence text) {
+        if (!(text instanceof android.text.Spannable)) return;
+        android.text.Spannable spans = (android.text.Spannable) text;
+        java.util.regex.Matcher links = java.util.regex.Pattern.compile("(?i)aesgcm://\\S+").matcher(text);
+        while (links.find()) {
+            for (android.text.style.URLSpan link : spans.getSpans(links.start(), links.end(), android.text.style.URLSpan.class)) spans.removeSpan(link);
+        }
+    }
     static File cache(Context context, String database, String url) throws Exception {
         byte[] hash = MessageDigest.getInstance("SHA-256").digest(url.getBytes("UTF-8"));
         StringBuilder name = new StringBuilder();
@@ -36,14 +45,7 @@ public final class MonogramAttachments {
         if (file.isFile()) BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
         if (bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth <= 12000 && bounds.outHeight <= 12000
                 && (long) bounds.outWidth * bounds.outHeight <= 50000000) {
-            TLRPC.TL_messageMediaPhoto media = new TLRPC.TL_messageMediaPhoto(); media.flags = 1;
-            TLRPC.TL_photo photo = new TLRPC.TL_photo(); photo.id = id; photo.date = date; photo.file_reference = new byte[0];
-            TLRPC.TL_photoSize_layer127 size = new TLRPC.TL_photoSize_layer127();
-            size.type = "x"; size.w = bounds.outWidth; size.h = bounds.outHeight; size.size = (int) file.length();
-            size.location = new TLRPC.TL_fileLocationToBeDeprecated();
-            size.location.volume_id = PHOTO_VOLUME; size.location.local_id = id; size.location.dc_id = Integer.MIN_VALUE;
-            size.location.file_reference = new byte[0]; photo.sizes.add(size); media.photo = photo;
-            return media;
+            return photo(id, date, bounds.outWidth, bounds.outHeight, file.length());
         }
         TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1;
         TLRPC.TL_document document = new TLRPC.TL_document(); document.id = id; document.date = date;
@@ -55,7 +57,17 @@ public final class MonogramAttachments {
         document.attributes.add(filename); media.document = document;
         return media;
     }
-    /** Temporary metadata for DownloadController; previews still require verified local bytes. */
+    private static TLRPC.MessageMedia photo(int id, int date, int width, int height, long length) {
+        TLRPC.TL_messageMediaPhoto media = new TLRPC.TL_messageMediaPhoto(); media.flags = 1;
+        TLRPC.TL_photo photo = new TLRPC.TL_photo(); photo.id = id; photo.date = date; photo.file_reference = new byte[0];
+        TLRPC.TL_photoSize_layer127 size = new TLRPC.TL_photoSize_layer127();
+        size.type = "x"; size.w = width; size.h = height; size.size = (int) Math.min(Integer.MAX_VALUE, Math.max(0, length));
+        size.location = new TLRPC.TL_fileLocationToBeDeprecated();
+        size.location.volume_id = PHOTO_VOLUME; size.location.local_id = id; size.location.dc_id = Integer.MIN_VALUE;
+        size.location.file_reference = new byte[0]; photo.sizes.add(size); media.photo = photo;
+        return media;
+    }
+    /** Native remote placeholders and DownloadController metadata; image pixels require verified local bytes. */
     public static TLRPC.MessageMedia remoteMedia(int id, String name, String contentType, long size) {
         String mime = contentType == null ? "application/octet-stream" : contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
         if (mime.equals("application/octet-stream") || mime.equals("binary/octet-stream")) {
@@ -63,15 +75,12 @@ public final class MonogramAttachments {
             String inferred = dot < 0 ? null : android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
             if (inferred != null) mime = inferred;
         }
-        if (mime.startsWith("image/")) {
-            TLRPC.TL_messageMediaPhoto media = new TLRPC.TL_messageMediaPhoto(); media.flags = 1;
-            media.photo = new TLRPC.TL_photo(); media.photo.id = id;
-            TLRPC.TL_photoSize photoSize = new TLRPC.TL_photoSize(); photoSize.type = "x"; photoSize.w = 1; photoSize.h = 1;
-            photoSize.size = (int) Math.min(Integer.MAX_VALUE, size); media.photo.sizes.add(photoSize);
-            return media;
-        }
+        if (mime.startsWith("image/")) return photo(id, 0, 1, 1, size);
         TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1;
-        media.document = new TLRPC.TL_document(); media.document.id = id; media.document.mime_type = mime; media.document.size = size;
+        media.document = new TLRPC.TL_document(); media.document.id = id; media.document.mime_type = mime; media.document.size = Math.max(0, size);
+        media.document.dc_id = Integer.MIN_VALUE; media.document.file_reference = new byte[0];
+        TLRPC.TL_documentAttributeFilename filename = new TLRPC.TL_documentAttributeFilename(); filename.file_name = name;
+        media.document.attributes.add(filename);
         if (mime.startsWith("video/")) media.document.attributes.add(new TLRPC.TL_documentAttributeVideo());
         else if (mime.startsWith("audio/")) media.document.attributes.add(new TLRPC.TL_documentAttributeAudio());
         return media;

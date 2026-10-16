@@ -1352,7 +1352,7 @@ public class FileLoader extends BaseController {
             TLRPC.FileLocation location = ((TLRPC.PhotoSize) attach).location;
             if (location != null && location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
                 File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(location.local_id);
-                if (local != null) return local;
+                return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-attachment-unavailable-" + location.local_id) : local;
             }
         }
         TLRPC.FileLocation profileLocation = attach instanceof TLRPC.PhotoSize ? ((TLRPC.PhotoSize) attach).location

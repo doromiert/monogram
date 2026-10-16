@@ -117,6 +117,37 @@ public class MonogramEditingTest {
         finally { reopened.close(); }
     }
 
+    @Test public void imageReceiverUsesIntegrityPathBeforeDownloadAndFailsClosedOnBadMetadata() throws Exception {
+        java.io.File source = java.io.File.createTempFile("image-source-", ".png", ApplicationLoader.applicationContext.getCacheDir());
+        java.nio.file.Files.write(source.toPath(), new byte[]{1,2,3});
+        com.negzero.monogram.xmpp.FileShare sharing = com.negzero.monogram.xmpp.FileShare.describe(
+                com.negzero.monogram.xmpp.FileLink.parse("https://example.org/photo.png"), source, "photo.png", "image/png");
+        int id = store.save(com.negzero.monogram.xmpp.XmppMessage.sentFile(org.jxmpp.jid.impl.JidCreate.entityFullFrom("alice@example.org/test"),
+                "bob@example.org", "photo", sharing, "Caption", null));
+        java.io.File expected = store.attachmentFile(sharing); assertFalse(expected.isFile());
+        TLRPC.TL_photoSize_layer127 size = new TLRPC.TL_photoSize_layer127();
+        size.location = new TLRPC.TL_fileLocationToBeDeprecated();
+        size.location.volume_id = MonogramAttachments.PHOTO_VOLUME; size.location.local_id = id;
+        org.telegram.messenger.ImageLocation location = new org.telegram.messenger.ImageLocation();
+        location.photoSize = size; location.location = (TLRPC.TL_fileLocationToBeDeprecated) size.location;
+        MonogramController[] instances = ReflectionHelpers.getStaticField(MonogramController.class, "instances");
+        instances[0] = controller;
+        try {
+            org.telegram.messenger.ImageReceiver receiver = new org.telegram.messenger.ImageReceiver();
+            ReflectionHelpers.setField(receiver, "currentAccount", 0);
+            receiver.setAllowLoadingOnAttachedOnly(true);
+            receiver.setImage(null, null, location, null, location, null, null, 3, "png", null, 0);
+            Object backup = ReflectionHelpers.getField(receiver, "setImageBackup");
+            org.telegram.messenger.ImageLocation image = ReflectionHelpers.getField(backup, "imageLocation");
+            assertEquals(expected.getAbsolutePath(), image.path);
+            assertNull(ReflectionHelpers.getField(backup, "thumbLocation"));
+            store.getWritableDatabase().execSQL("UPDATE attachments SET sharing='<broken/>' WHERE message=?", new Object[]{id});
+            receiver.setImage(null, null, location, null, location, null, null, 3, "png", null, 0);
+            assertNull(ReflectionHelpers.getField(backup, "imageLocation"));
+            assertNull(ReflectionHelpers.getField(backup, "thumbLocation"));
+        } finally { instances[0] = null; source.delete(); }
+    }
+
     @Test public void refusesForeignMissingUnreadableAndMediaTargets() throws Exception {
         int own = message("own", "Before", true, false, null);
         rejected(query(own, store.peer("other@example.org")));
