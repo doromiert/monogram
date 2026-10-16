@@ -30,7 +30,7 @@ public final class MonogramContactActivity extends UniversalFragment implements 
         NotificationCenter.getInstance(currentAccount).removeObserver(this,NotificationCenter.didUpdateConnectionState);
         super.onFragmentDestroy();
     }
-    @Override protected CharSequence getTitle() { return address==null ? "Contact requests" : "Contact authorization"; }
+    @Override protected CharSequence getTitle() { return address==null ? "Requests and invitations" : "Contact authorization"; }
     private void reload() {
         MonogramController controller=MonogramController.get(currentAccount);
         requests.clear(); requests.addAll(controller.pendingContactRequests()); state=null;
@@ -40,6 +40,8 @@ public final class MonogramContactActivity extends UniversalFragment implements 
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         if(address==null) {
             items.add(UItem.asHeader("Incoming contact requests"));
+            int roomInvites=MonogramController.get(currentAccount).pendingRoomInvitations().size();
+            if(roomInvites>0) items.add(UItem.asButton(11,"Room invitations ("+roomInvites+")"));
             if(requests.isEmpty()) items.add(UItem.asShadow("No pending contact requests."));
             for(int i=0;i<requests.size();i++) items.add(UItem.asButton(100+i,requests.get(i)));
         } else {
@@ -66,6 +68,7 @@ public final class MonogramContactActivity extends UniversalFragment implements 
         items.add(UItem.asButton(10,"XMPP connection"));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
+        if(item.id==11 && address==null) { presentFragment(new MonogramRoomActivity(currentAccount,0)); return; }
         if(item.id==10) { presentFragment(new MonogramConnectionActivity(currentAccount)); return; }
         if(address==null) {
             if(item.id>=100 && item.id-100<requests.size()) presentFragment(new MonogramContactActivity(currentAccount,requests.get(item.id-100)));

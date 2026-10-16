@@ -3258,7 +3258,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             monogramReconnectItem = menu.addItem(91002, R.drawable.msg_retry);
             monogramReconnectItem.setContentDescription(getString(R.string.MonogramReconnect));
             monogramContactRequestsItem=menu.addItem(91003,R.drawable.msg_addcontact);
-            monogramContactRequestsItem.setContentDescription("Contact requests");
+            monogramContactRequestsItem.setContentDescription("Contact requests and room invitations");
             checkUi_monogramReconnectVisibility();
             doneItem = new ActionBarMenuItem(context, null, getThemedColor(Theme.key_actionBarDefaultSelector), getThemedColor(Theme.key_actionBarDefaultIcon), true);
             doneItem.setText(LocaleController.getString(R.string.Done).toUpperCase());
@@ -14120,7 +14120,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 * (1f - Math.max(progressToActionMode, animatorActionModeVisible.getFloatValue()));
         FragmentFloatingButton.setAnimatedVisibility(monogramReconnectItem, connected ? 0 : factor);
         if(monogramContactRequestsItem!=null) FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,
-                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).pendingContactRequests().isEmpty() ? 0 : factor);
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).pendingContactRequests().isEmpty() && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).hasRoomInvitations() ? 0 : factor);
     }
 
     private void checkUi_itemPasscodeVisibility() {

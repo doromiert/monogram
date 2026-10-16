@@ -11548,4 +11548,7 @@
     <string name="MonogramJabberAddress">Jabber profile</string>
     <string name="MonogramProfilePublished">Published in your Jabber profile. Other profile fields are preserved when you save.</string>
     <string name="MonogramFavoriteAndRecentEmoji">Favorites and recent</string>
+    <string name="MonogramSavedGifsEmpty">Save a GIF from a chat to reuse it here.</string>
+    <string name="MonogramSearchSavedGifs">Search saved GIFs</string>
+    <string name="MonogramFavoriteEmoji">Favorite emoji</string>
 </resources>

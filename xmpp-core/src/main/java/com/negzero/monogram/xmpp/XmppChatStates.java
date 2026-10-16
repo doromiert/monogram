@@ -241,6 +241,7 @@ public final class XmppChatStates implements AutoCloseable {
             boolean room = rooms != null && rooms.known(peer);
             if (room && !rooms.canSendChatState(peer)) return;
             message = new Message(target, room ? Message.Type.groupchat : Message.Type.chat); message.addExtension(new ChatStateExtension(state));
+            org.jivesoftware.smackx.hints.element.NoStoreHint.set(message);
         }
         try {
             // Serialize with the privacy switch so disabling cannot leave a queued state send behind.

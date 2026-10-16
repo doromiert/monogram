@@ -312,6 +312,26 @@ public final class MonogramController {
                             publishTyping(peer, composing);
                         });
                     }
+                    @Override public void roomInvitation(String room,String inviter,String reason,String password) {
+                        worker.execute(() -> {
+                            if(sessionEpoch!=epoch || session==null || !preferences.contains("jid")) return;
+                            try {
+                                if(room.length()>3071 || inviter.length()>3071 || password!=null && password.length()>4096) return;
+                                org.json.JSONObject invites=roomInvitationData();
+                                if(!invites.has(room) && invites.length()>=64) return;
+                                org.json.JSONObject invite=new org.json.JSONObject();
+                                invite.put("inviter",inviter); invite.put("reason",reason==null ? "" : reason.substring(0,Math.min(512,reason.length())));
+                                org.json.JSONObject previous=invites.optJSONObject(room);
+                                invite.put("password",password==null || password.isEmpty() ? previous==null ? "" : previous.optString("password") : vault.encrypt(password));
+                                invites.put(room,invite);
+                                preferences.edit().putString(roomInvitationsKey(),invites.toString()).putBoolean("has-"+roomInvitationsKey(),invites.length()>0).commit();
+                                AndroidUtilities.runOnUIThread(() -> {
+                                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_CHAT_MEMBERS);
+                                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.contactsDidLoad);
+                                });
+                            } catch(Exception failed) { FileLog.e(failed); }
+                        });
+                    }
                     @Override public void roomTyping(org.jxmpp.jid.EntityFullJid occupant, boolean composing) {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null || !preferences.contains("jid") || composing && state != ConnectionsManager.ConnectionStateConnected) return;
@@ -500,6 +520,77 @@ public final class MonogramController {
     }
     public boolean isRoom(long dialog) { return dialog<0 && store.rooms().contains(dialog); }
     public String roomNickname(long dialog) { return store.room(dialog).nickname; }
+    private String roomInvitationsKey() { return "room-invitations-"+accountJid(); }
+    private org.json.JSONObject roomInvitationData() {
+        try { return new org.json.JSONObject(preferences.getString(roomInvitationsKey(),"{}")); }
+        catch(org.json.JSONException invalid) { return new org.json.JSONObject(); }
+    }
+    public boolean hasRoomInvitations() { return preferences.getBoolean("has-"+roomInvitationsKey(),false); }
+    public java.util.List<String> pendingRoomInvitations() {
+        ArrayList<String> result=new ArrayList<>(); roomInvitationData().keys().forEachRemaining(result::add); return result;
+    }
+    public String roomInvitationDescription(String room) {
+        org.json.JSONObject invite=roomInvitationData().optJSONObject(room);
+        return invite==null ? "" : "Invited by "+invite.optString("inviter")+(invite.optString("reason").isEmpty() ? "" : "\n"+invite.optString("reason"));
+    }
+    public String roomInvitationPassword(String room) {
+        org.json.JSONObject invite=roomInvitationData().optJSONObject(room);
+        String encrypted=invite==null ? "" : invite.optString("password");
+        try { return encrypted.isEmpty() ? "" : vault.decrypt(encrypted); } catch(Exception unavailable) { return ""; }
+    }
+    public void dismissRoomInvitation(String room) {
+        final long owner=accountEpoch;
+        worker.execute(() -> { if(accountEpoch!=owner) return; org.json.JSONObject invites=roomInvitationData(); invites.remove(room);
+            preferences.edit().putString(roomInvitationsKey(),invites.toString()).putBoolean("has-"+roomInvitationsKey(),invites.length()>0).commit();
+            AndroidUtilities.runOnUIThread(() -> {
+                                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_CHAT_MEMBERS);
+                                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.contactsDidLoad);
+                                }); });
+    }
+    public com.negzero.monogram.xmpp.XmppRooms.State roomState(long room) {
+        try { return session().rooms.state(store.jid(room)); } catch(Exception unavailable) { return null; }
+    }
+    public TLRPC.User roomOccupant(String address) {
+        long peer=store.knownOccupant(address); return peer==0 ? null : store.user(peer,self);
+    }
+    public void createRoom(String address,String nickname,String title,RequestDelegate callback) {
+        final long owner=accountEpoch,epoch=sessionEpoch;
+        roomWorker.execute(() -> {
+            try {
+                XmppSession expected=session();
+                if(accountEpoch!=owner || sessionEpoch!=epoch) throw new IllegalStateException("Account changed");
+                if(!org.jxmpp.jid.impl.JidCreate.from(address).isEntityBareJid()) throw new IllegalArgumentException("Enter a bare room address.");
+                expected.rooms.create(address,nickname,title);
+                worker.execute(() -> { if(accountEpoch==owner && sessionEpoch==epoch && session==expected) openRoom(address,nickname,"",callback); });
+            } catch(Exception failed) { roomResult(callback,failed); }
+        });
+    }
+    private String roomError(Exception error) {
+        if((error instanceof IllegalArgumentException || error instanceof IllegalStateException) && error.getMessage()!=null) return error.getMessage();
+        return com.negzero.monogram.xmpp.XmppRequestException.describe(error);
+    }
+    private interface RoomOperation { void run(com.negzero.monogram.xmpp.XmppRooms rooms,String address) throws Exception; }
+    private void roomOperation(long room,RoomOperation operation,Consumer<String> callback) {
+        final long owner=accountEpoch,epoch=sessionEpoch;
+        roomWorker.execute(() -> {
+            String failure=null;
+            try {
+                if(accountEpoch!=owner || sessionEpoch!=epoch) throw new IllegalStateException("Account changed");
+                XmppSession expected=session(); operation.run(expected.rooms,store.jid(room));
+                if(accountEpoch!=owner || sessionEpoch!=epoch || session!=expected) throw new IllegalStateException("Account changed");
+            } catch(Exception failed) { failure=roomError(failed); }
+            final String error=failure;
+            AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==owner && sessionEpoch==epoch) callback.accept(error); });
+        });
+    }
+    public void roomAffiliations(long room,java.util.function.BiConsumer<java.util.Map<String,String>,String> callback) {
+        final java.util.concurrent.atomic.AtomicReference<java.util.Map<String,String>> found=new java.util.concurrent.atomic.AtomicReference<>();
+        roomOperation(room,(rooms,jid) -> found.set(rooms.affiliations(jid)),error -> callback.accept(found.get(),error));
+    }
+    public void roomAffiliation(long room,String address,String affiliation,Consumer<String> callback) { roomOperation(room,(rooms,jid) -> rooms.affiliation(jid,address,affiliation),callback); }
+    public void inviteToRoom(long room,String address,Consumer<String> callback) { roomOperation(room,(rooms,jid) -> rooms.invite(jid,address,"Join us in this room"),callback); }
+    public void changeRoomSubject(long room,String subject,Consumer<String> callback) { roomOperation(room,(rooms,jid) -> rooms.subject(jid,subject),callback); }
+    public void roomMemberAction(long room,com.negzero.monogram.xmpp.XmppRooms.Occupant occupant,com.negzero.monogram.xmpp.XmppRooms.MemberAction action,Consumer<String> callback) { roomOperation(room,(rooms,jid) -> rooms.memberAction(jid,occupant,action),callback); }
     public void openRoom(String address,String nickname,String password,RequestDelegate callback) {
         long epoch=sessionEpoch,owner=accountEpoch;
         worker.execute(() -> {
@@ -522,7 +613,7 @@ public final class MonogramController {
                         com.negzero.monogram.xmpp.XmppRooms.State room=expected.rooms.join(jid,nickname,secret.isEmpty() ? null : secret);
                         worker.execute(() -> {
                             if(session!=expected || sessionEpoch!=epoch || accountEpoch!=owner) return;
-                            long dialog=store.room(jid,room.nickname); store.roomState(room,self); dirtyRoomBookmark(dialog); publishRoom(dialog);
+                            long dialog=store.room(jid,room.nickname); store.roomState(room,self); dirtyRoomBookmark(dialog); publishRoom(dialog); dismissRoomInvitation(jid);
                             TLRPC.Chat chat=store.roomChat(dialog); TLRPC.TL_messages_dialogs cached=dialogs();
                             AndroidUtilities.runOnUIThread(() -> {
                                 if(sessionEpoch!=epoch || accountEpoch!=owner) return;
@@ -536,7 +627,7 @@ public final class MonogramController {
         });
     }
     private void roomResult(RequestDelegate callback,Exception failure) {
-        TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400; error.text=failure.getClass().getSimpleName();
+        TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400; error.text=roomError(failure);
         AndroidUtilities.runOnUIThread(() -> callback.run(null,error));
     }
     public void changeRoomNickname(long dialog,String nickname,RequestDelegate callback) {

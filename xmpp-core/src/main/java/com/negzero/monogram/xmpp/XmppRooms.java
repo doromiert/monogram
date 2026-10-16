@@ -17,10 +17,14 @@ import org.jxmpp.jid.parts.Resourcepart;
 /** Blocking room discovery, membership and messaging without a server helper. */
 public final class XmppRooms implements AutoCloseable {
     public static final class Occupant {
-        public final String address,nickname,realJid;
-        Occupant(EntityFullJid address,org.jivesoftware.smackx.muc.Occupant occupant) {
+        public final String address,nickname,realJid,role,affiliation;
+        private final Presence presence;
+        Occupant(EntityFullJid address,org.jivesoftware.smackx.muc.Occupant occupant,Presence presence) {
+            this.presence=presence;
             this.address=address.toString(); nickname=address.getResourcepart().toString();
             realJid=occupant==null || occupant.getJid()==null ? null : occupant.getJid().asBareJid().toString();
+            role=occupant==null || occupant.getRole()==null ? "" : occupant.getRole().toString();
+            affiliation=occupant==null || occupant.getAffiliation()==null ? "" : occupant.getAffiliation().toString();
         }
     }
     public static final class State {
@@ -36,7 +40,7 @@ public final class XmppRooms implements AutoCloseable {
             role=own==null || own.getRole()==null ? "" : own.getRole().toString();
             affiliation=own==null || own.getAffiliation()==null ? "" : own.getAffiliation().toString();
             List<Occupant> found=new ArrayList<>();
-            for (EntityFullJid jid:chat.getOccupants()) found.add(new Occupant(jid,chat.getOccupant(jid)));
+            for (EntityFullJid jid:chat.getOccupants()) found.add(new Occupant(jid,chat.getOccupant(jid),chat.getOccupantPresence(jid)));
             occupants=Collections.unmodifiableList(found);
         }
     }
@@ -59,11 +63,41 @@ public final class XmppRooms implements AutoCloseable {
         this.connection=connection; this.omemo=omemo; this.listener=listener; this.deviceLookup=deviceLookup;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
-        MultiUserChatManager.getInstanceFor(connection).setAutoJoinOnReconnect(false);
+        MultiUserChatManager manager=MultiUserChatManager.getInstanceFor(connection);
+        manager.setAutoJoinOnReconnect(false);
+        manager.addInvitationListener((conn,room,inviter,reason,password,message,invitation) -> {
+            if(inviter==null || staleInvitation(message)) return;
+            invitation(room.getRoom(),inviter.toString(),reason,password);
+        });
+        org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("x","jabber:x:conference",
+                org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature("jabber:x:conference");
+        connection.addSyncStanzaListener(stanza -> {
+            Message message=(Message)stanza;
+            if(closed || connection.getUser()==null || message.getFrom()==null || !message.getFrom().isEntityJid()
+                    || message.getFrom().asBareJid().equals(connection.getUser().asBareJid())
+                    || message.getType()!=Message.Type.normal && message.getType()!=Message.Type.chat || staleInvitation(message)
+                    || message.getTo()!=null && !message.getTo().asBareJid().equals(connection.getUser().asBareJid())) return;
+            List<ExtensionElement> extensions=message.getExtensions("x","jabber:x:conference");
+            if(extensions.size()!=1 || !(extensions.get(0) instanceof StandardExtensionElement)) return;
+            StandardExtensionElement invite=(StandardExtensionElement)extensions.get(0);
+            try {
+                Jid room=JidCreate.from(invite.getAttributeValue("jid"));
+                if(room.isEntityBareJid()) invitation(room.asEntityBareJidOrThrow(),message.getFrom().toString(),invite.getAttributeValue("reason"),invite.getAttributeValue("password"));
+            } catch(Exception invalid) { /* An invalid invitation cannot create or join a room. */ }
+        },stanza -> stanza instanceof Message && stanza.hasExtension("x","jabber:x:conference"));
         omemo.addOmemoMucMessageListener((chat,stanza,clear) -> {
             if (!clear.isKeyTransportMessage() && stanza instanceof Message && !stanza.hasExtension("encrypted",XmppOmemo2.NS) && chats.get(chat.getRoom())==chat)
                 deliver(chat,(Message)stanza,clear.getBody(),true,true);
         });
+    }
+    private static boolean staleInvitation(Message message) {
+        return message.hasExtension("urn:xmpp:delay") || message.hasExtension("jabber:x:delay") || message.hasExtension("urn:xmpp:forward:0")
+                || message.hasExtension("urn:xmpp:carbons:2") || message.hasExtension("urn:xmpp:mam:2") || message.hasExtension("urn:xmpp:mam:1");
+    }
+    private void invitation(EntityBareJid room,String inviter,String reason,String password) {
+        MultiUserChat current=chats.get(room);
+        if(!closed && (current==null || !current.isJoined())) listener.roomInvitation(room.toString(),inviter,reason,password);
     }
     public List<DomainBareJid> services() throws Exception { return MultiUserChatManager.getInstanceFor(connection).getMucServiceDomains(); }
     public Collection<HostedRoom> discover(String service) throws Exception {
@@ -118,6 +152,103 @@ public final class XmppRooms implements AutoCloseable {
         if(password!=null) passwords.put(chat.getRoom(),password);
         State state=new State(chat,info.getName()); listener.roomChanged(state); return state;
     }
+    public State create(String jid,String nickname,String title) throws Exception {
+        MultiUserChat chat=managed(jid);
+        chat.create(Resourcepart.from(nickname));
+        try {
+            org.jivesoftware.smackx.xdata.form.FillableForm form=chat.getConfigurationForm().getFillableForm();
+            if(form.getField("muc#roomconfig_membersonly")==null || form.getField("muc#roomconfig_whois")==null)
+                throw new IllegalStateException("This server does not offer the private room settings required for OMEMO.");
+            form.setAnswer("muc#roomconfig_membersonly",true);
+            form.setAnswer("muc#roomconfig_whois","anyone");
+            if(form.getField("muc#roomconfig_persistentroom")!=null) form.setAnswer("muc#roomconfig_persistentroom",true);
+            if(form.getField("muc#roomconfig_publicroom")!=null) form.setAnswer("muc#roomconfig_publicroom",false);
+            if(form.getField("muc#roomconfig_roomname")!=null) form.setAnswer("muc#roomconfig_roomname",title);
+            chat.sendConfigurationForm(form);
+            RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
+            if(!info.isMembersOnly() || !info.isNonanonymous()) throw new IllegalStateException("The server did not apply the required private room settings.");
+            return join(jid,nickname,null);
+        } catch(Exception failed) {
+            try { chat.leave(); } catch(Exception ignored) { }
+            throw new XmppRequestException("The room was created, but setup could not be completed. Its owner can configure it and rejoin",failed);
+        }
+    }
+    public void invite(String jid,String address,String reason) throws Exception {
+        MultiUserChat chat=chat(jid);
+        if(!chat.isJoined()) throw new IllegalStateException("Join the room before inviting someone.");
+        Jid target=JidCreate.from(address);
+        if(!target.isEntityBareJid()) throw new IllegalArgumentException("Enter a bare Jabber address.");
+        chat.invite(target.asEntityBareJidOrThrow(),reason);
+    }
+    public enum MemberAction { KICK, GRANT_VOICE, REVOKE_VOICE, GRANT_MODERATOR, REVOKE_MODERATOR, GRANT_MEMBERSHIP, REVOKE_MEMBERSHIP }
+    public void memberAction(String jid,Occupant selected,MemberAction action) throws Exception {
+        MultiUserChat chat=chat(jid);
+        EntityFullJid from=JidCreate.entityFullFrom(selected.address);
+        if(!from.asEntityBareJid().equals(chat.getRoom()) || !chat.isJoined()) throw new IllegalArgumentException("The participant is not in this room.");
+        org.jivesoftware.smackx.muc.Occupant member=chat.getOccupant(from);
+        if(member==null) throw new IllegalStateException("This participant is no longer in the room.");
+        String currentJid=member.getJid()==null ? null : member.getJid().asBareJid().toString();
+        Presence currentPresence=chat.getOccupantPresence(from);
+        if(!Objects.equals(selected.realJid,currentJid) || selected.realJid==null && selected.presence!=currentPresence
+                && (!stableOccupants.contains(chat.getRoom()) || occupantId(selected.presence)==null || !occupantId(selected.presence).equals(occupantId(currentPresence))))
+            throw new IllegalStateException("This participant changed. Refresh the list before trying again.");
+        if(from.getResourcepart().equals(chat.getNickname())) throw new IllegalArgumentException("Select another participant.");
+        switch(action) {
+            case KICK: chat.kickParticipant(from.getResourcepart(),"Removed by a room moderator"); break;
+            case GRANT_VOICE: chat.grantVoice(from.getResourcepart()); break;
+            case REVOKE_VOICE: chat.revokeVoice(from.getResourcepart()); break;
+            case GRANT_MODERATOR: chat.grantModerator(from.getResourcepart()); break;
+            case REVOKE_MODERATOR: chat.revokeModerator(from.getResourcepart()); break;
+            case GRANT_MEMBERSHIP: case REVOKE_MEMBERSHIP:
+                if(member.getJid()==null) throw new IllegalStateException("This room does not disclose the participant's Jabber address.");
+                if(action==MemberAction.GRANT_MEMBERSHIP) chat.grantMembership(member.getJid().asBareJid());
+                else chat.revokeMembership(member.getJid().asBareJid());
+                break;
+        }
+        queueState(chat);
+    }
+    public Map<String,String> affiliations(String jid) throws Exception {
+        MultiUserChat chat=chat(jid);
+        if(!chat.isJoined()) throw new IllegalStateException("Join the room before managing memberships.");
+        Map<MUCAffiliation,org.jivesoftware.smack.StanzaCollector> queries=new LinkedHashMap<>();
+        Map<String,String> result=new TreeMap<>();
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(connection.getReplyTimeout());
+        try {
+            for(MUCAffiliation affiliation:new MUCAffiliation[]{MUCAffiliation.member,MUCAffiliation.admin,MUCAffiliation.owner,MUCAffiliation.outcast}) {
+                org.jivesoftware.smackx.muc.packet.MUCAdmin query=new org.jivesoftware.smackx.muc.packet.MUCAdmin();
+                query.setTo(chat.getRoom()); query.setType(IQ.Type.get);
+                query.addItem(new org.jivesoftware.smackx.muc.packet.MUCItem(affiliation));
+                queries.put(affiliation,connection.createStanzaCollectorAndSend(query));
+            }
+            for(Map.Entry<MUCAffiliation,org.jivesoftware.smack.StanzaCollector> query:queries.entrySet()) {
+                org.jivesoftware.smackx.muc.packet.MUCAdmin answer;
+                try { answer=query.getValue().nextResultOrThrow(Math.max(1,java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline-System.nanoTime()))); }
+                catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
+                catch(Exception failed) { throw new XmppRequestException("Room "+query.getKey()+" list",failed); }
+                for(org.jivesoftware.smackx.muc.packet.MUCItem member:answer.getItems()) {
+                    if(member.getJid()==null || !member.getJid().isEntityBareJid()) throw new IllegalStateException("The room returned an invalid member address.");
+                    String address=member.getJid().toString(),previous=result.put(address,query.getKey().toString());
+                    if(previous!=null && !previous.equals(query.getKey().toString())) throw new IllegalStateException("Membership changed while loading. Refresh the list.");
+                }
+            }
+            return Collections.unmodifiableMap(result);
+        } finally { for(org.jivesoftware.smack.StanzaCollector query:queries.values()) query.cancel(); }
+    }
+    public void affiliation(String jid,String address,String affiliation) throws Exception {
+        MultiUserChat chat=chat(jid); Jid target=JidCreate.from(address);
+        if(!chat.isJoined()) throw new IllegalStateException("Join the room before changing memberships.");
+        if(!target.isEntityBareJid()) throw new IllegalArgumentException("Enter a bare Jabber address.");
+        if(target.equals(connection.getUser().asBareJid())) throw new IllegalArgumentException("Use another owner to change your own membership.");
+        switch(affiliation) {
+            case "member": chat.grantMembership(target); break;
+            case "none": chat.revokeMembership(target); break;
+            case "outcast": chat.banUser(target,"Removed by a room administrator"); break;
+            case "admin": chat.grantAdmin(target); break;
+            default: throw new IllegalArgumentException("Unsupported membership change.");
+        }
+        queueState(chat);
+    }
+    public void subject(String jid,String subject) throws Exception { chat(jid).changeSubject(subject); }
     private void deliver(MultiUserChat chat,Message wire,String body,boolean encrypted,boolean readable) {
         if (!encrypted && body==null && !wire.hasExtension("reactions",MessageReactions.NAMESPACE) && !wire.hasExtension("file-sharing",FileShare.NAMESPACE)) return;
         XmppRoomMessage message=XmppRoomMessage.from(wire,chat.getRoom(),connection.getUser().asEntityBareJid(),

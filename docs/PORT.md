@@ -232,3 +232,18 @@ Verification includes the local Prosody room scenario with plain captioned file 
 
 
 [0.2.19](https://github.com/doromiert/monogram/releases/tag/v0.2.19) is published from `9470043d54a8238ceedccc5d0d7ac9fd68c94cbf` and installed through ADB on `192.168.1.128:42659` (71949). The APK is 79,658,398 bytes, SHA-256 `fbdb87f258c1d0923d32451dbbd4d0ce8e3d0334e3c75261326e4b13ce37f82b`; GitHub's digest and source tag match. Twenty Android checks, the expanded room/file scenario and reconnect scenario pass. Installation preserves the saved login/credential, legacy OMEMO device/identity, all 2,787 existing message identities, seven rooms and original first-install time; the cache remains schema 13. Proof is recorded in `.state/muc-files-*`. No phone navigation or real-contact test messages were performed. A user retry is requested for the actual SGH timeout and media behavior.
+
+
+## Overnight implementation pass (0.2.31 candidate)
+
+Tests are deferred until tomorrow at the user’s request. Compilation alone does not establish phone interaction or server interoperability.
+
+The native chat subtitle now prioritizes direct/group typing, then roster-authorized aggregated online status or optional server-provided last activity. It no longer uses encryption mode as the status line. Room typing uses current joined occupants, rejects delayed/forwarded state, expires on pause/leave/disconnect, follows the existing privacy toggle and refreshes Telegram’s shorter-lived rendering while the XMPP composing state remains active. Standalone notifications request no archival storage.
+
+The keyboard has a distinct Favorite emoji section and star tab, separate from Recently used. Favorites remain in the collapsed reaction prefix with its divider. Both controls use the same persistent standard-emoji favorites.
+
+GIF bytes are recognized as animated documents rather than still photographs, including previously cached still-photo metadata. The native GIF picker stores and removes favorites locally, restores their verified file paths after restart, filters saved filenames and resends local files/captions through the ordinary XMPP upload path. Telegram GIF list/save/search requests are removed from this path. Online provider search remains unfinished.
+
+MUC controls add members-only/non-anonymous private room creation, mediated and [direct invitations](https://xmpp.org/extensions/xep-0249.html), an explicit review/join/dismiss flow, encrypted-at-rest invitation passwords, a homescreen requests entry, participant/profile rows, invitations/topics and server-authorized kick/voice/moderator/member actions. Confirmed actions recheck disclosed identity or occupant continuity to avoid acting on a reused nickname. No invitation joins automatically or grants OMEMO trust. Offline member/admin/owner/ban lists are fetched in parallel on explicit request; membership/ban changes use stable bare account addresses with confirmation, and administrator promotion is offered only to owners. General existing-room configuration and ownership transfer remain pending.
+
+The existing XMPP connection page also shows Android battery optimization exemption state and offers explicit system exemption/app-settings actions, with a fallback when a vendor does not expose them. It does not automatically change battery policy; prolonged background/ColorOS behavior is still unverified.

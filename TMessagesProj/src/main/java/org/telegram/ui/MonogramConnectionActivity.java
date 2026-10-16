@@ -35,13 +35,27 @@ public final class MonogramConnectionActivity extends UniversalFragment implemen
         if(failure!=null) items.add(UItem.asShadow("Last disconnect: "+failure));
         items.add(UItem.asButton(1, R.drawable.msg_retry, "Reconnect").accent().setEnabled(state != ConnectionsManager.ConnectionStateConnecting));
         items.add(UItem.asShadow("Monogram retries automatically when the connection drops. Reconnecting uses your saved login and preserves your messages and OMEMO keys."));
-        items.add(UItem.asShadow("If your phone restricts Monogram in the background, check its battery and background data settings."));
-        items.add(UItem.asButton(2,"Contact requests",Integer.toString(MonogramController.get(currentAccount).pendingContactRequests().size())));
+        android.os.PowerManager power=(android.os.PowerManager)getContext().getSystemService(android.content.Context.POWER_SERVICE);
+        boolean unrestricted=power!=null && power.isIgnoringBatteryOptimizations(getContext().getPackageName());
+        items.add(UItem.asHeader("Background connection"));
+        items.add(UItem.asButton(3,unrestricted ? "Battery optimization exemption enabled" : "Allow unrestricted background connection").setEnabled(!unrestricted));
+        items.add(UItem.asButton(4,"App battery and background settings"));
+        items.add(UItem.asShadow("Monogram keeps its XMPP connection in a foreground notification. Android battery optimization and additional phone-specific restrictions can still interrupt it; allow background activity in the system settings."));
+        items.add(UItem.asButton(2,"Requests and invitations",Integer.toString(MonogramController.get(currentAccount).pendingContactRequests().size()+MonogramController.get(currentAccount).pendingRoomInvitations().size())));
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.id == 1) MonogramController.get(currentAccount).reconnect();
         else if(item.id==2) presentFragment(new MonogramContactActivity(currentAccount,null));
+        else if(item.id==3 || item.id==4) {
+            android.content.Intent intent=new android.content.Intent(item.id==3 ? android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS : android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:"+getContext().getPackageName()));
+            try { getParentActivity().startActivity(intent); }
+            catch(android.content.ActivityNotFoundException | SecurityException unsupported) {
+                try { getParentActivity().startActivity(new android.content.Intent(android.provider.Settings.ACTION_SETTINGS)); } catch(android.content.ActivityNotFoundException | SecurityException unavailable) { }
+            }
+        }
     }
+    @Override public void onResume() { super.onResume(); if(listView!=null) listView.adapter.update(true); }
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
     @Override public void didReceivedNotification(int id, int account, Object... args) { if (listView != null) listView.adapter.update(true); }
 }

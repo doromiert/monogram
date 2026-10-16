@@ -83,6 +83,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
 
     public EmojiTabButton toggleEmojiStickersTab;
     public EmojiTabButton recentTab;
+    private EmojiTabButton favoriteTab;
     public EmojiTabButton giftsTab;
     private EmojiTabButton settingsTab;
     private EmojiTabsView emojiTabs;
@@ -171,7 +172,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                                 lastX.put(id, x);
                             }
                             if (child == recentTab && !recentIsShown || child == giftsTab && !giftsIsShown) {
-                                continue;
+                                child.layout(0, 0, 0, 0); continue;
                             }
                             x += child.getMeasuredWidth() + AndroidUtilities.dp(3);
                         }
@@ -192,11 +193,12 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                         }
                     }
                 } else {
-                    final int childCount = getChildCount() - (!recentIsShown ? 1 : 0) - (!giftsIsShown ? 1 : 0);
+                    final int childCount = getChildCount() - (recentTab!=null && !recentIsShown ? 1 : 0) - (giftsTab!=null && !giftsIsShown ? 1 : 0);
                     int margin = (int) ((r - l - getPaddingLeft() - getPaddingRight() - childCount * AndroidUtilities.dp(30)) / (float) Math.max(1, childCount - 1));
                     int x = getPaddingLeft();
-                    for (int i = 0; i < childCount; ++i) {
-                        View child = getChildAt((!recentIsShown ? 1 : 0) + (!giftsIsShown ? 1 : 0) + i);
+                    for (int i = 0; i < getChildCount(); ++i) {
+                        View child = getChildAt(i);
+                        if (child == recentTab && !recentIsShown || child == giftsTab && !giftsIsShown) { child.layout(0, 0, 0, 0); continue; }
                         if (child != null) {
                             child.layout(x, cy - child.getMeasuredHeight() / 2, x + child.getMeasuredWidth(), cy + child.getMeasuredHeight() / 2);
                             x += child.getMeasuredWidth() + margin;
@@ -252,7 +254,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                 getChildBounds(selectFrom, from);
                 getChildBounds(selectTo, to);
                 AndroidUtilities.lerp(from, to, selectT - selectFrom, rect);
-                float isEmojiTabs = emojiTabs == null ? 0 : 1f - Utilities.clamp01(Math.abs(selectT - (1 + (giftsTab != null ? 1 : 0))));
+                float isEmojiTabs = emojiTabs == null ? 0 : 1f - Utilities.clamp01(Math.abs(selectT - (1 + (giftsTab != null ? 1 : 0) + (favoriteTab != null ? 1 : 0))));
                 float isMiddle = 4f * selectAnimationT * (1f - selectAnimationT);
                 float hw = rect.width() / 2 * (1f + isMiddle * .3f);
                 float hh = rect.height() / 2 * (1f - isMiddle * .05f);
@@ -364,6 +366,20 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
             }
             updateClickListeners();
         }
+    }
+
+    public void showFavorites(boolean show) {
+        if (show == (favoriteTab != null)) return;
+        if (show) {
+            favoriteTab = new EmojiTabButton(getContext(), R.drawable.emoji_tabs_faves, false, false);
+            favoriteTab.id = (long) "favorites".hashCode();
+            favoriteTab.setContentDescription(LocaleController.getString(R.string.MonogramFavoriteEmoji));
+            contentView.addView(favoriteTab, 0); packsIndexStart++;
+        } else {
+            contentView.removeView(favoriteTab); favoriteTab = null; packsIndexStart--;
+        }
+        updateClickListeners(); requestLayout();
+        select(Math.max(0, selectedFullIndex + (show ? 1 : -1)), false);
     }
 
     public void showRecentTabStub(boolean show) {
@@ -657,6 +673,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
     }
 
     public void updateColors() {
+        if (favoriteTab != null) favoriteTab.updateColor();
         if (recentTab != null) {
             recentTab.updateColor();
         }
@@ -671,8 +688,8 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
         if (toggleEmojiStickersTab != null) {
             index++;
         }
-        if (!recentIsShown || toggleEmojiStickersTab != null) {
-            index = Math.max(1, index);
+        if (!recentIsShown && (favoriteTab == null || index == 1) || toggleEmojiStickersTab != null) {
+            index = Math.max(favoriteTab == null ? 1 : 2, index);
         }
         selectedFullIndex = index;
         final int wasSelected = selected;

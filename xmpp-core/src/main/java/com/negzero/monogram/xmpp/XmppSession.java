@@ -40,6 +40,7 @@ public final class XmppSession implements AutoCloseable {
         default void profileChanged(org.jxmpp.jid.Jid jid) { profileChanged(jid.asEntityBareJidIfPossible()); }
         default void roomMessage(XmppRoomMessage message) {}
         default void roomChanged(XmppRooms.State room) {}
+        default void roomInvitation(String room,String inviter,String reason,String password) {}
         default void bookmarksChanged() {}
         default void reactionRejected(String from,String id) {}
         default void contactRequest(String address,boolean pending) {}
