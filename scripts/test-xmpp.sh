@@ -5,6 +5,8 @@ for command in prosody prosodyctl openssl keytool mvn; do
     command -v "$command" >/dev/null || { echo "Run inside nix develop .#test" >&2; exit 1; }
 done
 mkdir -p .state
+./scripts/build-omemo2.sh host > .state/omemo2-host-build.log 2>&1
+export MONOGRAM_OMEMO2=1
 state=$(mktemp -d "$PWD/.state/integration.XXXXXX")
 server_pid=
 cleanup() {
@@ -62,7 +64,7 @@ for _ in range(100):
 else: raise SystemExit('Prosody did not start')
 PY
 export MONOGRAM_IT=1 MONOGRAM_IT_PORT="$port" MONOGRAM_IT_STATE="$state" MONOGRAM_IT_HTTPS_PORT="$https_port"
-mvn -f xmpp-core/pom.xml clean test -DargLine="-Djavax.net.ssl.trustStore=$state/trust.p12 -Djavax.net.ssl.trustStorePassword=monogram-test"
+mvn -f xmpp-core/pom.xml clean test -DargLine="-Xcheck:jni -Djava.library.path=$PWD/.state/omemo2-host -Djavax.net.ssl.trustStore=$state/trust.p12 -Djavax.net.ssl.trustStorePassword=monogram-test"
 if [ -n "${MONOGRAM_ANDROID_DEVICE:-}" ]; then
     ./scripts/test-android-store.sh "$MONOGRAM_ANDROID_DEVICE"
 fi

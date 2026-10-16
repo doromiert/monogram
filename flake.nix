@@ -6,12 +6,16 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    libomemo-c = {
+      url = "github:dino/libomemo-c/1f0b37fee3ebefc46c32f882623481899a1ba568";
+      flake = false;
+    };
     android-nixpkgs = {
       url = "github:tadfisher/android-nixpkgs";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
-  outputs = { nixpkgs, android-nixpkgs, rust-overlay, ... }:
+  outputs = { nixpkgs, android-nixpkgs, rust-overlay, libomemo-c, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; overlays = [ rust-overlay.overlays.default ]; config.allowUnfree = true; };
@@ -27,14 +31,18 @@
       nixosModules.monogramHelper = import ./server/nixos-module.nix;
       devShells.${system} = {
       test = pkgs.mkShell {
-        packages = [ pkgs.jdk11 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 ];
+        packages = [ pkgs.jdk11 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.check pkgs.gcc pkgs.protobufc pkgs.meson ];
+        LIBOMEMO_C_SOURCE = libomemo-c.outPath;
+        PROTOBUF_C_SOURCE = pkgs.protobufc.src;
         JAVA_HOME = "${pkgs.jdk11}/lib/openjdk";
         shellHook = ''
           export MAVEN_OPTS="-Dmaven.repo.local=$PWD/.m2/repository ''${MAVEN_OPTS:-}"
         '';
       };
       default = pkgs.mkShell {
-        packages = [ pkgs.jdk21 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.git pkgs.go pkgs.ninja pkgs.yasm pkgs.nasm pkgs.perl pkgs.pkg-config pkgs.cmake pkgs.meson pkgs.gperf pkgs.zlib pkgs.autoconf pkgs.automake pkgs.libtool rust sdk ];
+        packages = [ pkgs.jdk21 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.git pkgs.go pkgs.ninja pkgs.yasm pkgs.nasm pkgs.perl pkgs.pkg-config pkgs.cmake pkgs.meson pkgs.gperf pkgs.zlib pkgs.autoconf pkgs.automake pkgs.libtool pkgs.check pkgs.protobufc rust sdk ];
+        LIBOMEMO_C_SOURCE = libomemo-c.outPath;
+        PROTOBUF_C_SOURCE = pkgs.protobufc.src;
         JAVA_HOME = "${pkgs.jdk21}/lib/openjdk";
         ANDROID_HOME = "${sdk}/share/android-sdk";
         ANDROID_SDK_ROOT = "${sdk}/share/android-sdk";

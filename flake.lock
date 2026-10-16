@@ -61,6 +61,23 @@
         "type": "github"
       }
     },
+    "libomemo-c": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1740756657,
+        "narHash": "sha256-HoZykdGVDsj4L5yN3SHGF5tjMq5exJyC15zTLBlpX/c=",
+        "owner": "dino",
+        "repo": "libomemo-c",
+        "rev": "1f0b37fee3ebefc46c32f882623481899a1ba568",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dino",
+        "repo": "libomemo-c",
+        "rev": "1f0b37fee3ebefc46c32f882623481899a1ba568",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1788752844,
@@ -80,6 +97,7 @@
     "root": {
       "inputs": {
         "android-nixpkgs": "android-nixpkgs",
+        "libomemo-c": "libomemo-c",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       }

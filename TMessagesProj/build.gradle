@@ -146,7 +146,7 @@ android {
             cmake {
                 version '3.22.1'
                 arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
-                targets 'tmessages.49'
+                targets 'tmessages.49', 'monogram_omemo2'
             }
         }
     }
@@ -267,3 +267,9 @@ task checkVisibility {
 }
 
 preBuild.dependsOn checkVisibility
+
+// The same JNI ratchet can be exercised with the real Android SQLite adapter on the host.
+tasks.withType(Test).configureEach {
+    systemProperty 'monogram.omemo2.library', rootProject.file('.state/omemo2-host/libmonogram_omemo2.so').absolutePath
+    systemProperty 'java.library.path', rootProject.file('.state/omemo2-host').absolutePath + File.pathSeparator + System.getProperty('java.library.path')
+}

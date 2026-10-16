@@ -6,6 +6,8 @@ The earlier prototype used [Telegram-FOSS-Team/Telegram-FOSS](https://github.com
 
 Upstream code is GPL-2.0-or-later; new Monogram code is GPL-3.0-or-later. Keep upstream copyright notices and publish corresponding source with distributed binaries.
 
+The `modern-omemo` development branch adds [Dino/libomemo-c](https://github.com/dino/libomemo-c), pinned to `1f0b37fee3ebefc46c32f882623481899a1ba568` by `flake.lock` (NAR hash `sha256-HoZykdGVDsj4L5yN3SHGF5tjMq5exJyC15zTLBlpX/c=`). It is a GPL-3.0 fork of libsignal-protocol-c with the newer OMEMO ratchet, XEdDSA/Ed25519 and protobuf format. The source remains immutable in the Nix store; Monogram's CMake wrapper regenerates protocol sources into build outputs rather than modifying upstream files. `protobuf-c` 1.5.2 source/compiler come from the existing pinned nixpkgs input. Native JNI glue is GPL-3.0-or-later; host tests use Nix OpenSSL, while Android reuses the BoringSSL source/build already supplied by the official Telegram base. The new module is not a complete XMPP OMEMO2 implementation yet.
+
 ---
 
 ## Telegram messenger for Android
