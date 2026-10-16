@@ -22,6 +22,31 @@ public class MonogramRoomStoreTest {
         org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
     }
     final String room="friends@conference.example.org", own="alice@example.org";
+    @Test public void recipientChoicesPersistPerAccountAndRoomWithoutChangingTrust() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); org.telegram.messenger.ApplicationLoader.applicationContext=context;
+        android.content.SharedPreferences prefs=context.getSharedPreferences("monogram-0",Context.MODE_PRIVATE); prefs.edit().clear().putString("jid",own).commit();
+        MonogramController controller=org.robolectric.util.ReflectionHelpers.callConstructor(MonogramController.class,org.robolectric.util.ReflectionHelpers.ClassParameter.from(int.class,0));
+        MonogramStore store=org.robolectric.util.ReflectionHelpers.getField(controller,"store");
+        try {
+            long dialog=store.room(room,"Alice"),other=store.room("other@conference.example.org","Alice");
+            assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
+            assertTrue(controller.setRoomRecipient(dialog,"offline@example.org",false));
+            assertEquals(java.util.Collections.singleton("offline@example.org"),controller.excludedRoomRecipients(dialog));
+            controller.excludedRoomRecipients(dialog).clear(); assertFalse(controller.excludedRoomRecipients(dialog).isEmpty());
+            assertTrue(controller.excludedRoomRecipients(other).isEmpty());
+            prefs.edit().putString("jid","another@example.org").commit(); assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
+            prefs.edit().putString("jid",own).commit(); assertFalse(controller.excludedRoomRecipients(dialog).isEmpty());
+            try { controller.setRoomRecipient(dialog,own,false); fail("Own devices cannot be excluded"); } catch(IllegalArgumentException expected) {}
+            try { controller.setRoomRecipient(dialog,"bob@example.org/phone",false); fail("Only bare account addresses are recipients"); } catch(IllegalArgumentException expected) {}
+            try { controller.setRoomRecipient(store.peer("bob@example.org"),"offline@example.org",false); fail("Room choices cannot modify direct chats"); } catch(IllegalArgumentException expected) {}
+            assertTrue(controller.setRoomRecipient(dialog,"offline@example.org",true)); assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
+        } finally {
+            for(String name:new String[]{"worker","cacheWorker","archiveWorker","fileWorker","profileWorker","autoDownloadWorker","roomWorker","bookmarkWorker","fingerprintWorker"})
+                ((java.util.concurrent.ExecutorService)org.robolectric.util.ReflectionHelpers.getField(controller,name)).shutdownNow();
+            store.close(); ((MonogramOmemo2Store)org.robolectric.util.ReflectionHelpers.getField(controller,"modernStore")).close();
+            prefs.edit().clear().commit(); context.deleteDatabase("monogram-0.db");
+        }
+    }
     XmppRoomMessage event(String nick,String stanza,String archive,String body,boolean encrypted,boolean readable) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom(own),Message.Type.groupchat);
         wire.setFrom(JidCreate.entityFullFrom(room+"/"+nick)); wire.setStanzaId(stanza);

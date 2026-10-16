@@ -86,8 +86,12 @@ class XmppRoomsIntegrationTest {
                 }
             }
             java.util.concurrent.atomic.AtomicInteger repeatedLists=new java.util.concurrent.atomic.AtomicInteger();
+            String unavailable="notregistered@localhost";
+            peer.grantMembership(JidCreate.bareFrom(unavailable));
+            assertEquals(OmemoSendException.Reason.NO_DEVICES,assertThrows(OmemoSendException.class,() -> alice.rooms.send(room,"must not silently omit a member",true)).reason);
+            Set<String> excluded=Collections.singleton(unavailable);
             alice.connection().addStanzaSendingListener(stanza -> repeatedLists.incrementAndGet(),stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.toXML().toString().contains("eu.siacs.conversations.axolotl.devicelist"));
-            alice.rooms.send(room,"private room hello",true);
+            alice.rooms.send(room,"private room hello",true,excluded);
             assertTrue(readable(bobMessages,"private room hello").encrypted);
             assertEquals(0,repeatedLists.get(),"Recently reviewed device lists must not be re-fetched for every room send");
             File source=new File(root,"room-photo.png"),downloaded=new File(root,"received-room-file");
@@ -99,15 +103,16 @@ class XmppRoomsIntegrationTest {
             assertNotNull(receivedPhoto.attachment); assertNotNull(receivedPhoto.sharing); assertEquals("Room photo",receivedPhoto.caption);
             FileTransfer.download(receivedPhoto.sharing,downloaded,new FileTransfer.Job(),null,null); assertArrayEquals(avatar,java.nio.file.Files.readAllBytes(downloaded.toPath()));
             FileLink secretPhoto=FileTransfer.upload(alice.connection(),source,"image/png",true,new FileTransfer.Job(),null);
-            alice.rooms.sendFile(room,secretPhoto,null,"",true);
+            alice.rooms.sendFile(room,secretPhoto,null,"",true,excluded);
             XmppRoomMessage receivedSecret=readable(bobMessages,secretPhoto.wireUrl);
             assertTrue(receivedSecret.encrypted); assertNotNull(receivedSecret.attachment);
             FileTransfer.download(receivedSecret.attachment,downloaded,new FileTransfer.Job(),null); assertArrayEquals(avatar,java.nio.file.Files.readAllBytes(downloaded.toPath()));
             byte[] audio=new byte[]{'O','g','g','S',0,2,3,4}; java.nio.file.Files.write(source.toPath(),audio);
             FileLink voice=FileTransfer.upload(alice.connection(),source,"audio/ogg",true,new FileTransfer.Job(),null);
-            alice.rooms.sendFile(room,voice,null,"",true);
+            alice.rooms.sendFile(room,voice,null,"",true,excluded);
             XmppRoomMessage receivedVoice=readable(bobMessages,voice.wireUrl);
             FileTransfer.download(receivedVoice.attachment,downloaded,new FileTransfer.Job(),null); assertArrayEquals(audio,java.nio.file.Files.readAllBytes(downloaded.toPath()));
+            peer.revokeMembership(JidCreate.bareFrom(unavailable));
             bob.rooms.leave(room);
             alice.rooms.send(room,"encrypted while Bob is absent",true);
             bob.rooms.join(room,"Bob",null);

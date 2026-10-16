@@ -23,6 +23,8 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     private final long peer;
     private final Map<OmemoDevice, OmemoFingerprint> identities = new LinkedHashMap<>();
     private final Map<OmemoDevice, String> states = new LinkedHashMap<>();
+    private final ArrayList<String> roomMembers=new ArrayList<>();
+    private boolean roomMembersChecked;
     private com.negzero.monogram.xmpp.XmppSession loadedSession;
     private String ownFingerprint;
     private String status = "Loading fingerprints…";
@@ -44,6 +46,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     private void loadIdentities(boolean force) {
         MonogramController controller=MonogramController.get(currentAccount);
         final int loading=++generation; fingerprintLookup++;
+        roomMembersChecked=false;
         if(fingerprintSetupTask!=null) fingerprintSetupTask.cancel(true);
         if(fingerprintRequest!=null) fingerprintRequest.close();
         final boolean selectedModern=controller.modernEncryption(peer);
@@ -66,7 +69,13 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                         }
                     });
                     String warning=null;
-                    try { for(org.jxmpp.jid.BareJid member:session.rooms.members(controller.jid(peer))) addresses.add(member.toString()); }
+                    try {
+                        java.util.Set<String> members=new java.util.LinkedHashSet<>();
+                        for(org.jxmpp.jid.BareJid member:session.rooms.members(controller.jid(peer))) members.add(member.toString());
+                        addresses.clear(); addresses.addAll(members);
+                        ArrayList<String> listed=new ArrayList<>(members); listed.remove(session.ownJid()); java.util.Collections.sort(listed);
+                        AndroidUtilities.runOnUIThread(() -> { if(loading==generation) { roomMembers.clear(); roomMembers.addAll(listed); roomMembersChecked=true; refresh(); } });
+                    }
                     catch(com.negzero.monogram.xmpp.OmemoSendException unsupported) {
                         warning=unsupported.reason==com.negzero.monogram.xmpp.OmemoSendException.Reason.ROOM_UNSUPPORTED
                             ? "Room OMEMO is unavailable. Join a members-only room that discloses participant addresses. Showing fingerprints for known accounts; encrypted room messages remain unsent."
@@ -82,11 +91,15 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     }
     private void loadFingerprintAddresses(com.negzero.monogram.xmpp.XmppSession session,java.util.Set<String> addresses,boolean selectedModern,boolean force,int loading,String warning) {
         if(loading!=generation) return;
+        java.util.Set<String> lookupAddresses=new java.util.LinkedHashSet<>(addresses);
+        if(peer<0) {
+            lookupAddresses.removeAll(MonogramController.get(currentAccount).excludedRoomRecipients(peer));
+        }
         final int lookup=++fingerprintLookup;
         if(fingerprintRequest!=null) fingerprintRequest.close();
         java.util.concurrent.atomic.AtomicReference<com.negzero.monogram.xmpp.XmppFingerprints.Snapshot> latest=new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicBoolean queued=new java.util.concurrent.atomic.AtomicBoolean();
-        fingerprintRequest=session.fingerprints.load(addresses,selectedModern,force,snapshot -> {
+        fingerprintRequest=session.fingerprints.load(lookupAddresses,selectedModern,force,snapshot -> {
             latest.set(snapshot);
             if(!queued.compareAndSet(false,true)) return;
             AndroidUtilities.runOnUIThread(() -> {
@@ -123,7 +136,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         if(sendError!=null) items.add(UItem.asShadow("Last send failure: "+org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(sendError)));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
-        else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Every member, including offline members, needs a compatible trusted device. OMEMO 2 rooms are not available yet."));
+        else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Included members, including offline members, need compatible trusted devices. OMEMO 2 rooms are not available yet."));
         items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
         items.add(UItem.asCheck(7,"Allow unencrypted reactions (legacy OMEMO)").setChecked(controller.plainReactionsAllowed(peer)));
         items.add(UItem.asShadow("Standard reactions are visible to the server with legacy OMEMO. OMEMO 2 direct chats encrypt reactions; this permission never changes message encryption."));
@@ -133,6 +146,18 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         if (status != null) items.add(UItem.asShadow(status));
         if (ownFingerprint != null) {
             items.add(UItem.asButton(3,modern ? "Your OMEMO 2 fingerprint" : "Your legacy OMEMO fingerprint")); items.add(UItem.asShadow(ownFingerprint));
+        }
+        if(peer<0 && !roomMembers.isEmpty()) {
+            java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
+            items.add(UItem.asHeader("Encrypted recipients"));
+            items.add(UItem.asShadow("Checked members receive keys for your new encrypted messages. Unchecked members cannot decrypt those messages. This only affects messages you send; it does not change room membership or fingerprint trust."));
+            for(int i=0;i<roomMembers.size();i++) {
+                String address=roomMembers.get(i);
+                items.add(UItem.asCheck(100000+i,address).setChecked(!excluded.contains(address)).setEnabled(!saving && roomMembersChecked));
+                if(!excluded.contains(address) && identities.keySet().stream().noneMatch(device -> address.equals(device.getJid().toString())))
+                    items.add(UItem.asShadow("No fingerprint loaded for this account. Included members without available trusted keys prevent encrypted sending."));
+            }
+            items.add(UItem.asShadow(null));
         }
         if (!identities.isEmpty()) {
             items.add(UItem.asButton(2, saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
@@ -147,7 +172,14 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id==7) {
+        if(item.id>=100000 && item.id-100000<roomMembers.size() && !saving && roomMembersChecked) {
+            String address=roomMembers.get(item.id-100000);
+            boolean included=!controller.excludedRoomRecipients(peer).contains(address);
+            if(!included) setRoomRecipient(address,true);
+            else showDialog(new AlertDialog.Builder(getContext()).setTitle("Exclude encrypted recipient?")
+                .setMessage(address+" will not receive keys for new encrypted messages you send to this room and will not be able to read them. Other included members still require trusted fingerprints. You can include this account again here.")
+                .setPositiveButton("Exclude recipient",(dialog,which) -> setRoomRecipient(address,false)).setNegativeButton("Cancel",null).create());
+        } else if(item.id==7) {
             if(controller.plainReactionsAllowed(peer)) { controller.setPlainReactions(peer,false); refresh(); }
             else showDialog(new AlertDialog.Builder(getContext()).setTitle("Allow unencrypted reactions?")
                 .setMessage("Legacy OMEMO protects message text but cannot encrypt standard reaction metadata. The XMPP server can see your reactions.")
@@ -177,6 +209,17 @@ public final class MonogramSecurityActivity extends UniversalFragment {
             showDialog(new AlertDialog.Builder(getContext()).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint)
                     .setPositiveButton("Trust", (d, w) -> decide(selected, true)).setNegativeButton("Distrust", (d, w) -> decide(selected, false))
                     .setNeutralButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(fingerprint.toString())).create());
+        }
+    }
+    private void setRoomRecipient(String address,boolean included) {
+        try {
+            MonogramController controller=MonogramController.get(currentAccount);
+            if(loadedSession==null || !controller.accountJid().equals(loadedSession.ownJid()) || !controller.setRoomRecipient(peer,address,included))
+                throw new IllegalStateException("Could not save recipient");
+            loadIdentities();
+        } catch(Exception failed) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not save encrypted recipient")
+                .setMessage("The recipient selection was not changed. Try again.").setPositiveButton("OK",null).create());
         }
     }
     private void decide(Map<OmemoDevice, OmemoFingerprint> selected, boolean trusted) {

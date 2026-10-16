@@ -220,20 +220,36 @@ public final class XmppRooms implements AutoCloseable {
         if (!members.contains(connection.getUser().asBareJid())) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
         return members;
     }
-    public XmppRoomMessage send(String jid,String body,boolean encrypted) throws Exception { return send(jid,body,encrypted,null); }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted) throws Exception { return send(jid,body,encrypted,Collections.emptySet()); }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded) throws Exception { return send(jid,body,encrypted,null,excluded); }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted) throws Exception {
-        if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
-        return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing);
+        return sendFile(jid,link,sharing,caption,encrypted,Collections.emptySet());
     }
-    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing) throws Exception {
+    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,Set<String> excluded) throws Exception {
+        if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
+        return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing,excluded);
+    }
+    static Set<BareJid> recipients(Set<BareJid> members,BareJid own,Set<String> excluded) throws Exception {
+        Set<BareJid> recipients=new HashSet<>(members);
+        for(String address:excluded) {
+            Jid parsed=JidCreate.from(address);
+            if(parsed.hasResource() || !parsed.isEntityBareJid() || parsed.equals(own)) throw new IllegalArgumentException("Invalid excluded room recipient");
+            recipients.remove(parsed.asBareJid());
+        }
+        if(members.stream().anyMatch(member -> !member.equals(own)) && recipients.stream().noneMatch(member -> !member.equals(own)))
+            throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"Include at least one other room member in Conversation security.");
+        return recipients;
+    }
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,Set<String> excluded) throws Exception {
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         Message message;
         if (encrypted) {
-            Set<BareJid> recipients;
-            try { recipients=members(jid); }
+            Set<BareJid> members;
+            try { members=members(jid); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the membership check.",timeout); }
+            Set<BareJid> recipients=recipients(members,connection.getUser().asBareJid(),excluded);
             for (BareJid recipient:recipients) {
                 try { if(deviceLookup.devices(recipient).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,recipient.toString()); }
                 catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
@@ -249,7 +265,7 @@ public final class XmppRooms implements AutoCloseable {
                 for (OmemoDevice device:ciphertext.getIntendedDevices()) if (device.getJid().equals(recipient)) included=true;
                 if (!included) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
             }
-            try { if (!members(jid).equals(recipients)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
+            try { if (!members(jid).equals(members)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
             message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
         } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(body); }

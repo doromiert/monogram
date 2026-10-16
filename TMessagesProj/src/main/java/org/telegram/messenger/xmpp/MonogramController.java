@@ -533,6 +533,7 @@ public final class MonogramController {
                     if(peer>0) addresses.add(store.jid(peer));
                     else if(peer<0 && encrypted(peer)) try { for(org.jxmpp.jid.BareJid member:sync.session.rooms.members(store.jid(peer))) addresses.add(member.toString()); } catch(Exception unsupported) {}
                     addresses.add(store.jid(self));
+                    if(peer<0) addresses.removeAll(excludedRoomRecipients(peer));
                     addresses.removeIf(address -> address.indexOf('/')>=0);
                     if(!currentArchive(sync)) return;
                     // The shared discovery pool has a deadline; an unavailable member cannot hold all history.
@@ -738,7 +739,7 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         accountEpoch++;
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -823,6 +824,20 @@ public final class MonogramController {
     }
     public TLRPC.User ownUser() { return store.user(self, self); }
     public String jid(long peer) { return store.jid(peer); }
+    private String roomRecipientsKey(long peer) { return "room-recipient-exclusions-"+accountJid()+"\n"+store.jid(peer); }
+    public java.util.Set<String> excludedRoomRecipients(long peer) {
+        return new java.util.HashSet<>(preferences.getStringSet(roomRecipientsKey(peer),java.util.Collections.emptySet()));
+    }
+    public boolean setRoomRecipient(long peer,String address,boolean included) {
+        if(!isRoom(peer) || address.equals(accountJid())) throw new IllegalArgumentException("Invalid room recipient");
+        try { if(!org.jxmpp.jid.impl.JidCreate.entityBareFrom(address).toString().equals(address)) throw new IllegalArgumentException("Invalid recipient address"); }
+        catch(org.jxmpp.stringprep.XmppStringprepException invalid) { throw new IllegalArgumentException(invalid); }
+        String key=roomRecipientsKey(peer);
+        java.util.Set<String> previous=excludedRoomRecipients(peer),excluded=new java.util.HashSet<>(previous);
+        if(included) excluded.remove(address); else excluded.add(address);
+        if(preferences.edit().putStringSet(key,excluded).commit()) return true;
+        preferences.edit().putStringSet(key,previous).apply(); return false;
+    }
     public java.util.Set<String> knownFingerprintAddresses(long peer) {
         java.util.Set<String> addresses=new java.util.LinkedHashSet<>(); if(self>0) addresses.add(store.jid(self));
         if(peer>0) addresses.add(store.jid(peer));
@@ -1043,7 +1058,7 @@ public final class MonogramController {
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,request.caption,encrypted);
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,request.caption,encrypted,excludedRoomRecipients(request.message.dialog_id));
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                         } else {
                             String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply) : expected.sendFile(peer,sharing,request.caption,reply);
@@ -1422,7 +1437,7 @@ public final class MonogramController {
                 if (send.schedule_date!=0 || send.reply_to!=null) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),send.message,encrypted(dialog));
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),send.message,encrypted(dialog),excludedRoomRecipients(dialog));
                 int id=store.saveRoom(message,self);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 result.pts_count=1; result.pts=MessagesStorage.getInstance(account).getLastPtsValue()+1; return result;
