@@ -15,15 +15,16 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [o] Verify XMPP onboarding and request dispatch; prevent Telegram networking in startup, background work and unsupported actions.
 - [x] Compile the current-base Android Java sources with the XMPP adapter and Jabber account routes (138 tasks; BUILD SUCCESSFUL).
 - [x] Build the rebased arm64 APK 0.2.0 (71759) with Nix (301 tasks, BUILD SUCCESSFUL).
-- [o] Verify the current Telegram UI, Monogram branding and security button on Android. The new process starts; visible UI verification is pending because the phone is locked.
+- [o] Verify the current Telegram UI, Monogram branding and security button on Android. The current-base chat renders and exposes the separate Conversation security control; complete branding and deliberate lock/confirmation touch checks remain pending.
 - [x] Install 0.2.0 through wireless ADB with the same signing key; verify the saved account/credential, all 53 existing local message rows, and the OMEMO device ID and identity key remain intact.
 
 ## Messaging and existing conversations
 
-- [ ] Restore previous conversations using the roster and server archive discovery.
-- [ ] Implement paged MAM history with correct timestamps, stable message IDs, deduplication and cache handling.
-- [ ] Represent old encrypted messages that this new device cannot decrypt accurately; do not pretend their plaintext is recoverable.
-- [ ] Handle incoming/outgoing carbons, multiple devices, offline messages and reconnects in the Android storage/UI adapter.
+- [x] Discover and import the account's available direct-message MAM archive. Installed 0.2.2 completed the first real-account backfill: 1,455 local messages, preserving all 57 previous messages and the credential/OMEMO identity.
+- [o] Implement paged MAM history with original timestamps, ID aliases/deduplication and chronological cache handling. Backfill/catch-up cursors and Android database paging pass tests; verify scrolling, history navigation and cache refresh visually, including imports while a chat is open.
+- [x] Represent encrypted archive messages this device cannot decrypt with an explicit placeholder, retaining already known plaintext. The real import contains 1,361 unreadable encrypted messages; no claim of recovering their plaintext.
+- [o] Handle incoming/outgoing carbons, multiple devices, offline messages and reconnects in the Android storage/UI adapter. Carbon direction/delays and forward archive catch-up are implemented and tested locally; automatic reconnect synchronization, unread state and independent-client Android checks remain.
+- [ ] Refresh already displayed history when an archive import corrects a timestamp or replaces an unreadable placeholder; cover jump-to-message/date navigation.
 - [ ] Implement delivery receipts and accurate pending/sent/delivered/failed states, with useful errors and retry behavior.
 - [ ] Implement roster management, subscription requests, presence and contact display names.
 - [ ] Port replies, editing, reactions and other applicable messaging actions using standard XMPP extensions.
@@ -42,7 +43,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 ## OMEMO
 
 - [x] Implement and install Trust all fingerprints in 0.2.1 (71769), scoped to the displayed contact/own-device fingerprints, with confirmation and atomic persistence. Six core tests pass, including changed/unseen-key isolation and failed-save rollback.
-- [ ] Verify the new trust-all button, confirmation and cancellation visually on the unlocked phone; no real trust decision was changed by the agent.
+- [ ] Verify the new trust-all button, confirmation and cancellation visually; no real trust decision was changed by the agent.
 
 - [ ] Verify actual Android encrypted exchange with an independent client such as Monocles, including this user's reported send failure. No successful send to the reported friend has been verified.
 - [ ] Verify persistent identities across a real process restart and app update.

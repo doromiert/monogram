@@ -3,6 +3,10 @@ package com.negzero.monogram.xmpp;
 
 import java.io.File;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Date;
+import java.util.Collections;
 import java.util.UUID;
 import org.jivesoftware.smack.ConnectionConfiguration.SecurityMode;
 import org.jivesoftware.smack.ReconnectionManager;
@@ -32,6 +36,12 @@ public final class XmppSession implements AutoCloseable {
     public interface Listener {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
+        default void message(XmppMessage message) {
+            if (!message.readable) return;
+            String id = message.ids.get("stanza");
+            if (message.outgoing) sentCarbon(message.peer, id, message.body, message.encrypted);
+            else message(message.peer, id, message.body, message.encrypted);
+        }
     }
     private static File keyRoot;
     private final XMPPTCPConnection connection;
@@ -70,26 +80,91 @@ public final class XmppSession implements AutoCloseable {
         omemo.setTrustCallback(trust);
         omemo.addOmemoMessageListener(new OmemoMessageListener() {
             @Override public void onOmemoMessageReceived(Stanza stanza, OmemoMessage.Received decrypted) {
-                if (!decrypted.isKeyTransportMessage()) listener.message(
-                        stanza.getFrom().asEntityBareJidIfPossible(), stanza.getStanzaId(), decrypted.getBody(), true);
+                if (!decrypted.isKeyTransportMessage() && stanza instanceof Message) {
+                    deliver(listener, (Message) stanza, decrypted.getBody(), true);
+                }
             }
             @Override public void onOmemoCarbonCopyReceived(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction direction,
                     Message carbon, Message wrapping, OmemoMessage.Received decrypted) {
-                if (decrypted.isKeyTransportMessage()) return;
-                if (direction == org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.sent) {
-                    listener.sentCarbon(carbon.getTo().asEntityBareJidIfPossible(), carbon.getStanzaId(), decrypted.getBody(), true);
-                } else {
-                    listener.message(carbon.getFrom().asEntityBareJidIfPossible(), carbon.getStanzaId(), decrypted.getBody(), true);
-                }
+                if (validCarbon(wrapping) && !decrypted.isKeyTransportMessage()) deliver(listener, carbon, decrypted.getBody(), true);
             }
+        });
+        CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
+            if (validCarbon(wrapping) && !encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false);
         });
         connection.addAsyncStanzaListener(stanza -> {
             Message message = (Message) stanza;
-            if (message.getBody() != null && !message.hasExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE)) {
-                EntityBareJid sender = message.getFrom() == null ? null : message.getFrom().asEntityBareJidIfPossible();
-                if (sender != null) listener.message(sender, message.getStanzaId(), message.getBody(), false);
+            if (!encrypted(message)) deliver(listener, message, message.getBody(), false);
+        }, stanza -> stanza instanceof Message && (((Message) stanza).getType() == Message.Type.chat
+                || ((Message) stanza).getType() == Message.Type.normal));
+    }
+
+    private static boolean encrypted(Message message) {
+        return message.hasExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE);
+    }
+    private boolean validCarbon(Message wrapping) {
+        return connection.getUser() != null && connection.getUser().asEntityBareJid().equals(wrapping.getFrom());
+    }
+    private void deliver(Listener listener, Message stanza, String body, boolean encrypted) {
+        if (connection.getUser() == null) return;
+        XmppMessage message = XmppMessage.from(stanza, connection.getUser().asEntityBareJid(), body, encrypted, true, null, null);
+        if (message != null) listener.message(message);
+    }
+
+    public static final class ArchivePage {
+        public final List<XmppMessage> messages;
+        public final String firstId, lastId;
+        public final boolean complete;
+        ArchivePage(List<XmppMessage> messages, String firstId, String lastId, boolean complete) {
+            this.messages = Collections.unmodifiableList(messages);
+            this.firstId = firstId; this.lastId = lastId; this.complete = complete;
+        }
+    }
+    /** Newest page when before is null; otherwise the page preceding that archive UID. */
+    public ArchivePage archiveBefore(String peer, String before, int limit) throws Exception {
+        return archive(peer, before == null ? "" : before, null, limit);
+    }
+    public ArchivePage archiveAfter(String after, int limit) throws Exception {
+        if (after == null || after.isEmpty()) throw new IllegalArgumentException("Missing archive cursor");
+        return archive(null, null, after, limit);
+    }
+    private ArchivePage archive(String peer, String before, String after, int limit) throws Exception {
+        MamManager.MamQueryArgs.Builder args = MamManager.MamQueryArgs.builder()
+                .setResultPageSizeTo(Math.min(Math.max(limit, 1), 100));
+        if (peer != null) args.limitResultsToJid(JidCreate.entityBareFrom(peer));
+        if (before != null) args.beforeUid(before);
+        if (after != null) args.afterUid(after);
+        MamManager.MamQuery query = MamManager.getInstanceFor(connection).queryArchive(args.build());
+        List<XmppMessage> messages = new ArrayList<>();
+        for (org.jivesoftware.smackx.mam.element.MamElements.MamResultExtension result : query.getMamResultExtensions()) {
+            org.jivesoftware.smackx.forward.packet.Forwarded<Message> forwarded = result.getForwarded();
+            Message stanza = forwarded.getForwardedStanza();
+            if (forwarded.getDelayInformation() == null) throw new java.io.IOException("Archive result has no timestamp");
+            EntityBareJid own = connection.getUser().asEntityBareJid();
+            Date time = forwarded.getDelayInformation().getStamp();
+            boolean encrypted = encrypted(stanza), readable = true;
+            String body = stanza.getBody();
+            // Reject unrelated and room messages before attempting decryption.
+            if (XmppMessage.from(stanza, own, body, encrypted, false, result.getId(), time) == null) continue;
+            if (encrypted) {
+                OmemoElement element = stanza.getExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE);
+                if (element.isKeyTransportElement()) continue;
+                try {
+                    OmemoMessage.Received plaintext = omemo.decrypt(stanza.getFrom().asBareJid(), element);
+                    if (plaintext.isKeyTransportMessage()) continue;
+                    body = plaintext.getBody();
+                } catch (org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
+                        | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
+                        | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException e) {
+                    // A new device (or an already-consumed ratchet key) cannot recover every archived ciphertext.
+                    body = null; readable = false;
+                }
             }
-        }, stanza -> stanza instanceof Message && ((Message) stanza).getType() == Message.Type.chat);
+            XmppMessage message = XmppMessage.from(stanza, own, body, encrypted, readable, result.getId(), time);
+            if (message != null) messages.add(message);
+        }
+        org.jivesoftware.smackx.rsm.packet.RSMSet rsm = query.getPage().getMamFinIq().getRSMSet();
+        return new ArchivePage(messages, rsm == null ? null : rsm.getFirst(), rsm == null ? null : rsm.getLast(), query.isComplete());
     }
 
     public void connect() throws Exception {

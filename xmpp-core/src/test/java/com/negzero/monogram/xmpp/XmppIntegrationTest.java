@@ -109,5 +109,84 @@ class XmppIntegrationTest {
             assertEquals("offline encrypted delivery", received.poll(15, TimeUnit.SECONDS));
             assertEquals(true, encryption.poll(1, TimeUnit.SECONDS));
         }
+        BlockingQueue<XmppMessage> copies = new LinkedBlockingQueue<>();
+        XmppSession.Listener observer = new XmppSession.Listener() {
+            @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
+            @Override public void message(XmppMessage message) { copies.add(message); }
+        };
+        try (XmppSession alice = session("alice", 101, ignore);
+             XmppSession bob = session("bob", 202, (sender, id, body, encrypted) -> { received.add(body); encryption.add(encrypted); });
+             XmppSession second = session("alice", 303, observer)) {
+            alice.connect(); bob.connect(); second.connect();
+            String sentId = alice.send("bob@localhost", "from another device", false);
+            XmppMessage sent = copies.poll(15, TimeUnit.SECONDS);
+            assertNotNull(sent); assertTrue(sent.outgoing); assertFalse(sent.encrypted);
+            assertEquals("from another device", sent.body);
+            assertEquals(sentId, sent.ids.get("stanza"));
+            assertEquals("bob@localhost", sent.peer.toString());
+            Message targeted = new Message(alice.connection().getUser(), Message.Type.chat);
+            targeted.setStanzaId("carbon-incoming"); targeted.setBody("to another device");
+            bob.connection().sendStanza(targeted);
+            XmppMessage incoming = copies.poll(15, TimeUnit.SECONDS);
+            assertNotNull(incoming); assertFalse(incoming.outgoing);
+            assertEquals("to another device", incoming.body);
+            assertEquals("bob@localhost", incoming.peer.toString());
+
+            Message forged = new Message(second.connection().getUser(), Message.Type.chat);
+            Message inner = new Message(JidCreate.entityBareFrom("alice@localhost"), Message.Type.chat);
+            inner.setFrom(JidCreate.entityBareFrom("mallory@localhost")); inner.setBody("forged carbon");
+            forged.addExtension(new org.jivesoftware.smackx.carbons.packet.CarbonExtension(
+                    org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.received,
+                    new org.jivesoftware.smackx.forward.packet.Forwarded<Message>(inner)));
+            bob.connection().sendStanza(forged);
+            assertNull(copies.poll(500, TimeUnit.MILLISECONDS), "A contact must not be able to forge a carbon");
+            alice.connection().sendStanza(forged);
+            assertNull(copies.poll(500, TimeUnit.MILLISECONDS), "Another client resource is not an authoritative carbon sender");
+
+            java.util.Map<String, XmppMessage> archive = new java.util.LinkedHashMap<>();
+            String before = null;
+            long previous = Long.MAX_VALUE;
+            for (int pageNumber = 0; pageNumber < 30; pageNumber++) {
+                XmppSession.ArchivePage page = second.archiveBefore("bob@localhost", before, 2);
+                assertTrue(page.messages.size() <= 2);
+                for (int i = page.messages.size() - 1; i >= 0; i--) {
+                    XmppMessage message = page.messages.get(i);
+                    assertTrue(message.archived);
+                    assertEquals("bob@localhost", message.peer.toString());
+                    assertTrue(message.timestamp <= previous, "Archive timestamps must retain their order");
+                    previous = message.timestamp;
+                    assertNull(archive.put(message.ids.get("archive"), message), "Paging must not repeat an archive UID");
+                }
+                if (page.complete || page.firstId == null) break;
+                assertNotEquals(before, page.firstId); before = page.firstId;
+            }
+            assertTrue(archive.values().stream().anyMatch(m -> "ordinary Jabber".equals(m.body) && m.outgoing));
+            assertTrue(archive.values().stream().anyMatch(m -> sentId.equals(m.ids.get("stanza")) && m.outgoing));
+            assertTrue(archive.values().stream().anyMatch(m -> "to another device".equals(m.body) && !m.outgoing));
+            assertTrue(archive.values().stream().anyMatch(m -> m.encrypted && !m.readable && m.body == null),
+                    "A new device must identify encrypted history it cannot decrypt");
+            String oldest = new java.util.ArrayList<>(archive.keySet()).get(archive.size() - 1);
+            java.util.Set<String> forwardIds = new java.util.HashSet<>();
+            String after = oldest;
+            for (int pageNumber = 0; pageNumber < 30; pageNumber++) {
+                XmppSession.ArchivePage page = second.archiveAfter(after, 2);
+                for (XmppMessage message : page.messages) assertTrue(forwardIds.add(message.ids.get("archive")));
+                if (page.complete || page.lastId == null) break;
+                assertNotEquals(after, page.lastId); after = page.lastId;
+            }
+            java.util.Set<String> expected = new java.util.HashSet<>(archive.keySet()); expected.remove(oldest);
+            assertEquals(expected, forwardIds, "Forward catch-up must cover the same archive without repeating its anchor");
+            String bobBefore = null;
+            for (int pageNumber = 0; pageNumber < 30; pageNumber++) {
+                XmppSession.ArchivePage page = bob.archiveBefore(null, bobBefore, 2);
+                if (page.complete || page.firstId == null) break;
+                assertNotEquals(bobBefore, page.firstId); bobBefore = page.firstId;
+            }
+            verifyDevices(alice, "alice@localhost");
+            received.clear(); encryption.clear();
+            alice.send("bob@localhost", "live encryption after archive replay", true);
+            assertEquals("live encryption after archive replay", received.poll(15, TimeUnit.SECONDS));
+            assertEquals(true, encryption.poll(1, TimeUnit.SECONDS));
+        }
     }
 }

@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import com.negzero.monogram.xmpp.Account;
 import com.negzero.monogram.xmpp.XmppSession;
+import com.negzero.monogram.xmpp.XmppMessage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
@@ -33,6 +34,9 @@ public final class MonogramController {
     private volatile long self;
     private volatile int state = ConnectionsManager.ConnectionStateConnecting;
     private boolean restoring;
+    private long sessionEpoch;
+    private volatile boolean archiveLoading;
+    private boolean archiveResetAttempted;
 
     private MonogramController(int account) {
         this.account = account;
@@ -56,6 +60,7 @@ public final class MonogramController {
     }
     private void connect(Account details, String password) throws Exception {
         if (session != null) { session.close(); session = null; }
+        final long epoch = ++sessionEpoch;
         state(ConnectionsManager.ConnectionStateConnecting);
         AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
         XmppSession.initializeOmemo(new File(ApplicationLoader.getFilesDirFixed(), "monogram-omemo"));
@@ -67,11 +72,75 @@ public final class MonogramController {
         self = store.peer(details.jid.toString());
         XmppSession connecting = new XmppSession(details, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
-                (sender, id, body, encrypted) -> worker.execute(() -> incoming(sender.toString(), id, body, encrypted)));
+                new XmppSession.Listener() {
+                    @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
+                    @Override public void message(XmppMessage message) { worker.execute(() -> { if (sessionEpoch == epoch && session != null) incoming(message); }); }
+                });
         connecting.connect();
         session = connecting;
         for (RosterEntry entry : Roster.getInstanceFor(connecting.connection()).getEntries()) store.peer(entry.getJid().toString());
         state(ConnectionsManager.ConnectionStateConnected);
+        archiveLoading = true; archiveResetAttempted = false;
+        worker.execute(() -> syncArchive(connecting, false));
+    }
+    private void syncArchive(XmppSession expected, boolean backwards) {
+        if (session != expected || !expected.connection().isAuthenticated()) return;
+        try {
+            if (!expected.hasArchive()) { archiveLoading = false; return; }
+            String cursor = store.archiveCursor(backwards);
+            if (backwards && store.archiveComplete()) { archiveLoading = false; return; }
+            XmppSession.ArchivePage page = !backwards && cursor != null
+                    ? expected.archiveAfter(cursor, 100) : expected.archiveBefore(null, cursor, 100);
+            if (cursor != null && cursor.equals(backwards ? page.firstId : page.lastId) && !page.complete) {
+                throw new java.io.IOException("Archive cursor did not advance");
+            }
+            boolean initial = !backwards && cursor == null;
+            if (store.saveArchive(page, backwards || initial) && UserConfig.getInstance(account).isClientActivated()) {
+                TLRPC.TL_messages_dialogs dialogs = dialogs();
+                AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
+                        dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
+            }
+            boolean older = backwards || initial || page.complete;
+            if (older ? !store.archiveComplete() : page.lastId != null) {
+                worker.execute(() -> syncArchive(expected, older));
+            } else { archiveLoading = false; }
+        } catch (Exception e) {
+            if (!archiveResetAttempted && e instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
+                    && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) e).getStanzaError().getCondition()
+                    == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
+                archiveResetAttempted = true;
+                store.resetArchiveCursor();
+                worker.execute(() -> syncArchive(expected, false));
+                return;
+            }
+            archiveLoading = false;
+            // Keep local chats usable if the provider has no usable archive. A later connection retries.
+            if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram archive sync: " + e.getClass().getSimpleName());
+        }
+    }
+    private TLRPC.TL_messages_dialogs dialogs() {
+        TLRPC.TL_messages_dialogs result = new TLRPC.TL_messages_dialogs();
+        for (long peer : store.peers()) {
+            if (peer == self) continue;
+            ArrayList<TLRPC.Message> history = store.history(peer, self, 0, 1);
+            if (history.isEmpty()) continue;
+            TLRPC.TL_dialog dialog = new TLRPC.TL_dialog(); dialog.id = peer; dialog.peer = new TLRPC.TL_peerUser(); dialog.peer.user_id = peer;
+            dialog.top_message = history.get(0).id; dialog.last_message_date = history.get(0).date;
+            dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
+            result.dialogs.add(dialog); result.messages.addAll(history); result.users.add(store.user(peer, self));
+        }
+        result.dialogs.sort((a, b) -> Integer.compare(b.last_message_date, a.last_message_date));
+        result.users.add(ownUser());
+        return result;
+    }
+    public void loadHistory(long peer, int offset, int count, int loadType, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
+        worker.execute(() -> {
+            TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
+            result.messages.addAll(store.history(peer, self, offset, count, loadType == 1));
+            result.users.add(store.user(peer, self)); result.users.add(ownUser());
+            boolean end = !archiveLoading;
+            Utilities.stageQueue.postRunnable(() -> completed.accept(result, end));
+        });
     }
     public void login(String jid, String password, String host, int port, Consumer<Exception> result) {
         worker.execute(() -> {
@@ -94,6 +163,7 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         worker.execute(() -> {
             if (session != null) { session.close(); session = null; }
+            sessionEpoch++; archiveLoading = false;
             store.clear(); self = 0;
             state(ConnectionsManager.ConnectionStateWaitingForNetwork);
         });
@@ -110,15 +180,15 @@ public final class MonogramController {
         if (!preferences.edit().putBoolean("omemo-" + peer, encrypted).commit()) throw new IllegalStateException("Cannot save encryption preference");
     }
     private int now() { return (int) (System.currentTimeMillis() / 1000); }
-    private void incoming(String jid, String stanza, String body, boolean encrypted) {
-        long peer = store.peer(jid);
-        int date = now();
-        int id = store.save(peer, stanza, body, encrypted, false, date);
+    private void incoming(XmppMessage message) {
+        long peer = store.peer(message.peer.toString());
+        int date = (int) (message.timestamp / 1000);
+        int id = store.save(message);
         if (id == 0) return;
         if (!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(store.user(peer, self)); users.add(ownUser());
         TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage();
-        update.message = store.message(id, peer, self, body, false, date);
+        update.message = store.message(id, peer, self, message.body, message.outgoing, date);
         ArrayList<TLRPC.Update> updates = new ArrayList<>(); updates.add(update);
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date));
     }
@@ -173,18 +243,7 @@ public final class MonogramController {
             }
             return result;
         }
-        if (request instanceof TLRPC.TL_messages_getDialogs) {
-            TLRPC.TL_messages_dialogs result = new TLRPC.TL_messages_dialogs();
-            for (long peer : store.peers()) {
-                if (peer == self) continue;
-                ArrayList<TLRPC.Message> history = store.history(peer, self, 0, 1);
-                if (history.isEmpty()) continue;
-                TLRPC.TL_dialog dialog = new TLRPC.TL_dialog(); dialog.id = peer; dialog.peer = new TLRPC.TL_peerUser(); dialog.peer.user_id = peer;
-                dialog.top_message = history.get(0).id; dialog.last_message_date = history.get(0).date; dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
-                result.dialogs.add(dialog); result.messages.addAll(history); result.users.add(store.user(peer, self));
-            }
-            result.users.add(ownUser()); return result;
-        }
+        if (request instanceof TLRPC.TL_messages_getDialogs) return dialogs();
         if (request instanceof TLRPC.TL_messages_getHistory) {
             TLRPC.TL_messages_getHistory query = (TLRPC.TL_messages_getHistory) request;
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
@@ -196,7 +255,8 @@ public final class MonogramController {
             if (send.schedule_date != 0 || send.reply_to != null || send.peer.user_id == 0) throw new UnsupportedOperationException();
             long peer = send.peer.user_id; boolean encrypted = encrypted(peer);
             String stanza = session().send(store.jid(peer), send.message, encrypted);
-            int date = now(); int id = store.save(peer, stanza, send.message, encrypted, true, date);
+            XmppMessage message = XmppMessage.sent(session().connection().getUser(), store.jid(peer), stanza, send.message, encrypted);
+            int date = (int) (message.timestamp / 1000); int id = store.save(message);
             TLRPC.TL_updateShortSentMessage result = new TLRPC.TL_updateShortSentMessage();
             result.id = id; result.date = date; result.out = true; result.pts_count = 1;
             result.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;

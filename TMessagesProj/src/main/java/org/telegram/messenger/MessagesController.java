@@ -11508,6 +11508,12 @@ public class MessagesController extends BaseController implements NotificationCe
         if (BuildVars.LOGS_ENABLED && loaderLogger == null && mode == 0) {
             loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
         }
+        if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && dialogId > 0) {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadHistory(dialogId, max_id, count, load_type, (result, archiveEnd) ->
+                    processLoadedMessages(result, result.messages.size(), dialogId, mergeDialogId, count, max_id, offset_date,
+                            false, classGuid, 0, 0, 0, 0, load_type, archiveEnd, mode, 0, loadIndex, false, 0, processMessages, false, null));
+            return;
+        }
         if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && (fromCache || DialogObject.isEncryptedDialog(dialogId))) {
             getMessagesStorage().getMessages(dialogId, mergeDialogId, loadInfo, count, max_id, offset_date, minDate, classGuid, load_type, mode, threadMessageId, loadIndex, processMessages, isTopic, loaderLogger);
         } else {
@@ -12056,7 +12062,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         message.unread = false;
                         message.media_unread = false;
                     } else if (threadMessageId == 0) {
-                        message.unread = (message.out ? outboxValue : inboxValue) < message.id;
+                        if (!(mode == ChatActivity.MODE_DEFAULT && dialogId > 0)) {
+                            message.unread = (message.out ? outboxValue : inboxValue) < message.id;
+                        }
                     } else {
                         message.unread = true;
                     }
@@ -13633,7 +13641,7 @@ public class MessagesController extends BaseController implements NotificationCe
                             }
                         }
                         if (oldMsgsDeleted || oldMsgs == null || currentDialog.top_message > 0) {
-                            if (value.top_message >= currentDialog.top_message || (oldMsgs == null) != (newMsgs == null) || oldMsgs != null && newMsgs != null && oldMsgs.size() != newMsgs.size()) {
+                            if (value.last_message_date >= currentDialog.last_message_date || (oldMsgs == null) != (newMsgs == null) || oldMsgs != null && newMsgs != null && oldMsgs.size() != newMsgs.size()) {
                                 dialogs_dict.put(key, value);
                                 dialogMessage.put(key, newMsgs);
                                 if (oldMsgs != null) {
@@ -22090,7 +22098,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             });
         } else {
-            if ((dialog.top_message > 0 && lastMessage.getId() > 0 && lastMessage.getId() > dialog.top_message) ||
+            if ((dialogId <= 0 && dialog.top_message > 0 && lastMessage.getId() > 0 && lastMessage.getId() > dialog.top_message) ||
                     (dialog.top_message < 0 && lastMessage.getId() < 0 && lastMessage.getId() < dialog.top_message) ||
                     dialogMessage.indexOfKey(dialogId) < 0 || dialog.top_message < 0 || dialog.last_message_date <= lastMessage.messageOwner.date) {
                 MessageObject object = dialogMessagesByIds.get(dialog.top_message);

@@ -13864,6 +13864,14 @@ public class ChatActivity extends BaseFragment implements
         return contentView.getKeyboardHeight() > AndroidUtilities.dp(20);
     }
 
+    private int monogramHistoryEdge(boolean newest) {
+        for (int i = newest ? 0 : messages.size() - 1; newest ? i < messages.size() : i >= 0; i += newest ? 1 : -1) {
+            MessageObject message = messages.get(i);
+            if (message.getId() > 0 && message.type >= 0 && message.getDialogId() == dialog_id) return message.getId();
+        }
+        return 0;
+    }
+
     private void checkScrollForLoad(boolean scroll) {
         if (chatLayoutManager == null || paused || chatAdapter.isFrozen || waitingForGetDifference) {
             return;
@@ -13917,7 +13925,7 @@ public class ChatActivity extends BaseFragment implements
                     loading = true;
                     waitingForLoad.add(lastLoadIndex);
                     if (messagesByDays.size() != 0) {
-                        getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, maxMessageId[0], 0, !cacheEndReached[0], minDate[0], classGuid, 0, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
+                        getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, dialog_id > 0 ? monogramHistoryEdge(false) : maxMessageId[0], 0, !cacheEndReached[0], minDate[0], classGuid, 0, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
                     } else {
                         getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, 0, 0, !cacheEndReached[0], minDate[0], classGuid, 0, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
                     }
@@ -13934,7 +13942,7 @@ public class ChatActivity extends BaseFragment implements
                     loadingForward = true;
                 } else if (!forwardEndReached[0]) {
                     waitingForLoad.add(lastLoadIndex);
-                    getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, minMessageId[0], 0, true, maxDate[0], classGuid, 1, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
+                    getMessagesController().loadMessages(dialog_id, mergeDialogId, false, 50, dialog_id > 0 ? monogramHistoryEdge(true) : minMessageId[0], 0, true, maxDate[0], classGuid, 1, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
                     loadingForward = true;
                 }
             }
@@ -21547,7 +21555,7 @@ public class ChatActivity extends BaseFragment implements
             }
             loadingForward = false;
         } else {
-            if (messArr.size() < count && load_type != 3 && load_type != 4) {
+            if (messArr.size() < count && load_type != 3 && load_type != 4 && (dialog_id <= 0 || isEnd)) {
                 if (isCache) {
                     if (currentEncryptedChat != null || loadIndex == 1 && mergeDialogId != 0 && isEnd) {
                         endReached[loadIndex] = true;
@@ -25925,7 +25933,7 @@ public class ChatActivity extends BaseFragment implements
                         for (int b = 0; b < size; b++) {
                             final MessageObject lastMessage = messages.get(b);
                             if (lastMessage.type >= 0 && lastMessage.messageOwner.date > 0) {
-                                if (chatMode != MODE_SCHEDULED && lastMessage.messageOwner.id > 0 && obj.messageOwner.id > 0 && lastMessage.messageOwner.id < obj.messageOwner.id || lastMessage.messageOwner.date < obj.messageOwner.date || lastMessage.messageOwner.date == obj.messageOwner.date) {
+                                if (dialog_id <= 0 && chatMode != MODE_SCHEDULED && lastMessage.messageOwner.id > 0 && obj.messageOwner.id > 0 && lastMessage.messageOwner.id < obj.messageOwner.id || lastMessage.messageOwner.date < obj.messageOwner.date || lastMessage.messageOwner.date == obj.messageOwner.date) {
                                     MessageObject.GroupedMessages lastGroupedMessages;
                                     if (lastMessage.getGroupId() != 0) {
                                         lastGroupedMessages = groupedMessagesMap.get(lastMessage.getGroupId());
