@@ -32,6 +32,7 @@ public final class MonogramController {
     }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService cacheWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService archiveWorker = Executors.newSingleThreadExecutor();
     private final int account;
     private final ExecutorService fileWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService profileWorker = Executors.newFixedThreadPool(2);
@@ -49,14 +50,12 @@ public final class MonogramController {
     private volatile int state = ConnectionsManager.ConnectionStateConnecting;
     private boolean restoring;
     private volatile long sessionEpoch;
-    private volatile boolean archiveLoading;
-    private boolean archiveResetAttempted;
+    private volatile ArchiveSync archiveSync;
     private final java.util.concurrent.ConcurrentHashMap<Long, Long> profileVersions = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Long> profileLoads = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.Set<Long> typingPeers = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.concurrent.ConcurrentHashMap<Long, String> typingAddresses = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long mediaHistoryPeer;
-    private long archiveRun;
     private int retrySeconds = 3;
     private final Runnable retryConnection = this::restore;
 
@@ -163,7 +162,7 @@ public final class MonogramController {
                     @Override public void disconnected() {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
-                            archiveRun++; archiveLoading = false;
+                            archiveSync = null;
                             state(ConnectionsManager.ConnectionStateWaitingForNetwork); retryConnection();
                         });
                     }
@@ -205,55 +204,104 @@ public final class MonogramController {
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
         startArchiveSync(connecting);
     }
-    private void startArchiveSync(XmppSession expected) {
-        archiveLoading = true; archiveResetAttempted = false;
-        long run = ++archiveRun;
-        worker.execute(() -> syncArchive(expected, false, run));
+    private static final class ArchiveTask {
+        final long peer;
+        boolean backwards, resetAttempted;
+        ArchiveTask(long peer) { this.peer = peer; }
     }
-    private void syncArchive(XmppSession expected, boolean backwards, long run) {
-        if (run != archiveRun || session != expected || !expected.connection().isAuthenticated()) return;
+    private static final class ArchiveSync {
+        final XmppSession session;
+        final long epoch;
+        final java.util.ArrayDeque<ArchiveTask> tasks = new java.util.ArrayDeque<>();
+        final java.util.Set<Long> peers = new java.util.HashSet<>();
+        final java.util.Set<Long> pending = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
+        boolean supported;
+        ArchiveSync(XmppSession session, long epoch) { this.session = session; this.epoch = epoch; }
+        boolean add(long peer) {
+            if (!peers.add(peer)) return false;
+            pending.add(peer); tasks.addLast(new ArchiveTask(peer)); return true;
+        }
+    }
+    private boolean currentArchive(ArchiveSync sync) {
+        return archiveSync == sync && accountEpoch == sync.epoch && session == sync.session && sync.session.connection().isAuthenticated();
+    }
+    private void startArchiveSync(XmppSession expected) {
+        ArchiveSync sync = new ArchiveSync(expected, accountEpoch); archiveSync = sync;
+        for (long peer : store.peers()) if (peer != self) sync.add(peer);
+        // Keep discovery for conversations that exist only in the server archive.
+        sync.add(0);
+        nextArchivePage(sync);
+    }
+    private void nextArchivePage(ArchiveSync sync) {
+        if (!currentArchive(sync)) return;
+        ArchiveTask task;
+        while ((task = sync.tasks.pollFirst()) != null) {
+            if (task.backwards && store.archiveComplete(task.peer)) { sync.pending.remove(task.peer); continue; }
+            final ArchiveTask next = task;
+            archiveWorker.execute(() -> syncArchive(sync, next));
+            return;
+        }
+        archiveSync = null;
+    }
+    private void syncArchive(ArchiveSync sync, ArchiveTask task) {
+        if (!currentArchive(sync)) return;
         try {
-            if (!expected.hasArchive()) { archiveLoading = false; return; }
-            String cursor = store.archiveCursor(backwards);
-            if (backwards && store.archiveComplete()) { archiveLoading = false; return; }
-            XmppSession.ArchivePage page = !backwards && cursor != null
-                    ? expected.archiveAfter(cursor, 100) : expected.archiveBefore(null, cursor, 100);
-            if (cursor != null && cursor.equals(backwards ? page.firstId : page.lastId) && !page.complete) {
+            if (!sync.supported) {
+                if (!sync.session.hasArchive()) { worker.execute(() -> { if (currentArchive(sync)) archiveSync = null; }); return; }
+                sync.supported = true;
+            }
+            String cursor = store.archiveCursor(task.peer, task.backwards);
+            String jid = task.peer == 0 ? null : store.jid(task.peer);
+            XmppSession.ArchivePage page = !task.backwards && cursor != null
+                    ? sync.session.archiveAfter(jid, cursor, 100) : sync.session.archiveBefore(jid, cursor, 100);
+            if (cursor != null && cursor.equals(task.backwards ? page.firstId : page.lastId) && !page.complete) {
                 throw new java.io.IOException("Archive cursor did not advance");
             }
-            boolean initial = !backwards && cursor == null;
-            java.util.Set<Integer> updated = new java.util.HashSet<>();
-            boolean changed = store.saveArchive(page, backwards || initial, updated);
-            java.util.Set<Long> replyPeers = new java.util.HashSet<>();
-            for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
-            for (long peer : replyPeers) {
-                MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
-                updated.addAll(corrections.edited);
-                publishCorrections(peer, correctionUpdates(corrections, 0));
-                refreshReplies(peer, updated);
-            }
-            if (changed && UserConfig.getInstance(account).isClientActivated()) {
-                TLRPC.TL_messages_dialogs dialogs = dialogs();
-                AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
-                        dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
-            }
-            boolean older = backwards || initial || page.complete;
-            if (older ? !store.archiveComplete() : page.lastId != null) {
-                worker.execute(() -> syncArchive(expected, older, run));
-            } else { archiveLoading = false; }
-        } catch (Exception e) {
-            if (!archiveResetAttempted && e instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
-                    && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) e).getStanzaError().getCondition()
-                    == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
-                archiveResetAttempted = true;
-                store.resetArchiveCursor();
-                worker.execute(() -> syncArchive(expected, false, run));
-                return;
-            }
-            archiveLoading = false;
-            // Keep local chats usable if the provider has no usable archive. A later connection retries.
-            if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram archive sync: " + e.getClass().getSimpleName());
+            boolean initial = !task.backwards && cursor == null;
+            worker.execute(() -> {
+                if (!currentArchive(sync)) return;
+                try { archivePage(sync, task, page, initial); }
+                catch (Exception error) { archiveFailed(sync, task, error); }
+            });
+        } catch (Exception error) { worker.execute(() -> { if (currentArchive(sync)) archiveFailed(sync, task, error); }); }
+    }
+    private void archivePage(ArchiveSync sync, ArchiveTask task, XmppSession.ArchivePage page, boolean initial) {
+        java.util.Set<Integer> updated = new java.util.HashSet<>();
+        boolean changed = store.saveArchive(task.peer, page, task.backwards || initial, updated);
+        java.util.Set<Long> replyPeers = new java.util.HashSet<>();
+        for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
+        for (long peer : replyPeers) {
+            MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
+            updated.addAll(corrections.edited);
+            publishCorrections(peer, correctionUpdates(corrections, 0));
+            refreshReplies(peer, updated);
+            if (peer != self && sync.add(peer)) refreshProfile(peer);
         }
+        if (changed && UserConfig.getInstance(account).isClientActivated()) {
+            TLRPC.TL_messages_dialogs dialogs = dialogs();
+            AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
+                    dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
+        }
+        boolean older = task.backwards || initial || page.complete;
+        if (older ? !store.archiveComplete(task.peer) : page.lastId != null) {
+            task.backwards = older;
+            // One page per chat per turn, including account-wide discovery.
+            sync.tasks.addLast(task);
+        } else sync.pending.remove(task.peer);
+        nextArchivePage(sync);
+    }
+    private void archiveFailed(ArchiveSync sync, ArchiveTask task, Exception error) {
+        if (!task.resetAttempted && error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
+                && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) error).getStanzaError().getCondition()
+                == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
+            task.resetAttempted = true; task.backwards = false;
+            store.resetArchiveCursor(task.peer); sync.tasks.addLast(task);
+        } else {
+            sync.pending.remove(task.peer);
+            // A failed chat must not prevent other chats from syncing or erase cached history.
+            if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram archive sync: " + error.getClass().getSimpleName());
+        }
+        nextArchivePage(sync);
     }
     private TLRPC.TL_messages_dialogs dialogs() {
         TLRPC.TL_messages_dialogs result = new TLRPC.TL_messages_dialogs();
@@ -275,7 +323,8 @@ public final class MonogramController {
         cacheWorker.execute(() -> {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             mediaHistoryPeer = peer;
-            boolean end = !archiveLoading;
+            ArchiveSync sync = archiveSync;
+            boolean end = sync == null || !sync.pending.contains(peer);
             try {
                 result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
                 result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
@@ -314,7 +363,7 @@ public final class MonogramController {
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
             typingAddresses.clear();
             if (session != null) { session.close(); session = null; }
-            sessionEpoch++; archiveRun++; archiveLoading = false;
+            sessionEpoch++; archiveSync = null;
             for (FileTransfer.Job job : fileJobs.values()) job.cancel();
             fileJobs.clear(); fileNames.clear();
             automaticJobs.clear(); autoAttempted.clear();

@@ -10,6 +10,9 @@ public final class MessageFixture {
         return new XmppSession.ArchivePage(java.util.Arrays.asList(messages), messages[0].ids.get("archive"),
                 messages[messages.length - 1].ids.get("archive"), true);
     }
+    public static XmppSession.ArchivePage page(boolean complete, String first, String last, XmppMessage... messages) {
+        return new XmppSession.ArchivePage(java.util.Arrays.asList(messages), first, last, complete);
+    }
     public static XmppMessage message(String stanzaId, String originId, String archiveId, String body,
                                       boolean readable, boolean outgoing, long time) throws Exception {
         return messageFrom(stanzaId, originId, archiveId, body, readable, outgoing, time, null);

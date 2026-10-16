@@ -40,7 +40,7 @@ public class MonogramEditingTest {
     }
 
     @After public void cleanup() throws Exception {
-        for (String name : new String[]{"worker", "cacheWorker", "fileWorker", "profileWorker", "autoDownloadWorker"}) {
+        for (String name : new String[]{"worker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
         }
         store.close();
@@ -88,6 +88,33 @@ public class MonogramEditingTest {
             assertNull(failure.get());
             assertTrue(result.get() instanceof TLRPC.TL_messages_messageEditData);
         } finally { releaseNetwork.countDown(); }
+    }
+
+    @Test public void archiveCursorsAreIndependentAndTransactional() throws Exception {
+        int original = message("saved", "Keep cached text", true, true, null);
+        long other = store.peer("other@example.org");
+        store.saveArchive(peer, MessageFixture.page(true, "bob-first", "bob-last"), true, null);
+        store.saveArchive(other, MessageFixture.page(false, "other-first", "other-last"), true, null);
+        store.saveArchive(MessageFixture.page(true, "global-first", "global-last"), true);
+        assertEquals("bob-last", store.archiveCursor(peer, false));
+        assertEquals("other-last", store.archiveCursor(other, false));
+        assertEquals("global-last", store.archiveCursor(false));
+        assertTrue(store.archiveComplete(peer)); assertFalse(store.archiveComplete(other));
+        try {
+            store.saveArchive(other, MessageFixture.page(MessageFixture.message("wrong-chat", null, "wrong-archive",
+                    "Wrong chat", true, false, 200000)), false, null);
+            fail("Cross-chat archive response accepted");
+        } catch (IllegalArgumentException expected) { }
+        assertEquals("other-last", store.archiveCursor(other, false));
+        assertEquals("bob-last", store.archiveCursor(peer, false));
+        store.resetArchiveCursor(other);
+        assertNull(store.archiveCursor(other, false)); assertFalse(store.archiveComplete(other));
+        assertEquals("bob-last", store.archiveCursor(peer, false));
+        assertEquals("global-last", store.archiveCursor(false));
+        assertEquals("Keep cached text", store.getMessage(original, self).message);
+        MonogramStore reopened = new MonogramStore(0);
+        try { assertEquals("bob-last", reopened.archiveCursor(peer, false)); }
+        finally { reopened.close(); }
     }
 
     @Test public void refusesForeignMissingUnreadableAndMediaTargets() throws Exception {

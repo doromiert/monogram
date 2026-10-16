@@ -274,6 +274,22 @@ class XmppIntegrationTest {
             }
             java.util.Set<String> expected = new java.util.HashSet<>(archive.keySet()); expected.remove(oldest);
             assertEquals(expected, forwardIds, "Forward catch-up must cover the same archive without repeating its anchor");
+            alice.send("typingbob@localhost", "separate archive conversation", false);
+            XmppSession.ArchivePage global = second.archiveAfter(oldest, 100);
+            assertTrue(global.messages.stream().anyMatch(m -> m.peer.toString().equals("typingbob@localhost")),
+                    "Global discovery must retain archive-only conversations");
+            java.util.Set<String> peerIds = new java.util.HashSet<>();
+            after = oldest;
+            for (int pageNumber = 0; pageNumber < 30; pageNumber++) {
+                XmppSession.ArchivePage page = second.archiveAfter("bob@localhost", after, 2);
+                for (XmppMessage message : page.messages) {
+                    assertEquals("bob@localhost", message.peer.toString(), "Catch-up must be filtered to this chat");
+                    assertTrue(peerIds.add(message.ids.get("archive")));
+                }
+                if (page.complete || page.lastId == null) break;
+                assertNotEquals(after, page.lastId); after = page.lastId;
+            }
+            assertEquals(expected, peerIds, "Per-chat catch-up must retain all of that chat's messages");
             String bobBefore = null;
             for (int pageNumber = 0; pageNumber < 30; pageNumber++) {
                 XmppSession.ArchivePage page = bob.archiveBefore(null, bobBefore, 2);
