@@ -66,6 +66,15 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [ ] Package and verify deployment for 192.168.1.24 using Nix.
 - [ ] Address remaining applicable features such as calls through standard XMPP support, and remove misleading Telegram-only service controls.
 
+## exteraGram features
+
+Reference APK: `~/extera/exteraGram-full-universal-20261004.apk`. The user reports that exteraGram's GitHub source is outdated; use the supplied APK as the behavior reference and reverse engineer it where needed.
+
+- [ ] Inventory exteraGram features from the supplied APK and prioritize which to bring to Monogram.
+- [ ] Compare the available source with the APK; inspect/decompile APK code and resources where the source does not cover the shipped behavior.
+- [ ] Map selected features to local client changes, standard XMPP extensions or optional helper capabilities, accounting for OMEMO and MUCs.
+- [ ] Implement and verify the selected features on the current official Telegram base, recording attribution and applicable license requirements.
+
 ## Release verification
 
 - [ ] Finish branding, launcher variants, app links, attribution and licensing on the current base.
