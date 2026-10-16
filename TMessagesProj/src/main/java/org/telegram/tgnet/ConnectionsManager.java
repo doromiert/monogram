@@ -180,12 +180,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public boolean isPushConnectionEnabled() {
-        SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();
-        if (preferences.contains("pushConnection")) {
-            return preferences.getBoolean("pushConnection", true);
-        } else {
-            return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);
-        }
+        return MessagesController.getNotificationsSettings(currentAccount).getBoolean("pushConnection", true);
     }
 
     public long getCurrentTimeMillis() {
@@ -425,7 +420,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void setPushConnectionEnabled(boolean value) {
-
+        ApplicationLoader.startPushService();
     }
 
     public void init(int version, int layer, int apiId, String deviceModel, String systemVersion, String appVersion, String langCode, String systemLangCode, String configPath, String logPath, String regId, String cFingerprint, int timezoneOffset, long userId, boolean userPremium, boolean enablePushConnection) {

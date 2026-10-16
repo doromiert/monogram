@@ -36,10 +36,14 @@ public class MonogramArchiveTest {
         @Implementation public static void e(String message) { }
     }
     static final List<String> stages=new java.util.concurrent.CopyOnWriteArrayList<>();
+    static final java.util.Set<String> blockedProfiles=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    static CountDownLatch profileEntered,profileRelease;
     @Implements(value=com.negzero.monogram.xmpp.XmppProfiles.class,isInAndroidSdk=false)
     public static class Profiles {
         @Implementation public com.negzero.monogram.xmpp.XmppProfile load(String address) throws Exception {
-            stages.add("profile:"+address); return new com.negzero.monogram.xmpp.XmppProfile("<vCard xmlns='vcard-temp'/>",null,new byte[0]);
+            stages.add("profile:"+address);
+            if(blockedProfiles.contains(address)) { profileEntered.countDown(); if(!profileRelease.await(10,TimeUnit.SECONDS)) throw new java.io.IOException("Profile test timed out"); }
+            return new com.negzero.monogram.xmpp.XmppProfile("<vCard xmlns='vcard-temp'/>",null,new byte[0]);
         }
         @Implementation public void useOwnProfile(com.negzero.monogram.xmpp.XmppProfile profile) {}
     }
@@ -50,6 +54,7 @@ public class MonogramArchiveTest {
         final CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         boolean block,expireBob,failBob,windowMode;
         String blockPeer;
+        com.negzero.monogram.xmpp.XmppMessage lateMessage;
         @Implementation public XMPPTCPConnection connection() { return connection; }
         @Implementation public boolean hasArchive() { return true; }
         @Implementation public java.util.Set<org.jivesoftware.smackx.omemo.internal.OmemoDevice> devices(String jid) { stages.add("fingerprint:"+jid); return java.util.Collections.emptySet(); }
@@ -70,7 +75,7 @@ public class MonogramArchiveTest {
                 if (block && !release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Test did not release archive");
             }
             if (failBob && "bob@example.org".equals(peer)) throw new java.io.IOException("Test archive timeout");
-            if ("bob@example.org".equals(peer) && before == null) return MessageFixture.page(false, "b1", "b2");
+            if ("bob@example.org".equals(peer) && before == null) return lateMessage==null ? MessageFixture.page(false, "b1", "b2") : MessageFixture.page(true,"b1","b2",lateMessage);
             return MessageFixture.page(true, before == null ? "first" : "b0", before == null ? "last" : "b0");
         }
         @Implementation public XmppSession.ArchivePage archiveAfter(String peer, String after, int limit) throws Exception {
@@ -90,7 +95,8 @@ public class MonogramArchiveTest {
     private ExecutorService archives;
     private long bob, other;
     @Before public void setup() throws Exception {
-        stages.clear(); ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
+        stages.clear(); blockedProfiles.clear(); profileEntered=new CountDownLatch(1); profileRelease=new CountDownLatch(1);
+        ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
         controller = ReflectionHelpers.callConstructor(MonogramController.class, ReflectionHelpers.ClassParameter.from(int.class, 0));
         store = ReflectionHelpers.getField(controller, "store");
         ReflectionHelpers.setField(controller, "self", store.peer("alice@example.org"));
@@ -106,7 +112,7 @@ public class MonogramArchiveTest {
         archives = ReflectionHelpers.getField(controller, "archiveWorker");
     }
     @After public void cleanup() {
-        session.fingerprints.close();
+        profileRelease.countDown(); session.fingerprints.close();
         network.release.countDown();
         for (String name : new String[]{"worker", "sendWorker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker", "fingerprintWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
@@ -133,13 +139,10 @@ public class MonogramArchiveTest {
         start(); finished();
         assertEquals(4,network.calls.size()); assertTrue(network.calls.contains("before:bob@example.org:b1"));
         assertTrue(store.archiveComplete(bob)); assertTrue(store.archiveComplete(other));
-        int lastProfile=-1,firstFingerprint=Integer.MAX_VALUE,lastFingerprint=-1,firstMessage=Integer.MAX_VALUE;
-        for(int i=0;i<stages.size();i++) {
-            if(stages.get(i).startsWith("profile:")) lastProfile=i;
-            if(stages.get(i).startsWith("fingerprint:")) { firstFingerprint=Math.min(firstFingerprint,i); lastFingerprint=i; }
-            if(stages.get(i).startsWith("messages:")) firstMessage=Math.min(firstMessage,i);
+        for(String peer:new String[]{"bob@example.org","other@example.org"}) {
+            int profile=stages.indexOf("profile:"+peer),fingerprint=stages.indexOf("fingerprint:"+peer),message=stages.indexOf("messages:"+peer);
+            assertTrue(profile>=0 && profile<fingerprint); assertTrue(fingerprint<message);
         }
-        assertTrue(lastProfile<firstFingerprint); assertTrue(lastFingerprint<firstMessage);
         network.calls.clear(); start(); finished();
         assertTrue(network.calls.contains("before:bob@example.org:null")); assertTrue(network.calls.stream().noneMatch(call -> call.startsWith("after:")));
     }
@@ -153,6 +156,48 @@ public class MonogramArchiveTest {
         controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS); finished();
         assertEquals(4,network.calls.stream().filter(call -> call.startsWith("before:bob@example.org:")).count());
         try(android.database.Cursor c=store.getReadableDatabase().rawQuery("SELECT count(*) FROM messages WHERE peer=?",new String[]{Long.toString(bob)})) { c.moveToFirst(); assertEquals(200,c.getInt(0)); }
+    }
+    @Test public void cachedChatCatchesUpWhileItsRefreshAndAnotherChatsMetadataAreBlocked() throws Exception {
+        long own=ReflectionHelpers.getField(controller,"self");
+        com.negzero.monogram.xmpp.XmppProfile cached=new com.negzero.monogram.xmpp.XmppProfile("<vCard xmlns='vcard-temp'><NICKNAME>Cached</NICKNAME></vCard>",null,new byte[0]);
+        store.profile(own,cached); store.profile(bob,cached);
+        blockedProfiles.add("bob@example.org"); blockedProfiles.add("other@example.org");
+        network.blockPeer="bob@example.org";
+        start(); assertTrue(profileEntered.await(5,TimeUnit.SECONDS));
+        assertTrue("A cached chat waited for unrelated metadata or its background refresh",network.entered.await(5,TimeUnit.SECONDS));
+        assertFalse(stages.contains("messages:other@example.org"));
+        profileRelease.countDown(); finished();
+        assertTrue(stages.contains("messages:other@example.org"));
+    }
+    @Test public void decryptedCallbacksSurviveReconnectButCannotCrossAccountChanges() throws Exception {
+        android.content.SharedPreferences preferences=ReflectionHelpers.getField(controller,"preferences");
+        preferences.edit().putString("jid","alice@example.org").commit();
+        CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
+        controller.worker.execute(() -> { entered.countDown(); try { release.await(5,TimeUnit.SECONDS); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } });
+        assertTrue(entered.await(5,TimeUnit.SECONDS));
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();
+        com.negzero.monogram.xmpp.XmppMessage message=MessageFixture.message("buffered",null,null,"Retain decrypted text",true,false,100000);
+        ReflectionHelpers.callInstanceMethod(controller,"received",ReflectionHelpers.ClassParameter.from(long.class,0L),ReflectionHelpers.ClassParameter.from(String.class,"alice@example.org"),ReflectionHelpers.ClassParameter.from(com.negzero.monogram.xmpp.XmppMessage.class,message),ReflectionHelpers.ClassParameter.from(Runnable.class,accepted::incrementAndGet));
+        ReflectionHelpers.setField(controller,"sessionEpoch",99L); ReflectionHelpers.setField(controller,"session",null);
+        release.countDown(); controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);
+        assertEquals("Retain decrypted text",store.history(bob,1,0,50).get(0).message); assertEquals(1,accepted.get());
+        ReflectionHelpers.setField(controller,"accountEpoch",1L);
+        message=MessageFixture.message("stale-account",null,null,"Must not import",true,false,100001);
+        ReflectionHelpers.callInstanceMethod(controller,"received",ReflectionHelpers.ClassParameter.from(long.class,0L),ReflectionHelpers.ClassParameter.from(String.class,"alice@example.org"),ReflectionHelpers.ClassParameter.from(com.negzero.monogram.xmpp.XmppMessage.class,message),ReflectionHelpers.ClassParameter.from(Runnable.class,accepted::incrementAndGet));
+        controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);
+        assertEquals(1,store.history(bob,1,0,50).size()); assertEquals(1,accepted.get());
+    }
+    @Test public void lateDecryptedHistorySurvivesReconnectWithoutWritingOldCursors() throws Exception {
+        android.content.SharedPreferences preferences=ReflectionHelpers.getField(controller,"preferences");
+        preferences.edit().putString("jid","alice@example.org").commit();
+        network.block=true; network.blockPeer="bob@example.org";
+        network.lateMessage=MessageFixture.message("late-decoded",null,null,"Preserve decoded archive text",true,false,100000);
+        start(); assertTrue(network.entered.await(5,TimeUnit.SECONDS));
+        controller.worker.submit(() -> ReflectionHelpers.setField(controller,"archiveSync",null)).get(5,TimeUnit.SECONDS);
+        network.release.countDown(); archives.submit(() -> {}).get(5,TimeUnit.SECONDS);
+        controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);
+        assertEquals("Preserve decoded archive text",store.history(bob,1,0,50).get(0).message);
+        assertNull(store.archiveCursor(bob,false));
     }
     @Test public void stalledArchiveLeavesNetworkRequestsResponsiveAndAccountChangesDiscardResults() throws Exception {
         network.block = true; start(); assertTrue(network.entered.await(5, TimeUnit.SECONDS));

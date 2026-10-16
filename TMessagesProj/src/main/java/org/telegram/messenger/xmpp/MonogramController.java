@@ -162,8 +162,15 @@ public final class MonogramController {
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         state(ConnectionsManager.ConnectionStateConnecting);
         worker.execute(() -> {
-            try { connect(new Account(preferences.getString("jid", ""), preferences.getString("host", ""), preferences.getInt("port", 5222), "Monogram"),
-                    vault.decrypt(preferences.getString("credential", ""))); }
+            try {
+                XmppSession existing = session;
+                if (!force && existing != null) {
+                    // Retain stream resumption and initialized keys on automatic reconnects.
+                    if (!existing.connection().isConnected()) existing.connection().connect();
+                    if (!existing.connection().isAuthenticated()) existing.connection().login();
+                } else connect(new Account(preferences.getString("jid", ""), preferences.getString("host", ""), preferences.getInt("port", 5222), "Monogram"),
+                        vault.decrypt(preferences.getString("credential", "")));
+            }
             catch (Exception e) { state(ConnectionsManager.ConnectionStateWaitingForNetwork); retryConnection(); }
             finally { synchronized (this) { restoring = false; } }
         });
@@ -177,7 +184,7 @@ public final class MonogramController {
     private void connect(Account details, String password) throws Exception {
         if (session != null) { session.close(); session = null; }
         joinedRooms.clear(); bookmarkSync=null; pendingProfileUsers.clear(); visibleHistory.clear();
-        final long epoch = ++sessionEpoch;
+        final long epoch = ++sessionEpoch, owner=accountEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
         AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
@@ -197,12 +204,10 @@ public final class MonogramController {
                         () -> modernStore.begin(details.jid.toString(),modernDevice)),
                 new XmppSession.Listener() {
                     @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
-                    @Override public void message(XmppMessage message) { worker.execute(() -> { if (sessionEpoch == epoch && session != null) incoming(message); }); }
-                    @Override public void message(XmppMessage message,Runnable accepted) {
-                        worker.execute(() -> { if (sessionEpoch == epoch && session != null) { incoming(message); accepted.run(); } });
-                    }
+                    @Override public void message(XmppMessage message) { received(owner,details.jid.toString(),message,null); }
+                    @Override public void message(XmppMessage message,Runnable accepted) { received(owner,details.jid.toString(),message,accepted); }
                     @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
-                        worker.execute(() -> { if (sessionEpoch==epoch && session!=null) incomingRoom(message); });
+                        worker.execute(() -> { if (sameAccount(owner,details.jid.toString())) incomingRoom(message); });
                     }
                     @Override public void contactRequest(String address,boolean pending) {
                         worker.execute(() -> { if(sessionEpoch==epoch) recordContactRequest(details.jid.toString(),address,pending); });
@@ -254,7 +259,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); recoverPendingSends(); startArchiveSync(session); archiveSync.waitingRooms=true; syncBookmarks(session,epoch,null);
+                            state(ConnectionsManager.ConnectionStateConnected); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null);
                         });
                     }
                 });
@@ -292,7 +297,7 @@ public final class MonogramController {
         state(ConnectionsManager.ConnectionStateConnected);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
         recoverPendingSends();
-        startArchiveSync(connecting); archiveSync.waitingRooms=true; syncBookmarks(connecting,epoch,null);
+        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null);
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
         roomWorker.execute(() -> {
@@ -308,10 +313,6 @@ public final class MonogramController {
                     flushPendingSends();
                 } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room rejoin: "+failed.getClass().getSimpleName()); }
             }
-            worker.execute(() -> {
-                ArchiveSync sync=archiveSync;
-                if(session==expected && sessionEpoch==epoch && sync!=null && currentArchive(sync)) { sync.waitingRooms=false; startFingerprintStage(sync); }
-            });
         });
     }
     private static final class BookmarkSync {
@@ -527,19 +528,18 @@ public final class MonogramController {
     private static final class ArchiveSync {
         final XmppSession session;
         final long epoch;
+        final String jid;
         final java.util.ArrayDeque<ArchiveTask> tasks = new java.util.ArrayDeque<>();
         final java.util.Set<Long> peers = new java.util.HashSet<>();
         final java.util.Set<Long> rescan = new java.util.HashSet<>();
         final java.util.Set<Long> pending = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
-        boolean supported,directChecked,running,waitingRooms;
-        int fingerprintStage;
-        final java.util.Set<Long> metadataPending=new java.util.HashSet<>();
+        boolean supported,directChecked,running;
         final java.util.ArrayDeque<Long> fingerprintsReady=new java.util.ArrayDeque<>();
         final java.util.Map<Long,Integer> requestedPages=new java.util.HashMap<>();
         final java.util.Map<Long,ArchiveTask> windows=new java.util.HashMap<>();
         final java.util.Set<Long> preparing=new java.util.HashSet<>();
         final java.util.Set<Long> supportedRooms=new java.util.HashSet<>();
-        ArchiveSync(XmppSession session, long epoch) { this.session = session; this.epoch = epoch; }
+        ArchiveSync(XmppSession session, long epoch,String jid) { this.session = session; this.epoch = epoch; this.jid=jid; }
         boolean add(long peer) {
             peers.add(peer);
             ArchiveTask task=windows.computeIfAbsent(peer,ArchiveTask::new);
@@ -552,7 +552,7 @@ public final class MonogramController {
         return archiveSync == sync && accountEpoch == sync.epoch && session == sync.session && sync.session.connection().isAuthenticated();
     }
     private void startArchiveSync(XmppSession expected) {
-        ArchiveSync sync = new ArchiveSync(expected, accountEpoch); archiveSync = sync;
+        ArchiveSync sync = new ArchiveSync(expected, accountEpoch,store.jid(self)); archiveSync = sync;
         for (long peer : store.peers()) if (peer != self) prepareArchivePeer(sync,peer);
         for(long room:store.rooms()) try { if(store.room(room).autojoin && expected.rooms.state(store.jid(room)).joined) { joinedRooms.add(room); prepareArchivePeer(sync,room); } } catch(Exception ignored) {}
         // Keep discovery for conversations that exist only in the server archive.
@@ -561,29 +561,28 @@ public final class MonogramController {
     }
     private void prepareArchivePeer(ArchiveSync sync,long peer) {
         if(!currentArchive(sync) || sync.windows.containsKey(peer) || !sync.preparing.add(peer)) return;
-        sync.peers.add(peer); sync.metadataPending.add(peer);
+        sync.peers.add(peer);
         java.util.Set<Long> profiles=new java.util.LinkedHashSet<>(); if(peer!=0) profiles.add(peer); profiles.add(self);
         if(peer<0) for(TLRPC.User user:store.roomUsers(peer,self)) profiles.add(user.id);
         java.util.concurrent.atomic.AtomicInteger remaining=new java.util.concurrent.atomic.AtomicInteger(profiles.size());
         Runnable profileReady=() -> {
             if(remaining.decrementAndGet()!=0 || !currentArchive(sync)) return;
-            sync.metadataPending.remove(peer); sync.fingerprintsReady.addLast(peer); startFingerprintStage(sync);
+            sync.fingerprintsReady.addLast(peer); startFingerprintStage(sync);
         };
-        for(long profile:profiles) refreshProfile(profile,profileReady);
+        for(long profile:profiles) {
+            if(store.profile(profile)!=null) { refreshProfile(profile); profileReady.run(); }
+            else refreshProfile(profile,profileReady);
+        }
     }
     private void startFingerprintStage(ArchiveSync sync) {
-        if(!currentArchive(sync) || sync.waitingRooms || !sync.metadataPending.isEmpty()) return;
-        if(!sync.fingerprintsReady.isEmpty()) {
-            final int stage=++sync.fingerprintStage;
-            sync.session.fingerprints.afterTimeout(() -> worker.execute(() -> {
-                if(!currentArchive(sync) || stage!=sync.fingerprintStage || !sync.metadataPending.isEmpty()) return;
-                for(long peer:new java.util.HashSet<>(sync.preparing)) { sync.preparing.remove(peer); sync.add(peer); }
-                nextArchivePage(sync);
-            }));
-        }
+        if(!currentArchive(sync)) return;
         Long next;
         while((next=sync.fingerprintsReady.pollFirst())!=null) {
             final long peer=next;
+            Runnable ready=() -> {
+                if(currentArchive(sync) && sync.preparing.remove(peer)) { sync.add(peer); nextArchivePage(sync); }
+            };
+            sync.session.fingerprints.afterTimeout(() -> worker.execute(ready));
             fingerprintWorker.execute(() -> {
                 try {
                     java.util.Set<String> addresses=new java.util.LinkedHashSet<>();
@@ -595,9 +594,9 @@ public final class MonogramController {
                     if(!currentArchive(sync)) return;
                     // The shared discovery pool has a deadline; an unavailable member cannot hold all history.
                     sync.session.fingerprints.load(addresses,modernEncryption(peer) && sync.session.modernAvailable(),false,snapshot -> {
-                        if(snapshot.complete) worker.execute(() -> { if(currentArchive(sync)) { sync.preparing.remove(peer); sync.add(peer); nextArchivePage(sync); } });
+                        if(snapshot.complete) worker.execute(ready);
                     });
-                } catch(Exception failed) { worker.execute(() -> { if(currentArchive(sync)) { sync.preparing.remove(peer); sync.add(peer); nextArchivePage(sync); } }); }
+                } catch(Exception failed) { worker.execute(ready); }
             });
         }
         nextArchivePage(sync);
@@ -605,7 +604,7 @@ public final class MonogramController {
     private void queueRoomArchive(long room,XmppSession expected) {
         ArchiveSync sync=archiveSync;
         if(sync!=null && currentArchive(sync)) { prepareArchivePeer(sync,room); return; }
-        sync=new ArchiveSync(expected,accountEpoch); archiveSync=sync; prepareArchivePeer(sync,room);
+        sync=new ArchiveSync(expected,accountEpoch,store.jid(self)); archiveSync=sync; prepareArchivePeer(sync,room);
     }
     private void syncRoomArchive(ArchiveSync sync,ArchiveTask task) throws Exception {
         String jid=store.jid(task.peer);
@@ -619,7 +618,10 @@ public final class MonogramController {
         if(cursor!=null && cursor.equals(task.backwards ? page.firstId : page.lastId) && !page.complete) throw new java.io.IOException("Room archive cursor did not advance");
         boolean initial=task.loaded==0;
         worker.execute(() -> {
-            if(!currentArchive(sync)) return;
+            if(!currentArchive(sync)) {
+                if(sameAccount(sync.epoch,sync.jid)) for(com.negzero.monogram.xmpp.XmppRoomMessage message:page.messages) store.saveRoom(message,self);
+                return;
+            }
             try {
                 java.util.Set<Integer> updated=new java.util.HashSet<>();
                 boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
@@ -646,7 +648,7 @@ public final class MonogramController {
         });
     }
     private void nextArchivePage(ArchiveSync sync) {
-        if (!currentArchive(sync) || sync.running || sync.waitingRooms || !sync.preparing.isEmpty()) return;
+        if (!currentArchive(sync) || sync.running) return;
         for (long peer:sync.rescan) {
             store.resetArchiveCursor(peer); sync.tasks.removeIf(task -> task.peer==peer);
             sync.windows.remove(peer); sync.pending.remove(peer); sync.add(peer);
@@ -679,7 +681,13 @@ public final class MonogramController {
             }
             boolean initial = task.loaded==0;
             worker.execute(() -> {
-                if (!currentArchive(sync)) return;
+                if (!currentArchive(sync)) {
+                    if(sameAccount(sync.epoch,sync.jid)) {
+                        for(XmppMessage message:page.messages) store.save(message);
+                        page.stored();
+                    }
+                    return;
+                }
                 try { archivePage(sync, task, page, initial); }
                 catch (Exception error) { archiveFailed(sync, task, error); }
             });
@@ -791,12 +799,14 @@ public final class MonogramController {
                 if (session != null) { session.close(); session = null; }
                 state(ConnectionsManager.ConnectionStateWaitingForNetwork);
             }
+            AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
             final Exception completed = error;
             AndroidUtilities.runOnUIThread(() -> result.accept(completed));
         });
     }
     public void logout() {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
+        AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
         accountEpoch++; pendingSends.clear(); queuedEncryption.clear();
         SharedPreferences.Editor roomPasswords=preferences.edit();
         for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
@@ -973,19 +983,33 @@ public final class MonogramController {
         if (!preferences.edit().putBoolean("omemo-" + peer, encrypted).commit()) throw new IllegalStateException("Cannot save encryption preference");
     }
     private int now() { return (int) (System.currentTimeMillis() / 1000); }
+    private boolean sameAccount(long owner,String jid) { return owner==accountEpoch && jid.equals(accountJid()) && self>0 && jid.equals(store.jid(self)); }
+    private void received(long owner,String jid,XmppMessage message,Runnable accepted) {
+        worker.execute(() -> {
+            // A reconnect may replace the session after decryption consumed a ratchet key.
+            if(!sameAccount(owner,jid)) return;
+            incoming(message);
+            if(accepted!=null) accepted.run();
+        });
+    }
     private void incoming(XmppMessage message) {
         long peer = store.peer(message.peer.toString());
         if(message.reactions!=null) { publishReactions(peer,store.reactions.save(message,self)); return; }
         if (store.profile(peer) == null) refreshProfile(peer);
         int date = (int) (message.timestamp / 1000);
-        int id = store.save(message);
+        java.util.Set<Integer> replaced = new java.util.HashSet<>();
+        int id = store.save(message,replaced);
         java.util.Set<Integer> updated = new java.util.HashSet<>(); if (id != 0) updated.add(id);
         MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
         updated.addAll(corrections.edited); refreshReplies(peer, updated);
         publishReactions(peer,store.reactions.reconcile(peer));
         ArrayList<TLRPC.Update> updates = correctionUpdates(corrections, id);
         if (id != 0 && !store.hiddenCorrection(id)) {
-            TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage(); update.message = store.getMessage(id, self); updates.add(update);
+            if(replaced.contains(id)) {
+                TL_update.TL_updateEditMessage update=new TL_update.TL_updateEditMessage(); update.message=store.getMessage(id,self); updates.add(update);
+            } else {
+                TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage(); update.message = store.getMessage(id, self); updates.add(update);
+            }
         }
         if (updates.isEmpty()) return;
         if (!UserConfig.getInstance(account).isClientActivated()) return;

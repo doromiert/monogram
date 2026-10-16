@@ -67,8 +67,10 @@ public final class MonogramStoreDeviceTest {
                 check(store.history(2, 1, 1, 1, true).get(0).id == newest, "Forward pagination must use the timeline anchor");
                 int unreadable = store.save(MessageFixture.message("locked", null, "locked-archive", null, false, false, 400000));
                 check(store.history(2, 1, 0, 1).get(0).message.contains("unavailable"), "Missing keys need an honest placeholder");
-                check(store.save(MessageFixture.message("locked", null, "locked-archive", "recovered", true, false, 400000)) == unreadable,
+                java.util.Set<Integer> replaced=new java.util.HashSet<>();
+                check(store.save(MessageFixture.message("locked", null, "locked-archive", "recovered", true, false, 400000),replaced) == unreadable,
                         "A later successful decryption must update the same local message");
+                check(replaced.contains(unreadable), "Recovery must tell the native UI to replace the placeholder");
                 check(store.history(2, 1, 0, 1).get(0).message.equals("recovered"), "Recovered text must replace the placeholder");
                 check(store.save(MessageFixture.message("existing", null, "sent-archive", "sent carbon", true, true, 500000)) > 0,
                         "Incoming and outgoing IDs must remain separate");

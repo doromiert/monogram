@@ -181,6 +181,15 @@ class XmppIntegrationTest {
             assertTrue(replyArchive.stream().anyMatch(m -> secretReplyId.equals(m.ids.get("origin")) && m.reply != null && originalId.equals(m.reply.id)));
             assertEquals(4, replyArchive.stream().filter(m -> m.correction != null && (replyId.equals(m.correction.id) || secretReplyId.equals(m.correction.id))).count());
             assertTrue(replyArchive.stream().anyMatch(m -> captionId.equals(m.ids.get("stanza")) && "Photo caption 😀".equals(m.caption) && m.sharing != null));
+            Message unavailable=org.jivesoftware.smack.util.PacketParserUtils.parseStanza("<message to='bob@localhost' type='chat' id='unreadable-live'><encrypted xmlns='eu.siacs.conversations.axolotl'><header sid='999999'><key rid='999998'>AAAA</key><iv>AAAAAAAAAAAAAAAAAAAAAA==</iv></header><payload>AAAA</payload></encrypted></message>");
+            alice.connection().sendStanza(unavailable);
+            XmppMessage pending=null; long pendingDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+            while(System.nanoTime()<pendingDeadline) {
+                XmppMessage next=receivedMessages.poll(100,TimeUnit.MILLISECONDS);
+                if(next!=null && "unreadable-live".equals(next.ids.get("stanza"))) { pending=next; break; }
+            }
+            assertNotNull(pending,"Undecryptable live legacy messages must not vanish");
+            assertFalse(pending.readable); assertTrue(pending.encrypted); assertNull(pending.body);
             assertTrue(ServiceDiscoveryManager.getInstanceFor(alice.connection()).serverSupportsFeature("urn:monogram:schedule:0"));
             Message scheduled = new Message(JidCreate.entityBareFrom("bob@localhost"), Message.Type.chat);
             scheduled.setStanzaId("scheduled-test"); scheduled.setBody("scheduled hello");

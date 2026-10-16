@@ -186,6 +186,7 @@ public final class XmppSession implements AutoCloseable {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
                 if (isModern(carbon)) deliverModern(carbon);
                 else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false);
+                else legacyPending(carbon);
             }
         });
         connection.addAsyncStanzaListener(stanza -> {
@@ -197,8 +198,17 @@ public final class XmppSession implements AutoCloseable {
             if (rooms.known(message.getFrom())) return;
             if (isModern(message)) deliverModern(message);
             else if (!encrypted(message)) deliver(listener, message, message.getBody(), false);
+            else legacyPending(message);
         }, stanza -> stanza instanceof Message && (((Message) stanza).getType() == Message.Type.chat
                 || ((Message) stanza).getType() == Message.Type.normal));
+    }
+
+    private void legacyPending(Message stanza) {
+        if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
+        OmemoElement element=stanza.getExtension(OmemoElement.NAME_ENCRYPTED,OmemoElement_VAxolotl.NAMESPACE);
+        if(element==null || element.isKeyTransportElement() || connection.getUser()==null || closed) return;
+        XmppMessage message=XmppMessage.from(stanza,connection.getUser().asEntityBareJid(),null,true,false,null,null);
+        if(message!=null) listener.message(message);
     }
 
     private static boolean encrypted(Message message) {

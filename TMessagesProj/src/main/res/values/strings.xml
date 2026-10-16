@@ -2497,6 +2497,7 @@
     <string name="DeleteLocalizationText">Are you sure you want to delete **%1$s** language pack?</string>
     <string name="IncorrectLocalization">Incorrect localization file</string>
     <string name="NotificationsService">Keep-Alive Service</string>
+    <string name="MonogramBackgroundConnection">Keeping your Jabber accounts connected</string>
     <string name="NotificationsServiceInfo">Relaunch app when shut down. Enable for reliable notifications.</string>
     <string name="NotificationsServiceConnection">Background Connection</string>
     <string name="NotificationsServiceConnectionInfo">Keep a low impact background connection to Telegram for reliable notifications.</string>

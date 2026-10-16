@@ -335,6 +335,7 @@ public class ApplicationLoader extends Application {
                 super.onActivityStarted(activity);
                 if (wasInBackground) {
                     ensureCurrentNetworkGet(true);
+                    startPushService();
                 }
             }
         };
@@ -363,22 +364,16 @@ public class ApplicationLoader extends Application {
     });
 
     public static void startPushService() {
-        SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();
-        boolean enabled;
-        if (preferences.contains("pushService")) {
-            enabled = preferences.getBoolean("pushService", true);
-        } else {
-            enabled = MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
-        }
-        if (enabled) {
+        Intent service = new Intent(applicationContext, NotificationsService.class);
+        if (NotificationsService.enabled(applicationContext)) {
             try {
-                applicationContext.startService(new Intent(applicationContext, NotificationsService.class));
-            } catch (Throwable ignore) {
-
+                if (Build.VERSION.SDK_INT >= 26) applicationContext.startForegroundService(service);
+                else applicationContext.startService(service);
+            } catch (RuntimeException error) {
+                // Android may forbid a background launch; retry when an activity starts.
+                FileLog.e(error);
             }
-        } else {
-            applicationContext.stopService(new Intent(applicationContext, NotificationsService.class));
-        }
+        } else applicationContext.stopService(service);
     }
 
     @Override

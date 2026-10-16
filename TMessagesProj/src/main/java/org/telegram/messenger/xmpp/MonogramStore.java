@@ -464,7 +464,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (full.profile_photo instanceof TLRPC.TL_photo) full.flags |= 4;
         return full;
     }
-    synchronized int save(XmppMessage message) {
+    synchronized int save(XmppMessage message) { return save(message,null); }
+    synchronized int save(XmppMessage message,java.util.Set<Integer> replaced) {
         if(message.reactions!=null) { long self=message.outgoing ? peer(message.sender.split("/",2)[0]) : 0; reactions.save(message,self); return 0; }
         if(!message.readable && reactions.known(message)) return 0;
         long peer = peer(message.peer.toString());
@@ -546,6 +547,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
             if (legacy != null && namespace(message) == 0) db.delete("message_ids", "kind='legacy-stanza' AND message=? AND value=?", new String[]{Integer.toString(id), legacy});
             db.setTransactionSuccessful();
+            if(changed && existing!=0 && replaced!=null) replaced.add(id);
             return changed ? id : 0;
         } finally { db.endTransaction(); }
     }

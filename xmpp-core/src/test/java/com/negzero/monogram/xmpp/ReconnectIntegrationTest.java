@@ -61,7 +61,7 @@ class ReconnectIntegrationTest {
                      "monogram-test", 202, new File(state, "reconnect-bob-trust"),
                      (sender, id, body, encrypted) -> { if (encrypted) received.add(body); })) {
             alice.connection().setUseStreamManagementResumption(false);
-            ReconnectionManager.getInstanceFor(alice.connection()).setFixedDelay(1);
+            ReconnectionManager.getInstanceFor(alice.connection()).disableAutomaticReconnection();
             org.jivesoftware.smack.roster.Roster.getInstanceFor(alice.connection()).setSubscriptionMode(org.jivesoftware.smack.roster.Roster.SubscriptionMode.accept_all);
             org.jivesoftware.smack.roster.Roster.getInstanceFor(bob.connection()).setSubscriptionMode(org.jivesoftware.smack.roster.Roster.SubscriptionMode.accept_all);
             alice.connect(); bob.connect();
@@ -75,6 +75,7 @@ class ReconnectIntegrationTest {
             assertEquals("before interruption", received.poll(15, TimeUnit.SECONDS));
             proxy.drop();
             assertEquals("down", events.poll(10, TimeUnit.SECONDS));
+            alice.connection().connect().login();
             assertEquals("up:false", events.poll(20, TimeUnit.SECONDS));
             assertTrue(alice.connection().isAuthenticated()); assertTrue(alice.connection().isSecureConnection());
             assertTrue(CarbonManager.getInstanceFor(alice.connection()).getCarbonsEnabled());
@@ -87,6 +88,7 @@ class ReconnectIntegrationTest {
             try { assertFalse(org.jivesoftware.smackx.ping.PingManager.getInstanceFor(alice.connection()).pingMyServer(true, 250)); }
             finally { proxy.muted = false; }
             assertEquals("down", events.poll(10, TimeUnit.SECONDS));
+            alice.connection().connect().login();
             assertEquals("up:false", events.poll(20, TimeUnit.SECONDS));
             assertEquals(identity, alice.ownFingerprint());
             alice.send("bob@localhost", "after unresponsive stream", true);
