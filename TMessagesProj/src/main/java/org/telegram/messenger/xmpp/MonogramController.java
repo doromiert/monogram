@@ -31,6 +31,7 @@ public final class MonogramController {
         return instances[account];
     }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService sendWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService bookmarkWorker = Executors.newSingleThreadExecutor();
     private final java.util.Set<Long> joinedRooms = new java.util.HashSet<>();
     private volatile BookmarkSync bookmarkSync;
@@ -75,6 +76,7 @@ public final class MonogramController {
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
     }
     public int state() { return state; }
+    public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
     public String accountJid() { return preferences.getString("jid", ""); }
     public java.util.Set<String> pendingContactRequests() {
         return new java.util.TreeSet<>(preferences.getStringSet("contact-requests-"+accountJid(),java.util.Collections.emptySet()));
@@ -155,7 +157,7 @@ public final class MonogramController {
     public void reconnect() { restore(true); }
     private synchronized void restore(boolean force) {
         if (restoring || !preferences.contains("jid")) return;
-        if (!force && session != null && (session.connection().isAuthenticated() || session.connection().isConnected())) return;
+        if (!force && session != null && session.connection().isAuthenticated()) return;
         restoring = true;
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         state(ConnectionsManager.ConnectionStateConnecting);
@@ -240,9 +242,10 @@ public final class MonogramController {
                             publishTyping(peer, composing);
                         });
                     }
-                    @Override public void disconnected() {
+                    @Override public void disconnected(Exception error) {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
+                            preferences.edit().putString("last-disconnect-"+details.jid,new java.util.Date()+" · "+(error==null ? "Connection closed" : com.negzero.monogram.xmpp.XmppRequestException.describe(error))).apply();
                             archiveSync = null; joinedRooms.clear(); bookmarkSync=null;
                             state(ConnectionsManager.ConnectionStateWaitingForNetwork); retryConnection();
                         });
@@ -255,6 +258,8 @@ public final class MonogramController {
                         });
                     }
                 });
+        // Android owns retries; do not race Smack's reconnect thread with replacement sessions.
+        org.jivesoftware.smack.ReconnectionManager.getInstanceFor(connecting.connection()).disableAutomaticReconnection();
         Roster roster = Roster.getInstanceFor(connecting.connection());
         roster.addRosterListener(new org.jivesoftware.smack.roster.RosterListener() {
             private void changed(java.util.Collection<org.jxmpp.jid.Jid> addresses) {
@@ -781,7 +786,7 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         accountEpoch++;
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -879,6 +884,32 @@ public final class MonogramController {
         if(included) excluded.remove(address); else excluded.add(address);
         if(preferences.edit().putStringSet(key,excluded).commit()) return true;
         preferences.edit().putStringSet(key,previous).apply(); return false;
+    }
+    private String automaticRecipientsKey(long peer) { return "automatic-room-recipients-"+accountJid()+"\n"+store.jid(peer); }
+    public boolean automaticRoomRecipients(long peer) { return peer<0 && preferences.getBoolean(automaticRecipientsKey(peer),true); }
+    public void setAutomaticRoomRecipients(long peer,boolean enabled) {
+        if(peer>=0) throw new IllegalArgumentException("Room required");
+        if(!preferences.edit().putBoolean(automaticRecipientsKey(peer),enabled).commit()) throw new IllegalStateException("Could not save recipient policy");
+    }
+    public String skippedRoomRecipients(long peer) { return preferences.getString("last-skipped-"+accountJid()+"\n"+peer,null); }
+    private void reportSkippedRecipients(long peer,com.negzero.monogram.xmpp.XmppRoomMessage message) {
+        String key="last-skipped-"+accountJid()+"\n"+peer;
+        SharedPreferences.Editor edit=preferences.edit();
+        if(message.skippedRecipients.isEmpty()) edit.remove(key);
+        else {
+            StringBuilder report=new StringBuilder("Last encrypted send · ").append(new java.util.Date(message.timestamp)).append("\n");
+            message.skippedRecipients.forEach((recipient,reason) -> report.append(recipient).append(": ").append(reason).append('\n'));
+            edit.putString(key,report.toString());
+            long owner=accountEpoch;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(owner!=accountEpoch) return;
+                org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if(org.telegram.ui.Components.BulletinFactory.canShowBulletin(fragment))
+                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.drawable.msg_info,
+                        "Sent with unavailable recipients skipped. Details in Conversation security.").show();
+            });
+        }
+        edit.apply();
     }
     public java.util.Set<String> knownFingerprintAddresses(long peer) {
         java.util.Set<String> addresses=new java.util.LinkedHashSet<>(); if(self>0) addresses.add(store.jid(self));
@@ -1033,10 +1064,19 @@ public final class MonogramController {
         FileTransfer.Job job = name == null ? null : fileNames.remove(name);
         if (job != null) job.cancel();
     }
-    private void progress(String name, long bytes, long total, boolean upload, boolean encrypted) {
+    private final java.util.concurrent.ConcurrentHashMap<String,Long> progressUpdates=new java.util.concurrent.ConcurrentHashMap<>();
+    private void progress(String name,long bytes,long total,boolean upload,boolean encrypted) {
+        long maximum=total<=0 ? Math.max(bytes,1) : total;
+        org.telegram.messenger.ImageLoader.getInstance().setFileProgress(name,bytes,maximum);
+        long now=android.os.SystemClock.elapsedRealtime(); Long previous=progressUpdates.putIfAbsent(name,now);
+        if(previous!=null && now-previous<100 && bytes!=0 && bytes<maximum) return;
+        progressUpdates.put(name,now);
+        // This native flag selects Telegram secret chats, not XMPP payload encryption.
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(
-                upload ? NotificationCenter.fileUploadProgressChanged : NotificationCenter.fileLoadProgressChanged,
-                name, bytes, total <= 0 ? Math.max(bytes, 1) : total, encrypted));
+            upload ? NotificationCenter.fileUploadProgressChanged : NotificationCenter.fileLoadProgressChanged,name,bytes,maximum,false));
+    }
+    private void clearProgress(String name) {
+        progressUpdates.remove(name); org.telegram.messenger.ImageLoader.getInstance().setFileProgress(name,-1,0);
     }
     private static String omemoSendError(com.negzero.monogram.xmpp.OmemoSendException error) {
         return "MONOGRAM_OMEMO_"+error.reason.name()+(error.detail==null ? "" : "|"+error.detail);
@@ -1085,23 +1125,26 @@ public final class MonogramController {
         fileWorker.execute(() -> {
             File snapshot = null;
             try {
+                final String uploadName=request.uploadName();
+                progress(progressName,0,request.file.length(),true,false);
                 snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
-                FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : request.file.getName(),
+                FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
                         modern ? "application/octet-stream" : request.mime, encrypted, job,
                         (bytes, total) -> progress(progressName, bytes, total, true, encrypted));
-                com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, request.file.getName(), request.mime, job);
+                com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, uploadName, request.mime, job);
                 File cached = sharing == null ? store.attachmentFile(link.wireUrl) : store.attachmentFile(sharing);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
                 job.check();
                 if (!snapshot.renameTo(cached)) throw new java.io.IOException("Cannot commit attachment cache");
-                worker.execute(() -> {
+                sendWorker.execute(() -> {
                     try {
                         job.check();
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,request.caption,encrypted,excludedRoomRecipients(request.message.dialog_id));
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,request.caption,encrypted,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id));
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
+                            if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply) : expected.sendFile(peer,sharing,request.caption,reply);
                             XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply)
@@ -1126,12 +1169,12 @@ public final class MonogramController {
                     } catch (Exception e) {
                         TLRPC.TL_error error = fileError(e);
                         if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
-                    } finally { fileJobs.remove(request.localId, job); fileNames.remove(progressName, job); }
+                    } finally { fileJobs.remove(request.localId, job); fileNames.remove(progressName, job); clearProgress(progressName); }
                 });
             } catch (Exception e) {
                 TLRPC.TL_error error = fileError(e);
                 if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
-                fileJobs.remove(request.localId, job); fileNames.remove(progressName, job);
+                fileJobs.remove(request.localId, job); fileNames.remove(progressName, job); clearProgress(progressName);
             } finally { if (snapshot != null && snapshot.exists() && !snapshot.delete()) snapshot.deleteOnExit(); }
         });
     }
@@ -1139,7 +1182,7 @@ public final class MonogramController {
         download(object, false);
     }
     private void finishDownload(int id, String name, FileTransfer.Job job) {
-        fileJobs.remove(id, job); fileNames.remove(name, job); automaticJobs.remove(id, job);
+        fileJobs.remove(id, job); fileNames.remove(name, job); automaticJobs.remove(id, job); clearProgress(name);
     }
     private void download(MessageObject object, boolean automatic) {
         if (!MonogramAttachments.has(object.messageOwner)) return;
@@ -1221,7 +1264,7 @@ public final class MonogramController {
         });
     }
     private void dispatchRequest(TLObject request, RequestDelegate callback) {
-        if (request instanceof MonogramFileRequest) { worker.execute(() -> upload((MonogramFileRequest) request, callback)); return; }
+        if (request instanceof MonogramFileRequest) { sendWorker.execute(() -> upload((MonogramFileRequest) request, callback)); return; }
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
@@ -1229,9 +1272,9 @@ public final class MonogramController {
                 || request instanceof TLRPC.TL_messages_getMessagesReactions || request instanceof TLRPC.TL_messages_getMessageReactionsList
                 || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
         long epoch = accountEpoch;
-        (cached ? cacheWorker : worker).execute(() -> {
+        (cached ? cacheWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction ? sendWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
-            try { response = handle(request); }
+            try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request); }
             catch (Exception e) {
                 error = new TLRPC.TL_error(); error.code = 400;
                 if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
@@ -1479,8 +1522,8 @@ public final class MonogramController {
                 if (send.schedule_date!=0 || send.reply_to!=null) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),send.message,encrypted(dialog),excludedRoomRecipients(dialog));
-                int id=store.saveRoom(message,self);
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),send.message,encrypted(dialog),excludedRoomRecipients(dialog),automaticRoomRecipients(dialog));
+                int id=store.saveRoom(message,self); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 result.pts_count=1; result.pts=MessagesStorage.getInstance(account).getLastPtsValue()+1; return result;
             }

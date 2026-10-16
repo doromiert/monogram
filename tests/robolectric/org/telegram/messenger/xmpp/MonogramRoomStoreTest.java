@@ -29,6 +29,12 @@ public class MonogramRoomStoreTest {
         MonogramStore store=org.robolectric.util.ReflectionHelpers.getField(controller,"store");
         try {
             long dialog=store.room(room,"Alice"),other=store.room("other@conference.example.org","Alice");
+            assertTrue(controller.automaticRoomRecipients(dialog));
+            controller.setAutomaticRoomRecipients(dialog,false); assertFalse(controller.automaticRoomRecipients(dialog));
+            assertTrue(controller.automaticRoomRecipients(other));
+            prefs.edit().putString("jid","another@example.org").commit(); assertTrue(controller.automaticRoomRecipients(dialog));
+            prefs.edit().putString("jid",own).commit(); assertFalse(controller.automaticRoomRecipients(dialog));
+            controller.setAutomaticRoomRecipients(dialog,true);
             assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
             assertTrue(controller.setRoomRecipient(dialog,"offline@example.org",false));
             assertEquals(java.util.Collections.singleton("offline@example.org"),controller.excludedRoomRecipients(dialog));
@@ -52,7 +58,7 @@ public class MonogramRoomStoreTest {
             try { controller.setRoomRecipient(store.peer("bob@example.org"),"offline@example.org",false); fail("Room choices cannot modify direct chats"); } catch(IllegalArgumentException expected) {}
             assertTrue(controller.setRoomRecipient(dialog,"offline@example.org",true)); assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
         } finally {
-            for(String name:new String[]{"worker","cacheWorker","archiveWorker","fileWorker","profileWorker","autoDownloadWorker","roomWorker","bookmarkWorker","fingerprintWorker"})
+            for(String name:new String[]{"worker","sendWorker", "cacheWorker","archiveWorker","fileWorker","profileWorker","autoDownloadWorker","roomWorker","bookmarkWorker","fingerprintWorker"})
                 ((java.util.concurrent.ExecutorService)org.robolectric.util.ReflectionHelpers.getField(controller,name)).shutdownNow();
             store.close(); ((MonogramOmemo2Store)org.robolectric.util.ReflectionHelpers.getField(controller,"modernStore")).close();
             prefs.edit().clear().commit(); context.deleteDatabase("monogram-0.db");

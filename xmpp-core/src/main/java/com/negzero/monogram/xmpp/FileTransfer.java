@@ -45,6 +45,14 @@ public final class FileTransfer {
             job.check(); return snapshot;
         } catch (Exception error) { if (!snapshot.delete()) snapshot.deleteOnExit(); throw error; }
     }
+    public static String uploadName(String original,String mime,boolean generated) {
+        if(!generated && !original.matches("-?[0-9]+_-?[0-9]+(?:_[0-9]+)?\\.[A-Za-z0-9]{1,10}")) return original;
+        String extension=original.replaceFirst("^.*(?=\\.[A-Za-z0-9]{1,10}$)","");
+        if(!extension.matches("\\.[A-Za-z0-9]{1,10}")) extension="image/jpeg".equals(mime) ? ".jpg" : "audio/ogg".equals(mime) ? ".ogg" : ".bin";
+        SecureRandom random=new SecureRandom(); StringBuilder suffix=new StringBuilder();
+        for(int i=0;i<8;i++) suffix.append((char)('a'+random.nextInt(26)));
+        return (System.currentTimeMillis()/1000)+"_"+suffix+extension.toLowerCase(java.util.Locale.ROOT);
+    }
     public static FileLink upload(XMPPConnection connection, File file, String mime, boolean encrypted, Job job, Progress progress) throws Exception {
         return upload(connection, file, file.getName(), mime, encrypted, job, progress);
     }

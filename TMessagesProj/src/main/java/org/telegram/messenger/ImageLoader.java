@@ -2683,6 +2683,12 @@ public class ImageLoader {
         return false;
     }
 
+    /** XMPP transfers use the same progress cache as native uploads/downloads. */
+    public void setFileProgress(String location,long loaded,long total) {
+        if(loaded<0) fileProgresses.remove(location);
+        else fileProgresses.put(location,new long[]{loaded,total});
+    }
+
     public Float getFileProgress(String location) {
         if (location == null) {
             return null;

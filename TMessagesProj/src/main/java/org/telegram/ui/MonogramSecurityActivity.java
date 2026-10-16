@@ -49,6 +49,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         roomMembersChecked=false;
         if(fingerprintSetupTask!=null) fingerprintSetupTask.cancel(true);
         if(fingerprintRequest!=null) fingerprintRequest.close();
+        if(force) try { controller.session().rooms.retryUnavailable(); } catch(Exception disconnected) {}
         final boolean selectedModern=controller.modernEncryption(peer);
         if(modern!=selectedModern) { identities.clear(); states.clear(); ownFingerprint=null; }
         modern=selectedModern; status=identities.isEmpty() ? "Loading fingerprints…" : "Showing cached fingerprints; refreshing…"; refresh();
@@ -136,7 +137,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         if(sendError!=null) items.add(UItem.asShadow("Last send failure: "+org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(sendError)));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
-        else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Included members, including offline members, need compatible trusted devices. OMEMO 2 rooms are not available yet."));
+        else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Available devices need compatible trusted keys. OMEMO 2 rooms are not available yet."));
         items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
         items.add(UItem.asCheck(7,"Allow unencrypted reactions (legacy OMEMO)").setChecked(controller.plainReactionsAllowed(peer)));
         items.add(UItem.asShadow("Standard reactions are visible to the server with legacy OMEMO. OMEMO 2 direct chats encrypt reactions; this permission never changes message encryption."));
@@ -148,6 +149,11 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         if (ownFingerprint != null) {
             items.add(UItem.asButton(3,modern ? "Your OMEMO 2 fingerprint" : "Your legacy OMEMO fingerprint")); items.add(UItem.asShadow(ownFingerprint));
         }
+        if(peer<0) {
+            items.add(UItem.asCheck(9,"Skip unreachable devices automatically").setChecked(controller.automaticRoomRecipients(peer)));
+            items.add(UItem.asShadow("Unavailable device lists or key bundles are skipped for this send. Skipped devices cannot read it. Offline devices with usable keys remain included; unknown or changed fingerprints still require approval. Turn this off to require every selected recipient."));
+            String skipped=controller.skippedRoomRecipients(peer); if(skipped!=null) items.add(UItem.asShadow(skipped));
+        }
         if(peer<0 && !roomMembers.isEmpty()) {
             java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
             items.add(UItem.asHeader("Encrypted recipients"));
@@ -156,7 +162,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                 String address=roomMembers.get(i);
                 items.add(UItem.asCheck(100000+i,address).setChecked(!excluded.contains(address)).setEnabled(!saving && roomMembersChecked));
                 if(!excluded.contains(address) && identities.keySet().stream().noneMatch(device -> address.equals(device.getJid().toString())))
-                    items.add(UItem.asShadow("No fingerprint loaded for this account. Included members without available trusted keys prevent encrypted sending."));
+                    items.add(UItem.asShadow("No fingerprint loaded for this account. Unavailable keys are skipped only when automatic skipping is enabled; available fingerprints still need trust."));
             }
             items.add(UItem.asShadow(null));
         }
@@ -173,7 +179,10 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id>=100000 && item.id-100000<roomMembers.size() && !saving && roomMembersChecked) {
+        if(item.id==9) {
+            try { controller.setAutomaticRoomRecipients(peer,!controller.automaticRoomRecipients(peer)); loadIdentities(); }
+            catch(Exception failed) { showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not save recipient policy").setMessage("Try again.").setPositiveButton("OK",null).create()); }
+        } else if(item.id>=100000 && item.id-100000<roomMembers.size() && !saving && roomMembersChecked) {
             String address=roomMembers.get(item.id-100000);
             boolean included=!controller.excludedRoomRecipients(peer).contains(address);
             if(!included) setRoomRecipient(address,true);

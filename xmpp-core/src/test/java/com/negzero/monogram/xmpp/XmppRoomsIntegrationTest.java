@@ -75,6 +75,7 @@ class XmppRoomsIntegrationTest {
             bob.connection().createStanzaCollectorAndSend(roomCard).nextResultOrThrow();
             assertArrayEquals(avatar,alice.profiles.loadRoom(room).avatar);
             assertThrows(org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException.class,() -> alice.rooms.send(room,"requires trust",true));
+            assertEquals(OmemoSendException.Reason.TRUST_REQUIRED,assertThrows(OmemoSendException.class,() -> alice.rooms.send(room,"Auto skip must not approve unknown fingerprints",true,Collections.emptySet(),true)).reason);
             for(String jid:new String[]{"roomalice@localhost","roombob@localhost"}) {
                 for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:alice.devices(jid)) {
                     if(device.getJid().toString().equals(alice.ownJid()) && device.getDeviceId()==alice.ownDeviceId()) continue;
@@ -89,6 +90,16 @@ class XmppRoomsIntegrationTest {
             String unavailable="notregistered@localhost";
             peer.grantMembership(JidCreate.bareFrom(unavailable));
             assertEquals(OmemoSendException.Reason.NO_DEVICES,assertThrows(OmemoSendException.class,() -> alice.rooms.send(room,"must not silently omit a member",true)).reason);
+            XmppRoomMessage automatic=alice.rooms.send(room,"automatic room recipients",true,Collections.emptySet(),true);
+            assertTrue(automatic.skippedRecipients.containsKey(unavailable)); assertTrue(readable(bobMessages,"automatic room recipients").encrypted);
+            org.jivesoftware.smackx.pubsub.LeafNode devicesNode=org.jivesoftware.smackx.pubsub.PubSubManager.getInstanceFor(bob.connection(),JidCreate.entityBareFrom(bob.ownJid())).getLeafNode("eu.siacs.conversations.axolotl.devicelist");
+            devicesNode.publish(new org.jivesoftware.smackx.pubsub.PayloadItem<>("current",new org.jivesoftware.smackx.omemo.element.OmemoDeviceListElement_VAxolotl(new HashSet<>(Arrays.asList(bob.ownDeviceId(),803)))));
+            assertTrue(alice.devices(bob.ownJid()).stream().anyMatch(device -> device.getDeviceId()==803));
+            XmppRoomMessage partial=alice.rooms.send(room,"one unreachable device",true,Collections.emptySet(),true);
+            assertTrue(partial.skippedRecipients.keySet().stream().anyMatch(key -> key.endsWith("device 803")));
+            assertTrue(readable(bobMessages,"one unreachable device").encrypted);
+            devicesNode.publish(new org.jivesoftware.smackx.pubsub.PayloadItem<>("current",new org.jivesoftware.smackx.omemo.element.OmemoDeviceListElement_VAxolotl(Collections.singleton(bob.ownDeviceId()))));
+            alice.devices(bob.ownJid());
             Set<String> excluded=Collections.singleton(unavailable);
             alice.connection().addStanzaSendingListener(stanza -> repeatedLists.incrementAndGet(),stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.toXML().toString().contains("eu.siacs.conversations.axolotl.devicelist"));
             alice.rooms.send(room,"private room hello",true,excluded);

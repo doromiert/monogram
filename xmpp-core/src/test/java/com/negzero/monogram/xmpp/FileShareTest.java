@@ -8,6 +8,11 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FileShareTest {
+    @Test void generatedUploadNamesKeepExtensionsAndExplicitNames() {
+        assertEquals("holiday.jpg",FileTransfer.uploadName("holiday.jpg","image/jpeg",false));
+        assertTrue(FileTransfer.uploadName("-2147483648_12345.jpg","image/jpeg",false).matches("[0-9]+_[a-z]{8}\\.jpg"));
+        assertTrue(FileTransfer.uploadName("recording.ogg","audio/ogg",true).matches("[0-9]+_[a-z]{8}\\.ogg"));
+    }
     static final String URL = "https://example.org/photo.jpg";
     private Message stanza(String body, String extra) throws Exception {
         FileShare.initialize();

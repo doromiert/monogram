@@ -221,13 +221,20 @@ public final class XmppRooms implements AutoCloseable {
         return members;
     }
     public XmppRoomMessage send(String jid,String body,boolean encrypted) throws Exception { return send(jid,body,encrypted,Collections.emptySet()); }
-    public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded) throws Exception { return send(jid,body,encrypted,null,excluded); }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded) throws Exception { return send(jid,body,encrypted,excluded,false);
+    }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
+        return send(jid,body,encrypted,null,excluded,automatic); }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted) throws Exception {
         return sendFile(jid,link,sharing,caption,encrypted,Collections.emptySet());
     }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,Set<String> excluded) throws Exception {
         if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
-        return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing,excluded);
+        return sendFile(jid,link,sharing,caption,encrypted,excluded,false);
+    }
+    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
+        if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
+        return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing,excluded,automatic);
     }
     static Set<BareJid> recipients(Set<BareJid> members,BareJid own,Set<String> excluded) throws Exception {
         Set<BareJid> recipients=new HashSet<>(members);
@@ -240,30 +247,35 @@ public final class XmppRooms implements AutoCloseable {
             throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"Include at least one other room member in Conversation security.");
         return recipients;
     }
-    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,Set<String> excluded) throws Exception {
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,Set<String> excluded,boolean automatic) throws Exception {
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        Map<String,String> skipped=new TreeMap<>();
         Message message;
         if (encrypted) {
             Set<BareJid> members;
             try { members=members(jid); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the membership check.",timeout); }
             Set<BareJid> recipients=recipients(members,connection.getUser().asBareJid(),excluded);
-            for (BareJid recipient:recipients) {
-                try { if(deviceLookup.devices(recipient).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,recipient.toString()); }
-                catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
-                catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
-            }
             OmemoMessage.Sent ciphertext;
-            try { ciphertext=omemo.encrypt(recipients,body); }
-            catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("An OMEMO bundle or session lookup timed out while preparing recipient devices.",timeout); }
-            if (!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
-            for (BareJid recipient:recipients) {
-                if (recipient.equals(connection.getUser().asBareJid())) continue;
-                boolean included=false;
-                for (OmemoDevice device:ciphertext.getIntendedDevices()) if (device.getJid().equals(recipient)) included=true;
-                if (!included) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
+            if(automatic) ciphertext=encryptAvailable(recipients,body,skipped);
+            else {
+                for (BareJid recipient:recipients) {
+                    try { if(deviceLookup.devices(recipient).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,recipient.toString()); }
+                    catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
+                    catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
+                }
+
+                try { ciphertext=omemo.encrypt(recipients,body); }
+                catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("An OMEMO bundle or session lookup timed out while preparing recipient devices.",timeout); }
+                if (!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
+                for (BareJid recipient:recipients) {
+                    if (recipient.equals(connection.getUser().asBareJid())) continue;
+                    boolean included=false;
+                    for (OmemoDevice device:ciphertext.getIntendedDevices()) if (device.getJid().equals(recipient)) included=true;
+                    if (!included) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
+                }
             }
             try { if (!members(jid).equals(members)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
@@ -272,7 +284,68 @@ public final class XmppRooms implements AutoCloseable {
         if(sharing!=null) sharing.addTo(message,body);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing);
-        chat.sendMessage(message); return sent;
+        chat.sendMessage(message); return sent.withSkippedRecipients(skipped);
+    }
+    private static final class Unavailable {
+        final long until=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
+        final Exception error;
+        Unavailable(Exception error) { this.error=error; }
+    }
+    private final Map<String,Unavailable> unavailable=new ConcurrentHashMap<>();
+    public void retryUnavailable() { unavailable.clear(); }
+    private static boolean unavailable(Exception error) {
+        return error instanceof org.jivesoftware.smack.SmackException.NoResponseException
+            || error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
+            || error instanceof org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException
+            || error instanceof OmemoSendException && (((OmemoSendException)error).reason==OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED || ((OmemoSendException)error).reason==OmemoSendException.Reason.NO_DEVICES);
+    }
+    private void checkUnavailable(String key) throws Exception {
+        Unavailable last=unavailable.get(key);
+        if(last!=null && System.nanoTime()<last.until) throw last.error;
+        unavailable.remove(key);
+    }
+    private OmemoMessage.Sent encryptAvailable(Set<BareJid> recipients,String body,Map<String,String> skipped) throws Exception {
+        synchronized(omemo) {
+            Set<OmemoDevice> devices=new HashSet<>();
+            for(BareJid recipient:recipients) {
+                Set<OmemoDevice> found;
+                String key=recipient.toString();
+                try {
+                    found=omemo.getDevicesOf(recipient);
+                    if(found.isEmpty()) { checkUnavailable(key); found=deviceLookup.devices(recipient); }
+                    unavailable.remove(key);
+                }
+                catch(Exception error) {
+                    if(!unavailable(error)) throw error;
+                    unavailable.putIfAbsent(key,new Unavailable(error)); found=omemo.getDevicesOf(recipient);
+                    if(found.isEmpty()) { skipped.put(key,XmppRequestException.describe(error)); continue; }
+                }
+                if(found.isEmpty() && !recipient.equals(connection.getUser().asBareJid())) {
+                    skipped.put(key,"No published OMEMO devices"); unavailable.put(key,new Unavailable(new OmemoSendException(OmemoSendException.Reason.NO_DEVICES)));
+                }
+                devices.addAll(found);
+            }
+            devices.remove(omemo.getOwnDevice());
+            Set<OmemoDevice> available=new HashSet<>();
+            for(OmemoDevice device:devices) {
+                String key=device.getJid()+" · device "+device.getDeviceId();
+                org.jivesoftware.smackx.omemo.trust.OmemoFingerprint fingerprint;
+                try { checkUnavailable(key); fingerprint=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.prepare(omemo,device); unavailable.remove(key); }
+                catch(Exception error) {
+                    if(!unavailable(error)) throw error;
+                    unavailable.putIfAbsent(key,new Unavailable(error)); skipped.put(key,XmppRequestException.describe(error)); continue;
+                }
+                if(!omemo.isDecidedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED,key);
+                if(!omemo.isTrustedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,key);
+                available.add(device);
+            }
+            if(recipients.stream().anyMatch(jid -> !jid.equals(connection.getUser().asBareJid()))
+                    && available.stream().noneMatch(device -> !device.getJid().equals(connection.getUser().asBareJid())))
+                throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"No reachable trusted recipient remains; message was not sent.");
+            OmemoMessage.Sent ciphertext=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.encrypt(omemo,available,body);
+            if(!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
+            return ciphertext;
+        }
     }
     private static OmemoSendException lookupTimeout(String detail,Exception cause) {
         OmemoSendException error=new OmemoSendException(OmemoSendException.Reason.LOOKUP_TIMEOUT,detail); error.initCause(cause); return error;

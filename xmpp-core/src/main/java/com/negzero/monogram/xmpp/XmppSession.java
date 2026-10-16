@@ -45,6 +45,7 @@ public final class XmppSession implements AutoCloseable {
         default void contactRequest(String address,boolean pending) {}
         default void typing(EntityBareJid jid, boolean composing) {}
         default void disconnected() {}
+        default void disconnected(Exception error) { disconnected(); }
         default void reconnected(boolean resumed) {}
         /** Call accepted only once the message has been stored; ratchet acknowledgements follow it. */
         default void message(XmppMessage message, Runnable accepted) { message(message); accepted.run(); }
@@ -58,7 +59,8 @@ public final class XmppSession implements AutoCloseable {
     private static File keyRoot;
     private static final class ManagedConnection extends XMPPTCPConnection {
         ManagedConnection(XMPPTCPConnectionConfiguration config) { super(config); }
-        void pingTimedOut() { notifyConnectionError(new java.io.IOException("XMPP server ping timed out")); }
+        void pingTimedOut() { notifyConnectionError(new java.net.SocketTimeoutException("XMPP server ping timed out")); }
+        void setupFailed(Exception error) { notifyConnectionError(error); }
     }
     private final ManagedConnection connection;
     public final XmppProfiles profiles;
@@ -146,12 +148,12 @@ public final class XmppSession implements AutoCloseable {
         contacts=new XmppContacts(connection,rooms,listener::contactRequest);
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
-            @Override public void connectionClosed() { disconnected(); }
-            @Override public void connectionClosedOnError(Exception error) { disconnected(); }
-            private void disconnected() {
+            @Override public void connectionClosed() { disconnected(null); }
+            @Override public void connectionClosedOnError(Exception error) { disconnected(error); }
+            private void disconnected(Exception error) {
                 chatStates.reset();
                 lifecycle.incrementAndGet();
-                if (!closed) listener.disconnected();
+                if (!closed) listener.disconnected(error);
             }
             @Override public void authenticated(org.jivesoftware.smack.XMPPConnection ignored, boolean resumed) {
                 if (!started || closed) return;
@@ -161,7 +163,7 @@ public final class XmppSession implements AutoCloseable {
                         if (!resumed) enableFeatures();
                         if (!closed && lifecycle.get() == generation && connection.isAuthenticated()) listener.reconnected(resumed);
                     } catch (Exception failed) {
-                        if (!closed && lifecycle.get() == generation) connection.pingTimedOut();
+                        if (!closed && lifecycle.get() == generation) connection.setupFailed(failed);
                     }
                 }, "Monogram reconnect setup");
             }

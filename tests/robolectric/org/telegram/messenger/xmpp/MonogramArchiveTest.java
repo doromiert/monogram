@@ -108,7 +108,7 @@ public class MonogramArchiveTest {
     @After public void cleanup() {
         session.fingerprints.close();
         network.release.countDown();
-        for (String name : new String[]{"worker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker", "fingerprintWorker"}) {
+        for (String name : new String[]{"worker", "sendWorker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker", "fingerprintWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
         }
         store.close(); ApplicationLoader.applicationContext.deleteDatabase("monogram-0.db");

@@ -40,7 +40,7 @@ public class MonogramEditingTest {
     }
 
     @After public void cleanup() throws Exception {
-        for (String name : new String[]{"worker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker"}) {
+        for (String name : new String[]{"worker", "sendWorker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
         }
         store.close();
@@ -86,6 +86,15 @@ public class MonogramEditingTest {
         assertTrue("Do not offer unsupported Telegram read-date queries", store.fullUser(peer, self).read_dates_private);
     }
 
+    @Test public void outgoingSendDoesNotBlockBehindIncomingWorker() throws Exception {
+        java.util.concurrent.CountDownLatch release=new java.util.concurrent.CountDownLatch(1),completed=new java.util.concurrent.CountDownLatch(1);
+        controller.worker.execute(() -> { try { release.await(); } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); } });
+        TLRPC.TL_messages_sendMessage send=new TLRPC.TL_messages_sendMessage(); send.peer=new TLRPC.TL_inputPeerUser(); send.peer.user_id=peer; send.message="offline";
+        try {
+            controller.request(send,(response,error) -> { assertNotNull(error); completed.countDown(); });
+            assertTrue("Send dispatch is coupled to incoming work",completed.await(5,java.util.concurrent.TimeUnit.SECONDS));
+        } finally { release.countDown(); }
+    }
     @Test public void preflightDoesNotWaitForNetworkWorker() throws Exception {
         int id = message("offline", "Edit without a network round trip", true, false, null);
         java.util.concurrent.CountDownLatch releaseNetwork = new java.util.concurrent.CountDownLatch(1);

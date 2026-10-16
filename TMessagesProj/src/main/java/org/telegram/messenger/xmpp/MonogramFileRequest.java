@@ -13,6 +13,13 @@ public final class MonogramFileRequest extends TLObject {
     public final int localId;
     public final boolean supported;
     public final com.negzero.monogram.xmpp.FileTransfer.Job job = new com.negzero.monogram.xmpp.FileTransfer.Job();
+    public String uploadName() {
+        boolean generated=message.media!=null && message.media.photo!=null;
+        if(message.media!=null && message.media.document!=null)
+            for(TLRPC.DocumentAttribute attribute:message.media.document.attributes)
+                if(attribute instanceof TLRPC.TL_documentAttributeAudio && attribute.voice) generated=true;
+        return com.negzero.monogram.xmpp.FileTransfer.uploadName(file.getName(),mime,generated);
+    }
     public MonogramFileRequest(TLRPC.Message message, File file, String mime, String caption) {
         this(message, file, mime, caption, true);
     }

@@ -29,6 +29,8 @@ public final class MonogramConnectionActivity extends UniversalFragment implemen
         int state = MonogramController.get(currentAccount).state();
         items.add(UItem.asHeader(state == ConnectionsManager.ConnectionStateConnected ? "Connected to XMPP"
                 : state == ConnectionsManager.ConnectionStateConnecting ? "Connecting to XMPP…" : "Disconnected from XMPP"));
+        String failure=MonogramController.get(currentAccount).lastDisconnect();
+        if(failure!=null) items.add(UItem.asShadow("Last disconnect: "+failure));
         items.add(UItem.asButton(1, R.drawable.msg_retry, "Reconnect").accent().setEnabled(state != ConnectionsManager.ConnectionStateConnecting));
         items.add(UItem.asShadow("Monogram retries automatically when the connection drops. Reconnecting uses your saved login and preserves your messages and OMEMO keys."));
         items.add(UItem.asShadow("If your phone restricts Monogram in the background, check its battery and background data settings."));
