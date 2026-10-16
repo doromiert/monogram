@@ -57,7 +57,7 @@ public final class XmppProfiles {
             if (stanza.getFrom() != null && stanza.getFrom().asEntityBareJidIfPossible() != null) changed.accept(stanza.getFrom().asEntityBareJidIfPossible());
         }, stanza -> stanza instanceof Presence && stanza.hasExtension("x", "vcard-temp:x:update"));
     }
-    private XmppProfile card(EntityBareJid jid, boolean editing) throws Exception {
+    private XmppProfile card(org.jxmpp.jid.Jid jid, boolean editing) throws Exception {
         CardIq request = new CardIq(StandardExtensionElement.builder("vCard", XmppProfile.VCARD).build());
         request.setType(IQ.Type.get);
         if (!jid.equals(connection.getUser().asEntityBareJid())) request.setTo(jid);
@@ -85,7 +85,10 @@ public final class XmppProfiles {
         } catch (XMPPErrorException absent) { if (optional(absent)) return null; throw absent; }
     }
     public XmppProfile load(String address) throws Exception {
-        EntityBareJid jid = JidCreate.entityBareFrom(address);
+        org.jxmpp.jid.EntityJid addressJid=JidCreate.entityFrom(address);
+        // Anonymous room occupants expose vCards through the full room/nickname address.
+        if(addressJid.hasResource()) return card(addressJid,false);
+        EntityBareJid jid = addressJid.asEntityBareJid();
         XmppProfile card = card(jid, false);
         StandardExtensionElement nick = item(jid, NICK, null);
         String nickname = nick != null && NICK.equals(nick.getNamespace()) && "nick".equals(nick.getElementName()) ? nick.getText() : null;
@@ -111,6 +114,8 @@ public final class XmppProfiles {
         XmppProfile result = new XmppProfile(card.card, nickname, avatar);
         return result;
     }
+    /** Room avatars use the room vCard, rather than a person's PEP nodes. */
+    public XmppProfile loadRoom(String room) throws Exception { return card(JidCreate.entityBareFrom(room),false); }
     public void useOwnProfile(XmppProfile profile) throws Exception {
         String hash = sha1OrEmpty(profile.cardAvatar());
         if (hash.equals(ownAvatarHash)) return;

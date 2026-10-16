@@ -58,8 +58,14 @@ public final class MonogramProfiles {
         image.currentSize = avatar.length();
         return image;
     }
+    public static org.telegram.messenger.ImageLocation imageLocation(TLRPC.Chat chat, File avatar) {
+        if(chat==null || chat.photo==null || avatar==null || !avatar.isFile()) return null;
+        org.telegram.messenger.ImageLocation image=org.telegram.messenger.ImageLocation.getForPath(avatar.getAbsolutePath());
+        image.location=location(-chat.id); image.photoId=chat.photo.photo_id; image.dc_id=Integer.MIN_VALUE; image.currentSize=avatar.length();
+        return image;
+    }
     static TLRPC.TL_fileLocationToBeDeprecated location(long peer) {
-        if (peer <= 0 || peer > Integer.MAX_VALUE) throw new IllegalArgumentException("Invalid profile ID");
+        if (peer == 0 || peer > Integer.MAX_VALUE || peer < -Integer.MAX_VALUE) throw new IllegalArgumentException("Invalid profile ID");
         TLRPC.TL_fileLocationToBeDeprecated location = new TLRPC.TL_fileLocationToBeDeprecated();
         location.volume_id = PHOTO_VOLUME; location.local_id = (int) peer; location.dc_id = Integer.MIN_VALUE;
         return location;

@@ -21,11 +21,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 11); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 12); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db); addRoomProfiles(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -77,7 +77,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 11 || oldVersion < 1 || oldVersion > 10) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 12 || oldVersion < 1 || oldVersion > 11) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -87,7 +87,14 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (oldVersion < 8) addCaptions(db);
         if (oldVersion < 9) addProtocols(db);
         if(oldVersion<10) addRooms(db);
-        addBookmarks(db);
+        if(oldVersion<11) addBookmarks(db);
+        addRoomProfiles(db);
+    }
+    private void addRoomProfiles(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_permissions (room INTEGER PRIMARY KEY,role TEXT NOT NULL,affiliation TEXT NOT NULL)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_message_actors (message INTEGER PRIMARY KEY,occupant TEXT NOT NULL,real_jid TEXT)");
+        // Re-read authoritative author metadata without deleting cached conversations.
+        db.execSQL("DELETE FROM archive_state WHERE scope LIKE 'room:%'");
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -112,7 +119,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         profileCache.clear();
         db.beginTransaction();
-        try { db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -149,10 +156,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized void leaveRoom(long dialog) { getWritableDatabase().execSQL("UPDATE rooms SET autojoin=0 WHERE id=?",new Object[]{-dialog}); }
     private long roomUser(long dialog,String occupant,String realJid,long self) {
         if (!occupant.startsWith(room(dialog).jid+"/")) throw new IllegalArgumentException("Occupant belongs to another room");
-        long user=realJid!=null && realJid.equals(jid(self)) ? self : peer(occupant);
-        if (user!=self) rosterName(user,occupant.substring(occupant.indexOf('/')+1));
+        long user=realJid!=null ? peer(realJid) : peer(occupant);
+        if (realJid==null) rosterName(user,occupant.substring(occupant.indexOf('/')+1));
         ContentValues values=new ContentValues(); values.put("room",-dialog); values.put("occupant",occupant); values.put("user",user); values.put("real_jid",realJid);
         getWritableDatabase().insertWithOnConflict("room_participants",null,values,SQLiteDatabase.CONFLICT_IGNORE);
+        if(realJid!=null) getWritableDatabase().update("room_participants",values,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant});
         return user;
     }
     synchronized void roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
@@ -167,10 +175,14 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
             if (!state.nickname.isEmpty()) values.put("nickname",state.nickname);
             db.update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
+            if(state.joined && !state.role.isEmpty()) {
+                ContentValues permissions=new ContentValues(); permissions.put("room",-dialog); permissions.put("role",state.role); permissions.put("affiliation",state.affiliation);
+                db.insertWithOnConflict("room_permissions",null,permissions,SQLiteDatabase.CONFLICT_REPLACE);
+            }
             db.execSQL("UPDATE room_participants SET active=0 WHERE room=?",new Object[]{-dialog});
             for (com.negzero.monogram.xmpp.XmppRooms.Occupant occupant:state.occupants) {
                 roomUser(dialog,occupant.address,occupant.realJid,self);
-                db.execSQL("UPDATE room_participants SET active=1,real_jid=? WHERE room=? AND occupant=?",new Object[]{occupant.realJid,-dialog,occupant.address});
+                db.execSQL("UPDATE room_participants SET active=1,real_jid=?,user=? WHERE room=? AND occupant=?",new Object[]{occupant.realJid,occupant.realJid==null ? peer(occupant.address) : peer(occupant.realJid),-dialog,occupant.address});
             }
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
@@ -185,6 +197,21 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized TLRPC.Chat roomChat(long dialog) {
         Room room=room(dialog); TLRPC.TL_chat chat=new TLRPC.TL_chat();
         chat.id=-dialog; chat.title=room.title; chat.photo=new TLRPC.TL_chatPhotoEmpty(); chat.version=1; chat.left=!room.autojoin;
+        // A missing rights object makes modern Telegram deny every send action.
+        chat.default_banned_rights=new TLRPC.TL_chatBannedRights(); chat.flags|=262144;
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT role FROM room_permissions WHERE room=?",new String[]{Long.toString(-dialog)})) {
+            if(c.moveToFirst() && "visitor".equals(c.getString(0))) {
+                chat.default_banned_rights.send_messages=true; chat.default_banned_rights.send_plain=true; chat.default_banned_rights.send_media=true;
+                chat.default_banned_rights.send_photos=true; chat.default_banned_rights.send_videos=true; chat.default_banned_rights.send_docs=true;
+                chat.default_banned_rights.send_audios=true; chat.default_banned_rights.send_voices=true; chat.default_banned_rights.send_roundvideos=true;
+                chat.default_banned_rights.send_stickers=true; chat.default_banned_rights.send_gifs=true; chat.default_banned_rights.send_polls=true;
+            }
+        }
+        java.io.File avatar=avatar(dialog);
+        if(avatar!=null && avatar.isFile()) {
+            chat.photo=new TLRPC.TL_chatPhoto(); chat.photo.photo_id=MonogramProfiles.photo(dialog,avatar).id;
+            chat.photo.photo_small=chat.photo.photo_big=MonogramProfiles.location(dialog); chat.photo.dc_id=Integer.MIN_VALUE;
+        }
         try (Cursor c=getReadableDatabase().rawQuery("SELECT count(DISTINCT user) FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) { c.moveToFirst(); chat.participants_count=c.getInt(0); }
         return chat;
     }
@@ -196,6 +223,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT user FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) {
             while(c.moveToNext()) { TLRPC.TL_chatParticipant participant=new TLRPC.TL_chatParticipant(); participant.user_id=c.getLong(0); full.participants.participants.add(participant); }
         }
+        full.chat_photo=MonogramProfiles.photo(dialog,avatar(dialog));
+        if(full.chat_photo instanceof TLRPC.TL_photo) full.flags|=4;
         result.full_chat=full; return result;
     }
     synchronized int saveRoom(com.negzero.monogram.xmpp.XmppRoomMessage message,long self) {
@@ -206,7 +235,15 @@ final class MonogramStore extends SQLiteOpenHelper {
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
                 String value=(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue();
                 try (Cursor c=db.rawQuery("SELECT DISTINCT message FROM message_ids WHERE peer=? AND kind=? AND value=? AND namespace=?",new String[]{Long.toString(dialog),alias.getKey(),value,Integer.toString(message.encryption.ordinal())})) {
-                    while(c.moveToNext()) { int match=c.getInt(0); if(existing!=0 && existing!=match) throw new IllegalStateException("Conflicting room IDs"); existing=match; }
+                    while(c.moveToNext()) {
+                        int match=c.getInt(0);
+                        if(!alias.getKey().equals("archive") && !alias.getKey().equals("mam") && message.ids.get("archive")!=null) {
+                            try(Cursor authority=db.rawQuery("SELECT value FROM message_ids WHERE message=? AND kind='archive'",new String[]{Integer.toString(match)})) {
+                                if(authority.moveToFirst() && !message.ids.get("archive").equals(authority.getString(0))) continue;
+                            }
+                        }
+                        if(existing!=0 && existing!=match) throw new IllegalStateException("Conflicting room IDs"); existing=match;
+                    }
                 }
             }
             ContentValues values=new ContentValues(); values.put("body",message.readable ? message.body : "Encrypted room message unavailable on this device");
@@ -217,7 +254,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             if (existing==0) {
                 values.put("peer",dialog); values.put("stanza",UUID.randomUUID().toString()); values.put("outgoing",message.outgoing);
                 long inserted=db.insertOrThrow("messages",null,values); if(inserted>Integer.MAX_VALUE) throw new IllegalStateException("Message ID space exhausted"); id=(int)inserted; changed=true;
-                long sender=message.outgoing ? self : roomUser(dialog,message.sender,null,self);
+                long sender=message.outgoing ? self : roomUser(dialog,message.sender,message.realSender,self);
                 ContentValues author=new ContentValues(); author.put("message",id); author.put("user",sender); db.insertOrThrow("room_senders",null,author);
             } else try (Cursor c=db.rawQuery("SELECT readable,time_ms FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
                 if(c.moveToFirst()) {
@@ -228,6 +265,21 @@ final class MonogramStore extends SQLiteOpenHelper {
                     }
                 }
             }
+            if(message.realSender!=null) {
+                long sender=roomUser(dialog,message.sender,message.realSender,self);
+                try(Cursor c=db.rawQuery("SELECT s.user,m.outgoing,a.real_jid FROM room_senders s JOIN messages m ON m.id=s.message LEFT JOIN room_message_actors a ON a.message=m.id WHERE m.id=?",new String[]{Integer.toString(id)})) {
+                    if(c.moveToFirst()) {
+                        if(!c.isNull(2) && !message.realSender.equals(c.getString(2))) throw new IllegalStateException("Conflicting room authors");
+                        if(c.getLong(0)!=sender || (c.getInt(1)!=0)!=message.outgoing) {
+                            db.execSQL("UPDATE room_senders SET user=? WHERE message=?",new Object[]{sender,id});
+                            db.execSQL("UPDATE messages SET outgoing=? WHERE id=?",new Object[]{message.outgoing ? 1 : 0,id}); changed=true;
+                        }
+                    }
+                }
+            }
+            ContentValues actor=new ContentValues(); actor.put("message",id); actor.put("occupant",message.sender); actor.put("real_jid",message.realSender);
+            db.insertWithOnConflict("room_message_actors",null,actor,SQLiteDatabase.CONFLICT_IGNORE);
+            if(message.realSender!=null) db.update("room_message_actors",actor,"message=?",new String[]{Integer.toString(id)});
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
                 ContentValues identity=new ContentValues(); identity.put("peer",dialog); identity.put("outgoing",message.outgoing); identity.put("kind",alias.getKey());
                 identity.put("value",(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);

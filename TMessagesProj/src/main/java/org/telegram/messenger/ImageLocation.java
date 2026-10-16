@@ -265,6 +265,10 @@ public class ImageLocation {
             imageLocation.photoSize.bytes = chat.photo.stripped_thumb;
             return imageLocation;
         }
+        if(chat.photo.dc_id==Integer.MIN_VALUE) {
+            return org.telegram.messenger.xmpp.MonogramProfiles.imageLocation(chat,
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(-chat.id));
+        }
         TLRPC.FileLocation fileLocation = type == TYPE_BIG ? chat.photo.photo_big : chat.photo.photo_small;
         if (fileLocation == null) {
             return null;

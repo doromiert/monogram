@@ -173,7 +173,8 @@ public final class MonogramController {
                         worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
                     @Override public void profileChanged(org.jxmpp.jid.EntityBareJid jid) {
-                        worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer); } });
+                        worker.execute(() -> { if (sessionEpoch == epoch && session != null) { long peer = store.knownPeer(jid.toString()); if (peer != 0) refreshProfile(peer);
+                            long room=store.knownRoom(jid.toString()); if(room!=0) { refreshProfile(room); for(TLRPC.User user:store.roomUsers(room,self)) if(user.id!=self) refreshProfile(user.id); } } });
                     }
                     @Override public void typing(org.jxmpp.jid.EntityBareJid jid, boolean composing) {
                         worker.execute(() -> {
@@ -413,13 +414,17 @@ public final class MonogramController {
     private void publishRoom(long dialog) {
         TLRPC.Chat chat=store.roomChat(dialog); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(chat);
         ArrayList<TLRPC.User> users=store.roomUsers(dialog,self);
+        if(store.profile(dialog)==null) refreshProfile(dialog);
+        for(TLRPC.User user:users) if(user.id!=self && store.profile(user.id)==null) refreshProfile(user.id);
         MessagesStorage.getInstance(account).putUsersAndChats(users,chats,true,true);
         AndroidUtilities.runOnUIThread(() -> { MessagesController.getInstance(account).putUsers(users,false); MessagesController.getInstance(account).putChat(chat,false);
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_ALL); });
     }
     private void incomingRoom(com.negzero.monogram.xmpp.XmppRoomMessage message) {
         long dialog=store.knownRoom(message.room.toString()); if(dialog==0) return;
-        int id=store.saveRoom(message,self); if(id==0 || !UserConfig.getInstance(account).isClientActivated()) return;
+        int id=store.saveRoom(message,self);
+        if(id!=0) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
+        if(id==0 || !UserConfig.getInstance(account).isClientActivated()) return;
         TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=store.getMessage(id,self);
         ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(update);
         ArrayList<TLRPC.User> users=store.roomUsers(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
@@ -486,6 +491,7 @@ public final class MonogramController {
                 java.util.Set<Integer> updated=new java.util.HashSet<>();
                 boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
                 if(changed && UserConfig.getInstance(account).isClientActivated()) {
+                    publishRoom(task.peer);
                     ArrayList<TLRPC.Message> messages=new ArrayList<>(); for(int id:updated) messages.add(store.getMessage(id,self));
                     MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
                     TLRPC.TL_messages_dialogs cached=dialogs();
@@ -665,7 +671,7 @@ public final class MonogramController {
     }
     public com.negzero.monogram.xmpp.XmppProfile cachedProfile(long peer) { return store.profile(peer); }
     public void refreshProfile(long peer) {
-        if (peer <= 0 || !profileLoads.add(peer)) return;
+        if (peer == 0 || !profileLoads.add(peer)) return;
         final XmppSession expected = session;
         final long epoch = sessionEpoch;
         final String jid;
@@ -675,10 +681,10 @@ public final class MonogramController {
         profileWorker.execute(() -> {
             try {
                 if (sessionEpoch != epoch || expected == null || session != expected) return;
-                com.negzero.monogram.xmpp.XmppProfile profile = expected.profiles.load(jid);
+                com.negzero.monogram.xmpp.XmppProfile profile = peer<0 ? expected.profiles.loadRoom(jid) : expected.profiles.load(jid);
                 worker.execute(() -> {
                     if (sessionEpoch != epoch || session != expected || !preferences.contains("jid") || profileVersions.getOrDefault(peer, 0L) != version) return;
-                    try { store.profile(peer, profile); if (peer == self) expected.profiles.useOwnProfile(profile); publishProfile(peer, epoch); }
+                    try { store.profile(peer, profile); if (peer == self) expected.profiles.useOwnProfile(profile); if(peer<0) publishRoom(peer); else publishProfile(peer, epoch); }
                     catch (Exception failed) { if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile cache: " + failed.getClass().getSimpleName()); }
                 });
             } catch (Exception failed) {
