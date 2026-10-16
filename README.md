@@ -17,7 +17,7 @@ mvn -f xmpp-core/pom.xml test
 ./gradlew :TMessagesProj_App:assembleAfatDebug -PmonogramAbi=arm64-v8a
 ```
 
-The pinned flake selects Java 21, Maven, Android SDK 36, NDK 27.2.12479018, CMake 3.22.1, Rust 1.96.1 with Android targets, and Prosody. Gradle/Maven caches and integration server data stay in this checkout. The native wrapper runs the current upstream source build scripts; this migration is still being verified. The lighter `nix develop .#test` shell runs shared-core tests without the Android toolchain. See [upstream source and instructions](docs/UPSTREAM.md).
+The pinned flake selects Java 21, Maven, Android SDK 36 (plus SDK 35 for the bundled Media3 modules), NDK 27.2.12479018, CMake 3.22.1, Rust 1.96.1 with Android targets, and Prosody. Gradle/Maven caches and integration server data stay in this checkout. The native wrapper runs the current upstream source build scripts; this migration is still being verified. The lighter `nix develop .#test` shell runs shared-core tests without the Android toolchain. See [upstream source and instructions](docs/UPSTREAM.md).
 
 Work stays in this repository using Git branches. `prototype/telegram-foss` preserves the old prototype; `monogram-current-base` carries the official-source migration.
 

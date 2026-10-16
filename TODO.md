@@ -8,11 +8,13 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Current priority: official Telegram base
 
-- [o] Rebase the Monogram changes onto `DrKLO/Telegram` 13.0.2, commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d` (2026-10-13). The rebase has started; resolve and verify the port before adding more features to the old base.
-- [o] Update the pinned Nix environment for the current base's Java, Android SDK, NDK, CMake and native build scripts.
-- [ ] Restore the FOSS replacements and remove proprietary runtime SDKs from the new base.
-- [ ] Verify XMPP onboarding and request dispatch; prevent Telegram networking in startup, background work and unsupported actions.
-- [ ] Build the rebased APK and verify the current Telegram UI, Monogram branding and the security button on Android.
+- [x] Reapply the Monogram changes onto `DrKLO/Telegram` 13.0.2, commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d` (2026-10-13). The Git rebase is complete; build/runtime validation is tracked below.
+- [x] Update the pinned Nix environment for Java 21, SDK/build tools 35 and 36, NDK 27.2, CMake 3.22.1 and Rust 1.96.1.
+- [x] Build all current-base arm64 native libraries from source; remove bundled native archives/generated headers from Git tracking.
+- [o] Restore the FOSS replacements and remove proprietary runtime SDKs from the new base.
+- [o] Verify XMPP onboarding and request dispatch; prevent Telegram networking in startup, background work and unsupported actions.
+- [x] Compile the current-base Android Java sources with the XMPP adapter and Jabber account routes (138 tasks; BUILD SUCCESSFUL).
+- [o] Build the rebased APK and verify the current Telegram UI, Monogram branding and the security button on Android.
 - [ ] Update the installed package while preserving its signing key, accounts, local messages and OMEMO identities.
 
 ## Messaging and existing conversations
@@ -59,6 +61,12 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [ ] Verify Android login, history, text/OMEMO messages, groups, attachments, reconnects and notifications.
 - [ ] Produce a reviewable APK and current build/deployment instructions for https://monogram.neg-zero.com.
 - [ ] Audit the full original goal against current runtime/build evidence before marking it complete.
+
+## Repository
+
+- [x] Publish the current-base Monogram source and TODO to https://github.com/doromiert/monogram (`master` and `monogram-current-base`).
+- [x] Remove the extra comparison checkouts; retain upstream commits as branches in this repository.
+- [x] Publish the preserved prototype branch as `prototype/telegram-foss`.
 
 ## Completed prototype milestones
 

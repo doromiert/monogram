@@ -15,6 +15,8 @@ import org.jivesoftware.smack.roster.Roster;
 import org.jivesoftware.smack.roster.RosterEntry;
 import org.telegram.messenger.*;
 import org.telegram.tgnet.*;
+import org.telegram.tgnet.tl.TL_account;
+import org.telegram.tgnet.tl.TL_update;
 
 public final class MonogramController {
     private static final MonogramController[] instances = new MonogramController[UserConfig.MAX_ACCOUNT_COUNT];
@@ -115,7 +117,7 @@ public final class MonogramController {
         if (id == 0) return;
         if (!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(store.user(peer, self)); users.add(ownUser());
-        TLRPC.TL_updateNewMessage update = new TLRPC.TL_updateNewMessage();
+        TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage();
         update.message = store.message(id, peer, self, body, false, date);
         ArrayList<TLRPC.Update> updates = new ArrayList<>(); updates.add(update);
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date));
@@ -200,8 +202,8 @@ public final class MonogramController {
             result.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
             return result;
         }
-        if (request instanceof TLRPC.TL_account_updateStatus) {
-            boolean offline = ((TLRPC.TL_account_updateStatus) request).offline;
+        if (request instanceof TL_account.updateStatus) {
+            boolean offline = ((TL_account.updateStatus) request).offline;
             session().connection().sendStanza(new org.jivesoftware.smack.packet.Presence(offline ? org.jivesoftware.smack.packet.Presence.Type.unavailable : org.jivesoftware.smack.packet.Presence.Type.available));
             return new TLRPC.TL_boolTrue();
         }

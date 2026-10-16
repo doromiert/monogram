@@ -23,3 +23,9 @@ TMessagesProj/jni/boringssl/
 TMessagesProj/jni/ffmpeg/
 TMessagesProj/jni/libvpx/
 TMessagesProj/jni/libwebp/
+
+# Android native outputs are rebuilt from the pinned submodules.
+TMessagesProj/jni/prebuild/lib/
+TMessagesProj/jni/prebuild/include/
+TMessagesProj/jni/prebuild/pkgconfig/
+TMessagesProj/jni/prebuild/build_env.txt

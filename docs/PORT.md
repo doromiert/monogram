@@ -1,6 +1,6 @@
 # Monogram port requirements and current evidence
 
-Current source base: official `DrKLO/Telegram` 13.0.2 at `f32ffeec763f0bdbf4bec25b52d654f77bff733d`. The `monogram-current-base` branch is being migrated; current-base Android build/runtime and removal of proprietary runtime SDKs remain unverified. See `TODO.md`.
+Current source base: official `DrKLO/Telegram` 13.0.2 at `f32ffeec763f0bdbf4bec25b52d654f77bff733d`. The `monogram-current-base` branch is being migrated; current-base APK build/runtime and completion of proprietary runtime SDK removal remain unverified. Android Java compilation and the arm64 native dependency source build have passed. See `TODO.md`.
 
 The Android evidence below belongs to the older Telegram-FOSS 10.14.3 prototype saved as `d46543df` on `prototype/telegram-foss`. It does not establish current-base behavior.
 Public URL requested: https://monogram.neg-zero.com. Optional helper host: 192.168.1.24.
@@ -31,6 +31,12 @@ The requested end state includes an installable branded Monogram Android client,
 - Add standard group chat, upload/download (including OMEMO files), avatars, editing, replies, reactions, notifications, account management and calls as supported. Identify and implement the remaining Telegram-specific helper functions with graceful feature discovery.
 - Package helper deployment for the specified host; verify service authentication, restart behavior and Android use of helper features. Current scheduling delivery removes the queued entry before routing: at most once, with a small message-loss window on a process crash.
 - Finish launcher art, app links, all reachable branding, licenses/attribution and release documentation.
+
+## Current-base build evidence
+
+All arm64 native libraries rebuilt successfully from the pinned upstream submodules under Nix on 2026-10-16: `.state/current-native-build.log`, `All prebuilt libraries were built successfully`. Bundled archives/generated headers are removed from Git tracking and ignored; `scripts/build-native.sh` generates them. The Nix toolchain includes SDK/build tools 35 for Media3 and 36 for the app, Java 21, NDK 27.2, CMake 3.22.1 and Rust 1.96.1 with Android targets.
+
+Firebase startup, Telegram phone login, SMS retrieval, captcha/Play Integrity and Google voice verification are removed from the active build. Other Google runtime dependencies remain to be replaced; this is not yet a finished FOSS APK. The current-base Java compile passed after updating the two moved TL model types in the adapter: `.state/current-java-build.log`, 138 tasks, BUILD SUCCESSFUL. This includes the Jabber account-entry adapter and removal of the Firebase/auth/integrity/captcha dependencies. Full APK linking/packaging and runtime checks remain pending.
 
 ## Reproducible checks
 

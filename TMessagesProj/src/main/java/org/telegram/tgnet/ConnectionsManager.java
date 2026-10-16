@@ -25,7 +25,6 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BaseController;
 import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.CaptchaController;
 import org.telegram.messenger.EmuDetector;
 import org.telegram.messenger.FileLoadOperation;
 import org.telegram.messenger.FileLoader;
@@ -44,7 +43,6 @@ import org.telegram.utils.proxy.WebProxyConnectionTester;
 import org.telegram.utils.proxy.WebProxyTransport;
 import org.telegram.utils.proxy.ProxySettings;
 import org.telegram.ui.Components.VideoPlayer;
-import org.telegram.ui.LoginActivity;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -162,66 +160,8 @@ public class ConnectionsManager extends BaseController {
     public ConnectionsManager(int instance) {
         super(instance);
         connectionState = ConnectionStateConnecting;
-        String deviceModel;
-        String systemLangCode;
-        String langCode;
-        String appVersion;
-        String systemVersion;
-        File config = ApplicationLoader.getFilesDirFixed();
-        if (instance != 0) {
-            config = new File(config, "account" + instance);
-            config.mkdirs();
-        }
-        String configPath = config.toString();
-        boolean enablePushConnection = isPushConnectionEnabled();
-        try {
-            systemLangCode = LocaleController.getSystemLocaleStringIso639().toLowerCase();
-            langCode = LocaleController.getLocaleStringIso639().toLowerCase();
-            deviceModel = Build.MANUFACTURER + Build.MODEL;
-            PackageInfo pInfo = ApplicationLoader.applicationContext.getPackageManager().getPackageInfo(ApplicationLoader.applicationContext.getPackageName(), 0);
-            appVersion = pInfo.versionName + " (" + pInfo.versionCode + ")";
-            if (BuildVars.DEBUG_PRIVATE_VERSION) {
-                appVersion += " pbeta";
-            } else if (BuildVars.DEBUG_VERSION) {
-                appVersion += " beta";
-            }
-            systemVersion = "SDK " + Build.VERSION.SDK_INT;
-        } catch (Exception e) {
-            systemLangCode = "en";
-            langCode = "";
-            deviceModel = "Android unknown";
-            appVersion = "App version unknown";
-            systemVersion = "SDK " + Build.VERSION.SDK_INT;
-        }
-        if (systemLangCode.trim().length() == 0) {
-            systemLangCode = "en";
-        }
-        if (deviceModel.trim().length() == 0) {
-            deviceModel = "Android unknown";
-        }
-        if (appVersion.trim().length() == 0) {
-            appVersion = "App version unknown";
-        }
-        if (systemVersion.trim().length() == 0) {
-            systemVersion = "SDK Unknown";
-        }
         getUserConfig().loadConfig();
-        String pushString = getRegId();
-        String fingerprint = AndroidUtilities.getCertificateSHA256Fingerprint();
-
-        int timezoneOffset = (TimeZone.getDefault().getRawOffset() + TimeZone.getDefault().getDSTSavings()) / 1000;
-        SharedPreferences mainPreferences;
-        if (currentAccount == 0) {
-            mainPreferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        } else {
-            mainPreferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig" + currentAccount, Activity.MODE_PRIVATE);
-        }
-        forceTryIpV6 = mainPreferences.getBoolean("forceTryIpV6", false);
-        boolean userPremium = false;
-        if (getUserConfig().getCurrentUser() != null) {
-            userPremium = getUserConfig().getCurrentUser().premium;
-        }
-        init(SharedConfig.buildVersion(), TLRPC.LAYER, BuildVars.APP_ID, deviceModel, systemVersion, appVersion, langCode, systemLangCode, configPath, FileLog.getNetworkLogPath(), pushString, fingerprint, timezoneOffset, getUserConfig().getClientUserId(), userPremium, enablePushConnection);
+        org.telegram.messenger.xmpp.MonogramController.get(instance).restore();
     }
 
     private String getRegId() {

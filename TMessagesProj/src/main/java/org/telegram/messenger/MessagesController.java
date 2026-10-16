@@ -1699,7 +1699,7 @@ public class MessagesController extends BaseController implements NotificationCe
         giveawayPeriodMax = mainPreferences.getLong("giveaway_period_max", 7);
         stealthModePast = mainPreferences.getInt("stories_stealth_past_period", 5 * 60);
         stealthModeCooldown = mainPreferences.getInt("stories_stealth_cooldown_period", 60 * 60);
-        boolean isTest = ConnectionsManager.native_isTestBackend(currentAccount) != 0;
+        boolean isTest = false;
         chatlistInvitesLimitDefault = mainPreferences.getInt("chatlistInvitesLimitDefault", 3);
         storyExpiringLimitDefault = mainPreferences.getInt("storyExpiringLimitDefault", 50);
         storyExpiringLimitPremium = mainPreferences.getInt("storyExpiringLimitPremium", 100);

@@ -32,8 +32,6 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
 
 import org.json.JSONObject;
 import org.telegram.messenger.utils.Choreographer60FpsContent;
@@ -114,7 +112,7 @@ public class ApplicationLoader extends Application {
     }
 
     protected PushListenerController.IPushListenerServiceProvider onCreatePushProvider() {
-        return PushListenerController.GooglePushListenerServiceProvider.INSTANCE;
+        return PushListenerController.NoPushListenerServiceProvider.INSTANCE;
     }
 
     public static String getApplicationId() {
@@ -397,27 +395,9 @@ public class ApplicationLoader extends Application {
     }
 
     private void initPushServices() {
-        AndroidUtilities.runOnUIThread(() -> {
-            if (getPushProvider().hasServices()) {
-                getPushProvider().onRequestPushToken();
-            } else {
-                if (BuildVars.LOGS_ENABLED) {
-                    FileLog.d("No valid " + getPushProvider().getLogTitle() + " APK found.");
-                }
-                SharedConfig.pushStringStatus = "__NO_GOOGLE_PLAY_SERVICES__";
-                PushListenerController.sendRegistrationToServer(getPushProvider().getPushType(), null);
-            }
-        }, 1000);
-    }
-
-    private boolean checkPlayServices() {
-        try {
-            int resultCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
-            return resultCode == ConnectionResult.SUCCESS;
-        } catch (Exception e) {
-            FileLog.e(e);
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) {
+            org.telegram.messenger.xmpp.MonogramController.get(account).restore();
         }
-        return true;
     }
 
     private static long lastNetworkCheck = -1;
