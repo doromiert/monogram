@@ -30,6 +30,35 @@ public class MonogramRoomStoreTest {
         if(encrypted) wire.addExtension(StandardExtensionElement.builder("encrypted","eu.siacs.conversations.axolotl").build());
         return XmppRoomMessage.from(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom(own),"Alice",body,encrypted,readable);
     }
+    @Test public void roomAttachmentsUseTheSharedCacheAndRetainVoiceMetadata() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-attachments.db"; context.deleteDatabase(file);
+        String address="friends@conference.example.org";
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer("alice@example.org"),room=store.room(address,"Alice");
+            TLRPC.TL_messages_sendMessage send=new TLRPC.TL_messages_sendMessage(); send.peer=new TLRPC.TL_inputPeerChat(); send.peer.chat_id=-room;
+            assertEquals(room,MonogramController.sendingPeer(send));
+            java.io.File source=java.io.File.createTempFile("monogram-voice",".ogg",context.getCacheDir());
+            try {
+                java.nio.file.Files.write(source.toPath(),new byte[]{'O','g','g','S',1,2,3,4});
+                FileLink plain=FileLink.parse("https://files.example.org/voice.ogg");
+                FileShare sharing=FileShare.describe(plain,source,"voice.ogg","audio/ogg");
+                int id=store.saveRoom(com.negzero.monogram.xmpp.MessageFixture.roomFile(address,"Bob","voice",sharing.body("Listen"),false,sharing),self);
+                TLRPC.Message received=store.getMessage(id,self); assertEquals(room,received.dialog_id); assertTrue(MonogramAttachments.has(received)); assertEquals("Listen",received.message);
+                assertEquals(room,MonogramController.sendingPeer(new MonogramFileRequest(received,source,"audio/ogg","Listen")));
+                assertNotNull(store.sharing(id)); assertEquals("audio/ogg",received.media.document.mime_type);
+                TLRPC.TL_messageMediaDocument media=new TLRPC.TL_messageMediaDocument(); media.document=new TLRPC.TL_document(); media.flags=1;
+                media.document.id=id; media.document.dc_id=Integer.MIN_VALUE; media.document.file_reference=new byte[0]; media.document.mime_type="audio/ogg";
+                TLRPC.TL_documentAttributeAudio audio=new TLRPC.TL_documentAttributeAudio(); audio.voice=true; audio.duration=1; media.document.attributes.add(audio);
+                java.io.File cached=store.attachmentFile(sharing); cached.getParentFile().mkdirs(); java.nio.file.Files.copy(source.toPath(),cached.toPath());
+                store.attach(id,plain.wireUrl,cached,media);
+                assertTrue(store.getMessage(id,self).media.document.attributes.stream().anyMatch(attribute -> attribute instanceof TLRPC.TL_documentAttributeAudio && ((TLRPC.TL_documentAttributeAudio)attribute).voice));
+                cached.delete();
+                String secret="aesgcm://files.example.org/secret.png#"+new String(new char[88]).replace('\0','a');
+                int encrypted=store.saveRoom(com.negzero.monogram.xmpp.MessageFixture.roomFile(address,"Bob","secret",secret,true,null),self);
+                assertTrue(MonogramAttachments.has(store.getMessage(encrypted,self))); assertEquals(secret,store.getMessage(encrypted,self).params.get(MonogramAttachments.PARAM));
+            } finally { source.delete(); }
+        } finally { context.deleteDatabase(file); }
+    }
     @Test public void roomHistoryIsSeparateSenderScopedAndPreservesKnownPlaintext() throws Exception {
         Context context=RuntimeEnvironment.getApplication(); String file="rooms.db"; context.deleteDatabase(file);
         long dialog,self; int first;

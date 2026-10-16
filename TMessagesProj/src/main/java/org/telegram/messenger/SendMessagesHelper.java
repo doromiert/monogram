@@ -5268,7 +5268,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 isFinalGroupMedia = params.get("final") != null;
             }
 
-            boolean monogramFile = peer > 0 && (photo != null || document != null);
+            boolean monogramFile = (peer>0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(peer)) && (photo != null || document != null);
+            if(monogramFile && groupId!=0) {
+                groupId=0; newMsg.grouped_id=0; newMsg.flags&=~131072;
+                if(params!=null) { params.remove("groupId"); params.remove("final"); }
+            }
             String monogramCaption = caption;
             File monogramSource = null;
             if (monogramFile) {

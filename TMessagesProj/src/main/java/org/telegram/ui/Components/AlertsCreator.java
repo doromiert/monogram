@@ -285,60 +285,71 @@ public class AlertsCreator {
                 .create();
     }
 
+    public static String monogramSendErrorText(String code) {
+        int separator=code.indexOf('|'); String detail=separator<0 ? null : code.substring(separator+1);
+        if(separator>=0) code=code.substring(0,separator);
+        String text;
+        switch (code) {
+            case "MONOGRAM_OMEMO_TRUST_REQUIRED":
+                text = "Review the OMEMO fingerprints for this contact and your other devices before sending. Your message is still unsent; retry it after reviewing the devices."; break;
+            case "MONOGRAM_OMEMO_NO_DEVICES":
+                text = "This contact has not published a compatible OMEMO device. Check their encryption support and try again. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_NO_TRUSTED_DEVICES":
+                text = "No trusted recipient device is available. Review this contact's device fingerprints before retrying your message."; break;
+            case "MONOGRAM_OMEMO_DEVICE_FAILURE":
+                text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_ROOM_UNSUPPORTED":
+                text = "This room cannot currently use OMEMO. It must be members-only, reveal participant addresses and allow the full member list to be checked. Your message was not sent. Review Conversation security before retrying."; break;
+            case "MONOGRAM_OMEMO_LOOKUP_TIMEOUT":
+                text="A server did not answer an encryption preparation request. Your message remains unsent; retry after reconnecting."; break;
+            case "MONOGRAM_OMEMO_ROOM_CHANGED":
+                text = "Room membership changed while encrypting. Review the room members and their fingerprints, then retry. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":
+                text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
+            case "MONOGRAM_XMPP_DISCONNECTED":
+                text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
+            case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":
+                text = "Your Jabber provider does not offer HTTP File Upload. This file was not sent."; break;
+            case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":
+                text = "This file exceeds the upload service's size limit. Choose a smaller file and retry."; break;
+            case "MONOGRAM_FILE_FILE_SIZE":
+                text = "Choose a non-empty file up to 100 MiB. Your provider may have a smaller limit."; break;
+            case "MONOGRAM_FILE_AUTHENTICATION":
+                text = "The encrypted file could not be verified. It has not been opened. You can retry the download."; break;
+            case "MONOGRAM_FILE_INTEGRITY":
+                text = "The downloaded file does not match its advertised size or hash. It has not replaced the cached file or been opened."; break;
+            case "MONOGRAM_FILE_TRANSFER_FAILED":
+                text = "The file transfer failed. Check your connection and retry."; break;
+            case "MONOGRAM_REPLY_UNAVAILABLE":
+                text = "The original message or selected quote is unavailable in this conversation. Load its history and try again.";
+                break;
+            case "MONOGRAM_EDIT_UNAVAILABLE":
+                text = "This text message cannot be edited because its original content or unique XMPP message ID is unavailable. Your correction was not sent."; break;
+            case "MONOGRAM_FEATURE_UNAVAILABLE":
+                text = "This action is not supported by Monogram yet. Your message was not sent."; break;
+            default:
+                text = code.startsWith("MONOGRAM_FILE_") ? "The file transfer failed. You can retry.\n" + code.substring("MONOGRAM_FILE_".length())
+                    : "The XMPP request failed. Your message was not sent.\n" + code.substring("MONOGRAM_".length());
+        }
+        return detail==null ? text : text+"\n\n"+detail;
+    }
+
     public static Dialog processError(int currentAccount, TLRPC.TL_error error, BaseFragment fragment, TLObject request, Object... args) {
         if (error == null || error.code == 406 || error.text == null) {
             return null;
         }
-        if ((request instanceof TLRPC.TL_messages_sendMessage || request instanceof TLRPC.TL_messages_editMessage || request instanceof org.telegram.messenger.xmpp.MonogramFileRequest) && error.text.startsWith("MONOGRAM_")) {
-            BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragment();
-            if (target == null || target.getParentActivity() == null) return null;
-            String text;
-            switch (error.text) {
-                case "MONOGRAM_OMEMO_TRUST_REQUIRED":
-                    text = "Review the OMEMO fingerprints for this contact and your other devices before sending. Your message is still unsent; retry it after reviewing the devices."; break;
-                case "MONOGRAM_OMEMO_NO_DEVICES":
-                    text = "This contact has not published a compatible OMEMO device. Check their encryption support and try again. Your message was not sent."; break;
-                case "MONOGRAM_OMEMO_NO_TRUSTED_DEVICES":
-                    text = "No trusted recipient device is available. Review this contact's device fingerprints before retrying your message."; break;
-                case "MONOGRAM_OMEMO_DEVICE_FAILURE":
-                    text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
-                case "MONOGRAM_OMEMO_ROOM_UNSUPPORTED":
-                    text = "This room cannot currently use OMEMO. It must be members-only, reveal participant addresses and allow the full member list to be checked. Your message was not sent. Review Conversation security before retrying."; break;
-                case "MONOGRAM_OMEMO_ROOM_CHANGED":
-                    text = "Room membership changed while encrypting. Review the room members and their fingerprints, then retry. Your message was not sent."; break;
-                case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":
-                    text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
-                case "MONOGRAM_XMPP_DISCONNECTED":
-                    text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
-                case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":
-                    text = "Your Jabber provider does not offer HTTP File Upload. This file was not sent."; break;
-                case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":
-                    text = "This file exceeds the upload service's size limit. Choose a smaller file and retry."; break;
-                case "MONOGRAM_FILE_FILE_SIZE":
-                    text = "Choose a non-empty file up to 100 MiB. Your provider may have a smaller limit."; break;
-                case "MONOGRAM_FILE_AUTHENTICATION":
-                    text = "The encrypted file could not be verified. It has not been opened. You can retry the download."; break;
-                case "MONOGRAM_FILE_INTEGRITY":
-                    text = "The downloaded file does not match its advertised size or hash. It has not replaced the cached file or been opened."; break;
-                case "MONOGRAM_FILE_TRANSFER_FAILED":
-                    text = "The file transfer failed. Check your connection and retry."; break;
-                case "MONOGRAM_REPLY_UNAVAILABLE":
-                    text = "The original message or selected quote is unavailable in this conversation. Load its history and try again.";
-                    break;
-                case "MONOGRAM_EDIT_UNAVAILABLE":
-                    text = "This text message cannot be edited because its original content or unique XMPP message ID is unavailable. Your correction was not sent."; break;
-                case "MONOGRAM_FEATURE_UNAVAILABLE":
-                    text = "This action is not supported by Monogram yet. Your message was not sent."; break;
-                default:
-                    text = error.text.startsWith("MONOGRAM_FILE_") ? "The file transfer failed. You can retry.\n" + error.text.substring("MONOGRAM_FILE_".length())
-                            : "The XMPP request failed. Your message was not sent.\n" + error.text.substring("MONOGRAM_".length());
+        if ((request instanceof TLRPC.TL_messages_sendMessage || request instanceof TLRPC.TL_messages_editMessage || (request instanceof TLRPC.TL_messages_sendMedia) || request instanceof org.telegram.messenger.xmpp.MonogramFileRequest) && error.text.startsWith("MONOGRAM_")) {
+            BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragmentIncludeMainTabs();
+            String text=monogramSendErrorText(error.text);
+            if (target == null || target.getParentActivity() == null) {
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, org.telegram.ui.Components.Bulletin.TYPE_ERROR, text);
+                return null;
             }
             AlertDialog.Builder builder = new AlertDialog.Builder(target.getParentActivity()).setTitle(request instanceof org.telegram.messenger.xmpp.MonogramFileRequest ? "File transfer failed" : "Message not sent").setMessage(text);
             if (error.text.startsWith("MONOGRAM_OMEMO_")) {
                 long peer = request instanceof org.telegram.messenger.xmpp.MonogramFileRequest
                         ? ((org.telegram.messenger.xmpp.MonogramFileRequest) request).message.dialog_id
-                        : request instanceof TLRPC.TL_messages_editMessage ? ((TLRPC.TL_messages_editMessage) request).peer.user_id
-                        : ((TLRPC.TL_messages_sendMessage) request).peer.user_id;
+                        : org.telegram.messenger.xmpp.MonogramController.sendingPeer(request);
                 builder.setPositiveButton("Review devices", (dialog, which) -> target.presentFragment(new org.telegram.ui.MonogramSecurityActivity(currentAccount, peer)));
                 builder.setNegativeButton("Close", null);
             } else builder.setPositiveButton("OK", null);

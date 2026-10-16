@@ -446,6 +446,7 @@ public final class MonogramController {
         publishReactions(dialog,store.reactions.reconcile(dialog));
         if(id!=0) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
         if(id==0 || !UserConfig.getInstance(account).isClientActivated()) return;
+        maybeAutoDownload(store.getMessage(id,self));
         TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=store.getMessage(id,self);
         ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(update);
         ArrayList<TLRPC.User> users=store.roomUsers(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
@@ -737,7 +738,7 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         accountEpoch++;
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -865,7 +866,7 @@ public final class MonogramController {
                 if (name.getValue() == entry.getValue()) fileNames.remove(name.getKey(), name.getValue());
         }
         automaticJobs.clear(); autoAttempted.clear();
-        worker.execute(() -> { if (mediaHistoryPeer > 0 && self > 0) for (TLRPC.Message message : store.history(mediaHistoryPeer, self, 0, 100)) maybeAutoDownload(message); });
+        worker.execute(() -> { if (mediaHistoryPeer != 0 && self > 0) for (TLRPC.Message message : store.history(mediaHistoryPeer, self, 0, 100)) maybeAutoDownload(message); });
     }
     public void setEncrypted(long peer, boolean encrypted) {
         if (!preferences.edit().putBoolean("omemo-" + peer, encrypted).commit()) throw new IllegalStateException("Cannot save encryption preference");
@@ -980,12 +981,15 @@ public final class MonogramController {
                 upload ? NotificationCenter.fileUploadProgressChanged : NotificationCenter.fileLoadProgressChanged,
                 name, bytes, total <= 0 ? Math.max(bytes, 1) : total, encrypted));
     }
+    private static String omemoSendError(com.negzero.monogram.xmpp.OmemoSendException error) {
+        return "MONOGRAM_OMEMO_"+error.reason.name()+(error.detail==null ? "" : "|"+error.detail);
+    }
     private TLRPC.TL_error fileError(Exception e) {
         TLRPC.TL_error error = new TLRPC.TL_error(); error.code = 400;
         if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
         else if (e instanceof FileTransfer.Failure) error.text = "MONOGRAM_FILE_" + ((FileTransfer.Failure) e).reason;
         else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
-        else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = "MONOGRAM_OMEMO_" + ((com.negzero.monogram.xmpp.OmemoSendException) e).reason.name();
+        else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = omemoSendError((com.negzero.monogram.xmpp.OmemoSendException)e);
         else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
         else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
         else error.text = "MONOGRAM_FILE_TRANSFER_FAILED";
@@ -996,7 +1000,7 @@ public final class MonogramController {
         try {
             request.job.check();
             expected = session();
-            if (!request.supported || request.message.dialog_id <= 0 || store.jid(request.message.dialog_id).contains("/"))
+            if (!request.supported || request.message.dialog_id == 0 || store.jid(request.message.dialog_id).contains("/"))
                 throw new UnsupportedOperationException();
             if (request.file == null || !request.file.isFile()) throw new java.io.FileNotFoundException();
         } catch (Exception e) {
@@ -1012,6 +1016,7 @@ public final class MonogramController {
         try {
             TLRPC.MessageReplyHeader header = request.message.reply_to;
             if (header != null && (header.reply_to_peer_id != null && header.reply_to_peer_id.user_id != request.message.dialog_id || header.reply_to_top_id != 0)) throw new UnsupportedOperationException();
+            if(request.message.dialog_id<0 && header!=null) throw new ReplyUnavailable(new IllegalArgumentException("Room attachment replies are not ready"));
             reply = header == null ? null : replyTo(header.reply_to_msg_id, request.message.dialog_id, encrypted, header.quote_text, header.quote_offset);
         } catch (Exception failed) {
             fileJobs.remove(request.localId, request.job);
@@ -1036,17 +1041,23 @@ public final class MonogramController {
                     try {
                         job.check();
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
-                        String stanza = encrypted && !modern ? expected.sendFile(peer, link, true, reply) : expected.sendFile(peer, sharing, request.caption, reply);
-                        XmppMessage message = encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, link, true, reply)
-                                : XmppMessage.sentFile(expected.connection().getUser(), peer, stanza, sharing, request.caption, reply);
-                        int id = store.save(message);
+                        int id; long timestamp; String caption;
+                        if(request.message.dialog_id<0) {
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,request.caption,encrypted);
+                            id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
+                        } else {
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply) : expected.sendFile(peer,sharing,request.caption,reply);
+                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply)
+                                    : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,request.caption,reply);
+                            id=store.save(message); timestamp=message.timestamp; caption=message.caption;
+                        }
                         TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
-                                : MonogramAttachments.media(id, (int) (message.timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
+                                : MonogramAttachments.media(id, (int) (timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
                         store.attach(id, link.wireUrl, cached, media);
                         refreshReplies(request.message.dialog_id);
-                        MonogramAttachments.apply(request.message, link, cached, media, message.caption, sharing == null ? link.fileName() : sharing.name);
+                        MonogramAttachments.apply(request.message, link, cached, media, caption, sharing == null ? link.fileName() : sharing.name);
                         TLRPC.TL_updateShortSentMessage response = new TLRPC.TL_updateShortSentMessage();
-                        response.id = id; response.date = (int) (message.timestamp / 1000); response.out = true; response.pts_count = 1;
+                        response.id = id; response.date = (int) (timestamp / 1000); response.out = true; response.pts_count = 1;
                         response.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
                         Utilities.stageQueue.postRunnable(() -> {
                             callback.run(response, null);
@@ -1129,7 +1140,27 @@ public final class MonogramController {
                     new MonogramFileRequest(object.messageOwner, null, "application/octet-stream", ""));
         });
     }
-    public void request(TLObject request, RequestDelegate callback) {
+    public static long sendingPeer(TLObject request) {
+        if(request instanceof MonogramFileRequest) return ((MonogramFileRequest)request).message.dialog_id;
+        TLRPC.InputPeer peer=request instanceof TLRPC.TL_messages_sendMessage ? ((TLRPC.TL_messages_sendMessage)request).peer
+            : request instanceof TLRPC.TL_messages_sendMedia ? ((TLRPC.TL_messages_sendMedia)request).peer
+            : request instanceof TLRPC.TL_messages_editMessage ? ((TLRPC.TL_messages_editMessage)request).peer : null;
+        return peer==null ? 0 : peer.chat_id!=0 ? -peer.chat_id : peer.channel_id!=0 ? -peer.channel_id : peer.user_id;
+    }
+    private String sendErrorKey(long peer) { return "last-send-error-"+accountJid()+"\n"+peer; }
+    public String lastSendError(long peer) { return preferences.getString(sendErrorKey(peer),null); }
+    public void request(TLObject request,RequestDelegate callback) {
+        final long peer=sendingPeer(request),owner=accountEpoch;
+        dispatchRequest(request,(response,error) -> {
+            if(peer!=0 && owner==accountEpoch) {
+                SharedPreferences.Editor edit=preferences.edit();
+                if(error==null) edit.remove(sendErrorKey(peer)); else edit.putString(sendErrorKey(peer),error.text);
+                edit.apply();
+            }
+            if(callback!=null) callback.run(response,error);
+        });
+    }
+    private void dispatchRequest(TLObject request, RequestDelegate callback) {
         if (request instanceof MonogramFileRequest) { worker.execute(() -> upload((MonogramFileRequest) request, callback)); return; }
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
@@ -1148,7 +1179,7 @@ public final class MonogramController {
                 else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
                         && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
                 else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
-                else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = "MONOGRAM_OMEMO_" + ((com.negzero.monogram.xmpp.OmemoSendException) e).reason.name();
+                else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = omemoSendError((com.negzero.monogram.xmpp.OmemoSendException)e);
                 else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
                 else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
                 else error.text = "MONOGRAM_XMPP_FAILED: " + e.getClass().getSimpleName();

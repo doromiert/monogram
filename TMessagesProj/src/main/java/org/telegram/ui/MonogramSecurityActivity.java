@@ -68,7 +68,9 @@ public final class MonogramSecurityActivity extends UniversalFragment {
                     String warning=null;
                     try { for(org.jxmpp.jid.BareJid member:session.rooms.members(controller.jid(peer))) addresses.add(member.toString()); }
                     catch(com.negzero.monogram.xmpp.OmemoSendException unsupported) {
-                        warning="This room does not support legacy OMEMO. Showing fingerprints for disclosed accounts only; encrypted room messages remain unsent.";
+                        warning=unsupported.reason==com.negzero.monogram.xmpp.OmemoSendException.Reason.ROOM_UNSUPPORTED
+                            ? "Room OMEMO is unavailable. Join a members-only room that discloses participant addresses. Showing fingerprints for known accounts; encrypted room messages remain unsent."
+                            : "Could not retrieve the complete room member list. Showing known accounts; refresh to retry."+(unsupported.detail==null ? "" : "\n"+unsupported.detail);
                     } catch(Exception unavailable) { warning="Could not retrieve the complete room member list. Showing known accounts; refresh to retry."; }
                     memberDeadline.cancel(false);
                     if(checkingMembers.compareAndSet(true,false) && loading==generation && !Thread.currentThread().isInterrupted()) loadFingerprintAddresses(session,addresses,selectedModern,false,loading,warning);
@@ -117,6 +119,8 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
         items.add(UItem.asHeader(controller.jid(peer)));
+        String sendError=controller.lastSendError(peer);
+        if(sendError!=null) items.add(UItem.asShadow("Last send failure: "+org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(sendError)));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Every member, including offline members, needs a compatible trusted device. OMEMO 2 rooms are not available yet."));

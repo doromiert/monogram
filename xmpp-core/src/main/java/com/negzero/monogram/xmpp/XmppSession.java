@@ -66,6 +66,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppChatStates chatStates;
     public final XmppFingerprints fingerprints;
     private final OmemoManager omemo;
+    private final java.util.Map<String,Long> deviceListRefresh=new java.util.concurrent.ConcurrentHashMap<>();
     private final IdentityTrust trust;
     private final XmppOmemo2 modern;
     private final Listener listener;
@@ -103,6 +104,7 @@ public final class XmppSession implements AutoCloseable {
                 .setSendPresence(false).setCompressionEnabled(false).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
         connection = new ManagedConnection(config.build());
+        connection.setReplyTimeout(15000);
         this.listener = listener;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("encrypted",XmppOmemo2.NS,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
@@ -138,7 +140,7 @@ public final class XmppSession implements AutoCloseable {
             }
             return found;
         });
-        rooms=new XmppRooms(connection,omemo,listener);
+        rooms=new XmppRooms(connection,omemo,listener,contact -> sendingDevices(contact.toString()));
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
             @Override public void connectionClosed() { disconnected(); }
@@ -474,11 +476,17 @@ public final class XmppSession implements AutoCloseable {
         EntityBareJid contact = JidCreate.entityBareFrom(jid);
         try {
             omemo.requestDeviceListUpdateFor(contact);
+            deviceListRefresh.put(contact.toString(),System.nanoTime());
             return omemo.getDevicesOf(contact);
         } catch (org.jivesoftware.smack.XMPPException.XMPPErrorException e) {
             if (e.getStanzaError().getCondition() == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) return java.util.Collections.emptySet();
             throw e;
         }
+    }
+    private Set<OmemoDevice> sendingDevices(String address) throws Exception {
+        Long refreshed=deviceListRefresh.get(address);
+        if(refreshed==null || System.nanoTime()-refreshed>java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) return devices(address);
+        return omemo.getDevicesOf(JidCreate.entityBareFrom(address));
     }
     public OmemoFingerprint fingerprint(OmemoDevice device) throws Exception { return omemo.getFingerprint(device); }
     private static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }

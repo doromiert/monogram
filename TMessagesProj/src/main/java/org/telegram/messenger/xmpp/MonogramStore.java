@@ -294,6 +294,15 @@ final class MonogramStore extends SQLiteOpenHelper {
                 identity.put("value",(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
                 db.insertWithOnConflict("message_ids",null,identity,SQLiteDatabase.CONFLICT_IGNORE);
             }
+            if(message.attachment!=null) {
+                ContentValues attachment=new ContentValues(); attachment.put("message",id); attachment.put("url",message.attachment.wireUrl); attachment.put("caption",message.caption);
+                if(message.sharing!=null) attachment.put("sharing",message.sharing.xml());
+                changed|=db.insertWithOnConflict("attachments",null,attachment,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
+                if(message.sharing!=null) {
+                    attachment.remove("message"); attachment.remove("url");
+                    changed|=db.update("attachments",attachment,"message=? AND url=? AND sharing IS NULL",new String[]{Integer.toString(id),message.attachment.wireUrl})>0;
+                }
+            }
             db.setTransactionSuccessful(); return changed ? id : 0;
         } finally { db.endTransaction(); }
     }

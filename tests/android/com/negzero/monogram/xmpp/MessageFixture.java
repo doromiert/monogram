@@ -63,6 +63,12 @@ public final class MessageFixture {
         return modern ? XmppMessage.modern(message,message,JidCreate.entityBareFrom("alice@example.org"),null,new Date(time))
                 : XmppMessage.from(message,JidCreate.entityBareFrom("alice@example.org"),null,false,true,null,new Date(time));
     }
+    public static XmppRoomMessage roomFile(String room,String nick,String wire,String body,boolean encrypted,FileShare sharing) throws Exception {
+        Message message=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
+        message.setFrom(JidCreate.entityFullFrom(room+"/"+nick)); message.setStanzaId(wire);
+        if(sharing!=null) sharing.addTo(message,body);
+        return XmppRoomMessage.from(message,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom("alice@example.org"),"Alice",body,encrypted,true);
+    }
     public static XmppRoomMessage roomReaction(String room,String nick,String wire,String target,String occupant,java.util.Collection<String> emojis,long time) throws Exception {
         Message message=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
         message.setFrom(JidCreate.entityFullFrom(room+"/"+nick)); message.setStanzaId(wire); new MessageReactions(target,emojis).addTo(message);

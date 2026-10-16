@@ -150,7 +150,7 @@ public final class XmppMessage {
                 : from(message, own.asEntityBareJidIfPossible(), body, false, true, null, null);
     }
 
-    private static boolean validThumbnail(String value) {
+    static boolean validThumbnail(String value) {
         if (value.length() > 16384 || value.indexOf('\n') >= 0) return false;
         String prefix = value.startsWith("data:image/jpeg;base64,") ? "data:image/jpeg;base64," : "data:image/jpeg,";
         if (!value.startsWith(prefix)) return false;
