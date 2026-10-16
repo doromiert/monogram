@@ -36,7 +36,7 @@ public final class MonogramStoreDeviceTest {
                 old.setVersion(1);
             }
             try (MonogramStore store = new MonogramStore(context, "migration.db")) {
-                check(store.getReadableDatabase().getVersion() == 6, "Schema must migrate");
+                check(store.getReadableDatabase().getVersion() == 7, "Schema must migrate");
                 check(store.history(2, 1, 0, 100).get(0).id == 1, "Migration must preserve IDs");
                 check(store.history(2, 1, 0, 100).get(0).message.equals("known plaintext"), "Migration must preserve text");
                 check(store.save(MessageFixture.message("existing", "origin", "archive", null, false, false, 200000)) == 0,
@@ -188,13 +188,14 @@ public final class MonogramStoreDeviceTest {
                 try (SQLiteDatabase old = SQLiteDatabase.openOrCreateDatabase(version2, null)) {
                     old.execSQL("DROP TABLE attachments");
                     old.execSQL("DROP TABLE profiles");
+                    old.execSQL("DROP TABLE corrections"); old.execSQL("DROP TABLE applied_corrections");
                     old.execSQL("DROP TABLE replies"); old.execSQL("DROP TABLE message_senders");
                     String link = "aesgcm://example.org/archived.png#" + new String(new char[88]).replace('\0', 'b');
                     old.execSQL("INSERT INTO messages VALUES (2,2,'archived-file',?,1,0,201,1,201000,0)", new Object[]{link});
                     old.setVersion(3);
                 }
                 try (MonogramStore migrated = new MonogramStore(context, "version2.db")) {
-                    check(migrated.getReadableDatabase().getVersion() == 6, "Schema 3 must migrate to 6");
+                    check(migrated.getReadableDatabase().getVersion() == 7, "Schema 3 must migrate to 7");
                     check(migrated.getMessage(1, 1).message.equals("existing v2"), "Schema 3 migration must retain known text");
                     TLRPC.Message archived = migrated.getMessage(2, 1);
                     check(MonogramAttachments.has(archived) && archived.message.isEmpty(),
@@ -203,13 +204,14 @@ public final class MonogramStoreDeviceTest {
             } finally { SQLiteDatabase.deleteDatabase(version2); }
             try (SQLiteDatabase previous = SQLiteDatabase.openOrCreateDatabase(database, null)) {
                 previous.execSQL("DROP TABLE profiles");
+                previous.execSQL("DROP TABLE corrections"); previous.execSQL("DROP TABLE applied_corrections");
                 previous.execSQL("DROP TABLE replies"); previous.execSQL("DROP TABLE message_senders");
                 previous.execSQL("INSERT INTO peers VALUES (1,'alice@example.org'),(2,'bob@example.org')");
                 previous.execSQL("INSERT INTO messages(id,peer,stanza,body,encrypted,outgoing,time,time_ms) VALUES(900,2,'v4-wire','schema 4 preserved',1,0,800,800000)");
                 previous.setVersion(4);
             }
             try (MonogramStore migrated = new MonogramStore(context, "migration.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 6 && migrated.profile(1) == null, "Schema 4 must gain profiles without changing message tables");
+                check(migrated.getReadableDatabase().getVersion() == 7 && migrated.profile(1) == null, "Schema 4 must gain profiles without changing message tables");
                 check(migrated.getMessage(900, 1).message.equals("schema 4 preserved"), "Schema 4 messages must survive the profile migration");
             }
             TLRPC.MessageMedia remotePhoto = MonogramAttachments.remoteMedia(1, "photo.jpg", "application/octet-stream", 65537);

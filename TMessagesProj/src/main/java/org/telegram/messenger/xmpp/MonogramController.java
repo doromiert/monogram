@@ -23,6 +23,8 @@ import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_update;
 
 public final class MonogramController {
+    /** Native update payloads originating from XMPP have no Telegram PTS sequence. */
+    public static final class Updates extends TLRPC.TL_updates {}
     private static final MonogramController[] instances = new MonogramController[UserConfig.MAX_ACCOUNT_COUNT];
     public static synchronized MonogramController get(int account) {
         if (instances[account] == null) instances[account] = new MonogramController(account);
@@ -221,14 +223,20 @@ public final class MonogramController {
             }
             boolean initial = !backwards && cursor == null;
             java.util.Set<Integer> updated = new java.util.HashSet<>();
-            if (store.saveArchive(page, backwards || initial, updated) && UserConfig.getInstance(account).isClientActivated()) {
+            boolean changed = store.saveArchive(page, backwards || initial, updated);
+            java.util.Set<Long> replyPeers = new java.util.HashSet<>();
+            for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
+            for (long peer : replyPeers) {
+                MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
+                updated.addAll(corrections.edited);
+                publishCorrections(peer, correctionUpdates(corrections, 0));
+                refreshReplies(peer, updated);
+            }
+            if (changed && UserConfig.getInstance(account).isClientActivated()) {
                 TLRPC.TL_messages_dialogs dialogs = dialogs();
                 AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
                         dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
             }
-            java.util.Set<Long> replyPeers = new java.util.HashSet<>();
-            for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
-            for (long peer : replyPeers) refreshReplies(peer, updated);
             boolean older = backwards || initial || page.complete;
             if (older ? !store.archiveComplete() : page.lastId != null) {
                 worker.execute(() -> syncArchive(expected, older, run));
@@ -387,16 +395,37 @@ public final class MonogramController {
         if (store.profile(peer) == null) refreshProfile(peer);
         int date = (int) (message.timestamp / 1000);
         int id = store.save(message);
-        refreshReplies(peer, id == 0 ? java.util.Collections.emptySet() : java.util.Collections.singleton(id));
-        if (id == 0) return;
+        java.util.Set<Integer> updated = new java.util.HashSet<>(); if (id != 0) updated.add(id);
+        MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
+        updated.addAll(corrections.edited); refreshReplies(peer, updated);
+        ArrayList<TLRPC.Update> updates = correctionUpdates(corrections, id);
+        if (id != 0 && !store.hiddenCorrection(id)) {
+            TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage(); update.message = store.getMessage(id, self); updates.add(update);
+        }
+        if (updates.isEmpty()) return;
         if (!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(store.user(peer, self)); users.add(ownUser());
-        TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage();
-        update.message = store.getMessage(id, self);
-        ArrayList<TLRPC.Update> updates = new ArrayList<>(); updates.add(update);
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date));
         if (typingPeers.contains(peer)) publishTyping(peer, true);
-        maybeAutoDownload(store.getMessage(id, self));
+        if (id != 0 && !store.hiddenCorrection(id)) maybeAutoDownload(store.getMessage(id, self));
+    }
+    private ArrayList<TLRPC.Update> correctionUpdates(MonogramStore.CorrectionChanges changes, int arriving) {
+        ArrayList<TLRPC.Update> updates = new ArrayList<>();
+        for (int id : changes.edited) {
+            TL_update.TL_updateEditMessage edit = new TL_update.TL_updateEditMessage(); edit.message = store.getMessage(id, self); updates.add(edit);
+        }
+        TL_update.TL_updateDeleteMessages hidden = new TL_update.TL_updateDeleteMessages();
+        for (int id : changes.hidden) if (id != arriving) hidden.messages.add(id);
+        if (!hidden.messages.isEmpty()) updates.add(hidden);
+        for (int id : changes.shown) if (id != arriving) {
+            TL_update.TL_updateNewMessage shown = new TL_update.TL_updateNewMessage(); shown.message = store.getMessage(id, self); updates.add(shown);
+        }
+        return updates;
+    }
+    private void publishCorrections(long peer, ArrayList<TLRPC.Update> updates) {
+        if (updates.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
+        ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(store.user(peer, self)); users.add(ownUser());
+        Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, now()));
     }
     private void refreshReplies(long peer) { refreshReplies(peer, java.util.Collections.emptySet()); }
     private void refreshReplies(long peer, java.util.Set<Integer> updated) {
@@ -611,6 +640,7 @@ public final class MonogramController {
             catch (Exception e) {
                 error = new TLRPC.TL_error(); error.code = 400;
                 if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
+                else if (request instanceof TLRPC.TL_messages_editMessage && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
                 else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
                 else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = "MONOGRAM_OMEMO_" + ((com.negzero.monogram.xmpp.OmemoSendException) e).reason.name();
                 else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
@@ -713,6 +743,24 @@ public final class MonogramController {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             result.messages.addAll(store.history(query.peer.user_id, self, query.offset_id, query.limit));
             result.users.add(store.user(query.peer.user_id, self)); result.users.add(ownUser()); return result;
+        }
+        if (request instanceof TLRPC.TL_messages_editMessage) {
+            TLRPC.TL_messages_editMessage edit = (TLRPC.TL_messages_editMessage) request;
+            if (edit.peer == null || edit.peer.user_id == 0 || edit.media != null || edit.schedule_date != 0 || edit.quick_reply_shortcut_id != 0
+                    || (edit.flags & 2048) == 0) throw new UnsupportedOperationException();
+            long peer = edit.peer.user_id;
+            MonogramStore.EditTarget target = store.editTarget(edit.id, peer, self);
+            boolean encrypted = target.encrypted || encrypted(peer);
+            String stanza = session().correct(store.jid(peer), edit.message, encrypted, target.reply, target.correction);
+            int saved = store.save(XmppMessage.sent(session().connection().getUser(), store.jid(peer), stanza, edit.message,
+                    encrypted, target.reply, target.correction));
+            MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, java.util.Collections.singleton(saved));
+            refreshReplies(peer, corrections.edited);
+            corrections.edited.remove(edit.id); publishCorrections(peer, correctionUpdates(corrections, saved));
+            Updates result = new Updates(); result.date = now();
+            TL_update.TL_updateEditMessage update = new TL_update.TL_updateEditMessage(); update.message = store.getMessage(edit.id, self); result.updates.add(update);
+            result.users.add(store.user(peer, self)); result.users.add(ownUser());
+            return result;
         }
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;

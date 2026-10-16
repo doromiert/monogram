@@ -19,19 +19,22 @@ public final class XmppMessage {
     public final String body;
     public final FileLink attachment;
     public final ReplyReference reply;
+    public final MessageCorrection correction;
     public final boolean encrypted, readable, outgoing, archived;
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, boolean encrypted,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction) {
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encrypted = encrypted; this.readable = readable; this.outgoing = outgoing;
-        this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply;
+        this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply; this.correction = correction;
     }
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
                             boolean readable, String archiveId, Date archiveTime) {
         if (message.getType() != Message.Type.chat && message.getType() != Message.Type.normal) return null;
+        // Room private messages need occupant/session identity, not this direct-chat bare-JID model.
+        if (message.hasExtension("x", "http://jabber.org/protocol/muc#user")) return null;
         EntityBareJid from = message.getFrom() == null ? null : message.getFrom().asEntityBareJidIfPossible();
         EntityBareJid to = message.getTo() == null ? null : message.getTo().asEntityBareJidIfPossible();
         if (from == null || (!own.equals(from) && to != null && !own.equals(to))) return null;
@@ -69,16 +72,20 @@ public final class XmppMessage {
         }
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encrypted, readable, outgoing, archiveId != null,
-                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply);
+                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, MessageCorrection.from(message));
     }
 
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted) throws Exception {
         return sent(own, peer, id, body, encrypted, null);
     }
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted, ReplyReference reply) throws Exception {
+        return sent(own, peer, id, body, encrypted, reply, null);
+    }
+    public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted, ReplyReference reply, MessageCorrection correction) throws Exception {
         Message message = new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer), Message.Type.chat);
         message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         if (reply != null) { reply.addTo(message); body = reply.wireBody(body); }
+        if (correction != null) correction.addTo(message);
         return from(message, own.asEntityBareJidIfPossible(), body, encrypted, true, null, null);
     }
     public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileLink link, boolean encrypted) throws Exception {

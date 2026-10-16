@@ -104,11 +104,12 @@ public final class MonogramReplyStoreDeviceTest {
                 check(reopened.getMessage(outgoingReply, self).replyMessage.message.equals("Original 😀"), "Reply previews must resolve outside the loaded page");
             }
             try (SQLiteDatabase old = SQLiteDatabase.openOrCreateDatabase(database, null)) {
+                old.execSQL("DROP TABLE corrections"); old.execSQL("DROP TABLE applied_corrections");
                 old.execSQL("DROP TABLE replies"); old.execSQL("DROP TABLE message_senders");
                 old.execSQL("INSERT OR REPLACE INTO archive_state VALUES('direct','oldest','newest',1)"); old.setVersion(5);
             }
             try (MonogramStore migrated = new MonogramStore(context, "replies.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 6, "Schema 5 must migrate to 6");
+                check(migrated.getReadableDatabase().getVersion() == 7, "Schema 5 must migrate to 7");
                 check(migrated.getMessage(original, self).message.equals("Original 😀"), "Schema 5 messages must survive migration");
                 check(migrated.profile(peer).nickname.equals("Bobby"), "Schema 5 profiles must survive reply migration");
                 check(migrated.archiveCursor(false) == null && !migrated.archiveComplete(), "Reply migration must rescan archive metadata without deleting messages");

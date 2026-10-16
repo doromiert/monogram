@@ -17900,7 +17900,9 @@ public class MessagesController extends BaseController implements NotificationCe
         boolean needGetDiff = false;
         boolean needReceivedQueue = false;
         boolean updateStatus = false;
-        if (updates instanceof TLRPC.TL_updateShort) {
+        if (updates instanceof org.telegram.messenger.xmpp.MonogramController.Updates) {
+            processUpdateArray(updates.updates, updates.users, updates.chats, false, updates.date);
+        } else if (updates instanceof TLRPC.TL_updateShort) {
             ArrayList<TLRPC.Update> arr = new ArrayList<>();
             arr.add(updates.update);
             processUpdateArray(arr, null, null, false, updates.date);

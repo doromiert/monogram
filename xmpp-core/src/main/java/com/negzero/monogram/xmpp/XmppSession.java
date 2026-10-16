@@ -85,9 +85,11 @@ public final class XmppSession implements AutoCloseable {
         if (account.host != null) config.setHost(account.host);
         connection = new ManagedConnection(config.build());
         ReplyReference.initialize();
+        MessageCorrection.initialize();
         profiles = new XmppProfiles(connection, listener::profileChanged);
         chatStates = new XmppChatStates(connection, listener::typing);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
         DeliveryReceiptManager receipts = DeliveryReceiptManager.getInstanceFor(connection);
@@ -234,6 +236,13 @@ public final class XmppSession implements AutoCloseable {
         return send(jid, link.wireUrl, encrypted, !encrypted, reply);
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply) throws Exception {
+        return send(jid, body, encrypted, attachment, reply, null);
+    }
+    public String correct(String jid, String body, boolean encrypted, ReplyReference reply, MessageCorrection correction) throws Exception {
+        if (correction == null) throw new IllegalArgumentException("Missing correction reference");
+        return send(jid, body, encrypted, false, reply, correction);
+    }
+    private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply, MessageCorrection correction) throws Exception {
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         EntityBareJid recipient = JidCreate.entityBareFrom(jid);
         String attachmentUrl = body;
@@ -267,6 +276,7 @@ public final class XmppSession implements AutoCloseable {
         if (attachment) message.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("x", "jabber:x:oob")
                 .addElement("url", attachmentUrl).build());
         if (reply != null) reply.addTo(message);
+        if (correction != null) correction.addTo(message);
         String id = UUID.randomUUID().toString();
         message.setStanzaId(id);
         message.addExtension(new OriginIdElement(id));

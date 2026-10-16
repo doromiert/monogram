@@ -140,6 +140,20 @@ class XmppIntegrationTest {
             assertEquals(encryptedReply.wireBody("Secret reply 🐈"), received.poll(15, TimeUnit.SECONDS)); encryption.poll(1, TimeUnit.SECONDS);
             assertFalse(outgoing.get().contains("Sensitive quote")); assertFalse(outgoing.get().contains("Secret reply"));
             assertTrue(outgoing.get().contains("urn:xmpp:reply:0"));
+            assertTrue(ServiceDiscoveryManager.getInstanceFor(bob.connection()).discoverInfo(alice.connection().getUser()).containsFeature(MessageCorrection.NAMESPACE));
+            for (boolean secret : new boolean[]{false, true}) {
+                String corrected = secret ? secretReplyId : replyId;
+                for (int edit = 1; edit <= 2; edit++) {
+                    String text = "Corrected reply " + secret + " #" + edit + " 😀";
+                    String eventId = alice.correct("bob@localhost", text, secret, plainReply, new MessageCorrection(corrected));
+                    XmppMessage event = awaitBody(receivedMessages, plainReply.wireBody(text));
+                    assertEquals(secret, event.encrypted); assertEquals(corrected, event.correction.id);
+                    assertEquals(eventId, event.ids.get("stanza")); assertNotEquals(corrected, eventId);
+                    assertEquals(originalId, event.reply.id);
+                    assertEquals(plainReply.wireBody(text), received.poll(15, TimeUnit.SECONDS)); encryption.poll(1, TimeUnit.SECONDS);
+                    if (secret) assertFalse(outgoing.get().contains(text));
+                }
+            }
             for (boolean encryptedFile : new boolean[]{false, true}) {
                 String url = encryptedFile ? "aesgcm://localhost/reply.png#" + new String(new char[88]).replace('\0', 'a') : "https://localhost/reply.png";
                 ReplyReference fileReply = new ReplyReference(bob.connection().getUser().toString(), originalId).quoted("Reply original 😀");
@@ -152,6 +166,7 @@ class XmppIntegrationTest {
             java.util.List<XmppMessage> replyArchive = alice.archiveBefore(null, null, 100).messages;
             assertTrue(replyArchive.stream().anyMatch(m -> replyId.equals(m.ids.get("origin")) && m.reply != null && originalId.equals(m.reply.id)));
             assertTrue(replyArchive.stream().anyMatch(m -> secretReplyId.equals(m.ids.get("origin")) && m.reply != null && originalId.equals(m.reply.id)));
+            assertEquals(4, replyArchive.stream().filter(m -> m.correction != null && (replyId.equals(m.correction.id) || secretReplyId.equals(m.correction.id))).count());
             assertTrue(ServiceDiscoveryManager.getInstanceFor(alice.connection()).serverSupportsFeature("urn:monogram:schedule:0"));
             Message scheduled = new Message(JidCreate.entityBareFrom("bob@localhost"), Message.Type.chat);
             scheduled.setStanzaId("scheduled-test"); scheduled.setBody("scheduled hello");
@@ -211,6 +226,10 @@ class XmppIntegrationTest {
             assertNotNull(replyCopy); assertTrue(replyCopy.outgoing); assertNotNull(replyCopy.reply);
             assertEquals("carbon-incoming", replyCopy.reply.id);
             assertEquals("Reply from another device", replyCopy.reply.withoutFallback(replyCopy.body));
+            alice.correct("bob@localhost", "Corrected on another device", false, null, new MessageCorrection(sentId));
+            XmppMessage correctionCopy = copies.poll(15, TimeUnit.SECONDS);
+            assertNotNull(correctionCopy); assertTrue(correctionCopy.outgoing);
+            assertEquals(sentId, correctionCopy.correction.id); assertEquals("Corrected on another device", correctionCopy.body);
             Message forged = new Message(second.connection().getUser(), Message.Type.chat);
             Message inner = new Message(JidCreate.entityBareFrom("alice@localhost"), Message.Type.chat);
             inner.setFrom(JidCreate.entityBareFrom("mallory@localhost")); inner.setBody("forged carbon");

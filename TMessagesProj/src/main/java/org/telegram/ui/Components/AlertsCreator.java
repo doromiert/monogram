@@ -289,7 +289,7 @@ public class AlertsCreator {
         if (error == null || error.code == 406 || error.text == null) {
             return null;
         }
-        if ((request instanceof TLRPC.TL_messages_sendMessage || request instanceof org.telegram.messenger.xmpp.MonogramFileRequest) && error.text.startsWith("MONOGRAM_")) {
+        if ((request instanceof TLRPC.TL_messages_sendMessage || request instanceof TLRPC.TL_messages_editMessage || request instanceof org.telegram.messenger.xmpp.MonogramFileRequest) && error.text.startsWith("MONOGRAM_")) {
             BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragment();
             if (target == null || target.getParentActivity() == null) return null;
             String text;
@@ -317,6 +317,8 @@ public class AlertsCreator {
                 case "MONOGRAM_REPLY_UNAVAILABLE":
                     text = "The original message or selected quote is unavailable in this conversation. Load its history and try again.";
                     break;
+                case "MONOGRAM_EDIT_UNAVAILABLE":
+                    text = "This text message cannot be edited because its original content or unique XMPP message ID is unavailable. Your correction was not sent."; break;
                 case "MONOGRAM_FEATURE_UNAVAILABLE":
                     text = "This action is not supported by Monogram yet. Your message was not sent."; break;
                 default:
@@ -327,6 +329,7 @@ public class AlertsCreator {
             if (error.text.startsWith("MONOGRAM_OMEMO_")) {
                 long peer = request instanceof org.telegram.messenger.xmpp.MonogramFileRequest
                         ? ((org.telegram.messenger.xmpp.MonogramFileRequest) request).message.dialog_id
+                        : request instanceof TLRPC.TL_messages_editMessage ? ((TLRPC.TL_messages_editMessage) request).peer.user_id
                         : ((TLRPC.TL_messages_sendMessage) request).peer.user_id;
                 builder.setPositiveButton("Review devices", (dialog, which) -> target.presentFragment(new org.telegram.ui.MonogramSecurityActivity(currentAccount, peer)));
                 builder.setNegativeButton("Close", null);

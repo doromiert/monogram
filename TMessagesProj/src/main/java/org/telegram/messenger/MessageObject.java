@@ -11715,6 +11715,10 @@ public class MessageObject {
             return false;
         }
         final TLRPC.MessageMedia media = getMedia(message);
+        if (message.peer_id.user_id != 0 && chat == null) {
+            return !scheduled && message.id > 0 && message.out && message.rich_message == null
+                    && (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage);
+        }
         if (media != null && message.rich_message == null && (isRoundVideoDocument(media.document) || isStickerDocument(media.document) || isAnimatedStickerDocument(media.document, true) || isLocationMessage(message))) {
             return false;
         }

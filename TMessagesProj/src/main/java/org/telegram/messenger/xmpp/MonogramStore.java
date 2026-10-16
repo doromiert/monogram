@@ -21,11 +21,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 6); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 7); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -51,13 +51,20 @@ final class MonogramStore extends SQLiteOpenHelper {
         // Re-read archive metadata; keep every local message, ID, attachment and known plaintext.
         db.execSQL("DELETE FROM archive_state WHERE scope='direct'");
     }
+    private void addCorrections(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE corrections (message INTEGER PRIMARY KEY, target TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0)");
+        db.execSQL("CREATE INDEX correction_targets ON corrections(resolved)");
+        db.execSQL("CREATE TABLE applied_corrections (original INTEGER PRIMARY KEY, message INTEGER NOT NULL)");
+        db.execSQL("DELETE FROM archive_state WHERE scope='direct'");
+    }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 6 || oldVersion < 1 || oldVersion > 5) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 7 || oldVersion < 1 || oldVersion > 6) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
         if (oldVersion < 5) addProfiles(db);
-        addReplies(db);
+        if (oldVersion < 6) addReplies(db);
+        addCorrections(db);
     }
     synchronized long peer(String jid) {
         ContentValues values = new ContentValues(); values.put("jid", jid);
@@ -81,7 +88,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         profileCache.clear();
         db.beginTransaction();
-        try { db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     synchronized com.negzero.monogram.xmpp.XmppProfile profile(long peer) {
@@ -202,6 +209,10 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
             ContentValues sender = new ContentValues(); sender.put("message", id); sender.put("sender", message.sender);
             db.insertWithOnConflict("message_senders", null, sender, SQLiteDatabase.CONFLICT_IGNORE);
+            if (message.correction != null) {
+                ContentValues correction = new ContentValues(); correction.put("message", id); correction.put("target", message.correction.id);
+                changed |= db.insertWithOnConflict("corrections", null, correction, SQLiteDatabase.CONFLICT_IGNORE) != -1;
+            }
             if (message.reply != null) {
                 ContentValues reply = new ContentValues(); reply.put("message", id); reply.put("author", message.reply.to);
                 reply.put("target", message.reply.id); reply.put("fallback", message.reply.ranges);
@@ -226,6 +237,103 @@ final class MonogramStore extends SQLiteOpenHelper {
     private static String aliasValue(XmppMessage message, Map.Entry<String, String> alias) {
         // Client stanza IDs need only be unique within a stream, unlike origin/archive IDs.
         return alias.getKey().equals("stanza") ? message.sender + "\n" + alias.getValue() : alias.getValue();
+    }
+    static final class CorrectionChanges {
+        final java.util.Set<Integer> edited = new java.util.HashSet<>(), hidden = new java.util.HashSet<>(), shown = new java.util.HashSet<>();
+    }
+    synchronized boolean hiddenCorrection(int id) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT 1 FROM corrections WHERE message=? AND resolved!=0", new String[]{Integer.toString(id)})) { return c.moveToFirst(); }
+    }
+    private int payload(int original) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT message FROM applied_corrections WHERE original=?", new String[]{Integer.toString(original)})) { return c.moveToFirst() ? c.getInt(0) : original; }
+    }
+    /** Re-evaluate late originals/aliases too: a newly discovered ID collision must undo an unsafe match. */
+    synchronized CorrectionChanges reconcileCorrections(long peer) { return reconcileCorrections(peer, java.util.Collections.emptySet()); }
+    synchronized CorrectionChanges reconcileCorrections(long peer, java.util.Set<Integer> updated) {
+        SQLiteDatabase db = getWritableDatabase(); CorrectionChanges changes = new CorrectionChanges();
+        db.beginTransaction();
+        try {
+            java.util.Map<Integer, Integer> protectedModes = new java.util.HashMap<>();
+            try (Cursor c = db.rawQuery("SELECT c.message,c.target,c.resolved,m.outgoing,m.encrypted FROM corrections c JOIN messages m ON m.id=c.message WHERE m.peer=? ORDER BY m.time_ms,m.archive_order,m.id", new String[]{Long.toString(peer)})) {
+                while (c.moveToNext()) {
+                    int event = c.getInt(0), old = c.getInt(2), target = 0;
+                    // XEP-0308 uses the client stanza ID, never an archive ID or an origin-only alias.
+                    try (Cursor matches = db.rawQuery("SELECT DISTINCT i.message FROM message_ids i JOIN messages m ON m.id=i.message WHERE i.peer=? AND i.outgoing=? AND i.kind='stanza' AND instr(i.value,char(10))>0 AND substr(i.value,instr(i.value,char(10))+1)=? AND NOT EXISTS(SELECT 1 FROM corrections x WHERE x.message=m.id)",
+                            new String[]{Long.toString(peer), c.getInt(3) == 1 ? "1" : "0", c.getString(1)})) {
+                        if (matches.moveToFirst()) { target = matches.getInt(0); if (matches.moveToNext()) target = 0; }
+                    }
+                    if (target != 0) {
+                        try (Cursor original = db.rawQuery("SELECT encrypted FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
+                            if (!original.moveToFirst() || Math.max(original.getInt(0), protectedModes.getOrDefault(target, 0)) > c.getInt(4)) target = 0;
+                        }
+                        // shortcut: text corrections only; support media replacement with the caption/file-sharing implementation.
+                        try (Cursor attachment = db.rawQuery("SELECT 1 FROM attachments WHERE message IN (?,?)", new String[]{Integer.toString(target), Integer.toString(event)})) {
+                            if (attachment.moveToFirst()) target = 0;
+                        }
+                    }
+                    if (target != 0) protectedModes.put(target, c.getInt(4));
+                    if (old != target) {
+                        ContentValues resolved = new ContentValues(); resolved.put("resolved", target);
+                        db.update("corrections", resolved, "message=?", new String[]{Integer.toString(event)});
+                        if (old == 0 && target != 0) changes.hidden.add(event);
+                        if (old != 0 && target == 0) changes.shown.add(event);
+                    }
+                }
+            }
+            java.util.Map<Integer, Integer> latest = new java.util.HashMap<>(), previous = new java.util.HashMap<>();
+            try (Cursor c = db.rawQuery("SELECT a.original,a.message FROM applied_corrections a JOIN messages m ON m.id=a.original WHERE m.peer=?", new String[]{Long.toString(peer)})) {
+                while (c.moveToNext()) previous.put(c.getInt(0), c.getInt(1));
+            }
+            try (Cursor c = db.rawQuery("SELECT c.resolved,c.message FROM corrections c JOIN messages m ON m.id=c.message WHERE m.peer=? AND c.resolved!=0 ORDER BY m.time_ms,m.archive_order,m.id", new String[]{Long.toString(peer)})) {
+                while (c.moveToNext()) latest.put(c.getInt(0), c.getInt(1));
+            }
+            java.util.Set<Integer> originals = new java.util.HashSet<>(previous.keySet()); originals.addAll(latest.keySet());
+            for (int original : originals) {
+                Integer old = previous.get(original), next = latest.get(original);
+                if (next != null && updated.contains(next)) changes.edited.add(original);
+                if (java.util.Objects.equals(old, next)) continue;
+                changes.edited.add(original);
+                if (next == null) db.delete("applied_corrections", "original=?", new String[]{Integer.toString(original)});
+                else {
+                    ContentValues applied = new ContentValues(); applied.put("original", original); applied.put("message", next);
+                    db.insertWithOnConflict("applied_corrections", null, applied, SQLiteDatabase.CONFLICT_REPLACE);
+                }
+            }
+            db.setTransactionSuccessful(); return changes;
+        } finally { db.endTransaction(); }
+    }
+    static final class EditTarget {
+        final com.negzero.monogram.xmpp.MessageCorrection correction;
+        final boolean encrypted;
+        final ReplyReference reply;
+        EditTarget(String id, boolean encrypted, ReplyReference reply) {
+            this.correction = new com.negzero.monogram.xmpp.MessageCorrection(id); this.encrypted = encrypted; this.reply = reply;
+        }
+    }
+    synchronized EditTarget editTarget(int id, long peer, long self) {
+        TLRPC.Message original = getMessage(id, self);
+        if (!original.out || original.dialog_id != peer || MonogramAttachments.has(original)) throw new IllegalArgumentException("Only your text messages can be edited");
+        SQLiteDatabase db = getReadableDatabase(); String wire = null; boolean encrypted;
+        try (Cursor c = db.rawQuery("SELECT encrypted,readable FROM messages WHERE id=? AND NOT EXISTS(SELECT 1 FROM corrections WHERE message=?)", new String[]{Integer.toString(id), Integer.toString(id)})) {
+            if (!c.moveToFirst() || c.getInt(1) == 0) throw new IllegalArgumentException("Original message unavailable"); encrypted = c.getInt(0) == 1;
+        }
+        try (Cursor c = db.rawQuery("SELECT readable,encrypted FROM messages WHERE id=?", new String[]{Integer.toString(payload(id))})) {
+            if (!c.moveToFirst() || c.getInt(0) == 0) throw new IllegalArgumentException("Latest correction unavailable");
+            encrypted |= c.getInt(1) == 1;
+        }
+        try (Cursor c = db.rawQuery("SELECT substr(value,instr(value,char(10))+1) FROM message_ids WHERE message=? AND kind='stanza' ORDER BY rowid LIMIT 1", new String[]{Integer.toString(id)})) {
+            if (c.moveToFirst()) wire = c.getString(0);
+        }
+        if (wire == null) throw new IllegalArgumentException("Original client message ID unavailable");
+        // Refuse reused IDs, including across the account's different resources.
+        try (Cursor c = db.rawQuery("SELECT count(DISTINCT message) FROM message_ids WHERE peer=? AND outgoing=1 AND kind='stanza' AND substr(value,instr(value,char(10))+1)=?", new String[]{Long.toString(peer), wire})) {
+            c.moveToFirst(); if (c.getInt(0) != 1) throw new IllegalArgumentException("Ambiguous original message ID");
+        }
+        ReplyReference reply = null;
+        try (Cursor c = db.rawQuery("SELECT author,target FROM replies WHERE message=?", new String[]{Integer.toString(payload(id))})) {
+            if (c.moveToFirst()) reply = new ReplyReference(c.getString(0), c.getString(1));
+        }
+        return new EditTarget(wire, encrypted, reply);
     }
     synchronized void resetArchiveCursor() {
         SQLiteDatabase db = getWritableDatabase();
@@ -286,9 +394,15 @@ final class MonogramStore extends SQLiteOpenHelper {
         message.peer_id = new TLRPC.TL_peerUser(); message.peer_id.user_id = outgoing ? peer : self;
         message.from_id = new TLRPC.TL_peerUser(); message.from_id.user_id = outgoing ? self : peer;
         message.flags = 256; message.dialog_id = peer;
+        int payload = payload(id);
+        if (payload != id) {
+            try (Cursor c = getReadableDatabase().rawQuery("SELECT body,time FROM messages WHERE id=?", new String[]{Integer.toString(payload)})) {
+                if (c.moveToFirst()) { body = c.getString(0); message.message = body; message.edit_date = c.getInt(1); message.flags |= TLRPC.MESSAGE_FLAG_EDITED; }
+            }
+        }
         message.media = new TLRPC.TL_messageMediaEmpty();
-        decorate(message);
-        decorateReply(message, self, body, embedReply);
+        decorate(message, payload);
+        decorateReply(message, self, body, embedReply, payload);
         return message;
     }
     private int resolveReply(long peer, long self, ReplyReference reply) {
@@ -312,10 +426,13 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery(sql, args.toArray(new String[0]))) {
             while (c.moveToNext()) { if (found != 0 && found != c.getInt(0)) return 0; found = c.getInt(0); }
         }
+        if (found != 0) {
+            try (Cursor c = getReadableDatabase().rawQuery("SELECT resolved FROM corrections WHERE message=? AND resolved!=0", new String[]{Integer.toString(found)})) { if (c.moveToFirst()) found = c.getInt(0); }
+        }
         return found;
     }
-    private synchronized void decorateReply(TLRPC.Message message, long self, String body, boolean embedReply) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT r.author,r.target,r.fallback,m.readable FROM replies r JOIN messages m ON m.id=r.message WHERE r.message=?", new String[]{Integer.toString(message.id)})) {
+    private synchronized void decorateReply(TLRPC.Message message, long self, String body, boolean embedReply, int payload) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT r.author,r.target,r.fallback,m.readable FROM replies r JOIN messages m ON m.id=r.message WHERE r.message=?", new String[]{Integer.toString(payload)})) {
             if (!c.moveToFirst()) return;
             ReplyReference reply = new ReplyReference(c.getString(0), c.getString(1), c.getString(2));
             int target = resolveReply(message.dialog_id, self, reply);
@@ -370,7 +487,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized ArrayList<TLRPC.Message> changedReplies(long peer, long self) { return changedReplies(peer, self, java.util.Collections.emptySet()); }
     synchronized ArrayList<TLRPC.Message> changedReplies(long peer, long self, java.util.Set<Integer> updated) {
         ArrayList<TLRPC.Message> result = new ArrayList<>();
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT r.message,r.author,r.target,r.fallback,r.resolved FROM replies r JOIN messages m ON m.id=r.message WHERE m.peer=?", new String[]{Long.toString(peer)})) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT r.message,r.author,r.target,r.fallback,r.resolved FROM replies r JOIN messages m ON m.id=r.message WHERE m.peer=? AND NOT EXISTS(SELECT 1 FROM corrections x WHERE x.message=m.id AND x.resolved!=0)", new String[]{Long.toString(peer)})) {
             while (c.moveToNext()) {
                 int target = resolveReply(peer, self, new ReplyReference(c.getString(1), c.getString(2), c.getString(3)));
                 if (target == c.getInt(0)) target = 0;
@@ -405,8 +522,8 @@ final class MonogramStore extends SQLiteOpenHelper {
             return message(id, c.getLong(0), self, c.getString(1), c.getInt(2) == 1, c.getInt(3), embedReply);
         }
     }
-    private synchronized void decorate(TLRPC.Message message) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media FROM attachments WHERE message=?", new String[]{Integer.toString(message.id)})) {
+    private synchronized void decorate(TLRPC.Message message, int payload) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media FROM attachments WHERE message=?", new String[]{Integer.toString(payload)})) {
             if (c.moveToFirst()) {
                 com.negzero.monogram.xmpp.FileLink link = com.negzero.monogram.xmpp.FileLink.parse(c.getString(0));
                 java.io.File file = c.isNull(1) ? attachmentFile(link.wireUrl) : new java.io.File(c.getString(1));
@@ -442,7 +559,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             sql += " JOIN messages a ON a.peer=m.peer AND a.id=?";
             args.add(Integer.toString(offset));
         }
-        sql += " WHERE m.peer=?"; args.add(Long.toString(peer));
+        sql += " WHERE m.peer=? AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0)"; args.add(Long.toString(peer));
         if (offset != 0) {
             String compare = forward ? ">" : "<";
             sql += " AND (m.time_ms" + compare + "a.time_ms OR (m.time_ms=a.time_ms AND m.archive_order" + compare
