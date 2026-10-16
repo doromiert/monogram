@@ -1706,6 +1706,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public boolean retrySendMessage(MessageObject messageObject, boolean unsent, long payStars) {
+        if(!unsent && messageObject.messageOwner.params!=null) messageObject.messageOwner.params.remove("monogram-encryption");
         if (messageObject.getId() >= 0) {
             if (messageObject.isEditing()) {
                 editMessage(messageObject, null, null, null, null, null, null, true, messageObject.hasMediaSpoilers(), messageObject);
@@ -5248,6 +5249,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 // newMsg.out = false;
                 newMsg.from_id = newMsg.peer_id;
             }
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).prepareOutgoingMessage(newMsg);
             newMsg.send_state = MessageObject.MESSAGE_SEND_STATE_SENDING;
             newMsg.errorAllowedPriceStars = 0;
             newMsg.errorNewPriceStars = 0;
@@ -8066,6 +8068,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     protected void performSendMessageRequest(final TLObject req, final MessageObject msgObj, final String originalPath, DelayedMessage parentMessage, boolean check, DelayedMessage delayedMessage, Object parentObject, HashMap<String, String> params, boolean scheduled) {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).prepareOutgoingRequest(req,msgObj.messageOwner);
         if (req instanceof TLRPC.TL_messages_addPollAnswer) {
             TLRPC.TL_messages_addPollAnswer r = (TLRPC.TL_messages_addPollAnswer) req;
             if (r.answer.input_media instanceof TLRPC.TL_inputMediaUploadedDocument || r.answer.input_media instanceof TLRPC.TL_inputMediaUploadedPhoto) {
@@ -9170,7 +9173,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         messageObject.messageOwner.params.put("final", "1");
                     }
                 }
-                retrySendMessage(messageObject, true, 0);
+                if(!isSendingMessage(messageObject.getId())) retrySendMessage(messageObject, true, 0);
             }
             if (scheduledMessages != null) {
                 for (int a = 0; a < scheduledMessages.size(); a++) {

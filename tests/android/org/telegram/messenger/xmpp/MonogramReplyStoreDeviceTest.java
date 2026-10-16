@@ -109,7 +109,7 @@ public final class MonogramReplyStoreDeviceTest {
                 old.execSQL("INSERT OR REPLACE INTO archive_state VALUES('direct','oldest','newest',1)"); MonogramStoreDeviceTest.legacyAttachments(old); old.setVersion(5);
             }
             try (MonogramStore migrated = new MonogramStore(context, "replies.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 13, "Schema 5 must migrate to 13");
+                check(migrated.getReadableDatabase().getVersion() == 14, "Schema 5 must migrate to 14");
                 check(migrated.getMessage(original, self).message.equals("Original 😀"), "Schema 5 messages must survive migration");
                 check(migrated.profile(peer).nickname.equals("Bobby"), "Schema 5 profiles must survive reply migration");
                 check(migrated.archiveCursor(false) == null && !migrated.archiveComplete(), "Reply migration must rescan archive metadata without deleting messages");

@@ -78,4 +78,14 @@ public final class MessageFixture {
         return roomReaction(room,nick,wire,target,occupant,emojis,time).identified(real,JidCreate.entityBareFrom("alice@example.org"));
     }
 
+    public static XmppRoomMessage roomText(String room,String nick,String stanza,String sid,String body,String real,String stable,long time,boolean encrypted,ReplyReference reply,String replacement) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
+        wire.setFrom(JidCreate.entityFullFrom(room+"/"+nick)); wire.setStanzaId(stanza);
+        if(sid!=null) wire.addExtension(new org.jivesoftware.smackx.sid.element.StanzaIdElement(sid,room));
+        if(reply!=null) reply.addTo(wire); if(replacement!=null) new MessageCorrection(replacement).addTo(wire);
+        XmppRoomMessage message=XmppRoomMessage.archived(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom("alice@example.org"),"",body,encrypted,true,sid,new Date(time));
+        if(real!=null) message=message.identified(JidCreate.from(real).asBareJid().toString(),JidCreate.entityBareFrom("alice@example.org"));
+        return message.withOccupantId(stable);
+    }
+
 }

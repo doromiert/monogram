@@ -21,8 +21,13 @@ import org.telegram.tgnet.TLRPC;
 
 /** Exercise the native editor's preflight request, not only correction storage. */
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest = Config.NONE, sdk = 36, application = android.app.Application.class)
+@Config(manifest = Config.NONE, sdk = 36, application = android.app.Application.class,shadows={MonogramEditingTest.PendingSession.class})
 public class MonogramEditingTest {
+    @org.robolectric.annotation.Implements(value=com.negzero.monogram.xmpp.XmppSession.class,isInAndroidSdk=false)
+    public static class PendingSession {
+        org.jivesoftware.smack.tcp.XMPPTCPConnection connection;
+        @org.robolectric.annotation.Implementation public org.jivesoftware.smack.tcp.XMPPTCPConnection connection() { return connection; }
+    }
     private MonogramController controller;
     private MonogramStore store;
     private Method handle;
@@ -86,14 +91,41 @@ public class MonogramEditingTest {
         assertTrue("Do not offer unsupported Telegram read-date queries", store.fullUser(peer, self).read_dates_private);
     }
 
-    @Test public void outgoingSendDoesNotBlockBehindIncomingWorker() throws Exception {
-        java.util.concurrent.CountDownLatch release=new java.util.concurrent.CountDownLatch(1),completed=new java.util.concurrent.CountDownLatch(1);
-        controller.worker.execute(() -> { try { release.await(); } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); } });
-        TLRPC.TL_messages_sendMessage send=new TLRPC.TL_messages_sendMessage(); send.peer=new TLRPC.TL_inputPeerUser(); send.peer.user_id=peer; send.message="offline";
-        try {
-            controller.request(send,(response,error) -> { assertNotNull(error); completed.countDown(); });
-            assertTrue("Send dispatch is coupled to incoming work",completed.await(5,java.util.concurrent.TimeUnit.SECONDS));
-        } finally { release.countDown(); }
+    @Test public void offlineSendsWaitForReconnectAndCanBeCancelled() throws Exception {
+        java.util.concurrent.CountDownLatch completed=new java.util.concurrent.CountDownLatch(1);
+        TLRPC.TL_messages_sendMessage send=new TLRPC.TL_messages_sendMessage(); send.peer=new TLRPC.TL_inputPeerUser(); send.peer.user_id=peer; send.message="queued";
+        TLRPC.TL_message saved=new TLRPC.TL_message(); saved.dialog_id=peer;
+        controller.prepareOutgoingMessage(saved); controller.prepareOutgoingRequest(send,saved);
+        controller.request(501,send,(response,error) -> { assertEquals("MONOGRAM_SENDING_MODE_CHANGED",error.text); completed.countDown(); });
+        ExecutorService sends=ReflectionHelpers.getField(controller,"sendWorker"); sends.submit(() -> {}).get(5,java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(1,controller.queuedSendCount()); assertEquals(1,completed.getCount());
+        controller.request(502,send,(response,error) -> fail("Cancelled queued send completed"));
+        sends.submit(() -> {}).get(5,java.util.concurrent.TimeUnit.SECONDS); controller.cancelRequest(502); assertEquals(1,controller.queuedSendCount());
+        // Reconnection must not silently downgrade a message composed with encryption enabled.
+        controller.setEncrypted(peer,false); controller.prepareOutgoingMessage(saved);
+        assertEquals("LEGACY_OMEMO",saved.params.get("monogram-encryption"));
+        org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration config=org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration.builder().setXmppDomain("example.org").build();
+        org.jivesoftware.smack.tcp.XMPPTCPConnection connection=new org.jivesoftware.smack.tcp.XMPPTCPConnection(config);
+        ReflectionHelpers.setField(connection,"authenticated",true);
+        com.negzero.monogram.xmpp.XmppSession session=org.robolectric.shadow.api.Shadow.newInstanceOf(com.negzero.monogram.xmpp.XmppSession.class);
+        PendingSession network=org.robolectric.shadow.api.Shadow.extract(session); network.connection=connection;
+        ReflectionHelpers.setField(controller,"session",session);
+        ReflectionHelpers.callInstanceMethod(controller,"flushPendingSends");
+        assertTrue("Reconnect did not drain queued sends",completed.await(5,java.util.concurrent.TimeUnit.SECONDS)); assertEquals(0,controller.queuedSendCount());
+        ReflectionHelpers.setField(connection,"authenticated",false);
+        controller.request(503,send,(response,error) -> fail("Old account queue completed after account change")); sends.submit(() -> {}).get(5,java.util.concurrent.TimeUnit.SECONDS);
+        ReflectionHelpers.setField(controller,"accountEpoch",1L); ReflectionHelpers.callInstanceMethod(controller,"flushPendingSends");
+        sends.submit(() -> {}).get(5,java.util.concurrent.TimeUnit.SECONDS); sends.submit(() -> {}).get(5,java.util.concurrent.TimeUnit.SECONDS); assertEquals(0,controller.queuedSendCount());
+    }
+    @Test public void roomPreflightUsesTheNativeEditorWithoutTelegramExpiry() throws Exception {
+        String room="friends@conference.example.org"; long dialog=store.room(room,"Alice");
+        int id=store.saveRoom(MessageFixture.roomText(room,"Alice","own-room","server-own-room","Before","alice@example.org","own",100000,true,null,null),self);
+        TLRPC.Message nativeMessage=store.getMessage(id,self);
+        assertTrue(MessageObject.canEditMessage(0,nativeMessage,store.roomChat(dialog),false));
+        assertTrue(MessageObject.canEditMessageAnytime(0,nativeMessage,store.roomChat(dialog)));
+        TLRPC.TL_messages_getMessageEditData request=query(id,peer); request.peer=new TLRPC.TL_inputPeerChat(); request.peer.chat_id=-dialog;
+        assertTrue(handle.invoke(controller,request) instanceof TLRPC.TL_messages_messageEditData);
+        request.peer.chat_id=-store.room("other@conference.example.org","Alice"); rejected(request);
     }
     @Test public void preflightDoesNotWaitForNetworkWorker() throws Exception {
         int id = message("offline", "Edit without a network round trip", true, false, null);

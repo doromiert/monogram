@@ -115,7 +115,7 @@ public final class XmppRooms implements AutoCloseable {
     }
     private XmppRoomMessage identify(MultiUserChat chat,Message wire,XmppRoomMessage message) {
         if(stableOccupants.contains(chat.getRoom())) message=message.withOccupantId(occupantId(wire));
-        if(message.realSender!=null) return message;
+        if(message.realSenderVerified) return message;
         EntityBareJid own=connection.getUser().asEntityBareJid();
         if(stableOccupants.contains(chat.getRoom()) && chat.getNickname()!=null) {
             Presence self=chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()));
@@ -224,7 +224,7 @@ public final class XmppRooms implements AutoCloseable {
     public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded) throws Exception { return send(jid,body,encrypted,excluded,false);
     }
     public XmppRoomMessage send(String jid,String body,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
-        return send(jid,body,encrypted,null,excluded,automatic); }
+        return send(jid,body,encrypted,null,null,excluded,automatic); }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted) throws Exception {
         return sendFile(jid,link,sharing,caption,encrypted,Collections.emptySet());
     }
@@ -234,7 +234,11 @@ public final class XmppRooms implements AutoCloseable {
     }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
         if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
-        return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing,excluded,automatic);
+        return sendFile(jid,link,sharing,caption,encrypted,null,excluded,automatic);
+    }
+    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic) throws Exception {
+        if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
+        return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing,reply,null,excluded,automatic);
     }
     static Set<BareJid> recipients(Set<BareJid> members,BareJid own,Set<String> excluded) throws Exception {
         Set<BareJid> recipients=new HashSet<>(members);
@@ -247,10 +251,17 @@ public final class XmppRooms implements AutoCloseable {
             throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"Include at least one other room member in Conversation security.");
         return recipients;
     }
-    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,Set<String> excluded,boolean automatic) throws Exception {
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction,Set<String> excluded) throws Exception {
+        return send(jid,body,encrypted,reply,correction,excluded,false);
+    }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic) throws Exception {
+        return send(jid,body,encrypted,null,reply,correction,excluded,automatic);
+    }
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic) throws Exception {
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        String wireBody=reply==null ? body : reply.wireBody(body);
         Map<String,String> skipped=new TreeMap<>();
         Message message;
         if (encrypted) {
@@ -259,7 +270,7 @@ public final class XmppRooms implements AutoCloseable {
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the membership check.",timeout); }
             Set<BareJid> recipients=recipients(members,connection.getUser().asBareJid(),excluded);
             OmemoMessage.Sent ciphertext;
-            if(automatic) ciphertext=encryptAvailable(recipients,body,skipped);
+            if(automatic) ciphertext=encryptAvailable(recipients,wireBody,skipped);
             else {
                 for (BareJid recipient:recipients) {
                     try { if(deviceLookup.devices(recipient).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,recipient.toString()); }
@@ -267,7 +278,7 @@ public final class XmppRooms implements AutoCloseable {
                     catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
                 }
 
-                try { ciphertext=omemo.encrypt(recipients,body); }
+                try { ciphertext=omemo.encrypt(recipients,wireBody); }
                 catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("An OMEMO bundle or session lookup timed out while preparing recipient devices.",timeout); }
                 if (!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
                 for (BareJid recipient:recipients) {
@@ -280,10 +291,12 @@ public final class XmppRooms implements AutoCloseable {
             try { if (!members(jid).equals(members)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
             message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
-        } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(body); }
-        if(sharing!=null) sharing.addTo(message,body);
+        } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(wireBody); }
+        if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
+        if(sharing!=null) sharing.addTo(message,wireBody);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
-        XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing);
+        XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
+        if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
         chat.sendMessage(message); return sent.withSkippedRecipients(skipped);
     }
     private static final class Unavailable {

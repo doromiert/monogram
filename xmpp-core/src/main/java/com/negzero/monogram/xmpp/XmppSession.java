@@ -492,10 +492,20 @@ public final class XmppSession implements AutoCloseable {
             throw e;
         }
     }
+    private final java.util.concurrent.ExecutorService deviceRefreshWorker=java.util.concurrent.Executors.newSingleThreadExecutor(r -> { Thread thread=new Thread(r,"Monogram device lists"); thread.setDaemon(true); return thread; });
+    private final Set<String> pendingDeviceRefresh=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private Set<OmemoDevice> sendingDevices(String address) throws Exception {
+        Set<OmemoDevice> cached=omemo.getDevicesOf(JidCreate.entityBareFrom(address));
+        if(cached.isEmpty()) return devices(address);
         Long refreshed=deviceListRefresh.get(address);
-        if(refreshed==null || System.nanoTime()-refreshed>java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) return devices(address);
-        return omemo.getDevicesOf(JidCreate.entityBareFrom(address));
+        if((refreshed==null || System.nanoTime()-refreshed>java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) && pendingDeviceRefresh.add(address)) {
+            try { deviceRefreshWorker.execute(() -> {
+                try { devices(address); }
+                catch(Exception unavailable) { deviceListRefresh.put(address,System.nanoTime()); }
+                finally { pendingDeviceRefresh.remove(address); }
+            }); } catch(java.util.concurrent.RejectedExecutionException stopped) { pendingDeviceRefresh.remove(address); }
+        }
+        return cached;
     }
     public OmemoFingerprint fingerprint(OmemoDevice device) throws Exception { return omemo.getFingerprint(device); }
     private static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
@@ -509,7 +519,7 @@ public final class XmppSession implements AutoCloseable {
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
-        if (modern != null) modern.close(); crypto.shutdownNow();
+        if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
         chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();

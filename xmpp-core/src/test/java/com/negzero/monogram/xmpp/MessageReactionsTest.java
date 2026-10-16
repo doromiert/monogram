@@ -45,7 +45,7 @@ class MessageReactionsTest {
         Message message=PacketParserUtils.parseStanza("<message type='groupchat' from='friends@conference.example.org/Bob' to='alice@example.org' id='update'><reactions xmlns='urn:xmpp:reactions:0' id='room-original'><reaction>👋</reaction></reactions><x xmlns='http://jabber.org/protocol/muc#user'><item jid='bob@example.org/phone' affiliation='member' role='participant'/></x></message>");
         message.addExtension(new StanzaIdElement("room-update","friends@conference.example.org"));
         XmppRoomMessage room=XmppRoomMessage.from(message,JidCreate.entityBareFrom("friends@conference.example.org"),JidCreate.entityBareFrom("alice@example.org"),"Alice",null,false,true);
-        assertNotNull(room); assertEquals("room-original",room.reactions.id); assertEquals("bob@example.org",room.realSender); assertFalse(room.outgoing);
+        assertNotNull(room); assertEquals("room-original",room.reactions.id); assertNull(room.realSender,"Sender-supplied MUC items are not authoritative"); assertFalse(room.realSenderVerified); assertFalse(room.outgoing);
         assertEquals("room-update",room.ids.get("archive")); assertNull(room.body);
         assertNull(XmppMessage.from(message,JidCreate.entityBareFrom("alice@example.org"),null,false,true,null,null));
     }

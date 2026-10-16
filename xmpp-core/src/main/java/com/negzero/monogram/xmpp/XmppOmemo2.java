@@ -34,6 +34,9 @@ public final class XmppOmemo2 implements AutoCloseable {
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentHashMap<String,Omemo2Bundle> bundles = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String,Set<Integer>> lists = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String,Long> refreshed=new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String,Long> watchAttempts=new ConcurrentHashMap<>();
+    private final java.util.concurrent.ExecutorService watches=java.util.concurrent.Executors.newSingleThreadExecutor(r -> { Thread thread=new Thread(r,"Monogram PEP subscriptions"); thread.setDaemon(true); return thread; });
     private final Set<String> watched = ConcurrentHashMap.newKeySet();
     private final Consumer<String> changed;
     private final PepListener listener;
@@ -65,7 +68,7 @@ public final class XmppOmemo2 implements AutoCloseable {
     public Exception lastError() { return lastError; }
     public synchronized void initialize() throws Exception {
         if (closed || !connection.isAuthenticated() || !connection.getUser().asBareJid().toString().equals(device.jid)) throw new IllegalStateException("OMEMO2 account changed");
-        ready = false; lastError = null; bundles.clear(); lists.clear(); watched.clear();
+        ready = false; lastError = null; bundles.clear(); lists.clear(); watched.clear(); refreshed.clear(); watchAttempts.clear();
         Omemo2Bundle own = device.prepare();
         publish(BUNDLES_NODE,Integer.toString(device.id),own.xml(),"max");
         Set<Integer> ids = fetchDevices(device.jid); ids.add(device.id); publishDevices(ids); device.devices(device.jid,ids); lists.put(device.jid,new HashSet<>(ids));
@@ -80,7 +83,7 @@ public final class XmppOmemo2 implements AutoCloseable {
         return result;
     }
     private synchronized Map<Integer,Omemo2Bundle> targets(String peer) throws Exception {
-        Set<Integer> ids = watched.contains(peer+"\n"+DEVICES_NODE) ? lists.get(peer) : null;
+        Set<Integer> ids = fresh(peer+"\n"+DEVICES_NODE) ? lists.get(peer) : null;
         if (ids == null) ids = fetchDevices(peer);
         Map<Integer,Omemo2Bundle> result = new LinkedHashMap<>();
         for (int id : new java.util.TreeSet<>(ids)) if (!peer.equals(device.jid) || id != device.id) result.put(id,bundle(peer,id,false));
@@ -96,15 +99,15 @@ public final class XmppOmemo2 implements AutoCloseable {
                 if (ids.size() >= 500 || !ids.add(Omemo2Bundle.positive(child.getAttributeValue("id")))) throw Omemo2Bundle.invalid();
             }
         }
-        device.devices(peer,ids); lists.put(peer,new HashSet<>(ids)); return ids;
+        device.devices(peer,ids); lists.put(peer,new HashSet<>(ids)); refreshed.put(peer+"\n"+DEVICES_NODE,System.nanoTime()); return ids;
     }
     private synchronized Omemo2Bundle bundle(String peer, int id, boolean refresh) throws Exception {
         String key = peer+"\n"+id;
-        Omemo2Bundle known = refresh || !watched.contains(peer+"\n"+BUNDLES_NODE) ? null : bundles.get(key);
+        Omemo2Bundle known = refresh || !fresh(peer+"\n"+BUNDLES_NODE+"\n"+id) ? null : bundles.get(key);
         if (known != null) return known;
         StandardExtensionElement root = item(peer,BUNDLES_NODE,Integer.toString(id));
         if (root == null) throw new java.security.GeneralSecurityException("OMEMO2 bundle unavailable");
-        Omemo2Bundle found = Omemo2Bundle.parse(root); device.observe(peer,id,found); bundles.put(key,found); changed.accept(peer); return found;
+        Omemo2Bundle found = Omemo2Bundle.parse(root); device.observe(peer,id,found); bundles.put(key,found); refreshed.put(peer+"\n"+BUNDLES_NODE+"\n"+id,System.nanoTime()); changed.accept(peer); return found;
     }
     private StandardExtensionElement item(String peer, String node, String id) throws Exception {
         try {
@@ -121,15 +124,25 @@ public final class XmppOmemo2 implements AutoCloseable {
             throw absent;
         }
     }
-    /** Non-roster contacts need explicit subscriptions; failed subscriptions disable send-side caches. */
-    private void watch(String peer, String node) throws Exception {
-        String key = peer+"\n"+node; if (watched.contains(key)) return;
-        try {
-            Subscription subscription = PubSubManager.getInstanceFor(connection,JidCreate.entityBareFrom(peer)).getLeafNode(node)
-                    .subscribe(connection.getUser().asEntityBareJid());
-            if (subscription.getState() == Subscription.State.subscribed) watched.add(key);
-        } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
-        catch (Exception unavailable) { lastError = unavailable; }
+    private boolean fresh(String key) {
+        String node=key.contains("\n"+BUNDLES_NODE) ? key.substring(0,key.lastIndexOf('\n')) : key;
+        Long time=refreshed.get(key);
+        return watched.contains(node) || time!=null && System.nanoTime()-time<java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
+    }
+    /** Subscription support must not add extra round trips to each send. */
+    private void watch(String peer,String node) {
+        String key=peer+"\n"+node; if(closed || watched.contains(key)) return;
+        long now=System.nanoTime(); Long last=watchAttempts.get(key);
+        if(last!=null && now-last<java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) return;
+        watchAttempts.put(key,now);
+        try { watches.execute(() -> {
+            if(closed) return;
+            try {
+                Subscription subscription=PubSubManager.getInstanceFor(connection,JidCreate.entityBareFrom(peer)).getLeafNode(node).subscribe(connection.getUser().asEntityBareJid());
+                if(subscription.getState()==Subscription.State.subscribed) watched.add(key);
+            } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            catch(Exception unavailable) { lastError=unavailable; }
+        }); } catch(java.util.concurrent.RejectedExecutionException stopped) { /* Session closed. */ }
     }
     private static StandardExtensionElement form(String type, String maximum) {
         StandardExtensionElement.Builder form = StandardExtensionElement.builder("x",FORMS).addAttribute("type","submit");
@@ -263,7 +276,7 @@ public final class XmppOmemo2 implements AutoCloseable {
         if (bytes.length == 0 || bytes.length > maximum) throw Omemo2Bundle.invalid(); return bytes;
     }
     @Override public void close() {
-        closed = true; ready = false; PepManager.getInstanceFor(connection).removePepListener(listener);
+        closed = true; ready = false; watches.shutdownNow(); PepManager.getInstanceFor(connection).removePepListener(listener);
         ServiceDiscoveryManager disco = ServiceDiscoveryManager.getInstanceFor(connection); disco.removeFeature(NS); disco.removeFeature(DEVICES_NODE+"+notify"); disco.removeFeature(BUNDLES_NODE+"+notify");
     }
 }

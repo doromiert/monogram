@@ -29,6 +29,8 @@ public final class MonogramConnectionActivity extends UniversalFragment implemen
         int state = MonogramController.get(currentAccount).state();
         items.add(UItem.asHeader(state == ConnectionsManager.ConnectionStateConnected ? "Connected to XMPP"
                 : state == ConnectionsManager.ConnectionStateConnecting ? "Connecting to XMPP…" : "Disconnected from XMPP"));
+        int queued=MonogramController.get(currentAccount).queuedSendCount();
+        if(queued>0) items.add(UItem.asShadow(queued+" messages waiting to send after reconnecting."));
         String failure=MonogramController.get(currentAccount).lastDisconnect();
         if(failure!=null) items.add(UItem.asShadow("Last disconnect: "+failure));
         items.add(UItem.asButton(1, R.drawable.msg_retry, "Reconnect").accent().setEnabled(state != ConnectionsManager.ConnectionStateConnecting));

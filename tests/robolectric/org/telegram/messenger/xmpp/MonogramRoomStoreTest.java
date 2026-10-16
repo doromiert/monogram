@@ -142,10 +142,10 @@ public class MonogramRoomStoreTest {
                 original=store.save(MessageFixture.replyMessage("existing",null,null,"Keep my direct chat",true,false,100000,"phone",false,null));
                 android.database.sqlite.SQLiteDatabase db=store.getWritableDatabase();
                 db.execSQL("INSERT INTO archive_state VALUES('direct','oldest','newest',1)");
-                db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.setVersion(9);
+                db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.execSQL("DROP TABLE room_message_actors"); db.setVersion(9);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(13,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
                 assertNull(store.archiveCursor(false)); assertTrue(store.rooms().isEmpty()); assertTrue(store.room(room,"Alice")<0);
             }
         } finally { context.deleteDatabase(file); }
@@ -156,10 +156,10 @@ public class MonogramRoomStoreTest {
         try {
             try(MonogramStore store=new MonogramStore(context,file)) {
                 self=store.peer(own); dialog=store.room(room,"Alice"); message=store.saveRoom(event("Bob","old","sid-old","Keep my room history",false,true),self);
-                store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().setVersion(10);
+                store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); store.getWritableDatabase().setVersion(10);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(13,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
                 XmppBookmarks.Bookmark bookmark=XmppBookmarks.Bookmark.parse(room,"<conference xmlns='urn:xmpp:bookmarks:1' name='My existing group' autojoin='true'><nick>ExistingNick</nick></conference>");
                 store.importBookmark(bookmark,"vault-encrypted-xml","Alice");
                 assertTrue(store.pendingBookmarks().isEmpty()); assertEquals("ExistingNick",store.room(dialog).nickname); assertEquals("My existing group",store.roomChat(dialog).title);
@@ -194,7 +194,7 @@ public class MonogramRoomStoreTest {
     XmppRoomMessage identified(String nick,String stanza,String archive,String real) throws Exception {
         Message wire=org.jivesoftware.smack.util.PacketParserUtils.parseStanza("<message type='groupchat' from='"+room+"/"+nick+"' to='"+own+"'><x xmlns='http://jabber.org/protocol/muc#user'><item jid='"+real+"' affiliation='member' role='participant'/></x></message>");
         wire.setStanzaId(stanza); wire.addExtension(new OriginIdElement(stanza)); wire.addExtension(new StanzaIdElement(archive,room));
-        return XmppRoomMessage.from(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom(own),nick,"Identity preserved",false,true);
+        return MessageFixture.roomText(room,nick,stanza,archive,"Identity preserved",real,null,200000,false,null,null);
     }
     @Test public void realMembersShareDmProfilesAndOwnEchoRepairsCachedDirection() throws Exception {
         Context context=RuntimeEnvironment.getApplication(); String file="room-identities.db"; context.deleteDatabase(file);
@@ -243,8 +243,75 @@ public class MonogramRoomStoreTest {
                 store.getWritableDatabase().execSQL("DROP TABLE room_permissions"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); store.getWritableDatabase().setVersion(11);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(13,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
                 assertNull(store.archiveCursor(dialog,false)); assertEquals(dialog,store.knownRoom(room));
+            }
+        } finally { context.deleteDatabase(file); }
+    }
+
+    @Test public void roomRepliesUseRoomIdsAndResolveLateOriginals() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-replies.db"; context.deleteDatabase(file);
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer(own),dialog=store.room(room,"Alice");
+            ReplyReference reference=new ReplyReference(room+"/Bob","server-original").quoted("Before 😀");
+            int reply=store.saveRoom(MessageFixture.roomText(room,"Charlie","reply-wire","server-reply",reference.wireBody("Answer"),"charlie@example.org","charlie",200000,false,reference,null),self);
+            assertNull(store.getMessage(reply,self).reply_to); assertTrue(store.getMessage(reply,self).message.startsWith("> Before"));
+            int original=store.saveRoom(MessageFixture.roomText(room,"Bob","client-original","server-original","Before 😀","bob@example.org","bob",100000,false,null,null),self);
+            assertEquals(reply,store.changedReplies(dialog,self).get(0).id);
+            assertEquals(original,store.getMessage(reply,self).reply_to.reply_to_msg_id);
+            assertEquals("Answer",store.getMessage(reply,self).message); assertEquals("Before 😀",store.getMessage(reply,self).replyMessage.message);
+            ReplyReference outgoing=store.replyTo(original,dialog,self,true,null,0);
+            assertEquals("server-original",outgoing.id); assertEquals(room+"/Bob",outgoing.to);
+            for(ReplyReference invalid:new ReplyReference[]{new ReplyReference(room+"/Bob","client-original"),new ReplyReference(room+"/Charlie","server-original")}) {
+                int id=store.saveRoom(MessageFixture.roomText(room,"Charlie","invalid-"+invalid.id+invalid.to,"server-invalid-"+invalid.id+invalid.to,"Keep fallback","charlie@example.org","charlie",300000,false,invalid,null),self);
+                assertNull(store.getMessage(id,self).reply_to);
+            }
+            int noRoomId=store.saveRoom(event("Bob","no-room-id",null,"No room ID",false,true),self);
+            try { store.replyTo(noRoomId,dialog,self,false,null,0); fail("Client ID must not substitute for room ID"); } catch(IllegalArgumentException expected) {}
+        } finally { context.deleteDatabase(file); }
+    }
+    @Test public void correctionsBindStableAuthorsAndProtectEncryptedEditsAndReplyPreviews() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-corrections.db"; context.deleteDatabase(file);
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer(own),dialog=store.room(room,"Alice");
+            int edit=store.saveRoom(MessageFixture.roomText(room,"NewBob","edit","server-edit","Corrected","bob@example.org","bob",200000,true,null,"original"),self);
+            store.reconcileCorrections(dialog); assertFalse(store.hiddenCorrection(edit));
+            int original=store.saveRoom(MessageFixture.roomText(room,"Bob","original","server-original","Before","bob@example.org","bob",100000,false,null,null),self);
+            int collision=store.saveRoom(MessageFixture.roomText(room,"Charlie","original","server-other","Other author","charlie@example.org","charlie",100000,false,null,null),self);
+            MonogramStore.CorrectionChanges changes=store.reconcileCorrections(dialog);
+            assertTrue(changes.hidden.contains(edit)); assertEquals("Corrected",store.getMessage(original,self).message); assertEquals("Other author",store.getMessage(collision,self).message);
+            assertTrue((store.getMessage(original,self).flags & TLRPC.MESSAGE_FLAG_EDITED)!=0);
+            assertTrue(store.replyTo(original,dialog,self,false,null,0).ranges.isEmpty());
+            ReplyReference ref=new ReplyReference(room+"/Bob","server-original");
+            int reply=store.saveRoom(MessageFixture.roomText(room,"Charlie","reply","server-reply","Answer","charlie@example.org","charlie",250000,true,ref,null),self);
+            store.changedReplies(dialog,self);
+            int repeated=store.saveRoom(MessageFixture.roomText(room,"NewBob","edit-again","server-edit-again","Corrected again","bob@example.org","bob",300000,true,null,"original"),self);
+            changes=store.reconcileCorrections(dialog); assertTrue(store.hiddenCorrection(repeated));
+            assertEquals("Corrected again",store.changedReplies(dialog,self,changes.edited).get(0).replyMessage.message);
+            for(String[] actor:new String[][]{{"Mallory","mallory@example.org","mallory"},{"NewBob","bob@example.org","reused-nickname"}}) {
+                int forged=store.saveRoom(MessageFixture.roomText(room,actor[0],"forged-"+actor[2],"server-forged-"+actor[2],"Forged",actor[1],actor[2],400000,true,null,"original"),self);
+                store.reconcileCorrections(dialog); assertFalse(store.hiddenCorrection(forged)); assertEquals("Corrected again",store.getMessage(original,self).message);
+            }
+            int downgrade=store.saveRoom(MessageFixture.roomText(room,"NewBob","downgrade","server-downgrade","Plaintext replacement","bob@example.org","bob",500000,false,null,"original"),self);
+            store.reconcileCorrections(dialog); assertFalse(store.hiddenCorrection(downgrade)); assertEquals("Corrected again",store.getMessage(original,self).message);
+            assertEquals(original,store.getMessage(reply,self).reply_to.reply_to_msg_id);
+        } finally { context.deleteDatabase(file); }
+    }
+    @Test public void schemaThirteenPreservesCachedMessagesAndRequiresVerifiedAuthorsBeforeEditing() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-verified-migration.db"; context.deleteDatabase(file); long self,dialog; int original;
+        XmppRoomMessage message=MessageFixture.roomText(room,"OtherDevice","mine","server-mine","Keep me",own,"own",100000,true,null,null);
+        try {
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                self=store.peer(own); dialog=store.room(room,"Alice"); original=store.saveRoom(message,self);
+                store.getWritableDatabase().execSQL("ALTER TABLE room_message_actors DROP COLUMN stable_id");
+                store.getWritableDatabase().execSQL("ALTER TABLE room_message_actors DROP COLUMN verified");
+                store.getWritableDatabase().setVersion(13);
+            }
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(original,self).message);
+                try { store.editTarget(original,dialog,self); fail("Old unverified author accepted"); } catch(IllegalArgumentException expected) {}
+                store.saveRoom(message,self); assertEquals("mine",store.editTarget(original,dialog,self).correction.id);
+                assertEquals(1,store.history(dialog,self,0,100).size());
             }
         } finally { context.deleteDatabase(file); }
     }

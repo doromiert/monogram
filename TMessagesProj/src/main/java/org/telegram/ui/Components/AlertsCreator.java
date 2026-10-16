@@ -308,6 +308,8 @@ public class AlertsCreator {
                 text = "Room membership changed while encrypting. Review the room members and their fingerprints, then retry. Your message was not sent."; break;
             case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":
                 text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
+            case "MONOGRAM_SENDING_MODE_CHANGED":
+                text="Encryption settings changed while this message was waiting. Review the conversation security settings, then retry to send using the current settings."; break;
             case "MONOGRAM_XMPP_DISCONNECTED":
                 text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
             case "MONOGRAM_XMPP_FAILED":

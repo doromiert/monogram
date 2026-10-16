@@ -288,7 +288,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
-        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).request(object, (response, error) -> {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).request(requestToken,object, (response, error) -> {
             if (onComplete != null) onComplete.run(response, error);
             else if (onCompleteTimestamp != null) onCompleteTimestamp.run(response, error, System.currentTimeMillis());
         });
@@ -390,7 +390,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void cancelRequest(int token, boolean notifyServer, Runnable onCancelled) {
-        if (onCancelled != null) Utilities.stageQueue.postRunnable(onCancelled);
+        Utilities.stageQueue.postRunnable(() -> {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelRequest(token);
+            if(onCancelled!=null) onCancelled.run();
+        });
     }
 
     public void cleanup(boolean resetKeys) {
