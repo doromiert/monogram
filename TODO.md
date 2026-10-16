@@ -128,6 +128,7 @@ Reference APK: `~/extera/exteraGram-full-universal-20261004.apk`. The user repor
 
 ## Release verification
 
+- [x] Record delivery fallback: try wireless ADB at `192.168.1.128:39127` first. If connection/install fails, send the updated APK through the existing Codex Telegram bot; for APKs above Telegram's upload limit, the user approved sending a GitHub APK download link instead. The running `codex-telegram-bot.service` and its configured owner's private destination were verified read-only; no test message was sent. Preserve the existing signing key and app data.
 - [ ] Finish branding, launcher variants, app links, attribution and licensing on the current base.
 - [ ] Verify plain Jabber operation without the helper and graceful handling of unsupported extensions.
 - [ ] Run unit tests, real-server integration tests and independent-client interoperability checks covering the actual supported paths.
