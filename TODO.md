@@ -11,11 +11,12 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [x] Reapply the Monogram changes onto `DrKLO/Telegram` 13.0.2, commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d` (2026-10-13). The Git rebase is complete; build/runtime validation is tracked below.
 - [x] Update the pinned Nix environment for Java 21, SDK/build tools 35 and 36, NDK 27.2, CMake 3.22.1 and Rust 1.96.1.
 - [x] Build all current-base arm64 native libraries from source; remove bundled native archives/generated headers from Git tracking.
-- [o] Restore the FOSS replacements and remove proprietary runtime SDKs from the new base.
+- [o] Restore the FOSS replacements and remove proprietary runtime SDKs from the new base. Firebase, phone authentication, captcha/integrity and Google voice verification are removed. Remaining: Maps/location, Cast, Wear, Vision/ML Kit, Wallet and Play Billing.
 - [o] Verify XMPP onboarding and request dispatch; prevent Telegram networking in startup, background work and unsupported actions.
 - [x] Compile the current-base Android Java sources with the XMPP adapter and Jabber account routes (138 tasks; BUILD SUCCESSFUL).
-- [o] Build the rebased APK and verify the current Telegram UI, Monogram branding and the security button on Android.
-- [ ] Update the installed package while preserving its signing key, accounts, local messages and OMEMO identities.
+- [x] Build the rebased arm64 APK 0.2.0 (71759) with Nix (301 tasks, BUILD SUCCESSFUL).
+- [o] Verify the current Telegram UI, Monogram branding and security button on Android. The new process starts; visible UI verification is pending because the phone is locked.
+- [x] Install 0.2.0 through wireless ADB with the same signing key; verify the saved account/credential, all 53 existing local message rows, and the OMEMO device ID and identity key remain intact.
 
 ## Messaging and existing conversations
 
@@ -26,8 +27,17 @@ The goal is a Monogram Android client based on current official Telegram source,
 - [ ] Implement delivery receipts and accurate pending/sent/delivered/failed states, with useful errors and retry behavior.
 - [ ] Implement roster management, subscription requests, presence and contact display names.
 - [ ] Port replies, editing, reactions and other applicable messaging actions using standard XMPP extensions.
-- [ ] Implement standard group chats and bookmarks, with OMEMO where supported.
 - [ ] Complete account management, request cancellation, logout isolation and background notification behavior.
+
+## Multi-user chats (MUCs)
+
+- [ ] Implement XEP-0045 room discovery, joining/leaving, nicknames and room conversation adapters.
+- [ ] Support room creation/configuration, invitations, occupants, affiliation/role changes and moderation.
+- [ ] Implement persistent room bookmarks and automatic rejoining through standard XMPP extensions.
+- [ ] Import room history/MAM with stable IDs, timestamps and deduplication; keep room state separate from direct messages.
+- [ ] Implement interoperable MUC OMEMO for supported non-anonymous, members-only rooms, with explicit participant/device trust and membership changes.
+- [ ] Explain when a room cannot support OMEMO; never silently send plaintext for an encrypted room.
+- [ ] Test rooms and encrypted group messages against an independent XMPP client, including reconnect and membership changes.
 
 ## OMEMO
 

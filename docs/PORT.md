@@ -1,6 +1,6 @@
 # Monogram port requirements and current evidence
 
-Current source base: official `DrKLO/Telegram` 13.0.2 at `f32ffeec763f0bdbf4bec25b52d654f77bff733d`. The `monogram-current-base` branch is being migrated; current-base APK build/runtime and completion of proprietary runtime SDK removal remain unverified. Android Java compilation and the arm64 native dependency source build have passed. See `TODO.md`.
+Current source base: official `DrKLO/Telegram` 13.0.2 at `f32ffeec763f0bdbf4bec25b52d654f77bff733d`. The `monogram-current-base` branch is being migrated; current-base UI/runtime verification and completion of proprietary runtime SDK removal remain in progress. Android Java compilation, the arm64 native source build and APK packaging have passed; 0.2.0 is installed on the authorized phone. See `TODO.md`.
 
 The Android evidence below belongs to the older Telegram-FOSS 10.14.3 prototype saved as `d46543df` on `prototype/telegram-foss`. It does not establish current-base behavior.
 Public URL requested: https://monogram.neg-zero.com. Optional helper host: 192.168.1.24.
@@ -36,7 +36,9 @@ The requested end state includes an installable branded Monogram Android client,
 
 All arm64 native libraries rebuilt successfully from the pinned upstream submodules under Nix on 2026-10-16: `.state/current-native-build.log`, `All prebuilt libraries were built successfully`. Bundled archives/generated headers are removed from Git tracking and ignored; `scripts/build-native.sh` generates them. The Nix toolchain includes SDK/build tools 35 for Media3 and 36 for the app, Java 21, NDK 27.2, CMake 3.22.1 and Rust 1.96.1 with Android targets.
 
-Firebase startup, Telegram phone login, SMS retrieval, captcha/Play Integrity and Google voice verification are removed from the active build. Other Google runtime dependencies remain to be replaced; this is not yet a finished FOSS APK. The current-base Java compile passed after updating the two moved TL model types in the adapter: `.state/current-java-build.log`, 138 tasks, BUILD SUCCESSFUL. This includes the Jabber account-entry adapter and removal of the Firebase/auth/integrity/captcha dependencies. Full APK linking/packaging and runtime checks remain pending.
+Firebase startup, Telegram phone login, SMS retrieval, captcha/Play Integrity and Google voice verification are removed from the active build. Other Google runtime dependencies remain to be replaced; this is not yet a finished FOSS APK. The current-base Java compile passed after updating the two moved TL model types in the adapter: `.state/current-java-build.log`, 138 tasks, BUILD SUCCESSFUL. This includes the Jabber account-entry adapter and removal of the Firebase/auth/integrity/captcha dependencies. Full APK linking/packaging subsequently passed: `.state/current-apk-build.log`, 301 tasks, BUILD SUCCESSFUL in 5m 9s. APK 0.2.0 (71759), package `com.negzero.monogram.beta`, contains arm64 libraries and matches the prototype signing certificate. It was installed with `adb install --no-streaming -r`; `.state/current-adb-install.log` records Success.
+
+Before/after update checks verified the saved JID/credential, all 53 existing local message rows, and the OMEMO device ID/identity key unchanged (`.state/android-update-verification.json`). The new process starts. The phone keyguard currently prevents visible UI/security-button verification; that check is still pending. No message was sent or trust decision changed during these checks.
 
 ## Reproducible checks
 
