@@ -102,6 +102,8 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Every member, including offline members, needs a compatible trusted device. OMEMO 2 rooms are not available yet."));
         items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
+        items.add(UItem.asCheck(7,"Allow unencrypted reactions (legacy OMEMO)").setChecked(controller.plainReactionsAllowed(peer)));
+        items.add(UItem.asShadow("Standard reactions are visible to the server with legacy OMEMO. OMEMO 2 direct chats encrypt reactions; this permission never changes message encryption."));
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         items.add(UItem.asShadow(null));
@@ -122,7 +124,12 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if (item.id == 1) {
+        if(item.id==7) {
+            if(controller.plainReactionsAllowed(peer)) { controller.setPlainReactions(peer,false); refresh(); }
+            else showDialog(new AlertDialog.Builder(getContext()).setTitle("Allow unencrypted reactions?")
+                .setMessage("Legacy OMEMO protects message text but cannot encrypt standard reaction metadata. The XMPP server can see your reactions.")
+                .setPositiveButton("Allow reactions",(dialog,which) -> { controller.allowPlainReactions(peer); refresh(); }).setNegativeButton("Cancel",null).create());
+        } else if (item.id == 1) {
             if (controller.encrypted(peer)) showDialog(new AlertDialog.Builder(getContext()).setTitle("Send without OMEMO?")
                     .setMessage("New messages in this conversation will be readable by the XMPP servers. Transport encryption remains enabled.")
                     .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); refresh(); })

@@ -56,6 +56,11 @@ class XmppRoomsIntegrationTest {
             assertEquals(room+"/Alice",incoming.sender); assertFalse(incoming.outgoing); assertFalse(incoming.encrypted);
             assertEquals(sent.ids.get("origin"),incoming.ids.get("origin"));
             assertEquals("roomalice@localhost",incoming.realSender);
+            assertNotNull(incoming.occupantId);
+            bob.rooms.sendReactions(room,new MessageReactions(incoming.ids.get("archive"),Arrays.asList("👍","🐢")));
+            XmppRoomMessage roomReaction=null; long reactionDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+            while(System.nanoTime()<reactionDeadline) { XmppRoomMessage next=aliceMessages.poll(100,TimeUnit.MILLISECONDS); if(next!=null && next.reactions!=null) { roomReaction=next; break; } }
+            assertNotNull(roomReaction); assertNull(roomReaction.body); assertEquals(incoming.ids.get("archive"),roomReaction.reactions.id); assertEquals("roombob@localhost",roomReaction.realSender); assertNotNull(roomReaction.occupantId);
             assertEquals("participant",alice.rooms.state(room).role);
             assertTrue(alice.rooms.archive(room,"",null,10).messages.stream().anyMatch(m -> sent.ids.get("origin").equals(m.ids.get("origin")) && m.outgoing));
             byte[] avatar=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");

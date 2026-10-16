@@ -169,6 +169,14 @@ public final class MonogramController {
                             if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) queueRoomArchive(dialog,session); else if(!room.joined) joinedRooms.remove(dialog); }
                         } });
                     }
+                    @Override public void reactionRejected(String from,String id) {
+                        worker.execute(() -> { if(sessionEpoch!=epoch || session==null) return;
+                            try { java.util.Set<Integer> changed=store.reactions.reject(from,id,self);
+                                if(!changed.isEmpty()) { long peer=store.getMessage(changed.iterator().next(),self).dialog_id; publishReactions(peer,changed);
+                                    AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin,org.telegram.ui.Components.Bulletin.TYPE_ERROR,"The server or recipient rejected your reaction. The previous reactions were restored.")); }
+                            } catch(Exception ignored) { /* An unrelated/invalid error cannot change reaction state. */ }
+                        });
+                    }
                     @Override public void bookmarksChanged() {
                         worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
@@ -422,7 +430,9 @@ public final class MonogramController {
     }
     private void incomingRoom(com.negzero.monogram.xmpp.XmppRoomMessage message) {
         long dialog=store.knownRoom(message.room.toString()); if(dialog==0) return;
+        if(message.reactions!=null) { publishReactions(dialog,store.reactions.save(message,self)); return; }
         int id=store.saveRoom(message,self);
+        publishReactions(dialog,store.reactions.reconcile(dialog));
         if(id!=0) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
         if(id==0 || !UserConfig.getInstance(account).isClientActivated()) return;
         TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=store.getMessage(id,self);
@@ -490,6 +500,7 @@ public final class MonogramController {
             try {
                 java.util.Set<Integer> updated=new java.util.HashSet<>();
                 boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
+                publishReactions(task.peer,null);
                 if(changed && UserConfig.getInstance(account).isClientActivated()) {
                     publishRoom(task.peer);
                     ArrayList<TLRPC.Message> messages=new ArrayList<>(); for(int id:updated) messages.add(store.getMessage(id,self));
@@ -557,6 +568,7 @@ public final class MonogramController {
             updated.addAll(corrections.edited);
             publishCorrections(peer, correctionUpdates(corrections, 0));
             refreshReplies(peer, updated);
+            publishReactions(peer,null);
             if (peer != self && sync.add(peer)) refreshProfile(peer);
         }
         if (changed && UserConfig.getInstance(account).isClientActivated()) {
@@ -649,7 +661,7 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         accountEpoch++;
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -758,12 +770,14 @@ public final class MonogramController {
     private int now() { return (int) (System.currentTimeMillis() / 1000); }
     private void incoming(XmppMessage message) {
         long peer = store.peer(message.peer.toString());
+        if(message.reactions!=null) { publishReactions(peer,store.reactions.save(message,self)); return; }
         if (store.profile(peer) == null) refreshProfile(peer);
         int date = (int) (message.timestamp / 1000);
         int id = store.save(message);
         java.util.Set<Integer> updated = new java.util.HashSet<>(); if (id != 0) updated.add(id);
         MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
         updated.addAll(corrections.edited); refreshReplies(peer, updated);
+        publishReactions(peer,store.reactions.reconcile(peer));
         ArrayList<TLRPC.Update> updates = correctionUpdates(corrections, id);
         if (id != 0 && !store.hiddenCorrection(id)) {
             TL_update.TL_updateNewMessage update = new TL_update.TL_updateNewMessage(); update.message = store.getMessage(id, self); updates.add(update);
@@ -1017,6 +1031,7 @@ public final class MonogramController {
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
+                || request instanceof TLRPC.TL_messages_getMessagesReactions || request instanceof TLRPC.TL_messages_getMessageReactionsList
                 || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
         long epoch = accountEpoch;
         (cached ? cacheWorker : worker).execute(() -> {
@@ -1024,7 +1039,9 @@ public final class MonogramController {
             try { response = handle(request); }
             catch (Exception e) {
                 error = new TLRPC.TL_error(); error.code = 400;
-                if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
+                if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
+                else if(request instanceof TLRPC.TL_messages_sendReaction && e instanceof IllegalArgumentException) error.text="MONOGRAM_REACTION_UNAVAILABLE: "+e.getMessage();
+                else if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
                 else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
                         && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
                 else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
@@ -1041,6 +1058,48 @@ public final class MonogramController {
                 } else callback.run(completed, failed);
             });
         });
+    }
+    private static final class ReactionConsentRequired extends IllegalStateException {}
+    private XmppMessage.Encryption reactionEncryption(int id,long peer) {
+        int original=store.encryptionOf(id);
+        if(original==2 || encryption(peer)==XmppMessage.Encryption.OMEMO2) return XmppMessage.Encryption.OMEMO2;
+        return original==1 || encrypted(peer) ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
+    }
+    public boolean requiresPlainReactionConsent(int id,long peer) {
+        try { return reactionEncryption(id,peer)==XmppMessage.Encryption.LEGACY_OMEMO && !plainReactionsAllowed(peer); }
+        catch(IllegalArgumentException unknown) { return false; }
+    }
+    private String plainReactionKey(long peer) { return "plain-reactions-"+accountJid()+"\n"+store.jid(peer); }
+    public boolean plainReactionsAllowed(long peer) { return preferences.getBoolean(plainReactionKey(peer),false); }
+    public boolean setPlainReactions(long peer,boolean allowed) { return preferences.edit().putBoolean(plainReactionKey(peer),allowed).commit(); }
+    public boolean allowPlainReactions(long peer) { return setPlainReactions(peer,true); }
+    public TLRPC.TL_messageReactions cachedReactions(int id) { return store.reactions.snapshot(id,self); }
+    private Updates reactionUpdates(long peer,java.util.Collection<Integer> ids) {
+        Updates result=new Updates(); result.date=now();
+        if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
+        else { result.users.add(store.user(peer,self)); result.users.add(ownUser()); }
+        for(int id:ids) {
+            if(store.getMessage(id,self).dialog_id!=peer) throw new IllegalArgumentException("Reaction target belongs to another conversation");
+            TL_update.TL_updateMessageReactions update=new TL_update.TL_updateMessageReactions();
+            update.peer=peer<0 ? new TLRPC.TL_peerChat() : new TLRPC.TL_peerUser();
+            if(peer<0) update.peer.chat_id=-peer; else update.peer.user_id=peer;
+            update.msg_id=id; update.reactions=store.reactions.snapshot(id,self); result.updates.add(update);
+        }
+        TL_update.TL_updateDeleteMessages hidden=new TL_update.TL_updateDeleteMessages(); hidden.messages.addAll(store.reactions.hidden(peer));
+        if(!hidden.messages.isEmpty()) result.updates.add(hidden);
+        return result;
+    }
+    private void publishReactions(long peer,java.util.Collection<Integer> ids) {
+        java.util.Set<Integer> changed=new java.util.LinkedHashSet<>(ids==null ? store.reactions.targets(peer) : ids);
+        changed.addAll(store.reactions.reconcile(peer));
+        if(!UserConfig.getInstance(account).isClientActivated()) return;
+        Updates updates=reactionUpdates(peer,changed); if(updates.updates.isEmpty()) return;
+        final long owner=accountEpoch;
+        Utilities.stageQueue.postRunnable(() -> { if(accountEpoch==owner) MessagesController.getInstance(account).processUpdates(updates,false); });
+    }
+    public void reloadReactions(int id,long peer) {
+        final long owner=accountEpoch;
+        cacheWorker.execute(() -> { if(accountEpoch==owner) try { publishReactions(peer,java.util.Collections.singleton(id)); } catch(IllegalArgumentException ignored) {} });
     }
     private TLObject handle(TLObject request) throws Exception {
         if (request instanceof TLRPC.TL_updates_getState) {
@@ -1141,6 +1200,54 @@ public final class MonogramController {
             long peer=query.peer.chat_id!=0 ? -query.peer.chat_id : query.peer.user_id;
             result.messages.addAll(store.history(peer, self, query.offset_id, query.limit));
             if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); result.users.add(ownUser()); return result;
+        }
+        if(request instanceof TLRPC.TL_messages_getMessagesReactions) {
+            TLRPC.TL_messages_getMessagesReactions query=(TLRPC.TL_messages_getMessagesReactions)request;
+            return reactionUpdates(query.peer.chat_id!=0 ? -query.peer.chat_id : query.peer.user_id,query.id);
+        }
+        if(request instanceof TLRPC.TL_messages_getMessageReactionsList) {
+            TLRPC.TL_messages_getMessageReactionsList query=(TLRPC.TL_messages_getMessageReactionsList)request;
+            long peer=query.peer.chat_id!=0 ? -query.peer.chat_id : query.peer.user_id;
+            if(store.getMessage(query.id,self).dialog_id!=peer) throw new IllegalArgumentException("Wrong conversation");
+            TLRPC.TL_messages_messageReactionsList result=new TLRPC.TL_messages_messageReactionsList();
+            int offset=query.offset==null || query.offset.isEmpty() ? 0 : Integer.parseInt(query.offset);
+            if(offset<0) throw new IllegalArgumentException("Invalid offset");
+            java.util.ArrayList<TLRPC.MessagePeerReaction> filtered=new java.util.ArrayList<>();
+            for(TLRPC.MessagePeerReaction reaction:store.reactions.snapshot(query.id,self).recent_reactions)
+                if(query.reaction==null || query.reaction instanceof TLRPC.TL_reactionEmpty || query.reaction instanceof TLRPC.TL_reactionEmoji
+                    && ((TLRPC.TL_reactionEmoji)query.reaction).emoticon.equals(((TLRPC.TL_reactionEmoji)reaction.reaction).emoticon)) filtered.add(reaction);
+            result.count=filtered.size(); int end=Math.min(filtered.size(),offset+Math.min(Math.max(query.limit,1),100));
+            for(int i=offset;i<end;i++) result.reactions.add(filtered.get(i));
+            if(end<filtered.size()) { result.flags=1; result.next_offset=Integer.toString(end); }
+            java.util.Set<Long> users=new java.util.LinkedHashSet<>(); for(TLRPC.MessagePeerReaction reaction:result.reactions) users.add(reaction.peer_id.user_id);
+            for(long user:users) result.users.add(store.user(user,self)); return result;
+        }
+        if(request instanceof TLRPC.TL_messages_sendReaction) {
+            TLRPC.TL_messages_sendReaction send=(TLRPC.TL_messages_sendReaction)request;
+            if(send.peer==null || send.peer.channel_id!=0) throw new IllegalArgumentException("Unsupported conversation");
+            long peer=send.peer.chat_id!=0 ? -send.peer.chat_id : send.peer.user_id;
+            String target=store.reactions.target(send.msg_id,peer,self);
+            java.util.List<String> emojis=new java.util.ArrayList<>();
+            for(TLRPC.Reaction reaction:send.reaction) {
+                if(!(reaction instanceof TLRPC.TL_reactionEmoji) || !MonogramReactions.isEmoji(((TLRPC.TL_reactionEmoji)reaction).emoticon)) throw new IllegalArgumentException("Choose a standard emoji");
+                emojis.add(((TLRPC.TL_reactionEmoji)reaction).emoticon);
+            }
+            com.negzero.monogram.xmpp.MessageReactions reactions=new com.negzero.monogram.xmpp.MessageReactions(target,emojis);
+            XmppMessage.Encryption mode=reactionEncryption(send.msg_id,peer);
+            if(mode==XmppMessage.Encryption.LEGACY_OMEMO) {
+                if(!plainReactionsAllowed(peer)) throw new ReactionConsentRequired();
+                mode=XmppMessage.Encryption.PLAIN;
+            }
+            XmppSession expected=session();
+            if(peer<0) {
+                if(mode!=XmppMessage.Encryption.PLAIN) throw new IllegalArgumentException("Encrypted room reactions are not supported by this OMEMO version");
+                if(!store.room(peer).autojoin) throw new IllegalArgumentException("Join the room first");
+                store.reactions.save(expected.rooms.sendReactions(store.jid(peer),reactions),self);
+            } else {
+                String wire=expected.sendReactions(store.jid(peer),reactions,mode);
+                store.reactions.save(XmppMessage.sentReactions(expected.connection().getUser(),store.jid(peer),wire,reactions,mode),self);
+            }
+            return reactionUpdates(peer,java.util.Collections.singleton(send.msg_id));
         }
         if (request instanceof TLRPC.TL_messages_getMessageEditData) {
             TLRPC.TL_messages_getMessageEditData query = (TLRPC.TL_messages_getMessageEditData) request;

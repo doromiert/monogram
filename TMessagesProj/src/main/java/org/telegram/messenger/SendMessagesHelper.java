@@ -4017,6 +4017,15 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (callback != null) {
                     AndroidUtilities.runOnUIThread(callback);
                 }
+            } else if(error!=null) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).reloadReactions(messageObject.getId(),messageObject.getDialogId());
+                AndroidUtilities.runOnUIThread(() -> {
+                    messageObject.messageOwner.reactions=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cachedReactions(messageObject.getId());
+                    org.telegram.ui.Components.BulletinFactory.of(parentFragment).createErrorBulletin(
+                        error.text!=null && error.text.startsWith("MONOGRAM_REACTION_UNAVAILABLE:") ? error.text.substring("MONOGRAM_REACTION_UNAVAILABLE: ".length())
+                        : "Could not send the reaction. Check the connection and conversation security settings.").show();
+                    if(callback!=null) callback.run();
+                });
             }
         });
     }

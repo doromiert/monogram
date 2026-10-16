@@ -932,6 +932,8 @@ public class ReactionsLayoutInBubble {
                         //imageReceiver.setImage(ImageLocation.getForDocument(r.static_icon), "40_40", svgThumb, "webp", r, 1);
                         SvgHelper.SvgDrawable svgThumb = DocumentObject.getSvgThumb(r.static_icon, Theme.key_windowBackgroundGray, 1.0f);
                         imageReceiver.setImage(ImageLocation.getForDocument(r.center_icon), "40_40_lastreactframe", svgThumb, "webp", r, 1);
+                    } else {
+                        imageReceiver.setImageBitmap(Emoji.getEmojiDrawable(visibleReaction.emojicon));
                     }
                 } else if (visibleReaction.documentId != 0) {
                     animatedEmojiDrawable = new AnimatedEmojiDrawable(getCacheType(), currentAccount, visibleReaction.documentId);

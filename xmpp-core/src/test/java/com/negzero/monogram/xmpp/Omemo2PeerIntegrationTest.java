@@ -56,6 +56,15 @@ class Omemo2PeerIntegrationTest {
                     assertTrue(file.link.encrypted()); assertEquals("Private caption 😀",file.caption(decoded,decoded.getBody(),ReplyReference.from(decoded,decoded.getBody())));
                     assertEquals("quoted",ReplyReference.from(decoded,decoded.getBody()).id); assertEquals("original",MessageCorrection.from(decoded).id);
                 }
+                MessageReactions.initialize();
+                for(java.util.List<String> emojis:java.util.Arrays.asList(java.util.Arrays.asList("👍","🐢"),java.util.Collections.<String>emptyList())) {
+                    Message reaction=new Message(original.getTo(),Message.Type.chat); reaction.setFrom(alice.connection.getUser()); reaction.setStanzaId(java.util.UUID.randomUUID().toString());
+                    new MessageReactions("independent-caption",emojis).addTo(reaction);
+                    Message wire=alice.service.encrypt(reaction); assertFalse(wire.toXML().toString().contains("urn:xmpp:reactions:0"));
+                    alice.connection.sendStanza(wire);
+                    Message returned=receive(alice); assertNull(returned.getBody());
+                    MessageReactions result=MessageReactions.from(returned); assertNotNull(result); assertEquals("independent-caption",result.id); assertEquals(new java.util.LinkedHashSet<>(emojis),result.emojis);
+                }
                 assertFalse(new File(state,mode+".error").exists(),() -> read(log));
             } finally { peer.destroy(); if (!peer.waitFor(5,TimeUnit.SECONDS)) { peer.destroyForcibly(); peer.waitFor(5,TimeUnit.SECONDS); } }
         }

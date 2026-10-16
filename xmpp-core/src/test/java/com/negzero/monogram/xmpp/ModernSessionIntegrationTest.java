@@ -59,6 +59,13 @@ class ModernSessionIntegrationTest {
             XmppSession.ArchivePage page=bob.archiveBefore("sessionalice@localhost",null,100);
             XmppMessage archived=page.messages.stream().filter(m -> id.equals(m.ids.get("stanza"))).findFirst().orElseThrow(AssertionError::new);
             assertEquals(XmppMessage.Encryption.OMEMO2,archived.encryption); assertFalse(archived.readable); page.stored(); page.stored();
+            bob.sendReactions("sessionalice@localhost",new MessageReactions(id,java.util.Arrays.asList("👍","🐢")),XmppMessage.Encryption.PLAIN);
+            XmppMessage plainReaction=a.next(); assertNull(plainReaction.body); assertFalse(plainReaction.encrypted); assertEquals(id,plainReaction.reactions.id);
+            for(java.util.List<String> emojis:java.util.Arrays.asList(java.util.Arrays.asList("❤️","🔥"),java.util.Collections.<String>emptyList())) {
+                bob.sendReactions("sessionalice@localhost",new MessageReactions(id,emojis),XmppMessage.Encryption.OMEMO2);
+                XmppMessage reaction=a.next(); assertNull(reaction.body); assertTrue(reaction.encrypted); assertEquals(id,reaction.reactions.id); assertEquals(new java.util.LinkedHashSet<>(emojis),reaction.reactions.emojis); a.store();
+            }
+            assertThrows(UnsupportedOperationException.class,() -> bob.sendReactions("sessionalice@localhost",new MessageReactions(id,java.util.Collections.singleton("👍")),XmppMessage.Encryption.LEGACY_OMEMO));
             alice.modern().close();
             OmemoSendException failure=assertThrows(OmemoSendException.class,() -> alice.send("sessionbob@localhost","Never downgrade",XmppMessage.Encryption.OMEMO2,null));
             assertEquals(OmemoSendException.Reason.MODERN_UNAVAILABLE,failure.reason); assertNull(b.messages.poll(200,TimeUnit.MILLISECONDS));

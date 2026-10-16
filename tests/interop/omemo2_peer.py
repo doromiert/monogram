@@ -141,7 +141,8 @@ class Peer(ClientXMPP):
                 assert envelope.find(f"{{{SCE}}}to").get("jid") == OWN
                 assert envelope.find(f"{{{SCE}}}rpad") is not None
                 content = envelope.find(f"{{{SCE}}}content")
-                assert content is not None and content.find(f"{{{CLIENT}}}body") is not None
+                assert content is not None
+                assert content.find(f"{{{CLIENT}}}body") is not None or content.find("{urn:xmpp:reactions:0}reactions") is not None
                 await self.send_content(content, stanza["from"])
             except Exception:
                 traceback.print_exc()

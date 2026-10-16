@@ -122,6 +122,13 @@ public final class XmppMessage {
         return encryption == Encryption.OMEMO2 ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)
                 : from(message, own.asEntityBareJidIfPossible(), body, encryption != Encryption.PLAIN, true, null, null);
     }
+    public static XmppMessage sentReactions(org.jxmpp.jid.Jid own,String peer,String id,MessageReactions reactions,Encryption encryption) throws Exception {
+        if(encryption==Encryption.LEGACY_OMEMO) throw new IllegalArgumentException("Legacy OMEMO cannot protect reactions");
+        Message message=new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer),Message.Type.chat);
+        message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id)); reactions.addTo(message);
+        return encryption==Encryption.OMEMO2 ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)
+                : from(message,own.asEntityBareJidIfPossible(),null,false,true,null,null);
+    }
     public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileLink link, boolean encrypted) throws Exception {
         return sentFile(own, peer, id, link, encrypted, null);
     }

@@ -31154,7 +31154,7 @@ public class ChatActivity extends BaseFragment implements
 
             List<TLRPC.TL_availableReaction> availableReacts = getMediaDataController().getEnabledReactionsList();
             final boolean isEphemeral = message != null && message.isEphemeral();
-            final boolean isReactionsViewAvailable = !isEphemeral && !suggestEdit && !isSecretChat() && !isInScheduleMode() && currentUser == null && primaryMessage.hasReactions() && (!ChatObject.isChannel(currentChat) || currentChat.megagroup) && !ChatObject.isMonoForum(currentChat) && !availableReacts.isEmpty() && primaryMessage.messageOwner.reactions.can_see_list && !primaryMessage.isSecretMedia();
+            final boolean isReactionsViewAvailable = !isEphemeral && !suggestEdit && !isSecretChat() && !isInScheduleMode() && currentUser == null && primaryMessage.hasReactions() && (!ChatObject.isChannel(currentChat) || currentChat.megagroup) && !ChatObject.isMonoForum(currentChat) && primaryMessage.messageOwner.reactions.can_see_list && !primaryMessage.isSecretMedia();
             final boolean isReactionsAvailable;
             if (suggestEdit || isEphemeral) {
                 isReactionsAvailable = false;
@@ -31167,7 +31167,7 @@ public class ChatActivity extends BaseFragment implements
                         && !isQuickRepliesOrWelcomeMessagesMode()
                         && !isInScheduleMode()
                         && primaryMessage.isReactionsAvailable()
-                        && !availableReacts.isEmpty()
+                       
                         && (chatInfo != null && (
                             !(chatInfo.available_reactions instanceof TLRPC.TL_chatReactionsNone)
                             || chatInfo.paid_reactions_available)
@@ -31178,7 +31178,7 @@ public class ChatActivity extends BaseFragment implements
                     && !isQuickRepliesOrWelcomeMessagesMode()
                     && !isInScheduleMode()
                     && primaryMessage.isReactionsAvailable()
-                    && !availableReacts.isEmpty()
+                   
                     && !message.isSecretMedia()
                     && (chatInfo != null && (
                         !(chatInfo.available_reactions instanceof TLRPC.TL_chatReactionsNone)
@@ -32957,6 +32957,19 @@ public class ChatActivity extends BaseFragment implements
         if (isInScheduleMode() || primaryMessage == null) {
             return;
         }
+        final org.telegram.messenger.xmpp.MonogramController monogram=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        if(visibleReaction!=null && (visibleReaction.isStar || visibleReaction.documentId!=0)) {
+            BulletinFactory.of(this).createErrorBulletin("Choose a standard emoji. Custom emoji reactions are not supported yet.").show(); return;
+        }
+        if(monogram.requiresPlainReactionConsent(primaryMessage.getId(),primaryMessage.getDialogId())) {
+            final View selectedCell=cell;
+            showDialog(new AlertDialog.Builder(getContext(),themeDelegate).setTitle("Reaction privacy")
+                .setMessage("Legacy OMEMO encrypts message text, but standard XMPP reactions are visible to the server. Allow unencrypted reactions in this chat?")
+                .setPositiveButton("Allow reactions",(dialog,which) -> {
+                    if(monogram.allowPlainReactions(primaryMessage.getDialogId())) selectReaction(selectedCell,primaryMessage,reactionsLayout,fromView,x,y,visibleReaction,fromDoubleTap,bigEmoji,addToRecent,withoutAnimation);
+                }).setNegativeButton(getString(R.string.Cancel),null).create()); return;
+        }
+        final boolean animateReaction=visibleReaction!=null && visibleReaction.emojicon!=null && getMediaDataController().getReactionsMap().containsKey(visibleReaction.emojicon);
         if (getMessagesController().isFrozen()) {
             AccountFrozenAlert.show(currentAccount);
             return;
@@ -33041,8 +33054,7 @@ public class ChatActivity extends BaseFragment implements
 
         if (added) {
             cell = findMessageCell(finalMessageIdForCell, true);
-            showMultipleReactionsPromo(cell, visibleReaction, currentChosenReactions);
-            if (!fromDoubleTap) {
+            if (!fromDoubleTap && animateReaction) {
                 ReactionsEffectOverlay.show(ChatActivity.this, reactionsLayout, cell, fromView, x, y, visibleReaction, currentAccount, reactionsLayout != null ? (bigEmoji ? ReactionsEffectOverlay.LONG_ANIMATION : ReactionsEffectOverlay.ONLY_MOVE_ANIMATION) : ReactionsEffectOverlay.SHORT_ANIMATION);
             }
         }
@@ -33054,8 +33066,8 @@ public class ChatActivity extends BaseFragment implements
         getSendMessagesHelper().sendReaction(primaryMessage, visibleReactions, added ? visibleReaction : null, bigEmoji, addToRecent, ChatActivity.this, updateReactionRunnable = new Runnable() {
             @Override
             public void run() {
-                if (withoutAnimation) {
-                    return;
+                if (withoutAnimation || !animateReaction) {
+                    updateReactionRunnable=null; updateMessageAnimated(primaryMessage,true); closeMenu(); return;
                 }
                 if (updateReactionRunnable != null) {
                     updateReactionRunnable = null;
@@ -33087,11 +33099,11 @@ public class ChatActivity extends BaseFragment implements
             }
         });
 
-        if (fromDoubleTap || withoutAnimation) {
+        if (fromDoubleTap || withoutAnimation || !animateReaction) {
             updateMessageAnimated(primaryMessage, true);
             updateReactionRunnable.run();
         }
-        if (!withoutAnimation) {
+        if (!withoutAnimation && animateReaction) {
             AndroidUtilities.runOnUIThread(updateReactionRunnable, 50);
         }
     }

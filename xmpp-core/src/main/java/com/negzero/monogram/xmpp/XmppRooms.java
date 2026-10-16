@@ -99,6 +99,7 @@ public final class XmppRooms implements AutoCloseable {
         if (message!=null) listener.roomMessage(identify(chat,wire,message));
     }
     private XmppRoomMessage identify(MultiUserChat chat,Message wire,XmppRoomMessage message) {
+        if(stableOccupants.contains(chat.getRoom())) message=message.withOccupantId(occupantId(wire));
         if(message.realSender!=null) return message;
         EntityBareJid own=connection.getUser().asEntityBareJid();
         if(stableOccupants.contains(chat.getRoom()) && chat.getNickname()!=null) {
@@ -220,14 +221,14 @@ public final class XmppRooms implements AutoCloseable {
         chat.sendMessage(message); return sent;
     }
     /** Explicit plaintext metadata, matching XEP-0444 clients that use legacy OMEMO for text. */
-    public String sendReactions(String jid,MessageReactions reactions) throws Exception {
+    public XmppRoomMessage sendReactions(String jid,MessageReactions reactions) throws Exception {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         Message message=new Message(chat.getRoom(),Message.Type.groupchat);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); reactions.addTo(message);
         message.addExtension(new OriginIdElement(id));
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
-        chat.sendMessage(message); return id;
+        chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
     @Override public void close() { chats.clear(); passwords.clear(); stableOccupants.clear(); }
 }

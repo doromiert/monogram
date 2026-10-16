@@ -11,7 +11,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 - [x] Build and deliver the current encrypted media/captions update: 0.2.13 includes modern OMEMO integration and local interoperability checks, is published, and is installed through wireless ADB. Phone picker/viewer interaction and complete independent Android-client exchange remain tracked below.
 - [o] Next: MUCs, covering the room support and verification listed below.
-- [o] Then: message reactions in direct chats and MUCs, reusing Telegram's native reaction UI with standard XMPP interoperability. The core XEP-0444/protected-content foundation is committed on `reactions`; native controls, durable per-sender state and delivery remain pending.
+- [o] Then: message reactions in direct chats and MUCs, reusing Telegram's native reaction UI with standard XMPP interoperability. The core XEP-0444/protected-content foundation is committed on `reactions`; Native controls, durable per-sender state, rollback and legacy-OMEMO consent are implemented in the working reaction branch; two Android regressions remain and this build is not published. Room sync performance is now the immediate priority.
 
 ## Official Telegram base
 

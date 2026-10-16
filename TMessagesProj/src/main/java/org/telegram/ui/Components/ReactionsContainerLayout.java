@@ -454,6 +454,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
     }
 
     public int getWindowType() {
+        if(type==TYPE_DEFAULT) return SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI;
         if (type == TYPE_STICKER_SET_EMOJI) {
             return SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI;
         }
@@ -1130,7 +1131,13 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
             }
         }
         hasStar = false;
-        if (type == TYPE_TAGS) {
+        if(type==TYPE_DEFAULT) {
+            allReactionsAvailable=false;
+            for(String emoji:new String[]{"👍","❤️","😂","😮","😢","🙏","🔥","👎"}) visibleReactions.add(ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(emoji));
+            if(messageObject!=null && messageObject.messageOwner.reactions!=null)
+                for(TLRPC.ReactionCount reaction:messageObject.messageOwner.reactions.results)
+                    if(reaction.reaction instanceof TLRPC.TL_reactionEmoji) visibleReactions.add(ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction.reaction));
+        } else if (type == TYPE_TAGS) {
             allReactionsAvailable = UserConfig.getInstance(currentAccount).isPremium();
             fillRecentReactionsList(visibleReactions);
         } else if (type == TYPE_MESSAGE_EFFECTS) {
@@ -1177,7 +1184,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
             fillRecentReactionsList(visibleReactions);
         }
         filterReactions(visibleReactions);
-        showExpandableReactions = !hitLimit && (!allReactionsAvailable && visibleReactions.size() > 16 || allReactionsAvailable && !UserConfig.getInstance(currentAccount).isPremium() && MessagesController.getInstance(currentAccount).premiumFeaturesBlocked());
+        showExpandableReactions = type==TYPE_DEFAULT || !hitLimit && (!allReactionsAvailable && visibleReactions.size() > 16 || allReactionsAvailable && !UserConfig.getInstance(currentAccount).isPremium() && MessagesController.getInstance(currentAccount).premiumFeaturesBlocked());
         if (type == TYPE_TAGS && !UserConfig.getInstance(currentAccount).isPremium()) {
             showExpandableReactions = false;
         }
@@ -2035,7 +2042,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
 
             resetAnimation();
             currentReaction = react;
-            hasEnterAnimation = currentReaction.isStar || (currentReaction.emojicon != null && (showCustomEmojiReaction() || allReactionsIsDefault)) && LiteMode.isEnabled(LiteMode.FLAG_ANIMATED_EMOJI_REACTIONS);
+            hasEnterAnimation = type!=TYPE_DEFAULT && (currentReaction.isStar || (currentReaction.emojicon != null && (showCustomEmojiReaction() || allReactionsIsDefault)) && LiteMode.isEnabled(LiteMode.FLAG_ANIMATED_EMOJI_REACTIONS));
             if (type == TYPE_STICKER_SET_EMOJI || currentReaction.isEffect) {
                 hasEnterAnimation = false;
             }
@@ -2094,7 +2101,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 if (particles == null) {
                     particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_HIGH ? 45 : 18);
                 }
-            } else if (type == TYPE_STICKER_SET_EMOJI && react != null && react.emojicon != null) {
+            } else if ((type == TYPE_STICKER_SET_EMOJI || type==TYPE_DEFAULT) && react != null && react.emojicon != null) {
                 enterImageView.getImageReceiver().setImageBitmap(Emoji.getEmojiDrawable(react.emojicon));
                 loopImageView.getImageReceiver().setImageBitmap(Emoji.getEmojiDrawable(react.emojicon));
             } else if (currentReaction.isEffect) {
