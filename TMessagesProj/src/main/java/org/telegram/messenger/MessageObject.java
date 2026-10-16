@@ -11666,8 +11666,8 @@ public class MessageObject {
     }
 
     public static boolean canEditMessageAnytime(int currentAccount, TLRPC.Message message, TLRPC.Chat chat) {
-        if (message != null && message.peer_id != null && message.peer_id.user_id != 0 && chat == null) {
-            return canEditMessage(currentAccount, message, null, false);
+        if (message != null && message.peer_id != null && (message.peer_id.user_id != 0 || message.peer_id.chat_id != 0)) {
+            return canEditMessage(currentAccount, message, chat, false);
         }
         if (message == null || message.peer_id == null || getMedia(message) != null && (isRoundVideoDocument(getMedia(message).document) || isStickerDocument(getMedia(message).document) || isAnimatedStickerDocument(getMedia(message).document, true)) || message.action != null && !(message.action instanceof TLRPC.TL_messageActionEmpty) || isForwardedMessage(message) || message.via_bot_id != 0 || message.id < 0) {
             return false;
@@ -11719,7 +11719,7 @@ public class MessageObject {
             return false;
         }
         final TLRPC.MessageMedia media = getMedia(message);
-        if (message.peer_id.user_id != 0 && chat == null) {
+        if (message.peer_id.chat_id != 0 || message.peer_id.user_id != 0 && chat == null) {
             return !scheduled && message.id > 0 && message.out && message.rich_message == null
                     && (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage);
         }

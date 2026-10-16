@@ -22,11 +22,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     final MonogramReactions reactions=new MonogramReactions(this);
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 13); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 14); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db); addRoomProfiles(db); MonogramReactions.create(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -78,7 +78,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 13 || oldVersion < 1 || oldVersion > 12) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 14 || oldVersion < 1 || oldVersion > 13) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -90,7 +90,13 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<10) addRooms(db);
         if(oldVersion<11) addBookmarks(db);
         if(oldVersion<12) addRoomProfiles(db);
+        if(oldVersion<14) addRoomAuthorVerification(db);
         MonogramReactions.create(db);
+    }
+    private void addRoomAuthorVerification(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE room_message_actors ADD COLUMN stable_id TEXT");
+        db.execSQL("ALTER TABLE room_message_actors ADD COLUMN verified INTEGER NOT NULL DEFAULT 0");
+        db.execSQL("DELETE FROM archive_state WHERE scope LIKE 'room:%'");
     }
     private void addRoomProfiles(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS room_permissions (room INTEGER PRIMARY KEY,role TEXT NOT NULL,affiliation TEXT NOT NULL)");
@@ -274,9 +280,9 @@ final class MonogramStore extends SQLiteOpenHelper {
                     }
                 }
             }
-            if(message.realSender!=null) {
+            if(message.realSenderVerified && message.realSender!=null) {
                 long sender=roomUser(dialog,message.sender,message.realSender,self);
-                try(Cursor c=db.rawQuery("SELECT s.user,m.outgoing,a.real_jid FROM room_senders s JOIN messages m ON m.id=s.message LEFT JOIN room_message_actors a ON a.message=m.id WHERE m.id=?",new String[]{Integer.toString(id)})) {
+                try(Cursor c=db.rawQuery("SELECT s.user,m.outgoing,CASE WHEN a.verified=1 THEN a.real_jid END FROM room_senders s JOIN messages m ON m.id=s.message LEFT JOIN room_message_actors a ON a.message=m.id WHERE m.id=?",new String[]{Integer.toString(id)})) {
                     if(c.moveToFirst()) {
                         if(!c.isNull(2) && !message.realSender.equals(c.getString(2))) throw new IllegalStateException("Conflicting room authors");
                         if(c.getLong(0)!=sender || (c.getInt(1)!=0)!=message.outgoing) {
@@ -286,9 +292,25 @@ final class MonogramStore extends SQLiteOpenHelper {
                     }
                 }
             }
-            ContentValues actor=new ContentValues(); actor.put("message",id); actor.put("occupant",message.sender); actor.put("real_jid",message.realSender);
+            ContentValues actor=new ContentValues(); actor.put("message",id); actor.put("occupant",message.sender);
             db.insertWithOnConflict("room_message_actors",null,actor,SQLiteDatabase.CONFLICT_IGNORE);
-            if(message.realSender!=null) db.update("room_message_actors",actor,"message=?",new String[]{Integer.toString(id)});
+            actor.remove("message");
+            try(Cursor c=db.rawQuery("SELECT stable_id,verified,real_jid FROM room_message_actors WHERE message=?",new String[]{Integer.toString(id)})) {
+                c.moveToFirst();
+                if(message.occupantId!=null) {
+                    if(!c.isNull(0) && !message.occupantId.equals(c.getString(0))) throw new IllegalStateException("Conflicting stable room authors");
+                    actor.put("stable_id",message.occupantId); changed|=c.isNull(0);
+                }
+                if(message.realSenderVerified && message.realSender!=null) {
+                    actor.put("real_jid",message.realSender); actor.put("verified",1); changed|=c.getInt(1)==0;
+                }
+            }
+            db.update("room_message_actors",actor,"message=?",new String[]{Integer.toString(id)});
+            if(message.correction!=null) {
+                ContentValues correction=new ContentValues(); correction.put("message",id); correction.put("target",message.correction.id);
+                changed|=db.insertWithOnConflict("corrections",null,correction,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
+            }
+            if(message.reply!=null) changed|=saveReply(db,id,message.reply);
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
                 ContentValues identity=new ContentValues(); identity.put("peer",dialog); identity.put("outgoing",message.outgoing); identity.put("kind",alias.getKey());
                 identity.put("value",(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
@@ -511,18 +533,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 ContentValues correction = new ContentValues(); correction.put("message", id); correction.put("target", message.correction.id);
                 changed |= db.insertWithOnConflict("corrections", null, correction, SQLiteDatabase.CONFLICT_IGNORE) != -1;
             }
-            if (message.reply != null) {
-                ContentValues reply = new ContentValues(); reply.put("message", id); reply.put("author", message.reply.to);
-                reply.put("target", message.reply.id); reply.put("fallback", message.reply.ranges);
-                changed |= db.insertWithOnConflict("replies", null, reply, SQLiteDatabase.CONFLICT_IGNORE) != -1;
-                if (!message.reply.ranges.isEmpty()) {
-                    ContentValues fallback = new ContentValues(); fallback.put("fallback", message.reply.ranges);
-                    String authorClause = message.reply.to == null ? "author IS NULL" : "author=?";
-                    String[] args = message.reply.to == null ? new String[]{Integer.toString(id), message.reply.id}
-                            : new String[]{Integer.toString(id), message.reply.id, message.reply.to};
-                    changed |= db.update("replies", fallback, "message=? AND target=? AND fallback='' AND " + authorClause, args) > 0;
-                }
-            }
+            if (message.reply != null) changed |= saveReply(db,id,message.reply);
             if (message.attachment != null) {
                 ContentValues attachment = new ContentValues(); attachment.put("message", id); attachment.put("url", message.attachment.wireUrl);
                 attachment.put("caption", message.caption);
@@ -537,6 +548,25 @@ final class MonogramStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
             return changed ? id : 0;
         } finally { db.endTransaction(); }
+    }
+    private boolean saveReply(SQLiteDatabase db,int id,ReplyReference reference) {
+        ContentValues reply=new ContentValues(); reply.put("message",id); reply.put("author",reference.to);
+        reply.put("target",reference.id); reply.put("fallback",reference.ranges);
+        boolean changed=db.insertWithOnConflict("replies",null,reply,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
+        if(!reference.ranges.isEmpty()) {
+            ContentValues fallback=new ContentValues(); fallback.put("fallback",reference.ranges);
+            String[] args=reference.to==null ? new String[]{Integer.toString(id),reference.id} : new String[]{Integer.toString(id),reference.id,reference.to};
+            changed|=db.update("replies",fallback,"message=? AND target=? AND fallback='' AND "+(reference.to==null ? "author IS NULL" : "author=?"),args)>0;
+        }
+        return changed;
+    }
+    private boolean sameRoomAuthor(int first,int second) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT a.stable_id,b.stable_id,a.verified,b.verified,a.real_jid,b.real_jid FROM room_message_actors a JOIN room_message_actors b ON b.message=? WHERE a.message=?",new String[]{Integer.toString(second),Integer.toString(first)})) {
+            if(!c.moveToFirst()) return false;
+            if(!c.isNull(0) && !c.isNull(1)) return c.getString(0).equals(c.getString(1))
+                && !(c.getInt(2)==1 && c.getInt(3)==1 && !java.util.Objects.equals(c.getString(4),c.getString(5)));
+            return c.getInt(2)==1 && c.getInt(3)==1 && !c.isNull(4) && c.getString(4).equals(c.getString(5));
+        }
     }
     private static String aliasValue(XmppMessage message, Map.Entry<String, String> alias) {
         // Client stanza IDs need only be unique within a stream, unlike origin/archive IDs.
@@ -564,7 +594,10 @@ final class MonogramStore extends SQLiteOpenHelper {
                     // XEP-0308 uses the client stanza ID, never an archive ID or an origin-only alias.
                     try (Cursor matches = db.rawQuery("SELECT DISTINCT i.message FROM message_ids i JOIN messages m ON m.id=i.message WHERE i.peer=? AND i.outgoing=? AND i.kind='stanza' AND instr(i.value,char(10))>0 AND substr(i.value,instr(i.value,char(10))+1)=? AND NOT EXISTS(SELECT 1 FROM corrections x WHERE x.message=m.id)",
                             new String[]{Long.toString(peer), c.getInt(3) == 1 ? "1" : "0", c.getString(1)})) {
-                        if (matches.moveToFirst()) { target = matches.getInt(0); if (matches.moveToNext()) target = 0; }
+                        while(matches.moveToNext()) {
+                            int match=matches.getInt(0); if(peer<0 && !sameRoomAuthor(event,match)) continue;
+                            if(target!=0) { target=0; break; } target=match;
+                        }
                     }
                     if (target != 0) {
                         try (Cursor original = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
@@ -620,6 +653,9 @@ final class MonogramStore extends SQLiteOpenHelper {
         TLRPC.Message original = getMessage(id, self);
         if (!original.out || original.dialog_id != peer || MonogramAttachments.has(original)) throw new IllegalArgumentException("Only your text messages can be edited");
         SQLiteDatabase db = getReadableDatabase(); String wire = null; int protocol;
+        if(peer<0) try(Cursor actor=db.rawQuery("SELECT 1 FROM room_message_actors WHERE message=? AND verified=1 AND real_jid=?",new String[]{Integer.toString(id),jid(self)})) {
+            if(!actor.moveToFirst()) throw new IllegalArgumentException("Original room author is not verified; refresh room history");
+        }
         try (Cursor c = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END,readable FROM messages WHERE id=? AND NOT EXISTS(SELECT 1 FROM corrections WHERE message=?)", new String[]{Integer.toString(id), Integer.toString(id)})) {
             if (!c.moveToFirst() || c.getInt(1) == 0) throw new IllegalArgumentException("Original message unavailable"); protocol = c.getInt(0);
         }
@@ -740,6 +776,17 @@ final class MonogramStore extends SQLiteOpenHelper {
         return message;
     }
     private int resolveReply(long peer, long self, ReplyReference reply) {
+        if(peer<0) {
+            int found=0;
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT i.message,a.occupant FROM message_ids i JOIN room_message_actors a ON a.message=i.message WHERE i.peer=? AND i.kind='archive' AND i.value=?",new String[]{Long.toString(peer),reply.id})) {
+                while(c.moveToNext()) {
+                    if(reply.to!=null && !reply.to.equals(c.getString(1))) continue;
+                    if(found!=0 && found!=c.getInt(0)) return 0; found=c.getInt(0);
+                }
+            }
+            if(found!=0) try(Cursor c=getReadableDatabase().rawQuery("SELECT resolved FROM corrections WHERE message=? AND resolved!=0",new String[]{Integer.toString(found)})) { if(c.moveToFirst()) found=c.getInt(0); }
+            return found;
+        }
         String author = reply.to;
         boolean full = false;
         Integer direction = null;
@@ -789,6 +836,11 @@ final class MonogramStore extends SQLiteOpenHelper {
         TLRPC.Message original = getMessage(target, self, false);
         if (original.dialog_id != peer) throw new IllegalArgumentException("Reply target belongs to another conversation");
         String author = null, id = null;
+        if(peer<0) {
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT i.value,a.occupant FROM message_ids i JOIN room_message_actors a ON a.message=i.message WHERE i.message=? AND i.kind='archive' ORDER BY i.rowid LIMIT 1",new String[]{Integer.toString(target)})) {
+                if(c.moveToFirst()) { id=c.getString(0); author=c.getString(1); }
+            }
+        } else {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT kind,value FROM message_ids WHERE message=? AND kind IN ('origin','stanza') ORDER BY CASE kind WHEN 'origin' THEN 0 ELSE 1 END,rowid", new String[]{Integer.toString(target)})) {
             if (c.moveToFirst()) {
                 id = c.getString(1);
@@ -797,6 +849,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                     author = id.substring(0, split); id = id.substring(split + 1);
                 }
             }
+        }
         }
         if (id == null) throw new IllegalArgumentException("Reply target has no XMPP ID");
         if (author == null) {

@@ -56,7 +56,13 @@ class XmppRoomsIntegrationTest {
             assertEquals(room+"/Alice",incoming.sender); assertFalse(incoming.outgoing); assertFalse(incoming.encrypted);
             assertEquals(sent.ids.get("origin"),incoming.ids.get("origin"));
             assertEquals("roomalice@localhost",incoming.realSender);
-            assertNotNull(incoming.occupantId);
+            assertNotNull(incoming.occupantId); assertTrue(incoming.realSenderVerified);
+            ReplyReference answer=new ReplyReference(incoming.sender,incoming.ids.get("archive")).quoted("room hello");
+            bob.rooms.send(room,"room reply",false,answer,null,Collections.emptySet());
+            XmppRoomMessage replied=readable(aliceMessages,answer.wireBody("room reply"));
+            assertEquals(incoming.ids.get("archive"),replied.reply.id); assertEquals("room reply",replied.reply.withoutFallback(replied.body));
+            alice.rooms.send(room,"room edited",false,null,new MessageCorrection(sent.ids.get("stanza")),Collections.emptySet());
+            assertEquals(sent.ids.get("stanza"),readable(bobMessages,"room edited").correction.id);
             bob.rooms.sendReactions(room,new MessageReactions(incoming.ids.get("archive"),Arrays.asList("👍","🐢")));
             XmppRoomMessage roomReaction=null; long reactionDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
             while(System.nanoTime()<reactionDeadline) { XmppRoomMessage next=aliceMessages.poll(100,TimeUnit.MILLISECONDS); if(next!=null && next.reactions!=null) { roomReaction=next; break; } }
@@ -92,7 +98,13 @@ class XmppRoomsIntegrationTest {
             Set<String> excluded=Collections.singleton(unavailable);
             alice.connection().addStanzaSendingListener(stanza -> repeatedLists.incrementAndGet(),stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.toXML().toString().contains("eu.siacs.conversations.axolotl.devicelist"));
             alice.rooms.send(room,"private room hello",true,excluded);
-            assertTrue(readable(bobMessages,"private room hello").encrypted);
+            XmppRoomMessage privateOriginal=readable(bobMessages,"private room hello"); assertTrue(privateOriginal.encrypted);
+            ReplyReference secretReply=new ReplyReference(privateOriginal.sender,privateOriginal.ids.get("archive")).quoted("private room hello");
+            bob.rooms.send(room,"secret answer",true,secretReply,null,excluded);
+            XmppRoomMessage secretAnswer=readable(aliceMessages,secretReply.wireBody("secret answer"));
+            assertTrue(secretAnswer.encrypted); assertEquals(privateOriginal.ids.get("archive"),secretAnswer.reply.id);
+            alice.rooms.send(room,"private corrected",true,null,new MessageCorrection(privateOriginal.ids.get("stanza")),excluded);
+            assertEquals(privateOriginal.ids.get("stanza"),readable(bobMessages,"private corrected").correction.id);
             assertEquals(0,repeatedLists.get(),"Recently reviewed device lists must not be re-fetched for every room send");
             File source=new File(root,"room-photo.png"),downloaded=new File(root,"received-room-file");
             java.nio.file.Files.write(source.toPath(),avatar);

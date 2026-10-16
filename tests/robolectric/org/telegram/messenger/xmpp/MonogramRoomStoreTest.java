@@ -139,7 +139,7 @@ public class MonogramRoomStoreTest {
                 db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.setVersion(9);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(13,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
                 assertNull(store.archiveCursor(false)); assertTrue(store.rooms().isEmpty()); assertTrue(store.room(room,"Alice")<0);
             }
         } finally { context.deleteDatabase(file); }
@@ -153,7 +153,7 @@ public class MonogramRoomStoreTest {
                 store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().setVersion(10);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(13,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
                 XmppBookmarks.Bookmark bookmark=XmppBookmarks.Bookmark.parse(room,"<conference xmlns='urn:xmpp:bookmarks:1' name='My existing group' autojoin='true'><nick>ExistingNick</nick></conference>");
                 store.importBookmark(bookmark,"vault-encrypted-xml","Alice");
                 assertTrue(store.pendingBookmarks().isEmpty()); assertEquals("ExistingNick",store.room(dialog).nickname); assertEquals("My existing group",store.roomChat(dialog).title);
@@ -188,7 +188,7 @@ public class MonogramRoomStoreTest {
     XmppRoomMessage identified(String nick,String stanza,String archive,String real) throws Exception {
         Message wire=org.jivesoftware.smack.util.PacketParserUtils.parseStanza("<message type='groupchat' from='"+room+"/"+nick+"' to='"+own+"'><x xmlns='http://jabber.org/protocol/muc#user'><item jid='"+real+"' affiliation='member' role='participant'/></x></message>");
         wire.setStanzaId(stanza); wire.addExtension(new OriginIdElement(stanza)); wire.addExtension(new StanzaIdElement(archive,room));
-        return XmppRoomMessage.from(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom(own),nick,"Identity preserved",false,true);
+        return MessageFixture.roomText(room,nick,stanza,archive,"Identity preserved",real,null,200000,false,null,null);
     }
     @Test public void realMembersShareDmProfilesAndOwnEchoRepairsCachedDirection() throws Exception {
         Context context=RuntimeEnvironment.getApplication(); String file="room-identities.db"; context.deleteDatabase(file);
@@ -237,7 +237,7 @@ public class MonogramRoomStoreTest {
                 store.getWritableDatabase().execSQL("DROP TABLE room_permissions"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); store.getWritableDatabase().setVersion(11);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(13,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
+                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
                 assertNull(store.archiveCursor(dialog,false)); assertEquals(dialog,store.knownRoom(room));
             }
         } finally { context.deleteDatabase(file); }
