@@ -27,12 +27,16 @@ class Omemo2NativeTest {
         void put(int kind, String peer, int id, byte[] value) { records.put(kind+"\n"+peer+"\n"+id, value); }
         @Override public byte[] load(int kind, String peer, int id) throws Exception {
             if (failLoad) throw new java.io.IOException("Test load failure");
-            return pending.get(kind+"\n"+peer+"\n"+id);
+            byte[] value = pending.get(kind+"\n"+peer+"\n"+id); return value == null ? null : value.clone();
         }
         @Override public void save(int kind, String peer, int id, byte[] value) throws Exception {
             if (failSave) throw new java.io.IOException("Test persistence failure");
             String key = kind+"\n"+peer+"\n"+id;
-            if (value == null) pending.remove(key); else pending.put(key, value);
+            if (value == null) pending.remove(key); else pending.put(key, value.clone());
+        }
+        @Override public int[] ids(int kind) {
+            String prefix = kind+"\n\n";
+            return pending.keySet().stream().filter(k -> k.startsWith(prefix)).mapToInt(k -> Integer.parseInt(k.substring(prefix.length()))).sorted().toArray();
         }
         @Override public void commit() { records = pending; pending = null; }
         @Override public void close() { pending = null; }

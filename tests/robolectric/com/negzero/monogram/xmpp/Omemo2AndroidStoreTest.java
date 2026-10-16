@@ -25,6 +25,43 @@ public class Omemo2AndroidStoreTest {
         Method begin = database.getClass().getDeclaredMethod("begin",String.class,int.class); begin.setAccessible(true);
         return (Omemo2Records) begin.invoke(database,owner,device);
     }
+    private int device(SQLiteOpenHelper database, String owner) throws Exception {
+        Method method = database.getClass().getDeclaredMethod("device",String.class); method.setAccessible(true);
+        return (Integer)method.invoke(database,owner);
+    }
+    @Test public void generatedBundleRotationAndRefusalsSurviveRealSqliteReopen() throws Exception {
+        Assume.assumeTrue("Build the host JNI library first",new java.io.File(System.getProperty("monogram.omemo2.library","")).isFile());
+        Context context = RuntimeEnvironment.getApplication(); String file = "modern-lifecycle.db", other = "modern-lifecycle-peer.db";
+        context.deleteDatabase(file); context.deleteDatabase(other);
+        String alice = "alice@example.org", bob = "bob@example.org"; int id; Omemo2Bundle original, remote, rotated;
+        try {
+            try (SQLiteOpenHelper a = open(context,file); SQLiteOpenHelper b = open(context,other)) {
+                id = device(a,alice); int peerId = device(b,bob);
+                Omemo2Device own = new Omemo2Device(alice,id,() -> begin(a,alice,id));
+                remote = new Omemo2Device(bob,peerId,() -> begin(b,bob,peerId)).prepare(1000000);
+                original = own.prepare(1000000); own.observe(bob,202,remote); own.decide(bob,202,remote.identity(),false);
+                int consumed = original.preKeys()[0];
+                try (Omemo2Records tx = begin(a,alice,id)) { tx.save(Omemo2Records.PRE_KEY,"",consumed,null); tx.commit(); }
+                rotated = own.prepare(1000000+Omemo2Device.ROTATION);
+                assertEquals(100,rotated.preKeys().length); assertNotEquals(original.signedId,rotated.signedId);
+                assertArrayEquals(original.identity(),rotated.identity());
+                try (Omemo2Records tx = begin(a,alice,id)) {
+                    assertNull(tx.load(Omemo2Records.PRE_KEY,"",consumed)); assertNull(tx.load(Omemo2Records.PRE_PUBLIC,"",consumed));
+                    assertNotNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",original.signedId));
+                }
+            }
+            try (SQLiteOpenHelper a = open(context,file)) {
+                assertEquals(id,device(a,alice)); Omemo2Device own = new Omemo2Device(alice,id,() -> begin(a,alice,id));
+                assertEquals(rotated.xml().toXML().toString(),own.prepare(1000001+Omemo2Device.ROTATION).xml().toXML().toString());
+                assertEquals(Omemo2Device.Trust.REJECTED,own.trust(bob,202,remote.identity()));
+                assertEquals(Omemo2Device.Trust.UNDECIDED,own.trust(bob,203,remote.identity()));
+                own.prepare(1000000+2*Omemo2Device.ROTATION);
+                try (Omemo2Records tx = begin(a,alice,id)) {
+                    assertNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",original.signedId)); assertNotNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",rotated.signedId));
+                }
+            }
+        } finally { context.deleteDatabase(file); context.deleteDatabase(other); }
+    }
     private byte[] seed(SQLiteOpenHelper database, String owner, int device) throws Exception {
         byte[][] identity = Omemo2Native.identity();
         byte[][] preKey = Omemo2Native.preKey(11), signed = Omemo2Native.signedPreKey(identity[0],22,System.currentTimeMillis());

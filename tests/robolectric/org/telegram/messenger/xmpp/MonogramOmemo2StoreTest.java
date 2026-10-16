@@ -13,6 +13,41 @@ import org.robolectric.annotation.Config;
 @Config(manifest = Config.NONE, sdk = 36, application = android.app.Application.class)
 public class MonogramOmemo2StoreTest {
     private static final String ACCOUNT = "alice@example.org", PEER = "bob@example.org";
+    @Test public void ownDeviceAllocationIsDurableAndAccountScoped() throws Exception {
+        android.content.Context context = RuntimeEnvironment.getApplication(); String file = "omemo2-device.db";
+        context.deleteDatabase(file); int id, other;
+        try {
+            try (MonogramOmemo2Store database = new MonogramOmemo2Store(context,file)) {
+                id = database.device(ACCOUNT); other = database.device(PEER);
+                assertTrue(id > 0); assertTrue(other > 0); assertEquals(id,database.device(ACCOUNT));
+                try { database.device(ACCOUNT+"/phone"); fail("Full JID accepted"); } catch (IllegalArgumentException expected) {}
+                try (Omemo2Records tx = database.begin(ACCOUNT,id)) { tx.save(Omemo2Records.IDENTITY,"",0,new byte[]{1,2,3}); tx.commit(); }
+            }
+            try (MonogramOmemo2Store database = new MonogramOmemo2Store(context,file)) {
+                assertEquals(id,database.device(ACCOUNT)); assertEquals(other,database.device(PEER));
+                try (Omemo2Records tx = database.begin(ACCOUNT,id)) { assertArrayEquals(new byte[]{1,2,3},tx.load(Omemo2Records.IDENTITY,"",0)); }
+            }
+        } finally { context.deleteDatabase(file); }
+    }
+    @Test public void migrationReusesExistingDeviceAndRejectsConflictingKeysWithoutDeletingThem() throws Exception {
+        android.content.Context context = RuntimeEnvironment.getApplication(); String file = "omemo2-upgrade.db";
+        context.deleteDatabase(file);
+        try {
+            try (android.database.sqlite.SQLiteDatabase old = context.openOrCreateDatabase(file,0,null)) {
+                old.execSQL("CREATE TABLE records(owner TEXT NOT NULL,device INTEGER NOT NULL,kind INTEGER NOT NULL,peer TEXT NOT NULL,id INTEGER NOT NULL,value BLOB NOT NULL,PRIMARY KEY(owner,device,kind,peer,id))");
+                old.execSQL("INSERT INTO records VALUES(?,321,0,'',0,?)",new Object[]{ACCOUNT,new byte[]{4,5,6}});
+                old.execSQL("INSERT INTO records VALUES(?,654,0,'',0,?)",new Object[]{PEER,new byte[]{7}});
+                old.execSQL("INSERT INTO records VALUES(?,987,0,'',0,?)",new Object[]{PEER,new byte[]{8}});
+                old.setVersion(1);
+            }
+            try (MonogramOmemo2Store database = new MonogramOmemo2Store(context,file)) {
+                assertEquals(321,database.device(ACCOUNT)); assertEquals(2,database.getWritableDatabase().getVersion());
+                try { database.device(PEER); fail("Conflicting devices silently replaced"); } catch (IllegalStateException expected) {}
+                for (int id : new int[]{654,987}) try (Omemo2Records tx = database.begin(PEER,id)) { assertNotNull(tx.load(Omemo2Records.IDENTITY,"",0)); }
+                try (Omemo2Records tx = database.begin(ACCOUNT,321)) { assertArrayEquals(new byte[]{4,5,6},tx.load(Omemo2Records.IDENTITY,"",0)); }
+            }
+        } finally { context.deleteDatabase(file); }
+    }
     @Test public void productionPathIsExcludedFromAutomaticBackups() throws Exception {
         android.content.Context context = RuntimeEnvironment.getApplication();
         org.telegram.messenger.ApplicationLoader.applicationContext = context;

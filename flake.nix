@@ -27,9 +27,16 @@
         platforms-android-35 build-tools-35-0-0
         ndk-27-2-12479018 cmake-3-22-1
       ]);
+      omemo2Peer = pkgs.python3.withPackages (p: [ p.slixmpp-omemo ]);
     in {
       nixosModules.monogramHelper = import ./server/nixos-module.nix;
-      devShells.${system} = {
+      devShells.${system} = rec {
+      interop = pkgs.mkShell {
+        inputsFrom = [ test ];
+        inherit (test) LIBOMEMO_C_SOURCE PROTOBUF_C_SOURCE JAVA_HOME;
+        packages = [ omemo2Peer ];
+        MONOGRAM_OMEMO2_PEER = "${omemo2Peer}/bin/python3";
+      };
       test = pkgs.mkShell {
         packages = [ pkgs.jdk11 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.check pkgs.gcc pkgs.protobufc pkgs.meson ];
         LIBOMEMO_C_SOURCE = libomemo-c.outPath;

@@ -13,6 +13,7 @@ import org.jxmpp.jid.EntityBareJid;
 
 /** One direct message, independent of whether it arrived live, via carbons or MAM. */
 public final class XmppMessage {
+    public enum Encryption { PLAIN, LEGACY_OMEMO, OMEMO2 }
     public final EntityBareJid peer;
     public final String sender;
     public final Map<String, String> ids;
@@ -23,18 +24,33 @@ public final class XmppMessage {
     public final ReplyReference reply;
     public final MessageCorrection correction;
     public final boolean encrypted, readable, outgoing, archived;
+    public final Encryption encryption;
     public final long timestamp;
 
-    private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, boolean encrypted,
+    private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, Encryption encryption,
                         boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption) {
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
-        this.encrypted = encrypted; this.readable = readable; this.outgoing = outgoing;
+        this.encryption = encryption; this.encrypted = encryption != Encryption.PLAIN;
+        this.readable = readable; this.outgoing = outgoing;
         this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply; this.correction = correction;
         this.sharing = sharing; this.caption = caption;
     }
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
                             boolean readable, String archiveId, Date archiveTime) {
+        return from(message,message,own,body,encrypted ? Encryption.LEGACY_OMEMO : Encryption.PLAIN,readable,archiveId,archiveTime);
+    }
+    /** Only content authenticated by the OMEMO2/SCE decoder may supply private metadata. */
+    static XmppMessage modern(Message outer, Message authenticated, EntityBareJid own, String archiveId, Date archiveTime) {
+        if (authenticated != null && (!java.util.Objects.equals(outer.getFrom(),authenticated.getFrom())
+                || !java.util.Objects.equals(outer.getTo(),authenticated.getTo()) || outer.getType() != authenticated.getType()))
+            throw new IllegalArgumentException("Protected routing does not match its stanza");
+        return from(outer,authenticated,own,authenticated == null ? null : authenticated.getBody(),Encryption.OMEMO2,
+                authenticated != null,archiveId,archiveTime);
+    }
+    private static XmppMessage from(Message message, Message content, EntityBareJid own, String body, Encryption encryption,
+                            boolean readable, String archiveId, Date archiveTime) {
+        boolean encrypted = encryption != Encryption.PLAIN;
         if (message.getType() != Message.Type.chat && message.getType() != Message.Type.normal) return null;
         // Room private messages need occupant/session identity, not this direct-chat bare-JID model.
         if (message.hasExtension("x", "http://jabber.org/protocol/muc#user")) return null;
@@ -43,8 +59,8 @@ public final class XmppMessage {
         if (from == null || (!own.equals(from) && to != null && !own.equals(to))) return null;
         boolean outgoing = own.equals(from);
         EntityBareJid peer = outgoing ? to : from;
-        FileShare sharing = !encrypted && readable ? FileShare.from(message) : null;
-        if (sharing != null && sharing.link.encrypted()) sharing = null;
+        FileShare sharing = encryption != Encryption.LEGACY_OMEMO && readable ? FileShare.from(content) : null;
+        if (sharing != null && sharing.link.encrypted() != encrypted) sharing = null;
         if (peer == null || (readable && body == null && sharing == null)) return null;
         if (sharing != null && body == null) body = "";
         Map<String, String> ids = new LinkedHashMap<>();
@@ -58,18 +74,18 @@ public final class XmppMessage {
             if (own.toString().equals(id.getBy())) put(ids, "archive", id.getId());
         }
         if (archiveId != null) put(ids, "archive", archiveId);
-        ReplyReference reply = ReplyReference.from(message, readable ? body : null);
+        ReplyReference reply = content == null ? null : ReplyReference.from(content, readable ? body : null);
         FileLink attachment = null;
         String mediaText = reply == null ? body : reply.withoutFallback(body);
         if (readable && body != null) {
             String first = mediaText.split("\n", -1)[0];
             boolean mediaBody = encrypted && (mediaText.equals(first) || validThumbnail(mediaText.substring(Math.min(mediaText.length(), first.length() + 1))));
-            org.jivesoftware.smack.packet.ExtensionElement oob = message.getExtension("x", "jabber:x:oob");
+            org.jivesoftware.smack.packet.ExtensionElement oob = content.getExtension("x", "jabber:x:oob");
             if (!encrypted && oob instanceof org.jivesoftware.smack.packet.StandardExtensionElement) {
                 org.jivesoftware.smack.packet.StandardExtensionElement url = ((org.jivesoftware.smack.packet.StandardExtensionElement) oob).getFirstElement("url");
                 mediaBody = url != null && mediaText.equals(url.getText());
             }
-            if (!encrypted && message.hasExtension("file-sharing", FileShare.NAMESPACE)) mediaBody = false;
+            if (content.hasExtension("file-sharing", FileShare.NAMESPACE) && encryption != Encryption.LEGACY_OMEMO) mediaBody = false;
             if (mediaBody) {
                 try {
                     FileLink parsed = FileLink.parse(first);
@@ -78,10 +94,10 @@ public final class XmppMessage {
             }
         }
         String caption = "";
-        if (sharing != null) { attachment = sharing.link; caption = sharing.caption(message, body, reply); }
+        if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
-        return new XmppMessage(peer, message.getFrom().toString(), ids, body, encrypted, readable, outgoing, archiveId != null,
-                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, MessageCorrection.from(message), sharing, caption);
+        return new XmppMessage(peer, message.getFrom().toString(), ids, body, encryption, readable, outgoing, archiveId != null,
+                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption);
     }
 
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted) throws Exception {
