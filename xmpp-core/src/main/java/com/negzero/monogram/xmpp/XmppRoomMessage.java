@@ -13,13 +13,15 @@ public final class XmppRoomMessage {
     public final EntityBareJid room;
     public final String sender, body, realSender, occupantId;
     public final MessageReactions reactions;
+    public final ReplyReference reply;
+    public final MessageCorrection correction;
     public final Map<String,String> ids;
     public final boolean outgoing, encrypted, readable, archived;
     public final XmppMessage.Encryption encryption;
     public final long timestamp;
     private XmppRoomMessage(EntityBareJid room,String sender,String body,Map<String,String> ids,
-                            boolean outgoing,boolean encrypted,boolean readable,long timestamp,boolean modern,boolean archived,String realSender,MessageReactions reactions,String occupantId) {
-        this.realSender=realSender; this.reactions=reactions; this.occupantId=occupantId;
+                            boolean outgoing,boolean encrypted,boolean readable,long timestamp,boolean modern,boolean archived,String realSender,MessageReactions reactions,String occupantId,ReplyReference reply,MessageCorrection correction) {
+        this.realSender=realSender; this.reactions=reactions; this.occupantId=occupantId; this.reply=reply; this.correction=correction;
         this.room=room; this.sender=sender; this.body=body; this.ids=Collections.unmodifiableMap(ids);
         this.encryption=modern ? XmppMessage.Encryption.OMEMO2 : encrypted ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
         this.archived=archived; this.outgoing=outgoing; this.encrypted=encrypted; this.readable=readable; this.timestamp=timestamp;
@@ -33,7 +35,9 @@ public final class XmppRoomMessage {
         if (wire.getType()!=Message.Type.groupchat || wire.getFrom()==null || !room.equals(wire.getFrom().asBareJid())
                 || !wire.getFrom().hasResource() || wire.getTo()!=null && !own.equals(wire.getTo().asEntityBareJidIfPossible()) && !(archiveTime!=null && room.equals(wire.getTo().asEntityBareJidIfPossible()))) return null;
         MessageReactions reactions=!encrypted && readable ? MessageReactions.from(wire) : null;
-        if(wire.hasExtension("reactions",MessageReactions.NAMESPACE) && (reactions==null || body!=null)) return null;
+        ReplyReference reply=ReplyReference.from(wire,readable ? body : null);
+        MessageCorrection correction=readable ? MessageCorrection.from(wire) : null;
+        if(wire.hasExtension("reactions",MessageReactions.NAMESPACE) && (reactions==null || body!=null || reply!=null || correction!=null)) return null;
         if(readable && body==null && reactions==null) return null;
         Date delay=archiveTime!=null ? archiveTime : DelayInformationManager.getDelayTimestamp(wire);
         MUCUser user=MUCUser.from(wire);
@@ -53,15 +57,15 @@ public final class XmppRoomMessage {
         if(archiveId!=null) ids.put("mam",archiveId);
         if (ids.isEmpty()) ids.put("local",UUID.randomUUID().toString());
         return new XmppRoomMessage(room,wire.getFrom().toString(),body,ids,outgoing,encrypted,readable,
-                delay==null ? System.currentTimeMillis() : delay.getTime(),wire.hasExtension("encrypted",XmppOmemo2.NS),archiveTime!=null,real==null ? null : real.asBareJid().toString(),reactions,null);
+                delay==null ? System.currentTimeMillis() : delay.getTime(),wire.hasExtension("encrypted",XmppOmemo2.NS),archiveTime!=null,real==null ? null : real.asBareJid().toString(),reactions,null,reply,correction);
     }
     XmppRoomMessage identified(String real,EntityBareJid own) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),own.toString().equals(real),encrypted,readable,
-                timestamp,encryption==XmppMessage.Encryption.OMEMO2,archived,real,reactions,occupantId);
+                timestamp,encryption==XmppMessage.Encryption.OMEMO2,archived,real,reactions,occupantId,reply,correction);
     }
     XmppRoomMessage withOccupantId(String id) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,id);
+                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,id,reply,correction);
     }
     static XmppRoomMessage sentReactions(EntityBareJid room,EntityBareJid own,String nickname,String id,MessageReactions reactions) throws Exception {
         Message message=new Message(own,Message.Type.groupchat);
@@ -70,9 +74,13 @@ public final class XmppRoomMessage {
         return from(message,room,own,nickname,null,false,true).identified(own.toString(),own);
     }
     static XmppRoomMessage sent(EntityBareJid room,EntityBareJid own,String nickname,String id,String body,boolean encrypted) throws Exception {
+        return sent(room,own,nickname,id,body,encrypted,null,null);
+    }
+    static XmppRoomMessage sent(EntityBareJid room,EntityBareJid own,String nickname,String id,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction) throws Exception {
         Message message=new Message(own,Message.Type.groupchat);
         message.setFrom(org.jxmpp.jid.impl.JidCreate.entityFullFrom(room+"/"+nickname));
         message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
-        return from(message,room,own,nickname,body,encrypted,true);
+        if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
+        return from(message,room,own,nickname,reply==null ? body : reply.wireBody(body),encrypted,true).identified(own.toString(),own);
     }
 }

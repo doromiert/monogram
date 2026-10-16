@@ -210,15 +210,17 @@ public final class XmppRooms implements AutoCloseable {
         if (!members.contains(connection.getUser().asBareJid())) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
         return members;
     }
-    public XmppRoomMessage send(String jid,String body,boolean encrypted) throws Exception {
+    public XmppRoomMessage send(String jid,String body,boolean encrypted) throws Exception { return send(jid,body,encrypted,null,null); }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction) throws Exception {
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        String wireBody=reply==null ? body : reply.wireBody(body);
         Message message;
         if (encrypted) {
             Set<BareJid> recipients=members(jid);
             for (BareJid recipient:recipients) if (!omemo.contactSupportsOmemo(recipient)) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
-            OmemoMessage.Sent ciphertext=omemo.encrypt(recipients,body);
+            OmemoMessage.Sent ciphertext=omemo.encrypt(recipients,wireBody);
             if (!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
             for (BareJid recipient:recipients) {
                 if (recipient.equals(connection.getUser().asBareJid())) continue;
@@ -228,9 +230,10 @@ public final class XmppRooms implements AutoCloseable {
             }
             if (!members(jid).equals(recipients)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
             message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
-        } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(body); }
+        } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(wireBody); }
+        if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
-        XmppRoomMessage sent=XmppRoomMessage.sent(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted);
+        XmppRoomMessage sent=XmppRoomMessage.sent(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,reply,correction);
         chat.sendMessage(message); return sent;
     }
     /** Explicit plaintext metadata, matching XEP-0444 clients that use legacy OMEMO for text. */
