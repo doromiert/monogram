@@ -506,6 +506,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     public ActionBarMenuItem searchItem;
     private ActionBarMenuItem optionsItem;
     private ActionBarMenuItem monogramReconnectItem;
+    private ActionBarMenuItem monogramContactRequestsItem;
     private ActionBarMenuItem speedItem;
     public static boolean switchingTheme;
     private ActionBarMenuItem doneItem;
@@ -3219,6 +3220,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         ActionBarMenu menu = actionBar.createMenu();
         monogramReconnectItem = null;
+        monogramContactRequestsItem = null;
         menu.setTranslationX(-dp(5));
         searchItem = menu.addItem(0, R.drawable.outline_header_search).setIsSearchField(true, false);
         searchItem.setOnClickListener(v -> {
@@ -3255,6 +3257,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (!onlySelect && searchString == null && folderId == 0 && communityId == 0) {
             monogramReconnectItem = menu.addItem(91002, R.drawable.msg_retry);
             monogramReconnectItem.setContentDescription(getString(R.string.MonogramReconnect));
+            monogramContactRequestsItem=menu.addItem(91003,R.drawable.msg_addcontact);
+            monogramContactRequestsItem.setContentDescription("Contact requests");
             checkUi_monogramReconnectVisibility();
             doneItem = new ActionBarMenuItem(context, null, getThemedColor(Theme.key_actionBarDefaultSelector), getThemedColor(Theme.key_actionBarDefaultIcon), true);
             doneItem.setText(LocaleController.getString(R.string.Done).toUpperCase());
@@ -3873,6 +3877,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(new MonogramConnectionActivity(currentAccount));
                     return;
                 }
+                if(id==91003) { presentFragment(new MonogramContactActivity(currentAccount,null)); return; }
                 if ((id == SearchViewPager.forwardItemId || id == SearchViewPager.gotoItemId || id == SearchViewPager.deleteItemId || id == SearchViewPager.speedItemId) && searchViewPager != null) {
                     searchViewPager.onActionBarItemClick(id);
                     return;
@@ -10616,6 +10621,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (id == NotificationCenter.encryptedChatUpdated) {
             updateVisibleRows(0);
         } else if (id == NotificationCenter.contactsDidLoad) {
+            checkUi_monogramReconnectVisibility();
             if (viewPages == null || dialogsListFrozen) {
                 return;
             }
@@ -14109,10 +14115,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     private void checkUi_monogramReconnectVisibility() {
         final boolean connected = getConnectionsManager().getConnectionState() == ConnectionsManager.ConnectionStateConnected;
-        final float factor = connected ? 0 : (1f - animatorSearchVisible.getFloatValue())
+        final float factor = (1f - animatorSearchVisible.getFloatValue())
                 * (1f - getRightSlidingProgress()) * (1f - animatorDoneButtonVisible.getFloatValue())
                 * (1f - Math.max(progressToActionMode, animatorActionModeVisible.getFloatValue()));
-        FragmentFloatingButton.setAnimatedVisibility(monogramReconnectItem, factor);
+        FragmentFloatingButton.setAnimatedVisibility(monogramReconnectItem, connected ? 0 : factor);
+        if(monogramContactRequestsItem!=null) FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).pendingContactRequests().isEmpty() ? 0 : factor);
     }
 
     private void checkUi_itemPasscodeVisibility() {

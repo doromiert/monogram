@@ -302,6 +302,8 @@ public class AlertsCreator {
                 text = "This room cannot currently use OMEMO. It must be members-only, reveal participant addresses and allow the full member list to be checked. Your message was not sent. Review Conversation security before retrying."; break;
             case "MONOGRAM_OMEMO_LOOKUP_TIMEOUT":
                 text="A server did not answer an encryption preparation request. Your message remains unsent; retry after reconnecting."; break;
+            case "MONOGRAM_OMEMO_CONTACT_AUTHORIZATION_REQUIRED":
+                text="That account's server requires contact authorization before allowing its OMEMO device list to be read. Open Conversation security → Contact authorization, request access, then refresh fingerprints after they accept. Your message was not sent."; break;
             case "MONOGRAM_OMEMO_ROOM_CHANGED":
                 text = "Room membership changed while encrypting. Review the room members and their fingerprints, then retry. Your message was not sent."; break;
             case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":

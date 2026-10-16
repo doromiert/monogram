@@ -2,7 +2,7 @@
 package com.negzero.monogram.xmpp;
 
 public final class OmemoSendException extends java.security.GeneralSecurityException {
-    public enum Reason { NO_DEVICES, NO_TRUSTED_DEVICES, DEVICE_FAILURE, MODERN_UNAVAILABLE, TRUST_REQUIRED, ROOM_UNSUPPORTED, ROOM_CHANGED, LOOKUP_TIMEOUT }
+    public enum Reason { NO_DEVICES, NO_TRUSTED_DEVICES, DEVICE_FAILURE, MODERN_UNAVAILABLE, TRUST_REQUIRED, ROOM_UNSUPPORTED, ROOM_CHANGED, LOOKUP_TIMEOUT, CONTACT_AUTHORIZATION_REQUIRED }
     public final Reason reason;
     public final String detail;
     OmemoSendException(Reason reason) { this(reason,null); }

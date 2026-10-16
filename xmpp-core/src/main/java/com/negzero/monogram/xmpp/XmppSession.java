@@ -42,6 +42,7 @@ public final class XmppSession implements AutoCloseable {
         default void roomChanged(XmppRooms.State room) {}
         default void bookmarksChanged() {}
         default void reactionRejected(String from,String id) {}
+        default void contactRequest(String address,boolean pending) {}
         default void typing(EntityBareJid jid, boolean composing) {}
         default void disconnected() {}
         default void reconnected(boolean resumed) {}
@@ -63,6 +64,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppProfiles profiles;
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
+    public final XmppContacts contacts;
     public final XmppChatStates chatStates;
     public final XmppFingerprints fingerprints;
     private final OmemoManager omemo;
@@ -141,6 +143,7 @@ public final class XmppSession implements AutoCloseable {
             return found;
         });
         rooms=new XmppRooms(connection,omemo,listener,contact -> sendingDevices(contact.toString()));
+        contacts=new XmppContacts(connection,rooms,listener::contactRequest);
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
             @Override public void connectionClosed() { disconnected(); }
@@ -414,7 +417,7 @@ public final class XmppSession implements AutoCloseable {
         Message message;
         if (encrypted) {
             try {
-                if (!omemo.contactSupportsOmemo(recipient)) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
+                if (sendingDevices(recipient.toString()).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
             } catch (org.jivesoftware.smack.XMPPException.XMPPErrorException e) {
                 if (e.getStanzaError().getCondition() == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
                     throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
@@ -480,6 +483,10 @@ public final class XmppSession implements AutoCloseable {
             return omemo.getDevicesOf(contact);
         } catch (org.jivesoftware.smack.XMPPException.XMPPErrorException e) {
             if (e.getStanzaError().getCondition() == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) return java.util.Collections.emptySet();
+            if(e.getStanzaError().getCondition()==org.jivesoftware.smack.packet.StanzaError.Condition.subscription_required
+                    || e.getStanzaError().getExtension("presence-subscription-required","http://jabber.org/protocol/pubsub#errors")!=null) {
+                OmemoSendException required=new OmemoSendException(OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED,contact.toString()); required.initCause(e); throw required;
+            }
             throw e;
         }
     }
@@ -501,7 +508,7 @@ public final class XmppSession implements AutoCloseable {
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
         if (modern != null) modern.close(); crypto.shutdownNow();
-        chatStates.close(); rooms.close(); bookmarks.close(); fingerprints.close();
+        chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

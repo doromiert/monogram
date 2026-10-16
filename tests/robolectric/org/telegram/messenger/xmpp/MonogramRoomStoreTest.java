@@ -36,6 +36,17 @@ public class MonogramRoomStoreTest {
             assertTrue(controller.excludedRoomRecipients(other).isEmpty());
             prefs.edit().putString("jid","another@example.org").commit(); assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
             prefs.edit().putString("jid",own).commit(); assertFalse(controller.excludedRoomRecipients(dialog).isEmpty());
+            prefs.edit().putString("jid","another@example.org").commit();
+            controller.recordContactRequest(own,"requester@example.org",true);
+            assertTrue(controller.pendingContactRequests().isEmpty());
+            prefs.edit().putString("jid",own).commit();
+            assertEquals(java.util.Collections.singleton("requester@example.org"),controller.pendingContactRequests());
+            controller.pendingContactRequests().clear(); assertFalse(controller.pendingContactRequests().isEmpty());
+            prefs.edit().putString("jid","another@example.org").commit(); assertTrue(controller.pendingContactRequests().isEmpty());
+            prefs.edit().putString("jid",own).commit(); assertFalse(controller.pendingContactRequests().isEmpty());
+            prefs.edit().putString("jid","another@example.org").commit();
+            controller.recordContactRequest(own,"requester@example.org",false);
+            prefs.edit().putString("jid",own).commit(); assertTrue(controller.pendingContactRequests().isEmpty());
             try { controller.setRoomRecipient(dialog,own,false); fail("Own devices cannot be excluded"); } catch(IllegalArgumentException expected) {}
             try { controller.setRoomRecipient(dialog,"bob@example.org/phone",false); fail("Only bare account addresses are recipients"); } catch(IllegalArgumentException expected) {}
             try { controller.setRoomRecipient(store.peer("bob@example.org"),"offline@example.org",false); fail("Room choices cannot modify direct chats"); } catch(IllegalArgumentException expected) {}

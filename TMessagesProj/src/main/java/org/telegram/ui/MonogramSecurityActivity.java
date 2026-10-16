@@ -141,6 +141,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
         items.add(UItem.asCheck(7,"Allow unencrypted reactions (legacy OMEMO)").setChecked(controller.plainReactionsAllowed(peer)));
         items.add(UItem.asShadow("Standard reactions are visible to the server with legacy OMEMO. OMEMO 2 direct chats encrypt reactions; this permission never changes message encryption."));
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
+        items.add(UItem.asButton(8,"Contact authorization").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         items.add(UItem.asShadow(null));
         if (status != null) items.add(UItem.asShadow(status));
@@ -179,6 +180,13 @@ public final class MonogramSecurityActivity extends UniversalFragment {
             else showDialog(new AlertDialog.Builder(getContext()).setTitle("Exclude encrypted recipient?")
                 .setMessage(address+" will not receive keys for new encrypted messages you send to this room and will not be able to read them. Other included members still require trusted fingerprints. You can include this account again here.")
                 .setPositiveButton("Exclude recipient",(dialog,which) -> setRoomRecipient(address,false)).setNegativeButton("Cancel",null).create());
+        } else if(item.id==8) {
+            if(peer>0) presentFragment(new MonogramContactActivity(currentAccount,controller.jid(peer)));
+            else {
+                ArrayList<String> contacts=new ArrayList<>(roomMembers); contacts.remove(controller.accountJid());
+                if(!contacts.isEmpty()) showDialog(new AlertDialog.Builder(getContext()).setTitle("Contact authorization")
+                    .setItems(contacts.toArray(new CharSequence[0]),(dialog,which) -> presentFragment(new MonogramContactActivity(currentAccount,contacts.get(which)))).create());
+            }
         } else if(item.id==7) {
             if(controller.plainReactionsAllowed(peer)) { controller.setPlainReactions(peer,false); refresh(); }
             else showDialog(new AlertDialog.Builder(getContext()).setTitle("Allow unencrypted reactions?")

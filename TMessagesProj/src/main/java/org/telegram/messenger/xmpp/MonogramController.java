@@ -76,6 +76,43 @@ public final class MonogramController {
     }
     public int state() { return state; }
     public String accountJid() { return preferences.getString("jid", ""); }
+    public java.util.Set<String> pendingContactRequests() {
+        return new java.util.TreeSet<>(preferences.getStringSet("contact-requests-"+accountJid(),java.util.Collections.emptySet()));
+    }
+    void recordContactRequest(String owner,String address,boolean pending) {
+        if(owner.equals(address)) return;
+        String key="contact-requests-"+owner;
+        java.util.Set<String> requests=new java.util.HashSet<>(preferences.getStringSet(key,java.util.Collections.emptySet()));
+        boolean changed=pending ? requests.add(address) : requests.remove(address);
+        if(!changed) return;
+        preferences.edit().putStringSet(key,requests).apply();
+        if(owner.equals(accountJid())) contactAuthorizationsChanged();
+    }
+    private void contactAuthorizationsChanged() {
+        AndroidUtilities.runOnUIThread(() -> {
+            XmppSession current=session;
+            if(UserConfig.getInstance(account).isClientActivated() && current!=null && current.connection().isAuthenticated())
+                ContactsController.getInstance(account).loadContacts(false,0);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.contactsDidLoad);
+        });
+    }
+    public com.negzero.monogram.xmpp.XmppContacts.State contactAuthorization(String address) throws Exception { return session().contacts.state(address); }
+    public void contactAuthorization(String address,com.negzero.monogram.xmpp.XmppContacts.Action action,Consumer<String> completed) {
+        final long owner=accountEpoch; final String jid=accountJid();
+        worker.execute(() -> {
+            String error=null;
+            try {
+                if(owner!=accountEpoch || !jid.equals(accountJid())) throw new IllegalStateException("Account changed");
+                XmppSession expected=session(); expected.contacts.act(address,action);
+                if(expected!=session || owner!=accountEpoch) throw new IllegalStateException("Account changed");
+                if(action==com.negzero.monogram.xmpp.XmppContacts.Action.ACCEPT || action==com.negzero.monogram.xmpp.XmppContacts.Action.DENY
+                        || action==com.negzero.monogram.xmpp.XmppContacts.Action.REVOKE) recordContactRequest(jid,address,false);
+                contactAuthorizationsChanged();
+            } catch(Exception failed) { error=com.negzero.monogram.xmpp.XmppRequestException.describe(failed); }
+            final String failure=error;
+            AndroidUtilities.runOnUIThread(() -> completed.accept(owner==accountEpoch ? failure : "Account changed"));
+        });
+    }
     public boolean typingEnabled() { return preferences.getBoolean("typing-enabled", true); }
     public boolean setTypingEnabled(boolean enabled) {
         if (!preferences.edit().putBoolean("typing-enabled", enabled).commit()) return false;
@@ -165,6 +202,9 @@ public final class MonogramController {
                     @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) incomingRoom(message); });
                     }
+                    @Override public void contactRequest(String address,boolean pending) {
+                        worker.execute(() -> { if(sessionEpoch==epoch) recordContactRequest(details.jid.toString(),address,pending); });
+                    }
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
                             store.roomState(room,self); long dialog=store.knownRoom(room.room.toString());
@@ -222,10 +262,12 @@ public final class MonogramController {
                     if (sessionEpoch != epoch || session != connecting) return;
                     for (org.jxmpp.jid.Jid jid : addresses) {
                         RosterEntry entry = roster.getEntry(jid.asBareJid());
+                        if(entry!=null && entry.canSeeMyPresence()) recordContactRequest(details.jid.toString(),jid.asBareJid().toString(),false);
                         long peer = store.knownPeer(jid.asBareJid().toString());
                         if (peer == 0 && entry != null) peer = store.peer(jid.asBareJid().toString());
                         if (peer != 0) { store.rosterName(peer, entry == null ? "" : entry.getName()); publishProfile(peer, epoch); refreshProfile(peer); }
                     }
+                    contactAuthorizationsChanged();
                 });
             }
             @Override public void entriesAdded(java.util.Collection<org.jxmpp.jid.Jid> addresses) { changed(addresses); }
@@ -739,7 +781,7 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         accountEpoch++;
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
