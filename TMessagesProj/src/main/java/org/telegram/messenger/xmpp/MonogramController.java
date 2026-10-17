@@ -877,7 +877,7 @@ public final class MonogramController {
             }
         }
         if(updates.isEmpty()) return;
-        ArrayList<TLRPC.User> users=store.roomUsers(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
+        ArrayList<TLRPC.User> users=roomUpdateUsers(updates); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
         long epoch=sessionEpoch;
         Utilities.stageQueue.postRunnable(() -> {
             MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now());
@@ -889,6 +889,28 @@ public final class MonogramController {
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,dialog,changed);
             });
         });
+    }
+    private ArrayList<TLRPC.User> roomUpdateUsers(ArrayList<TLRPC.Update> updates) {
+        ArrayList<Long> ids=new ArrayList<>(),chats=new ArrayList<>();ids.add(self);
+        ArrayList<TLRPC.Message> messages=new ArrayList<>();
+        for(TLRPC.Update update:updates) {
+            if(update instanceof TL_update.TL_updateNewMessage) messages.add(((TL_update.TL_updateNewMessage)update).message);
+            else if(update instanceof TL_update.TL_updateEditMessage) messages.add(((TL_update.TL_updateEditMessage)update).message);
+        }
+        java.util.Set<TLRPC.Message> seen=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for(int index=0;index<messages.size();index++) {
+            TLRPC.Message message=messages.get(index);if(message==null || !seen.add(message)) continue;
+            MessagesStorage.addUsersAndChatsFromMessage(message,ids,chats,null);
+            if(message.reactions!=null) for(TLRPC.MessagePeerReaction reaction:message.reactions.recent_reactions)
+                if(reaction!=null && reaction.peer_id!=null && reaction.peer_id.user_id>0) ids.add(reaction.peer_id.user_id);
+            if(message.replyMessage!=null) messages.add(message.replyMessage);
+        }
+        ArrayList<TLRPC.User> users=new ArrayList<>();
+        for(long id:new java.util.LinkedHashSet<>(ids)) if(id>0) {
+            try { users.add(store.user(id,self)); }
+            catch(IllegalArgumentException missing) { /* Missing references remain unresolved in the native cache. */ }
+        }
+        return users;
     }
     private static final class ArchiveTask {
         final long peer;
