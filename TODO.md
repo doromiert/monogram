@@ -2,7 +2,9 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
-- [o] Fix native message forwarding: replace Telegram's unsupported server-side forward RPC with ordinary XMPP text/media sends, preserving destination OMEMO policy and persistent outbox. Download uncached source attachments, verify them and freshly upload for the destination without reusing the source chat's encrypted link; keep captions/round-video attributes and exclude source replies/security settings. Build and focused verification in progress; real phone forwarding remains to verify.
+- [x] Build, publish and install [0.2.67](https://github.com/doromiert/monogram/releases/tag/v0.2.67) (72429, arm64, original signer) from `message-forwarding`, source `7e9b60f76`. Nix packaging and three focused forwarding checks pass; published APK checksum, size and source tag match. ADB confirms the version, foreground connection service and preservation of current account settings, two checked key files and all 540 pre-update message identities. Native phone forwarding and cross-client behavior remain unverified.
+
+- [o] Fix native message forwarding: replace Telegram's unsupported server-side forward RPC with ordinary XMPP text/media sends, preserving destination OMEMO policy and persistent outbox. Download uncached source attachments, verify them and freshly upload for the destination without reusing the source chat's encrypted link; keep captions/round-video attributes and exclude source replies/security settings. Three focused Android checks and Nix APK packaging pass. Existing failed forwards can retry using their original local identity. Native phone interaction and cross-client forwarding remain to verify; forwards arrive as new messages without Telegram original-author attribution.
 
 Work only in `~/Projects/monogram`, using Git branches. Do not create separate source checkouts in other project folders.
 Reuse the existing upstream feature implementations and redesigned UI components (`MainTabsActivity`, `UniversalFragment`, native settings/presets); do not add parallel custom settings for features Telegram already supplies.
