@@ -52,6 +52,7 @@ public final class XmppRooms implements AutoCloseable {
     private final Map<EntityBareJid,String> passwords=new ConcurrentHashMap<>();
     private static final String OCCUPANT_ID="urn:xmpp:occupant-id:0";
     private final Set<EntityBareJid> stableOccupants=ConcurrentHashMap.newKeySet();
+    private final Map<EntityBareJid,Boolean> legacyRetractions=new ConcurrentHashMap<>();
     private final java.util.concurrent.ScheduledExecutorService presenceUpdates=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread=new Thread(r,"Monogram room presence"); thread.setDaemon(true); return thread;
     });
@@ -145,6 +146,7 @@ public final class XmppRooms implements AutoCloseable {
         MultiUserChat chat=managed(jid);
         RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
         org.jivesoftware.smackx.disco.packet.DiscoverInfo features=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(chat.getRoom());
+        legacyRetractions.put(chat.getRoom(),!features.containsFeature(MessageRetraction.NAMESPACE) && features.containsFeature(MessageRetraction.LEGACY));
         if(features.containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
         else stableOccupants.remove(chat.getRoom());
         if (!chat.isJoined()) chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
@@ -250,7 +252,6 @@ public final class XmppRooms implements AutoCloseable {
     }
     public void subject(String jid,String subject) throws Exception { chat(jid).changeSubject(subject); }
     private void deliver(MultiUserChat chat,Message wire,String body,boolean encrypted,boolean readable) {
-        if (!encrypted && body==null && !wire.hasExtension("reactions",MessageReactions.NAMESPACE) && !wire.hasExtension("file-sharing",FileShare.NAMESPACE)) return;
         XmppRoomMessage message=XmppRoomMessage.from(wire,chat.getRoom(),connection.getUser().asEntityBareJid(),
                 chat.getNickname()==null ? "" : chat.getNickname().toString(),body,encrypted,readable);
         if (message!=null) listener.roomMessage(identify(chat,wire,message));
@@ -526,6 +527,28 @@ public final class XmppRooms implements AutoCloseable {
         OmemoSendException error=new OmemoSendException(OmemoSendException.Reason.LOOKUP_TIMEOUT,detail); error.initCause(cause); return error;
     }
     /** Explicit plaintext metadata, matching XEP-0444 clients that use legacy OMEMO for text. */
+    public boolean legacyRetractions(String jid) throws Exception { return legacyRetractions.getOrDefault(chat(jid).getRoom(),false); }
+    public void sendRetraction(String jid,MessageRetraction request,String originalSender,String originalStable) throws Exception {
+        MultiUserChat chat=chat(jid);
+        if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        EntityFullJid own=JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname());
+        String stable=stableOccupants.contains(chat.getRoom()) ? occupantId(chat.getOccupantPresence(own)) : null;
+        if(!own.toString().equals(originalSender) && (stable==null || !stable.equals(originalStable)))
+            throw new IllegalArgumentException("The room cannot verify this message belongs to your current occupant");
+        Message wire=new Message(chat.getRoom(),Message.Type.groupchat); String id=UUID.randomUUID().toString();
+        wire.setStanzaId(id); wire.addExtension(new OriginIdElement(id)); request.addTo(wire);
+        org.jivesoftware.smack.StanzaCollector collector=connection.createStanzaCollector(stanza -> stanza instanceof Message
+                && id.equals(stanza.getStanzaId()) && stanza.getFrom()!=null
+                && (((Message)stanza).getType()==Message.Type.error && chat.getRoom().equals(stanza.getFrom().asBareJid())
+                || ((Message)stanza).getType()==Message.Type.groupchat && own.equals(stanza.getFrom())));
+        try {
+            chat.sendMessage(wire);
+            Message echo=collector.nextResultOrThrow(); MessageRetraction confirmed=MessageRetraction.from(echo);
+            if(confirmed==null || confirmed.legacy!=request.legacy || !confirmed.id.equals(request.id))
+                throw new java.io.IOException("Room did not confirm the requested retraction");
+        }
+        finally { collector.cancel(); }
+    }
     public XmppRoomMessage sendReactions(String jid,MessageReactions reactions) throws Exception {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");

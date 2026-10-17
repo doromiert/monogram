@@ -675,11 +675,12 @@ public final class MonogramController {
         if(message.reactions!=null) { publishReactions(dialog,store.reactions.save(message,self)); return; }
         java.util.Set<Integer> replaced=new java.util.HashSet<>();
         int id=store.saveRoom(message,self,replaced);
+        applyRetractions(dialog);
         java.util.Set<Integer> updated=new java.util.HashSet<>(); if(id!=0) updated.add(id);
         MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(dialog,updated);
         updated.addAll(corrections.edited); refreshReplies(dialog,updated);
         publishReactions(dialog,store.reactions.reconcile(dialog));
-        if(id!=0) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
+        if(id!=0 && !store.hiddenCorrection(id)) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
         if(!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.Update> updates=correctionUpdates(corrections,id);
         if(id!=0 && !store.hiddenCorrection(id)) {
@@ -811,6 +812,7 @@ public final class MonogramController {
             try {
                 java.util.Set<Integer> updated=new java.util.HashSet<>();
                 boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
+                applyRetractions(task.peer);
                 refreshNotifications(updated);
                 MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(task.peer,updated);
                 updated.addAll(corrections.edited); refreshReplies(task.peer,updated);
@@ -888,6 +890,7 @@ public final class MonogramController {
         java.util.Set<Long> replyPeers = new java.util.HashSet<>();
         for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
         for (long peer : replyPeers) {
+            applyRetractions(peer);
             MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
             updated.addAll(corrections.edited);
             publishCorrections(peer, correctionUpdates(corrections, 0));
@@ -1185,6 +1188,7 @@ public final class MonogramController {
         int date = (int) (message.timestamp / 1000);
         java.util.Set<Integer> replaced = new java.util.HashSet<>();
         int id = store.save(message,replaced);
+        applyRetractions(peer);
         java.util.Set<Integer> updated = new java.util.HashSet<>(); if (id != 0) updated.add(id);
         MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
         updated.addAll(corrections.edited); refreshReplies(peer, updated);
@@ -1225,6 +1229,58 @@ public final class MonogramController {
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now()));
     }
     private void refreshReplies(long peer) { refreshReplies(peer, java.util.Collections.emptySet()); }
+    public boolean canRetract(int id,long peer) {
+        try { store.retractionTarget(id,peer,self); return true; } catch(IllegalArgumentException unavailable) { return false; }
+    }
+    public void retractMessages(ArrayList<Integer> ids,long peer,Consumer<String> completed) {
+        final long owner=accountEpoch; final ArrayList<Integer> selection=new ArrayList<>(ids);
+        AndroidUtilities.runOnUIThread(() -> {
+            org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
+            if(owner==accountEpoch && fragment!=null && fragment.getCurrentAccount()==account && org.telegram.ui.Components.BulletinFactory.canShowBulletin(fragment))
+                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(R.raw.chats_infotip,LocaleController.getString(R.string.MonogramRequestingRetraction)).show();
+        });
+        sendWorker.execute(() -> {
+            int sent=0; String error=null;
+            try {
+                if(owner!=accountEpoch) throw new IllegalStateException("Account changed");
+                XmppSession expected=session(); String jid=store.jid(peer);
+                ArrayList<MonogramRetractions.Target> targets=new ArrayList<>();
+                for(int id:selection) targets.add(store.retractionTarget(id,peer,self));
+                boolean legacy=peer<0 ? expected.rooms.legacyRetractions(jid) : expected.legacyRetractions(jid);
+                for(MonogramRetractions.Target target:targets) {
+                    if(owner!=accountEpoch || session!=expected) throw new IllegalStateException("Connection changed before the request was sent");
+                    boolean old=legacy || target.current==null;
+                    String reference=old ? target.legacy : target.current;
+                    if(reference==null) throw new IllegalArgumentException("This client or room needs an unavailable original message reference");
+                    com.negzero.monogram.xmpp.MessageRetraction request=new com.negzero.monogram.xmpp.MessageRetraction(reference,old);
+                    if(peer<0) expected.rooms.sendRetraction(jid,request,target.sender,target.stable);
+                    else expected.sendRetraction(jid,request);
+                    sent++;
+                    worker.execute(() -> {
+                        if(owner!=accountEpoch) return;
+                        store.deleteMessages(java.util.Collections.singleton(target.id));
+                        FileTransfer.Job job=fileJobs.remove(target.id); if(job!=null) job.cancel(); automaticJobs.remove(target.id);
+                        TL_update.TL_updateDeleteMessages deletion=new TL_update.TL_updateDeleteMessages(); deletion.messages.add(target.id);
+                        ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(deletion); publishCorrections(peer,updates);
+                        refreshReplies(peer,java.util.Collections.singleton(target.id));
+                    });
+                }
+            } catch(Exception failed) {
+                error=(sent==0 ? "Retraction could not be completed. " : "Sent "+sent+" retraction requests before an error. ")
+                        +com.negzero.monogram.xmpp.XmppRequestException.describe(failed);
+            }
+            final String result=error;
+            worker.execute(() -> AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==owner) completed.accept(result); }));
+        });
+    }
+    private void applyRetractions(long peer) {
+        java.util.Set<Integer> removed=store.reconcileRetractions(peer);
+        if(removed.isEmpty()) return;
+        for(int id:removed) { FileTransfer.Job job=fileJobs.remove(id); if(job!=null) job.cancel(); automaticJobs.remove(id); }
+        TL_update.TL_updateDeleteMessages deletion=new TL_update.TL_updateDeleteMessages(); deletion.messages.addAll(removed);
+        ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(deletion); publishCorrections(peer,updates);
+        refreshReplies(peer,removed);
+    }
     private void refreshNotifications(java.util.Set<Integer> updated) {
         if(updated.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
         long owner=accountEpoch;

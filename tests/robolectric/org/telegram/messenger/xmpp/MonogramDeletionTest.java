@@ -43,10 +43,10 @@ public class MonogramDeletionTest {
                 assertEquals(0,store.saveRoom(MessageFixture.roomArchive(room,"Bob","wire","archive","mam","Late plaintext",100000,true),self));
                 assertEquals(1,store.history(dialog,self,0,50).size());
                 // Recreate the actual pre-deletion schema, then exercise the migration on reopening.
-                store.getWritableDatabase().execSQL("ALTER TABLE messages DROP COLUMN deleted"); store.getWritableDatabase().setVersion(14);
+                MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(14);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(15,store.getReadableDatabase().getVersion());
+                assertEquals(16,store.getReadableDatabase().getVersion());
                 assertEquals("Keep me",store.getMessage(kept,self).message);
             }
         } finally { context.deleteDatabase(file); }

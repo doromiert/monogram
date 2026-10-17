@@ -137,7 +137,9 @@ final class Omemo2Payload {
                 || name.equals("reply") && ReplyReference.NAMESPACE.equals(namespace)
                 || name.equals("fallback") && ReplyReference.FALLBACK.equals(namespace)
                 || name.equals("replace") && MessageCorrection.NAMESPACE.equals(namespace)
-                || name.equals("reactions") && MessageReactions.NAMESPACE.equals(namespace);
+                || name.equals("reactions") && MessageReactions.NAMESPACE.equals(namespace)
+                || name.equals("retract") && MessageRetraction.NAMESPACE.equals(namespace)
+                || name.equals("apply-to") && MessageRetraction.FASTEN.equals(namespace);
     }
     static void direct(Message message) throws GeneralSecurityException {
         if ((message.getType() != Message.Type.chat && message.getType() != Message.Type.normal) || message.getFrom() == null || message.getTo() == null

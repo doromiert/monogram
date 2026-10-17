@@ -119,7 +119,10 @@ public final class XmppSession implements AutoCloseable {
         ReplyReference.initialize();
         MessageCorrection.initialize();
         MessageReactions.initialize();
+        MessageRetraction.initialize();
         FileShare.initialize();
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.LEGACY);
         profiles = new XmppProfiles(connection, listener::profileChanged);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
@@ -472,6 +475,20 @@ public final class XmppSession implements AutoCloseable {
         return id;
     }
     /** Legacy OMEMO protects bodies only. Callers must explicitly choose plaintext metadata. */
+    public boolean legacyRetractions(String jid) throws Exception {
+        org.jivesoftware.smack.packet.Presence presence=org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).getPresence(directRecipient(jid));
+        if(presence.isAvailable() && presence.getFrom()!=null && presence.getFrom().hasResource()) try {
+            org.jivesoftware.smackx.disco.packet.DiscoverInfo info=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(presence.getFrom());
+            return !info.containsFeature(MessageRetraction.NAMESPACE) && info.containsFeature(MessageRetraction.LEGACY);
+        } catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException unsupported) { }
+        return false;
+    }
+    /** Retraction requests identify the original stanza publicly, without its body or file URL. */
+    public void sendRetraction(String jid,MessageRetraction request) throws Exception {
+        Message wire=new Message(directRecipient(jid),Message.Type.chat);
+        String id=UUID.randomUUID().toString(); wire.setStanzaId(id); wire.addExtension(new OriginIdElement(id));
+        request.addTo(wire); connection.sendStanza(wire);
+    }
     public String sendReactions(String jid,MessageReactions reactions,XmppMessage.Encryption encryption) throws Exception {
         if(encryption==XmppMessage.Encryption.LEGACY_OMEMO)
             throw new UnsupportedOperationException("Legacy OMEMO cannot encrypt reaction metadata");

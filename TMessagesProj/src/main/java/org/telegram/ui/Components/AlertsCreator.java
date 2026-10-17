@@ -8193,6 +8193,28 @@ public class AlertsCreator {
             }
         }
 
+        ArrayList<MessageObject> retractionSelection=new ArrayList<>();
+        if(selectedGroup!=null) retractionSelection.addAll(selectedGroup.messages);
+        else if(selectedMessage!=null) retractionSelection.add(selectedMessage);
+        else if(selectedMessages!=null) for(SparseArray<MessageObject> group:selectedMessages)
+            if(group!=null) for(int i=0;i<group.size();i++) retractionSelection.add(group.valueAt(i));
+        boolean retractable=localXmppDeletion && !scheduled && !quickReplies && !isSavedMessages && !retractionSelection.isEmpty();
+        if(retractable) for(MessageObject message:retractionSelection)
+            if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).canRetract(message.getId(),message.getDialogId())) { retractable=false; break; }
+        final boolean canRequestRetraction=retractable;
+        if(canRequestRetraction) {
+            CheckBoxCell cell=new CheckBoxCell(activity,1,resourcesProvider);
+            cell.setText(LocaleController.getString(R.string.MonogramRequestRetraction),"",false,false);
+            cell.setBackgroundDrawable(Theme.getSelectorDrawable(false));
+            cell.setPadding(LocaleController.isRTL ? dp(16) : dp(8),0,LocaleController.isRTL ? dp(8) : dp(16),0);
+            cell.setOnClickListener(v -> { deleteForAll[0]=!deleteForAll[0]; cell.setChecked(deleteForAll[0],true); });
+            builder.setView(cell); builder.setCustomViewOffset(9);
+        }
+        java.util.function.Consumer<String> retractionFinished=error -> {
+            if(error!=null && fragment.getParentActivity()!=null) fragment.showDialog(new AlertDialog.Builder(fragment.getParentActivity(),resourcesProvider)
+                    .setTitle(LocaleController.getString(R.string.AppName)).setMessage(error)
+                    .setPositiveButton(LocaleController.getString(R.string.OK),null).create());
+        };
         AlertDialog.OnButtonClickListener deleteAction = (dialogInterface, i) -> {
             ArrayList<Integer> ids = null;
             long thisDialogId = dialogId;
@@ -8234,7 +8256,8 @@ public class AlertsCreator {
                     thisDialogId = mergeDialogId;
                 }
                 if (!ids.isEmpty()) {
-                    MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, thisDialogId, topicId, deleteForAll[0], mode);
+                    if(canRequestRetraction && deleteForAll[0]) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).retractMessages(ids,thisDialogId,retractionFinished);
+                    else MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, thisDialogId, topicId, deleteForAll[0], mode);
                 }
                 for (MessageObject msg: ephemeralMessages) {
                     MessagesController.getInstance(currentAccount).deleteEphemeralMessage(thisDialogId, topicId, msg);
@@ -8255,7 +8278,9 @@ public class AlertsCreator {
                             }
                         }
                     }
-                    MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, (a == 1 && mergeDialogId != 0) ? mergeDialogId : thisDialogId, topicId, deleteForAll[0], mode);
+                    long deleteDialog=(a == 1 && mergeDialogId != 0) ? mergeDialogId : thisDialogId;
+                    if(canRequestRetraction && deleteForAll[0]) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).retractMessages(ids,deleteDialog,retractionFinished);
+                    else MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, deleteDialog, topicId, deleteForAll[0], mode);
                     selectedMessages[a].clear();
                 }
             }
@@ -8279,7 +8304,7 @@ public class AlertsCreator {
         }
 
         if(localXmppDeletion) {
-            builder.setMessage(LocaleController.getString(R.string.MonogramDeleteMessagesLocal));
+            builder.setMessage(LocaleController.getString(canRequestRetraction ? R.string.MonogramDeleteMessagesRetraction : R.string.MonogramDeleteMessagesLocal));
         } else if (isSavedMessages) {
             if (count == 1) {
                 builder.setMessage(LocaleController.getString(R.string.AreYouSureUnsaveSingleMessage));
