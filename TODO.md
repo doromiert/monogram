@@ -9,6 +9,9 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
+- [o] Stop the stale Sending video notification after XMPP upload/send success, failure or cancellation. The native encoding service waits for Telegram upload-completion events which XMPP never emits; finish only the matching account/path and retain another active conversion.
+- [x] Keep background XMPP while hiding its ongoing notification: Android channel `monogram_connection` is separate from message notifications; long-press the notification and disable only that category while retaining the background connection switch. Foreground-service registration remains required; Android active-apps/task-manager UI may still show the process. Do not suppress all message notifications.
+
 - [o] Incoming reactions missing in both archived and live messages (user screenshots compare a missing fire reaction with Monocles). Trace the actual wire parser, alias resolution, persistent reaction state and native publication; cover updates/removals and offline recovery without weakening routing/encryption checks.
 
 - [x] Build, publish and install [0.2.54](https://github.com/doromiert/monogram/releases/tag/v0.2.54) (72299, arm64, original signer) from `unread-history`, source `d733c1ad0`. Nix packaging and 13 focused read-state/receipt/decryption checks pass; published APK digest and source tag match. ADB confirms the configured foreground connection service and preservation of all 3,154 previous XMPP identities, account/credential, checked legacy OMEMO identity/trust and seven rooms on schema 17. All 1,512 previous native incoming rows remain; none of 1,399 previously read rows became unread during the update. Actual unread UI/navigation remains unverified.

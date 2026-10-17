@@ -42,13 +42,18 @@ public final class XmppRoomMessage {
                                        String body,boolean encrypted,boolean readable,String archiveId,Date archiveTime) {
         if (wire.getType()!=Message.Type.groupchat || wire.getFrom()==null || !room.equals(wire.getFrom().asBareJid())
                 || !wire.getFrom().hasResource() || wire.getTo()!=null && !own.equals(wire.getTo().asEntityBareJidIfPossible()) && !(archiveTime!=null && room.equals(wire.getTo().asEntityBareJidIfPossible()))) return null;
+        if (encrypted && MessageReactions.publicLegacy(wire)) { encrypted=false; readable=true; body=null; }
         MessageRetraction retraction;
         try { retraction=MessageRetraction.from(wire); } catch(IllegalArgumentException invalid) { return null; }
         if(retraction!=null) body=null;
         MessageReactions reactions=!encrypted && readable ? MessageReactions.from(wire) : null;
         ReplyReference reply=ReplyReference.from(wire,readable ? body : null);
         MessageCorrection correction=readable ? MessageCorrection.from(wire) : null;
-        if(wire.hasExtension("reactions",MessageReactions.NAMESPACE) && (reactions==null || body!=null || reply!=null || correction!=null)) return null;
+        if(wire.hasExtension("reactions",MessageReactions.NAMESPACE)) {
+            if(reactions==null || !MessageReactions.fallback(wire,body) || !MessageReactions.replyMatches(wire,body,reactions.id)
+                    || correction!=null || retraction!=null || wire.hasExtension("file-sharing",FileShare.NAMESPACE)) return null;
+            body=null; reply=null;
+        }
         FileShare sharing=!encrypted && readable ? FileShare.from(wire) : null;
         if(sharing!=null && sharing.link.encrypted()) sharing=null;
         if(readable && body==null && reactions==null && sharing==null && retraction==null) return null;

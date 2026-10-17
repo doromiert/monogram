@@ -49,4 +49,50 @@ class MessageReactionsTest {
         assertEquals("room-update",room.ids.get("archive")); assertNull(room.body);
         assertNull(XmppMessage.from(message,JidCreate.entityBareFrom("alice@example.org"),null,false,true,null,null));
     }
+    private Message fallbackReaction(String type,String from) throws Exception {
+        MessageReactions.initialize(); ReplyReference.initialize();
+        return PacketParserUtils.parseStanza("<message xmlns='jabber:client' type='"+type+"' from='"+from+"' to='alice@example.org' id='fallback-update'>"
+                +"<body>&gt; Original message\n\n🔥</body><reactions xmlns='urn:xmpp:reactions:0' id='original'><reaction>🔥</reaction></reactions>"
+                +"<reply xmlns='urn:xmpp:reply:0' id='original' to='bob@example.org'/>"
+                +"<fallback xmlns='urn:xmpp:fallback:0' for='urn:xmpp:reactions:0'><body/></fallback></message>");
+    }
+    @Test void monoclesFallbackIsAReactionForLiveAndArchivedDirectMessages() throws Exception {
+        Message wire=fallbackReaction("chat","bob@example.org/phone");
+        XmppMessage live=XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null);
+        assertNotNull(live);assertEquals(Collections.singleton("🔥"),live.reactions.emojis);assertNull(live.body);assertNull(live.reply);
+        XmppMessage archived=XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,"mam-reaction",new Date(100000));
+        assertNotNull(archived);assertTrue(archived.archived);assertEquals(100000,archived.timestamp);assertEquals("mam-reaction",archived.ids.get("archive"));
+        wire.removeExtension("fallback",ReplyReference.FALLBACK);
+        assertNull(XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null));
+    }
+    @Test void legacyReactionMetadataDoesNotRequireOrClaimDecryption() throws Exception {
+        Message wire=fallbackReaction("chat","bob@example.org/phone");
+        wire.addExtension(StandardExtensionElement.builder("encrypted","eu.siacs.conversations.axolotl").addElement("payload","opaque-ciphertext").build());
+        XmppMessage metadata=XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),null,true,false,"mam-public",new Date(200000));
+        assertNotNull(metadata);assertEquals(Collections.singleton("🔥"),metadata.reactions.emojis);assertTrue(metadata.readable);
+        assertFalse(metadata.encrypted);assertEquals(XmppMessage.Encryption.PLAIN,metadata.encryption);assertNull(metadata.body);assertNull(metadata.reply);
+        wire.addExtension(StandardExtensionElement.builder("encrypted",XmppOmemo2.NS).build());
+        assertFalse(MessageReactions.publicLegacy(wire));
+        XmppMessage protectedPending=XmppMessage.modern(wire,null,JidCreate.entityBareFrom("alice@example.org"),null,null);
+        assertNotNull(protectedPending);assertNull(protectedPending.reactions);assertFalse(protectedPending.readable);
+    }
+    @Test void monoclesFallbackAndLegacyMetadataAlsoWorkInRoomsWithoutTrustingNicknameIdentity() throws Exception {
+        Message wire=fallbackReaction("groupchat","friends@conference.example.org/Bob");
+        wire.addExtension(new StanzaIdElement("server-reaction","friends@conference.example.org"));
+        XmppRoomMessage live=XmppRoomMessage.from(wire,JidCreate.entityBareFrom("friends@conference.example.org"),JidCreate.entityBareFrom("alice@example.org"),"Alice",wire.getBody(),false,true);
+        assertNotNull(live);assertNotNull(live.reactions);assertNull(live.body);assertNull(live.reply);assertNull(live.realSender);
+        wire.addExtension(StandardExtensionElement.builder("encrypted","eu.siacs.conversations.axolotl").addElement("payload","opaque-ciphertext").build());
+        XmppRoomMessage archived=XmppRoomMessage.archived(wire,JidCreate.entityBareFrom("friends@conference.example.org"),JidCreate.entityBareFrom("alice@example.org"),"Alice",null,true,false,"mam-room",new Date(300000));
+        assertNotNull(archived);assertNotNull(archived.reactions);assertFalse(archived.encrypted);assertNull(archived.realSender);assertFalse(archived.realSenderVerified);
+    }
+    @Test void partialFallbackAndUnrelatedReplyCannotHideMixedMessageText() throws Exception {
+        Message wire=fallbackReaction("chat","bob@example.org/phone");wire.removeExtension("fallback",ReplyReference.FALLBACK);
+        wire.addExtension(StandardExtensionElement.builder("fallback",ReplyReference.FALLBACK).addAttribute("for",MessageReactions.NAMESPACE)
+                .addElement(StandardExtensionElement.builder("body",ReplyReference.FALLBACK).addAttribute("start","0").addAttribute("end","1").build()).build());
+        assertNull(XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null));
+        wire=fallbackReaction("chat","bob@example.org/phone");wire.removeExtension("reply",ReplyReference.NAMESPACE);
+        new ReplyReference("bob@example.org","different-target").addTo(wire);
+        assertNull(XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null));
+    }
+
 }

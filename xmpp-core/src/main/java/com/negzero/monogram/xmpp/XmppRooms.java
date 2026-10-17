@@ -129,7 +129,9 @@ public final class XmppRooms implements AutoCloseable {
             created.addMessageListener(message -> {
                 if (closed || connection.getUser()==null) return;
                 boolean encrypted=message.hasExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE) || message.hasExtension("encrypted",XmppOmemo2.NS);
-                if (encrypted && !message.hasExtension("encrypted",XmppOmemo2.NS)) {
+                if (MessageReactions.publicLegacy(message)) {
+                    deliver(created,message,null,false,true);
+                } else if (encrypted && !message.hasExtension("encrypted",XmppOmemo2.NS)) {
                     org.jivesoftware.smackx.omemo.element.OmemoElement element=message.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
                     if (element!=null && element.isKeyTransportElement()) return;
                     XmppRoomMessage pending=XmppRoomMessage.from(message,created.getRoom(),connection.getUser().asEntityBareJid(),
@@ -312,10 +314,12 @@ public final class XmppRooms implements AutoCloseable {
             Message wire=forwarded.getForwardedStanza(); Date time=forwarded.getDelayInformation().getStamp();
             boolean modern=wire.hasExtension("encrypted",XmppOmemo2.NS);
             org.jivesoftware.smackx.omemo.element.OmemoElement element=wire.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
-            boolean encrypted=modern || element!=null,readable=!encrypted; String body=encrypted ? null : wire.getBody();
+            boolean publicReaction=MessageReactions.publicLegacy(wire);
+            boolean encrypted=(modern || element!=null) && !publicReaction,readable=!encrypted;
+            String body=encrypted || publicReaction ? null : wire.getBody();
             if(XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time)==null) continue;
             String fingerprint=null;
-            if(element!=null && !modern) {
+            if(element!=null && !modern && !publicReaction) {
                 if(element.isKeyTransportElement()) continue;
                 org.jivesoftware.smackx.muc.packet.MUCUser muc=org.jivesoftware.smackx.muc.packet.MUCUser.from(wire);
                 Jid author=muc==null || muc.getItem()==null ? null : muc.getItem().getJid();

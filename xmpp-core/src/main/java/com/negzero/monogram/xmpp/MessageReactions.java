@@ -29,6 +29,30 @@ public final class MessageReactions {
         for(String emoji:emojis) element.addElement("reaction",emoji);
         message.addExtension(element.build());
     }
+    static boolean publicLegacy(Message message) {
+        return message.hasExtension("encrypted", "eu.siacs.conversations.axolotl")
+                && !message.hasExtension("encrypted", XmppOmemo2.NS) && message.hasExtension("reactions", NAMESPACE);
+    }
+    /** Only discard text explicitly marked as the reaction's complete fallback. */
+    static boolean fallback(Message message,String body) {
+        if (body == null || body.isEmpty()) return true;
+        for (ExtensionElement extension : message.getExtensions("fallback", ReplyReference.FALLBACK)) {
+            if (!(extension instanceof StandardExtensionElement)) continue;
+            StandardExtensionElement fallback = (StandardExtensionElement) extension;
+            if (!NAMESPACE.equals(fallback.getAttributeValue("for")) || fallback.getElements().size()!=1) continue;
+            StandardExtensionElement text = fallback.getElements().get(0);
+            if (!"body".equals(text.getElementName()) || !ReplyReference.FALLBACK.equals(text.getNamespace())
+                    || text.getAttributeValue("xml:lang")!=null || !text.getElements().isEmpty()) continue;
+            String start=text.getAttributeValue("start"),end=text.getAttributeValue("end");
+            if (start==null && end==null || "0".equals(start) && Integer.toString(body.codePointCount(0,body.length())).equals(end)) return true;
+        }
+        return false;
+    }
+    static boolean replyMatches(Message message,String body,String target) {
+        if (!message.hasExtension("reply",ReplyReference.NAMESPACE)) return true;
+        ReplyReference reply=ReplyReference.from(message,body);
+        return reply!=null && target.equals(reply.id);
+    }
     public static MessageReactions from(Message message) {
         List<ExtensionElement> found=message.getExtensions("reactions",NAMESPACE);
         if(found.size()!=1 || !(found.get(0) instanceof StandardExtensionElement)) return null;

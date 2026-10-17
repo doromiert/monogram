@@ -1545,6 +1545,11 @@ public final class MonogramController {
         else error.text = "MONOGRAM_FILE_TRANSFER_FAILED|"+com.negzero.monogram.xmpp.XmppRequestException.describe(e);
         return error;
     }
+    private void finishUpload(int id,String path,FileTransfer.Job job) {
+        fileJobs.remove(id,job);
+        if(path!=null) { fileNames.remove(path,job); clearProgress(path); }
+        AndroidUtilities.runOnUIThread(() -> org.telegram.messenger.VideoEncodingService.uploadFinished(account,path));
+    }
     private void upload(MonogramFileRequest request, RequestDelegate callback) {
         final XmppSession expected;
         try {
@@ -1552,7 +1557,7 @@ public final class MonogramController {
             expected = session();
             String queuedMode=request.message.params==null ? null : request.message.params.get(QUEUED_ENCRYPTION);
             if(queuedMode!=null && !queuedMode.equals(encryption(request.message.dialog_id).name())) {
-                fileJobs.remove(request.localId,request.job);
+                finishUpload(request.localId,request.message.attachPath,request.job);
                 TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400; error.text="MONOGRAM_SENDING_MODE_CHANGED";
                 Utilities.stageQueue.postRunnable(() -> callback.run(null,error)); return;
             }
@@ -1568,7 +1573,7 @@ public final class MonogramController {
                         if(owner!=accountEpoch || request.job.cancelled()) return;
                         if(success) sendWorker.execute(() -> { if(owner==accountEpoch && !request.job.cancelled()) upload(request,callback); });
                         else {
-                            fileJobs.remove(request.localId,request.job);
+                            finishUpload(request.localId,request.message.attachPath,request.job);
                             TLRPC.TL_error error=fileError(new java.io.IOException("GIF source download failed"));
                             Utilities.stageQueue.postRunnable(() -> { if(owner==accountEpoch && !request.job.cancelled()) callback.run(null,error); });
                         }
@@ -1578,7 +1583,7 @@ public final class MonogramController {
             }
             if (request.file == null || !request.file.isFile()) throw new java.io.FileNotFoundException();
         } catch (Exception e) {
-            fileJobs.remove(request.localId, request.job);
+            finishUpload(request.localId,request.message.attachPath,request.job);
             TLRPC.TL_error error = fileError(e);
             if (!request.job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
             return;
@@ -1592,7 +1597,7 @@ public final class MonogramController {
             if (header != null && (header.reply_to_peer_id != null && (request.message.dialog_id<0 ? -header.reply_to_peer_id.chat_id : header.reply_to_peer_id.user_id) != request.message.dialog_id || header.reply_to_top_id != 0)) throw new UnsupportedOperationException();
             reply = header == null ? null : replyTo(header.reply_to_msg_id, request.message.dialog_id, encrypted, header.quote_text, header.quote_offset);
         } catch (Exception failed) {
-            fileJobs.remove(request.localId, request.job);
+            finishUpload(request.localId,request.message.attachPath,request.job);
             Utilities.stageQueue.postRunnable(() -> callback.run(null, fileError(failed))); return;
         }
         FileTransfer.Job job = request.job;
@@ -1648,12 +1653,12 @@ public final class MonogramController {
                     } catch (Exception e) {
                         TLRPC.TL_error error = fileError(e);
                         if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
-                    } finally { fileJobs.remove(request.localId, job); fileNames.remove(progressName, job); clearProgress(progressName); }
+                    } finally { finishUpload(request.localId,progressName,job); }
                 });
             } catch (Exception e) {
                 TLRPC.TL_error error = fileError(e);
                 if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
-                fileJobs.remove(request.localId, job); fileNames.remove(progressName, job); clearProgress(progressName);
+                finishUpload(request.localId,progressName,job);
             } finally { if (snapshot != null && snapshot.exists() && !snapshot.delete()) snapshot.deleteOnExit(); }
         });
     }

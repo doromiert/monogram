@@ -241,7 +241,9 @@ public final class XmppSession implements AutoCloseable {
         OmemoElement element=stanza.getExtension(OmemoElement.NAME_ENCRYPTED,OmemoElement_VAxolotl.NAMESPACE);
         if(element==null || element.isKeyTransportElement() || connection.getUser()==null || closed) return;
         XmppMessage message=XmppMessage.from(stanza,connection.getUser().asEntityBareJid(),null,true,false,null,null);
-        if(message!=null) listener.messagePending(message);
+        if(message!=null) {
+            if(message.reactions!=null) listener.message(message); else listener.messagePending(message);
+        }
     }
 
     private void receipt(Message stanza) {
@@ -365,9 +367,14 @@ public final class XmppSession implements AutoCloseable {
                 continue;
             }
             boolean encrypted = encrypted(stanza), readable = true;
+            if (MessageReactions.publicLegacy(stanza)) {
+                XmppMessage reaction=XmppMessage.from(stanza,own,null,true,false,result.getId(),time);
+                if(reaction!=null) messages.add(reaction);
+                continue;
+            }
             String body = stanza.getBody(); String senderFingerprint=null;
             // Reject unrelated and room messages before attempting decryption.
-            if (XmppMessage.from(stanza, own, body, encrypted, false, result.getId(), time) == null) continue;
+            if (XmppMessage.from(stanza, own, body, encrypted, !encrypted, result.getId(), time) == null) continue;
             if (encrypted) {
                 OmemoElement element = stanza.getExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE);
                 if (element.isKeyTransportElement()) continue;

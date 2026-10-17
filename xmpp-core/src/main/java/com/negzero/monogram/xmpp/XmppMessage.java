@@ -41,6 +41,9 @@ public final class XmppMessage {
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
                             boolean readable, String archiveId, Date archiveTime) {
+        // Legacy OMEMO only encrypts the fallback body, not its public reaction metadata.
+        if (encrypted && MessageReactions.publicLegacy(message))
+            return from(message,message,own,null,Encryption.PLAIN,true,archiveId,archiveTime);
         return from(message,message,own,body,encrypted ? Encryption.LEGACY_OMEMO : Encryption.PLAIN,readable,archiveId,archiveTime);
     }
     /** Only content authenticated by the OMEMO2/SCE decoder may supply private metadata. */
@@ -72,7 +75,12 @@ public final class XmppMessage {
         if (sharing != null && sharing.link.encrypted() != encrypted) sharing = null;
         MessageReactions reactions = readable && encryption != Encryption.LEGACY_OMEMO && content != null ? MessageReactions.from(content) : null;
         if (content != null && content.hasExtension("reactions", MessageReactions.NAMESPACE) && reactions == null) return null;
-        if (reactions != null && (body != null || sharing != null || MessageCorrection.from(content) != null || ReplyReference.from(content,body) != null)) return null;
+        if (reactions != null) {
+            if (!MessageReactions.fallback(content,body) || !MessageReactions.replyMatches(content,body,reactions.id)
+                    || sharing != null || content.hasExtension("file-sharing",FileShare.NAMESPACE)
+                    || MessageCorrection.from(content) != null || retraction != null) return null;
+            body=null;
+        }
         if (peer == null || (readable && body == null && sharing == null && reactions == null && retraction == null)) return null;
         if (sharing != null && body == null) body = "";
         Map<String, String> ids = new LinkedHashMap<>();
@@ -87,7 +95,7 @@ public final class XmppMessage {
         }
         if (archiveId != null) put(ids, "archive", archiveId);
         if (ids.isEmpty() && encrypted) ids.put("local", opaqueId(message));
-        ReplyReference reply = content == null ? null : ReplyReference.from(content, readable ? body : null);
+        ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? body : null);
         FileLink attachment = null;
         String mediaText = reply == null ? body : reply.withoutFallback(body);
         if (readable && body != null) {
