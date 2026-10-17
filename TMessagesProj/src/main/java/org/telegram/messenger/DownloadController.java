@@ -500,8 +500,15 @@ public class DownloadController extends BaseController implements NotificationCe
         return mask;
     }
 
+    private String lastMonogramDownloadPolicy;
     public void checkAutodownloadSettings() {
-        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).autoDownloadSettingsChanged();
+        int network = ApplicationLoader.getAutodownloadNetworkType();
+        Preset preset = network == StatsController.TYPE_WIFI ? getCurrentWiFiPreset()
+                : network == StatsController.TYPE_ROAMING ? getCurrentRoamingPreset() : getCurrentMobilePreset();
+        String policy = network + ":" + getCurrentDownloadMask() + ":" + preset.toString();
+        boolean changed = !policy.equals(lastMonogramDownloadPolicy);
+        lastMonogramDownloadPolicy = policy;
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).autoDownloadSettingsChanged(changed);
         int currentMask = getCurrentDownloadMask();
         if (currentMask == lastCheckMask) {
             return;

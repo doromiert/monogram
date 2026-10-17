@@ -1187,14 +1187,21 @@ public final class MonogramController {
             }
         });
     }
-    public void autoDownloadSettingsChanged() {
-        for (java.util.Map.Entry<Integer, FileTransfer.Job> entry : automaticJobs.entrySet()) {
-            entry.getValue().cancel(); fileJobs.remove(entry.getKey(), entry.getValue());
-            for (java.util.Map.Entry<String, FileTransfer.Job> name : fileNames.entrySet())
-                if (name.getValue() == entry.getValue()) fileNames.remove(name.getKey(), name.getValue());
+    public void autoDownloadSettingsChanged(boolean changed) {
+        final long owner = accountEpoch;
+        if (changed) {
+            for (java.util.Map.Entry<Integer, FileTransfer.Job> entry : automaticJobs.entrySet()) {
+                entry.getValue().cancel(); fileJobs.remove(entry.getKey(), entry.getValue());
+                for (java.util.Map.Entry<String, FileTransfer.Job> name : fileNames.entrySet())
+                    if (name.getValue() == entry.getValue()) fileNames.remove(name.getKey(), name.getValue());
+            }
+            automaticJobs.clear(); autoAttempted.clear();
         }
-        automaticJobs.clear(); autoAttempted.clear();
-        worker.execute(() -> { if (mediaHistoryPeer != 0 && self > 0) for (TLRPC.Message message : store.history(mediaHistoryPeer, self, 0, 100)) maybeAutoDownload(message); });
+        worker.execute(() -> {
+            if (owner != accountEpoch) return;
+            if (mediaHistoryPeer != 0 && self > 0)
+                for (TLRPC.Message message : store.history(mediaHistoryPeer, self, 0, 100)) maybeAutoDownload(message);
+        });
     }
     public void setEncrypted(long peer, boolean encrypted) {
         if (!preferences.edit().putBoolean("omemo-" + peer, encrypted).commit()) throw new IllegalStateException("Cannot save encryption preference");

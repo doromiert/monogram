@@ -10415,7 +10415,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         int localFile = 0;
                         if (messageObject.attachPathExists) {
                             DownloadController.getInstance(currentAccount).removeLoadingFileObserver(this);
-                            localFile = 1;
+                            // Private XMPP cache names have no extension; use the typed document decoder.
+                            localFile = org.telegram.messenger.xmpp.MonogramAttachments.has(messageObject.messageOwner) ? 2 : 1;
                         } else if (messageObject.mediaExists) {
                             localFile = 2;
                         }
