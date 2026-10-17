@@ -2501,6 +2501,7 @@
     <string name="MonogramPresenceUnavailable">Presence unavailable</string>
     <string name="MonogramPresenceAway">Away</string>
     <string name="MonogramPresenceBusy">Do not disturb</string>
+    <string name="MonogramDeleteMessagesLocal">Delete these messages from this device? Copies on other devices and on the server will remain.</string>
     <string name="MonogramBackgroundConnection">Keeping your Jabber accounts connected</string>
     <string name="NotificationsServiceInfo">Relaunch app when shut down. Enable for reliable notifications.</string>
     <string name="NotificationsServiceConnection">Background Connection</string>

@@ -1513,7 +1513,7 @@ public final class MonogramController {
                 worker.execute(() -> {
                     try {
                         job.check();
-                        if (sessionEpoch != epoch) return;
+                        if (sessionEpoch != epoch || store.hiddenCorrection(id)) return;
                         TLRPC.Message saved = store.getMessage(id, self);
                         if(decoded.document!=null) decoded.document.date=saved.date;
                         if(decoded.photo!=null) decoded.photo.date=saved.date;
@@ -1706,6 +1706,7 @@ public final class MonogramController {
         if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
         else { result.users.add(store.user(peer,self)); result.users.add(ownUser()); }
         for(int id:ids) {
+            if(store.hiddenCorrection(id)) continue;
             if(store.getMessage(id,self).dialog_id!=peer) throw new IllegalArgumentException("Reaction target belongs to another conversation");
             TL_update.TL_updateMessageReactions update=new TL_update.TL_updateMessageReactions();
             update.peer=peer<0 ? new TLRPC.TL_peerChat() : new TLRPC.TL_peerUser();
@@ -1729,6 +1730,25 @@ public final class MonogramController {
         cacheWorker.execute(() -> { if(accountEpoch==owner) try { publishReactions(peer,java.util.Collections.singleton(id)); } catch(IllegalArgumentException ignored) {} });
     }
     private TLObject handle(TLObject request) throws Exception {
+        if(request instanceof TLRPC.TL_messages_deleteMessages) {
+            TLRPC.TL_messages_deleteMessages query=(TLRPC.TL_messages_deleteMessages)request;
+            if(query.revoke) throw new UnsupportedOperationException("XMPP message retraction is not implemented");
+            java.util.Set<Long> peers=new java.util.HashSet<>();
+            for(int id:query.id) {
+                try { peers.add(store.getMessage(id,self).dialog_id); } catch(IllegalArgumentException unknown) { }
+                FileTransfer.Job job=fileJobs.remove(id); if(job!=null) job.cancel();
+                automaticJobs.remove(id);
+            }
+            store.deleteMessages(query.id);
+            for(long peer:peers) refreshReplies(peer,new java.util.HashSet<>(query.id));
+            androidx.collection.LongSparseArray<ArrayList<Integer>> removed=new androidx.collection.LongSparseArray<>();
+            removed.put(0,new ArrayList<>(query.id));
+            long owner=accountEpoch;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(accountEpoch==owner) NotificationsController.getInstance(account).removeDeletedMessagesFromNotifications(removed,false);
+            });
+            return new TLRPC.TL_messages_affectedMessages();
+        }
         if(request instanceof TLRPC.TL_messages_getEmojiKeywords) return MonogramEmojiKeywords.load(ApplicationLoader.applicationContext.getAssets(),((TLRPC.TL_messages_getEmojiKeywords)request).lang_code,-1);
         if(request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference) {
             TLRPC.TL_messages_getEmojiKeywordsDifference query=(TLRPC.TL_messages_getEmojiKeywordsDifference)request;
@@ -1821,6 +1841,7 @@ public final class MonogramController {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             java.util.Set<Long> peers = new java.util.HashSet<>();
             for (int input : ((TLRPC.TL_messages_getMessages) request).id) {
+                if(store.hiddenCorrection(input)) continue;
                 try { TLRPC.Message message = store.getMessage(input, self); result.messages.add(message); peers.add(message.dialog_id); }
                 catch (IllegalArgumentException missing) { /* The requested local message is unavailable. */ }
             }

@@ -65,6 +65,9 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Messaging and existing conversations
 
+- [o] Fix persistent local message deletion: route the native delete request into the XMPP store, retain alias tombstones across replay/decryption, hide deleted messages from history and previews, clear stored content/attachment metadata, cancel downloads and update notifications/replies. Label the native confirmation as device-only and hide unsupported delete-for-everyone options. Migration/build/phone verification pending.
+- [ ] Implement interoperable XMPP message retraction for deleting own messages for everyone (including MUC authority checks and incoming retractions); remote copies/server archives are not removed by local deletion.
+
 - [o] Fix the 0.2.33 MUC-send crash: phone crash logs identify the skipped-recipient bulletin passing a drawable to the raw Lottie animation loader (`rawRes not found`). Use the native info animation. Built, published and installed in 0.2.34; real-phone sending verification pending.
 - [o] Refresh encrypted notifications when cached placeholders decrypt, including archive recovery while a chat is closed. Publish live room placeholder replacements as edits rather than duplicate new messages. Preserve native notification privacy/mute settings and silently update only existing tray entries. Installed in 0.2.34; phone verification pending.
 - [o] Correct false “online” for away/extended-away/do-not-disturb and XEP-0319 idle resources. Aggregate all resources, prefer a genuinely active resource, retain reported idle times, and query offline last activity only when no resource is connected. Installed in 0.2.34; phone verification pending.

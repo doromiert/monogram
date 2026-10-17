@@ -7981,6 +7981,7 @@ public class AlertsCreator {
 
         final boolean[] deleteForAll = new boolean[1];
         boolean canRevokeInbox = user != null && MessagesController.getInstance(currentAccount).canRevokePmInbox;
+        final boolean localXmppDeletion=!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
         int revokeTimeLimit;
         if (user != null) {
             revokeTimeLimit = MessagesController.getInstance(currentAccount).revokeTimePmLimit;
@@ -7991,7 +7992,7 @@ public class AlertsCreator {
         boolean hasNotOut = false;
         int myMessagesCount = 0;
         boolean canDeleteInbox = encryptedChat == null && user != null && canRevokeInbox && revokeTimeLimit == 0x7fffffff;
-        if (chat != null && chat.megagroup && !scheduled && !isSavedMessages) {
+        if (!localXmppDeletion && chat != null && chat.megagroup && !scheduled && !isSavedMessages) {
             ArrayList<MessageObject> messages = new ArrayList<>();
             if (selectedMessage != null) {
                 if (selectedMessage.messageOwner.action == null || selectedMessage.messageOwner.action instanceof TLRPC.TL_messageActionEmpty ||
@@ -8168,7 +8169,7 @@ public class AlertsCreator {
                     }
                 }
             }
-            if (myMessagesCount > 0 && hasNonDiceMessages && (user == null || !UserObject.isDeleted(user))) {
+            if (!localXmppDeletion && myMessagesCount > 0 && hasNonDiceMessages && (user == null || !UserObject.isDeleted(user))) {
                 hasDeleteForAllCheck = true;
                 FrameLayout frameLayout = new FrameLayout(activity);
                 CheckBoxCell cell = new CheckBoxCell(activity, 1, resourcesProvider);
@@ -8277,7 +8278,9 @@ public class AlertsCreator {
             }
         }
 
-        if (isSavedMessages) {
+        if(localXmppDeletion) {
+            builder.setMessage(LocaleController.getString(R.string.MonogramDeleteMessagesLocal));
+        } else if (isSavedMessages) {
             if (count == 1) {
                 builder.setMessage(LocaleController.getString(R.string.AreYouSureUnsaveSingleMessage));
             } else {

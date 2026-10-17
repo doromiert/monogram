@@ -142,10 +142,10 @@ public class MonogramRoomStoreTest {
                 original=store.save(MessageFixture.replyMessage("existing",null,null,"Keep my direct chat",true,false,100000,"phone",false,null));
                 android.database.sqlite.SQLiteDatabase db=store.getWritableDatabase();
                 db.execSQL("INSERT INTO archive_state VALUES('direct','oldest','newest',1)");
-                db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.execSQL("DROP TABLE room_message_actors"); db.setVersion(9);
+                db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.execSQL("DROP TABLE room_message_actors"); MonogramStoreDeviceTest.legacyDeletions(db); db.setVersion(9);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
+                assertEquals(15,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
                 assertNull(store.archiveCursor(false)); assertTrue(store.rooms().isEmpty()); assertTrue(store.room(room,"Alice")<0);
             }
         } finally { context.deleteDatabase(file); }
@@ -156,10 +156,10 @@ public class MonogramRoomStoreTest {
         try {
             try(MonogramStore store=new MonogramStore(context,file)) {
                 self=store.peer(own); dialog=store.room(room,"Alice"); message=store.saveRoom(event("Bob","old","sid-old","Keep my room history",false,true),self);
-                store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); store.getWritableDatabase().setVersion(10);
+                store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(10);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
+                assertEquals(15,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
                 XmppBookmarks.Bookmark bookmark=XmppBookmarks.Bookmark.parse(room,"<conference xmlns='urn:xmpp:bookmarks:1' name='My existing group' autojoin='true'><nick>ExistingNick</nick></conference>");
                 store.importBookmark(bookmark,"vault-encrypted-xml","Alice");
                 assertTrue(store.pendingBookmarks().isEmpty()); assertEquals("ExistingNick",store.room(dialog).nickname); assertEquals("My existing group",store.roomChat(dialog).title);
@@ -240,10 +240,10 @@ public class MonogramRoomStoreTest {
             try(MonogramStore store=new MonogramStore(context,file)) {
                 self=store.peer(own); dialog=store.room(room,"Alice"); message=store.saveRoom(event("Bob","existing","existing-server","Keep me",false,true),self);
                 store.getWritableDatabase().execSQL("INSERT INTO archive_state VALUES(?, 'oldest', 'newest', 1)",new Object[]{"room:"+(-dialog)});
-                store.getWritableDatabase().execSQL("DROP TABLE room_permissions"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); store.getWritableDatabase().setVersion(11);
+                store.getWritableDatabase().execSQL("DROP TABLE room_permissions"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(11);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
+                assertEquals(15,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
                 assertNull(store.archiveCursor(dialog,false)); assertEquals(dialog,store.knownRoom(room));
             }
         } finally { context.deleteDatabase(file); }
@@ -305,10 +305,10 @@ public class MonogramRoomStoreTest {
                 self=store.peer(own); dialog=store.room(room,"Alice"); original=store.saveRoom(message,self);
                 store.getWritableDatabase().execSQL("ALTER TABLE room_message_actors DROP COLUMN stable_id");
                 store.getWritableDatabase().execSQL("ALTER TABLE room_message_actors DROP COLUMN verified");
-                store.getWritableDatabase().setVersion(13);
+                MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(13);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(14,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(original,self).message);
+                assertEquals(15,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(original,self).message);
                 try { store.editTarget(original,dialog,self); fail("Old unverified author accepted"); } catch(IllegalArgumentException expected) {}
                 store.saveRoom(message,self); assertEquals("mine",store.editTarget(original,dialog,self).correction.id);
                 assertEquals(1,store.history(dialog,self,0,100).size());
