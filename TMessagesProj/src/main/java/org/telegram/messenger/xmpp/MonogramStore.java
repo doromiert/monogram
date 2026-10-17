@@ -867,11 +867,11 @@ final class MonogramStore extends SQLiteOpenHelper {
         return db.update("attachments", preserved, "message=?", new String[]{Integer.toString(event)}) == 1;
     }
     private boolean sameAttachment(String originalUrl, String originalXml, String correctionUrl, String correctionXml) {
-        if (!java.util.Objects.equals(originalUrl, correctionUrl) || originalXml == null || !originalXml.equals(correctionXml)) return false;
+        if (!java.util.Objects.equals(originalUrl, correctionUrl) || originalXml == null || correctionXml == null) return false;
         try {
             com.negzero.monogram.xmpp.FileShare original = sharing(originalUrl, originalXml);
             com.negzero.monogram.xmpp.FileShare correction = sharing(correctionUrl, correctionXml);
-            return original != null && correction != null && original.cacheKey().equals(correction.cacheKey());
+            return original != null && correction != null && original.sameAttachment(correction);
         } catch (Exception invalid) { return false; }
     }
     synchronized TLRPC.TL_textWithEntities translationText(int id,long peer,long self) {

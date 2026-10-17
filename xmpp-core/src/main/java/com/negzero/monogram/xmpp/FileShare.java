@@ -23,6 +23,7 @@ import org.jivesoftware.smack.util.PacketParserUtils;
 public final class FileShare {
     public static final String NAMESPACE = "urn:xmpp:sfs:0", METADATA = "urn:xmpp:file:metadata:0";
     public static final String URL_DATA = "http://jabber.org/protocol/url-data", HASHES = "urn:xmpp:hashes:2", OOB = "jabber:x:oob";
+    private static final String[] SIMPLE_METADATA = {"name", "media-type", "size", "date", "desc", "height", "length", "width"};
     public final FileLink link;
     public final String name, mime;
     public final long size;
@@ -79,6 +80,93 @@ public final class FileShare {
         return null;
     }
     public String xml() { return element.toXML().toString(); }
+    /**
+     * True when this is the same attachment described with an equivalent, known SFS shape.
+     * Unknown metadata remains significant unless its serialized representation is unchanged.
+     */
+    public boolean sameAttachment(FileShare other) {
+        if (other == null) return false;
+        if (xml().equals(other.xml())) return true;
+        if (!knownDescription(element) || !knownDescription(other.element)) return false;
+        if (!link.wireUrl.equals(other.link.wireUrl) || manual != other.manual || size != other.size
+                || !name.equals(other.name) || !mime.equals(other.mime)
+                || !same(element.getAttributeValue("disposition"), other.element.getAttributeValue("disposition"))
+                || !same(element.getAttributeValue("id"), other.element.getAttributeValue("id"))) return false;
+        StandardExtensionElement firstFile = metadataFile(element), secondFile = metadataFile(other.element);
+        for (String field : SIMPLE_METADATA) if (!same(metadataText(firstFile, field), metadataText(secondFile, field))) return false;
+        if (hashes.size() != other.hashes.size()) return false;
+        for (Map.Entry<String, byte[]> hash : hashes.entrySet()) {
+            byte[] value = other.hashes.get(hash.getKey());
+            if (value == null || !java.security.MessageDigest.isEqual(hash.getValue(), value)) return false;
+        }
+        return true;
+    }
+    private static boolean same(String first, String second) {
+        return first == null ? second == null : first.equals(second);
+    }
+    private static String metadataText(StandardExtensionElement description, String name) {
+        for (StandardExtensionElement child : description.getElements()) {
+            if (name.equals(child.getElementName()) && METADATA.equals(child.getNamespace())) return child.getText();
+        }
+        return null;
+    }
+    private static StandardExtensionElement metadataFile(StandardExtensionElement description) {
+        for (StandardExtensionElement child : description.getElements()) {
+            if ("file".equals(child.getElementName()) && METADATA.equals(child.getNamespace())) return child;
+        }
+        return null;
+    }
+    private static boolean knownDescription(StandardExtensionElement description) {
+        if (!rootAttributes(description) || !blank(description)) return false;
+        int files = 0, sources = 0;
+        for (StandardExtensionElement child : description.getElements()) {
+            if ("file".equals(child.getElementName()) && METADATA.equals(child.getNamespace())) { if (++files != 1 || !knownFile(child)) return false; }
+            else if ("sources".equals(child.getElementName()) && NAMESPACE.equals(child.getNamespace())) { if (++sources != 1 || !knownSources(child)) return false; }
+            else return false;
+        }
+        return files == 1 && sources == 1;
+    }
+    private static boolean knownSources(StandardExtensionElement sources) {
+        if (!attributes(sources) || !blank(sources)) return false;
+        int urls = 0;
+        for (StandardExtensionElement child : sources.getElements()) {
+            if (!"url-data".equals(child.getElementName()) || !URL_DATA.equals(child.getNamespace()) || ++urls != 1
+                    || !attributes(child, "target") || !blank(child) || !child.getElements().isEmpty()) return false;
+        }
+        return urls == 1;
+    }
+    private static boolean knownFile(StandardExtensionElement file) {
+        if (!attributes(file) || !blank(file)) return false;
+        Map<String, Boolean> fields = new LinkedHashMap<>();
+        Map<String, Boolean> algorithms = new LinkedHashMap<>();
+        for (StandardExtensionElement child : file.getElements()) {
+            if (METADATA.equals(child.getNamespace()) && simpleMetadata(child.getElementName())) {
+                if (!attributes(child) || !child.getElements().isEmpty() || fields.put(child.getElementName(), Boolean.TRUE) != null) return false;
+            } else if (HASHES.equals(child.getNamespace()) && "hash".equals(child.getElementName())) {
+                String algorithm = child.getAttributeValue("algo");
+                if (!attributes(child, "algo") || digest(algorithm) == null || algorithms.put(algorithm, Boolean.TRUE) != null || !child.getElements().isEmpty()) return false;
+            } else return false;
+        }
+        return true;
+    }
+    private static boolean simpleMetadata(String name) {
+        for (String field : SIMPLE_METADATA) if (field.equals(name)) return true;
+        return false;
+    }
+    private static boolean rootAttributes(StandardExtensionElement element) {
+        if (element.getAttributes().size() > 2) return false;
+        for (String name : element.getAttributes().keySet()) if (!"id".equals(name) && !"disposition".equals(name)) return false;
+        return true;
+    }
+    private static boolean attributes(StandardExtensionElement element, String... expected) {
+        Map<String, String> attributes = element.getAttributes();
+        if (attributes.size() != expected.length) return false;
+        for (String name : expected) if (!attributes.containsKey(name)) return false;
+        return true;
+    }
+    private static boolean blank(StandardExtensionElement element) {
+        return element.getText() == null || element.getText().trim().isEmpty();
+    }
     /** A reused URL cannot substitute bytes with different expected integrity metadata. */
     public String cacheKey() {
         if (size < 0 && hashes.isEmpty()) return link.wireUrl;
