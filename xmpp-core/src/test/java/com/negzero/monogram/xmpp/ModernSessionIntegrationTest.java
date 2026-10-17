@@ -43,6 +43,7 @@ class ModernSessionIntegrationTest {
         try (XmppSession alice=session("sessionalice",411,true,a); XmppSession bob=session("sessionbob",422,true,b)) {
             alice.connect(); bob.connect(); assertTrue(alice.modernAvailable()); assertTrue(bob.modernAvailable());
             trust(alice,"sessionbob@localhost"); trust(bob,"sessionalice@localhost");
+            trust(alice,"sessionalice@localhost");trust(bob,"sessionbob@localhost");
             BlockingQueue<Message> controls=new LinkedBlockingQueue<>();
             alice.connection().addAsyncStanzaListener(stanza -> controls.add((Message)stanza),stanza -> stanza instanceof Message
                     && stanza.hasExtension("encrypted",XmppOmemo2.NS)
@@ -103,6 +104,50 @@ class ModernSessionIntegrationTest {
             assertEquals(XmppMessage.Encryption.OMEMO2,received.encryption); assertNull(received.body); assertNull(received.correction); b.store();
             XmppSession.ArchivePage page=bob.archiveBefore("fallbackalice@localhost",null,100);
             assertTrue(page.messages.stream().anyMatch(m -> m.encryption==XmppMessage.Encryption.OMEMO2 && !m.readable && m.body==null));
+        }
+    }
+    @Test void ciphertextDuringHeldInitialSetupWaitsForReadinessAndStorageAcceptance() throws Exception {
+        Inbox a=new Inbox(),b=new Inbox();
+        try(XmppSession alice=session("sessionalice",7711,true,a)) {
+            alice.connect();Omemo2Device bobDevice;
+            // Publish the same durable Bob identity first, as a returning installation would have done.
+            try(Omemo2IntegrationTest.Client seed=new Omemo2IntegrationTest.Client("sessionbob",7722)) {
+                seed.trust("sessionalice@localhost");trust(alice,"sessionbob@localhost");trust(alice,"sessionalice@localhost");bobDevice=seed.device;
+            }
+            File state=new File(System.getenv("MONOGRAM_IT_STATE"));
+            try(XmppSession bob=new XmppSession(new Account("sessionbob@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"HeldSetup"),
+                    "monogram-test",7722,new File(state,"held-setup-bob.trust"),bobDevice,b)) {
+                java.util.concurrent.CountDownLatch setupEntered=new java.util.concurrent.CountDownLatch(1),releaseSetup=new java.util.concurrent.CountDownLatch(1);
+                java.util.concurrent.atomic.AtomicBoolean held=new java.util.concurrent.atomic.AtomicBoolean();
+                bob.connection().addStanzaInterceptor(stanza -> {
+                    String xml=stanza.toXML().toString();
+                    if(xml.contains("<publish") && xml.contains(XmppOmemo2.BUNDLES_NODE) && held.compareAndSet(false,true)) {
+                        setupEntered.countDown();
+                        try { if(!releaseSetup.await(10,TimeUnit.SECONDS)) throw new AssertionError("Held setup was not released"); }
+                        catch(InterruptedException interrupted) { Thread.currentThread().interrupt();throw new AssertionError(interrupted); }
+                    }
+                },stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ);
+                java.util.concurrent.ExecutorService connector=java.util.concurrent.Executors.newSingleThreadExecutor();
+                try {
+                    java.util.concurrent.Future<?> connected=connector.submit(() -> { try { bob.connect(); } catch(Exception error) { throw new RuntimeException(error); } });
+                    assertTrue(setupEntered.await(10,TimeUnit.SECONDS));assertFalse(bob.modernAvailable());
+                    BlockingQueue<Message> controls=new LinkedBlockingQueue<>();
+                    alice.connection().addAsyncStanzaListener(stanza -> controls.add((Message)stanza),stanza -> stanza instanceof Message
+                            && stanza.hasExtension("encrypted",XmppOmemo2.NS)
+                            && ((StandardExtensionElement)stanza.getExtension("encrypted",XmppOmemo2.NS)).getFirstElement("payload",XmppOmemo2.NS)==null);
+                    Message clear=new Message(JidCreate.entityFullFrom("sessionbob@localhost/HeldSetup"),Message.Type.chat);
+                    clear.setFrom(alice.connection().getUser());clear.setStanzaId("during-held-setup");clear.setBody("Arrived before readiness 😀");
+                    alice.connection().sendStanza(alice.modern().encrypt(clear));
+                    XmppMessage pending=b.pending.poll(5,TimeUnit.SECONDS);assertNotNull(pending);assertEquals(clear.getStanzaId(),pending.ids.get("stanza"));assertFalse(pending.readable);
+                    assertNull(b.messages.poll(300,TimeUnit.MILLISECONDS),"Setup in progress must not publish a terminal unreadable result");
+                    assertNull(controls.poll(100,TimeUnit.MILLISECONDS));
+                    releaseSetup.countDown();connected.get(10,TimeUnit.SECONDS);
+                    XmppMessage delivered=b.next();assertTrue(delivered.readable,() -> "Modern setup drain failed: "+bob.modernFailure());
+                    assertEquals(clear.getStanzaId(),delivered.ids.get("stanza"));assertEquals(clear.getBody(),delivered.body);
+                    assertNull(controls.poll(200,TimeUnit.MILLISECONDS),"Queued decrypt must still wait for durable acceptance");
+                    b.store();assertNotNull(controls.poll(10,TimeUnit.SECONDS));
+                } finally { releaseSetup.countDown();connector.shutdownNow();assertTrue(connector.awaitTermination(10,TimeUnit.SECONDS)); }
+            }
         }
     }
 }

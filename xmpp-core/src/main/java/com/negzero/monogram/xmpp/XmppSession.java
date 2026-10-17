@@ -92,6 +92,12 @@ public final class XmppSession implements AutoCloseable {
     private final java.util.LinkedHashSet<String> displayedMarkersSent=new java.util.LinkedHashSet<>();
     private final java.util.concurrent.atomic.AtomicLong lifecycle = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicBoolean checkingConnection = new java.util.concurrent.atomic.AtomicBoolean();
+    private static final int MAX_MODERN_SETUP_MESSAGES=128;
+    private static final long MAX_MODERN_SETUP_BYTES=4L*1024*1024;
+    private final Object modernInboxLock=new Object();
+    private final java.util.ArrayDeque<Message> modernInbox=new java.util.ArrayDeque<>();
+    private long modernInboxBytes;
+    private boolean modernSetup=true;
 
     /** Android may change networks while the old TCP socket still appears authenticated. */
     public void checkConnection() {
@@ -190,15 +196,16 @@ public final class XmppSession implements AutoCloseable {
             @Override public void connectionClosedOnError(Exception error) { disconnected(error); }
             private void disconnected(Exception error) {
                 chatStates.reset();
-                lifecycle.incrementAndGet();
+                beginModernSetup();
                 if (!closed) listener.disconnected(error);
             }
             @Override public void authenticated(org.jivesoftware.smack.XMPPConnection ignored, boolean resumed) {
                 if (!started || closed) return;
-                long generation = lifecycle.incrementAndGet();
+                long generation = beginModernSetup();
                 org.jivesoftware.smack.util.Async.go(() -> {
                     try {
                         if (!resumed) enableFeatures();
+                        finishModernSetup(generation);
                         if (!closed && lifecycle.get() == generation && connection.isAuthenticated()) listener.reconnected(resumed);
                     } catch (Exception failed) {
                         if (!closed && lifecycle.get() == generation) connection.setupFailed(failed);
@@ -300,12 +307,50 @@ public final class XmppSession implements AutoCloseable {
             XmppMessage pending=XmppMessage.modern(stanza,null,connection.getUser().asEntityBareJid(),null,null);
             if (pending!=null) listener.messagePending(pending);
         }
+        queueModern(stanza);
+    }
+    private long beginModernSetup() {
+        synchronized(modernInboxLock) { modernSetup=true;return lifecycle.incrementAndGet(); }
+    }
+    private void finishModernSetup(long generation) {
+        synchronized(modernInboxLock) {
+            if(closed || lifecycle.get()!=generation || !connection.isAuthenticated()) return;
+            modernSetup=false;
+            while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),false);
+            modernInboxBytes=0;
+        }
+    }
+    private void queueModern(Message stanza) {
+        java.io.IOException overflow=null;
+        synchronized(modernInboxLock) {
+            if(closed) return;
+            if(!modernSetup) { decryptModern(stanza,false);return; }
+            long bytes=2L*stanza.toXML().length();
+            if(modernInbox.size()<MAX_MODERN_SETUP_MESSAGES && bytes<=MAX_MODERN_SETUP_BYTES-modernInboxBytes) {
+                modernInbox.addLast(stanza);modernInboxBytes+=bytes;return;
+            }
+            overflow=new java.io.IOException("OMEMO2 setup inbox exceeded its bounded capacity; reconnect and recover history");
+            modernFailure=overflow;modernSetup=false;
+            // Preserve every provisional ID as unreadable; do not consume ratchets or acknowledge overflowed data.
+            while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),true);
+            modernInboxBytes=0;decryptModern(stanza,true);
+        }
+        connection.setupFailed(overflow);
+    }
+    private void decryptModern(Message stanza,boolean setupOverflow) {
         try {
         crypto.execute(() -> {
             if (closed || connection.getUser() == null) return;
             XmppOmemo2.Received received = null;
-            try { if (modernAvailable()) received = modern.receive(stanza); }
-            catch (Exception error) { modernFailure = error; }
+            Exception failed=null;
+            try { if (!setupOverflow && modernAvailable()) received = modern.receive(stanza); }
+            catch (Exception error) { failed=error; }
+            if(received==null && !setupOverflow) {
+                boolean settingUp;
+                synchronized(modernInboxLock) { settingUp=modernSetup; }
+                if(settingUp) { queueModern(stanza);return; }
+            }
+            if(failed!=null) modernFailure=failed;
             XmppMessage message = XmppMessage.modern(stanza,received == null ? null : received.content,
                     connection.getUser().asEntityBareJid(),null,null);
             if(message!=null && received!=null) message=message.withSenderFingerprint(received.senderFingerprint);
@@ -434,7 +479,8 @@ public final class XmppSession implements AutoCloseable {
     public void connect() throws Exception {
         try {
             connection.connect().login();
-            enableFeatures(); started = true;
+            long generation=lifecycle.get();
+            enableFeatures();finishModernSetup(generation);started = true;
         } catch (Exception e) { close(); throw e; }
     }
     private void enableFeatures() throws Exception {
@@ -710,6 +756,7 @@ public final class XmppSession implements AutoCloseable {
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
+        synchronized(modernInboxLock) { modernInbox.clear();modernInboxBytes=0; }
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
         chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);

@@ -853,7 +853,8 @@ public final class MonogramController {
         java.util.Set<Long> active=store.activeRoomUsers(dialog);
         for(TLRPC.User user:users) if(user.id!=self && active.contains(user.id) && store.profile(user.id)==null) refreshProfile(user.id);
         MessagesStorage.getInstance(account).putUsersAndChats(users,chats,true,true);
-        AndroidUtilities.runOnUIThread(() -> { MessagesController.getInstance(account).putUsers(users,false); MessagesController.getInstance(account).putChat(chat,false);
+        final long owner=accountEpoch;
+        AndroidUtilities.runOnUIThread(() -> { if(accountEpoch!=owner) return; MessagesController.getInstance(account).putUsers(users,false); MessagesController.getInstance(account).putChat(chat,false);
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_ALL); });
     }
     private void incomingRoom(com.negzero.monogram.xmpp.XmppRoomMessage message) {
@@ -1012,28 +1013,22 @@ public final class MonogramController {
         if(cursor!=null && cursor.equals(task.backwards ? page.firstId : page.lastId) && !page.complete) throw new java.io.IOException("Room archive cursor did not advance");
         boolean initial=task.loaded==0;
         worker.execute(() -> {
-            if(!currentArchive(sync)) {
-                if(sameAccount(sync.epoch,sync.jid)) for(com.negzero.monogram.xmpp.XmppRoomMessage message:page.messages) store.saveRoom(message,self);
-                return;
-            }
-            try {
-                java.util.Set<Integer> updated=new java.util.HashSet<>();
-                boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
-                applyRetractions(task.peer);
-                refreshNotifications(updated);
-                MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(task.peer,updated);
-                updated.addAll(corrections.edited); refreshReplies(task.peer,updated);
-                publishCorrections(task.peer,correctionUpdates(corrections,0));
-                publishReactions(task.peer,null);
-                if(changed && UserConfig.getInstance(account).isClientActivated()) {
-                    publishRoom(task.peer);
-                    publishArchiveMessages(sync,updated);
-                    TLRPC.TL_messages_dialogs cached=dialogs();
-                    publishDialogs(cached,() -> currentArchive(sync),null);
-                }
-                finishArchivePage(sync,task,page.firstId,page.complete);
-            } catch(Exception failed) { archiveFailed(sync,task,failed); }
+            try { roomArchivePage(sync,task,page,initial); }
+            catch(Exception failed) { if(currentArchive(sync)) archiveFailed(sync,task,failed); else if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram late room archive: "+failed.getClass().getSimpleName()); }
         });
+    }
+    private void roomArchivePage(ArchiveSync sync,ArchiveTask task,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page,boolean initial) {
+        if(!sameAccount(sync.epoch,sync.jid)) return;
+        java.util.Set<Integer> updated=new java.util.HashSet<>();
+        boolean current=currentArchive(sync),changed=false;
+        if(current) changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
+        // Retain already decrypted records after reconnect without advancing the obsolete sync's cursors.
+        else for(com.negzero.monogram.xmpp.XmppRoomMessage message:page.messages) {
+            if(!store.jid(task.peer).equals(message.room.toString())) throw new IllegalArgumentException("Room archive belongs to another room");
+            int id=store.saveRoom(message,self); if(id!=0) { updated.add(id);changed=true; }
+        }
+        publishArchiveChanges(sync,java.util.Collections.singleton(task.peer),updated,changed);
+        if(current) finishArchivePage(sync,task,page.firstId,page.complete);
     }
     private void nextArchivePage(ArchiveSync sync) {
         if (!currentArchive(sync) || sync.running) return;
@@ -1069,40 +1064,44 @@ public final class MonogramController {
             }
             boolean initial = task.loaded==0;
             worker.execute(() -> {
-                if (!currentArchive(sync)) {
-                    if(sameAccount(sync.epoch,sync.jid)) {
-                        for(XmppMessage message:page.messages) store.save(message);
-                        page.stored();
-                    }
-                    return;
-                }
                 try { archivePage(sync, task, page, initial); }
-                catch (Exception error) { archiveFailed(sync, task, error); }
+                catch (Exception error) { if(currentArchive(sync)) archiveFailed(sync, task, error); else if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram late archive: "+error.getClass().getSimpleName()); }
             });
         } catch (Exception error) { worker.execute(() -> { if (currentArchive(sync)) archiveFailed(sync, task, error); }); }
     }
     private void archivePage(ArchiveSync sync, ArchiveTask task, XmppSession.ArchivePage page, boolean initial) {
+        if(!sameAccount(sync.epoch,sync.jid)) return;
         java.util.Set<Integer> updated = new java.util.HashSet<>();
-        boolean changed = store.saveArchive(task.peer, page, task.backwards || initial, updated);
-        refreshNotifications(updated);
+        boolean current=currentArchive(sync),changed=false;
+        if(current) changed=store.saveArchive(task.peer,page,task.backwards || initial,updated);
+        // Replaying the ciphertext may no longer work after its ratchet key has been consumed.
+        else for(XmppMessage message:page.messages) {
+            if(task.peer!=0 && !store.jid(task.peer).equals(message.peer.toString())) throw new IllegalArgumentException("Archive belongs to another chat");
+            int id=store.save(message); if(id!=0) { updated.add(id);changed=true; }
+        }
         page.stored();
-        java.util.Set<Long> replyPeers = new java.util.HashSet<>();
-        for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
-        for (long peer : replyPeers) {
+        java.util.Set<Long> peers=new java.util.HashSet<>();
+        for(XmppMessage message:page.messages) peers.add(store.peer(message.peer.toString()));
+        publishArchiveChanges(sync,peers,updated,changed);
+        if(current) finishArchivePage(sync,task,page.firstId,page.complete);
+    }
+    private void publishArchiveChanges(ArchiveSync sync,java.util.Set<Long> peers,java.util.Set<Integer> updated,boolean changed) {
+        refreshNotifications(updated);
+        for(long peer:peers) {
             applyRetractions(peer);
-            MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
+            MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(peer,updated);
             updated.addAll(corrections.edited);
-            publishCorrections(peer, correctionUpdates(corrections, 0));
-            refreshReplies(peer, updated);
+            publishCorrections(peer,correctionUpdates(corrections,0));
+            refreshReplies(peer,updated);
             publishReactions(peer,null);
-            if(peer!=self && !sync.peers.contains(peer)) prepareArchivePeer(sync,peer);
+            ArchiveSync active=archiveSync;
+            if(peer!=self && active!=null && currentArchive(active) && !active.peers.contains(peer)) prepareArchivePeer(active,peer);
         }
-        if (changed && UserConfig.getInstance(account).isClientActivated()) {
+        if(changed && UserConfig.getInstance(account).isClientActivated()) {
+            for(long peer:peers) if(peer<0) publishRoom(peer);
             publishArchiveMessages(sync,updated);
-            TLRPC.TL_messages_dialogs dialogs = dialogs();
-            publishDialogs(dialogs,() -> currentArchive(sync),null);
+            publishDialogs(dialogs(),() -> sameAccount(sync.epoch,sync.jid),null);
         }
-        finishArchivePage(sync,task,page.firstId,page.complete);
     }
     private void publishArchiveMessages(ArchiveSync sync, java.util.Set<Integer> updated) {
         if(updated.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
@@ -1118,7 +1117,7 @@ public final class MonogramController {
         }
         MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
         AndroidUtilities.runOnUIThread(() -> {
-            if(accountEpoch!=sync.epoch || session!=sync.session) return;
+            if(!sameAccount(sync.epoch,sync.jid)) return;
             for(java.util.Map.Entry<Long,ArrayList<MessageObject>> entry:byPeer.entrySet())
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,entry.getKey(),entry.getValue(),true);
         });
@@ -1585,7 +1584,8 @@ public final class MonogramController {
         ArrayList<TLRPC.User> users=new ArrayList<>(); ArrayList<TLRPC.Chat> chats=new ArrayList<>();
         if(peer<0) { users.addAll(store.roomUsers(peer,self)); chats.add(store.roomChat(peer)); }
         else { users.add(store.user(peer,self)); users.add(ownUser()); }
-        Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now()));
+        final long owner=accountEpoch;
+        Utilities.stageQueue.postRunnable(() -> { if(accountEpoch==owner) MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now()); });
     }
     private void refreshReplies(long peer) { refreshReplies(peer, java.util.Collections.emptySet()); }
     public boolean canRetract(int id,long peer) {
@@ -1666,10 +1666,10 @@ public final class MonogramController {
     private void refreshReplies(long peer, java.util.Set<Integer> updated) {
         ArrayList<TLRPC.Message> changed = store.changedReplies(peer, self, updated);
         if (changed.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
-        long epoch = sessionEpoch;
+        long owner = accountEpoch;
         MessagesStorage.getInstance(account).putMessages(changed, false, true, false, 0, 0, 0);
         AndroidUtilities.runOnUIThread(() -> {
-            if (sessionEpoch != epoch) return;
+            if (accountEpoch != owner) return;
             ArrayList<MessageObject> objects = new ArrayList<>();
             for (TLRPC.Message message : changed) objects.add(new MessageObject(account, message, true, true));
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects, peer, objects);
