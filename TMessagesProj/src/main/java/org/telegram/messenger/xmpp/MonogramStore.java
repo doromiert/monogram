@@ -277,6 +277,12 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(realJid!=null) getWritableDatabase().update("room_participants",values,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant});
         return user;
     }
+    synchronized void roomMetadata(long dialog,String title,String description) {
+        ContentValues values=new ContentValues();
+        if(title!=null && !title.trim().isEmpty()) values.put("title",title);
+        if(description!=null) values.put("description",description);
+        if(values.size()>0) getWritableDatabase().update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
+    }
     synchronized void roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
         long dialog=knownRoom(state.room.toString()); if (dialog==0) return;
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
@@ -545,7 +551,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized void profile(long peer, com.negzero.monogram.xmpp.XmppProfile profile) throws Exception {
         byte[] png;
         try { png = MonogramProfiles.png(profile.avatar); }
-        catch (IllegalArgumentException invalid) { png = new byte[0]; }
+        catch (IllegalArgumentException invalid) { if(avatar(peer)!=null) throw invalid;png = new byte[0]; }
         java.io.File avatar = png.length == 0 ? null : MonogramProfiles.cache(storeContext, database, png);
         ContentValues empty = new ContentValues(); empty.put("peer", peer);
         SQLiteDatabase db = getWritableDatabase();

@@ -246,6 +246,13 @@ public class MonogramRoomStoreTest {
                 android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(4,4,android.graphics.Bitmap.Config.ARGB_8888);
                 java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream(); bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,bytes); bitmap.recycle();
                 store.profile(dialog,new XmppProfile("<vCard xmlns='vcard-temp'/>",null,bytes.toByteArray()));
+                java.io.File previousAvatar=store.avatar(dialog);
+                android.graphics.Bitmap oversized=android.graphics.Bitmap.createBitmap(5000,1,android.graphics.Bitmap.Config.ARGB_8888);
+                java.io.ByteArrayOutputStream invalid=new java.io.ByteArrayOutputStream();oversized.compress(android.graphics.Bitmap.CompressFormat.PNG,100,invalid);oversized.recycle();
+                XmppProfile invalidReplacement=new XmppProfile("<vCard xmlns='vcard-temp'/>",null,invalid.toByteArray());
+                try { store.profile(dialog,invalidReplacement);fail("An invalid replacement must preserve the cached avatar"); }
+                catch(IllegalArgumentException expected) {}
+                assertEquals(previousAvatar,store.avatar(dialog));assertTrue(previousAvatar.isFile());
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
                 TLRPC.Chat chat=store.roomChat(dialog);

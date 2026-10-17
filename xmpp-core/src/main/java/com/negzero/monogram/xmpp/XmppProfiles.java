@@ -125,6 +125,26 @@ public final class XmppProfiles {
     }
     /** Room avatars use the room vCard, rather than a person's PEP nodes. */
     public XmppProfile loadRoom(String room) throws Exception { return card(JidCreate.entityBareFrom(room),false); }
+    /** Reuse advertised cached bytes; a denied or inconsistent refresh must not erase them. */
+    public XmppProfile loadRoom(String room,XmppProfile cached,org.jivesoftware.smackx.muc.RoomInfo information) throws Exception {
+        java.util.Set<String> hashes=roomAvatarHashes(information==null ? null : information.getForm());
+        if(cached!=null && hashes.contains(sha1OrEmpty(cached.avatar))) return cached;
+        XmppProfile profile=card(JidCreate.entityBareFrom(room),cached!=null);
+        if(!hashes.isEmpty() && !hashes.contains(sha1OrEmpty(profile.avatar))) throw new java.io.IOException("Room avatar does not match its advertised hash");
+        return profile;
+    }
+    static java.util.Set<String> roomAvatarHashes(org.jivesoftware.smackx.xdata.packet.DataForm form) throws java.io.IOException {
+        java.util.Set<String> hashes=new java.util.HashSet<>();
+        if(form==null) return hashes;
+        org.jivesoftware.smackx.xdata.FormField type=form.getField("FORM_TYPE"),field=form.getField("muc#roominfo_avatarhash");
+        if(type==null || type.getValues().size()!=1 || !"http://jabber.org/protocol/muc#roominfo".contentEquals(type.getValues().get(0)) || field==null) return hashes;
+        for(CharSequence value:field.getValues()) {
+            String hash=value.toString().trim().toLowerCase(java.util.Locale.ROOT);
+            if(!hash.matches("[0-9a-f]{40}")) throw new java.io.IOException("Invalid advertised room avatar hash");
+            hashes.add(hash);
+        }
+        return hashes;
+    }
     public XmppProfile roomAvatar(String room,byte[] png) throws Exception {
         XmppProfile.checkedAvatar(png);
         EntityBareJid address=JidCreate.entityBareFrom(room);

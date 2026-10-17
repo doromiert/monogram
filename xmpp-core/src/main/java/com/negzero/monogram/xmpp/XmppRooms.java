@@ -60,6 +60,19 @@ public final class XmppRooms implements AutoCloseable {
     private final RoomInvitations outgoingInvitations=new RoomInvitations();
     private final org.jivesoftware.smack.StanzaListener invitationInterceptor=stanza -> trackInvitation((Message)stanza);
     private final org.jivesoftware.smack.StanzaListener invitationErrors=stanza -> rejectInvitation((Message)stanza);
+    private final org.jivesoftware.smack.StanzaListener metadataChanges=stanza -> changedMetadata((Message)stanza);
+    static boolean metadataHint(Message message,BareJid account) {
+        if(message.getType()!=Message.Type.groupchat || message.getFrom()==null || !message.getFrom().isEntityBareJid()
+                || staleInvitation(message) || message.getTo()!=null && !account.equals(message.getTo().asBareJid())) return false;
+        java.util.List<ExtensionElement> extensions=message.getExtensions("x",org.jivesoftware.smackx.muc.packet.MUCUser.NAMESPACE);
+        return extensions.size()==1 && extensions.get(0) instanceof org.jivesoftware.smackx.muc.packet.MUCUser
+                && ((org.jivesoftware.smackx.muc.packet.MUCUser)extensions.get(0)).getStatus().contains(org.jivesoftware.smackx.muc.packet.MUCUser.Status.create(104));
+    }
+    private void changedMetadata(Message message) {
+        if(closed || connection.getUser()==null || !metadataHint(message,connection.getUser().asBareJid())) return;
+        MultiUserChat chat=chats.get(message.getFrom().asEntityBareJidIfPossible());
+        if(chat!=null && chat.isJoined()) listener.roomMetadataChanged(chat.getRoom().toString());
+    }
     private void rejectInvitation(Message error) {
         RoomInvitations.Pending invitation=outgoingInvitations.rejected(error);
         if(!closed && invitation!=null) listener.roomInviteFailed(invitation.room.toString(),invitation.target.toString(),error.getError().getCondition().toString());
@@ -78,6 +91,7 @@ public final class XmppRooms implements AutoCloseable {
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         connection.addStanzaInterceptor(invitationInterceptor,stanza -> stanza instanceof Message && stanza.hasExtension("x",RoomInvitations.NS));
         connection.addAsyncStanzaListener(invitationErrors,stanza -> stanza instanceof Message && ((Message)stanza).getType()==Message.Type.error);
+        connection.addAsyncStanzaListener(metadataChanges,stanza -> stanza instanceof Message && stanza.hasExtension("x",org.jivesoftware.smackx.muc.packet.MUCUser.NAMESPACE));
         MultiUserChatManager manager=MultiUserChatManager.getInstanceFor(connection);
         manager.setAutoJoinOnReconnect(false);
         manager.addInvitationListener((conn,room,inviter,reason,password,message,invitation) -> {
@@ -115,6 +129,7 @@ public final class XmppRooms implements AutoCloseable {
         if(!closed && (current==null || !current.isJoined())) listener.roomInvitation(room.toString(),inviter,reason,password);
     }
     public List<DomainBareJid> services() throws Exception { return MultiUserChatManager.getInstanceFor(connection).getMucServiceDomains(); }
+    public RoomInfo information(String room) throws Exception { return MultiUserChatManager.getInstanceFor(connection).getRoomInfo(JidCreate.entityBareFrom(room)); }
     public Collection<HostedRoom> discover(String service) throws Exception {
         return MultiUserChatManager.getInstanceFor(connection).getRoomsHostedBy(JidCreate.domainBareFrom(service)).values();
     }
@@ -621,5 +636,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { closed=true; connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
+    @Override public void close() { closed=true; connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
 }

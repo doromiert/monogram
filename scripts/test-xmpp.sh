@@ -49,6 +49,7 @@ archive_expires_after = "1d"
 default_archive_policy = true
 Component "conference.localhost" "muc"
 modules_enabled = { "muc_mam" }
+muc_avatar_advertise_hashes = "message"
 archive_expires_after = "1d"
 Component "upload.localhost" "http_file_share"
 http_host = "localhost"

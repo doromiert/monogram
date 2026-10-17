@@ -61,6 +61,7 @@ public final class MonogramController {
     private volatile long sessionEpoch;
     private volatile ArchiveSync archiveSync;
     private final java.util.concurrent.ConcurrentHashMap<Long, Long> profileVersions = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<Long> roomMetadataDirty=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.Set<Long> profileLoads = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.Set<Long> typingPeers = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.concurrent.ConcurrentHashMap<Long, String> typingAddresses = new java.util.concurrent.ConcurrentHashMap<>();
@@ -252,7 +253,7 @@ public final class MonogramController {
     private void state(int value) {
         state = value;
         if (value != ConnectionsManager.ConnectionStateConnected) {
-            presences.clear(); clearRoomTyping(); rosterLoads.clear();rosterAttempts.clear();
+            presences.clear(); clearRoomTyping(); rosterLoads.clear();rosterAttempts.clear();roomMetadataDirty.clear();
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
         }
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didUpdateConnectionState));
@@ -339,8 +340,14 @@ public final class MonogramController {
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
                             store.roomState(room,self); if(room.joined) flushPendingSends(); long dialog=store.knownRoom(room.room.toString());
+                            if(dialog!=0 && (room.title!=null || room.description!=null)) profileVersions.merge(dialog,1L,Long::sum);
                             if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) { refreshRoomRoster(dialog,true); queueRoomArchive(dialog,session); } else if(!room.joined) joinedRooms.remove(dialog); }
                         } });
+                    }
+                    @Override public void roomMetadataChanged(String room) {
+                        worker.execute(() -> { if(sessionEpoch!=epoch || session==null) return;
+                            long dialog=store.knownRoom(room);if(dialog!=0) { roomMetadataDirty.add(dialog);changedProfile(dialog); }
+                        });
                     }
                     @Override public void roomInviteFailed(String room,String target,String condition) {
                         worker.execute(() -> {
@@ -372,8 +379,8 @@ public final class MonogramController {
                             long peer=address.hasResource() ? store.knownOccupant(address.toString()) : 0;
                             if(peer==0) peer=store.knownPeer(address.toString());
                             if(peer==0 && address.hasResource() && store.knownRoom(address.asBareJid().toString())==0) peer=store.knownPeer(address.asBareJid().toString());
-                            if(peer!=0) refreshProfile(peer);
-                            if(!address.hasResource()) { long room=store.knownRoom(address.toString()); if(room!=0) refreshProfile(room); }
+                            if(peer!=0) changedProfile(peer);
+                            if(!address.hasResource()) { long room=store.knownRoom(address.toString()); if(room!=0) changedProfile(room); }
                         });
                     }
                     @Override public void typing(org.jxmpp.jid.EntityBareJid jid, boolean composing) {
@@ -1166,34 +1173,54 @@ public final class MonogramController {
     public com.negzero.monogram.xmpp.XmppProfile cachedProfile(long peer) { return store.profile(peer); }
     public void refreshProfile(long peer) { refreshProfile(peer,null); }
     public void refreshVisibleRoomMember(long room,long peer) { if(peer>0 && isRoom(room) && store.profile(peer)==null) refreshProfile(peer); }
+    private void changedProfile(long peer) {
+        profileVersions.merge(peer,1L,Long::sum);refreshProfile(peer);
+    }
     private void refreshProfile(long peer,Runnable completed) {
         if(peer==0) { if(completed!=null) completed.run(); return; }
         synchronized(profileLoads) {
             if(completed!=null) profileCompletions.computeIfAbsent(peer,key -> new ArrayList<>()).add(completed);
             if(!profileLoads.add(peer)) return;
         }
-        final XmppSession expected=session; final long epoch=sessionEpoch;
+        final XmppSession expected=session;final long epoch=sessionEpoch;
         final String jid;
         try { jid=store.jid(peer); }
-        catch(IllegalArgumentException unknown) { finishProfile(peer); return; }
+        catch(IllegalArgumentException unknown) { finishProfile(peer);return; }
         final long version=profileVersions.getOrDefault(peer,0L);
+        final com.negzero.monogram.xmpp.XmppProfile cachedRoom=peer<0 ? store.profile(peer) : null;
+        final boolean metadata=peer<0 && roomMetadataDirty.contains(peer);
         profileWorker.execute(() -> {
-            try {
-                if(expected==null || session!=expected || sessionEpoch!=epoch) { worker.execute(() -> finishProfile(peer)); return; }
-                com.negzero.monogram.xmpp.XmppProfile profile=peer<0 ? expected.profiles.loadRoom(jid) : expected.profiles.load(jid);
-                worker.execute(() -> {
-                    try {
-                        if(sessionEpoch!=epoch || session!=expected || profileVersions.getOrDefault(peer,0L)!=version) return;
-                        store.profile(peer,profile); if(peer==self) expected.profiles.useOwnProfile(profile);
-                        if(peer<0) publishRoom(peer); else publishProfile(peer,epoch);
-                    } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile cache: "+failed.getClass().getSimpleName()); }
-                    finally { finishProfile(peer); }
-                });
-            } catch(Exception failed) {
-                worker.execute(() -> finishProfile(peer));
-                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile: "+failed.getClass().getSimpleName());
-            }
+            if(expected==null || session!=expected || sessionEpoch!=epoch) { worker.execute(() -> finishProfile(peer,expected,epoch,version));return; }
+            org.jivesoftware.smackx.muc.RoomInfo information=null;
+            if(metadata) try { information=expected.rooms.information(jid); }
+            catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room metadata: "+failed.getClass().getSimpleName()); }
+            com.negzero.monogram.xmpp.XmppProfile fetched=null;
+            try { fetched=peer<0 ? expected.profiles.loadRoom(jid,cachedRoom,information) : expected.profiles.load(jid); }
+            catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile: "+failed.getClass().getSimpleName()); }
+            final org.jivesoftware.smackx.muc.RoomInfo info=information;
+            final com.negzero.monogram.xmpp.XmppProfile profile=fetched;
+            worker.execute(() -> {
+                try {
+                    if(sessionEpoch!=epoch || session!=expected || profileVersions.getOrDefault(peer,0L)!=version) return;
+                    if(info!=null) { store.roomMetadata(peer,info.getName(),info.getDescription());if(profile!=null) roomMetadataDirty.remove(peer); }
+                    if(profile!=null && profile!=cachedRoom) {
+                        try { store.profile(peer,profile);if(peer==self) expected.profiles.useOwnProfile(profile); }
+                        catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile cache: "+failed.getClass().getSimpleName()); }
+                    }
+                    if(peer<0 && (info!=null || profile!=null)) { publishRoom(peer);publishRoomInfo(peer,expected,epoch); }
+                    else if(profile!=null) publishProfile(peer,epoch);
+                } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile publication: "+failed.getClass().getSimpleName()); }
+                finally { finishProfile(peer,expected,epoch,version); }
+            });
         });
+    }
+    private void finishProfile(long peer,XmppSession expected,long epoch,long version) {
+        if(expected!=null && session==expected && sessionEpoch==epoch && profileVersions.getOrDefault(peer,0L)!=version) {
+            // A hint received during a fetch invalidates its result and needs one follow-up fetch.
+            synchronized(profileLoads) { profileLoads.remove(peer); }
+            refreshProfile(peer);return;
+        }
+        finishProfile(peer);
     }
     private void finishProfile(long peer) {
         java.util.List<Runnable> callbacks;
@@ -1984,18 +2011,21 @@ public final class MonogramController {
                 worker.execute(() -> {
                     try {
                         requireRoomSession(expected,epoch);store.roomRoster(dialog,members);publishRoom(dialog);
-                        TLRPC.TL_messages_chatFull full=store.roomFull(dialog,self);
-                        MessagesStorage.getInstance(account).updateChatInfo(full.full_chat,false);
-                        AndroidUtilities.runOnUIThread(() -> {
-                            if(session!=expected || sessionEpoch!=epoch) return;
-                            MessagesController.getInstance(account).putUsers(full.users,false);
-                            MessagesController.getInstance(account).putChatFull(full.full_chat);
-                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.chatInfoDidLoad,full.full_chat,0,false,false);
-                        });
+                        publishRoomInfo(dialog,expected,epoch);
                     } catch(Exception failed) { /* Keep the last complete roster if the account changed or storage failed. */ }
                     finally { rosterLoads.remove(dialog,expected); }
                 });
             } catch(Exception failed) { rosterLoads.remove(dialog,expected); }
+        });
+    }
+    private void publishRoomInfo(long dialog,XmppSession expected,long epoch) {
+        TLRPC.TL_messages_chatFull full=store.roomFull(dialog,self);
+        MessagesStorage.getInstance(account).updateChatInfo(full.full_chat,false);
+        AndroidUtilities.runOnUIThread(() -> {
+            if(session!=expected || sessionEpoch!=epoch) return;
+            MessagesController.getInstance(account).putUsers(full.users,false);
+            MessagesController.getInstance(account).putChatFull(full.full_chat);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.chatInfoDidLoad,full.full_chat,0,false,false);
         });
     }
     private static boolean roomMutation(TLObject request) {

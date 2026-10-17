@@ -31,6 +31,13 @@ public class MonogramRoomRosterTest {
             assertTrue(full.full_chat.participants.participants.stream().anyMatch(p -> p instanceof TLRPC.TL_chatParticipantCreator && p.user_id==self));
             assertTrue(full.full_chat.participants.participants.stream().anyMatch(p -> p instanceof TLRPC.TL_chatParticipantAdmin));
             assertTrue(full.users.stream().filter(u -> u.id==bob).findFirst().get().status instanceof TLRPC.TL_userStatusEmpty);
+            store.roomMetadata(room,"Renamed remotely","Remote description");
+            assertEquals("Renamed remotely",store.roomChat(room).title);
+            assertEquals("Remote description",store.roomFull(room,self).full_chat.about);
+            assertEquals(Collections.singleton(self),store.activeRoomUsers(room));
+            assertEquals(3,store.roomChat(room).participants_count);
+            assertTrue(store.roomFull(room,self).full_chat.participants.participants.stream().anyMatch(p -> p instanceof TLRPC.TL_chatParticipantAdmin));
+            store.roomMetadata(room,null,null);assertEquals("Renamed remotely",store.roomChat(room).title);
             Map<String,String> invalid=new LinkedHashMap<>();invalid.put("bob@example.org","outcast");
             try { store.roomRoster(room,invalid);fail("An invalid snapshot must not erase the known roster"); } catch(IllegalArgumentException expected) {}
             assertEquals(3,store.roomFull(room,self).full_chat.participants.participants.size());
