@@ -1301,6 +1301,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (finalSize > 0) {
                     Runnable ready = monogramVideoConversions.remove(messageObject);
                     removeFromUploadingMessages(messageObject.getId(), false);
+                    if(!TextUtils.isEmpty(messageObject.messageOwner.attachPath) && !messageObject.messageOwner.attachPath.equals(finalPath))
+                        ImageLoader.getInstance().setFileProgress(messageObject.messageOwner.attachPath,-1,0);
                     messageObject.messageOwner.attachPath = finalPath;
                     messageObject.videoEditedInfo = null;
                     messageObject.shouldRemoveVideoEditedInfo = true;
@@ -1562,6 +1564,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     private void monogramVideoFailed(MessageObject message) {
+        if(!TextUtils.isEmpty(message.messageOwner.attachPath)) ImageLoader.getInstance().setFileProgress(message.messageOwner.attachPath,-1,0);
         getMessagesStorage().markMessageAsSendError(message.messageOwner, 0);
         message.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
         getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, message.getId());
@@ -1614,7 +1617,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             java.util.Iterator<MessageObject> conversions = monogramVideoConversions.keySet().iterator();
             while (conversions.hasNext()) {
                 MessageObject converting = conversions.next();
-                if (converting.getId() == object.getId()) { conversions.remove(); MediaController.getInstance().cancelVideoConvert(converting); }
+                if (converting.getId() == object.getId()) {
+                    conversions.remove();MediaController.getInstance().cancelVideoConvert(converting);
+                    if(!TextUtils.isEmpty(converting.messageOwner.attachPath)) ImageLoader.getInstance().setFileProgress(converting.messageOwner.attachPath,-1,0);
+                }
             }
             org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelFile(object.getId());
             if (object.scheduled) {
@@ -5369,6 +5375,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (newMsg.params.containsKey("monogramCaption")) monogramCaption = newMsg.params.get("monogramCaption");
                 else if (caption != null && !caption.isEmpty()) newMsg.params.put("monogramCaption", caption);
                 newMsg.message = ""; newMsg.entities.clear(); newMsg.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+                org.telegram.messenger.xmpp.MonogramFileRequest.prepareProgress(newMsg,monogramSource);
             }
             if (stars > 0) {
                 TLRPC.MessageMedia media = newMsg.media;

@@ -15,7 +15,7 @@ import org.telegram.messenger.xmpp.MonogramFavoriteEmojiTest;
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
         shadows={MonogramFavoriteEmojiTest.Display.class,MonogramFavoriteEmojiTest.Settings.class})
 public class MonogramQuickReactionsTest {
-    @Test public void defaultMessageStripKeepsSeparateFavoritePrefixWithoutDuplicateOrLostReactions() {
+    @Test public void defaultMessageStripKeepsFavoritePrefixWithoutDuplicateOrLostReactions() {
         TLRPC.TL_messageReactions current=new TLRPC.TL_messageReactions();
         for(String code:Arrays.asList("🔥","🐢","🦊")) {
             TLRPC.TL_reactionCount count=new TLRPC.TL_reactionCount(); TLRPC.TL_reactionEmoji emoji=new TLRPC.TL_reactionEmoji();
@@ -26,10 +26,6 @@ public class MonogramQuickReactionsTest {
         assertEquals(Arrays.asList(VisibleReaction.fromEmojicon("🐢"),VisibleReaction.fromEmojicon("🔥"),VisibleReaction.fromEmojicon("❤️")),quick.reactions.subList(0,3));
         assertEquals(10,quick.reactions.size());
         assertTrue(quick.reactions.contains(VisibleReaction.fromEmojicon("🦊")));
-        assertEquals(3,ReactionsContainerLayout.favoriteBoundary(quick.favoriteCount,7,true));
-        assertEquals(7,ReactionsContainerLayout.favoriteBoundary(10,7,true));
-        assertEquals(-1,ReactionsContainerLayout.favoriteBoundary(7,7,false));
-        assertEquals(-1,ReactionsContainerLayout.favoriteBoundary(0,7,true));
         assertEquals(8,new ReactionsContainerLayout.QuickReactions(Collections.emptyList(),null).reactions.size());
     }
 }

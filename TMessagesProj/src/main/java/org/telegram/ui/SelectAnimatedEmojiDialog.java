@@ -177,6 +177,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     private int topReactionsStartRow;
     private int topReactionsEndRow;
     private int recentReactionsSectionRow;
+    private int favoriteReactionsHeaderRow=-1, favoriteReactionsStartRow=-1, favoriteReactionsEndRow=-1, otherReactionsHeaderRow=-1;
     private int popularSectionRow;
     private int giftsSectionRow;
     private int giftsStartRow;
@@ -447,6 +448,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     private int standardEmojisStartRow;
     public boolean reactionScrollEffect;
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> topReactions = new ArrayList<>();
+    private ArrayList<ReactionsLayoutInBubble.VisibleReaction> favoriteReactions = new ArrayList<>();
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> recentReactions = new ArrayList<>();
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> stickers = new ArrayList<>();
     private ArrayList<AnimatedEmojiSpan> defaultStatuses = new ArrayList<>();
@@ -750,6 +752,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
             @Override
             public void onScrolled(int dx, int dy) {
                 super.onScrolled(dx, dy);
+                preloadReactionWindow(this);
                 checkScroll();
                 if (!smoothScrolling) {
                     updateTabsPosition(layoutManager.findFirstCompletelyVisibleItemPosition());
@@ -807,7 +810,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         layoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
             @Override
             public int getSpanSize(int position) {
-                if (positionToSection.indexOfKey(position) >= 0 || positionToButton.indexOfKey(position) >= 0 || position == recentReactionsSectionRow || position == stickersSectionRow || position == giftsSectionRow || position == popularSectionRow || position == longtapHintRow || position == searchRow || position == topicEmojiHeaderRow) {
+                if (positionToSection.indexOfKey(position) >= 0 || positionToButton.indexOfKey(position) >= 0 || position == favoriteReactionsHeaderRow || position == otherReactionsHeaderRow || position == recentReactionsSectionRow || position == stickersSectionRow || position == giftsSectionRow || position == popularSectionRow || position == longtapHintRow || position == searchRow || position == topicEmojiHeaderRow) {
                     return layoutManager.getSpanCount();
                 } else if (position >= stickersStartRow && position < stickersEndRow) {
                     return 8;
@@ -881,6 +884,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
             @Override
             public void onScrolled(int dx, int dy) {
                 super.onScrolled(dx, dy);
+                preloadReactionWindow(this);
                 checkScroll();
             }
         };
@@ -2565,7 +2569,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         public int getItemViewType(int position) {
             if (position == searchRow) {
                 return VIEW_TYPE_SEARCH;
-            } else if ((position >= recentReactionsStartRow && position < recentReactionsEndRow) || (position >= topReactionsStartRow && position < topReactionsEndRow) || (position >= stickersStartRow && position < stickersEndRow)) {
+            } else if ((position >= favoriteReactionsStartRow && position < favoriteReactionsEndRow) || (position >= recentReactionsStartRow && position < recentReactionsEndRow) || (position >= topReactionsStartRow && position < topReactionsEndRow) || (position >= stickersStartRow && position < stickersEndRow)) {
                 return VIEW_TYPE_REACTION;
             } else if ((position >= giftsStartRow && position < giftsEndRow)) {
                 return VIEW_TYPE_EMOJI;
@@ -2575,7 +2579,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 return VIEW_TYPE_BUTTON;
             } else if (position == longtapHintRow) {
                 return VIEW_TYPE_HINT;
-            } else if (positionToSection.indexOfKey(position) >= 0 || position == recentReactionsSectionRow || position == stickersSectionRow || position == giftsSectionRow || position == popularSectionRow || position == topicEmojiHeaderRow) {
+            } else if (positionToSection.indexOfKey(position) >= 0 || position == favoriteReactionsHeaderRow || position == otherReactionsHeaderRow || position == recentReactionsSectionRow || position == stickersSectionRow || position == giftsSectionRow || position == popularSectionRow || position == topicEmojiHeaderRow) {
                 return VIEW_TYPE_HEADER;
             }
             if (position == defaultTopicIconRow) {
@@ -2605,6 +2609,11 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 }
             } else if (viewType == VIEW_TYPE_HEADER) {
                 HeaderView header = (HeaderView) holder.itemView;
+                if(position==favoriteReactionsHeaderRow || position==otherReactionsHeaderRow) {
+                    header.setText(LocaleController.getString(position==favoriteReactionsHeaderRow ? R.string.FavoriteStickers : R.string.Reactions),false);
+                    header.closeIcon.setVisibility(View.GONE);
+                    return;
+                }
                 if (position == topicEmojiHeaderRow) {
                     header.setText(LocaleController.getString(R.string.SelectTopicIconHint), false);
                     header.closeIcon.setVisibility(View.GONE);
@@ -2649,7 +2658,9 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 ImageViewEmoji imageView = (ImageViewEmoji) holder.itemView;
                 imageView.position = position;
                 ReactionsLayoutInBubble.VisibleReaction currentReaction;
-                if ((position >= recentReactionsStartRow && position < recentReactionsEndRow)) {
+                if(position>=favoriteReactionsStartRow && position<favoriteReactionsEndRow) {
+                    currentReaction=favoriteReactions.get(position-favoriteReactionsStartRow);
+                } else if ((position >= recentReactionsStartRow && position < recentReactionsEndRow)) {
                     int index = position - recentReactionsStartRow;
                     currentReaction = recentReactions.get(index);
                 } else if ((position >= stickersStartRow && position < stickersEndRow)) {
@@ -3696,6 +3707,8 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         ArrayList<Long> prevRowHashCodes = new ArrayList<>(rowHashCodes);
         totalCount = 0;
         recentReactionsSectionRow = -1;
+        favoriteReactionsHeaderRow=favoriteReactionsStartRow=favoriteReactionsEndRow=otherReactionsHeaderRow=-1;
+        favoriteReactions.clear();
         recentReactionsStartRow = -1;
         giftsStartRow = -1;
         giftsEndRow = -1;
@@ -3839,7 +3852,6 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
             }
         }
         if (recentReactionsToSet != null) {
-            topReactionsStartRow = totalCount;
             ArrayList<ReactionsLayoutInBubble.VisibleReaction> stickers = null;
             ArrayList<ReactionsLayoutInBubble.VisibleReaction> tmp = new ArrayList<>(recentReactionsToSet);
             if (type == TYPE_REACTIONS || type == TYPE_EXPANDABLE_REACTIONS || type == TYPE_STICKER_SET_EMOJI) {
@@ -3847,9 +3859,20 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 for (int i = favorites.size() - 1; i >= 0; i--) {
                     ReactionsLayoutInBubble.VisibleReaction favorite = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(favorites.get(i));
                     tmp.remove(favorite);
-                    tmp.add(0, favorite);
+                    if(type==TYPE_STICKER_SET_EMOJI) favoriteReactions.add(0,favorite);
+                    else tmp.add(0, favorite);
                 }
             }
+            if(!favoriteReactions.isEmpty()) {
+                favoriteReactionsHeaderRow=totalCount++;rowHashCodes.add(-70101L);
+                favoriteReactionsStartRow=totalCount;
+                for(ReactionsLayoutInBubble.VisibleReaction favorite:favoriteReactions) {
+                    rowHashCodes.add(-70102L+13L*favorite.hashCode());totalCount++;
+                }
+                favoriteReactionsEndRow=totalCount;
+                otherReactionsHeaderRow=totalCount++;rowHashCodes.add(-70103L);
+            }
+            topReactionsStartRow=totalCount;
             if (type == TYPE_STICKER_SET_EMOJI && tmp.size() > 8) {
                 tmp.subList(8, tmp.size()).clear();
             } else if (type == TYPE_EFFECTS) {
@@ -4295,9 +4318,45 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         }
     }
 
+    private String reactionEmojiAt(int position,boolean search) {
+        if(search) return searchResult!=null && position>=0 && position<searchResult.size() ? searchResult.get(position).emojicon : null;
+        if(position>=favoriteReactionsStartRow && position<favoriteReactionsEndRow) return favoriteReactions.get(position-favoriteReactionsStartRow).emojicon;
+        if(position>=topReactionsStartRow && position<topReactionsEndRow) return topReactions.get(position-topReactionsStartRow).emojicon;
+        if(position>=recentReactionsStartRow && position<recentReactionsEndRow) return recentReactions.get(position-recentReactionsStartRow).emojicon;
+        int standard=position-standardEmojisStartRow;
+        return standard>=0 && standard<standardEmojis.size() ? standardEmojis.get(standard) : null;
+    }
+    private void preloadReactionWindow(EmojiListView grid) {
+        if(type!=TYPE_STICKER_SET_EMOJI || grid==null || grid.getVisibility()!=View.VISIBLE || grid.getHeight()<=0) return;
+        int first=Integer.MAX_VALUE,last=-1;
+        ArrayList<String> visible=new ArrayList<>();
+        for(int i=0;i<grid.getChildCount();i++) {
+            View child=grid.getChildAt(i);
+            if(child.getBottom()<=grid.getPaddingTop() || child.getTop()>=grid.getHeight()-grid.getPaddingBottom()) continue;
+            int position=grid.getChildAdapterPosition(child);
+            if(position<0) continue;
+            first=Math.min(first,position);last=Math.max(last,position);
+            if(child instanceof ImageViewEmoji) {
+                ReactionsLayoutInBubble.VisibleReaction reaction=((ImageViewEmoji)child).reaction;
+                if(reaction!=null && reaction.emojicon!=null) visible.add(reaction.emojicon);
+            }
+        }
+        if(last<0) return;
+        Emoji.preloadVisibleEmojis(visible);
+        // Two rows ahead and one behind; never schedule the entire emoji catalogue.
+        boolean search=grid==emojiSearchGridView;
+        for(int position=Math.max(0,first-8);position<=last+16;position++) {
+            if(position>=first && position<=last) continue;
+            String emoji=reactionEmojiAt(position,search);
+            if(emoji!=null) Emoji.preloadEmoji(emoji,Emoji.LOAD_PREFETCH);
+        }
+    }
+
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);
+        preloadReactionWindow(emojiGridView);
+        preloadReactionWindow(emojiSearchGridView);
         if (changed && type == TYPE_CHAT_REACTIONS) {
             int items = getMeasuredWidth() / AndroidUtilities.dp(42);
             int spanCount = items * 5;

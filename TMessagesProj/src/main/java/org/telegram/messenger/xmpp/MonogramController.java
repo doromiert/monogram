@@ -1656,7 +1656,11 @@ public final class MonogramController {
             }
         });
     }
-    public void reserveFile(MonogramFileRequest request) { fileJobs.put(request.localId, request.job); }
+    public void reserveFile(MonogramFileRequest request) {
+        fileJobs.put(request.localId, request.job);
+        long size=MonogramFileRequest.prepareProgress(request.message,request.file);
+        if(size>0) progress(request.message.attachPath,0,size,true,false);
+    }
     public File attachmentPath(int id) { return store.attachmentPath(id); }
     public boolean isFileLoading(String name) { return name != null && fileNames.containsKey(name); }
     public void cancelFile(int message) {
@@ -1735,9 +1739,9 @@ public final class MonogramController {
             catch(java.io.IOException invalid) { request.job.check();cached=false; }
         }
         if(!cached) {
-            FileTransfer.Progress onProgress=(bytes,total) -> progress(request.message.attachPath,bytes,total,false,link.encrypted());
-            boolean downloaded=sharing==null ? FileTransfer.download(link,request.file,request.job,onProgress,null)
-                    : FileTransfer.download(sharing,request.file,request.job,onProgress,null);
+            // Source downloads are preparation, not bytes uploaded to the destination.
+            boolean downloaded=sharing==null ? FileTransfer.download(link,request.file,request.job,null,null)
+                    : FileTransfer.download(sharing,request.file,request.job,null,null);
             if(!downloaded) throw new java.io.IOException("Cannot download the forwarded attachment");
         }
         request.job.check();

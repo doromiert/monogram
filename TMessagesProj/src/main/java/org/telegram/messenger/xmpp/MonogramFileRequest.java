@@ -13,6 +13,15 @@ public final class MonogramFileRequest extends TLObject {
     public final int localId;
     public final boolean supported;
     public final com.negzero.monogram.xmpp.FileTransfer.Job job = new com.negzero.monogram.xmpp.FileTransfer.Job();
+    /** Native sending cells otherwise interpret missing progress as an already completed upload. */
+    public static long prepareProgress(TLRPC.Message message, File source) {
+        if(message.attachPath==null || message.attachPath.isEmpty()) return 0;
+        long size=source==null ? 0 : source.length();
+        if(size<=0 && message.media!=null && message.media.document!=null) size=message.media.document.size;
+        size=Math.max(size,1);
+        org.telegram.messenger.ImageLoader.getInstance().setFileProgress(message.attachPath,0,size);
+        return size;
+    }
     public String uploadName() {
         boolean generated=message.media!=null && message.media.photo!=null;
         String name=file.getName();
