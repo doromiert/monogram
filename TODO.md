@@ -81,6 +81,8 @@ Parity gate: close the current user-visible regressions with real phone use and 
 
 - [x] Remove the proprietary Google Wear SDK and unsupported Telegram watch authentication. 0.2.48 deletes the exported Telegram token-transfer service and its isolated sheet, and removes the Gradle dependency. Runtime dependency insight finds no Wear SDK; APK class/manifest inspection confirms the SDK/auth classes and exported service are absent, while AndroidX notification support and WearReplyReceiver remain. The dedicated Monogram watch client stays in the backlog; real watch interaction is not verified.
 
+- [x] Build, publish and install [0.2.48](https://github.com/doromiert/monogram/releases/tag/v0.2.48) (72239, arm64, original signing key) from `foss-wear-cleanup`. Nix packaging passes. Dependency insight and APK class/manifest inspection verify Google Wear SDK/auth removal and retention of AndroidX notification support/WearReplyReceiver. All 3,115 previous message identities, saved account/credential, legacy OMEMO identity/trust and seven rooms survive on schema 16. Full FOSS cleanup, real watch interaction and earlier phone regression checks remain open.
+
 ## Official Telegram base
 
 - [x] Reapply the Monogram changes onto `DrKLO/Telegram` 13.0.2, commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d` (2026-10-13). The Git rebase is complete; build/runtime validation is tracked below.
