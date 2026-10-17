@@ -23,6 +23,7 @@ public final class XmppMessage {
     public final String caption;
     public final ReplyReference reply;
     public final MessageCorrection correction;
+    public final MessageMarkup markup;
     public final MessageReactions reactions;
     public final MessageRetraction retraction;
     public final String senderFingerprint;
@@ -31,7 +32,8 @@ public final class XmppMessage {
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, Encryption encryption,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, MessageMarkup markup) {
+        this.markup=markup;
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encryption = encryption; this.encrypted = encryption != Encryption.PLAIN;
         this.readable = readable; this.outgoing = outgoing;
@@ -118,12 +120,13 @@ public final class XmppMessage {
         if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encryption, readable, outgoing, archiveId != null,
-                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption, reactions, retraction, null);
+                delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption, reactions, retraction, null,
+                readable && encryption!=Encryption.LEGACY_OMEMO ? MessageMarkup.from(content,body) : null);
     }
 
     public XmppMessage withSenderFingerprint(String fingerprint) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint);
+                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markup);
     }
     static String opaqueId(Message message) {
         try {
