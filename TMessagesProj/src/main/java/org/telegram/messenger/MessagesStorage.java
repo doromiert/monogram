@@ -8577,6 +8577,48 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    private void restoreMonogramMessageReadState(ArrayList<TLRPC.Message> messages) {
+        java.util.HashMap<Long, java.util.HashMap<Integer, TLRPC.Message>> peers = new java.util.HashMap<>();
+        for (TLRPC.Message message : messages) if (org.telegram.messenger.xmpp.MonogramReceipts.hasIncomingState(message) && message.id > 0) {
+            peers.computeIfAbsent(message.dialog_id, ignored -> new java.util.HashMap<>()).put(message.id, message);
+        }
+        for (java.util.Map.Entry<Long, java.util.HashMap<Integer, TLRPC.Message>> peer : peers.entrySet()) {
+            SQLiteCursor cursor = null;
+            try {
+                // IDs originate in our local store; peer scoping prevents same-ID cross-chat matches.
+                cursor = database.queryFinalized("SELECT mid,read_state FROM messages_v2 WHERE uid=? AND out=0 AND mid IN (" + TextUtils.join(",", peer.getValue().keySet()) + ")", peer.getKey());
+                while (cursor.next()) {
+                    TLRPC.Message message = peer.getValue().get(cursor.intValue(0));
+                    if (message != null) org.telegram.messenger.xmpp.MonogramReceipts.restoreIncoming(message, cursor.intValue(1));
+                }
+            } catch (Exception unavailable) {
+                if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram read-state load: " + unavailable.getClass().getSimpleName());
+            } finally { if (cursor != null) cursor.dispose(); }
+        }
+    }
+
+    /** Restore existing native flags/counts after XMPP reconstructs message content. */
+    public void restoreMonogramReadState(ArrayList<TLRPC.Message> messages, ArrayList<TLRPC.Dialog> dialogs, Runnable callback) {
+        storageQueue.postRunnable(() -> {
+            restoreMonogramMessageReadState(messages);
+            if (dialogs != null) for (TLRPC.Dialog dialog : dialogs) {
+                SQLiteCursor cursor = null;
+                try {
+                    cursor = database.queryFinalized("SELECT unread_count,unread_count_i,unread_reactions,flags FROM dialogs WHERE did=?", dialog.id);
+                    if (cursor.next()) {
+                        dialog.unread_count = cursor.intValue(0);
+                        dialog.unread_mentions_count = cursor.intValue(1);
+                        dialog.unread_reactions_count = cursor.intValue(2);
+                        dialog.unread_mark = (cursor.intValue(3) & 1) != 0;
+                    }
+                } catch (Exception unavailable) {
+                    if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram unread-count load: " + unavailable.getClass().getSimpleName());
+                } finally { if (cursor != null) cursor.dispose(); }
+            }
+            callback.run();
+        });
+    }
+
     /** Read pending and failed native messages for the XMPP history adapter, on the storage queue. */
     public void getMonogramOutbox(long dialogId,Consumer<ArrayList<TLRPC.Message>> callback) {
         storageQueue.postRunnable(() -> {
@@ -11897,6 +11939,8 @@ public class MessagesStorage extends BaseController {
 
     private void putMessagesInternal(ArrayList<TLRPC.Message> messages, boolean withTransaction, boolean doNotUpdateDialogDate, int downloadMask, boolean ifNoLastMessage, int mode, long threadMessageId) {
         if (messages != null) {
+            // Content-only XMPP refreshes must retain native read/media-read flags at write time.
+            restoreMonogramMessageReadState(messages);
             ArrayList<TL_ephemeral.EphemeralMessage> ephemeralMessages = null;
             for (TLRPC.Message message : messages) {
                 if (MessageObject.isEphemeralAndNotWelcome(message) && message.id > 0) {

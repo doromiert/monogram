@@ -874,6 +874,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         decorateReply(message, self, body, embedReply, payload);
         message.reactions=reactions.snapshot(id,self);
         if (outgoing && peer > 0 && peer != self) receipts.decorate(message);
+        if (!outgoing) MonogramReceipts.restoreIncoming(message, message.media_unread ? 0 : 2);
         message.flags|=1048576;
         return message;
     }
@@ -1109,7 +1110,6 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery(sql, args.toArray(new String[0]))) {
             while (c.moveToNext()) {
                 TLRPC.Message message = message(c.getInt(0), peer, self, c.getString(1), c.getInt(2) == 1, c.getInt(3));
-                if (!message.out) message.unread = false;
                 result.add(message);
             }
         }

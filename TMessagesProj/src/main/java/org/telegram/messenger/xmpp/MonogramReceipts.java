@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import org.telegram.tgnet.TLRPC;
 
 public final class MonogramReceipts {
+    private static final String INCOMING_UNREAD = "monogram-incoming-unread";
     private static final String DISPLAYED = "monogram-displayed", DELIVERED = "monogram-delivered";
     private final MonogramStore store;
     MonogramReceipts(MonogramStore store) { this.store = store; }
@@ -16,8 +17,26 @@ public final class MonogramReceipts {
     }
     /** Native Telegram read maxima are numeric; XMPP local IDs do not encode chronology. */
     public static boolean isUnread(TLRPC.Message message) {
+        if (!message.out && message.params != null && message.params.containsKey(INCOMING_UNREAD))
+            return "true".equals(message.params.get(INCOMING_UNREAD));
         return message.out && message.params != null && message.params.containsKey(DISPLAYED)
                 ? !"true".equals(message.params.get(DISPLAYED)) : message.unread;
+    }
+    public static boolean hasIncomingState(TLRPC.Message message) {
+        return message != null && !message.out && message.params != null && message.params.containsKey(INCOMING_UNREAD);
+    }
+    /** Reuse Telegram's persisted per-message flags, without treating a history fetch as a read. */
+    public static void restoreIncoming(TLRPC.Message message, int flags) {
+        if (message.out) return;
+        message.unread = (flags & 1) == 0;
+        message.media_unread = (flags & 2) == 0;
+        if (message.params == null) message.params = new java.util.HashMap<>();
+        message.params.put(INCOMING_UNREAD, Boolean.toString(message.unread));
+    }
+    public static void markRead(TLRPC.Message message) {
+        message.unread = false;
+        if (!message.out && message.params != null && message.params.containsKey(INCOMING_UNREAD))
+            message.params.put(INCOMING_UNREAD, "false");
     }
     static void pending(TLRPC.Message message) {
         if (message.params == null) message.params = new java.util.HashMap<>();

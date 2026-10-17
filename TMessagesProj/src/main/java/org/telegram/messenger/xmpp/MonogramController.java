@@ -486,7 +486,7 @@ public final class MonogramController {
                         store.missingBookmarks(present);
                         rejoinRooms(sync.session,sync.epoch);
                         TLRPC.TL_messages_dialogs cached=dialogs();
-                        AndroidUtilities.runOnUIThread(() -> { if(accountEpoch==sync.owner && sessionEpoch==sync.epoch) MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false); });
+                        publishDialogs(cached,() -> accountEpoch==sync.owner && sessionEpoch==sync.epoch,null);
                         ArrayList<MonogramStore.PendingBookmark> pending=store.pendingBookmarks();
                         if(!snapshot.writable) { finishBookmarks(sync,"Using older server bookmarks; local changes stay on this device.",null); return; }
                         publishBookmarks(sync,pending);
@@ -636,11 +636,7 @@ public final class MonogramController {
                             if(session!=expected || sessionEpoch!=epoch || accountEpoch!=owner) return;
                             long dialog=store.room(jid,room.nickname); store.roomState(room,self); dirtyRoomBookmark(dialog); publishRoom(dialog); dismissRoomInvitation(jid);
                             TLRPC.Chat chat=store.roomChat(dialog); TLRPC.TL_messages_dialogs cached=dialogs();
-                            AndroidUtilities.runOnUIThread(() -> {
-                                if(sessionEpoch!=epoch || accountEpoch!=owner) return;
-                                MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false);
-                                callback.run(chat,null);
-                            });
+                            publishDialogs(cached,() -> sessionEpoch==epoch && accountEpoch==owner,() -> callback.run(chat,null));
                         });
                     } catch(Exception failed) { roomResult(callback,failed); }
                 });
@@ -842,10 +838,7 @@ public final class MonogramController {
                     publishRoom(task.peer);
                     publishArchiveMessages(sync,updated);
                     TLRPC.TL_messages_dialogs cached=dialogs();
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if(session!=sync.session || accountEpoch!=sync.epoch) return;
-                        MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false);
-                    });
+                    publishDialogs(cached,() -> currentArchive(sync),null);
                 }
                 finishArchivePage(sync,task,page.firstId,page.complete);
             } catch(Exception failed) { archiveFailed(sync,task,failed); }
@@ -916,8 +909,7 @@ public final class MonogramController {
         if (changed && UserConfig.getInstance(account).isClientActivated()) {
             publishArchiveMessages(sync,updated);
             TLRPC.TL_messages_dialogs dialogs = dialogs();
-            AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
-                    dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
+            publishDialogs(dialogs,() -> currentArchive(sync),null);
         }
         finishArchivePage(sync,task,page.firstId,page.complete);
     }
@@ -956,6 +948,13 @@ public final class MonogramController {
     }
     private static long searchPeer(TLRPC.InputPeer peer) {
         return peer==null ? 0 : peer.chat_id!=0 ? -peer.chat_id : peer.channel_id!=0 ? -peer.channel_id : peer.user_id;
+    }
+    private void publishDialogs(TLRPC.TL_messages_dialogs dialogs,java.util.function.BooleanSupplier current,Runnable completed) {
+        MessagesStorage.getInstance(account).restoreMonogramReadState(dialogs.messages,dialogs.dialogs,() -> AndroidUtilities.runOnUIThread(() -> {
+            if(!current.getAsBoolean()) return;
+            MessagesController.getInstance(account).processLoadedDialogs(dialogs,null,null,0,0,dialogs.dialogs.size(),3,false,false,false);
+            if(completed!=null) completed.run();
+        }));
     }
     private TLRPC.TL_messages_dialogs dialogs() {
         TLRPC.TL_messages_dialogs result = new TLRPC.TL_messages_dialogs();
@@ -1016,11 +1015,11 @@ public final class MonogramController {
                 result.messages.clear(); result.users.clear(); end = true;
             }
             final boolean archiveEnd = end;
-            Utilities.stageQueue.postRunnable(() -> {
+            MessagesStorage.getInstance(account).restoreMonogramReadState(result.messages,null,() -> Utilities.stageQueue.postRunnable(() -> {
                 if(epoch!=accountEpoch) { completed.accept(new TLRPC.TL_messages_messages(),archiveEnd); return; }
                 outbox.merge(peer,result.messages,pending);
                 completed.accept(result,archiveEnd);
-            });
+            }));
         });
     }
     public void login(String jid, String password, String host, int port, Consumer<Exception> result) {
@@ -1895,12 +1894,18 @@ public final class MonogramController {
                 else error.text = "MONOGRAM_XMPP_FAILED|"+com.negzero.monogram.xmpp.XmppRequestException.describe(e);
             }
             final TLObject completed = response; final TLRPC.TL_error failed = error;
-            if (callback != null) Utilities.stageQueue.postRunnable(() -> {
-                if (epoch != accountEpoch) {
-                    TLRPC.TL_error changed = new TLRPC.TL_error(); changed.code = 400; changed.text = "MONOGRAM_ACCOUNT_CHANGED";
-                    callback.run(null, changed);
-                } else callback.run(completed, failed);
-            });
+            if (callback != null) {
+                Runnable deliver = () -> Utilities.stageQueue.postRunnable(() -> {
+                    if (epoch != accountEpoch) {
+                        TLRPC.TL_error changed = new TLRPC.TL_error(); changed.code = 400; changed.text = "MONOGRAM_ACCOUNT_CHANGED";
+                        callback.run(null, changed);
+                    } else callback.run(completed, failed);
+                });
+                if (completed instanceof TLRPC.messages_Dialogs) {
+                    TLRPC.messages_Dialogs dialogs = (TLRPC.messages_Dialogs) completed;
+                    MessagesStorage.getInstance(account).restoreMonogramReadState(dialogs.messages,dialogs.dialogs,deliver);
+                } else deliver.run();
+            }
         });
     }
     private static final class ReactionConsentRequired extends IllegalStateException {}

@@ -1868,6 +1868,7 @@ public class MessageObject {
         localUserName = userName;
         messageText = formattedMessage;
         messageOwner = message;
+        if (messageOwner != null) messageOwner.unread = org.telegram.messenger.xmpp.MonogramReceipts.isUnread(messageOwner);
         localChannel = isChannel;
         localSupergroup = supergroup;
         localEdit = edit;
@@ -1923,6 +1924,7 @@ public class MessageObject {
 
         currentAccount = accountNum;
         messageOwner = message;
+        if (messageOwner != null) messageOwner.unread = org.telegram.messenger.xmpp.MonogramReceipts.isUnread(messageOwner);
         replyMessageObject = replyToMessage;
         eventId = eid;
         wasUnread = !messageOwner.out && messageOwner.unread;
@@ -9901,7 +9903,7 @@ public class MessageObject {
     }
 
     public void setIsRead() {
-        messageOwner.unread = false;
+        org.telegram.messenger.xmpp.MonogramReceipts.markRead(messageOwner);
     }
 
     public static int getUnreadFlags(TLRPC.Message message) {
