@@ -9,6 +9,8 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
+- [o] Release the cached-media scan marker after every finished attempt, including metadata/thumbnail extraction failure, missing files and stale publication. Keep concurrent attempts coalesced, but allow a later history load to retry without restarting the app or downloading the same file again. This improves recovery; actual video/round/GIF autoplay remains to verify.
+
 - [x] Build, publish and install [0.2.52](https://github.com/doromiert/monogram/releases/tag/v0.2.52) (72279, arm64, original signing key) from `update-reconnect`, source `402ee786b`. Nix packaging and 18 focused checks pass; remote source tag and APK checksum match. ADB confirms the process and configured foreground connection service restart automatically. All 3,144 previous message identities, saved account/credential, checked legacy OMEMO identity/trust and seven rooms remain on schema 17. Decryption visuals, long background survival and prior media regressions still need phone confirmation. Translate provider selection remains pending.
 
 - [x] Translation exclusions: 0.2.52 uses only the system language automatically, removes old automatic keyboard exclusions, preserves explicitly selected/empty lists and stops app-language changes from rewriting them. Two focused default/migration checks pass.

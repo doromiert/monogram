@@ -1440,23 +1440,23 @@ public final class MonogramController {
         final long owner=accountEpoch;
         final String address=message.params.get(MonogramAttachments.PARAM);
         fileWorker.execute(() -> {
-            if(owner!=accountEpoch || !path.isFile()) return;
+            boolean publicationQueued=false;
             try {
+                if(owner!=accountEpoch || !path.isFile()) return;
                 com.negzero.monogram.xmpp.FileShare sharing=store.sharing(message.id);
                 String filename=sharing==null ? com.negzero.monogram.xmpp.FileLink.parse(address).fileName() : sharing.name;
                 TLRPC.MessageMedia media=MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime);
                 MonogramAttachments.preserveMediaAttributes(message.media,media);
                 if(media.document==null || MonogramAttachments.needsMediaInfo(media.document)) return;
                 worker.execute(() -> {
-                    if(owner!=accountEpoch) return;
                     try {
+                        if(owner!=accountEpoch) return;
                         TLRPC.Message current=store.getMessage(message.id,self);
                         if(!address.equals(current.params.get(MonogramAttachments.PARAM)) || !path.equals(store.attachmentPath(message.id)) || !MonogramAttachments.needsMediaRefresh(current)) return;
                         MonogramAttachments.preserveMediaAttributes(current.media,media);
                         media.document.date=current.date;
                         store.attach(message.id,address,path,media);
                         TLRPC.Message updated=store.getMessage(message.id,self);
-                        if (!MonogramAttachments.needsMediaRefresh(updated)) mediaInfoScanned.remove(message.id);
                         ArrayList<TLRPC.Message> stored=new ArrayList<>(); stored.add(updated);
                         MessagesStorage.getInstance(account).putMessages(stored,false,true,false,0,0,0);
                         AndroidUtilities.runOnUIThread(() -> {
@@ -1465,8 +1465,14 @@ public final class MonogramController {
                             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,updated.dialog_id,objects);
                         });
                     } catch(Exception changed) { /* Cached metadata cannot replace a changed/deleted attachment. */ }
+                    finally { mediaInfoScanned.remove(message.id); }
                 });
+                publicationQueued=true;
             } catch(Exception unavailable) { /* Metadata is optional; retain the cached document. */ }
+            finally {
+                // Suppress concurrent scans, but let a later history load retry a failed preview.
+                if(!publicationQueued) mediaInfoScanned.remove(message.id);
+            }
         });
     }
     private void maybeAutoDownload(TLRPC.Message message) {
