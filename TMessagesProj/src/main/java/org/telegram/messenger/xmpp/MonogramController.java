@@ -1657,20 +1657,32 @@ public final class MonogramController {
         });
     }
     public void reserveFile(MonogramFileRequest request) {
-        fileJobs.put(request.localId, request.job);
-        long size=MonogramFileRequest.prepareProgress(request.message,request.file);
-        if(size>0) progress(request.message.attachPath,0,size,true,false);
+        synchronized(fileNames) {
+            fileJobs.put(request.localId, request.job);
+            if(request.message.attachPath!=null && !request.message.attachPath.isEmpty()) fileNames.put(request.message.attachPath,request.job);
+            long size=MonogramFileRequest.prepareProgress(request.message,request.file);
+            if(size>0) progress(request.message.attachPath,0,size,true,false);
+        }
     }
     public File attachmentPath(int id) { return store.attachmentPath(id); }
     public boolean isFileLoading(String name) { return name != null && fileNames.containsKey(name); }
     public void cancelFile(int message) {
         for(PendingSend pending:pendingSends.values()) if(pending.request instanceof MonogramFileRequest && ((MonogramFileRequest)pending.request).localId==message) cancelRequest(pending.token);
         FileTransfer.Job job = fileJobs.remove(message);
-        if (job != null) { job.cancel(); for (java.util.Map.Entry<String, FileTransfer.Job> entry : fileNames.entrySet()) if (entry.getValue() == job) fileNames.remove(entry.getKey(), job); }
+        if (job != null) {
+            job.cancel();
+            for (java.util.Map.Entry<String, FileTransfer.Job> entry : fileNames.entrySet())
+                if (entry.getValue() == job) finishUpload(message,entry.getKey(),job);
+        }
     }
     public void cancelFile(String name) {
-        FileTransfer.Job job = name == null ? null : fileNames.remove(name);
-        if (job != null) job.cancel();
+        FileTransfer.Job job = name == null ? null : fileNames.get(name);
+        if (job != null) {
+            job.cancel();
+            for(java.util.Map.Entry<Integer,FileTransfer.Job> entry:fileJobs.entrySet())
+                if(entry.getValue()==job) finishUpload(entry.getKey(),name,job);
+            fileNames.remove(name,job);
+        }
     }
     private final java.util.concurrent.ConcurrentHashMap<String,Long> progressUpdates=new java.util.concurrent.ConcurrentHashMap<>();
     private void progress(String name,long bytes,long total,boolean upload,boolean encrypted) {
@@ -1702,8 +1714,15 @@ public final class MonogramController {
     }
     private void finishUpload(int id,String path,FileTransfer.Job job) {
         fileJobs.remove(id,job);
-        if(path!=null) { fileNames.remove(path,job); clearProgress(path); }
-        AndroidUtilities.runOnUIThread(() -> org.telegram.messenger.VideoEncodingService.uploadFinished(account,path));
+        // A cancelled worker may finish after a retry has taken ownership of this path.
+        synchronized(fileNames) {
+            if(path!=null && fileNames.remove(path,job)) {
+                clearProgress(path);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if(!fileNames.containsKey(path)) org.telegram.messenger.VideoEncodingService.uploadFinished(account,path);
+                });
+            }
+        }
     }
     public void retryForward(TLRPC.Message pending) {
         TLRPC.Message source=null;
@@ -1802,19 +1821,28 @@ public final class MonogramController {
             Utilities.stageQueue.postRunnable(() -> callback.run(null, fileError(failed))); return;
         }
         FileTransfer.Job job = request.job;
-        fileJobs.put(request.localId, job); fileNames.put(request.message.attachPath, job);
+        synchronized(fileNames) {
+            if(job.cancelled()) return;
+            fileJobs.put(request.localId, job); fileNames.put(request.message.attachPath, job);
+        }
         String progressName = request.message.attachPath;
+        FileTransfer.Progress uploadProgress=(bytes,total) -> {
+            synchronized(fileNames) {
+                if(!job.cancelled() && fileNames.get(progressName)==job) progress(progressName,bytes,total,true,encrypted);
+            }
+        };
         fileWorker.execute(() -> {
             File snapshot = null;
             try {
                 prepareForwardFile(request,expected);
+                job.check();
                 final String uploadName=request.uploadName();
-                progress(progressName,0,request.file.length(),true,false);
+                uploadProgress.update(0,request.file.length());
                 FileTransfer.checkUploadSize(expected.connection(),request.file.length(),encrypted,job);
                 snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
                 FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
                         modern ? "application/octet-stream" : request.mime, encrypted, job,
-                        (bytes, total) -> progress(progressName, bytes, total, true, encrypted));
+                        uploadProgress);
                 com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, uploadName, request.mime, job);
                 File cached = sharing == null ? store.attachmentFile(link.wireUrl) : store.attachmentFile(sharing);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
@@ -2005,7 +2033,8 @@ public final class MonogramController {
     public void cancelRequest(int token) {
         PendingSend pending=pendingSends.remove(token);
         if(pending!=null && pending.request instanceof MonogramFileRequest) {
-            MonogramFileRequest file=(MonogramFileRequest)pending.request; file.job.cancel(); fileJobs.remove(file.localId,file.job);
+            MonogramFileRequest file=(MonogramFileRequest)pending.request; file.job.cancel();
+            finishUpload(file.localId,file.message.attachPath,file.job);
         }
     }
     private void queueSend(int token,TLObject request,RequestDelegate completed) {
