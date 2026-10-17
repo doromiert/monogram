@@ -38,9 +38,10 @@ ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhos
 c2s_require_encryption = true
 allow_registration = false
 allow_user_invites = true
+registration_invite_only = true
 admins = { "roomalice@localhost" }
 log = { { levels = { min = "info" }; to = "console" } }
-modules_enabled = { "roster"; "lastactivity"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule"; "invites_adhoc" }
+modules_enabled = { "roster"; "lastactivity"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule"; "invites_adhoc"; "invites_register" }
 VirtualHost "localhost"
 authentication = "internal_hashed"
 ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhost.crt" }

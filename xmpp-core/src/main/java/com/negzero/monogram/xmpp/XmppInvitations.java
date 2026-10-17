@@ -2,9 +2,6 @@
 package com.negzero.monogram.xmpp;
 
 import java.net.URI;
-import java.net.URLDecoder;
-import java.util.HashMap;
-import java.util.Map;
 import org.jivesoftware.smack.XMPPConnection;
 import org.jivesoftware.smackx.commands.AdHocCommand;
 import org.jivesoftware.smackx.commands.AdHocCommandManager;
@@ -14,7 +11,6 @@ import org.jivesoftware.smackx.xdata.FormField;
 import org.jivesoftware.smackx.xdata.packet.DataForm;
 import org.jivesoftware.smackx.xdata.form.FillableForm;
 import org.jxmpp.jid.DomainBareJid;
-import org.jxmpp.jid.impl.JidCreate;
 import org.jxmpp.jid.parts.Localpart;
 
 /** Blocking XEP-0401 account invitations. Only explicit UI actions execute commands. */
@@ -93,17 +89,8 @@ public final class XmppInvitations {
         try {
             String uri=value(form,"uri"),landing=value(form,"landing-url"),expires=value(form,"expire");
             if(expires.isEmpty()) expires=value(form,"expiry");
-            URI parsed=new URI(uri);
-            if(!"xmpp".equalsIgnoreCase(parsed.getScheme()) || parsed.getRawFragment()!=null) throw new IllegalArgumentException();
-            String raw=parsed.getRawSchemeSpecificPart();int query=raw.indexOf('?');
-            if(query<=0) throw new IllegalArgumentException();
-            if(!server.equals(JidCreate.bareFrom(decode(raw.substring(0,query))).getDomain())) throw new IllegalArgumentException();
-            String[] parts=raw.substring(query+1).split(";",-1);Map<String,String> parameters=new HashMap<>();
-            for(int i=1;i<parts.length;i++) { int split=parts[i].indexOf('=');if(split<=0) throw new IllegalArgumentException();
-                if(parameters.put(decode(parts[i].substring(0,split)),decode(parts[i].substring(split+1)))!=null) throw new IllegalArgumentException(); }
-            if(parameters.getOrDefault("preauth","").isEmpty()) throw new IllegalArgumentException();
-            if(!"register".equals(parts[0]) && !("roster".equals(parts[0]) && "y".equals(parameters.get("ibr"))))
-                throw new InvitationException("Your server returned a contact-only invite. This account is not allowed to invite new registrations; ask the server administrator.");
+            RegistrationInvitation invitation=RegistrationInvitation.parse(uri);
+            if(!server.equals(invitation.server)) throw new IllegalArgumentException();
             String link=uri;
             if(!landing.isEmpty()) {
                 URI web=new URI(landing);
@@ -121,5 +108,4 @@ public final class XmppInvitations {
         if(value.length()>16384 || value.codePoints().anyMatch(Character::isISOControl)) throw new IllegalArgumentException();
         return value;
     }
-    private static String decode(String value) throws Exception { return URLDecoder.decode(value.replace("+","%2B"),"UTF-8"); }
 }

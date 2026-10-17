@@ -39,9 +39,13 @@ public class MonogramLoginActivity extends BaseFragment {
     private FragmentFloatingButton floatingButton;
     private ImageView backButtonView;
     private Bundle savedFields;
+    private com.negzero.monogram.xmpp.RegistrationInvitation invitation;
+    private boolean accountCreated;
 
     public MonogramLoginActivity() { super(); }
     public MonogramLoginActivity(int account) { super(); currentAccount = account; }
+    public MonogramLoginActivity(int account,com.negzero.monogram.xmpp.RegistrationInvitation invitation) { this(account);this.invitation=invitation; }
+    public boolean isConnecting() { return connecting; }
 
     @Override public boolean onFragmentCreate() {
         return !UserConfig.getInstance(currentAccount).isClientActivated() && super.onFragmentCreate();
@@ -87,6 +91,8 @@ public class MonogramLoginActivity extends BaseFragment {
         backButtonView.setVisibility(UserConfig.getActivatedAccountsCount() > 0 ? View.VISIBLE : View.GONE);
         backButtonView.setOnClickListener(v -> { if (onBackPressed(true)) finishFragment(); });
         if (savedFields != null) restoreSelfArgs(savedFields);
+        else if(invitation!=null) prefillInvitation();
+        applyMode();
         setConnecting(connecting);
         updateColors();
         return fragmentView;
@@ -99,6 +105,8 @@ public class MonogramLoginActivity extends BaseFragment {
         floatingButton.setEnabled(!value);
         for (EditTextBoldCursor field : jabberView.fields) field.setEnabled(!value);
         jabberView.advancedButton.setEnabled(!value);
+        jabberView.invitationButton.setEnabled(!value);
+        jabberView.fields[0].setEnabled(!value && (invitation==null || invitation.username==null));
     }
 
     private void updateColors() {
@@ -135,6 +143,10 @@ public class MonogramLoginActivity extends BaseFragment {
         args.putString("monogram_host", jabberView.fields[2].getText().toString());
         args.putString("monogram_port", jabberView.fields[3].getText().toString());
         args.putBoolean("monogram_advanced", jabberView.advancedFields.getVisibility() == View.VISIBLE);
+        args.putInt("monogram_account",currentAccount);args.putBoolean("monogram_account_created",accountCreated);
+        args.remove("monogram_invite");
+        if(invitation!=null) try { args.putString("monogram_invite",MonogramController.get(currentAccount).sealRegistrationInvite(invitation.uri)); }
+        catch(Exception unavailable) { /* Reopen the invite rather than save a token without Keystore protection. */ }
     }
     @Override public void restoreSelfArgs(Bundle args) {
         savedFields = args;
@@ -143,6 +155,48 @@ public class MonogramLoginActivity extends BaseFragment {
         jabberView.fields[2].setText(args.getString("monogram_host", ""));
         jabberView.fields[3].setText(args.getString("monogram_port", ""));
         jabberView.showAdvanced(args.getBoolean("monogram_advanced"));
+        accountCreated=args.getBoolean("monogram_account_created");
+        String sealed=args.getString("monogram_invite");
+        if(sealed!=null) {
+            try { invitation=MonogramController.get(currentAccount).openRegistrationInvite(sealed); }
+            catch(Exception unavailable) { invitation=null;jabberView.error(0,"Reopen your invitation link to continue registration."); }
+        }
+        if(invitation!=null && invitation.username!=null) jabberView.fields[0].setText(invitation.username+"@"+invitation.server);
+        applyMode();
+    }
+
+    private void prefillInvitation() {
+        jabberView.fields[1].setText("");jabberView.fields[2].setText("");jabberView.fields[3].setText("");jabberView.showAdvanced(false);
+        jabberView.fields[0].setText((invitation.username==null ? "" : invitation.username.toString())+"@"+invitation.server);
+        jabberView.fields[0].setSelection(invitation.username==null ? 0 : jabberView.fields[0].length());
+    }
+    private void applyMode() {
+        if(jabberView==null) return;
+        boolean registering=invitation!=null;
+        jabberView.titleView.setText(registering ? "Create your XMPP account" : getString(R.string.MonogramLoginTitle));
+        jabberView.confirmTextView.setText(registering ? "Create an account on "+invitation.server+". "+(invitation.username==null ? "Choose a username and password." : "This invitation reserves the address below. Choose your password.")
+                : accountCreated ? "Your account was created. Sign in with the address and password you chose." : getString(R.string.MonogramLoginHelp));
+        jabberView.outlines[1].setText(registering ? "Choose a password" : getString(R.string.EnterPassword));
+        jabberView.invitationButton.setText(registering ? "Sign in instead" : "Use an invitation link");
+        if(floatingButton!=null) floatingButton.setContentDescription(registering ? "Create account" : getString(R.string.Continue));
+        if(android.os.Build.VERSION.SDK_INT>=26) jabberView.fields[1].setAutofillHints(registering ? "newPassword" : View.AUTOFILL_HINT_PASSWORD);
+        setConnecting(connecting);
+    }
+    private void invitationLink() {
+        if(connecting) return;
+        if(invitation!=null) { invitation=null;applyMode();return; }
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),"xmpp: invitation link",false);
+        input.editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.editText.setSingleLine(true);input.editText.setSaveEnabled(false);
+        input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(16384)});
+        if(android.os.Build.VERSION.SDK_INT>=26) input.editText.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+        showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext()).setTitle("Use an invitation link")
+                .setMessage("Paste the xmpp: link from your server's invitation page. No account is created until you submit the registration screen.")
+                .setView(input).setPositiveButton("Continue",(dialog,which) -> {
+                    try { invitation=com.negzero.monogram.xmpp.RegistrationInvitation.parse(input.getText().toString().trim());accountCreated=false;prefillInvitation();applyMode(); }
+                    catch(com.negzero.monogram.xmpp.XmppInvitations.InvitationException invalid) { jabberView.error(0,invalid.getMessage()); }
+                    input.editText.setText("");
+                }).setNegativeButton("Cancel",null).create());
     }
 
     private void login() {
@@ -162,38 +216,47 @@ public class MonogramLoginActivity extends BaseFragment {
         try { new com.negzero.monogram.xmpp.Account(jid, host, port, "Monogram"); }
         catch (Exception invalid) { jabberView.error(0, getString(R.string.MonogramLoginAddressError)); return; }
         if (password.isEmpty()) { jabberView.error(1, getString(R.string.MonogramLoginPasswordError)); return; }
+        if(invitation!=null) try { invitation.validate(new com.negzero.monogram.xmpp.Account(jid,host,port,"Monogram")); }
+        catch(Exception invalid) { jabberView.error(0,invalid.getMessage());return; }
         setConnecting(true);
         AndroidUtilities.hideKeyboard(jabberView.fields[1]);
-        MonogramController.get(currentAccount).login(jid, password, host, port, error -> {
-            connecting = false;
-            if (error != null) {
-                if (!destroyed && getParentActivity() != null) {
-                    setConnecting(false);
-                    jabberView.error(1, getString(R.string.MonogramLoginFailed));
-                }
-                return;
-            }
-            TLRPC.User user = MonogramController.get(currentAccount).ownUser();
-            UserConfig config = UserConfig.getInstance(currentAccount);
-            config.setCurrentUser(user); config.syncContacts = false; config.saveConfig(true);
-            ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(user);
-            MessagesStorage.getInstance(currentAccount).putUsersAndChats(users, null, true, true);
-            MessagesController.getInstance(currentAccount).putUser(user, false);
-            MessagesController.getGlobalMainSettings().edit().putBoolean("monogram_intro_seen", true).apply();
-            ApplicationLoader.startPushService();
-            if (destroyed || getParentActivity() == null) return;
-            jabberView.fields[1].setText("");
-            if (UserConfig.selectedAccount != currentAccount && getParentActivity() instanceof LaunchActivity)
-                ((LaunchActivity) getParentActivity()).switchToAccount(currentAccount, true);
-            else { MainTabsActivity tabs = new MainTabsActivity(); tabs.setCurrentAccount(currentAccount); presentFragment(tabs, true); }
+        if(invitation!=null) MonogramController.get(currentAccount).register(invitation,jid,password,host,port,(created,error) -> {
+            if(created) { invitation=null;accountCreated=true;if(!destroyed) applyMode(); }
+            authenticated(error);
         });
+        else MonogramController.get(currentAccount).login(jid,password,host,port,this::authenticated);
+    }
+    private void authenticated(Exception error) {
+        connecting = false;
+        if (error != null) {
+            if (!destroyed && getParentActivity() != null) {
+                setConnecting(false);
+                String detail=error instanceof com.negzero.monogram.xmpp.XmppInvitations.InvitationException ? error.getMessage()
+                        : invitation!=null || accountCreated ? com.negzero.monogram.xmpp.XmppRequestException.describe(error) : getString(R.string.MonogramLoginFailed);
+                jabberView.error(1,(accountCreated ? "Account created; sign-in failed. " : "")+detail);
+            }
+            return;
+        }
+        TLRPC.User user = MonogramController.get(currentAccount).ownUser();
+        UserConfig config = UserConfig.getInstance(currentAccount);
+        config.setCurrentUser(user); config.syncContacts = false; config.saveConfig(true);
+        ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(user);
+        MessagesStorage.getInstance(currentAccount).putUsersAndChats(users, null, true, true);
+        MessagesController.getInstance(currentAccount).putUser(user, false);
+        MessagesController.getGlobalMainSettings().edit().putBoolean("monogram_intro_seen", true).apply();
+        ApplicationLoader.startPushService();
+        if (destroyed || getParentActivity() == null) return;
+        jabberView.fields[1].setText("");
+        if (UserConfig.selectedAccount != currentAccount && getParentActivity() instanceof LaunchActivity)
+            ((LaunchActivity) getParentActivity()).switchToAccount(currentAccount, true);
+        else { MainTabsActivity tabs = new MainTabsActivity(); tabs.setCurrentAccount(currentAccount); presentFragment(tabs, true); }
     }
 
     /** Telegram's password-page layout with Jabber fields in place of phone/SMS authentication. */
     private class JabberView extends SlideView {
         final EditTextBoldCursor[] fields = new EditTextBoldCursor[4];
         final OutlineTextContainerView[] outlines = new OutlineTextContainerView[4];
-        final TextView titleView, confirmTextView, advancedButton, errorView;
+        final TextView titleView, confirmTextView, advancedButton, errorView,invitationButton;
         final LinearLayout advancedFields;
         JabberView(Context context) {
             super(context);
@@ -243,6 +306,12 @@ public class MonogramLoginActivity extends BaseFragment {
             fields[3].setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
             showAdvanced(false);
             advancedButton.setOnClickListener(v -> showAdvanced(advancedFields.getVisibility() != VISIBLE));
+            invitationButton=new TextView(context);
+            invitationButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP,15);invitationButton.setGravity(Gravity.CENTER);
+            invitationButton.setMinimumHeight(dp(48));
+            invitationButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));
+            invitationButton.setOnClickListener(v -> invitationLink());
+            addView(invitationButton,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,48,16,0,16,0));
             errorView = new TextView(context);
             errorView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             errorView.setGravity(Gravity.CENTER);
@@ -295,6 +364,7 @@ public class MonogramLoginActivity extends BaseFragment {
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             confirmTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
             advancedButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+            invitationButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             errorView.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
             for (int index = 0; index < fields.length; index++) {
                 fields[index].setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));

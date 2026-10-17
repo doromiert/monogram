@@ -595,6 +595,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     if (fragmentName != null) {
                         Bundle args = savedInstanceState.getBundle("args");
                         switch (fragmentName) {
+                            case "monogram_login": {
+                                int loginAccount=savedInstanceState.getInt("monogram_account",currentAccount);
+                                if(loginAccount>=0 && loginAccount<UserConfig.MAX_ACCOUNT_COUNT && !UserConfig.getInstance(loginAccount).isClientActivated()) {
+                                    MonogramLoginActivity login=new MonogramLoginActivity(loginAccount);
+                                    if(!UserConfig.getInstance(currentAccount).isClientActivated()) actionBarLayout.removeAllFragments();
+                                    if(actionBarLayout.addFragmentToStack(login)) login.restoreSelfArgs(savedInstanceState);
+                                }
+                                break;
+                            }
                             case "chat":
                                 if (args != null) {
                                     ChatActivity chat = new ChatActivity(args);
@@ -1543,6 +1552,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 return false;
             }
         }
+        if(handleXmppInvitation(intent)) return true;
         boolean pushOpened = false;
         long push_user_id = 0;
         long push_chat_id = 0;
@@ -3369,6 +3379,23 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private static Pattern timestampPattern;
+    private boolean handleXmppInvitation(Intent intent) {
+        if(intent==null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData()==null || !"xmpp".equalsIgnoreCase(intent.getData().getScheme())) return false;
+        String uri=intent.getData().toString();intent.setAction(null);intent.setData(null);
+        try {
+            com.negzero.monogram.xmpp.RegistrationInvitation invitation=com.negzero.monogram.xmpp.RegistrationInvitation.parse(uri);
+            BaseFragment previous=getSafeLastFragment();
+            if(previous instanceof MonogramLoginActivity && ((MonogramLoginActivity)previous).isConnecting())
+                throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Finish the current sign-in before opening another invitation.");
+            int slot=UserConfig.getInstance(currentAccount).isClientActivated() ? UserConfig.getFreeAccount() : currentAccount;
+            if(slot<0) throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("All account slots are in use. Remove an account before creating another one.");
+            presentFragment(new MonogramLoginActivity(slot,invitation),previous instanceof MonogramLoginActivity || previous instanceof IntroActivity,false);
+        } catch(com.negzero.monogram.xmpp.XmppInvitations.InvitationException invalid) {
+            new AlertDialog.Builder(this).setTitle("XMPP invitation").setMessage(invalid.getMessage()).setPositiveButton(getString(R.string.OK),null).show();
+        }
+        return true;
+    }
+
     public static int getTimestampFromLink(Uri data) {
         List<String> segments = data.getPathSegments();
         String timestampStr = null;
@@ -8237,7 +8264,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
             if (lastFragment != null) {
                 Bundle args = lastFragment.getArguments();
-                if (lastFragment instanceof ChatActivity && args != null) {
+                if(lastFragment instanceof MonogramLoginActivity) {
+                    outState.putString("fragment","monogram_login");
+                } else if (lastFragment instanceof ChatActivity && args != null) {
                     outState.putBundle("args", args);
                     outState.putString("fragment", "chat");
                 } else if (lastFragment instanceof GroupCreateFinalActivity && args != null) {

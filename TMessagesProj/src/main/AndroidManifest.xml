@@ -279,6 +279,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="tg" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="xmpp" />
+            </intent-filter>
             <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon" android:priority="1">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

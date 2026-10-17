@@ -1077,21 +1077,65 @@ public final class MonogramController {
         });
     }
     public void login(String jid, String password, String host, int port, Consumer<Exception> result) {
+        long owner=accountEpoch;
         worker.execute(() -> {
-            Exception error = null;
+            Exception error = null;boolean signingIn=false;
             try {
                 Account details = new Account(jid, host, port, "Monogram");
-                connect(details, password);
+                if(owner!=accountEpoch || UserConfig.getInstance(account).isClientActivated()
+                        || preferences.contains("jid") && !details.jid.toString().equals(accountJid()))
+                    throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("This account slot is already configured or changed. Open sign-in again.");
+                signingIn=true;connect(details, password);
+                if(owner!=accountEpoch) throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Please sign in again.");
                 if (!preferences.edit().putString("jid", details.jid.toString()).putString("host", host)
                         .putInt("port", port).putString("credential", vault.encrypt(password)).commit()) throw new java.io.IOException("Cannot save account");
             } catch (Exception e) {
                 error = e;
-                if (session != null) { session.close(); session = null; }
-                state(ConnectionsManager.ConnectionStateWaitingForNetwork);
+                if(signingIn) {
+                    if (session != null) { session.close(); session = null; }
+                    state(ConnectionsManager.ConnectionStateWaitingForNetwork);
+                }
             }
             AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
             final Exception completed = error;
-            AndroidUtilities.runOnUIThread(() -> result.accept(completed));
+            AndroidUtilities.runOnUIThread(() -> result.accept(owner==accountEpoch ? completed : new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Please sign in again.")));
+        });
+    }
+    public String sealRegistrationInvite(String uri) throws Exception {
+        com.negzero.monogram.xmpp.RegistrationInvitation.parse(uri);return vault.encrypt(uri);
+    }
+    public com.negzero.monogram.xmpp.RegistrationInvitation openRegistrationInvite(String sealed) throws Exception {
+        return com.negzero.monogram.xmpp.RegistrationInvitation.parse(vault.decrypt(sealed));
+    }
+    private void requireRegistrationSlot(long owner) throws Exception {
+        if(owner!=accountEpoch || UserConfig.getInstance(account).isClientActivated() || preferences.contains("jid"))
+            throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("This account slot changed. Open the invitation again.");
+    }
+    public void register(com.negzero.monogram.xmpp.RegistrationInvitation invitation,String jid,String password,String host,int port,
+                         java.util.function.BiConsumer<Boolean,Exception> callback) {
+        long owner=accountEpoch;
+        worker.execute(() -> {
+            boolean created=false,signingIn=false;Exception error=null;
+            try {
+                requireRegistrationSlot(owner);Account details=new Account(jid,host,port,"Monogram");invitation.validate(details);
+                String sealed=vault.encrypt(password);
+                AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
+                com.negzero.monogram.xmpp.XmppRegistration.create(invitation,details,password);created=true;
+                requireRegistrationSlot(owner);signingIn=true;connect(details,password);requireRegistrationSlot(owner);
+                if(!preferences.edit().putString("jid",details.jid.toString()).putString("host",host).putInt("port",port)
+                        .putString("credential",sealed).commit()) throw new java.io.IOException("Cannot save account");
+            } catch(Exception failed) {
+                error=failed;
+                if(signingIn) {
+                    if(session!=null) { session.close();session=null; }
+                    state(ConnectionsManager.ConnectionStateWaitingForNetwork);
+                }
+            }
+            final boolean registered=created;final Exception failure=error;
+            AndroidUtilities.runOnUIThread(() -> {
+                ApplicationLoader.startPushService();
+                callback.accept(registered,owner==accountEpoch ? failure : new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Sign in to the new account separately."));
+            });
         });
     }
     public void logout() {
