@@ -9,6 +9,9 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
+- [ ] Fix reported broken search. Identify affected entry points (global/chat/contact search versus emoji/GIF search), reproduce the failure, and route supported searches through the XMPP/local cache instead of unsupported Telegram requests. The report does not specify a screen yet.
+- [o] Match collapsed reaction emoji size to the expanded Unicode grid, superseding the earlier preference for larger collapsed icons; preserve native touch targets and selected-state feedback.
+- [o] Fix the reaction flight's final size snap: scale Unicode glyphs with the moving view and hand off at the actual message reaction size without a larger static glyph appearing at arrival.
 - [x] Build and install 0.2.40 (72159) with Nix and the original signing key through wireless ADB. Saved account/credential, legacy OMEMO identity/trust, all 3,056 prior cached message identities and seven rooms are preserved on schema 16. Broad suites are deferred as requested; the behavior checks below remain open.
 - [o] Restore reaction selection vibration and the flight animation from the picker to the message reaction; compare the pinned official Telegram implementation and retain native behavior for Unicode reactions. The native overlay now draws cached Unicode glyphs without Telegram animation documents, re-enabling its flight and haptic paths; phone confirmation remains.
 - [o] Check and restore the expanded emoji picker's native 3D scrolling effect against official Telegram source. Reuse the existing row skew for the Unicode reaction grid while retaining its compact glyph scale; phone appearance remains to verify.
