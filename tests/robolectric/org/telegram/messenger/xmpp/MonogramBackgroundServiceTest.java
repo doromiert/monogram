@@ -17,10 +17,21 @@ import org.telegram.messenger.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE, sdk=36, application=Application.class,
         shadows={MonogramBackgroundServiceTest.Loader.class, MonogramBackgroundServiceTest.Settings.class,
-                MonogramBackgroundServiceTest.Strings.class, MonogramBackgroundServiceTest.Accounts.class})
+                MonogramBackgroundServiceTest.Strings.class, MonogramBackgroundServiceTest.Accounts.class,
+                MonogramBackgroundServiceTest.Configuration.class})
 public class MonogramBackgroundServiceTest {
     @Implements(value=ApplicationLoader.class,isInAndroidSdk=false)
-    public static class Loader { @Implementation public static void postInitApplication() {} }
+    public static class Loader {
+        static int starts;
+        @Implementation public static void postInitApplication() {}
+        @Implementation public static void startPushService() { starts++; }
+    }
+    @Implements(value=SharedConfig.class,isInAndroidSdk=false)
+    public static class Configuration {
+        static int saves;
+        @Implementation public static void loadConfig() {}
+        @Implementation public static void saveConfig() { saves++; }
+    }
     @Implements(value=MessagesController.class,isInAndroidSdk=false)
     public static class Settings {
         @Implementation public static android.content.SharedPreferences getNotificationsSettings(int account) {
@@ -67,5 +78,19 @@ public class MonogramBackgroundServiceTest {
         assertTrue(NotificationsService.enabled(context));
         context.getSharedPreferences("monogram-1",0).edit().remove("jid").commit();
         assertFalse(NotificationsService.enabled(context));
+    }
+    @Test public void packageUpdateAndBootStartSynchronouslyAndKeepPasscodeProtection() {
+        Context context=RuntimeEnvironment.getApplication();
+        AppStartReceiver receiver=new AppStartReceiver();
+        ApplicationLoader.applicationHandler=null;
+        SharedConfig.passcodeHash="test-hash"; SharedConfig.appLocked=false;
+        Loader.starts=0; Configuration.saves=0;
+        receiver.onReceive(context,new android.content.Intent(android.content.Intent.ACTION_MY_PACKAGE_REPLACED));
+        assertEquals(1,Loader.starts); assertTrue(SharedConfig.appLocked); assertEquals(1,Configuration.saves);
+        SharedConfig.passcodeHash=""; SharedConfig.appLocked=false;
+        receiver.onReceive(context,new android.content.Intent(android.content.Intent.ACTION_BOOT_COMPLETED));
+        assertEquals(2,Loader.starts); assertFalse(SharedConfig.appLocked); assertEquals(1,Configuration.saves);
+        receiver.onReceive(context,new android.content.Intent("org.telegram.start")); receiver.onReceive(context,null);
+        assertEquals(2,Loader.starts);
     }
 }
