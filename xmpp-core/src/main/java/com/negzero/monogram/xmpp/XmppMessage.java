@@ -21,6 +21,7 @@ public final class XmppMessage {
     public final FileLink attachment;
     public final FileShare sharing;
     public final String caption;
+    public final MessageMarkup markup,captionMarkup;
     public final ReplyReference reply;
     public final MessageCorrection correction;
     public final MessageReactions reactions;
@@ -32,13 +33,13 @@ public final class XmppMessage {
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, Encryption encryption,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, String markableId) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, String markableId, MessageMarkup markup, MessageMarkup captionMarkup) {
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encryption = encryption; this.encrypted = encryption != Encryption.PLAIN;
         this.readable = readable; this.outgoing = outgoing;
         this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply; this.correction = correction;
         this.sharing = sharing; this.caption = caption; this.reactions = reactions; this.retraction=retraction; this.senderFingerprint=senderFingerprint;
-        this.markableId=markableId;
+        this.markableId=markableId;this.markup=markup;this.captionMarkup=captionMarkup;
     }
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
@@ -118,15 +119,37 @@ public final class XmppMessage {
         }
         String caption = "";
         if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
+        MessageMarkup markup=readable ? encryption==Encryption.LEGACY_OMEMO ? MessageMarkup.body(body) : MessageMarkup.from(content,body) : null;
+        MessageMarkup captionMarkup=sharing==null || markup==null ? null : sharing.captionMarkup(content,body,reply,markup);
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encryption, readable, outgoing, archiveId != null,
                 delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption, reactions, retraction, null,
-                !outgoing && reactions==null && retraction==null ? MessageReceipt.markableId(message) : null);
+                !outgoing && reactions==null && retraction==null ? MessageReceipt.markableId(message) : null,markup,captionMarkup);
     }
 
     public XmppMessage withSenderFingerprint(String fingerprint) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId);
+                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId,markup,captionMarkup);
+    }
+    public XmppMessage withMarkup(MessageMarkup value) {
+        if(value==null) return this;
+        MessageMarkup full=value;
+        if(!body.equals(value.body)) {
+            String payload=sharing!=null && value.body.equals(caption) ? sharing.body(value.body) : value.body;
+            if(!body.endsWith(payload)) throw new IllegalArgumentException("Markup belongs to another body");
+            full=value.inBody(body,body.codePointCount(0,body.length()-payload.length()));
+        }
+        if(encryption==Encryption.LEGACY_OMEMO) full=MessageMarkup.body(body);
+        MessageMarkup captionValue=null;
+        if(sharing!=null) {
+            String payload=sharing.body(caption);
+            if(!body.endsWith(payload)) throw new IllegalArgumentException("Caption belongs to another body");
+            int start=body.codePointCount(0,body.length()-payload.length());
+            captionValue=full.slice(start,start+caption.codePointCount(0,caption.length()));
+        }
+        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,full,
+                captionValue);
     }
     static String opaqueId(Message message) {
         try {

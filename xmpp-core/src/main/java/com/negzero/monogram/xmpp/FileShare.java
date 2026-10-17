@@ -152,7 +152,10 @@ public final class FileShare {
     }
     /** Keep actual caption text; only marked file-URL spans and validated reply spans may disappear. */
     public String caption(Message message, String body, ReplyReference reply) {
-        if (body == null) return "";
+        return captionMarkup(message,body,reply,MessageMarkup.body(body)).body;
+    }
+    public MessageMarkup captionMarkup(Message message,String body,ReplyReference reply,MessageMarkup markup) {
+        if(body==null) return MessageMarkup.body("");
         List<int[]> spans = new ArrayList<>(); int length = body.codePointCount(0, body.length());
         try {
             for (ExtensionElement extension : message.getExtensions("fallback", ReplyReference.FALLBACK)) {
@@ -170,8 +173,8 @@ public final class FileShare {
                     spans.add(new int[]{start, end});
                 }
             }
-        } catch (RuntimeException malformed) { return reply == null ? body : reply.withoutFallback(body); }
-        if (spans.isEmpty() && (body.equals(link.wireUrl) || reply != null && reply.withoutFallback(body).equals(link.wireUrl))) return "";
+        } catch (RuntimeException malformed) { return withoutReply(markup,reply); }
+        if (spans.isEmpty() && (body.equals(link.wireUrl) || reply != null && reply.withoutFallback(body).equals(link.wireUrl))) return markup.slice(0,0);
         if (reply != null && !reply.ranges.isEmpty()) {
             try {
                 for (String range : reply.ranges.split(",")) {
@@ -179,13 +182,16 @@ public final class FileShare {
                     if (a < 0 || b < a || b > length) throw new IllegalArgumentException();
                     spans.add(new int[]{a, b});
                 }
-            } catch (RuntimeException malformed) { return body; }
+            } catch (RuntimeException malformed) { return markup; }
         }
-        spans.sort(Comparator.comparingInt(span -> span[0])); int position = 0; StringBuilder caption = new StringBuilder();
-        for (int[] span : spans) {
-            if (span[0] > position) caption.append(body, body.offsetByCodePoints(0, position), body.offsetByCodePoints(0, span[0]));
-            position = Math.max(position, span[1]);
-        }
-        caption.append(body.substring(body.offsetByCodePoints(0, position))); return caption.toString();
+        return markup.without(spans);
+    }
+    private static MessageMarkup withoutReply(MessageMarkup markup,ReplyReference reply) {
+        if(reply==null || reply.ranges.isEmpty()) return markup;
+        try {
+            int length=markup.body.codePointCount(0,markup.body.length());List<int[]> spans=new ArrayList<>();
+            for(String range:reply.ranges.split(",")) { String[] ends=range.split(":");spans.add(new int[]{Integer.parseInt(ends[0]),"*".equals(ends[1]) ? length : Integer.parseInt(ends[1])}); }
+            return markup.without(spans);
+        } catch(RuntimeException invalid) { return markup; }
     }
 }

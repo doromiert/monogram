@@ -82,6 +82,9 @@ class XmppRoomsIntegrationTest {
             assertEquals("",alice.rooms.configure(room,null,"").description);
         }
     }
+    private MessageMarkup formatted(String body) {
+        return new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(0,body.codePointCount(0,body.length()),Collections.singleton(MessageMarkup.Style.STRONG),null))).styled();
+    }
     @Test void joinNativeRoomTransportEncryptOfflineMembersAndRejoinHistory() throws Exception {
         XmppSession.initializeOmemo(new File(root,"keys"));
         BlockingQueue<XmppRoomMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();
@@ -103,18 +106,22 @@ class XmppRoomsIntegrationTest {
             assertThrows(org.jivesoftware.smack.XMPPException.XMPPErrorException.class,() -> alice.rooms.join("missing@conference.localhost","Alice",null));
             assertThrows(UnsupportedOperationException.class,() -> alice.send(room+"/Bob","must not strip occupant",false));
             assertThrows(UnsupportedOperationException.class,() -> alice.send(room,"must not become a direct chat",false));
-            XmppRoomMessage sent=alice.rooms.send(room,"room hello",false);
-            XmppRoomMessage incoming=readable(bobMessages,"room hello");
+            MessageMarkup plainMarkup=formatted("room hello");
+            XmppRoomMessage sent=alice.rooms.send(room,plainMarkup.body,false,null,null,Collections.emptySet(),false,plainMarkup);
+            XmppRoomMessage incoming=readable(bobMessages,plainMarkup.body);
+            assertEquals("room hello",incoming.markup.display().body);assertFalse(incoming.markup.ranges.isEmpty());
             assertEquals(room+"/Alice",incoming.sender); assertFalse(incoming.outgoing); assertFalse(incoming.encrypted);
             assertEquals(sent.ids.get("origin"),incoming.ids.get("origin"));
             assertEquals("roomalice@localhost",incoming.realSender);
             assertNotNull(incoming.occupantId); assertTrue(incoming.realSenderVerified);
             ReplyReference answer=new ReplyReference(incoming.sender,incoming.ids.get("archive")).quoted("room hello");
-            bob.rooms.send(room,"room reply",false,answer,null,Collections.emptySet());
-            XmppRoomMessage replied=readable(aliceMessages,answer.wireBody("room reply"));
-            assertEquals(incoming.ids.get("archive"),replied.reply.id); assertEquals("room reply",replied.reply.withoutFallback(replied.body));
-            alice.rooms.send(room,"room edited",false,null,new MessageCorrection(sent.ids.get("stanza")),Collections.emptySet());
-            assertEquals(sent.ids.get("stanza"),readable(bobMessages,"room edited").correction.id);
+            MessageMarkup replyMarkup=formatted("room reply");
+            bob.rooms.send(room,replyMarkup.body,false,answer,null,Collections.emptySet(),false,replyMarkup);
+            XmppRoomMessage replied=readable(aliceMessages,answer.wireBody(replyMarkup.body));
+            assertEquals(incoming.ids.get("archive"),replied.reply.id); assertEquals(replyMarkup.body,replied.reply.withoutFallback(replied.body));
+            MessageMarkup plainEdit=formatted("room edited");
+            alice.rooms.send(room,plainEdit.body,false,null,new MessageCorrection(sent.ids.get("stanza")),Collections.emptySet(),false,plainEdit);
+            XmppRoomMessage plainEdited=readable(bobMessages,plainEdit.body);assertEquals(sent.ids.get("stanza"),plainEdited.correction.id);assertEquals("room edited",plainEdited.markup.display().body);
             bob.rooms.sendReactions(room,new MessageReactions(incoming.ids.get("archive"),Arrays.asList("👍","🐢")));
             XmppRoomMessage roomReaction=null; long reactionDeadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
             while(System.nanoTime()<reactionDeadline) { XmppRoomMessage next=aliceMessages.poll(100,TimeUnit.MILLISECONDS); if(next!=null && next.reactions!=null) { roomReaction=next; break; } }
@@ -174,23 +181,35 @@ class XmppRoomsIntegrationTest {
             alice.devices(bob.ownJid());
             Set<String> excluded=Collections.singleton(unavailable);
             alice.connection().addStanzaSendingListener(stanza -> repeatedLists.incrementAndGet(),stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.toXML().toString().contains("eu.siacs.conversations.axolotl.devicelist"));
-            alice.rooms.send(room,"private room hello",true,excluded);
-            XmppRoomMessage privateOriginal=readable(bobMessages,"private room hello"); assertTrue(privateOriginal.encrypted);
+            java.util.concurrent.atomic.AtomicReference<org.jivesoftware.smack.packet.Message> encryptedFormattingWire=new java.util.concurrent.atomic.AtomicReference<>();
+            alice.connection().addStanzaInterceptor(stanza -> encryptedFormattingWire.set((org.jivesoftware.smack.packet.Message)stanza),stanza -> stanza instanceof org.jivesoftware.smack.packet.Message
+                    && stanza.hasExtension("encrypted","eu.siacs.conversations.axolotl"));
+            MessageMarkup privateMarkup=formatted("private room hello");
+            alice.rooms.send(room,privateMarkup.body,true,null,null,excluded,false,privateMarkup);
+            XmppRoomMessage privateOriginal=readable(bobMessages,privateMarkup.body); assertTrue(privateOriginal.encrypted);
+            assertEquals("private room hello",privateOriginal.markup.display().body);
+            assertNotNull(encryptedFormattingWire.get());assertFalse(encryptedFormattingWire.get().hasExtension("markup",MessageMarkup.NAMESPACE));assertFalse(encryptedFormattingWire.get().hasExtension("unstyled",MessageMarkup.STYLING));
             ReplyReference secretReply=new ReplyReference(privateOriginal.sender,privateOriginal.ids.get("archive")).quoted("private room hello");
-            bob.rooms.send(room,"secret answer",true,secretReply,null,excluded);
-            XmppRoomMessage secretAnswer=readable(aliceMessages,secretReply.wireBody("secret answer"));
+            MessageMarkup secretAnswerMarkup=formatted("secret answer");
+            bob.rooms.send(room,secretAnswerMarkup.body,true,secretReply,null,excluded,false,secretAnswerMarkup);
+            XmppRoomMessage secretAnswer=readable(aliceMessages,secretReply.wireBody(secretAnswerMarkup.body));
             assertTrue(secretAnswer.encrypted); assertEquals(privateOriginal.ids.get("archive"),secretAnswer.reply.id);
-            alice.rooms.send(room,"private corrected",true,null,new MessageCorrection(privateOriginal.ids.get("stanza")),excluded);
-            assertEquals(privateOriginal.ids.get("stanza"),readable(bobMessages,"private corrected").correction.id);
+            MessageMarkup secretEdit=formatted("private corrected");
+            alice.rooms.send(room,secretEdit.body,true,null,new MessageCorrection(privateOriginal.ids.get("stanza")),excluded,false,secretEdit);
+            XmppRoomMessage privateEdited=readable(bobMessages,secretEdit.body);assertEquals(privateOriginal.ids.get("stanza"),privateEdited.correction.id);assertEquals("private corrected",privateEdited.markup.display().body);
             assertEquals(0,repeatedLists.get(),"Recently reviewed device lists must not be re-fetched for every room send");
             File source=new File(root,"room-photo.png"),downloaded=new File(root,"received-room-file");
             java.nio.file.Files.write(source.toPath(),avatar);
             FileLink photo=FileTransfer.upload(alice.connection(),source,"image/png",false,new FileTransfer.Job(),null);
             FileShare described=FileShare.describe(photo,source,"room-photo.png","image/png");
-            alice.rooms.sendFile(room,photo,described,"Room photo",false,answer,Collections.emptySet(),true);
-            XmppRoomMessage receivedPhoto=readable(bobMessages,answer.wireBody(described.body("Room photo")));
-            assertEquals(answer.id,receivedPhoto.reply.id); assertNotNull(receivedPhoto.attachment); assertNotNull(receivedPhoto.sharing); assertEquals("Room photo",receivedPhoto.caption);
+            MessageMarkup photoCaption=formatted("Room photo");
+            alice.rooms.sendFile(room,photo,described,photoCaption.body,false,answer,Collections.emptySet(),true,photoCaption);
+            XmppRoomMessage receivedPhoto=readable(bobMessages,answer.wireBody(described.body(photoCaption.body)));
+            assertEquals(answer.id,receivedPhoto.reply.id); assertNotNull(receivedPhoto.attachment); assertNotNull(receivedPhoto.sharing); assertEquals("Room photo",receivedPhoto.captionMarkup.display().body);
             FileTransfer.download(receivedPhoto.sharing,downloaded,new FileTransfer.Job(),null,null); assertArrayEquals(avatar,java.nio.file.Files.readAllBytes(downloaded.toPath()));
+            MessageMarkup photoEdit=formatted("Edited room caption");
+            alice.rooms.correctFile(room,described,photoEdit.body,answer,new MessageCorrection(receivedPhoto.ids.get("stanza")),Collections.emptySet(),true,photoEdit);
+            XmppRoomMessage editedPhoto=readable(bobMessages,answer.wireBody(described.body(photoEdit.body)));assertEquals("Edited room caption",editedPhoto.captionMarkup.display().body);
             FileLink secretPhoto=FileTransfer.upload(alice.connection(),source,"image/png",true,new FileTransfer.Job(),null);
             alice.rooms.sendFile(room,secretPhoto,null,"",true,secretReply,excluded,true);
             XmppRoomMessage receivedSecret=readable(bobMessages,secretReply.wireBody(secretPhoto.wireUrl));
@@ -222,7 +241,7 @@ class XmppRoomsIntegrationTest {
                 assertNotNull(page.firstId); assertNotEquals(before,page.firstId); before=page.firstId;
                 assertTrue(pages<10,"Archive pagination must finish");
             }
-            assertTrue(pages>3); assertTrue(bodies.contains("room hello")); assertTrue(bodies.contains("archive fill 119"));
+            assertTrue(pages>3); assertTrue(bodies.contains(plainMarkup.body)); assertTrue(bodies.contains("archive fill 119"));
             XmppRooms.ArchivePage latest=bob.rooms.archive(room,"",null,1);
             alice.rooms.send(room,"new archive message",false); readable(bobMessages,"new archive message");
             assertEquals("new archive message",bob.rooms.archive(room,null,latest.lastId,10).messages.get(0).body);

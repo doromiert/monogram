@@ -9,6 +9,7 @@ import com.negzero.monogram.xmpp.XmppMessage;
 import com.negzero.monogram.xmpp.ReplyReference;
 import com.negzero.monogram.xmpp.FileLink;
 import com.negzero.monogram.xmpp.FileTransfer;
+import com.negzero.monogram.xmpp.MessageMarkup;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
@@ -1943,7 +1944,10 @@ public final class MonogramController {
         boolean encrypted = mode != XmppMessage.Encryption.PLAIN, modern = mode == XmppMessage.Encryption.OMEMO2;
         String peer = store.jid(request.message.dialog_id);
         final ReplyReference reply;
+        final MessageMarkup captionMarkup;
+        final ArrayList<TLRPC.MessageEntity> captionEntities = new ArrayList<>(request.message.entities);
         try {
+            captionMarkup = MonogramFormatting.fromEntities(request.caption == null ? "" : request.caption, captionEntities).styled();
             TLRPC.MessageReplyHeader header = request.message.reply_to;
             if (header != null && (header.reply_to_peer_id != null && (request.message.dialog_id<0 ? -header.reply_to_peer_id.chat_id : header.reply_to_peer_id.user_id) != request.message.dialog_id || header.reply_to_top_id != 0)) throw new UnsupportedOperationException();
             reply = header == null ? null : replyTo(header.reply_to_msg_id, request.message.dialog_id, encrypted, header.quote_text, header.quote_offset);
@@ -1993,14 +1997,14 @@ public final class MonogramController {
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,request.caption,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id));
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? null : captionMarkup);
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String fingerprint=expected.senderFingerprint(mode);
-                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply) : expected.sendFile(peer,sharing,request.caption,reply);
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
                             XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply)
-                                    : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,request.caption,reply);
+                                    : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,captionMarkup.body,reply).withMarkup(captionMarkup);
                             message=message.withSenderFingerprint(fingerprint);
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
                         }
@@ -2008,16 +2012,22 @@ public final class MonogramController {
                                 : MonogramAttachments.media(id, (int) (timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
                         store.attach(id, link.wireUrl, cached, media);
                         refreshReplies(request.message.dialog_id);
-                        MonogramAttachments.apply(request.message, link, cached, media, caption, sharing == null ? link.fileName() : sharing.name);
+                        MonogramAttachments.apply(request.message, link, cached, media, sharing == null ? caption : request.caption, sharing == null ? link.fileName() : sharing.name);
+                        request.message.entities.clear();
+                        if (sharing != null) request.message.entities.addAll(captionEntities);
+                        if (request.message.entities.isEmpty()) request.message.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+                        else request.message.flags |= TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
                         TLRPC.TL_updateShortSentMessage response = new TLRPC.TL_updateShortSentMessage();
                         response.id = id; response.date = (int) (timestamp / 1000); response.out = true; response.pts_count = 1;
+                        TLRPC.Message projected = store.getMessage(id, self);
+                        response.message = projected.message; response.entities = projected.entities;
                         response.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
                         Utilities.stageQueue.postRunnable(() -> {
                             callback.run(response, null);
                             // Legacy OMEMO cannot carry SFS content; keep its separate encrypted caption until OMEMO2 is integrated.
                             if (encrypted && !modern && request.caption != null && !request.caption.isEmpty()) AndroidUtilities.runOnUIThread(() ->
                                     SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
-                                            request.caption, request.message.dialog_id, null, null, null, false, null, null, null, true, 0, 0, null, false)));
+                                            request.caption, request.message.dialog_id, null, null, null, false, captionEntities, null, null, true, 0, 0, null, false)));
                         });
                     } catch (Exception e) {
                         TLRPC.TL_error error = fileError(e);
@@ -2735,22 +2745,23 @@ public final class MonogramController {
                     || (edit.flags & 2048) == 0) throw new UnsupportedOperationException();
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
             MonogramStore.EditTarget target = editTarget(edit.id, peer);
+            MessageMarkup markup = MonogramFormatting.fromEntities(edit.message, edit.entities).styled();
             XmppMessage.Encryption mode = target.sharing!=null ? target.encryption
                     : target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
             int saved;
             if(peer<0) {
                 com.negzero.monogram.xmpp.XmppRoomMessage message=target.sharing==null
-                        ? session().rooms.send(store.jid(peer),edit.message,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer))
-                        : session().rooms.correctFile(store.jid(peer),target.sharing,edit.message,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
+                        ? session().rooms.send(store.jid(peer),markup.body,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup)
+                        : session().rooms.correctFile(store.jid(peer),target.sharing,markup.body,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup);
                 saved=store.saveRoom(message,self); if(message.encrypted) reportSkippedRecipients(peer,message);
             }
             else {
                 XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-                String stanza=target.sharing==null ? expected.correct(store.jid(peer),edit.message,mode,target.reply,target.correction)
-                        : expected.correctFile(store.jid(peer),target.sharing,edit.message,mode,target.reply,target.correction);
-                XmppMessage message=target.sharing==null ? XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,edit.message,mode,target.reply,target.correction)
-                        : XmppMessage.sentFile(expected.connection().getUser(),store.jid(peer),stanza,target.sharing,edit.message,target.reply,target.correction);
-                saved=store.save(message.withSenderFingerprint(fingerprint));
+                String stanza=target.sharing==null ? expected.correct(store.jid(peer),markup.body,mode,target.reply,target.correction,markup)
+                        : expected.correctFile(store.jid(peer),target.sharing,markup.body,mode,target.reply,target.correction,markup);
+                XmppMessage message=target.sharing==null ? XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,markup.body,mode,target.reply,target.correction)
+                        : XmppMessage.sentFile(expected.connection().getUser(),store.jid(peer),stanza,target.sharing,markup.body,target.reply,target.correction);
+                saved=store.save(message.withMarkup(markup).withSenderFingerprint(fingerprint));
             }
             MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, java.util.Collections.singleton(saved));
             refreshReplies(peer, corrections.edited);
@@ -2763,25 +2774,28 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
+            MessageMarkup markup = MonogramFormatting.fromEntities(send.message, send.entities).styled();
             if (send.peer.chat_id!=0) {
                 if (send.schedule_date!=0) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),send.message,encrypted(dialog),outgoingReply(send.reply_to,dialog,encrypted(dialog)),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog));
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,encrypted(dialog),outgoingReply(send.reply_to,dialog,encrypted(dialog)),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup);
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
+                TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
                 result.pts_count=1; result.pts=MessagesStorage.getInstance(account).getLastPtsValue()+1; return result;
             }
             if (send.schedule_date != 0 || send.peer.user_id == 0) throw new UnsupportedOperationException();
             long peer = send.peer.user_id; XmppMessage.Encryption mode = encryption(peer);
             ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);
             XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-            String stanza = expected.send(store.jid(peer), send.message, mode, reply);
-            XmppMessage message = XmppMessage.sent(expected.connection().getUser(), store.jid(peer), stanza, send.message, mode, reply,null).withSenderFingerprint(fingerprint);
+            String stanza = expected.send(store.jid(peer), markup.body, mode, reply, markup);
+            XmppMessage message = XmppMessage.sent(expected.connection().getUser(), store.jid(peer), stanza, markup.body, mode, reply,null).withMarkup(markup).withSenderFingerprint(fingerprint);
             int date = (int) (message.timestamp / 1000); int id = store.save(message);
             refreshReplies(peer);
             TLRPC.TL_updateShortSentMessage result = new TLRPC.TL_updateShortSentMessage();
             result.id = id; result.date = date; result.out = true; result.pts_count = 1;
+            TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
             result.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
             return result;
         }

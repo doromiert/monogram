@@ -146,6 +146,9 @@ public final class XmppSession implements AutoCloseable {
         MessageReactions.initialize();
         MessageRetraction.initialize();
         FileShare.initialize();
+        MessageMarkup.initialize();
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.STYLING);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.LEGACY);
         profiles = new XmppProfiles(connection, listener::profileChanged);
@@ -473,6 +476,15 @@ public final class XmppSession implements AutoCloseable {
         return encryption == XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null)
                 : correct(jid,body,encryption != XmppMessage.Encryption.PLAIN,reply,correction);
     }
+    public String send(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageMarkup markup) throws Exception {
+        return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,null,null,null,markup)
+                : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,null,null,null,markup);
+    }
+    public String correct(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageCorrection correction,MessageMarkup markup) throws Exception {
+        if(correction==null) throw new IllegalArgumentException("Missing correction reference");
+        return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null,null,markup)
+                : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,correction,null,null,markup);
+    }
     public String sendFile(String jid, FileLink link, boolean encrypted) throws Exception {
         return sendFile(jid, link, encrypted, null);
     }
@@ -501,16 +513,36 @@ public final class XmppSession implements AutoCloseable {
         return encryption == XmppMessage.Encryption.OMEMO2 ? sendModern(jid,sharing.body(caption),reply,correction,sharing)
                 : send(jid,sharing.body(caption),false,false,reply,correction,sharing);
     }
+    public String sendFile(String jid,FileShare sharing,String caption,ReplyReference reply,MessageMarkup markup) throws Exception {
+        if(markup!=null && !markup.body.equals(caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
+        String body=sharing.body(caption);MessageMarkup full=markup==null ? null : markup.inBody(body,0);
+        return sharing.link.encrypted() ? sendModern(jid,body,reply,null,sharing,null,full)
+                : send(jid,body,false,false,reply,null,sharing,null,full);
+    }
+    public String correctFile(String jid,FileShare sharing,String caption,XmppMessage.Encryption encryption,ReplyReference reply,MessageCorrection correction,MessageMarkup markup) throws Exception {
+        if(markup!=null && !markup.body.equals(caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
+        if(sharing==null || correction==null || encryption==XmppMessage.Encryption.LEGACY_OMEMO || sharing.link.encrypted()!=(encryption==XmppMessage.Encryption.OMEMO2))
+            throw new IllegalArgumentException("Caption encryption mode mismatch");
+        String body=sharing.body(caption);MessageMarkup full=markup==null ? null : markup.inBody(body,0);
+        return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,sharing,null,full)
+                : send(jid,body,false,false,reply,correction,sharing,null,full);
+    }
     private String sendModern(String jid, String body, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
         return sendModern(jid,body,reply,correction,sharing,null);
     }
     private String sendModern(String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction) throws Exception {
+        return sendModern(jid,body,reply,correction,sharing,retraction,null);
+    }
+    private String sendModern(String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup) throws Exception {
+        if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
+        int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
         if (!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         Message clear = new Message(directRecipient(jid),Message.Type.chat);
         clear.setFrom(connection.getUser()); String id = UUID.randomUUID().toString(); clear.setStanzaId(id);
         if (reply != null) { body = reply.wireBody(body); reply.addTo(clear); }
         clear.setBody(body); if (correction != null) correction.addTo(clear); if (sharing != null) sharing.addTo(clear,body);
+        if(markup!=null) markup.inBody(body,prefix).addTo(clear);
         if(retraction!=null) retraction.addMetadataTo(clear);
         Message wire = modern.encrypt(clear);
         if(retraction!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
@@ -522,6 +554,11 @@ public final class XmppSession implements AutoCloseable {
         return send(jid,body,encrypted,attachment,reply,correction,sharing,null);
     }
     private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction) throws Exception {
+        return send(jid,body,encrypted,attachment,reply,correction,sharing,retraction,null);
+    }
+    private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup) throws Exception {
+        if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
+        int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         EntityBareJid recipient = directRecipient(jid);
         String attachmentUrl = body;
@@ -557,6 +594,7 @@ public final class XmppSession implements AutoCloseable {
         if (reply != null) reply.addTo(message);
         if (correction != null) correction.addTo(message);
         if (sharing != null) sharing.addTo(message, body);
+        if(!encrypted && markup!=null) markup.inBody(body,prefix).addTo(message);
         if(retraction!=null) {
             retraction.addMetadataTo(message);
             message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());

@@ -31,7 +31,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 22); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 23); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -39,6 +39,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         addDeletions(db); addSenderFingerprints(db); MonogramRetractions.create(db);
         MonogramReceipts.create(db);
         MonogramReads.create(db);
+        MonogramFormatting.create(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -90,7 +91,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 22 || oldVersion < 1 || oldVersion > 21) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 23 || oldVersion < 1 || oldVersion > 22) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -111,6 +112,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         addRoomAffiliations(db);addProfileSources(db);
         if(oldVersion<21) MonogramReads.create(db);
         if(oldVersion<22) MonogramReads.createDisplayed(db);
+        if(oldVersion<23) MonogramFormatting.create(db);
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -420,6 +422,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 }
             }
             rememberFingerprint(db,id,message.readable,message.encryption.ordinal(),message.senderFingerprint);
+            changed|=MonogramFormatting.remember(db,id,message.body,message.readable,message.markup,message.captionMarkup);
             if(existing==0 && message.archived && !archiveBatch) reads.inheritArchive(id);
             if(message.realSenderVerified && message.realSender!=null) {
                 long sender=roomUser(dialog,message.sender,message.realSender,self);
@@ -707,6 +710,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 db.insertWithOnConflict("message_ids", null, identity, SQLiteDatabase.CONFLICT_IGNORE);
             }
             rememberFingerprint(db,id,message.readable,protocol(message),message.senderFingerprint);
+            changed|=MonogramFormatting.remember(db,id,message.body,message.readable,message.markup,message.captionMarkup);
             reads.remember(id,message);
             if(existing==0 && message.archived && !archiveBatch) reads.inheritArchive(id);
             ContentValues sender = new ContentValues(); sender.put("message", id); sender.put("sender", message.sender);
@@ -1018,6 +1022,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         message.media = new TLRPC.TL_messageMediaEmpty();
         decorate(message, payload);
         decorateReply(message, self, body, embedReply, payload);
+        MonogramFormatting.decorate(getReadableDatabase(),message,payload,body);
         message.reactions=reactions.snapshot(id,self);
         if (outgoing && peer > 0 && peer != self) receipts.decorate(message);
         if (!outgoing) MonogramReceipts.restoreIncoming(message, message.media_unread ? 0 : 2);
@@ -1281,8 +1286,9 @@ final class MonogramStore extends SQLiteOpenHelper {
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {
         TLRPC.TL_messages_messagesSlice result=new TLRPC.TL_messages_messagesSlice();
         String needle=query==null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
-        String sql="SELECT m.id,m.peer,p.body,COALESCE(a.caption,''),m.time_ms,m.archive_order FROM messages m "
+        String sql="SELECT m.id,m.peer,p.body,COALESCE(a.caption,''),m.time_ms,m.archive_order,f.markup,f.caption_body,f.caption_markup FROM messages m "
                 +"LEFT JOIN applied_corrections ac ON ac.original=m.id JOIN messages p ON p.id=COALESCE(ac.message,m.id) "
+                +"LEFT JOIN message_formatting f ON f.message=p.id AND f.body=p.body "
                 +"LEFT JOIN attachments a ON a.message=p.id LEFT JOIN room_senders r ON r.message=m.id "
                 +"WHERE m.deleted=0 AND p.deleted=0 AND p.readable=1 "
                 +"AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) "
@@ -1305,7 +1311,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         boolean unfiltered=filter==null || filter instanceof TLRPC.TL_inputMessagesFilterEmpty;
         try(Cursor c=getReadableDatabase().rawQuery(sql+" ORDER BY m.time_ms DESC,m.archive_order DESC,m.id DESC",args.toArray(new String[0]))) {
             while(c.moveToNext()) {
-                String text=c.getString(2),caption=c.getString(3);
+                String text=MonogramFormatting.displayText(c.getString(2),c.getString(6)),caption=c.getString(3);
+                if(java.util.Objects.equals(caption,c.getString(7))) caption=MonogramFormatting.displayText(caption,c.getString(8));
                 if(!needle.isEmpty() && !(text==null ? "" : text).toLowerCase(java.util.Locale.ROOT).contains(needle)
                         && !caption.toLowerCase(java.util.Locale.ROOT).contains(needle)) continue;
                 TLRPC.Message message=unfiltered ? null : getMessage(c.getInt(0),self);

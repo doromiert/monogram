@@ -81,4 +81,52 @@ class Omemo2PayloadTest {
         }
         outer.setType(Message.Type.groupchat); assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.envelope(outer,new SecureRandom()));
     }
+    @Test void formattedAndLiteralBodiesRoundTripOnlyInsideAuthenticatedContentAndOldPlainBodyStillWorks() throws Exception {
+        MessageMarkup.initialize();
+        MessageMarkup markup=new MessageMarkup("Private 😀",java.util.Collections.singletonList(new MessageMarkup.Range(0,9,java.util.Collections.singleton(MessageMarkup.Style.STRONG),null))).styled();
+        for(MessageMarkup value:java.util.Arrays.asList(markup,new MessageMarkup("literal *markers*",java.util.Collections.emptyList()).styled())) {
+            Message clear=message(value.body);value.addTo(clear);
+            byte[] payload=Omemo2Payload.envelope(clear,new SecureRandom());
+            try(Omemo2Payload.Sealed encrypted=Omemo2Payload.seal(payload,new SecureRandom())) {
+                Message outer=message("Server fallback");
+                assertFalse(outer.hasExtension("markup",MessageMarkup.NAMESPACE));assertFalse(outer.hasExtension("unstyled",MessageMarkup.STYLING));
+                Message decoded=Omemo2Payload.content(outer,Omemo2Payload.open(encrypted.ciphertext,encrypted.material));
+                assertEquals(value.display().body,MessageMarkup.from(decoded,decoded.getBody()).display().body);
+                assertEquals(clear.getExtensions("markup",MessageMarkup.NAMESPACE).size(),decoded.getExtensions("markup",MessageMarkup.NAMESPACE).size());
+                assertEquals(clear.getExtensions("unstyled",MessageMarkup.STYLING).size(),decoded.getExtensions("unstyled",MessageMarkup.STYLING).size());
+            }
+        }
+        Message original=message("Unformatted original overload");
+        Message decoded=Omemo2Payload.content(original,Omemo2Payload.envelope(original,new SecureRandom()));
+        assertEquals(original.getBody(),decoded.getBody());
+        assertFalse(decoded.hasExtension("markup",MessageMarkup.NAMESPACE));assertFalse(decoded.hasExtension("unstyled",MessageMarkup.STYLING));
+    }
+    @Test void malformedKnownFormattingPreservesInboundTextWhileOutboundAndUnknownNamespacesStayStrict() throws Exception {
+        MessageMarkup.initialize();Message original=message("Text");
+        String envelope=new String(Omemo2Payload.envelope(original,new SecureRandom()),StandardCharsets.UTF_8);
+        String[] invalid={
+                "<markup xmlns='urn:xmpp:markup:0'><span start='0' end='99'><strong/></span></markup>",
+                "<markup xmlns='urn:xmpp:markup:0'><span start='-1' end='2'><strong/></span></markup>",
+                "<unstyled xmlns='urn:xmpp:styling:0'>text</unstyled>",
+                "<unstyled xmlns='urn:xmpp:styling:0'/><unstyled xmlns='urn:xmpp:styling:0'/>",
+                "<markup xmlns='urn:unknown:format'/>",
+                "<unstyled xmlns='urn:unknown:format'/>"};
+        for(String child:invalid) {
+            String inbound=envelope.replace("</content>",child+"</content>");
+            if(child.contains("urn:unknown:format"))
+                assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.content(original,inbound.getBytes(StandardCharsets.UTF_8)));
+            else {
+                Message readable=Omemo2Payload.content(original,inbound.getBytes(StandardCharsets.UTF_8));
+                assertEquals("Text",readable.getBody());
+                assertFalse(readable.hasExtension("markup",MessageMarkup.NAMESPACE));assertFalse(readable.hasExtension("unstyled",MessageMarkup.STYLING));
+            }
+            Message outbound=PacketParserUtils.parseStanza("<message xmlns='jabber:client'><body>Text</body>"+child+"</message>");
+            outbound.setFrom(original.getFrom());outbound.setTo(original.getTo());outbound.setType(Message.Type.chat);
+            assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.envelope(outbound,new SecureRandom()));
+        }
+        String nested="<future xmlns='urn:unknown:format'/>";
+        for(int depth=0;depth<18;depth++) nested="<future xmlns='urn:unknown:format'>"+nested+"</future>";
+        String tooDeep=envelope.replace("</content>","<markup xmlns='urn:xmpp:markup:0'>"+nested+"</markup></content>");
+        assertEquals("Text",Omemo2Payload.content(original,tooDeep.getBytes(StandardCharsets.UTF_8)).getBody());
+    }
 }

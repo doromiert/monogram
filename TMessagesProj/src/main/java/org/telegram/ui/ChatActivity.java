@@ -22628,6 +22628,12 @@ public class ChatActivity extends BaseFragment implements
                 messagesDict[0].put(newMsgId, obj);
                 obj.messageOwner.id = newMsgId;
                 obj.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
+                if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                    obj.updateMessageText();
+                    obj.resetLayout();
+                    obj.caption = null;
+                    obj.generateCaption();
+                }
                 obj.forceUpdate = mediaUpdated;
                 addReplyMessageOwner(obj, msgId);
                 if (args.length >= 6) {

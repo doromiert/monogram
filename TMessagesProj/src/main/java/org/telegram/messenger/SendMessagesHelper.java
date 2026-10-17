@@ -8441,6 +8441,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             if (!newMsgObj.entities.isEmpty()) {
                                 newMsgObj.flags |= TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
                             }
+                            if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty() && res.message != null) {
+                                newMsgObj.message = res.message;
+                                if (newMsgObj.entities.isEmpty()) newMsgObj.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+                                msgObj.updateMessageText();
+                                msgObj.resetLayout();
+                                msgObj.caption = null;
+                                msgObj.generateCaption();
+                            }
                             currentSchedule = false;
                             if (!currentSchedule) {
                                 Integer value = getMessagesController().dialogs_read_outbox_max.get(newMsgObj.dialog_id);

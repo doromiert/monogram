@@ -64,6 +64,7 @@ final class Omemo2Payload {
     }
     static byte[] envelope(Message message, SecureRandom random) throws Exception {
         direct(message);
+        MessageMarkup.validateProtected(message);
         StandardExtensionElement.Builder content = StandardExtensionElement.builder("content",SCE);
         for (Message.Body body : message.getBodies()) {
             StandardExtensionElement.Builder text = StandardExtensionElement.builder("body",CLIENT).setText(body.getMessage());
@@ -127,6 +128,12 @@ final class Omemo2Payload {
         }
         stanza.append("</message>");
         Message result = PacketParserUtils.parseStanza(stanza.toString());
+        try { MessageMarkup.validateProtected(result); }
+        catch(GeneralSecurityException malformedFormatting) {
+            // Formatting is optional: authenticated readable text survives malformed known hints.
+            while(result.hasExtension("markup",MessageMarkup.NAMESPACE)) result.removeExtension("markup",MessageMarkup.NAMESPACE);
+            while(result.hasExtension("unstyled",MessageMarkup.STYLING)) result.removeExtension("unstyled",MessageMarkup.STYLING);
+        }
         result.setFrom(outer.getFrom()); result.setTo(outer.getTo()); result.setStanzaId(outer.getStanzaId()); result.setType(outer.getType());
         return result;
     }
@@ -138,6 +145,8 @@ final class Omemo2Payload {
                 || name.equals("fallback") && ReplyReference.FALLBACK.equals(namespace)
                 || name.equals("replace") && MessageCorrection.NAMESPACE.equals(namespace)
                 || name.equals("reactions") && MessageReactions.NAMESPACE.equals(namespace)
+                || name.equals("markup") && MessageMarkup.NAMESPACE.equals(namespace)
+                || name.equals("unstyled") && MessageMarkup.STYLING.equals(namespace)
                 || name.equals("retract") && MessageRetraction.NAMESPACE.equals(namespace)
                 || name.equals("apply-to") && MessageRetraction.FASTEN.equals(namespace);
     }

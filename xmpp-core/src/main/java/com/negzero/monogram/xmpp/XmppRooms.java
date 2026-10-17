@@ -534,7 +534,26 @@ public final class XmppRooms implements AutoCloseable {
     public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic) throws Exception {
         return send(jid,body,encrypted,null,reply,correction,excluded,automatic);
     }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        return send(jid,body,encrypted,null,reply,correction,excluded,automatic,markup);
+    }
+    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        if(link.encrypted()!=encrypted || encrypted && sharing!=null || sharing!=null && !sharing.link.wireUrl.equals(link.wireUrl)) throw new IllegalArgumentException("Attachment encryption mode mismatch");
+        if(markup!=null && (sharing==null || !markup.body.equals(caption==null ? "" : caption))) throw new IllegalArgumentException("Markup belongs to another caption");
+        String body=sharing==null ? link.wireUrl : sharing.body(caption);
+        return send(jid,body,encrypted,sharing,reply,null,excluded,automatic,markup==null ? null : markup.inBody(body,0));
+    }
+    public XmppRoomMessage correctFile(String jid,FileShare sharing,String caption,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        if(sharing==null || sharing.link.encrypted() || correction==null) throw new IllegalArgumentException("Unsupported encrypted caption correction");
+        if(markup!=null && !markup.body.equals(caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
+        String body=sharing.body(caption);
+        return send(jid,body,false,sharing,reply,correction,excluded,automatic,markup==null ? null : markup.inBody(body,0));
+    }
     private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic) throws Exception {
+        return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,null);
+    }
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
@@ -542,10 +561,12 @@ public final class XmppRooms implements AutoCloseable {
         Map<String,String> skipped=new TreeMap<>();
         Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped);
         if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
+        if(!encrypted && markup!=null) markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         if(sharing!=null) sharing.addTo(message,wireBody);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
         if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
+        if(markup!=null) sent=sent.withMarkup(markup);
         sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
         chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
     }
