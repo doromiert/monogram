@@ -255,6 +255,7 @@ public class CustomEmojiReactionsWindow {
             selectAnimatedEmojiDialog.setPaused(reactionsContainerLayout.paused, reactionsContainerLayout.pausedExceptSelected);
         }
         
+        selectAnimatedEmojiDialog.reactionScrollEffect = true;
         selectAnimatedEmojiDialog.setOnLongPressedListener(new SelectAnimatedEmojiDialog.onLongPressedListener() {
             @Override
             public void onLongPressed(SelectAnimatedEmojiDialog.ImageViewEmoji view) {

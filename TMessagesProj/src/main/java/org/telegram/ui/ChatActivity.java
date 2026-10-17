@@ -22494,6 +22494,15 @@ public class ChatActivity extends BaseFragment implements
             }
             Integer msgId = (Integer) args[0];
             MessageObject obj = messagesDict[0].get(msgId);
+            if (obj == null && chatMode == MODE_DEFAULT && (Long) args[3] == dialog_id
+                    && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                TLRPC.Message sent = (TLRPC.Message) args[2];
+                if (sent != null && messagesDict[0].get((Integer) args[1]) == null) {
+                    ArrayList<MessageObject> restored = new ArrayList<>();
+                    restored.add(new MessageObject(currentAccount, sent, true, true));
+                    processNewMessages(restored, false);
+                }
+            }
             if (isThreadChat() && pendingSendMessagesDict.size() > 0) {
                 MessageObject object = pendingSendMessagesDict.get(msgId);
                 if (object != null) {
@@ -23503,7 +23512,18 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
             int loadIndex = did == dialog_id ? 0 : 1;
+            final boolean archivePage = args.length > 2 && Boolean.TRUE.equals(args[2]);
             doOnIdle(() -> {
+                if (archivePage && chatMode == MODE_DEFAULT && loadIndex == 0) {
+                    int oldestDate = Integer.MAX_VALUE;
+                    for (MessageObject visible : messages) if (visible.getId() > 0 && visible.type >= 0)
+                        oldestDate = Math.min(oldestDate, visible.messageOwner.date);
+                    ArrayList<MessageObject> missing = new ArrayList<>();
+                    for (MessageObject message : messageObjects) if (messagesDict[0].get(message.getId()) == null
+                            && (oldestDate == Integer.MAX_VALUE || message.messageOwner.date >= oldestDate)) missing.add(message);
+                    missing.sort(java.util.Comparator.comparingInt(message -> message.messageOwner.date));
+                    if (!missing.isEmpty()) processNewMessages(missing, false);
+                }
                 replaceMessageObjects(messageObjects, loadIndex, false);
             });
         } else if (id == NotificationCenter.notificationsSettingsUpdated) {
@@ -25953,7 +25973,7 @@ public class ChatActivity extends BaseFragment implements
                         for (int b = 0; b < size; b++) {
                             final MessageObject lastMessage = messages.get(b);
                             if (lastMessage.type >= 0 && lastMessage.messageOwner.date > 0) {
-                                if (dialog_id <= 0 && chatMode != MODE_SCHEDULED && lastMessage.messageOwner.id > 0 && obj.messageOwner.id > 0 && lastMessage.messageOwner.id < obj.messageOwner.id || lastMessage.messageOwner.date < obj.messageOwner.date || lastMessage.messageOwner.date == obj.messageOwner.date) {
+                                if (dialog_id <= 0 && chatMode != MODE_SCHEDULED && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id) && lastMessage.messageOwner.id > 0 && obj.messageOwner.id > 0 && lastMessage.messageOwner.id < obj.messageOwner.id || lastMessage.messageOwner.date < obj.messageOwner.date || lastMessage.messageOwner.date == obj.messageOwner.date) {
                                     MessageObject.GroupedMessages lastGroupedMessages;
                                     if (lastMessage.getGroupId() != 0) {
                                         lastGroupedMessages = groupedMessagesMap.get(lastMessage.getGroupId());
@@ -32978,7 +32998,8 @@ public class ChatActivity extends BaseFragment implements
                     if(monogram.allowPlainReactions(primaryMessage.getDialogId())) selectReaction(selectedCell,primaryMessage,reactionsLayout,fromView,x,y,visibleReaction,fromDoubleTap,bigEmoji,addToRecent,withoutAnimation);
                 }).setNegativeButton(getString(R.string.Cancel),null).create()); return;
         }
-        final boolean animateReaction=visibleReaction!=null && visibleReaction.emojicon!=null && getMediaDataController().getReactionsMap().containsKey(visibleReaction.emojicon);
+        final boolean animateReaction=visibleReaction!=null && visibleReaction.emojicon!=null
+                && (getMediaDataController().getReactionsMap().containsKey(visibleReaction.emojicon) || Emoji.getEmojiBigDrawable(visibleReaction.emojicon)!=null);
         if (getMessagesController().isFrozen()) {
             AccountFrozenAlert.show(currentAccount);
             return;

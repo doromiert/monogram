@@ -23,6 +23,7 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.Emoji;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.tgnet.TLRPC;
@@ -460,7 +461,7 @@ public class ReactionsEffectOverlay {
                     }
                 }
 
-                if (animationType == ONLY_MOVE_ANIMATION || (wasScrolled && animationType == LONG_ANIMATION) || (animationType != SHORT_ANIMATION && (emojiImageView.wasPlaying && emojiImageView.getImageReceiver().getLottieAnimation() != null && !emojiImageView.getImageReceiver().getLottieAnimation().isRunning()) || (visibleReaction.documentId != 0 && System.currentTimeMillis() - startTime > 2000)) ||
+                if (emojiImageView.unicodeDrawable != null && System.currentTimeMillis() - startTime > 350 || animationType == ONLY_MOVE_ANIMATION || (wasScrolled && animationType == LONG_ANIMATION) || (animationType != SHORT_ANIMATION && (emojiImageView.wasPlaying && emojiImageView.getImageReceiver().getLottieAnimation() != null && !emojiImageView.getImageReceiver().getLottieAnimation().isRunning()) || (visibleReaction.documentId != 0 && System.currentTimeMillis() - startTime > 2000)) ||
                         (animationType == SHORT_ANIMATION && (effectImageView.wasPlaying && (effectImageView.getImageReceiver().getLottieAnimation() != null && !effectImageView.getImageReceiver().getLottieAnimation().isRunning())) || (visibleReaction.documentId != 0 && System.currentTimeMillis() - startTime > 2000))) {
                     if (ReactionsEffectOverlay.this.animateOutProgress != 1f) {
                         if (animationType == SHORT_ANIMATION) {
@@ -620,7 +621,8 @@ public class ReactionsEffectOverlay {
         if (visibleReaction.emojicon != null) {
             availableReaction = MediaDataController.getInstance(currentAccount).getReactionsMap().get(reaction.emojicon);
         }
-        if (availableReaction != null || visibleReaction.documentId != 0) {
+        boolean unicodeReaction = availableReaction == null && visibleReaction.emojicon != null;
+        if (availableReaction != null || visibleReaction.documentId != 0 || unicodeReaction) {
             if (availableReaction != null) {
                 if (animationType != ONLY_MOVE_ANIMATION) {
                     if ((animationType == SHORT_ANIMATION && LiteMode.isEnabled(LiteMode.FLAG_ANIMATED_EMOJI_CHAT)) || animationType == LONG_ANIMATION)  {
@@ -648,6 +650,9 @@ public class ReactionsEffectOverlay {
                     emojiImageView.getImageReceiver().setUniqKeyPrefix((uniqPrefix++) + "_" + messageId + "_");
                     emojiImageView.setImage(ImageLocation.getForDocument(document), emojiSizeForFilter + "_" + emojiSizeForFilter, null, null, 0, null);
                 }
+            } else if (unicodeReaction) {
+                emojiImageView.unicodeDrawable = Emoji.getEmojiBigDrawable(visibleReaction.emojicon);
+                emojiStaticImageView.unicodeDrawable = Emoji.getEmojiBigDrawable(visibleReaction.emojicon);
             } else {
                 if (animationType == LONG_ANIMATION) {
                     emojiImageView.setAnimatedReactionDrawable(new AnimatedEmojiDrawable(AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, currentAccount, visibleReaction.documentId));
@@ -863,12 +868,20 @@ public class ReactionsEffectOverlay {
         }
 
         boolean wasPlaying;
+        android.graphics.drawable.Drawable unicodeDrawable;
         AnimatedEmojiDrawable animatedEmojiDrawable;
         AnimatedEmojiEffect emojiEffect;
         boolean attached;
 
         @Override
         protected void onDraw(Canvas canvas) {
+            if (unicodeDrawable != null) {
+                unicodeDrawable.setBounds(0, 0, getMeasuredWidth(), getMeasuredHeight());
+                unicodeDrawable.setAlpha(255);
+                unicodeDrawable.draw(canvas);
+                wasPlaying = true;
+                return;
+            }
             if (animatedEmojiDrawable != null) {
                 animatedEmojiDrawable.setBounds(0, 0, getMeasuredWidth(), getMeasuredHeight());
                 animatedEmojiDrawable.setAlpha(255);

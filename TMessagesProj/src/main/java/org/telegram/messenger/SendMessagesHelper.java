@@ -136,6 +136,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static final int MEDIA_TYPE_RICH = 13;
     private final HashMap<String, ArrayList<DelayedMessage>> delayedMessages = new HashMap<>();
     private final SparseArray<MessageObject> unsentMessages = new SparseArray<>();
+    private final HashMap<MessageObject, Runnable> monogramVideoConversions = new HashMap<>();
     private final SparseArray<TLRPC.Message> sendingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> editingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> uploadMessages = new SparseArray<>();
@@ -979,6 +980,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void cleanup() {
+        for (MessageObject message : monogramVideoConversions.keySet()) MediaController.getInstance().cancelVideoConvert(message);
+        monogramVideoConversions.clear();
         delayedMessages.clear();
         unsentMessages.clear();
         sendingMessages.clear();
@@ -1254,6 +1257,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
         } else if (id == NotificationCenter.filePreparingStarted) {
             MessageObject messageObject = (MessageObject) args[0];
+            if (monogramVideoConversions.containsKey(messageObject)) return;
             if (messageObject.getId() == 0) {
                 return;
             }
@@ -1293,6 +1297,22 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             long availableSize = (Long) args[2];
             long finalSize = (Long) args[3];
             Float progress = (Float) args[4];
+            if (monogramVideoConversions.containsKey(messageObject)) {
+                if (finalSize > 0) {
+                    Runnable ready = monogramVideoConversions.remove(messageObject);
+                    removeFromUploadingMessages(messageObject.getId(), false);
+                    messageObject.messageOwner.attachPath = finalPath;
+                    messageObject.videoEditedInfo = null;
+                    messageObject.shouldRemoveVideoEditedInfo = true;
+                    if (messageObject.messageOwner.params != null) messageObject.messageOwner.params.remove("ve");
+                    TLRPC.Document document = messageObject.getDocument();
+                    if (document != null) document.size = finalSize;
+                    ArrayList<TLRPC.Message> converted = new ArrayList<>(); converted.add(messageObject.messageOwner);
+                    getMessagesStorage().putMessages(converted, false, true, false, 0, 0, 0);
+                    ready.run();
+                }
+                return;
+            }
             boolean isEncrypted = DialogObject.isEncryptedDialog(messageObject.getDialogId());
             getFileLoader().checkUploadNewDataAvailable(finalPath, isEncrypted, availableSize, finalSize, progress);
             if (finalSize != 0) {
@@ -1356,6 +1376,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
         } else if (id == NotificationCenter.filePreparingFailed) {
             MessageObject messageObject = (MessageObject) args[0];
+            if (monogramVideoConversions.remove(messageObject) != null) {
+                monogramVideoFailed(messageObject); return;
+            }
             if (messageObject.getId() == 0) {
                 return;
             }
@@ -1538,6 +1561,15 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         getNotificationCenter().postNotificationName(NotificationCenter.replaceMessagesObjects, object.getDialogId(), arrayList);
     }
 
+    private void monogramVideoFailed(MessageObject message) {
+        getMessagesStorage().markMessageAsSendError(message.messageOwner, 0);
+        message.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
+        getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, message.getId());
+        processSentMessage(message.getId());
+        removeFromSendingMessages(message.getId(), false);
+        removeFromUploadingMessages(message.getId(), false);
+    }
+
     public void cancelSendingMessage(MessageObject object) {
         ArrayList<MessageObject> arrayList = new ArrayList<>();
         arrayList.add(object);
@@ -1579,6 +1611,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         int topicId = 0;
         for (int c = 0; c < objects.size(); c++) {
             MessageObject object = objects.get(c);
+            java.util.Iterator<MessageObject> conversions = monogramVideoConversions.keySet().iterator();
+            while (conversions.hasNext()) {
+                MessageObject converting = conversions.next();
+                if (converting.getId() == object.getId()) { conversions.remove(); MediaController.getInstance().cancelVideoConvert(converting); }
+            }
             org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelFile(object.getId());
             if (object.scheduled) {
                 scheduled = true;
@@ -5284,7 +5321,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     monogramSource = size == null ? null : getFileLoader().getPathToAttach(size, true);
                     if (monogramSource != null && !monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(size);
                 } else if (!TextUtils.isEmpty(newMsg.attachPath)) monogramSource = new File(newMsg.attachPath);
-                if (document != null && (monogramSource == null || !monogramSource.isFile())) {
+                if (document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
                     monogramSource = getFileLoader().getPathToAttach(document);
                     if (!monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(document, true);
                 }
@@ -5372,12 +5409,27 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (monogramFile) {
                     String mime = photo != null ? "image/jpeg" : document.mime_type;
                     boolean supported = scheduleDate == 0 && ttl == 0 && stars == 0 && pollSendParams == null
-                            && quick_reply_shortcut == null && quick_reply_shortcut_id == 0
-                            && (videoEditedInfo == null || !videoEditedInfo.needConvert());
-                    org.telegram.messenger.xmpp.MonogramFileRequest request = new org.telegram.messenger.xmpp.MonogramFileRequest(
-                            newMsg, monogramSource, mime == null ? "application/octet-stream" : mime, monogramCaption, supported);
-                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).reserveFile(request);
-                    performSendMessageRequest(request, newMsgObj, newMsg.attachPath, null, null, params, false);
+                            && quick_reply_shortcut == null && quick_reply_shortcut_id == 0;
+                    final MessageObject outgoing = newMsgObj;
+                    final String contentType = mime == null ? "application/octet-stream" : mime, outgoingCaption = monogramCaption;
+                    final HashMap<String, String> outgoingParams = params;
+                    final File source = monogramSource;
+                    final boolean convert = supported && videoEditedInfo != null && videoEditedInfo.needConvert();
+                    Runnable sendFile = () -> {
+                        org.telegram.messenger.xmpp.MonogramFileRequest request = new org.telegram.messenger.xmpp.MonogramFileRequest(
+                                outgoing.messageOwner, convert ? new File(outgoing.messageOwner.attachPath) : source, contentType, outgoingCaption, supported);
+                        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).reserveFile(request);
+                        performSendMessageRequest(request, outgoing, outgoing.messageOwner.attachPath, null, null, outgoingParams, false);
+                    };
+                    if (convert) {
+                        outgoing.videoEditedInfo = videoEditedInfo;
+                        monogramVideoConversions.put(outgoing, sendFile);
+                        putToSendingMessages(outgoing.messageOwner, false);
+                        putToUploadingMessages(outgoing);
+                        if (!MediaController.getInstance().scheduleVideoConvert(outgoing, false, true, false)) {
+                            monogramVideoConversions.remove(outgoing); monogramVideoFailed(outgoing);
+                        }
+                    } else sendFile.run();
                     return;
                 }
             } else {

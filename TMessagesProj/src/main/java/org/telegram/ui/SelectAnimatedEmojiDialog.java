@@ -445,6 +445,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     private ArrayList<TLRPC.Document> recentStickers = new ArrayList<>();
     private ArrayList<String> standardEmojis = new ArrayList<>();
     private int standardEmojisStartRow;
+    public boolean reactionScrollEffect;
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> topReactions = new ArrayList<>();
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> recentReactions = new ArrayList<>();
     private ArrayList<ReactionsLayoutInBubble.VisibleReaction> stickers = new ArrayList<>();
@@ -4861,6 +4862,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                             }
                             if (type == TYPE_CHAT_REACTIONS || type == TYPE_STICKER_SET_EMOJI || type == TYPE_EFFECTS) {
                                 canvas.scale(scale, scale, AndroidUtilities.rectTmp2.centerX(), AndroidUtilities.rectTmp2.centerY());
+                                if (reactionScrollEffect) skew(canvas, i, imageView.getHeight());
                             } else {
                                 skew(canvas, i, imageView.getHeight());
                             }

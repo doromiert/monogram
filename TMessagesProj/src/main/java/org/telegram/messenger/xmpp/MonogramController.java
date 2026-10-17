@@ -820,16 +820,11 @@ public final class MonogramController {
                 publishReactions(task.peer,null);
                 if(changed && UserConfig.getInstance(account).isClientActivated()) {
                     publishRoom(task.peer);
-                    ArrayList<TLRPC.Message> messages=new ArrayList<>(); for(int id:updated) if(!store.hiddenCorrection(id)) messages.add(store.getMessage(id,self));
-                    MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
+                    publishArchiveMessages(sync,updated);
                     TLRPC.TL_messages_dialogs cached=dialogs();
                     AndroidUtilities.runOnUIThread(() -> {
                         if(session!=sync.session || accountEpoch!=sync.epoch) return;
                         MessagesController.getInstance(account).processLoadedDialogs(cached,null,null,0,0,cached.dialogs.size(),3,false,false,false);
-                        if(mediaHistoryPeer==task.peer) {
-                            ArrayList<MessageObject> objects=new ArrayList<>(); for(TLRPC.Message message:messages) objects.add(new MessageObject(account,message,true,true));
-                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,task.peer,objects);
-                        }
                     });
                 }
                 finishArchivePage(sync,task,page.firstId,page.complete);
@@ -899,11 +894,27 @@ public final class MonogramController {
             if(peer!=self && !sync.peers.contains(peer)) prepareArchivePeer(sync,peer);
         }
         if (changed && UserConfig.getInstance(account).isClientActivated()) {
+            publishArchiveMessages(sync,updated);
             TLRPC.TL_messages_dialogs dialogs = dialogs();
             AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).processLoadedDialogs(
                     dialogs, null, null, 0, 0, dialogs.dialogs.size(), 3, false, false, false));
         }
         finishArchivePage(sync,task,page.firstId,page.complete);
+    }
+    private void publishArchiveMessages(ArchiveSync sync, java.util.Set<Integer> updated) {
+        if(updated.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
+        ArrayList<TLRPC.Message> messages=new ArrayList<>();
+        java.util.Map<Long,ArrayList<MessageObject>> byPeer=new java.util.HashMap<>();
+        for(int id:updated) if(!store.hiddenCorrection(id)) {
+            TLRPC.Message message=store.getMessage(id,self); messages.add(message);
+            byPeer.computeIfAbsent(message.dialog_id,ignored -> new ArrayList<>()).add(new MessageObject(account,message,true,true));
+        }
+        MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
+        AndroidUtilities.runOnUIThread(() -> {
+            if(accountEpoch!=sync.epoch || session!=sync.session) return;
+            for(java.util.Map.Entry<Long,ArrayList<MessageObject>> entry:byPeer.entrySet())
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,entry.getKey(),entry.getValue(),true);
+        });
     }
     private void archiveFailed(ArchiveSync sync, ArchiveTask task, Exception error) {
         sync.running=false;
@@ -1718,8 +1729,6 @@ public final class MonogramController {
                                 if(id>0 && !store.hiddenCorrection(id)) {
                                     TLRPC.Message sent=store.getMessage(id,self);
                                     outbox.completed(pending.localId,sent);
-                                    TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=sent;
-                                    ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(update); publishCorrections(peer,updates);
                                 }
                             } catch(RuntimeException unavailable) {
                                 if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram sent-message refresh: "+unavailable.getClass().getSimpleName());

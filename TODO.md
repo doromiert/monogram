@@ -9,11 +9,11 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
-- [o] Restore reaction selection vibration and the flight animation from the picker to the message reaction; compare the pinned official Telegram implementation and retain native behavior for Unicode reactions.
-- [o] Check and restore the expanded emoji picker's native 3D scrolling effect against official Telegram source.
-- [o] Diagnose video upload failure from phone logs and saved send errors. The latest stored file error is `MONOGRAM_FEATURE_UNAVAILABLE`; the adapter currently rejects videos requiring conversion. Preserve Telegram's selected trim/compression rather than silently uploading the original.
-- [o] Fix outgoing messages playing the send animation twice: once on Send, then again on completion. Investigate the 0.2.39 outbox completion update while preserving pending messages across chat reopening.
-- [o] Fix messages arriving during connection/reconnection missing from the conversation after sync. Check archive catch-up and insertion into already-open chats, retaining the bounded 50-message paging policy.
+- [o] Restore reaction selection vibration and the flight animation from the picker to the message reaction; compare the pinned official Telegram implementation and retain native behavior for Unicode reactions. The native overlay now draws cached Unicode glyphs without Telegram animation documents, re-enabling its flight and haptic paths; phone confirmation remains.
+- [o] Check and restore the expanded emoji picker's native 3D scrolling effect against official Telegram source. Reuse the existing row skew for the Unicode reaction grid while retaining its compact glyph scale; phone appearance remains to verify.
+- [o] Diagnose video upload failure from phone logs and saved send errors. The latest stored file error is `MONOGRAM_FEATURE_UNAVAILABLE`; the adapter currently rejects videos requiring conversion. Preserve Telegram's selected trim/compression rather than silently uploading the original. The adapter now waits for native conversion completion before XMPP upload and handles conversion failure, cancellation and logout; actual video exchange remains to verify.
+- [o] Fix outgoing messages playing the send animation twice: once on Send, then again on completion. Remove the 0.2.39 duplicate new-message completion update; use the native acknowledgement and insert only when the pending copy is absent after reopening. Real-phone send/reopen verification remains.
+- [o] Fix messages arriving during connection/reconnection missing from the conversation after sync. Archive pages now populate the native cache and insert missing messages within the displayed history window, with chronological room placement and the bounded 50-message paging policy retained. Real-phone reconnect and independent-client comparison remain.
 
 ## Priority order
 
