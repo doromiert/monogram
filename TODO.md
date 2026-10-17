@@ -36,6 +36,8 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 - [o] Generate missing cached video/round-video thumbnails independently of duration/dimension discovery. The old refresh gate skipped files with valid metadata even when no preview existed. 0.2.44 generates a bounded native thumbnail on the existing file worker, persists its native PhotoSize in the attachment media and refreshes the visible message; uses the native app cache and never uploads the generated preview. Actual phone appearance remains to verify.
 
+- [x] Build, publish and install [0.2.44](https://github.com/doromiert/monogram/releases/tag/v0.2.44) (72199, arm64, original signing key) from `video-thumbnails`. Nix packaging and three focused media checks pass; remote APK checksum and tag match. All 3,108 prior message identities, saved account/credential, OMEMO identity/trust and seven rooms survive on schema 16. Preview appearance, playback and picker stability remain unverified.
+
 ## Monocles parity checkpoint (2026-10-17)
 
 This is a quick source inventory, not a fresh interoperability certification. Baselines differ: the phone has Monocles 2.2.2, while upstream master is `129dbcc7cdc919c73a65e50ee121efecc36c5e7e`. Monocles' [own XEP declarations](https://codeberg.org/monocles/monocles_chat/src/commit/129dbcc7cdc919c73a65e50ee121efecc36c5e7e/monocles_chat.doap) describe its claimed protocol support; [its README](https://codeberg.org/monocles/monocles_chat/src/commit/129dbcc7cdc919c73a65e50ee121efecc36c5e7e/README.md) also documents OTR. **Monogram does not yet match Monocles overall.**
