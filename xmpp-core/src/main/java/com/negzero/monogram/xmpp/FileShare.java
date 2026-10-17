@@ -106,8 +106,9 @@ public final class FileShare {
         return new FileShare(StandardExtensionElement.builder("file-sharing", NAMESPACE).addAttribute("disposition", "inline").addElement(metadata)
                 .addElement(StandardExtensionElement.builder("sources", NAMESPACE).addElement(StandardExtensionElement.builder("url-data", URL_DATA).addAttribute("target", link.wireUrl).build()).build()).build());
     }
-    /** Called on the temporary download before it replaces any verified cache file. */
-    void verify(File file, FileTransfer.Job job) throws Exception {
+    /** Verify downloaded plaintext before committing it, or before reusing a cached attachment. */
+    public void verify(File file, FileTransfer.Job job) throws Exception {
+        job.check();
         if (size >= 0 && file.length() != size) throw new FileTransfer.Failure("INTEGRITY");
         Map<String, Digest> digests = new LinkedHashMap<>();
         for (String algorithm : hashes.keySet()) digests.put(algorithm, digest(algorithm));

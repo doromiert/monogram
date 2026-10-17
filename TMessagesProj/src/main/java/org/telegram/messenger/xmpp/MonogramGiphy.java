@@ -47,6 +47,31 @@ public final class MonogramGiphy {
     }
     public static Request search(int account, String query, String offset, Callback callback) {
         Request request = new Request();
+        String cacheKey = "monogram-giphy:" + org.telegram.messenger.Utilities.MD5(
+                preferences(account).getString("key", "") + "\n" + (query == null ? "" : query) + "\n" + (offset == null ? "" : offset));
+        org.telegram.messenger.MessagesStorage storage = org.telegram.messenger.MessagesStorage.getInstance(account);
+        storage.getBotCache(cacheKey, (response, ignored) -> {
+            if (request.cancelled) return;
+            if (response instanceof TLRPC.TL_messages_botResults) {
+                TLRPC.TL_messages_botResults cached = (TLRPC.TL_messages_botResults) response;
+                Page page = new Page(); page.results.addAll(cached.results);
+                page.nextOffset = cached.next_offset == null ? "" : cached.next_offset;
+                AndroidUtilities.runOnUIThread(() -> { if (!request.cancelled) callback.complete(page, null); });
+            } else fetch(request, account, query, offset, (page, error) -> {
+                if (page != null && !request.cancelled) storage.saveBotCache(cacheKey, cachedPage(page));
+                callback.complete(page, error);
+            });
+        });
+        return request;
+    }
+    static TLRPC.TL_messages_botResults cachedPage(Page page) {
+        TLRPC.TL_messages_botResults cached = new TLRPC.TL_messages_botResults();
+        cached.gallery = true; cached.cache_time = 300;
+        cached.results.addAll(page.results);
+        if (!page.nextOffset.isEmpty()) { cached.flags |= 2; cached.next_offset = page.nextOffset; }
+        return cached;
+    }
+    private static void fetch(Request request, int account, String query, String offset, Callback callback) {
         WORKER.execute(() -> {
             Page page = null;
             String error = null;
@@ -94,7 +119,6 @@ public final class MonogramGiphy {
             Page result = page; String failure = error;
             AndroidUtilities.runOnUIThread(() -> { if (!request.cancelled) callback.complete(result, failure); });
         });
-        return request;
     }
     static Page parse(JSONObject response, boolean trending) throws Exception {
         Page page = new Page();

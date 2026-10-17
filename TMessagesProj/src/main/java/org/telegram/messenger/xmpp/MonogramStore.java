@@ -975,6 +975,14 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized java.io.File attachmentFile(com.negzero.monogram.xmpp.FileShare sharing) throws Exception {
         return MonogramAttachments.cache(storeContext, database, sharing.cacheKey());
     }
+    synchronized boolean hasCachedAttachment(String url, java.io.File file) {
+        if (!file.isFile() || file.length() <= 0) return false;
+        // Only reuse files committed to this account, never a leftover partial download.
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT 1 FROM attachments WHERE url=? AND path=? AND media IS NOT NULL LIMIT 1",
+                new String[]{url, file.getAbsolutePath()})) {
+            return c.moveToFirst();
+        }
+    }
     private com.negzero.monogram.xmpp.FileShare sharing(String url, String xml) throws Exception {
         if (xml == null) return null;
         com.negzero.monogram.xmpp.FileShare sharing = new com.negzero.monogram.xmpp.FileShare(xml);

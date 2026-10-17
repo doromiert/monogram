@@ -1503,7 +1503,7 @@ public final class MonogramController {
             if (!request.supported || request.message.dialog_id == 0 || store.jid(request.message.dialog_id).contains("/"))
                 throw new UnsupportedOperationException();
             String gifSource=request.message.params==null ? null : request.message.params.get("monogram-gif-source");
-            if (gifSource!=null && (request.file==null || !request.file.isFile())) {
+            if (gifSource!=null && (request.file==null || !request.file.isFile() || request.file.length()==0)) {
                 if (!MonogramGiphy.sourceFile(gifSource).equals(request.file)) throw new IllegalArgumentException("GIF source changed");
                 final long owner=accountEpoch;
                 AndroidUtilities.runOnUIThread(() -> {
@@ -1632,7 +1632,12 @@ public final class MonogramController {
                 FileTransfer.Progress onProgress = (bytes, total) -> progress(name, bytes, total, false, link.encrypted());
                 FileTransfer.DownloadPolicy policy = automatic ? (mime, size) -> DownloadController.getInstance(account).getMonogramDownloadLimit(
                         object.messageOwner, MonogramAttachments.remoteMedia(id, filename, sharing==null ? mime : sharing.mime, size), size) : null;
-                boolean downloaded = sharing == null ? FileTransfer.download(link, path, job, onProgress, policy) : FileTransfer.download(sharing, path, job, onProgress, policy);
+                boolean cached = store.hasCachedAttachment(address, path);
+                if (cached && sharing != null) {
+                    try { sharing.verify(path, job); }
+                    catch (java.io.IOException invalidCache) { job.check(); cached = false; }
+                }
+                boolean downloaded = cached || (sharing == null ? FileTransfer.download(link, path, job, onProgress, policy) : FileTransfer.download(sharing, path, job, onProgress, policy));
                 if (!downloaded) {
                     finishDownload(id, name, job);
                     AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0));

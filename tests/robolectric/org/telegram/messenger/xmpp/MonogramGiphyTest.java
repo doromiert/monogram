@@ -34,4 +34,17 @@ public class MonogramGiphyTest {
                 "https://user@media.giphy.com/a.gif","https://media.giphy.com:444/a.gif","https://127.0.0.1/a.gif"}) data.put(gif(url));
         assertTrue(MonogramGiphy.parse(new JSONObject().put("data",data),false).results.isEmpty());
     }
+    @Test public void searchPagesRoundTripThroughNativeBotCacheFormat() throws Exception {
+        MonogramGiphy.Page page = MonogramGiphy.parse(new JSONObject().put("data", new JSONArray().put(
+                gif("https://media0.giphy.com/media/example/giphy.gif"))), false);
+        page.nextOffset = "25";
+        org.telegram.tgnet.SerializedData bytes = new org.telegram.tgnet.SerializedData();
+        MonogramGiphy.cachedPage(page).serializeToStream(bytes);
+        org.telegram.tgnet.SerializedData input = new org.telegram.tgnet.SerializedData(bytes.toByteArray());
+        TLRPC.TL_messages_botResults cached = TLRPC.TL_messages_botResults.TLdeserialize(input, input.readInt32(true), true);
+        assertEquals(300, cached.cache_time); assertEquals("25", cached.next_offset);
+        assertEquals(1, cached.results.size()); assertTrue(MonogramGiphy.isResult(cached.results.get(0)));
+        assertEquals(page.results.get(0).content.url, cached.results.get(0).content.url);
+        bytes.cleanup(); input.cleanup();
+    }
 }
