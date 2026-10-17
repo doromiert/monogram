@@ -42,12 +42,14 @@ import org.telegram.messenger.pip.utils.PipPermissions;
 import org.telegram.messenger.pip.PipSource;
 import org.telegram.messenger.pip.utils.PipUtils;
 import org.telegram.messenger.voip.Instance;
-import org.telegram.messenger.voip.VideoCapturerDevice;
+import org.telegram.messenger.voip.VoIPCallController;
+import org.telegram.messenger.voip.VoIPCallControllers;
 import org.telegram.messenger.voip.VoIPService;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.VoIPFragment;
+import org.webrtc.EglBase;
 import org.webrtc.RendererCommon;
 import org.webrtc.TextureViewRenderer;
 
@@ -109,6 +111,7 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
     int animationIndex = -1;
 
     private int currentAccount;
+    private final VoIPCallController callController;
 
     Runnable collapseRunnable = new Runnable() {
         @Override
@@ -139,7 +142,8 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
     };
 
     public static void show(Activity activity, int account, int parentWidth, int parentHeight, int animationType) {
-        if (instance != null || VideoCapturerDevice.eglBase == null) {
+        VoIPCallController controller = VoIPCallControllers.get();
+        if (instance != null || controller == null || !controller.hasCapability(VoIPCallController.CAP_PIP) || controller.getEglContext() == null) {
             return;
         }
         WindowManager.LayoutParams windowLayoutParams = createWindowLayoutParams(activity, parentWidth, parentHeight, SCALE_NORMAL);
@@ -162,8 +166,9 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
         NotificationCenter.getGlobalInstance().addObserver(instance, NotificationCenter.didEndCall);
         wm.addView(instance.windowView, windowLayoutParams);
 
-        instance.currentUserTextureView.renderer.init(VideoCapturerDevice.eglBase.getEglBaseContext(), null);
-        instance.callingUserTextureView.renderer.init(VideoCapturerDevice.eglBase.getEglBaseContext(), instance.rendererEvents);
+        EglBase.Context eglContext = controller.getEglContext();
+        instance.currentUserTextureView.renderer.init(eglContext, null);
+        instance.callingUserTextureView.renderer.init(eglContext, instance.rendererEvents);
 
         if (animationType == ANIMATION_ENTER_TYPE_SCALE) {
             instance.windowView.setScaleX(0.5f);
@@ -171,20 +176,15 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
             instance.windowView.setAlpha(0f);
             instance.windowView.animate().alpha(1f).scaleY(1f).scaleX(1f).start();
 
-            if (VoIPService.getSharedInstance() != null) {
-                VoIPService.getSharedInstance().setSinks(instance.currentUserTextureView.renderer, instance.callingUserTextureView.renderer);
-            }
+            controller.setSinks(instance.currentUserTextureView.renderer, instance.callingUserTextureView.renderer);
 
         } else if (animationType == ANIMATION_ENTER_TYPE_TRANSITION) {
             instance.windowView.setAlpha(0f);
 
-            if (VoIPService.getSharedInstance() != null) {
-                VoIPService.getSharedInstance().setBackgroundSinks(instance.currentUserTextureView.renderer, instance.callingUserTextureView.renderer);
-            }
+            controller.setSinks(instance.currentUserTextureView.renderer, instance.callingUserTextureView.renderer);
         }
 
-        final VoIPService service = VoIPService.getSharedInstance();
-        if (service != null && service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
+        if (controller.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
             if (PipUtils.checkPermissions(activity) == PipPermissions.PIP_GRANTED_PIP) {
                 instance.pipSource = new PipSource.Builder(activity, instance)
                     .setTagPrefix("voip-pip")
@@ -287,6 +287,7 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
     public VoIPPiPView(@NonNull Context context, int parentWidth, int parentHeight, boolean expanded) {
         this.parentWidth = parentWidth;
         this.parentHeight = parentHeight;
+        this.callController = VoIPCallControllers.get();
 
         yOffset = (int) (parentHeight * SCALE_EXPANDED * 1.05f - parentHeight * SCALE_EXPANDED) / 2;
         xOffset = (int) (parentWidth * SCALE_EXPANDED * 1.05f - parentWidth * SCALE_EXPANDED) / 2;
@@ -344,9 +345,8 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
             floatingView.addView(enlargeIcon, LayoutHelper.createFrame(40, 40, Gravity.TOP | Gravity.LEFT, 4, 4, 4, 0));
 
             closeIcon.setOnClickListener((v) -> {
-                VoIPService service = VoIPService.getSharedInstance();
-                if (service != null) {
-                    service.hangUp();
+                if (callController != null && VoIPCallControllers.isActive(callController)) {
+                    callController.hangUp();
                 } else {
                     finish();
                 }
@@ -364,9 +364,8 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
             });
         }
 
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null) {
-            service.registerStateListener(this);
+        if (callController != null) {
+            callController.addListener(this);
         }
         updateViewState();
     }
@@ -374,9 +373,8 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
     private void finishInternal() {
         currentUserTextureView.renderer.release();
         callingUserTextureView.renderer.release();
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null) {
-            service.unregisterStateListener(this);
+        if (callController != null) {
+            callController.removeListener(this);
         }
         windowView.setVisibility(View.GONE);
         if (windowView.getParent() != null) {
@@ -407,12 +405,11 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
         if (state == VoIPService.STATE_ENDED || state == VoIPService.STATE_BUSY || state == VoIPService.STATE_FAILED || state == VoIPService.STATE_HANGING_UP) {
             AndroidUtilities.runOnUIThread(VoIPPiPView::finish, 200);
         }
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service == null) {
+        if (callController == null || !VoIPCallControllers.isActive(callController)) {
             finish();
             return;
         }
-        if (state == VoIPService.STATE_ESTABLISHED && !service.isVideoAvailable()) {
+        if (state == VoIPService.STATE_ESTABLISHED && !callController.isVideoAvailable()) {
             finish();
             return;
         }
@@ -431,8 +428,7 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
 
     @Override
     public void onMediaStateUpdated(int audioState, int videoState) {
-        final VoIPService service = VoIPService.getSharedInstance();
-        if (service != null && service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
+        if (callController != null && callController.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
             final Context context = instance.windowView.getContext();
             if (pipSource == null && PipUtils.checkPermissions(context) == PipPermissions.PIP_GRANTED_PIP) {
                 if (context instanceof Activity) {
@@ -463,14 +459,13 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
 
     @Override
     public void onScreenOnChange(boolean screenOn) {
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service == null) {
+        if (callController == null || !VoIPCallControllers.isActive(callController)) {
             return;
         }
         if (!screenOn && currentUserIsVideo) {
-            service.setVideoState(false, Instance.VIDEO_STATE_PAUSED);
-        } else if (screenOn && service.getVideoState(false) == Instance.VIDEO_STATE_PAUSED) {
-            service.setVideoState(false, Instance.VIDEO_STATE_ACTIVE);
+            callController.setVideoState(Instance.VIDEO_STATE_PAUSED);
+        } else if (screenOn && callController.getVideoState() == Instance.VIDEO_STATE_PAUSED) {
+            callController.setVideoState(Instance.VIDEO_STATE_ACTIVE);
         }
     }
 
@@ -478,12 +473,11 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
         boolean animated = floatingView.getMeasuredWidth() != 0;
         boolean callingUserWasVideo = callingUserIsVideo;
 
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null) {
-            callingUserIsVideo = service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE;
-            currentUserIsVideo = service.getVideoState(false) == Instance.VIDEO_STATE_ACTIVE || service.getVideoState(false) == Instance.VIDEO_STATE_PAUSED;
-            currentUserTextureView.renderer.setMirror(service.isFrontFaceCamera());
-            currentUserTextureView.setIsScreencast(service.isScreencast());
+        if (callController != null) {
+            callingUserIsVideo = callController.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE;
+            currentUserIsVideo = callController.getVideoState() == Instance.VIDEO_STATE_ACTIVE || callController.getVideoState() == Instance.VIDEO_STATE_PAUSED;
+            currentUserTextureView.renderer.setMirror(callController.isFrontFaceCamera());
+            currentUserTextureView.setIsScreencast(callController.isScreencast());
             currentUserTextureView.setScreenshareMiniProgress(1.0f, false);
         }
 
@@ -504,25 +498,23 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
     }
 
     public void onTransitionEnd() {
-        if (VoIPService.getSharedInstance() != null) {
-            VoIPService.getSharedInstance().swapSinks();
+        if (callController != null && VoIPCallControllers.isActive(callController)) {
+            callController.setSinks(currentUserTextureView.renderer, callingUserTextureView.renderer);
         }
     }
 
     public void onPause() {
         if (windowLayoutParams.type == WindowManager.LayoutParams.LAST_APPLICATION_WINDOW) {
-            VoIPService service = VoIPService.getSharedInstance();
-            if (currentUserIsVideo) {
-                service.setVideoState(false, Instance.VIDEO_STATE_PAUSED);
+            if (callController != null && currentUserIsVideo) {
+                callController.setVideoState(Instance.VIDEO_STATE_PAUSED);
             }
         }
     }
 
 
     public void onResume() {
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null && service.getVideoState(false) == Instance.VIDEO_STATE_PAUSED) {
-            service.setVideoState(false, Instance.VIDEO_STATE_ACTIVE);
+        if (callController != null && callController.getVideoState() == Instance.VIDEO_STATE_PAUSED) {
+            callController.setVideoState(Instance.VIDEO_STATE_ACTIVE);
         }
     }
 
@@ -555,7 +547,11 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
         pipTextureView.renderer.setEnableHardwareScaler(true);
         pipTextureView.renderer.setRotateTextureWithScreen(true);
         pipTextureView.scaleType = VoIPTextureView.SCALE_TYPE_FIT;
-        pipTextureView.renderer.init(VideoCapturerDevice.getEglBase().getEglBaseContext(), new RendererCommon.RendererEvents() {
+        EglBase.Context eglContext = callController != null ? callController.getEglContext() : null;
+        if (eglContext == null) {
+            return pipTextureView;
+        }
+        pipTextureView.renderer.init(eglContext, new RendererCommon.RendererEvents() {
             @Override
             public void onFirstFrameRendered() {
                 if (firstFrameCallback != null) {
@@ -583,9 +579,8 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
             callingUserTextureView.renderer.clearFirstFrame();
         }
 
-        final VoIPService voip = VoIPService.getSharedInstance();
-        if (voip != null) {
-            voip.setSinks(currentUserTextureView.renderer, pipTextureView.renderer);
+        if (callController != null) {
+            callController.setSinks(currentUserTextureView.renderer, pipTextureView.renderer);
         }
 
         windowViewSkipRender = true;
@@ -615,9 +610,8 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
         windowViewSkipRender = false;
         windowView.invalidate();
 
-        final VoIPService voip = VoIPService.getSharedInstance();
-        if (voip != null) {
-            voip.setSinks(currentUserTextureView.renderer, callingUserTextureView.renderer);
+        if (callController != null) {
+            callController.setSinks(currentUserTextureView.renderer, callingUserTextureView.renderer);
         }
     }
 
@@ -945,14 +939,15 @@ public class VoIPPiPView implements VoIPService.StateListener, IPipSourceDelegat
             to.callingUserTextureView.setStub(from.callingUserTextureView);
             from.currentUserTextureView.renderer.release();
             from.callingUserTextureView.renderer.release();
-            if (VideoCapturerDevice.eglBase == null) {
+            EglBase.Context eglContext = callController != null ? callController.getEglContext() : null;
+            if (eglContext == null) {
                 return;
             }
-            to.currentUserTextureView.renderer.init(VideoCapturerDevice.eglBase.getEglBaseContext(), null);
-            to.callingUserTextureView.renderer.init(VideoCapturerDevice.eglBase.getEglBaseContext(), rendererEvents);
+            to.currentUserTextureView.renderer.init(eglContext, null);
+            to.callingUserTextureView.renderer.init(eglContext, rendererEvents);
 
-            if (VoIPService.getSharedInstance() != null) {
-                VoIPService.getSharedInstance().setSinks(to.currentUserTextureView.renderer, to.callingUserTextureView.renderer);
+            if (callController != null && VoIPCallControllers.isActive(callController)) {
+                callController.setSinks(to.currentUserTextureView.renderer, to.callingUserTextureView.renderer);
             }
         }
     }

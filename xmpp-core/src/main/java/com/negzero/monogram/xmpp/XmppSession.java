@@ -88,6 +88,7 @@ public final class XmppSession implements AutoCloseable {
         void setupFailed(Exception error) { notifyConnectionError(error); }
     }
     private final ManagedConnection connection;
+    public final com.negzero.monogram.xmpp.calls.XmppCalls calls;
     public final XmppProfiles profiles;
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
@@ -199,6 +200,7 @@ public final class XmppSession implements AutoCloseable {
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.STYLING);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.LEGACY);
+        calls = new com.negzero.monogram.xmpp.calls.XmppCalls(connection);
         profiles = new XmppProfiles(connection, listener::profileChanged);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
@@ -1060,7 +1062,7 @@ public final class XmppSession implements AutoCloseable {
         synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }
         MonogramLegacyOmemoService.instance().unregister(omemo);legacyWorker.shutdownNow();
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
-        chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
+        calls.close(); chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

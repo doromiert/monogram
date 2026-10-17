@@ -464,8 +464,10 @@ jobject asJavaFingerprint(JNIEnv *env, const std::string& hash, const std::strin
 extern "C" {
 
 bool webrtcLoaded = false;
+std::mutex webrtcInitializationMutex;
 
 void initWebRTC(JNIEnv *env) {
+    std::lock_guard<std::mutex> lock(webrtcInitializationMutex);
     if (webrtcLoaded) {
         return;
     }
@@ -474,7 +476,6 @@ void initWebRTC(JNIEnv *env) {
     webrtc::InitAndroid(vm);
     webrtc::JVM::Initialize(vm);
     rtc::InitializeSSL();
-    webrtcLoaded = true;
 
     DEBUG_REF("NativeInstanceClass");
     NativeInstanceClass = static_cast<jclass>(env->NewGlobalRef(env->FindClass("org/telegram/messenger/voip/NativeInstance")));
@@ -485,6 +486,11 @@ void initWebRTC(JNIEnv *env) {
     DEBUG_REF("FinalStateClass");
     FinalStateClass = static_cast<jclass>(env->NewGlobalRef(env->FindClass("org/telegram/messenger/voip/Instance$FinalState")));
     FinalStateInitMethod = env->GetMethodID(FinalStateClass, "<init>", "([BLjava/lang/String;Lorg/telegram/messenger/voip/Instance$TrafficStats;Z)V");
+    webrtcLoaded = true;
+}
+
+JNIEXPORT void JNICALL Java_org_webrtc_MonogramWebRtcBootstrap_nativeInitialize(JNIEnv *env, jclass clazz) {
+    initWebRTC(env);
 }
 
 extern "C"

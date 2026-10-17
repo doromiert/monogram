@@ -56,7 +56,7 @@ http_host = "localhost"
 http_file_share_size_limit = 1024*1024
 http_file_share_daily_quota = 10*1024*1024
 CONFIG
-for user in legacyjournalalice legacyjournalbob receiptalice receiptbob subscribealice subscribebob bookmarkmodern bookmarklegacy roomalice roombob alice bob typingalice typingbob modernalice modernbob peeralice peerbob firstpeeralice firstpeerbob devicealice devicebob sessionalice sessionbob fallbackalice fallbackbob; do
+for user in callsalice callsbob legacyjournalalice legacyjournalbob receiptalice receiptbob subscribealice subscribebob bookmarkmodern bookmarklegacy roomalice roombob alice bob typingalice typingbob modernalice modernbob peeralice peerbob firstpeeralice firstpeerbob devicealice devicebob sessionalice sessionbob fallbackalice fallbackbob; do
     prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-test
  done
 prosody --config "$state/prosody.cfg.lua" -F >"$state/server.log" 2>&1 &

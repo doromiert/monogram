@@ -320,6 +320,11 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         ArrayList<TLRPC.User> result=new ArrayList<>(); for (long id:ids) result.add(user(id,self)); return result;
     }
+    synchronized boolean roomMember(long chat,long peer) {
+        if(chat<=0 || peer<=0) return false;
+        try(Cursor rows=getReadableDatabase().rawQuery("SELECT 1 FROM ("+ROOM_MEMBERS+") WHERE user=? LIMIT 1",
+                new String[]{Long.toString(chat),Long.toString(chat),Long.toString(peer)})) { return rows.moveToFirst(); }
+    }
     synchronized TLRPC.Chat roomChat(long dialog) {
         Room room=room(dialog); TLRPC.TL_chat chat=new TLRPC.TL_chat();
         chat.id=-dialog; chat.title=room.title; chat.photo=new TLRPC.TL_chatPhotoEmpty(); chat.version=1; chat.left=!room.autojoin;

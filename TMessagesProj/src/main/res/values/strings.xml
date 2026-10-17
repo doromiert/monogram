@@ -4606,6 +4606,8 @@
     <string name="VoipRateCallDescription">Please rate the quality of this call.</string>
     <string name="VoipHintEncryptionKey">Encryption key of this call</string>
     <string name="VoipCallEncryptionEndToEnd">This call is end to end encrypted</string>
+    <string name="MonogramCallEncryptedTransport">Encrypted transport</string>
+    <string name="MonogramCallIdentityUnverified">Contact identity unverified</string>
     <string name="VoipWeakNetwork">Weak network signal</string>
     <string name="VoipHideEmoji">Hide Emoji</string>
     <string name="VoipMyMicrophoneState">Your microphone is turned off</string>

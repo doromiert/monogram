@@ -401,7 +401,7 @@ public final class MonogramController {
         retrySeconds = Math.min(60, retrySeconds * 2);
     }
     private void connect(Account details, String password) throws Exception {
-        if (session != null) { session.close(); session = null; }
+        if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
         joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();
         final long epoch = ++sessionEpoch, owner=accountEpoch;
         autoAttempted.clear();
@@ -587,6 +587,7 @@ public final class MonogramController {
                 });
             }
         });
+        MonogramCallService.bind(account,connecting,() -> sessionEpoch==epoch && sameAccount(owner,details.jid.toString()));
         for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
         connecting.chatStates.setEnabled(typingEnabled());
         connecting.recoverIncoming();
@@ -1240,7 +1241,7 @@ public final class MonogramController {
             } catch (Exception e) {
                 error = e;
                 if(signingIn) {
-                    if (session != null) { session.close(); session = null; }
+                    if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
                     state(ConnectionsManager.ConnectionStateWaitingForNetwork);
                 }
             }
@@ -1275,7 +1276,7 @@ public final class MonogramController {
             } catch(Exception failed) {
                 error=failed;
                 if(signingIn) {
-                    if(session!=null) { session.close();session=null; }
+                    if(session!=null) { MonogramCallService.unbind(account,session);session.close();session=null; }
                     state(ConnectionsManager.ConnectionStateWaitingForNetwork);
                 }
             }
@@ -1306,7 +1307,7 @@ public final class MonogramController {
         worker.execute(() -> {
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
             typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
-            if (session != null) { session.close(); session = null; }
+            if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
             sessionEpoch++; archiveSync = null;pendingRecoveryRooms.clear();
             try { if(!departing.isEmpty()) { modernStore.clearIncoming(departing);legacyStore.clearIncoming(departing); } }
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
@@ -1411,7 +1412,66 @@ public final class MonogramController {
     }
     private TLRPC.TL_users_userFull profileResult(long peer) {
         TLRPC.TL_users_userFull result = new TLRPC.TL_users_userFull();
-        result.full_user = store.fullUser(peer, self); result.users.add(result.full_user.user); return result;
+        result.full_user = store.fullUser(peer, self);
+        applyCallCapabilities(peer,result.full_user);result.users.add(result.full_user.user);return result;
+    }
+    private MonogramCallPrivacy callPrivacy() throws Exception {
+        return new MonogramCallPrivacy(account,accountJid(),id -> store.user(id,self),chat -> store.roomChat(-chat),
+                (peer,chat) -> store.roomMember(chat,peer));
+    }
+    void resolveCallUser(String address,boolean incoming,XmppSession expected,Consumer<TLRPC.User> callback) {
+        final long owner=accountEpoch;
+        worker.execute(() -> {
+            TLRPC.User result=null;
+            try {
+                if(owner==accountEpoch && session==expected && expected.connection().isAuthenticated() && !accountJid().equals(address)) {
+                    org.jxmpp.jid.EntityBareJid jid=org.jxmpp.jid.impl.JidCreate.entityBareFrom(address);
+                    long peer=store.peer(jid.toString());
+                    boolean contact=Roster.getInstanceFor(expected.connection()).getEntry(jid)!=null;
+                    if(!incoming || callPrivacy().allowIncoming(peer,contact)) result=store.user(peer,self);
+                }
+            } catch(Exception invalid) { /* Unavailable account/privacy data cannot authorize a call. */ }
+            final TLRPC.User user=result;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(owner!=accountEpoch || session!=expected) { callback.accept(null);return; }
+                if(user!=null) MessagesController.getInstance(account).putUser(user,false);
+                callback.accept(user);
+            });
+        });
+    }
+    java.util.concurrent.CompletableFuture<Boolean> allowDirectCall(long peer) {
+        final long owner=accountEpoch;final XmppSession expected=session;
+        java.util.concurrent.CompletableFuture<Boolean> result=new java.util.concurrent.CompletableFuture<>();
+        worker.execute(() -> {
+            boolean allowed=false;
+            try {
+                if(owner==accountEpoch && expected!=null && session==expected && expected.connection().isAuthenticated())
+                    allowed=callPrivacy().allowDirect(peer,Roster.getInstanceFor(expected.connection()).getEntry(org.jxmpp.jid.impl.JidCreate.entityBareFrom(store.jid(peer)))!=null);
+            } catch(Exception unavailable) { /* Relay-only when policy cannot be read. */ }
+            result.complete(allowed);
+        });
+        return result;
+    }
+    private void applyCallCapabilities(long peer,TLRPC.UserFull full) {
+        XmppSession expected=session;
+        com.negzero.monogram.xmpp.calls.XmppCalls.Capabilities capabilities=expected==null ? null : expected.calls.cachedCapabilities(store.jid(peer));
+        full.phone_calls_available=peer>0 && peer!=self && capabilities!=null && capabilities.audio;
+        full.video_calls_available=full.phone_calls_available && capabilities.video;
+    }
+    void callCapabilitiesChanged(String address) {
+        final long owner=accountEpoch;final XmppSession expected=session;
+        worker.execute(() -> {
+            if(owner!=accountEpoch || session!=expected) return;
+            long peer=store.knownPeer(address);if(peer<=0 || peer==self) return;
+            TLRPC.UserFull latest=store.fullUser(peer,self);applyCallCapabilities(peer,latest);
+            AndroidUtilities.runOnUIThread(() -> {
+                if(owner!=accountEpoch || session!=expected) return;
+                TLRPC.UserFull cached=MessagesController.getInstance(account).getUserFull(peer);
+                if(cached==null || cached.phone_calls_available==latest.phone_calls_available && cached.video_calls_available==latest.video_calls_available) return;
+                cached.phone_calls_available=latest.phone_calls_available;cached.video_calls_available=latest.video_calls_available;
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.userInfoDidLoad,peer,cached);
+            });
+        });
     }
     public TLRPC.User ownUser() { return store.user(self, self); }
     public String jid(long peer) { return store.jid(peer); }
@@ -2533,6 +2593,7 @@ public final class MonogramController {
         cacheWorker.execute(() -> { if(accountEpoch==owner) try { publishReactions(peer,java.util.Collections.singleton(id)); } catch(IllegalArgumentException ignored) {} });
     }
     private TLObject handle(TLObject request) throws Exception {
+        if(MonogramCallPrivacy.handles(request)) return callPrivacy().handle(request);
         if(request instanceof TLRPC.TL_messages_createChat) return createNativeRoom((TLRPC.TL_messages_createChat)request);
         if(request instanceof TLRPC.TL_messages_addChatUser) {
             TLRPC.TL_messages_addChatUser query=(TLRPC.TL_messages_addChatUser)request;
@@ -2625,6 +2686,8 @@ public final class MonogramController {
             long peer = input instanceof TLRPC.TL_inputUserSelf ? self : input.user_id;
             // Respond from the offline cache; refresh separately without blocking the profile screen.
             if (store.profile(peer) == null) refreshProfile(peer);
+            XmppSession calls=session;
+            if(peer>0 && peer!=self && calls!=null && calls.connection().isAuthenticated()) calls.calls.discover(store.jid(peer));
             return profileResult(peer);
         }
         if (request instanceof TL_account.updateProfile) {

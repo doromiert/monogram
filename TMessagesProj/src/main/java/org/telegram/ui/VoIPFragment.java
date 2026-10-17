@@ -91,10 +91,10 @@ import org.telegram.messenger.pip.PipSource;
 import org.telegram.messenger.pip.utils.PipUtils;
 import org.telegram.messenger.voip.EncryptionKeyEmojifier;
 import org.telegram.messenger.voip.Instance;
-import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.messenger.voip.VoIPService;
+import org.telegram.messenger.voip.VoIPCallController;
+import org.telegram.messenger.voip.VoIPCallControllers;
 import org.telegram.messenger.voip.VoIPServiceState;
-import org.telegram.messenger.voip.VoipAudioManager;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -160,6 +160,7 @@ public class VoIPFragment implements
     private final static int STATE_FLOATING = 2;
 
     private final int currentAccount;
+    private VoIPCallController callController;
 
     Activity activity;
 
@@ -191,6 +192,7 @@ public class VoIPFragment implements
     private UserSelectorBottomSheet addPeopleSheet;
 
     LinearLayout emojiLayout;
+    TextView xmppSecurityLabel;
     FrameLayout hideEmojiLayout;
     TextView hideEmojiTextView;
     RateCallLayout rateCallLayout;
@@ -249,6 +251,7 @@ public class VoIPFragment implements
 
     private boolean canSwitchToPip;
     private boolean switchingToPip;
+    private boolean renderersInitialized;
 
     private float enterTransitionProgress;
     private boolean isFinished;
@@ -329,13 +332,15 @@ public class VoIPFragment implements
             return;
         }
         boolean transitionFromPip = VoIPPiPView.getInstance() != null;
-        if (VoIPService.getSharedState() == null) {
+        final VoIPCallController controller = VoIPCallControllers.get();
+        final VoIPServiceState legacyState = VoIPService.getSharedState();
+        if (controller == null && legacyState == null) {
             return;
         }
-        if (VoIPService.getSharedState().getUser() == null) {
+        if ((controller != null ? controller.getUser() : legacyState.getUser()) == null) {
             return;
         }
-        VoIPFragment fragment = new VoIPFragment(account);
+        VoIPFragment fragment = new VoIPFragment(controller != null ? controller.getAccount() : account);
         fragment.activity = activity;
         instance = fragment;
         VoIPWindowView windowView = new VoIPWindowView(activity, !transitionFromPip) {
@@ -355,9 +360,13 @@ public class VoIPFragment implements
                 }
                 if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                     if (fragment.currentState == VoIPService.STATE_WAITING_INCOMING) {
-                        final VoIPServiceState service = VoIPService.getSharedState();
-                        if (service != null) {
-                            service.stopRinging();
+                        final VoIPCallController controller = fragment.getController();
+                        final VoIPServiceState legacyState = VoIPService.getSharedState();
+                        if (controller != null) {
+                            controller.stopRinging();
+                            return true;
+                        } else if (legacyState != null) {
+                            legacyState.stopRinging();
                             return true;
                         }
                     }
@@ -423,8 +432,8 @@ public class VoIPFragment implements
             fragment.updateSystemBarColors();
         }
 
-        final VoIPService service = VoIPService.getSharedInstance();
-        if (service != null && service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
+        final VoIPCallController controllerAfterShow = fragment.getController();
+        if (controllerAfterShow != null && controllerAfterShow.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
             if (PipUtils.checkPermissions(activity) == PipPermissions.PIP_GRANTED_PIP) {
                 instance.pipSource = new PipSource.Builder(activity, instance)
                     .setTagPrefix("voip-fragment-pip")
@@ -457,7 +466,8 @@ public class VoIPFragment implements
             if (emojiRationalLayout.getVisibility() != View.GONE) {
                 return;
             }
-            if (canSwitchToPip && (VoIPService.getSharedInstance() != null && !VoIPService.getSharedInstance().isConverting()) && !lockOnScreen) {
+            VoIPCallController controller = getController();
+            if (canSwitchToPip && controller != null && controller.hasCapability(VoIPCallController.CAP_PIP) && !controller.isConverting() && !lockOnScreen) {
                 if (PipUtils.checkAnyPipPermissions(activity)) {
                     switchToPip();
                 } else {
@@ -475,9 +485,10 @@ public class VoIPFragment implements
 
     public static void clearInstance() {
         if (instance != null) {
-            if (VoIPService.getSharedInstance() != null) {
+            VoIPCallController controller = instance.getController();
+            if (controller != null) {
                 int h = instance.windowView.getMeasuredHeight();
-                if (instance.canSwitchToPip && !VoIPService.getSharedInstance().isConverting()) {
+                if (instance.canSwitchToPip && controller.hasCapability(VoIPCallController.CAP_PIP) && !controller.isConverting()) {
                     VoIPPiPView.show(instance.activity, instance.currentAccount, instance.windowView.getMeasuredWidth(), h, VoIPPiPView.ANIMATION_ENTER_TYPE_SCALE);
                     if (instance.lastInsets != null) {
                         VoIPPiPView.topInset = instance.lastInsets.getSystemWindowInsetTop();
@@ -523,15 +534,16 @@ public class VoIPFragment implements
     public VoIPFragment(int account) {
         currentAccount = account;
         currentUser = MessagesController.getInstance(currentAccount).getUser(UserConfig.getInstance(currentAccount).getClientUserId());
-        final VoIPServiceState state = VoIPService.getSharedState();
-        if (state == null) return;
-        callingUser = state.getUser();
-        if (VoIPService.getSharedInstance() != null) {
-            VoIPService.getSharedInstance().registerStateListener(this);
+        callController = VoIPCallControllers.get();
+        final VoIPServiceState legacyState = VoIPService.getSharedState();
+        if (callController == null && legacyState == null) return;
+        callingUser = callController != null ? callController.getUser() : legacyState.getUser();
+        if (callController != null) {
+            callController.addListener(this);
         }
-        isOutgoing = state.isOutgoing();
+        isOutgoing = callController != null ? callController.isOutgoing() : legacyState.isOutgoing();
         previousState = -1;
-        currentState = state.getCallState();
+        currentState = callController != null ? callController.getCallState() : legacyState.getCallState();
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.webRtcSpeakerAmplitudeEvent);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.voipServiceCreated);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
@@ -540,8 +552,8 @@ public class VoIPFragment implements
     }
 
     private void destroy() {
-        if (VoIPService.getSharedInstance() != null) {
-            VoIPService.getSharedInstance().unregisterStateListener(this);
+        if (callController != null) {
+            callController.removeListener(this);
         }
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.webRtcSpeakerAmplitudeEvent);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.voipServiceCreated);
@@ -558,6 +570,19 @@ public class VoIPFragment implements
         }
     }
 
+    private VoIPCallController getController() {
+        if (callController != null) {
+            return VoIPCallControllers.isActive(callController) ? callController : null;
+        }
+        VoIPCallController active = VoIPCallControllers.get();
+        if (active != null && active.getAccount() == currentAccount) {
+            callController = active;
+            callController.addListener(this);
+            return active;
+        }
+        return null;
+    }
+
     @Override
     public void onStateChanged(int state) {
         if (currentState != state) {
@@ -572,12 +597,14 @@ public class VoIPFragment implements
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.voipServiceCreated) {
-            if (currentState == VoIPService.STATE_BUSY && VoIPService.getSharedInstance() != null) {
+            VoIPCallController controller = getController();
+            if (currentState == VoIPService.STATE_BUSY && controller != null) {
                 currentUserTextureView.renderer.release();
                 callingUserTextureView.renderer.release();
                 callingUserMiniTextureRenderer.release();
+                renderersInitialized = false;
                 initRenderers();
-                VoIPService.getSharedInstance().registerStateListener(this);
+                controller.addListener(this);
             }
         } else if (id == NotificationCenter.emojiLoaded) {
             updateKeyView(true);
@@ -625,8 +652,11 @@ public class VoIPFragment implements
         if (videoState == Instance.VIDEO_STATE_ACTIVE && !isVideoCall) {
             isVideoCall = true;
         }
-        final VoIPService service = VoIPService.getSharedInstance();
-        if (service != null && service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
+        final VoIPCallController controller = getController();
+        if (controller != null) {
+            initRenderers();
+        }
+        if (controller != null && controller.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE) {
             if (pipSource == null && PipUtils.checkPermissions(activity) == PipPermissions.PIP_GRANTED_PIP) {
                 pipSource = new PipSource.Builder(activity, instance)
                     .setTagPrefix("voip-fragment-pip")
@@ -839,8 +869,11 @@ public class VoIPFragment implements
         updateSystemBarColors();
         fragmentView = frameLayout;
 
-        VoIPServiceState state = VoIPService.getSharedState();
-        gradientLayout = new VoIpGradientLayout(context, state != null && state.isConference(), backgroundProvider);
+        VoIPCallController initialController = getController();
+        VoIPServiceState legacyState = VoIPService.getSharedState();
+        gradientLayout = new VoIpGradientLayout(context,
+                initialController != null ? initialController.hasCapability(VoIPCallController.CAP_CONFERENCE) : legacyState != null && legacyState.isConference(),
+                backgroundProvider);
         callingUserTextureView = new VoIPTextureView(context, false, true, false, false);
         callingUserTextureView.renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT);
         callingUserTextureView.renderer.setEnableHardwareScaler(true);
@@ -926,7 +959,7 @@ public class VoIPFragment implements
             @Override
             public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
                 super.onInitializeAccessibilityNodeInfo(info);
-                info.setVisibleToUser(emojiLoaded);
+                info.setVisibleToUser(emojiLoaded || xmppSecurityLabel != null && xmppSecurityLabel.getVisibility() == View.VISIBLE);
             }
         };
         emojiLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -939,10 +972,20 @@ public class VoIPFragment implements
             }
             lastContentTapTime = System.currentTimeMillis();
             if (emojiExpanded) return;
-            if (emojiLoaded) {
+            VoIPCallController controller = getController();
+            if (emojiLoaded && controller != null && controller.getSecurityPresentation() == VoIPCallController.SECURITY_TELEGRAM_EMOJI) {
                 expandEmoji(!emojiExpanded);
             }
         });
+
+        xmppSecurityLabel = new TextView(context);
+        xmppSecurityLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        xmppSecurityLabel.setTextColor(Color.WHITE);
+        xmppSecurityLabel.setGravity(Gravity.CENTER);
+        xmppSecurityLabel.setText(LocaleController.getString(R.string.MonogramCallEncryptedTransport) + " · "
+                + LocaleController.getString(R.string.MonogramCallIdentityUnverified));
+        xmppSecurityLabel.setVisibility(View.GONE);
+        emojiLayout.addView(xmppSecurityLabel, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 28));
 
         hideEmojiTextView = new HideEmojiTextView(context, backgroundProvider);
         hideEmojiLayout = new FrameLayout(context);
@@ -997,19 +1040,20 @@ public class VoIPFragment implements
             @Override
             public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
                 super.onInitializeAccessibilityNodeInfo(info);
-                final VoIPServiceState service = VoIPService.getSharedState();
+                final VoIPCallController controller = getController();
+                final VoIPServiceState legacyState = VoIPService.getSharedState();
                 final CharSequence callingUserTitleText = callingUserTitle.getText();
-                if (service != null && !TextUtils.isEmpty(callingUserTitleText)) {
+                if ((controller != null || legacyState != null) && !TextUtils.isEmpty(callingUserTitleText)) {
                     final StringBuilder builder = new StringBuilder(callingUserTitleText);
 
                     builder.append(", ");
-                    if (service.getPrivateCall() != null && service.getPrivateCall().video) {
+                    if (controller != null ? controller.isCallingVideo() : legacyState.getPrivateCall() != null && legacyState.getPrivateCall().video) {
                         builder.append(LocaleController.getString(R.string.VoipInVideoCallBranding));
                     } else {
                         builder.append(LocaleController.getString(R.string.VoipInCallBranding));
                     }
 
-                    final long callDuration = service.getCallDuration();
+                    final long callDuration = controller != null ? controller.getCallDuration() : legacyState.getCallDuration();
                     if (callDuration > 0) {
                         builder.append(", ");
                         builder.append(LocaleController.formatDuration((int) (callDuration / 1000)));
@@ -1045,9 +1089,9 @@ public class VoIPFragment implements
         ViewCompat.setImportantForAccessibility(statusTextView, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         statusLayout.addView(statusTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 6));
 
-        if (state != null && state.getUser() != null && state.isConference() && state.getGroupCall() != null) {
+        if (legacyState != null && legacyState.getUser() != null && legacyState.isConference() && legacyState.getGroupCall() != null) {
             participantsView = new ConferenceParticipantsView(context);
-            participantsView.set(currentAccount, state.getUser().id, state.getGroupParticipants(), state.getGroupCall().participants_count);
+            participantsView.set(currentAccount, legacyState.getUser().id, legacyState.getGroupParticipants(), legacyState.getGroupCall().participants_count);
             statusLayout.addView(participantsView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 30, 0, 22, 0, 0));
         }
 
@@ -1108,29 +1152,26 @@ public class VoIPFragment implements
             @Override
             public void onAccept() {
                 if (currentState == VoIPService.STATE_BUSY) {
-                    Intent intent = new Intent(activity, VoIPService.class);
-                    intent.putExtra("user_id", callingUser.id);
-                    intent.putExtra("is_outgoing", true);
-                    intent.putExtra("start_incall_activity", false);
-                    intent.putExtra("video_call", isVideoCall);
-                    intent.putExtra("can_video_call", isVideoCall);
-                    intent.putExtra("account", currentAccount);
-                    try {
-                        activity.startService(intent);
-                    } catch (Throwable e) {
-                        FileLog.e(e);
+                    VoIPCallController controller = getController();
+                    if (controller != null && controller.hasCapability(VoIPCallController.CAP_RETRY)) {
+                        controller.retry();
                     }
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                         activity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 101);
                     } else {
-                        if (VoIPService.getSharedState() != null) {
+                        VoIPCallController controller = getController();
+                        VoIPServiceState legacyState = VoIPService.getSharedState();
+                        if (controller != null || legacyState != null) {
                             runAcceptCallAnimation(() -> {
-                                if (VoIPService.getSharedState() != null) {
-                                    VoIPService.getSharedState().acceptIncomingCall();
-                                    if (currentUserIsVideo && VoIPService.getSharedInstance() != null) {
-                                        VoIPService.getSharedInstance().requestVideoCall(false);
+                                VoIPCallController active = getController();
+                                if (active != null) {
+                                    active.acceptIncomingCall();
+                                    if (currentUserIsVideo) {
+                                        active.requestVideoCall();
                                     }
+                                } else if (VoIPService.getSharedState() != null) {
+                                    VoIPService.getSharedState().acceptIncomingCall();
                                 }
                             });
                         }
@@ -1143,7 +1184,10 @@ public class VoIPFragment implements
                 if (currentState == VoIPService.STATE_BUSY) {
                     windowView.finish();
                 } else {
-                    if (VoIPService.getSharedState() != null) {
+                    VoIPCallController controller = getController();
+                    if (controller != null) {
+                        controller.declineIncomingCall();
+                    } else if (VoIPService.getSharedState() != null) {
                         VoIPService.getSharedState().declineIncomingCall();
                     } else {
                         windowView.finish();
@@ -1179,9 +1223,9 @@ public class VoIPFragment implements
                 super.onInitializeAccessibilityNodeInfo(info);
                 info.setClassName(ToggleButton.class.getName());
                 info.setCheckable(true);
-                VoIPService service = VoIPService.getSharedInstance();
-                if (service != null) {
-                    info.setChecked(service.isSpeakerphoneOn());
+                VoIPCallController controller = getController();
+                if (controller != null) {
+                    info.setChecked(controller.isSpeakerphoneOn());
                 }
             }
         };
@@ -1194,18 +1238,10 @@ public class VoIPFragment implements
             if (speakerPhoneIcon.getTag() == null) {
                 return;
             }
-            VoIPService service = VoIPService.getSharedInstance();
-            if (service != null) {
+            VoIPCallController controller = getController();
+            if (controller != null) {
                 startWaitingFoHideUi();
-                final int selectedSpeaker;
-                if (service.isBluetoothOn()) {
-                    selectedSpeaker = 2;
-                } else if (service.isSpeakerphoneOn()) {
-                    selectedSpeaker = 0;
-                } else {
-                    selectedSpeaker = 1;
-                }
-                service.toggleSpeakerphoneOrShowRouteSheet(activity, false, selectedSpeaker);
+                controller.toggleSpeakerphoneOrShowRouteSheet(activity, false, controller.getAudioOutput());
             }
         });
 
@@ -1222,9 +1258,9 @@ public class VoIPFragment implements
             addPeopleSheet = new UserSelectorBottomSheet(context, currentAccount, 0, null, UserSelectorBottomSheet.TYPE_CALL, true, new DarkBlueThemeResourcesProvider())
                 .exceptUsers(currentUser != null ? currentUser.id : 0, callingUser != null ? callingUser.id : 0)
                 .setOnUsersSelector((video, users) -> {
-                    VoIPService voip = VoIPService.getSharedInstance();
-                    if (voip != null) {
-                        voip.convertToConferenceCall(video, users);
+                    VoIPCallController controller = getController();
+                    if (controller != null && controller.hasCapability(VoIPCallController.CAP_CONFERENCE)) {
+                        controller.convertToConferenceCall(video, users);
                     }
                 });
             addPeopleSheet.show();
@@ -1269,10 +1305,10 @@ public class VoIPFragment implements
 
         updateViewState();
 
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null) {
+        initialController = getController();
+        if (initialController != null) {
             if (!isVideoCall) {
-                isVideoCall = service.privateCall != null && service.privateCall.video;
+                isVideoCall = initialController.isCallingVideo();
             }
             initRenderers();
         }
@@ -1434,7 +1470,16 @@ public class VoIPFragment implements
     }
 
     private void initRenderers() {
-        currentUserTextureView.renderer.init(VideoCapturerDevice.getEglBase().getEglBaseContext(), new RendererCommon.RendererEvents() {
+        if (currentUserTextureView == null || callingUserTextureView == null || callingUserMiniTextureRenderer == null) {
+            return;
+        }
+        VoIPCallController controller = getController();
+        EglBase.Context eglContext = controller != null ? controller.getEglContext() : null;
+        if (renderersInitialized || eglContext == null) {
+            return;
+        }
+        renderersInitialized = true;
+        currentUserTextureView.renderer.init(eglContext, new RendererCommon.RendererEvents() {
             @Override
             public void onFirstFrameRendered() {
                 AndroidUtilities.runOnUIThread(() -> updateViewState());
@@ -1446,7 +1491,7 @@ public class VoIPFragment implements
             }
 
         });
-        callingUserTextureView.renderer.init(VideoCapturerDevice.getEglBase().getEglBaseContext(), new RendererCommon.RendererEvents() {
+        callingUserTextureView.renderer.init(eglContext, new RendererCommon.RendererEvents() {
             @Override
             public void onFirstFrameRendered() {
                 if (firstFrameCallback != null) {
@@ -1463,7 +1508,7 @@ public class VoIPFragment implements
 
         }, EglBase.CONFIG_PLAIN, new GlRectDrawer());
 
-        callingUserMiniTextureRenderer.init(VideoCapturerDevice.getEglBase().getEglBaseContext(), null);
+        callingUserMiniTextureRenderer.init(eglContext, null);
     }
 
     public void switchToPip() {
@@ -1471,7 +1516,8 @@ public class VoIPFragment implements
             return;
         }
         isFinished = true;
-        if (VoIPService.getSharedInstance() != null) {
+        VoIPCallController controller = getController();
+        if (controller != null && controller.hasCapability(VoIPCallController.CAP_PIP)) {
             int h = instance.windowView.getMeasuredHeight();
             VoIPPiPView.show(instance.activity, instance.currentAccount, instance.windowView.getMeasuredWidth(), h, VoIPPiPView.ANIMATION_ENTER_TYPE_TRANSITION);
             if (instance.lastInsets != null) {
@@ -1524,8 +1570,8 @@ public class VoIPFragment implements
 
     public void startTransitionFromPiP() {
         enterFromPiP = true;
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null && service.getVideoState(false) == Instance.VIDEO_STATE_ACTIVE) {
+        VoIPCallController controller = getController();
+        if (controller != null && controller.getVideoState() == Instance.VIDEO_STATE_ACTIVE) {
             callingUserTextureView.setStub(VoIPPiPView.getInstance().callingUserTextureView);
             currentUserTextureView.setStub(VoIPPiPView.getInstance().currentUserTextureView);
         }
@@ -1768,8 +1814,8 @@ public class VoIPFragment implements
     }
 
     private void startWaitingFoHideUi() {
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null) {
+        VoIPCallController controller = getController();
+        if (controller != null) {
             AndroidUtilities.cancelRunOnUIThread(hideUIRunnable);
             hideUiRunnableWaiting = false;
             if (canHideUI && uiVisible) {
@@ -1789,18 +1835,19 @@ public class VoIPFragment implements
         boolean showTimer = false;
         boolean showReconnecting = false;
         int statusLayoutOffset = 0;
-        final VoIPServiceState state = VoIPService.getSharedState();
-        final VoIPService service = VoIPService.getSharedInstance();
+        final VoIPServiceState legacyState = VoIPService.getSharedState();
+        final VoIPCallController service = getController();
 
         switch (currentState) {
             case VoIPService.STATE_WAITING_INCOMING:
                 showAcceptDeclineView = true;
                 lockOnScreen = false;
                 acceptDeclineView.setRetryMod(false);
-                if (state != null && state.isConference()) {
+                if ((service != null && service.hasCapability(VoIPCallController.CAP_CONFERENCE))
+                        || (service == null && legacyState != null && legacyState.isConference())) {
                     statusTextView.setText(LocaleController.getString(R.string.VoipInConferenceCallBranding), false, animated);
                     acceptDeclineView.setTranslationY(0);
-                } else if (state != null && state.isCallingVideo()) {
+                } else if (service != null ? service.isCallingVideo() : legacyState != null && legacyState.isCallingVideo()) {
                     statusTextView.setText(LocaleController.getString(R.string.VoipInVideoCallBranding), false, animated);
                     acceptDeclineView.setTranslationY(-AndroidUtilities.dp(60));
                 } else {
@@ -1933,15 +1980,14 @@ public class VoIPFragment implements
                 break;
             case VoIPService.STATE_FAILED:
                 statusTextView.setText(LocaleController.getString(R.string.VoipFailed), false, animated);
-                final VoIPService voipService = VoIPService.getSharedInstance();
-                final String lastError = voipService != null ? voipService.getLastError() : Instance.ERROR_UNKNOWN;
+                final String lastError = service != null ? service.getLastError() : Instance.ERROR_UNKNOWN;
                 if (!TextUtils.equals(lastError, Instance.ERROR_UNKNOWN)) {
                     if (TextUtils.equals(lastError, Instance.ERROR_INCOMPATIBLE)) {
                         final String name = ContactsController.formatName(callingUser.first_name, callingUser.last_name);
                         final String message = LocaleController.formatString("VoipPeerIncompatible", R.string.VoipPeerIncompatible, name);
                         showErrorDialog(AndroidUtilities.replaceTags(message));
                     } else if (TextUtils.equals(lastError, Instance.ERROR_PEER_OUTDATED)) {
-                        if (isVideoCall) {
+                        if (isVideoCall && service != null && service.hasCapability(VoIPCallController.CAP_TELEGRAM_EMOJI)) {
                             final String name = UserObject.getFirstName(callingUser);
                             final String message = LocaleController.formatString("VoipPeerVideoOutdated", R.string.VoipPeerVideoOutdated, name);
                             boolean[] callAgain = new boolean[1];
@@ -2003,7 +2049,7 @@ public class VoIPFragment implements
         boolean wasVideo = callingUserIsVideo || currentUserIsVideo;
         if (service != null) {
             callingUserIsVideo = service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE;
-            currentUserIsVideo = service.getVideoState(false) == Instance.VIDEO_STATE_ACTIVE || service.getVideoState(false) == Instance.VIDEO_STATE_PAUSED;
+            currentUserIsVideo = service.getVideoState() == Instance.VIDEO_STATE_ACTIVE || service.getVideoState() == Instance.VIDEO_STATE_PAUSED;
             if (currentUserIsVideo && !isVideoCall) {
                 isVideoCall = true;
             }
@@ -2062,7 +2108,7 @@ public class VoIPFragment implements
         }
 
         final boolean showBack = currentState != VoIPService.STATE_ENDED && !lockOnScreen && uiVisible;
-        final boolean showAdd = !showAcceptDeclineView && currentState != VoIPService.STATE_RINGING && currentState != VoIPService.STATE_ENDED && currentState != VoIPService.STATE_EXCHANGING_KEYS && currentState != VoIPService.STATE_REQUESTING && currentState != VoIPService.STATE_CREATING && !lockOnScreen && uiVisible && service != null && service.privateCall != null && service.privateCall.conference_supported;
+        final boolean showAdd = !showAcceptDeclineView && currentState != VoIPService.STATE_RINGING && currentState != VoIPService.STATE_ENDED && currentState != VoIPService.STATE_EXCHANGING_KEYS && currentState != VoIPService.STATE_REQUESTING && currentState != VoIPService.STATE_CREATING && !lockOnScreen && uiVisible && service != null && service.hasCapability(VoIPCallController.CAP_CONFERENCE);
         if (animated) {
             if (showBack) {
                 backIcon.animate().alpha(1f).start();
@@ -2134,16 +2180,24 @@ public class VoIPFragment implements
         }
         statusLayoutAnimateToOffset = statusLayoutOffset;
         boolean isScreencast = service != null && service.isScreencast();
-        canSwitchToPip = (currentState != VoIPService.STATE_ENDED && currentState != VoIPService.STATE_BUSY) && ((currentUserIsVideo && !isScreencast) || callingUserIsVideo);
+        canSwitchToPip = service != null && service.hasCapability(VoIPCallController.CAP_PIP)
+                && service.getEglContext() != null
+                && (currentState != VoIPService.STATE_ENDED && currentState != VoIPService.STATE_BUSY)
+                && ((currentUserIsVideo && !isScreencast) || callingUserIsVideo);
 
         int floatingViewsOffset;
         if (service != null) {
+            initRenderers();
             if (currentUserIsVideo) {
-                service.sharedUIParams.tapToVideoTooltipWasShowed = true;
+                service.setTapToVideoTooltipShown(true);
             }
             currentUserTextureView.setIsScreencast(service.isScreencast());
             currentUserTextureView.renderer.setMirror(service.isFrontFaceCamera());
-            service.setSinks(currentUserIsVideo && !service.isScreencast() ? currentUserTextureView.renderer : null, windowViewSkipRender && pipTextureView != null ? pipTextureView.renderer : showCallingUserVideoMini ? callingUserMiniTextureRenderer : callingUserTextureView.renderer);
+            if (renderersInitialized) {
+                service.setSinks(currentUserIsVideo && !service.isScreencast() ? currentUserTextureView.renderer : null,
+                        windowViewSkipRender && pipTextureView != null ? pipTextureView.renderer
+                                : showCallingUserVideoMini ? callingUserMiniTextureRenderer : callingUserTextureView.renderer);
+            }
 
             if (animated) {
                 notificationsLayout.beforeLayoutChanges();
@@ -2173,8 +2227,8 @@ public class VoIPFragment implements
                 notificationsLayout.removeNotification("video");
             }
 
-            if (notificationsLayout.getChildCount() == 0 && callingUserIsVideo && service.privateCall != null && !service.privateCall.video && !service.sharedUIParams.tapToVideoTooltipWasShowed) {
-                service.sharedUIParams.tapToVideoTooltipWasShowed = true;
+            if (notificationsLayout.getChildCount() == 0 && callingUserIsVideo && !service.isCallingVideo() && !service.isTapToVideoTooltipShown()) {
+                service.setTapToVideoTooltipShown(true);
                 tapToVideoTooltip.setTranslationY(-(fragmentView.getMeasuredHeight() - buttonsLayout.getY() + AndroidUtilities.dp(6)));
                 tapToVideoTooltip.setJointPx(0, buttonsLayout.getX() + bottomVideoBtn.getX() + AndroidUtilities.dp(14));
                 tapToVideoTooltip.show();
@@ -2460,18 +2514,43 @@ public class VoIPFragment implements
     }
 
     private void updateKeyView(boolean animated) {
+        VoIPCallController controller = getController();
+        if (controller == null) {
+            return;
+        }
+        if (controller.getSecurityPresentation() != VoIPCallController.SECURITY_TELEGRAM_EMOJI) {
+            if (xmppSecurityLabel != null && controller.getSecurityPresentation() != VoIPCallController.SECURITY_NONE) {
+                boolean wasVisible = xmppSecurityLabel.getVisibility() == View.VISIBLE;
+                emojiLayout.setEnabled(false);
+                xmppSecurityLabel.setVisibility(View.VISIBLE);
+                emojiLayout.setContentDescription(xmppSecurityLabel.getText());
+                for (BackupImageView emojiView : emojiViews) {
+                    emojiView.setVisibility(View.GONE);
+                }
+                if (animated && !wasVisible) {
+                    xmppSecurityLabel.setAlpha(0f);
+                    xmppSecurityLabel.animate().alpha(1f).setDuration(150).start();
+                } else if (!wasVisible) {
+                    xmppSecurityLabel.setAlpha(1f);
+                }
+            }
+            return;
+        }
         if (emojiLoaded) {
             return;
         }
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service == null) {
-            return;
-        }
+        emojiLayout.setEnabled(true);
+        xmppSecurityLabel.setVisibility(View.GONE);
         byte[] auth_key = null;
         try {
+            byte[] key = controller.getTelegramEncryptionKey();
+            byte[] ga = controller.getTelegramGA();
+            if (key == null || ga == null) {
+                return;
+            }
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
-            buf.write(service.getEncryptionKey());
-            buf.write(service.getGA());
+            buf.write(key);
+            buf.write(ga);
             auth_key = buf.toByteArray();
         } catch (Exception checkedExceptionsAreBad) {
             FileLog.e(checkedExceptionsAreBad, false);
@@ -2588,7 +2667,7 @@ public class VoIPFragment implements
     }
 
     private void updateButtons(boolean animated) {
-        VoIPService service = VoIPService.getSharedInstance();
+        VoIPCallController service = getController();
         if (service == null) {
             return;
         }
@@ -2641,7 +2720,8 @@ public class VoIPFragment implements
         }
 
         if (currentState == VoIPService.STATE_WAITING_INCOMING || currentState == VoIPService.STATE_BUSY) {
-            if (service.privateCall != null && service.privateCall.video && currentState == VoIPService.STATE_WAITING_INCOMING) {
+            if (service.isCallingVideo() && service.hasCapability(VoIPCallController.CAP_PREANSWER_VIDEO)
+                    && currentState == VoIPService.STATE_WAITING_INCOMING) {
                 if (!service.isScreencast() && (currentUserIsVideo || callingUserIsVideo)) {
                     setFrontalCameraAction(bottomSpeakerBtn, service, animated);
                     if (uiVisible) {
@@ -2679,10 +2759,11 @@ public class VoIPFragment implements
 
             bottomEndCallBtn.setData(R.drawable.calls_decline, Color.WHITE, 0xFFF01D2C, LocaleController.getString(R.string.VoipEndCall2), false, animated);
             bottomEndCallBtn.setOnClickListener(view -> {
-                if (VoIPService.getSharedInstance() != null) {
+                VoIPCallController controller = getController();
+                if (controller != null) {
                     AndroidUtilities.cancelRunOnUIThread(hideUIRunnable);
                     hideUiRunnableWaiting = false;
-                    VoIPService.getSharedInstance().hangUp();
+                    controller.hangUp();
                 }
             });
         }
@@ -2706,11 +2787,11 @@ public class VoIPFragment implements
         updateSpeakerPhoneIcon();
     }
 
-    private void setMicrohoneAction(VoIpSwitchLayout bottomButton, VoIPService service, boolean animated) {
+    private void setMicrohoneAction(VoIpSwitchLayout bottomButton, VoIPCallController service, boolean animated) {
         bottomButton.setType(VoIpSwitchLayout.Type.MICRO, service.isMicMute());
         currentUserCameraFloatingLayout.setMuted(service.isMicMute(), animated);
         bottomButton.setOnBtnClickedListener((view) -> {
-            final VoIPService serviceInstance = VoIPService.getSharedInstance();
+            final VoIPCallController serviceInstance = getController();
             if (serviceInstance != null) {
                 AndroidUtilities.cancelRunOnUIThread(hideUIRunnable);
                 hideUiRunnableWaiting = false;
@@ -2719,19 +2800,19 @@ public class VoIPFragment implements
                     final String text = LocaleController.getString(micMute ? R.string.AccDescrVoipMicOff : R.string.AccDescrVoipMicOn);
                     view.announceForAccessibility(text);
                 }
-                serviceInstance.setMicMute(micMute, false, true);
+                serviceInstance.setMicMute(micMute);
                 previousState = currentState;
                 updateViewState();
             }
         });
     }
 
-    private void setVideoAction(VoIpSwitchLayout bottomButton, VoIPService service, boolean fast) {
+    private void setVideoAction(VoIpSwitchLayout bottomButton, VoIPCallController service, boolean fast) {
         boolean isVideoAvailable;
         if (currentUserIsVideo || callingUserIsVideo) {
             isVideoAvailable = true;
         } else {
-            isVideoAvailable = service.isVideoAvailable();
+            isVideoAvailable = service.hasCapability(VoIPCallController.CAP_VIDEO_UPGRADE) && service.isVideoAvailable();
         }
         if (isVideoAvailable) {
             if (currentUserIsVideo) {
@@ -2761,14 +2842,14 @@ public class VoIPFragment implements
     }
 
     private void updateSpeakerPhoneIcon() {
-        VoIPService service = VoIPService.getSharedInstance();
+        VoIPCallController service = getController();
         if (service == null) {
             return;
         }
         final int icon;
         if (service.isBluetoothOn()) {
             icon = R.drawable.calls_bluetooth;
-        } else if (VoipAudioManager.get().isSpeakerphoneOn()) {
+        } else if (service.isSpeakerphoneOn()) {
             icon = R.drawable.calls_speaker;
         } else {
             if (service.isHeadsetPlugged()) {
@@ -2786,31 +2867,28 @@ public class VoIPFragment implements
         speakerPhoneIconResId = icon;
     }
 
-    private void setSpeakerPhoneAction(VoIpSwitchLayout bottomButton, VoIPService service, boolean animated) {
-        final int selectedSpeaker;
-        VoipAudioManager vam = VoipAudioManager.get();
+    private void setSpeakerPhoneAction(VoIpSwitchLayout bottomButton, VoIPCallController service, boolean animated) {
+        final int selectedSpeaker = service.getAudioOutput();
         if (service.isBluetoothOn()) {
-            selectedSpeaker = 2;
             bottomButton.setType(VoIpSwitchLayout.Type.BLUETOOTH, false);
-        } else if (vam.isSpeakerphoneOn()) {
-            selectedSpeaker = 0;
+        } else if (service.isSpeakerphoneOn()) {
             bottomButton.setType(VoIpSwitchLayout.Type.SPEAKER, true);
         } else {
-            selectedSpeaker = 1;
             bottomButton.setType(VoIpSwitchLayout.Type.SPEAKER, false);
         }
         bottomButton.setEnabled(true);
         bottomButton.setOnBtnClickedListener(view -> {
-            if (VoIPService.getSharedInstance() != null) {
+            VoIPCallController controller = getController();
+            if (controller != null) {
                 AndroidUtilities.cancelRunOnUIThread(hideUIRunnable);
                 hideUiRunnableWaiting = false;
-                VoIPService.getSharedInstance().toggleSpeakerphoneOrShowRouteSheet(activity, false, selectedSpeaker);
-                setSpeakerPhoneAction(bottomButton, service, true);
+                controller.toggleSpeakerphoneOrShowRouteSheet(activity, false, selectedSpeaker);
+                setSpeakerPhoneAction(bottomButton, controller, true);
             }
         });
     }
 
-    private void setFrontalCameraAction(VoIpSwitchLayout bottomButton, VoIPService service, boolean animated) {
+    private void setFrontalCameraAction(VoIpSwitchLayout bottomButton, VoIPCallController service, boolean animated) {
         if (!currentUserIsVideo) {
             bottomButton.setType(VoIpSwitchLayout.Type.CAMERA, false);
             bottomButton.setOnBtnClickedListener(null);
@@ -2823,7 +2901,7 @@ public class VoIPFragment implements
                 bottomButton.setType(VoIpSwitchLayout.Type.CAMERA, service.isSwitchingCamera());
             }
             bottomButton.setOnBtnClickedListener(view -> {
-                final VoIPService serviceInstance = VoIPService.getSharedInstance();
+                final VoIPCallController serviceInstance = getController();
                 if (serviceInstance != null) {
                     AndroidUtilities.cancelRunOnUIThread(hideUIRunnable);
                     hideUiRunnableWaiting = false;
@@ -2851,7 +2929,7 @@ public class VoIPFragment implements
     }
 
     private void toggleCameraInput() {
-        VoIPService service = VoIPService.getSharedInstance();
+        VoIPCallController service = getController();
         if (service != null) {
             if (accessibilityManager.isTouchExplorationEnabled()) {
                 final String text;
@@ -2864,7 +2942,7 @@ public class VoIPFragment implements
             }
             if (!currentUserIsVideo) {
                 if (previewDialog == null) {
-                    service.createCaptureDevice(false);
+                    service.createCaptureDevice();
                     if (!service.isFrontFaceCamera()) {
                         service.switchCamera();
                     }
@@ -2875,13 +2953,13 @@ public class VoIPFragment implements
                         @Override
                         public void onDismiss(boolean screencast, boolean apply) {
                             previewDialog = null;
-                            VoIPService service = VoIPService.getSharedInstance();
+                            VoIPCallController service = getController();
                             windowView.setLockOnScreen(false);
                             if (apply) {
                                 currentUserIsVideo = true;
                                 if (service != null && !screencast) {
-                                    service.requestVideoCall(false);
-                                    service.setVideoState(false, Instance.VIDEO_STATE_ACTIVE);
+                                    service.requestVideoCall();
+                                    service.setVideoState(Instance.VIDEO_STATE_ACTIVE);
                                     service.switchToSpeaker();
                                 }
                                 if (service != null) {
@@ -2889,7 +2967,7 @@ public class VoIPFragment implements
                                 }
                             } else {
                                 if (service != null) {
-                                    service.setVideoState(false, Instance.VIDEO_STATE_INACTIVE);
+                                    service.setVideoState(Instance.VIDEO_STATE_INACTIVE);
                                 }
                             }
                             previousState = currentState;
@@ -2932,7 +3010,7 @@ public class VoIPFragment implements
                 return;
             } else {
                 currentUserTextureView.saveCameraLastBitmap();
-                service.setVideoState(false, Instance.VIDEO_STATE_INACTIVE);
+                service.setVideoState(Instance.VIDEO_STATE_INACTIVE);
                 service.clearCamera();
             }
             previousState = currentState;
@@ -2949,19 +3027,25 @@ public class VoIPFragment implements
     @TargetApi(Build.VERSION_CODES.M)
     private void onRequestPermissionsResultInternal(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == 101) {
-            if (VoIPService.getSharedState() == null) {
+            if (getController() == null && VoIPService.getSharedState() == null) {
                 windowView.finish();
                 return;
             }
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 runAcceptCallAnimation(() -> {
-                    if (VoIPService.getSharedState() != null) {
+                    VoIPCallController controller = getController();
+                    if (controller != null) {
+                        controller.acceptIncomingCall();
+                    } else if (VoIPService.getSharedState() != null) {
                         VoIPService.getSharedState().acceptIncomingCall();
                     }
                 });
             } else {
                 if (!activity.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
-                    if (VoIPService.getSharedState() != null) {
+                    VoIPCallController controller = getController();
+                    if (controller != null) {
+                        controller.declineIncomingCall();
+                    } else if (VoIPService.getSharedState() != null) {
                         VoIPService.getSharedState().declineIncomingCall();
                     }
                     VoIPHelper.permissionDenied(activity, () -> windowView.finish(), requestCode);
@@ -2970,7 +3054,7 @@ public class VoIPFragment implements
             }
         }
         if (requestCode == 102) {
-            if (VoIPService.getSharedState() == null) {
+            if (getController() == null && VoIPService.getSharedState() == null) {
                 windowView.finish();
                 return;
             }
@@ -3015,7 +3099,8 @@ public class VoIPFragment implements
         final @PipPermissions int permissions = PipUtils.checkPermissions(activity);
         final boolean hasPermissionsToPip = permissions > 0;
 
-        if (canSwitchToPip && (VoIPService.getSharedInstance() != null && !VoIPService.getSharedInstance().isConverting()) && permissions == PipPermissions.PIP_GRANTED_OVERLAY) {
+        VoIPCallController controller = getController();
+        if (canSwitchToPip && controller != null && controller.hasCapability(VoIPCallController.CAP_PIP) && !controller.isConverting() && permissions == PipPermissions.PIP_GRANTED_OVERLAY) {
             int h = instance.windowView.getMeasuredHeight();
             VoIPPiPView.show(instance.activity, instance.currentAccount, instance.windowView.getMeasuredWidth(), h, VoIPPiPView.ANIMATION_ENTER_TYPE_SCALE);
             if (instance.lastInsets != null) {
@@ -3025,9 +3110,8 @@ public class VoIPFragment implements
         }
 
         if (currentUserIsVideo && (!hasPermissionsToPip || !screenOn)) {
-            VoIPService service = VoIPService.getSharedInstance();
-            if (service != null) {
-                service.setVideoState(false, Instance.VIDEO_STATE_PAUSED);
+            if (controller != null) {
+                controller.setVideoState(Instance.VIDEO_STATE_PAUSED);
             }
         }
     }
@@ -3036,10 +3120,10 @@ public class VoIPFragment implements
         if (VoIPPiPView.getInstance() != null) {
             VoIPPiPView.finish();
         }
-        VoIPService service = VoIPService.getSharedInstance();
-        if (service != null) {
-            if (service.getVideoState(false) == Instance.VIDEO_STATE_PAUSED) {
-                service.setVideoState(false, Instance.VIDEO_STATE_ACTIVE);
+        VoIPCallController controller = getController();
+        if (controller != null) {
+            if (controller.getVideoState() == Instance.VIDEO_STATE_PAUSED) {
+                controller.setVideoState(Instance.VIDEO_STATE_ACTIVE);
             }
             updateViewState();
         } else if (VoIPService.getSharedState() == null) {
@@ -3129,7 +3213,12 @@ public class VoIPFragment implements
         pipTextureView.renderer.setEnableHardwareScaler(true);
         pipTextureView.renderer.setRotateTextureWithScreen(true);
         pipTextureView.scaleType = VoIPTextureView.SCALE_TYPE_FIT;
-        pipTextureView.renderer.init(VideoCapturerDevice.getEglBase().getEglBaseContext(), new RendererCommon.RendererEvents() {
+        VoIPCallController controller = getController();
+        EglBase.Context eglContext = controller != null ? controller.getEglContext() : null;
+        if (eglContext == null) {
+            return pipTextureView;
+        }
+        pipTextureView.renderer.init(eglContext, new RendererCommon.RendererEvents() {
             @Override
             public void onFirstFrameRendered() {
                 if (firstFrameCallback != null) {
