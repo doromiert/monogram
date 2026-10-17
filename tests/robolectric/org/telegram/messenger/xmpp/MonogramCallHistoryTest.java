@@ -76,6 +76,21 @@ public class MonogramCallHistoryTest {
         TLRPC.TL_messages_messagesSlice missed=search(true,0,10);assertEquals(2,missed.count);
         assertEquals(Arrays.asList(newest,middle),Arrays.asList(missed.messages.get(0).id,missed.messages.get(1).id));
     }
+    @Test public void callsSearchExcludesOtherOwnersAndNeverProjectsUnrelatedRoomHistory() throws Exception {
+        int own=save("own-call",true,false,100000,12,"hangup");
+        long otherOwner=store.peer("carol@example.org");
+        int foreign=store.saveCall(otherOwner,peer,"foreign-call",false,false,200000,0,"missed");
+        long room=store.room("crowd@conference.example.org","Alice");
+        store.getWritableDatabase().execSQL("INSERT INTO messages(peer,stanza,body,encrypted,encryption,outgoing,time,time_ms) VALUES(?,'unprojectable-room-row','ordinary room history',0,0,0,300,300000)",new Object[]{room});
+        int unrelated;
+        try(Cursor row=store.getReadableDatabase().rawQuery("SELECT id FROM messages WHERE stanza='unprojectable-room-row'",null)) { assertTrue(row.moveToFirst());unrelated=row.getInt(0); }
+        // Both rows deliberately fail projection; a call-only search must exclude them in SQL first.
+        try { store.getMessage(unrelated,self);fail("Fixture needs a missing room-sender record"); } catch(IllegalStateException expected) {}
+        try { store.getMessage(foreign,self);fail("Fixture needs a different call owner"); } catch(IllegalArgumentException expected) {}
+        TLRPC.TL_messages_messagesSlice calls=search(false,0,10);
+        assertEquals(1,calls.count);assertEquals(1,calls.messages.size());assertEquals(own,calls.messages.get(0).id);
+        assertEquals(0,search(true,0,10).count);assertTrue(search(false,foreign,10).messages.isEmpty());
+    }
     @Test public void deletingCallSummariesRetainsSidTombstonesAndNeverDeletesOrdinaryMessages() throws Exception {
         int plain=store.save(MessageFixture.message("ordinary","ordinary-origin",null,"Keep normal message",true,false,50000));
         int first=save("deleted-call",false,false,100000,0,"missed");int second=save("other-call",true,false,200000,30,"hangup");

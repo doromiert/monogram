@@ -20,17 +20,25 @@ public final class JingleSdp {
         }
         if(!global.contains("v=0")) throw invalid("Invalid SDP version");
         String group=value(global,"a=group:BUNDLE ");if(group==null) throw invalid("BUNDLE required");List<String> bundle=Arrays.asList(group.trim().split(" +"));
-        List<Content> contents=new ArrayList<>();for(List<String> section:sections) {
+        for(String line:global) if(line.startsWith("a=bundle-only")) throw invalid("bundle-only must be media-level");
+        Map<String,Long> ports=new HashMap<>();List<Content> contents=new ArrayList<>();for(List<String> section:sections) {
             String[] m=section.get(0).substring(2).split(" +");if(m.length<4 || !"UDP/TLS/RTP/SAVPF".equals(m[2])) throw invalid("DTLS RTP required");
-            if("0".equals(m[1])) throw invalid("Rejected media cannot be negotiated");number(m[1],1,65535);
+            String mid=token(value(section,"a=mid:"),64);long port=number(m[1],0,65535);
+            if(ports.put(mid,port)!=null) throw invalid("Duplicate content MID");
+            int bundleOnly=0;for(String line:section) if(line.startsWith("a=bundle-only")) { if(!line.equals("a=bundle-only") || ++bundleOnly>1) throw invalid("Invalid bundle-only marker"); }
+            // RFC 8843: zero is live only for a bundle-only member using the positive-port tag.
+            if(port==0 && (bundleOnly!=1 || mid.equals(bundle.get(0)) || !bundle.contains(mid))) throw invalid("Rejected media cannot be negotiated");
+            if(port>0 && bundleOnly!=0) throw invalid("bundle-only requires zero port");
             List<String> attrs=new ArrayList<>();for(String l:section) if(l.startsWith("a=")) attrs.add(l.substring(2));
             if(global.contains("a=extmap-allow-mixed") && !attrs.contains("extmap-allow-mixed")) attrs.add("extmap-allow-mixed");
-            String mid=required(section,global,"a=mid:"),ufrag=required(section,global,"a=ice-ufrag:"),pwd=required(section,global,"a=ice-pwd:"),finger=required(section,global,"a=fingerprint:");
+            String ufrag=required(section,global,"a=ice-ufrag:"),pwd=required(section,global,"a=ice-pwd:"),finger=required(section,global,"a=fingerprint:");
             if(!finger.startsWith("sha-256 ")) throw invalid("DTLS SHA-256 required");String direction=direction(section);if(direction==null) direction=direction(global);if(direction==null) direction="sendrecv";
             Set<String> offered=new LinkedHashSet<>();for(int i=3;i<m.length;i++) { number(m[i],0,127);if(!offered.add(m[i])) throw invalid("Duplicate SDP payload"); }
             Set<String> described=new HashSet<>();for(String a:attrs) if(a.startsWith("rtpmap:")) described.add(a.substring(7).split(" ",2)[0]);if(!offered.equals(described)) throw invalid("SDP codec list mismatch");
             Content c=new Content(mid,m[0],direction,ufrag,pwd,finger.substring(8),required(section,global,"a=setup:"),attrs);rtp(c);transport(c,true);contents.add(c);
-        }return new CallDescription(contents,bundle);
+        }
+        Long tagPort=ports.get(bundle.get(0));if(tagPort==null || tagPort==0) throw invalid("Live BUNDLE tag required");
+        return new CallDescription(contents,bundle);
     }
     public static String serialize(CallDescription description) {
         StringBuilder out=new StringBuilder("v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=group:BUNDLE ");out.append(String.join(" ",description.bundle)).append("\r\na=msid-semantic: WMS *\r\n");

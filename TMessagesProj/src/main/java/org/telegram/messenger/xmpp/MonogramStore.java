@@ -1355,7 +1355,12 @@ final class MonogramStore extends SQLiteOpenHelper {
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {
         TLRPC.TL_messages_messagesSlice result=new TLRPC.TL_messages_messagesSlice();
         String needle=query==null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
-        String sql="SELECT m.id,m.peer,p.body,COALESCE(a.caption,''),m.time_ms,m.archive_order,f.markup,f.caption_body,f.caption_markup FROM messages m "
+        boolean phoneCalls=filter instanceof TLRPC.TL_inputMessagesFilterPhoneCalls;
+        ArrayList<String> args=new ArrayList<>();
+        // Keep the owner-indexed call table first, rather than scanning and projecting unrelated chat history.
+        String source=phoneCalls ? "call_events ce CROSS JOIN messages m ON m.id=ce.message AND ce.owner=? " : "messages m ";
+        if(phoneCalls) args.add(jid(self));
+        String sql="SELECT m.id,m.peer,p.body,COALESCE(a.caption,''),m.time_ms,m.archive_order,f.markup,f.caption_body,f.caption_markup FROM "+source
                 +"LEFT JOIN applied_corrections ac ON ac.original=m.id JOIN messages p ON p.id=COALESCE(ac.message,m.id) "
                 +"LEFT JOIN message_formatting f ON f.message=p.id AND f.body=p.body "
                 +"LEFT JOIN attachments a ON a.message=p.id LEFT JOIN room_senders r ON r.message=m.id "
@@ -1363,7 +1368,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 +"AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) "
                 +"AND NOT EXISTS(SELECT 1 FROM reaction_sources x WHERE x.message=m.id) "
                 +"AND NOT EXISTS(SELECT 1 FROM retraction_sources x WHERE x.message=m.id AND x.hidden=1)";
-        ArrayList<String> args=new ArrayList<>();
+        if(phoneCalls && filter.missed) sql+=" AND ce.reason IN ('missed','busy')";
         if(peer!=0) { sql+=" AND m.peer=?"; args.add(Long.toString(peer)); }
         if(groups) sql+=" AND m.peer<0";
         if(users) sql+=" AND m.peer>0";
@@ -1371,13 +1376,18 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(minDate>0) { sql+=" AND m.time>=?"; args.add(Integer.toString(minDate)); }
         if(maxDate>0) { sql+=" AND m.time<=?"; args.add(Integer.toString(maxDate)); }
         long[] anchor=null;
-        if(offset>0) try(Cursor c=getReadableDatabase().rawQuery("SELECT time_ms,archive_order,id FROM messages WHERE id=?"+(peer==0 ? "" : " AND peer=?"),
-                peer==0 ? new String[]{Integer.toString(offset)} : new String[]{Integer.toString(offset),Long.toString(peer)})) {
-            if(c.moveToFirst()) anchor=new long[]{c.getLong(0),c.getLong(1),c.getLong(2)};
-            else return result;
+        if(offset>0) {
+            ArrayList<String> anchorArgs=new ArrayList<>();anchorArgs.add(Integer.toString(offset));
+            String anchorSql="SELECT time_ms,archive_order,id FROM messages WHERE id=?";
+            if(peer!=0) { anchorSql+=" AND peer=?";anchorArgs.add(Long.toString(peer)); }
+            if(phoneCalls) { anchorSql+=" AND EXISTS(SELECT 1 FROM call_events c WHERE c.message=messages.id AND c.owner=?)";anchorArgs.add(jid(self)); }
+            try(Cursor c=getReadableDatabase().rawQuery(anchorSql,anchorArgs.toArray(new String[0]))) {
+                if(c.moveToFirst()) anchor=new long[]{c.getLong(0),c.getLong(1),c.getLong(2)};
+                else return result;
+            }
         }
         int remainingSkip=Math.max(0,skip), maximum=Math.min(100,Math.max(1,limit));
-        boolean unfiltered=filter==null || filter instanceof TLRPC.TL_inputMessagesFilterEmpty;
+        boolean unfiltered=phoneCalls || filter==null || filter instanceof TLRPC.TL_inputMessagesFilterEmpty;
         try(Cursor c=getReadableDatabase().rawQuery(sql+" ORDER BY m.time_ms DESC,m.archive_order DESC,m.id DESC",args.toArray(new String[0]))) {
             while(c.moveToNext()) {
                 String text=MonogramFormatting.displayText(c.getString(2),c.getString(6)),caption=c.getString(3);

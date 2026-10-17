@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.*;
 import android.widget.Toast;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.app.Person;
 import androidx.core.content.ContextCompat;
 import com.negzero.monogram.xmpp.XmppSession;
@@ -42,7 +43,8 @@ public final class MonogramCallService extends Service {
     private AudioDeviceCallback devices;
     private PowerManager.WakeLock cpu,proximity;
     private int previousAudioMode;
-    private boolean previousSpeaker,audioConfigured;
+    private boolean previousSpeaker,audioConfigured,audioFocusHeld;
+    private long audioGeneration;
 
     private static final class Network {
         final List<com.negzero.monogram.xmpp.calls.XmppIceServers.IceServer> servers;final boolean direct;
@@ -138,6 +140,14 @@ public final class MonogramCallService extends Service {
     private static boolean permission(Context context,String permission) {
         return Build.VERSION.SDK_INT<23 || context.checkSelfPermission(permission)==PackageManager.PERMISSION_GRANTED;
     }
+    private static boolean incomingAlertsAllowed(Context context) {
+        if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false;
+        if(Build.VERSION.SDK_INT>=26) {
+            NotificationChannel channel=((NotificationManager)context.getSystemService(NOTIFICATION_SERVICE)).getNotificationChannel(INCOMING_CHANNEL);
+            if(channel!=null && channel.getImportance()==NotificationManager.IMPORTANCE_NONE) return false;
+        }
+        return true;
+    }
     static void open(Controller c) {
         if(!c.valid()) return;
         Context context=ApplicationLoader.applicationContext;
@@ -163,11 +173,8 @@ public final class MonogramCallService extends Service {
     private void configureAudio(Controller c) {
         if(devices!=null) return;
         previousAudioMode=audio.getMode();previousSpeaker=audio.isSpeakerphoneOn();audioConfigured=true;audio.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        focusListener=change -> AndroidUtilities.runOnUIThread(() -> {
-            if(!c.valid()) return;
-            if(change==AudioManager.AUDIOFOCUS_LOSS) c.hangUp();
-            else if(c.media!=null) c.media.setMicMuted(change<0 || c.micMuted);
-        });
+        long generation=++audioGeneration;
+        focusListener=change -> AndroidUtilities.runOnUIThread(() -> audioFocusChanged(c,generation,change));
         int result;
         if(Build.VERSION.SDK_INT>=26) {
             focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
@@ -175,6 +182,7 @@ public final class MonogramCallService extends Service {
                     .setOnAudioFocusChangeListener(focusListener).build();result=audio.requestAudioFocus(focus);
         } else result=audio.requestAudioFocus(focusListener,AudioManager.STREAM_VOICE_CALL,AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
         if(result!=AudioManager.AUDIOFOCUS_REQUEST_GRANTED) throw new IllegalStateException("Call audio focus unavailable");
+        audioFocusHeld=true;c.applyMicMute();
         devices=new AudioDeviceCallback() {
             @Override public void onAudioDevicesAdded(AudioDeviceInfo[] added) { c.audioChanged(); }
             @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) { c.audioChanged(); }
@@ -185,6 +193,12 @@ public final class MonogramCallService extends Service {
         if(power.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK))
             proximity=power.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,"monogram:call-proximity");
         c.setAudioOutput(c.call.video || !c.hasEarpiece() ? VoIPCallController.AUDIO_OUTPUT_SPEAKER : VoIPCallController.AUDIO_OUTPUT_EARPIECE);
+    }
+    private void audioFocusChanged(Controller c,long generation,int change) {
+        if(generation!=audioGeneration || !audioConfigured || controller!=c || c.service!=this || !c.valid()) return;
+        audioFocusHeld=change>0;
+        c.applyMicMute();
+        if(change==AudioManager.AUDIOFOCUS_LOSS) c.hangUp();
     }
     private void updateProximity(Controller c) {
         if(proximity==null) return;
@@ -198,6 +212,8 @@ public final class MonogramCallService extends Service {
         releaseAudio();stopForeground(true);super.onDestroy();
     }
     private void releaseAudio() {
+        audioGeneration++;audioFocusHeld=false;
+        if(controller!=null && controller.service==this && controller.media!=null) controller.media.setMicMuted(true);
         if(audio!=null) {
             if(devices!=null) audio.unregisterAudioDeviceCallback(devices);
             if(Build.VERSION.SDK_INT>=26 && focus!=null) audio.abandonAudioFocusRequest(focus);
@@ -268,7 +284,7 @@ public final class MonogramCallService extends Service {
                     public void localDescription(boolean offer,String sdp) { ui(() -> {
                         mediaReady=true;for(Listener l:listeners) l.onVideoAvailableChange(call.video);
                         binding.session.calls.localDescription(call.sid,offer,sdp);
-                        binding.session.calls.mediaMuted(call.sid,micMuted,!videoEnabled);mediaChanged(); }); }
+                        applyMicMute();mediaChanged(); }); }
                     public void candidate(String mid,int line,String value) { if(valid()) binding.session.calls.candidate(call.sid,mid,line,value); }
                     public void remoteDescriptionApplied() { if(valid()) binding.session.calls.remoteDescriptionApplied(call.sid); }
                     public void connected() { ui(() -> { binding.session.calls.mediaConnected(call.sid);Controller.this.connected(); }); }
@@ -277,7 +293,7 @@ public final class MonogramCallService extends Service {
                     public void cameraSwitched(boolean front) { ui(() -> { switching=false;for(Listener l:listeners) l.onCameraSwitch(front); }); }
                     public void cameraFirstFrameAvailable() { ui(() -> { for(Listener l:listeners) l.onCameraFirstFrameAvailable(); }); }
                 });
-                media.setSinks(localSink,remoteSink);media.setMicMuted(micMuted);
+                media.setSinks(localSink,remoteSink);applyMicMute();
                 media.setVideoEnabled(videoEnabled);media.prepare(call.video,ice,!network.direct);
                 mediaReady=true;applyDescriptions();
             }));
@@ -353,8 +369,12 @@ public final class MonogramCallService extends Service {
         }
         void showNotification(boolean incoming) {
             if(!valid()) return;
+            boolean background=incoming && ApplicationLoader.mainInterfacePaused;
+            if(background && !incomingAlertsAllowed(ApplicationLoader.applicationContext)) {
+                binding.session.calls.ignore(call.sid);finish("Notifications unavailable",true);return;
+            }
             try { ((NotificationManager)ApplicationLoader.applicationContext.getSystemService(NOTIFICATION_SERVICE)).notify(NOTIFICATION,notification(incoming)); }
-            catch(SecurityException denied) { if(incoming) { binding.session.calls.reject(call.sid);finish("Notifications unavailable",true); } }
+            catch(SecurityException denied) { if(background) { binding.session.calls.ignore(call.sid);finish("Notifications unavailable",true); } }
         }
         public int getAccount() { return binding.account; }
         public long getPeerId() { return user.id; }
@@ -380,7 +400,12 @@ public final class MonogramCallService extends Service {
         }
         public void retry() { if(binding.valid()) hangUp(() -> start(ApplicationLoader.applicationContext,binding.account,user.id,call.video)); }
         public boolean isMicMute() { return micMuted; }
-        public void setMicMute(boolean mute) { micMuted=mute;if(media!=null) media.setMicMuted(mute);if(valid()) binding.session.calls.mediaMuted(call.sid,mute,!videoEnabled);audioChanged(); }
+        boolean effectiveMicMute() { return micMuted || service==null || !service.audioFocusHeld; }
+        void applyMicMute() {
+            boolean mute=effectiveMicMute();if(media!=null) media.setMicMuted(mute);
+            if(valid() && accepted) binding.session.calls.mediaMuted(call.sid,mute,!videoEnabled);
+        }
+        public void setMicMute(boolean mute) { micMuted=mute;applyMicMute();audioChanged(); }
         private AudioManager audio() { return service==null ? (AudioManager)ApplicationLoader.applicationContext.getSystemService(AUDIO_SERVICE) : service.audio; }
         public boolean isBluetoothOn() { AudioManager a=audio();return Build.VERSION.SDK_INT>=31 ? a.getCommunicationDevice()!=null && bluetooth(a.getCommunicationDevice().getType()) : a.isBluetoothScoOn(); }
         static boolean bluetooth(int type) { return type==AudioDeviceInfo.TYPE_BLUETOOTH_SCO || Build.VERSION.SDK_INT>=31 && type==AudioDeviceInfo.TYPE_BLE_HEADSET; }
@@ -427,7 +452,7 @@ public final class MonogramCallService extends Service {
         public void clearCamera() { setVideoState(Instance.VIDEO_STATE_INACTIVE); }
         public void requestVideoCall() { if(call.video) createCaptureDevice(); }
         public void setVideoState(int value) { if(!call.video) return;videoEnabled=value==Instance.VIDEO_STATE_ACTIVE;
-            if(media!=null) media.setVideoEnabled(videoEnabled);if(valid()) binding.session.calls.mediaMuted(call.sid,micMuted,!videoEnabled);mediaChanged(); }
+            if(media!=null) media.setVideoEnabled(videoEnabled);applyMicMute();mediaChanged(); }
         public void switchCamera() { if(media!=null && !switching) { switching=true;media.switchCamera(); } }
         public void setSinks(VideoSink local,VideoSink remote) { localSink=local;remoteSink=remote;if(media!=null) media.setSinks(local,remote); }
         public boolean isConverting() { return false; }

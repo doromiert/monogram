@@ -28,7 +28,7 @@ public final class MonogramCallMediaDeviceTest {
     private static Object field(Object owner,String name) throws Exception {
         Field value = owner.getClass().getDeclaredField(name);value.setAccessible(true);return value.get(owner);
     }
-    private static void unopened(JavaAudioDeviceModule audio) throws Exception {
+    static void unopened(JavaAudioDeviceModule audio) throws Exception {
         check(field(field(audio,"audioInput"),"audioRecord") == null,"Smoke opened AudioRecord");
         check(field(field(audio,"audioOutput"),"audioTrack") == null,"Smoke opened AudioTrack");
     }
@@ -43,10 +43,9 @@ public final class MonogramCallMediaDeviceTest {
         catch (Throwable failure) { failure.printStackTrace(System.err);System.exit(1); }
     }
 
-    private static void run(String[] args) throws Exception {
-        check(args.length == 1,"Disposable directory required");
-        File root = new File(args[0]).getCanonicalFile();
-        check(root.getPath().startsWith("/data/local/tmp/monogram-call-media-smoke."),"Unexpected smoke directory");
+    static Context bootstrap(File directory) throws Exception {
+        File root = directory.getCanonicalFile();
+        check(root.getPath().matches("/data/local/tmp/monogram-call-(media-smoke|interop)\\.[A-Za-z0-9]+"),"Unexpected smoke directory");
         File library = new File(root,"libtmessages.49.so");
         check(library.isFile(),"New APK library missing");
         if (Looper.getMainLooper() == null) Looper.prepareMainLooper();
@@ -73,6 +72,12 @@ public final class MonogramCallMediaDeviceTest {
         }
         check(mapped,"Supplied media library was not mapped");
         System.out.println("PASS: supplied APK native bootstrap is repeatable");
+        return context;
+    }
+
+    private static void run(String[] args) throws Exception {
+        check(args.length == 1,"Disposable directory required");
+        Context context = bootstrap(new File(args[0]));
 
         EglBase egl = null;JavaAudioDeviceModule audio = null;PeerConnectionFactory factory = null;
         PeerConnection peer = null;AudioSource audioSource = null;AudioTrack audioTrack = null;

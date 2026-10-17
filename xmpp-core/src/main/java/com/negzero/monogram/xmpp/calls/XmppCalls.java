@@ -145,6 +145,8 @@ public final class XmppCalls implements AutoCloseable {
         else { listener.remoteDescription(e.call,true,JingleSdp.serialize(e.remote));requestDescription(e,false); }
         emit(State.CONNECTING,null);timeout(sid,45000,"timeout");
     }); }
+    /** A locally unavailable resource must not decline the call on the account's other devices. */
+    public void ignore(String sid) { command(sid,e -> { if(!e.call.outgoing && !e.accepted) finish("local-unavailable"); }); }
     public void reject(String sid) { command(sid,e -> { if(e.local==null && e.remote==null) { jmi("reject",e.call.fullPeer==null?e.call.peer:e.call.fullPeer,e.call);jmi("reject",connection.getUser().asBareJid().toString(),e.call);finish("decline"); }else terminate("decline"); }); }
     public void end(String sid) { command(sid,e -> { if(e.local==null && e.remote==null) { jmi(e.call.outgoing?"retract":"reject",e.call.fullPeer==null?e.call.peer:e.call.fullPeer,e.call);finish("cancel"); }else terminate("success"); }); }
     public void localDescription(String sid,boolean offer,String sdp) { command(sid,e -> {

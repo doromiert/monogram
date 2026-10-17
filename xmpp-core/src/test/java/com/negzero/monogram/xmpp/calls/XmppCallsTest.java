@@ -78,6 +78,16 @@ class XmppCallsTest {
             calls.localDescription(sid,false,JingleCodecTest.sdp(false,false));await(() -> c.sent.stream().anyMatch(s -> s instanceof Packet && "session-accept".equals(((Packet)s).element.getAttributeValue("action"))));calls.end(sid);next(events.ended);
         }
     }
+    @Test void localIgnoreSendsNothingFencesStaleAcceptAndCannotIgnoreAcceptedOrOutgoingCalls() throws Exception {
+        Connection c=new Connection();Events events=new Events();try(XmppCalls calls=new XmppCalls(c)) {
+            calls.setListener(events);c.feed(jmi("propose","locally-unavailable","bob@example.org/desktop",true));XmppCalls.Call ignored=next(events.incoming);int sent=c.sent.size();
+            calls.ignore(ignored.sid);assertEquals("local-unavailable",next(events.ended));assertNull(calls.current());assertEquals(sent,c.sent.size(),"Local ignore must send neither peer nor own-account signaling");
+            calls.accept(ignored.sid);c.feed(jmi("propose","next-incoming","bob@example.org/desktop",false));XmppCalls.Call next=next(events.incoming);assertEquals("next-incoming",next.sid);assertEquals(sent,c.sent.size());assertTrue(events.requested.isEmpty());
+            calls.accept(next.sid);await(() -> c.sent.stream().anyMatch(stanza -> stanza.hasExtension("proceed",JMI) && next.sid.equals(((StandardExtensionElement)stanza.getExtension("proceed",JMI)).getAttributeValue("id"))));
+            calls.ignore(next.sid);calls.end(next.sid);assertEquals("cancel",next(events.ended),"Accepted incoming calls require explicit termination");
+            XmppCalls.Call outgoing=calls.start("bob@example.org",false);calls.ignore(outgoing.sid);calls.end(outgoing.sid);assertEquals("cancel",next(events.ended),"Outgoing calls cannot be silently ignored");
+        }
+    }
     @Test void receivedCarbonRingsAndRetractsOnlyBareAddressedProposalsFromValidatedOwnWrapper() throws Exception {
         Connection c=new Connection();Events events=new Events();try(XmppCalls calls=new XmppCalls(c)) {
             calls.setListener(events);c.resumed();Message proposal=jmi("propose","carbon","bob@example.org/desktop",true);proposal.setTo(c.getUser().asBareJid());

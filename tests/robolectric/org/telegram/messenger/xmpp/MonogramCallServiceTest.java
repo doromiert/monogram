@@ -4,8 +4,13 @@ import static org.junit.Assert.*;
 import android.Manifest;
 import android.app.Application;
 import android.app.PendingIntent;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
 import com.negzero.monogram.xmpp.XmppSession;
 import com.negzero.monogram.xmpp.calls.XmppCalls;
 import java.lang.reflect.Constructor;
@@ -19,33 +24,63 @@ import org.robolectric.*;
 import org.robolectric.annotation.*;
 import org.robolectric.util.ReflectionHelpers;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.voip.*;
 import org.telegram.tgnet.TLRPC;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=Application.class,
-        shadows={MonogramScreenWakeTest.Session.class,MonogramCallServiceTest.Signalling.class})
+        shadows={MonogramScreenWakeTest.Session.class,MonogramCallServiceTest.Signalling.class,
+                MonogramCallServiceTest.Media.class,MonogramCallServiceTest.Ui.class,MonogramCallServiceTest.NotificationOnly.class})
 public class MonogramCallServiceTest {
     @Implements(value=XmppCalls.class,isInAndroidSdk=false)
     public static class Signalling {
-        static int declines,ends;
+        static int declines,ends,ignores;
         @Implementation public void __constructor__(XMPPConnection connection) {}
         @Implementation public void reject(String sid) { declines++; }
+        @Implementation public void ignore(String sid) { ignores++; }
         @Implementation public void end(String sid) { ends++; }
+        @Implementation public void mediaMuted(String sid,boolean audio,boolean video) {}
+    }
+    @Implements(value=MonogramCallMedia.class,isInAndroidSdk=false)
+    public static class Media {
+        static final List<Boolean> muted=new ArrayList<>();
+        @Implementation public void __constructor__(Context context,MonogramCallMedia.Listener listener) {}
+        @Implementation public void setMicMuted(boolean value) { muted.add(value); }
+        @Implementation public void close(Runnable complete) { if(complete!=null) complete.run(); }
+    }
+    @Implements(value=AndroidUtilities.class,isInAndroidSdk=false)
+    public static class Ui {
+        @Implementation public static void __staticInitializer__() {}
+        @Implementation public static void runOnUIThread(Runnable action) { action.run(); }
+    }
+    @Implements(value=MonogramCallService.Controller.class,isInAndroidSdk=false)
+    public static class NotificationOnly {
+        @Implementation public Notification notification(boolean incoming) { return new Notification(); }
     }
     Application application;
     Map<Integer,Object> bindings;
     Class<?> bindingClass;
+    boolean previousPaused;
     @Before public void setup() throws Exception {
         application=RuntimeEnvironment.getApplication();ApplicationLoader.applicationContext=application;
         bindings=ReflectionHelpers.getStaticField(MonogramCallService.class,"bindings");bindings.clear();
         VoIPCallController old=VoIPCallControllers.get();if(old!=null) VoIPCallControllers.unregister(old);
         bindingClass=Class.forName(MonogramCallService.class.getName()+"$Binding");
-        Signalling.declines=0;Signalling.ends=0;
+        Signalling.declines=0;Signalling.ends=0;Signalling.ignores=0;
+        Media.muted.clear();previousPaused=ApplicationLoader.mainInterfacePaused;
         Shadows.shadowOf(application).denyPermissions(Manifest.permission.RECORD_AUDIO,Manifest.permission.CAMERA);
     }
     @After public void cleanup() {
+        ApplicationLoader.mainInterfacePaused=previousPaused;
         VoIPCallController current=VoIPCallControllers.get();if(current!=null) VoIPCallControllers.unregister(current);bindings.clear();
+    }
+    private XmppSession session() {
+        XmppSession session=MonogramScreenWakeTest.session();ReflectionHelpers.setField(session,"calls",new XmppCalls(null));return session;
+    }
+    private void focus(MonogramCallService service,MonogramCallService.Controller c,long generation,int change) {
+        ReflectionHelpers.callInstanceMethod(service,"audioFocusChanged",ReflectionHelpers.ClassParameter.from(MonogramCallService.Controller.class,c),
+                ReflectionHelpers.ClassParameter.from(long.class,generation),ReflectionHelpers.ClassParameter.from(int.class,change));
     }
     private MonogramCallService.Controller controller(int account,boolean outgoing,boolean video,BooleanSupplier current,XmppSession session) throws Exception {
         Constructor<?> bindingConstructor=bindingClass.getDeclaredConstructor(int.class,XmppSession.class,BooleanSupplier.class);bindingConstructor.setAccessible(true);
@@ -145,5 +180,55 @@ public class MonogramCallServiceTest {
             lifecycle.destroy();
         }
         assertEquals(1,Signalling.declines);assertEquals(1,Signalling.ends);
+    }
+    @Test public void transientFocusLossSurvivesUserUnmuteAndLateMediaCreationWithoutChangingUserPreference() throws Exception {
+        MonogramCallService.Controller c=controller(0,true,false,() -> true,session());assertTrue(VoIPCallControllers.register(c));
+        org.robolectric.android.controller.ServiceController<MonogramCallService> lifecycle=Robolectric.buildService(MonogramCallService.class).create();
+        MonogramCallService service=lifecycle.get();ReflectionHelpers.setField(service,"controller",c);c.service=service;c.accepted=true;
+        ReflectionHelpers.setField(service,"audioConfigured",true);ReflectionHelpers.setField(service,"audioFocusHeld",true);
+        try {
+            focus(service,c,0,AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);assertFalse(c.isMicMute());assertTrue(c.effectiveMicMute());
+            c.setMicMute(true);c.setMicMute(false);assertTrue(c.effectiveMicMute());assertFalse(c.isMicMute());
+            c.media=new MonogramCallMedia(application,null);c.applyMicMute();assertEquals(Collections.singletonList(true),Media.muted);
+            focus(service,c,0,AudioManager.AUDIOFOCUS_GAIN);assertFalse(c.effectiveMicMute());assertFalse(Media.muted.get(Media.muted.size()-1));
+            c.setMicMute(true);focus(service,c,0,AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK);focus(service,c,0,AudioManager.AUDIOFOCUS_GAIN);
+            assertTrue(c.isMicMute());assertTrue(c.effectiveMicMute());assertTrue(Media.muted.get(Media.muted.size()-1));
+        } finally { c.finish("success",false);lifecycle.destroy(); }
+    }
+    @Test public void staleFocusCallbacksCannotAffectReplacementServiceAndPermanentLossEndsCurrentCall() throws Exception {
+        MonogramCallService.Controller c=controller(0,true,false,() -> true,session());assertTrue(VoIPCallControllers.register(c));
+        org.robolectric.android.controller.ServiceController<MonogramCallService> oldLifecycle=Robolectric.buildService(MonogramCallService.class).create();
+        org.robolectric.android.controller.ServiceController<MonogramCallService> currentLifecycle=Robolectric.buildService(MonogramCallService.class).create();
+        MonogramCallService old=oldLifecycle.get(),current=currentLifecycle.get();
+        ReflectionHelpers.setField(old,"controller",c);ReflectionHelpers.setField(old,"audioConfigured",true);
+        ReflectionHelpers.setField(current,"controller",c);ReflectionHelpers.setField(current,"audioConfigured",true);ReflectionHelpers.setField(current,"audioFocusHeld",true);
+        c.service=current;c.accepted=true;c.media=new MonogramCallMedia(application,null);
+        try {
+            focus(old,c,0,AudioManager.AUDIOFOCUS_LOSS);focus(current,c,-1,AudioManager.AUDIOFOCUS_LOSS);
+            assertFalse(c.ended);assertFalse(c.effectiveMicMute());assertTrue(Media.muted.isEmpty());assertEquals(0,Signalling.ends);
+            focus(current,c,0,AudioManager.AUDIOFOCUS_LOSS);
+            assertTrue(c.ended);assertEquals(1,Signalling.ends);assertEquals(Collections.singletonList(true),Media.muted);assertNull(VoIPCallControllers.get());
+        } finally { c.finish("success",false);oldLifecycle.destroy();currentLifecycle.destroy(); }
+    }
+    @Test public void blockedNotificationsIgnoreOnlyLocalBackgroundRingingWhileDndAndForegroundRemainAnswerable() throws Exception {
+        NotificationManager manager=(NotificationManager)application.getSystemService(Context.NOTIFICATION_SERVICE);
+        String channel=ReflectionHelpers.getStaticField(MonogramCallService.class,"INCOMING_CHANNEL");
+        Shadows.shadowOf(manager).setNotificationsEnabled(true);Shadows.shadowOf(manager).setNotificationPolicyAccessGranted(true);
+        manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE);
+        assertTrue(ReflectionHelpers.<Boolean>callStaticMethod(MonogramCallService.class,"incomingAlertsAllowed",ReflectionHelpers.ClassParameter.from(Context.class,application)));
+        manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL);
+        ApplicationLoader.mainInterfacePaused=true;
+        Shadows.shadowOf(manager).setNotificationsEnabled(false);
+        MonogramCallService.Controller globalBlocked=controller(0,false,false,() -> true,session());assertTrue(VoIPCallControllers.register(globalBlocked));
+        globalBlocked.showNotification(true);assertTrue(globalBlocked.ended);assertEquals(1,Signalling.ignores);assertEquals(0,Signalling.declines);
+        Shadows.shadowOf(manager).setNotificationsEnabled(true);
+        manager.createNotificationChannel(new NotificationChannel(channel,"Incoming calls",NotificationManager.IMPORTANCE_NONE));
+        MonogramCallService.Controller channelBlocked=controller(0,false,false,() -> true,session());assertTrue(VoIPCallControllers.register(channelBlocked));
+        channelBlocked.showNotification(true);assertTrue(channelBlocked.ended);assertEquals(2,Signalling.ignores);assertEquals(0,Signalling.declines);
+        ApplicationLoader.mainInterfacePaused=false;
+        Shadows.shadowOf(manager).setNotificationsEnabled(false);
+        MonogramCallService.Controller foreground=controller(0,false,false,() -> true,session());assertTrue(VoIPCallControllers.register(foreground));
+        foreground.showNotification(true);assertFalse(foreground.ended);assertSame(foreground,VoIPCallControllers.get());foreground.finish("decline",false);
+        assertEquals(2,Signalling.ignores);assertEquals(0,Signalling.declines);
     }
 }

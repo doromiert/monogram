@@ -40,6 +40,23 @@ class JingleCodecTest {
         assertThrows(IllegalArgumentException.class,() -> candidate(value+"\r\na=evil","abcd"));
         assertThrows(IllegalArgumentException.class,() -> candidate(value.replace("1234 typ","70000 typ"),"abcd"));
     }
+    private static String bundleOnlyOffer() {
+        return sdp(true,true).replace("a=fingerprint:sha-256 "+FP+"\r\n","")
+                .replace("a=group:BUNDLE 0 1\r\n","a=group:BUNDLE 0 1\r\na=fingerprint:sha-256 "+FP+"\r\n")
+                .replace("m=video 9 ","m=video 0 ").replace("a=mid:1\r\n","a=mid:1\r\na=bundle-only\r\n");
+    }
+    @Test void zeroPortBundleOnlyVideoRemainsNegotiatedThroughJingleWithSessionFingerprint() {
+        CallDescription offered=JingleSdp.parse(bundleOnlyOffer());assertTrue(offered.video());assertEquals(2,offered.contents.size());assertEquals("1",offered.contents.get(1).name);assertEquals(FP,offered.contents.get(1).fingerprint);
+        CallDescription received=JingleSdp.fromJingle(description(offered,true),true);String normalized=JingleSdp.serialize(received);
+        assertTrue(normalized.contains("m=video 9 "));assertFalse(normalized.contains("a=bundle-only"));assertEquals(offered.bundle,received.bundle);assertTrue(JingleSdp.parse(normalized).video());assertEquals("sendrecv",received.contents.get(1).direction);
+    }
+    @Test void bundleOnlyCannotResurrectRejectedMediaOrBypassTagMarkerAndSecurityChecks() {
+        String valid=bundleOnlyOffer();
+        for(String invalid:Arrays.asList(valid.replace("a=bundle-only\r\n",""),valid.replace("a=bundle-only\r\n","").replace("a=sendrecv","a=inactive"),valid.replace("a=mid:1","a=mid:0"),valid.replace("BUNDLE 0 1","BUNDLE 1 0"),valid.replace("BUNDLE 0 1","BUNDLE 0"),
+                valid.replace("a=bundle-only","a=bundle-only\r\na=bundle-only"),valid.replace("a=bundle-only","a=bundle-only:yes"),valid.replace("m=video 0 ","m=video 9 "),
+                valid.replace("a=group:BUNDLE 0 1\r\n","a=group:BUNDLE 0 1\r\na=bundle-only\r\n"),valid.replace("m=audio 9 ","m=audio 0 "),valid.replace("BUNDLE 0 1","BUNDLE missing 1"),
+                valid.replace("a=fingerprint:sha-256 "+FP+"\r\n",""),valid.replace("a=ice-pwd:abcdefghijklmnopqrstuvwxyz\r\n",""),valid.replace("a=rtcp-mux\r\n",""))) assertThrows(IllegalArgumentException.class,() -> JingleSdp.parse(invalid));
+    }
     @Test void invalidOrOversizedDescriptionsFailClosed() {
         for(String invalid:Arrays.asList(sdp(false,true).replace(FP,"00:11"),sdp(false,true).replace("sha-256","sha-1"),sdp(false,true).replace("a=rtcp-mux\r\n",""),sdp(false,true).replace("BUNDLE 0","BUNDLE unknown"),sdp(false,true).replace("a=mid:0","a=mid:0\r\na=mid:0"),new String(new char[MAX_XML+1]).replace('\0','x'))) assertThrows(IllegalArgumentException.class,() -> JingleSdp.parse(invalid));
     }
