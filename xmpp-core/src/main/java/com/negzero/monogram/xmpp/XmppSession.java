@@ -37,6 +37,7 @@ public final class XmppSession implements AutoCloseable {
     public interface Listener {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
+        default void receipt(MessageReceipt receipt) {}
         default void profileChanged(EntityBareJid jid) {}
         default void profileChanged(org.jxmpp.jid.Jid jid) { profileChanged(jid.asEntityBareJidIfPossible()); }
         default void roomMessage(XmppRoomMessage message) {}
@@ -146,6 +147,7 @@ public final class XmppSession implements AutoCloseable {
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageReactions.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(FileShare.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageReceipt.MARKERS);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
         DeliveryReceiptManager receipts = DeliveryReceiptManager.getInstanceFor(connection);
@@ -210,11 +212,14 @@ public final class XmppSession implements AutoCloseable {
         });
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
+                receipt(carbon);
                 if (isModern(carbon)) deliverModern(carbon);
                 else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false);
                 else legacyPending(carbon);
             }
         });
+        connection.addAsyncStanzaListener(stanza -> receipt((Message) stanza), stanza -> stanza instanceof Message
+                && (((Message) stanza).hasExtension("received", "urn:xmpp:receipts") || ((Message) stanza).hasExtension("displayed", MessageReceipt.MARKERS)));
         connection.addAsyncStanzaListener(stanza -> {
             if(stanza.getFrom()!=null && stanza.getStanzaId()!=null)
                 listener.reactionRejected(stanza.getFrom().toString(),stanza.getStanzaId());
@@ -235,6 +240,11 @@ public final class XmppSession implements AutoCloseable {
         if(element==null || element.isKeyTransportElement() || connection.getUser()==null || closed) return;
         XmppMessage message=XmppMessage.from(stanza,connection.getUser().asEntityBareJid(),null,true,false,null,null);
         if(message!=null) listener.message(message);
+    }
+
+    private void receipt(Message stanza) {
+        if (closed || connection.getUser() == null || rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
+        for (MessageReceipt receipt : MessageReceipt.from(stanza, connection.getUser().asEntityBareJid())) listener.receipt(receipt);
     }
 
     private static boolean encrypted(Message message) {
@@ -453,6 +463,7 @@ public final class XmppSession implements AutoCloseable {
         Message wire = modern.encrypt(clear);
         if(retraction!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         wire.addExtension(new OriginIdElement(id)); DeliveryReceiptManager.addDeliveryReceiptRequest(wire); chatStates.decorate(wire);
+        if (retraction == null) wire.addExtension(StandardExtensionElement.builder("markable", MessageReceipt.MARKERS).build());
         connection.sendStanza(wire); chatStates.sent(wire); return id;
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
@@ -502,6 +513,7 @@ public final class XmppSession implements AutoCloseable {
         message.setStanzaId(id);
         message.addExtension(new OriginIdElement(id));
         DeliveryReceiptManager.addDeliveryReceiptRequest(message);
+        if (retraction == null) message.addExtension(StandardExtensionElement.builder("markable", MessageReceipt.MARKERS).build());
         chatStates.decorate(message);
         connection.sendStanza(message);
         chatStates.sent(message);

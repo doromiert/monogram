@@ -9889,7 +9889,7 @@ public class MessageObject {
     }
 
     public boolean isUnread() {
-        return messageOwner != null && messageOwner.unread;
+        return messageOwner != null && isUnread(messageOwner);
     }
 
     public boolean isEdited() {
@@ -9906,7 +9906,7 @@ public class MessageObject {
 
     public static int getUnreadFlags(TLRPC.Message message) {
         int flags = 0;
-        if (!message.unread) {
+        if (!isUnread(message)) {
             flags |= 1;
         }
         if (!message.media_unread) {
@@ -10070,7 +10070,7 @@ public class MessageObject {
     }
 
     public static boolean isUnread(TLRPC.Message message) {
-        return message.unread;
+        return org.telegram.messenger.xmpp.MonogramReceipts.isUnread(message);
     }
 
     public static boolean isContentUnread(TLRPC.Message message) {

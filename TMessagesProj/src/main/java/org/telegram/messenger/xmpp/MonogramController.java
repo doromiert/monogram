@@ -277,6 +277,7 @@ public final class MonogramController {
                     @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
                     @Override public void message(XmppMessage message) { received(owner,details.jid.toString(),message,null); }
                     @Override public void message(XmppMessage message,Runnable accepted) { received(owner,details.jid.toString(),message,accepted); }
+                    @Override public void receipt(com.negzero.monogram.xmpp.MessageReceipt receipt) { receivedReceipt(owner,details.jid.toString(),receipt); }
                     @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
                         worker.execute(() -> { if (sameAccount(owner,details.jid.toString())) incomingRoom(message); });
                     }
@@ -1248,6 +1249,32 @@ public final class MonogramController {
         if (typingPeers.contains(peer)) publishTyping(peer, true);
         if (id != 0 && !store.hiddenCorrection(id)) maybeAutoDownload(store.getMessage(id, self));
     }
+    private void receivedReceipt(long owner, String own, com.negzero.monogram.xmpp.MessageReceipt receipt) {
+        // A very fast peer can acknowledge before send() returns and saves the local ID.
+        sendWorker.execute(() -> worker.execute(() -> {
+            if (!sameAccount(owner,own)) return;
+            long peer = store.knownPeer(receipt.peer.toString());
+            ArrayList<TLRPC.Message> messages = new ArrayList<>();
+            for (int id : store.receipt(peer,receipt.id,receipt.displayed))
+                if (!store.hiddenCorrection(id)) messages.add(store.getMessage(id,self));
+            if (messages.isEmpty()) return;
+            MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
+            Utilities.stageQueue.postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
+                if (!sameAccount(owner,own)) return;
+                MessagesController controller = MessagesController.getInstance(account);
+                ArrayList<MessageObject> objects = new ArrayList<>();
+                ArrayList<MessageObject> latest = controller.dialogMessage.get(peer);
+                for (TLRPC.Message message : messages) {
+                    MessageObject object = new MessageObject(account,message,true,true); objects.add(object);
+                    if (latest != null) for (int i=0;i<latest.size();i++) if (latest.get(i).getId()==message.id) latest.set(i,object);
+                    MessageObject indexed = controller.dialogMessagesByIds.get(message.id);
+                    if (indexed != null && indexed.getDialogId()==peer) controller.dialogMessagesByIds.put(message.id,object);
+                }
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,peer,objects);
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_READ_DIALOG_MESSAGE);
+            }));
+        }));
+    }
     private ArrayList<TLRPC.Update> correctionUpdates(MonogramStore.CorrectionChanges changes, int arriving) {
         ArrayList<TLRPC.Update> updates = new ArrayList<>();
         for (int id : changes.edited) {
@@ -1714,6 +1741,7 @@ public final class MonogramController {
     private final java.util.concurrent.ConcurrentHashMap<TLObject,String> queuedEncryption=new java.util.concurrent.ConcurrentHashMap<>();
     public void prepareOutgoingMessage(TLRPC.Message message) {
         if(message.params==null) message.params=new java.util.HashMap<>();
+        if (message.dialog_id>0 && message.dialog_id!=self) MonogramReceipts.pending(message);
         message.params.putIfAbsent(QUEUED_ENCRYPTION,encryption(message.dialog_id).name());
     }
     public void prepareOutgoingRequest(TLObject request,TLRPC.Message message) {

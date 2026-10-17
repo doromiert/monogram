@@ -21,14 +21,16 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final String database;
     final MonogramReactions reactions=new MonogramReactions(this);
     private final MonogramRetractions retractions=new MonogramRetractions(this);
+    private final MonogramReceipts receipts=new MonogramReceipts(this);
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 16); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 17); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
         addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
         addDeletions(db); addSenderFingerprints(db); MonogramRetractions.create(db);
+        MonogramReceipts.create(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -80,7 +82,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 16 || oldVersion < 1 || oldVersion > 15) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 17 || oldVersion < 1 || oldVersion > 16) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -96,6 +98,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<14) MonogramReactions.create(db);
         if(oldVersion<15) addDeletions(db);
         if(oldVersion<16) { addSenderFingerprints(db); MonogramRetractions.create(db); }
+        if(oldVersion<17) MonogramReceipts.create(db);
     }
     private void addSenderFingerprints(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN sender_fingerprint TEXT");
@@ -120,6 +123,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
     }
     synchronized java.util.Set<Integer> reconcileRetractions(long peer) { return retractions.reconcile(peer); }
+    synchronized ArrayList<Integer> receipt(long peer, String wire, boolean displayed) { return receipts.receive(peer, wire, displayed); }
     synchronized MonogramRetractions.Target retractionTarget(int id,long peer,long self) { return retractions.target(id,peer,self); }
     synchronized void deleteMessages(java.util.Collection<Integer> ids) {
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
@@ -849,6 +853,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         decorate(message, payload);
         decorateReply(message, self, body, embedReply, payload);
         message.reactions=reactions.snapshot(id,self);
+        if (outgoing && peer > 0 && peer != self) receipts.decorate(message);
         message.flags|=1048576;
         return message;
     }
@@ -1083,7 +1088,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery(sql, args.toArray(new String[0]))) {
             while (c.moveToNext()) {
                 TLRPC.Message message = message(c.getInt(0), peer, self, c.getString(1), c.getInt(2) == 1, c.getInt(3));
-                message.unread = false;
+                if (!message.out) message.unread = false;
                 result.add(message);
             }
         }
