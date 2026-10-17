@@ -89,6 +89,8 @@ public final class XmppSession implements AutoCloseable {
     });
     private volatile Exception modernFailure;
     private volatile boolean started, closed;
+    private boolean displayedMarkersEnabled;
+    private final java.util.LinkedHashSet<String> displayedMarkersSent=new java.util.LinkedHashSet<>();
     private final java.util.concurrent.atomic.AtomicLong lifecycle = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicBoolean checkingConnection = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -253,6 +255,31 @@ public final class XmppSession implements AutoCloseable {
     private void receipt(Message stanza) {
         if (closed || connection.getUser() == null || rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         for (MessageReceipt receipt : MessageReceipt.from(stanza, connection.getUser().asEntityBareJid())) listener.receipt(receipt);
+    }
+
+    /** Disabled by default; serialize the switch with sending so queued work cannot disclose reads after disabling. */
+    public synchronized void setDisplayedMarkersEnabled(boolean enabled) { displayedMarkersEnabled=enabled; }
+
+    /** The caller supplies a persisted incoming markableId after the native chat has displayed that message. */
+    public synchronized boolean sendDisplayed(String jid,String id) throws Exception {
+        org.jxmpp.jid.Jid address;
+        try { address=JidCreate.from(jid); }
+        catch(Exception invalid) { throw new IllegalArgumentException("Invalid displayed-marker recipient",invalid); }
+        if(!address.isEntityBareJid() || !MessageReceipt.valid(id)) throw new IllegalArgumentException("Invalid displayed-marker reference");
+        EntityBareJid peer=address.asEntityBareJidOrThrow();
+        if(rooms.known(peer) || connection.getUser()!=null && peer.equals(connection.getUser().asEntityBareJid()))
+            throw new IllegalArgumentException("Displayed markers require a direct contact");
+        if(closed || !displayedMarkersEnabled || !connection.isAuthenticated() || connection.getUser()==null) return false;
+        org.jivesoftware.smack.roster.RosterEntry contact=org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).getEntry(peer);
+        if(contact==null || !contact.canSeeMyPresence()) return false;
+        String key=peer+"\n"+id;
+        if(displayedMarkersSent.contains(key)) return false;
+        Message marker=new Message(peer,Message.Type.chat);
+        marker.addExtension(new org.jivesoftware.smackx.chat_markers.element.ChatMarkersElements.DisplayedExtension(id));
+        connection.sendStanza(marker);
+        displayedMarkersSent.add(key);
+        while(displayedMarkersSent.size()>1024) displayedMarkersSent.remove(displayedMarkersSent.iterator().next());
+        return true;
     }
 
     private static boolean encrypted(Message message) {

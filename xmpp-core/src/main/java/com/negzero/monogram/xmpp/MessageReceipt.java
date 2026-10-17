@@ -31,7 +31,32 @@ public final class MessageReceipt {
         if (valid(displayedId)) result.add(new MessageReceipt(peer, displayedId, true));
         return result;
     }
-    private static boolean valid(String id) { return id != null && !id.isEmpty() && id.length() <= 4096; }
+    static boolean valid(String id) {
+        if(id==null || id.trim().isEmpty() || id.length()>4096) return false;
+        for(int offset=0;offset<id.length();) {
+            int point=id.codePointAt(offset);offset+=Character.charCount(point);
+            if(point!=9 && point!=10 && point!=13 && (point<32 || point>=0xD800 && point<=0xDFFF
+                    || point==0xFFFE || point==0xFFFF || point>0x10FFFF)) return false;
+        }
+        return true;
+    }
+    /** Direct markers reference the original stanza attribute, never an origin, archive or local ID. */
+    static String markableId(Message message) {
+        if(message==null || message.getType()!=Message.Type.chat && message.getType()!=Message.Type.normal
+                || !valid(message.getStanzaId()) || message.hasExtension("x","http://jabber.org/protocol/muc#user")
+                || message.hasExtension("received","urn:xmpp:receipts")) return null;
+        java.util.List<ExtensionElement> requests=message.getExtensions("markable",MARKERS);
+        if(requests.size()!=1) return null;
+        for(ExtensionElement extension:message.getExtensions())
+            if(MARKERS.equals(extension.getNamespace()) && !"markable".equals(extension.getElementName())) return null;
+        ExtensionElement request=requests.get(0);
+        if(request instanceof StandardExtensionElement) {
+            StandardExtensionElement value=(StandardExtensionElement)request;
+            if(!value.getAttributes().isEmpty() || !value.getElements().isEmpty()
+                    || value.getText()!=null && !value.getText().trim().isEmpty()) return null;
+        } else if(!(request instanceof org.jivesoftware.smackx.chat_markers.element.ChatMarkersElements.MarkableExtension)) return null;
+        return message.getStanzaId();
+    }
     private static String id(ExtensionElement extension) {
         if (extension instanceof DeliveryReceipt) return ((DeliveryReceipt) extension).getId();
         if (extension instanceof DisplayedExtension) return ((DisplayedExtension) extension).getId();

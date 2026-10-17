@@ -90,6 +90,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
 
     private int privacySectionRow;
     private int monogramTypingRow;
+    private int monogramReadReceiptsRow;
     @Keep
     private int blockedRow;
     @Keep
@@ -322,6 +323,11 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 boolean enabled = !controller.typingEnabled();
                 if (controller.setTypingEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
                 else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramTypingSaveFailed)).show();
+            } else if (position == monogramReadReceiptsRow) {
+                org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                boolean enabled = !controller.readReceiptsEnabled();
+                if (controller.setReadReceiptsEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
+                else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramReadReceiptsSaveFailed)).show();
             } else if (position == autoDeleteMesages) {
                 if (getUserConfig().getGlobalTTl() >= 0) {
                     presentFragment(new AutoDeleteMessagesActivity());
@@ -742,6 +748,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         phoneNumberRow = rowCount++;
         lastSeenRow = rowCount++;
         monogramTypingRow = rowCount++;
+        monogramReadReceiptsRow = rowCount++;
         profilePhotoRow = rowCount++;
         forwardsRow = rowCount++;
         callsRow = rowCount++;
@@ -1027,7 +1034,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == monogramTypingRow || position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
+            return position == monogramTypingRow || position == monogramReadReceiptsRow || position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
                     position == groupsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_INVITE) ||
                     position == lastSeenRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_LASTSEEN) ||
                     position == callsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_CALLS) ||
@@ -1286,6 +1293,9 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                     if (position == monogramTypingRow) {
                         textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramTypingIndicators), getString(R.string.MonogramTypingIndicatorsInfo),
                                 org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingEnabled(), true, true);
+                    } else if (position == monogramReadReceiptsRow) {
+                        textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramReadReceipts), getString(R.string.MonogramReadReceiptsInfo),
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).readReceiptsEnabled(), true, true);
                     } else if (position == secretWebpageRow) {
                         textCheckCell.setTextAndCheck(getString("SecretWebPage", R.string.SecretWebPage), getMessagesController().secretWebpagePreview == 1, false);
                     } else if (position == contactsSyncRow) {
@@ -1407,7 +1417,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 return 1;
             } else if (position == securitySectionRow || position == advancedSectionRow || position == privacySectionRow || position == secretSectionRow || position == botsSectionRow || position == contactsSectionRow || position == newChatsHeaderRow) {
                 return 2;
-            } else if (position == monogramTypingRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
+            } else if (position == monogramTypingRow || position == monogramReadReceiptsRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
                 return 3;
             } else if (position == botsAndWebsitesShadowRow) {
                 return 4;

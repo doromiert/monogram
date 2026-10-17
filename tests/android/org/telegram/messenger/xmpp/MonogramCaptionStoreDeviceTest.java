@@ -95,7 +95,7 @@ public final class MonogramCaptionStoreDeviceTest {
                 old.execSQL("INSERT OR REPLACE INTO archive_state VALUES('direct:2','peer-oldest','peer-newest',1)");
             }
             try (MonogramStore migrated = new MonogramStore(context, "captions.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 21 && migrated.archiveCursor(false) == null && migrated.archiveCursor(peer, false) == null, "Schema 7 must rescan both global and per-chat metadata without deleting messages");
+                check(migrated.getReadableDatabase().getVersion() == 22 && migrated.archiveCursor(false) == null && migrated.archiveCursor(peer, false) == null, "Schema 7 must rescan both global and per-chat metadata without deleting messages");
                 check(migrated.getMessage(id, self).media.photo != null && migrated.attachmentPath(id).equals(cached), "Migration must preserve existing media and local paths");
                 check(migrated.save(sent) == id, "Metadata rescan must enrich the existing message, preserving its ID");
                 check(migrated.getMessage(id, self).message.equals(caption) && migrated.getMessage(id, self).reply_to.reply_to_msg_id == original, "Rescan must recover caption and reply metadata together");

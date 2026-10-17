@@ -6,6 +6,14 @@ import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
+    public static XmppMessage markable(String stanza,String origin,String archive,String body,boolean outgoing,boolean readable,long time,String resource) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
+        wire.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/"+resource));
+        wire.setStanzaId(stanza);wire.setBody(body);
+        if(origin!=null) wire.addExtension(new OriginIdElement(origin));
+        wire.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("markable",MessageReceipt.MARKERS).build());
+        return XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),body,false,readable,archive,new Date(time));
+    }
     public static XmppMessage idlessEncrypted(boolean readable,String sender) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.chat);
         wire.setFrom(JidCreate.entityFullFrom(sender)); wire.setStanzaId(null);

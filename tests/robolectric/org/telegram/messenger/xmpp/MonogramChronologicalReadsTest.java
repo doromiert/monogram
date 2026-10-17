@@ -79,9 +79,10 @@ public class MonogramChronologicalReadsTest {
     }
     @Test public void schema20UpgradeAddsOnlyReadAnchorsAndRetainsMessagesAndAliases() throws Exception {
         int original=save("keep",300000);
-        store.getWritableDatabase().execSQL("DROP TABLE local_read_anchors");store.getWritableDatabase().execSQL("DROP TABLE local_read_messages");store.getWritableDatabase().setVersion(20);
+        for(String table:Arrays.asList("local_read_anchors","local_read_messages","markable_messages","displayed_anchors","pending_displayed")) store.getWritableDatabase().execSQL("DROP TABLE "+table);
+        store.getWritableDatabase().setVersion(20);
         store.close();store=new MonogramStore(context,"chronological-reads.db");
-        assertEquals(21,store.getReadableDatabase().getVersion());assertEquals("keep",store.getMessage(original,self).message);
+        assertEquals(22,store.getReadableDatabase().getVersion());assertEquals("keep",store.getMessage(original,self).message);
         assertTrue(MonogramReceipts.isUnread(store.getMessage(original,self)));assertFalse(store.reads.isRead(original));
         assertEquals(Collections.singleton(original),store.reads.through(peer,Collections.singleton(original),false));
         assertFalse(MonogramReceipts.isUnread(store.getMessage(original,self)));
