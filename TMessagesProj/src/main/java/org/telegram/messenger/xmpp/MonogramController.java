@@ -30,6 +30,10 @@ public final class MonogramController {
         if (instances[account] == null) instances[account] = new MonogramController(account);
         return instances[account];
     }
+    public static synchronized com.negzero.monogram.xmpp.XmppContacts.PresenceState cachedPresence(int account,long peer) {
+        MonogramController current=instances[account];
+        return current==null ? com.negzero.monogram.xmpp.XmppContacts.PresenceState.UNKNOWN : current.presence(peer);
+    }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService sendWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService bookmarkWorker = Executors.newSingleThreadExecutor();
@@ -67,6 +71,8 @@ public final class MonogramController {
     private final java.util.concurrent.ConcurrentHashMap<Long,com.negzero.monogram.xmpp.XmppContacts.PresenceState> presences=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<Long,Long> lastPresenceQueries=new java.util.HashMap<>();
     private final java.util.concurrent.atomic.AtomicBoolean presencePublishQueued=new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.Set<Long> presenceUpdates=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.atomic.AtomicBoolean presenceReset=new java.util.concurrent.atomic.AtomicBoolean();
     private volatile long presencePeer;
     private final java.util.Map<String, long[]> roomTypingPeers = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long mediaHistoryPeer;
@@ -176,7 +182,7 @@ public final class MonogramController {
             com.negzero.monogram.xmpp.XmppContacts.PresenceState value=expected.contacts.presence(store.jid(peer));
             com.negzero.monogram.xmpp.XmppContacts.PresenceState old=presences.get(peer);
             if(value.visible && !value.available && old!=null && old.visible && !old.available && old.lastSeen>0) value=old;
-            presences.put(peer,value); publishPresence();
+            presences.put(peer,value); publishPresence(peer);
             long now=android.os.SystemClock.elapsedRealtime();
             if(!query || !value.visible || value.available || value.lastSeen>0 || now-lastPresenceQueries.getOrDefault(peer,Long.MIN_VALUE/2)<60000) return;
             lastPresenceQueries.put(peer,now);
@@ -189,17 +195,29 @@ public final class MonogramController {
                         if(session!=expected || sessionEpoch!=epoch || state!=ConnectionsManager.ConnectionStateConnected || presences.get(peer)!=requested) return;
                         try {
                             com.negzero.monogram.xmpp.XmppContacts.PresenceState current=expected.contacts.presence(jid);
-                            presences.put(peer,current.visible && !current.available ? result : current); publishPresence();
+                            presences.put(peer,current.visible && !current.available ? result : current); publishPresence(peer);
                         } catch(Exception unavailable) { }
                     });
                 } catch(Exception unavailable) { /* Last activity is optional and can be refused. */ }
             });
-        } catch(Exception unknown) { presences.remove(peer); publishPresence(); }
+        } catch(Exception unknown) { presences.remove(peer); publishPresence(peer); }
     }
+    private void publishPresence(long peer) { presenceUpdates.add(peer);publishPresence(); }
     private void publishPresence() {
         if(!presencePublishQueued.compareAndSet(false,true)) return;
         AndroidUtilities.runOnUIThread(() -> {
             presencePublishQueued.set(false);
+            java.util.ArrayList<Long> changed=new java.util.ArrayList<>(presenceUpdates);
+            presenceUpdates.removeAll(changed);
+            MessagesController nativeController=MessagesController.getInstance(account);
+            long now=System.currentTimeMillis()/1000;
+            if(presenceReset.getAndSet(false)) {
+                nativeController.onlinePrivacy.clear();
+                for(TLRPC.User user:nativeController.getUsers().values()) MonogramPresence.apply(user,presence(user.id),now);
+            } else for(long peer:changed) {
+                nativeController.onlinePrivacy.remove(peer);
+                MonogramPresence.apply(nativeController.getUser(peer),presence(peer),now);
+            }
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_STATUS);
         },100);
     }
@@ -255,6 +273,7 @@ public final class MonogramController {
             presences.clear(); clearRoomTyping(); rosterLoads.clear();rosterAttempts.clear();roomMetadataDirty.clear();
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
         }
+        presenceReset.set(true);publishPresence();
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didUpdateConnectionState));
     }
     public void restore() { restore(false); }

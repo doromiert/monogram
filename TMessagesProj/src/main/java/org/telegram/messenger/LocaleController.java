@@ -2921,6 +2921,10 @@ public class LocaleController {
     }
 
     public static String formatUserStatus(int currentAccount, TLRPC.User user, boolean[] isOnline, boolean[] madeShorter) {
+        if (org.telegram.messenger.xmpp.MonogramPresence.applies(user)) {
+            return org.telegram.messenger.xmpp.MonogramPresence.format(
+                    org.telegram.messenger.xmpp.MonogramController.cachedPresence(currentAccount,user.id),isOnline,madeShorter);
+        }
         if (user != null && user.status != null && user.status.expires == 0) {
             if (user.status instanceof TLRPC.TL_userStatusRecently) {
                 user.status.expires = user.status.by_me ? -1000 : -100;

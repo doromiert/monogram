@@ -6839,6 +6839,8 @@ public class MessagesController extends BaseController implements NotificationCe
         if (user == null) {
             return false;
         }
+        org.telegram.messenger.xmpp.MonogramPresence.apply(user,
+                org.telegram.messenger.xmpp.MonogramController.cachedPresence(currentAccount,user.id),System.currentTimeMillis()/1000);
         fromCache = fromCache && user.id / 1000 != 333 && user.id != 777000;
         TLRPC.User oldUser = users.get(user.id);
         if (oldUser == user && !force) {
@@ -17971,10 +17973,6 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                 }
             }
-            if (!updates.out && user != null && user.status != null && user.status.expires <= 0 && Math.abs(getConnectionsManager().getCurrentTime() - updates.date) < 30) {
-                onlinePrivacy.put(user.id, updates.date);
-                updateStatus = true;
-            }
 
             if (missingData) {
                 needGetDiff = true;
@@ -18590,10 +18588,6 @@ public class MessagesController extends BaseController implements NotificationCe
                                 }
                                 return false;
                             }
-                            if (!message.out && a == 1 && user.status != null && user.status.expires <= 0 && Math.abs(getConnectionsManager().getCurrentTime() - message.date) < 30) {
-                                onlinePrivacy.put(userId, message.date);
-                                interfaceUpdateMask |= UPDATE_MASK_STATUS;
-                            }
                         }
                     }
                 }
@@ -18827,11 +18821,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 } else {
                     markAsReadMessagesOutbox.put(update.peer.user_id, update.max_id);
                     dialogId = update.peer.user_id;
-                    TLRPC.User user = getUser(update.peer.user_id);
-                    if (user != null && user.status != null && user.status.expires <= 0 && Math.abs(getConnectionsManager().getCurrentTime() - date) < 30) {
-                        onlinePrivacy.put(update.peer.user_id, date);
-                        interfaceUpdateMask |= UPDATE_MASK_STATUS;
-                    }
                 }
                 Integer value = dialogs_read_outbox_max.get(dialogId);
                 if (value == null) {
@@ -19014,9 +19003,6 @@ public class MessagesController extends BaseController implements NotificationCe
                             }
                         }
                     }
-                    if (Math.abs(getConnectionsManager().getCurrentTime() - date) < 30) {
-                        onlinePrivacy.put(userId, date);
-                    }
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateChatParticipants) {
                 TL_update.TL_updateChatParticipants update = (TL_update.TL_updateChatParticipants) baseUpdate;
@@ -19176,9 +19162,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         newUser.action = new TLRPC.TL_sendMessageTypingAction();
                         arr.add(newUser);
                         printChanged = true;
-                    }
-                    if (Math.abs(getConnectionsManager().getCurrentTime() - date) < 30) {
-                        onlinePrivacy.put(encryptedChat.user_id, date);
                     }
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateEncryptedMessagesRead) {

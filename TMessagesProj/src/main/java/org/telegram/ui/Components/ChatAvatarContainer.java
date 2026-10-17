@@ -1243,14 +1243,9 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                     int connection=controller.state();
                     if(connection!=org.telegram.tgnet.ConnectionsManager.ConnectionStateConnected) {
                         newStatus=getString(connection==org.telegram.tgnet.ConnectionsManager.ConnectionStateConnecting ? R.string.MonogramConnecting : R.string.MonogramDisconnected);
-                    } else if(presence.online) {
-                        newStatus=getString(R.string.Online); useOnlineColor=true;
-                    } else if(presence.visible && presence.lastSeen>0 && presence.lastSeen<=Integer.MAX_VALUE) {
-                        newStatus=LocaleController.formatDateOnline((int)presence.lastSeen,allowShorterStatus ? statusMadeShorter : null);
-                    } else if(presence.available) {
-                        newStatus=getString(presence.mode==org.jivesoftware.smack.packet.Presence.Mode.dnd ? R.string.MonogramPresenceBusy : R.string.MonogramPresenceAway);
                     } else {
-                        newStatus=getString(presence.visible ? R.string.VoipOfflineTitle : R.string.MonogramPresenceUnavailable);
+                        newStatus=org.telegram.messenger.xmpp.MonogramPresence.format(presence,null,allowShorterStatus ? statusMadeShorter : null);
+                        useOnlineColor=presence.visible && presence.online;
                     }
                 }
                 newSubtitle = newStatus;
