@@ -112,6 +112,24 @@ public final class MonogramAttachments {
         }
         return media;
     }
+    static void preserveMediaAttributes(TLRPC.MessageMedia previous,TLRPC.MessageMedia decoded) {
+        if(previous==null || previous.document==null || decoded.document==null) return;
+        for(TLRPC.DocumentAttribute old:previous.document.attributes) {
+            if(!(old instanceof TLRPC.TL_documentAttributeAudio) && !(old instanceof TLRPC.TL_documentAttributeVideo)
+                    && !(old instanceof TLRPC.TL_documentAttributeAnimated)) continue;
+            TLRPC.DocumentAttribute found=null;
+            for(TLRPC.DocumentAttribute current:decoded.document.attributes) {
+                if(old instanceof TLRPC.TL_documentAttributeAudio && current instanceof TLRPC.TL_documentAttributeAudio
+                        || old instanceof TLRPC.TL_documentAttributeVideo && current instanceof TLRPC.TL_documentAttributeVideo
+                        || old instanceof TLRPC.TL_documentAttributeAnimated && current instanceof TLRPC.TL_documentAttributeAnimated) { found=current; break; }
+            }
+            if(found==null) decoded.document.attributes.add(old);
+            else if(old instanceof TLRPC.TL_documentAttributeAudio) {
+                found.voice=old.voice;
+                if(old.waveform!=null) { found.waveform=old.waveform.clone(); found.flags|=4; }
+            } else if(old instanceof TLRPC.TL_documentAttributeVideo) found.round_message=old.round_message;
+        }
+    }
     private static boolean isGif(File file) {
         if (!file.isFile()) return false;
         try (java.io.InputStream input = new java.io.FileInputStream(file)) {

@@ -1483,6 +1483,7 @@ public final class MonogramController {
                 job.check();
                 TLRPC.MessageMedia decoded=MonogramAttachments.decodedMedia(id,object.messageOwner.date,path,filename,
                         sharing==null && object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : sharing==null ? null : sharing.mime);
+                MonogramAttachments.preserveMediaAttributes(object.messageOwner.media,decoded);
                 job.check();
                 worker.execute(() -> {
                     try {
