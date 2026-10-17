@@ -213,10 +213,18 @@ public final class XmppOmemo2 implements AutoCloseable {
         return StandardExtensionElement.builder("key",NS).addAttribute("rid",Integer.toString(id))
                 .addAttribute("kex",encrypted[0][0] == 1 ? "true" : "false").setText(Base64.getEncoder().encodeToString(encrypted[1])).build();
     }
+    public String ownFingerprint() throws Exception {
+        try(Omemo2Records tx=device.records.begin()) {
+            byte[] identity=tx.load(IDENTITY,"",1);
+            if(identity==null) throw new IllegalStateException("OMEMO2 identity is unavailable");
+            return XmppSession.hex(identity);
+        }
+    }
     public static final class Received {
         public final Message content, acknowledgement;
         public final boolean replenish;
-        Received(Message content, Message acknowledgement, boolean replenish) { this.content = content; this.acknowledgement = acknowledgement; this.replenish = replenish; }
+        public final String senderFingerprint;
+        Received(Message content, Message acknowledgement, boolean replenish,String senderFingerprint) { this.content = content; this.acknowledgement = acknowledgement; this.replenish = replenish; this.senderFingerprint=senderFingerprint; }
     }
     /** Persist content before sending its optional acknowledgement or refreshing public bundles. */
     public Received receive(Message outer) throws Exception { return receive(outer,null); }
@@ -264,7 +272,9 @@ public final class XmppOmemo2 implements AutoCloseable {
                     ack.addExtension(StandardExtensionElement.builder("encrypted",NS).addElement(StandardExtensionElement.builder("header",NS)
                             .addAttribute("sid",Integer.toString(device.id)).addElement(keys).build()).build());
                 }
-                boolean replenish = tx.ids(PRE_KEY).length < 50; tx.commit(); return new Received(content,ack,replenish);
+                byte[] senderIdentity=tx.load(SESSION_IDENTITY,peer,sender);
+                String fingerprint=senderIdentity==null ? null : XmppSession.hex(senderIdentity);
+                boolean replenish = tx.ids(PRE_KEY).length < 50; tx.commit(); return new Received(content,ack,replenish,fingerprint);
             } finally { Arrays.fill(material,(byte)0); }
         }
     }

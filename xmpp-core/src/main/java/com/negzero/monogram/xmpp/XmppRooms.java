@@ -89,7 +89,7 @@ public final class XmppRooms implements AutoCloseable {
         },stanza -> stanza instanceof Message && stanza.hasExtension("x","jabber:x:conference"));
         omemo.addOmemoMucMessageListener((chat,stanza,clear) -> {
             if (!clear.isKeyTransportMessage() && stanza instanceof Message && !stanza.hasExtension("encrypted",XmppOmemo2.NS) && chats.get(chat.getRoom())==chat)
-                deliver(chat,(Message)stanza,clear.getBody(),true,true);
+                deliver(chat,(Message)stanza,clear.getBody(),true,true,clear.getSendersFingerprint().toString());
         });
     }
     private static boolean staleInvitation(Message message) {
@@ -251,10 +251,11 @@ public final class XmppRooms implements AutoCloseable {
         queueState(chat);
     }
     public void subject(String jid,String subject) throws Exception { chat(jid).changeSubject(subject); }
-    private void deliver(MultiUserChat chat,Message wire,String body,boolean encrypted,boolean readable) {
+    private void deliver(MultiUserChat chat,Message wire,String body,boolean encrypted,boolean readable) { deliver(chat,wire,body,encrypted,readable,null); }
+    private void deliver(MultiUserChat chat,Message wire,String body,boolean encrypted,boolean readable,String fingerprint) {
         XmppRoomMessage message=XmppRoomMessage.from(wire,chat.getRoom(),connection.getUser().asEntityBareJid(),
                 chat.getNickname()==null ? "" : chat.getNickname().toString(),body,encrypted,readable);
-        if (message!=null) listener.roomMessage(identify(chat,wire,message));
+        if (message!=null) listener.roomMessage(identify(chat,wire,message.withSenderFingerprint(fingerprint)));
     }
     private XmppRoomMessage identify(MultiUserChat chat,Message wire,XmppRoomMessage message) {
         if(stableOccupants.contains(chat.getRoom())) message=message.withOccupantId(occupantId(wire));
@@ -306,6 +307,7 @@ public final class XmppRooms implements AutoCloseable {
             org.jivesoftware.smackx.omemo.element.OmemoElement element=wire.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
             boolean encrypted=modern || element!=null,readable=!encrypted; String body=encrypted ? null : wire.getBody();
             if(XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time)==null) continue;
+            String fingerprint=null;
             if(element!=null && !modern) {
                 if(element.isKeyTransportElement()) continue;
                 org.jivesoftware.smackx.muc.packet.MUCUser muc=org.jivesoftware.smackx.muc.packet.MUCUser.from(wire);
@@ -314,7 +316,7 @@ public final class XmppRooms implements AutoCloseable {
                 if(author!=null) try {
                     OmemoMessage.Received clear=omemo.decrypt(author.asBareJid(),element);
                     if(clear.isKeyTransportMessage()) continue;
-                    body=clear.getBody(); readable=true;
+                    body=clear.getBody(); readable=true; fingerprint=clear.getSendersFingerprint().toString();
                 } catch(org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
                         | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
                         | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException unavailable) {
@@ -322,7 +324,7 @@ public final class XmppRooms implements AutoCloseable {
                 }
             }
             XmppRoomMessage message=XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time);
-            if(message!=null) messages.add(identify(chat,wire,message));
+            if(message!=null) messages.add(identify(chat,wire,message.withSenderFingerprint(fingerprint)));
         }
         org.jivesoftware.smackx.rsm.packet.RSMSet rsm=query.getPage().getMamFinIq().getRSMSet();
         return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete());
@@ -460,6 +462,7 @@ public final class XmppRooms implements AutoCloseable {
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
         if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
+        sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
         chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
     }
     private static final class Unavailable {

@@ -182,12 +182,12 @@ public final class XmppSession implements AutoCloseable {
         omemo.addOmemoMessageListener(new OmemoMessageListener() {
             @Override public void onOmemoMessageReceived(Stanza stanza, OmemoMessage.Received decrypted) {
                 if (!decrypted.isKeyTransportMessage() && stanza instanceof Message && !isModern((Message)stanza) && !rooms.known(stanza.getFrom())) {
-                    deliver(listener, (Message) stanza, decrypted.getBody(), true);
+                    deliver(listener, (Message) stanza, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString());
                 }
             }
             @Override public void onOmemoCarbonCopyReceived(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction direction,
                     Message carbon, Message wrapping, OmemoMessage.Received decrypted) {
-                if (validCarbon(wrapping) && !isModern(carbon) && !decrypted.isKeyTransportMessage()) deliver(listener, carbon, decrypted.getBody(), true);
+                if (validCarbon(wrapping) && !isModern(carbon) && !decrypted.isKeyTransportMessage()) deliver(listener, carbon, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString());
             }
         });
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
@@ -239,6 +239,7 @@ public final class XmppSession implements AutoCloseable {
             catch (Exception error) { modernFailure = error; }
             XmppMessage message = XmppMessage.modern(stanza,received == null ? null : received.content,
                     connection.getUser().asEntityBareJid(),null,null);
+            if(message!=null && received!=null) message=message.withSenderFingerprint(received.senderFingerprint);
             final XmppOmemo2.Received decoded = received;
             java.util.concurrent.atomic.AtomicBoolean accepted = new java.util.concurrent.atomic.AtomicBoolean();
             if (message != null && modernPayload(stanza)) listener.message(message,() -> { if (accepted.compareAndSet(false,true)) afterModern(decoded); });
@@ -266,11 +267,12 @@ public final class XmppSession implements AutoCloseable {
     private boolean validCarbon(Message wrapping) {
         return connection.getUser() != null && connection.getUser().asEntityBareJid().equals(wrapping.getFrom());
     }
-    private void deliver(Listener listener, Message stanza, String body, boolean encrypted) {
+    private void deliver(Listener listener, Message stanza, String body, boolean encrypted) { deliver(listener,stanza,body,encrypted,null); }
+    private void deliver(Listener listener, Message stanza, String body, boolean encrypted,String fingerprint) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (connection.getUser() == null) return;
         XmppMessage message = XmppMessage.from(stanza, connection.getUser().asEntityBareJid(), body, encrypted, true, null, null);
-        if (message != null) listener.message(message);
+        if (message != null) listener.message(message.withSenderFingerprint(fingerprint));
     }
 
     public static final class ArchivePage {
@@ -323,12 +325,13 @@ public final class XmppSession implements AutoCloseable {
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
                 catch (Exception unavailable) { modernFailure = unavailable; }
                 XmppMessage message = XmppMessage.modern(stanza,received == null ? null : received.content,own,result.getId(),time);
+                if(message!=null && received!=null) message=message.withSenderFingerprint(received.senderFingerprint);
                 if (message != null) messages.add(message);
                 final XmppOmemo2.Received decoded = received; accepted.add(() -> afterModern(decoded));
                 continue;
             }
             boolean encrypted = encrypted(stanza), readable = true;
-            String body = stanza.getBody();
+            String body = stanza.getBody(); String senderFingerprint=null;
             // Reject unrelated and room messages before attempting decryption.
             if (XmppMessage.from(stanza, own, body, encrypted, false, result.getId(), time) == null) continue;
             if (encrypted) {
@@ -337,7 +340,7 @@ public final class XmppSession implements AutoCloseable {
                 try {
                     OmemoMessage.Received plaintext = omemo.decrypt(stanza.getFrom().asBareJid(), element);
                     if (plaintext.isKeyTransportMessage()) continue;
-                    body = plaintext.getBody();
+                    body = plaintext.getBody(); senderFingerprint=plaintext.getSendersFingerprint().toString();
                 } catch (org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
                         | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
                         | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException e) {
@@ -346,7 +349,7 @@ public final class XmppSession implements AutoCloseable {
                 }
             }
             XmppMessage message = XmppMessage.from(stanza, own, body, encrypted, readable, result.getId(), time);
-            if (message != null) messages.add(message);
+            if (message != null) messages.add(message.withSenderFingerprint(senderFingerprint));
         }
         org.jivesoftware.smackx.rsm.packet.RSMSet rsm = query.getPage().getMamFinIq().getRSMSet();
         return new ArchivePage(messages, rsm == null ? null : rsm.getFirst(), rsm == null ? null : rsm.getLast(), query.isComplete(),accepted);
@@ -540,10 +543,13 @@ public final class XmppSession implements AutoCloseable {
         return cached;
     }
     public OmemoFingerprint fingerprint(OmemoDevice device) throws Exception { return omemo.getFingerprint(device); }
-    private static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
+    static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
     public String ownJid() { return omemo.getOwnJid().toString(); }
     public int ownDeviceId() { return omemo.getDeviceId(); }
     public org.jivesoftware.smackx.omemo.trust.TrustState trustState(OmemoDevice device, OmemoFingerprint fingerprint) { return trust.getTrust(device, fingerprint); }
+    public String senderFingerprint(XmppMessage.Encryption encryption) throws Exception {
+        return encryption==XmppMessage.Encryption.PLAIN ? null : encryption==XmppMessage.Encryption.OMEMO2 ? modern().ownFingerprint() : ownFingerprint().toString();
+    }
     public OmemoFingerprint ownFingerprint() throws Exception { return legacyDiscovery.ownFingerprint(); }
     public void decide(OmemoDevice device, OmemoFingerprint fingerprint, boolean trusted) { trust.setTrust(device, fingerprint, trusted); }
     public void decideAll(java.util.Map<OmemoDevice, OmemoFingerprint> identities, boolean trusted) { trust.setTrustAll(identities, trusted); }
