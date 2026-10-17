@@ -307,6 +307,8 @@ public final class XmppSession implements AutoCloseable {
     private void deliver(Listener listener, Message stanza, String body, boolean encrypted,String fingerprint) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (connection.getUser() == null) return;
+        // Public legacy reactions were already delivered by the raw/carbon listener.
+        if (encrypted && MessageReactions.publicLegacy(stanza)) return;
         XmppMessage message = XmppMessage.from(stanza, connection.getUser().asEntityBareJid(), body, encrypted, true, null, null);
         if (message != null) listener.message(message.withSenderFingerprint(fingerprint));
     }

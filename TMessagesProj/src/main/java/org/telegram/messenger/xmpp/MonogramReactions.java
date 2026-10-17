@@ -38,7 +38,7 @@ final class MonogramReactions {
     }
     Set<Integer> save(XmppMessage message,long self) {
         long peer=store.peer(message.peer.toString()),user=message.outgoing ? self : peer;
-        return save(peer,"jid:"+store.jid(user),user,message.ids.get("stanza"),message.reactions,
+        return save(peer,"jid:"+store.jid(user),user,message.ids,message.reactions,
                 message.timestamp,message.encryption.ordinal(),message.sender,message.outgoing);
     }
     Set<Integer> save(XmppRoomMessage message,long self) {
@@ -49,9 +49,20 @@ final class MonogramReactions {
         // An anonymous nickname without server-backed continuity cannot identify a reaction sender.
         if(actor==null) return Collections.emptySet();
         long user=message.outgoing ? self : store.roomUser(peer,message.sender,message.realSender,self);
-        return save(peer,actor,user,message.ids.get("stanza"),message.reactions,message.timestamp,0,message.sender,message.outgoing);
+        return save(peer,actor,user,message.ids,message.reactions,message.timestamp,0,message.sender,message.outgoing);
     }
-    private Set<Integer> save(long peer,String actor,long user,String wire,MessageReactions reactions,long stamp,int protocol,String sender,boolean outgoing) {
+    private static String referenceKind(Map<String,String> ids) {
+        for(String kind:new String[]{"stanza","origin","archive","mam","local"})
+            if(ids.get(kind)!=null && !ids.get(kind).isEmpty()) return kind;
+        return null;
+    }
+    private static String reference(Map<String,String> ids,String kind,long stamp,int protocol) {
+        if(kind==null) return null;
+        // The same ID-less live set can be added again after an intervening removal.
+        return kind.equals("stanza") ? ids.get(kind) : kind+"\n"+ids.get(kind)+(kind.equals("local") && protocol==0 ? "\n"+stamp : "");
+    }
+    private Set<Integer> save(long peer,String actor,long user,Map<String,String> ids,MessageReactions reactions,long stamp,int protocol,String sender,boolean outgoing) {
+        String kind=referenceKind(ids),wire=reference(ids,kind,stamp,protocol);
         if(reactions==null || wire==null || wire.isEmpty() || stamp<0 || stamp>System.currentTimeMillis()+300000) return Collections.emptySet();
         LinkedHashSet<String> emojis=new LinkedHashSet<>();
         for(String emoji:reactions.emojis) if(isEmoji(emoji)) emojis.add(canonicalEmoji(emoji));
@@ -60,7 +71,7 @@ final class MonogramReactions {
             SQLiteDatabase db=store.getWritableDatabase(); db.beginTransaction();
             try {
                 List<Integer> sources=new ArrayList<>();
-                try(Cursor c=db.rawQuery("SELECT DISTINCT m.id,m.readable FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND m.outgoing=? AND m.encryption=? AND i.kind='stanza' AND i.value=?",new String[]{Long.toString(peer),outgoing ? "1" : "0",Integer.toString(protocol),sender+"\n"+wire})) {
+                try(Cursor c=db.rawQuery("SELECT DISTINCT m.id,m.readable FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND m.outgoing=? AND m.encryption=? AND i.kind=? AND i.value=?",new String[]{Long.toString(peer),outgoing ? "1" : "0",Integer.toString(protocol),kind,kind.equals("stanza") ? sender+"\n"+ids.get(kind) : ids.get(kind)})) {
                     while(c.moveToNext()) { if(c.getInt(1)!=0) return Collections.emptySet(); sources.add(c.getInt(0)); }
                 }
                 int target=resolve(peer,reactions.id);
@@ -74,7 +85,7 @@ final class MonogramReactions {
         }
     }
     boolean known(XmppMessage message) {
-        String wire=message.ids.get("stanza"); if(wire==null) return false;
+        String wire=reference(message.ids,referenceKind(message.ids),message.timestamp,message.encryption.ordinal()); if(wire==null) return false;
         long peer=store.knownPeer(message.peer.toString()); if(peer==0) return false;
         String actor="jid:"+message.sender.split("/",2)[0];
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT 1 FROM reaction_events WHERE peer=? AND actor=? AND wire=? AND protocol=?",new String[]{Long.toString(peer),actor,wire,Integer.toString(message.encryption.ordinal())})) { return c.moveToFirst(); }

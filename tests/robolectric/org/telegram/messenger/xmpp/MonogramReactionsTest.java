@@ -25,6 +25,31 @@ public class MonogramReactionsTest {
     void react(String wire,String target,long time,boolean outgoing,boolean modern,String... emojis) throws Exception {
         store.reactions.save(MessageFixture.reaction(wire,target,Arrays.asList(emojis),outgoing,modern,time),self);
     }
+    @Test public void idlessUpdatesReplayRemoveAndAddAgainWithoutCollapsingLaterUpdates() throws Exception {
+        int original=text("original",false);
+        com.negzero.monogram.xmpp.XmppMessage first=MessageFixture.idlessReaction("original",Arrays.asList("🔥"),200000,"archive-one");
+        assertNull(first.ids.get("stanza"));store.save(first);
+        assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        store.save(first);assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        store.save(MessageFixture.idlessReaction("original",Collections.emptyList(),300000,null));assertTrue(counts(original).isEmpty());
+        store.save(MessageFixture.idlessReaction("original",Arrays.asList("🔥"),400000,null));assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        store.save(MessageFixture.idlessReaction("original",Collections.emptyList(),500000,null));assertTrue(counts(original).isEmpty());
+        store.save(MessageFixture.idlessReaction("original",Arrays.asList("🔥"),600000,null));assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        store.save(first);assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        store.close();store=new MonogramStore(context,"reactions.db");assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        assertEquals(1,store.history(peer,self,0,100).size());
+    }
+    @Test public void idlessProtectedReplayCannotResurrectARemovedReactionOrCreateAnErrorBubble() throws Exception {
+        int original=store.save(MessageFixture.modern("protected",null,"Secret text",false,100000,null,null,null));
+        store.save(MessageFixture.idlessModernReaction("protected",Arrays.asList("🔥"),200000,"encrypted-one"));
+        assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        store.save(MessageFixture.idlessModernReaction("protected",Collections.emptyList(),300000,"encrypted-two"));
+        assertTrue(counts(original).isEmpty());
+        store.save(MessageFixture.idlessModernReaction("protected",Arrays.asList("🔥"),400000,"encrypted-one"));
+        assertTrue(counts(original).isEmpty());
+        assertEquals(0,store.save(MessageFixture.idlessModernReaction("protected",null,500000,"encrypted-one")));
+        assertEquals(1,store.history(peer,self,0,100).size());
+    }
     int text(String id,boolean outgoing) throws Exception {
         return store.save(MessageFixture.replyMessage(id,id,null,"A visible message",true,outgoing,100000,"phone",false,null));
     }

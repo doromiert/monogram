@@ -88,6 +88,23 @@ public final class MessageFixture {
         if(sid!=null) wire.addExtension(new org.jivesoftware.smackx.sid.element.StanzaIdElement(sid,room));
         return XmppRoomMessage.archived(wire,org.jxmpp.jid.impl.JidCreate.entityBareFrom(room),org.jxmpp.jid.impl.JidCreate.entityBareFrom("alice@example.org"),"",body,encrypted,body!=null,mam,new java.util.Date(time));
     }
+    public static XmppMessage idlessModernReaction(String target,java.util.Collection<String> emojis,long time,String payload) throws Exception {
+        Message outer=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.chat);
+        outer.setFrom(JidCreate.entityFullFrom("bob@example.org/phone"));outer.setStanzaId(null);
+        outer.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("encrypted",XmppOmemo2.NS).addElement("payload",payload).build());
+        Message clear=null;
+        if(emojis!=null) {
+            clear=new Message(outer.getTo(),outer.getType());clear.setFrom(outer.getFrom());clear.setStanzaId(null);
+            new MessageReactions(target,emojis).addTo(clear);
+        }
+        return XmppMessage.modern(outer,clear,JidCreate.entityBareFrom("alice@example.org"),null,new java.util.Date(time));
+    }
+    public static XmppMessage idlessReaction(String target,java.util.Collection<String> emojis,long time,String archive) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.chat);
+        wire.setFrom(JidCreate.entityFullFrom("bob@example.org/phone"));wire.setStanzaId(null);
+        new MessageReactions(target,emojis).addTo(wire);
+        return XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),null,false,true,archive,new java.util.Date(time));
+    }
     public static XmppMessage reaction(String wire,String target,java.util.Collection<String> emojis,boolean outgoing,boolean modern,long time) throws Exception {
         Message message=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
         message.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/phone")); message.setStanzaId(wire);

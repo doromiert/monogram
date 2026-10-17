@@ -9,6 +9,8 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
+- [o] Receive reactions without a root stanza ID, as emitted by Monocles: prefer origin/server/archive IDs for durable replay; assign an opaque local identity to otherwise ID-less controls and retain later re-adds after removal. Keep actor/target scoping, hide authenticated control placeholders by the actual available alias, and retain existing outgoing reaction IDs/error correlation.
+
 - [x] Build, publish and install [0.2.55](https://github.com/doromiert/monogram/releases/tag/v0.2.55) (72309, arm64, original signer) from `incoming-reactions`, source `7184103a3`. Nix packaging, seven core wire checks and nine Android reaction/service/notification checks pass; APK/source match. All 3,157 prior message identities, saved account/credential, checked legacy OMEMO identity/trust and seven rooms remain on schema 17. Normal reconnect recovered one older incoming reaction (10→11 incoming events; resolved 4→5), but it is not the reported fire reaction. A second confirmed issue remains: Monocles can send reactions without a root stanza ID, which storage currently rejects. Real video-send notification completion and reaction display remain unverified.
 
 - [o] Stop the stale Sending video notification after XMPP upload/send success, failure or cancellation. The native encoding service waits for Telegram upload-completion events which XMPP never emits; finish only the matching account/path and retain another active conversion.

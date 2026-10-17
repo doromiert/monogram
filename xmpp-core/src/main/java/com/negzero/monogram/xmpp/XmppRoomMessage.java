@@ -87,7 +87,7 @@ public final class XmppRoomMessage {
                 ids.put("archive",((StanzaIdElement)extension).getId());
         }
         if(archiveId!=null) ids.put("mam",archiveId);
-        if (ids.isEmpty()) ids.put("local",encrypted ? XmppMessage.opaqueId(wire) : UUID.randomUUID().toString());
+        if (ids.isEmpty()) ids.put("local",encrypted || reactions!=null ? XmppMessage.opaqueId(wire) : UUID.randomUUID().toString());
         return new XmppRoomMessage(room,wire.getFrom().toString(),body,ids,outgoing,encrypted,readable,
                 delay==null ? System.currentTimeMillis() : delay.getTime(),wire.hasExtension("encrypted",XmppOmemo2.NS),archiveTime!=null,real==null ? null : real.asBareJid().toString(),reactions,null,attachment,sharing,caption,reply,correction,real!=null,Collections.emptyMap(),retraction,null);
     }

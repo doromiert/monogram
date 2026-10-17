@@ -95,4 +95,12 @@ class MessageReactionsTest {
         assertNull(XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null));
     }
 
+    @Test void reactionWithoutRootIdHasLocalIdentityAndKeepsArchiveIdentityWhenAvailable() throws Exception {
+        Message wire=fallbackReaction("chat","bob@example.org/phone");wire.setStanzaId(null);
+        XmppMessage live=XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null);
+        assertNotNull(live);assertNull(live.ids.get("stanza"));assertNotNull(live.ids.get("local"));
+        XmppMessage replay=XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,"archive-no-root-id",new Date(100000));
+        assertNotNull(replay);assertNull(replay.ids.get("stanza"));assertEquals("archive-no-root-id",replay.ids.get("archive"));
+    }
+
 }

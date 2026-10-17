@@ -94,7 +94,7 @@ public final class XmppMessage {
             if (own.toString().equals(id.getBy())) put(ids, "archive", id.getId());
         }
         if (archiveId != null) put(ids, "archive", archiveId);
-        if (ids.isEmpty() && encrypted) ids.put("local", opaqueId(message));
+        if (ids.isEmpty() && (encrypted || reactions!=null)) ids.put("local", opaqueId(message));
         ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? body : null);
         FileLink attachment = null;
         String mediaText = reply == null ? body : reply.withoutFallback(body);
