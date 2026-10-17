@@ -480,6 +480,7 @@ public class ImageLocation {
         } else if (instantFile != null) {
             return Utilities.MD5(instantFile.url);
         } else if (document != null) {
+            if (!android.text.TextUtils.isEmpty(document.localPath)) return Utilities.MD5(document.localPath);
             if (!url && document instanceof DocumentObject.ThemeDocument) {
                 DocumentObject.ThemeDocument themeDocument = (DocumentObject.ThemeDocument) document;
                 return document.dc_id + "_" + document.id + "_" + Theme.getBaseThemeKey(themeDocument.themeSettings) + "_" + themeDocument.themeSettings.accent_color + "_" +

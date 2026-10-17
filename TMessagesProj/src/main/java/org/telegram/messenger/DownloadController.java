@@ -428,11 +428,14 @@ public class DownloadController extends BaseController implements NotificationCe
         if (message.dialog_id > 0) { routing.peer_id = new TLRPC.TL_peerUser(); routing.peer_id.user_id = message.dialog_id; }
         if (canDownloadMedia(routing, media) != 1) return 0;
         int type = media.photo != null ? AUTODOWNLOAD_TYPE_PHOTO
-                : MessageObject.isVideoDocument(media.document) ? AUTODOWNLOAD_TYPE_VIDEO : AUTODOWNLOAD_TYPE_DOCUMENT;
+                : MessageObject.isVideoDocument(media.document) || MessageObject.isGifDocument(media.document) || MessageObject.isRoundVideoDocument(media.document)
+                ? AUTODOWNLOAD_TYPE_VIDEO : MessageObject.isVoiceDocument(media.document) ? AUTODOWNLOAD_TYPE_AUDIO : AUTODOWNLOAD_TYPE_DOCUMENT;
         int network = ApplicationLoader.getAutodownloadNetworkType();
         Preset preset = network == StatsController.TYPE_WIFI ? getCurrentWiFiPreset()
                 : network == StatsController.TYPE_ROAMING ? getCurrentRoamingPreset() : getCurrentMobilePreset();
-        long limit = Math.min(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES, preset.sizes[typeToIndex(type)]);
+        long configured = preset.sizes[typeToIndex(type)];
+        if(type == AUTODOWNLOAD_TYPE_AUDIO) configured = Math.max(512 * 1024, configured);
+        long limit = Math.min(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES, configured);
         return size > 0 && size <= limit ? limit : 0;
     }
 
@@ -575,7 +578,8 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public boolean canDownloadMedia(MessageObject messageObject) {
-        if (org.telegram.messenger.xmpp.MonogramAttachments.has(messageObject.messageOwner)) return false;
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(messageObject.messageOwner))
+            return !messageObject.isHiddenSensitive() && getFileLoader().getPathToMessage(messageObject.messageOwner).isFile();
         if (messageObject.type == MessageObject.TYPE_STORY) {
             if (!SharedConfig.isAutoplayVideo()) return false;
             TLRPC.TL_messageMediaStory mediaStory = (TLRPC.TL_messageMediaStory) MessageObject.getMedia(messageObject);
@@ -656,7 +660,8 @@ public class DownloadController extends BaseController implements NotificationCe
 
     private int canDownloadMediaInternal(MessageObject message) {
         if (message == null || message.messageOwner == null) return 0;
-        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner)) return 0;
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner))
+            return getFileLoader().getPathToMessage(message.messageOwner).isFile() ? 1 : 0;
         if (message.messageOwner.media instanceof TLRPC.TL_messageMediaStory) {
             return canPreloadStories() ? 2 : 0;
         }
@@ -747,7 +752,8 @@ public class DownloadController extends BaseController implements NotificationCe
 
     private int canDownloadMediaInternal(MessageObject message, long overrideSize) {
         if (message == null || message.messageOwner == null) return 0;
-        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner)) return 0;
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner))
+            return getFileLoader().getPathToMessage(message.messageOwner).isFile() ? 1 : 0;
         if (message.messageOwner.media instanceof TLRPC.TL_messageMediaStory) {
             return canPreloadStories() ? 2 : 0;
         }
@@ -830,7 +836,7 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public int canDownloadMedia(TLRPC.Message message) {
-        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message)) return 0;
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message)) return getFileLoader().getPathToMessage(message).isFile() ? 1 : 0;
         if (message == null || message.media instanceof TLRPC.TL_messageMediaStory) {
             return canPreloadStories() ? 2 : 0;
         }
@@ -917,7 +923,7 @@ public class DownloadController extends BaseController implements NotificationCe
         }
         int type;
         boolean isVideo = false;
-        if (MessageObject.isVideoDocument(media.document)) {
+        if (MessageObject.isVideoDocument(media.document) || MessageObject.isGifDocument(media.document) || MessageObject.isRoundVideoDocument(media.document)) {
             isVideo = true;
             type = AUTODOWNLOAD_TYPE_VIDEO;
         } else if (MessageObject.isVoiceDocument(media.document)) {

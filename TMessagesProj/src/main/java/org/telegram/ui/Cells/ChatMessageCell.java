@@ -4339,7 +4339,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 if (currentMessageObject.isSendError()) {
                     imagePressed = false;
                     result = false;
-                } else if (currentMessageObject.type == MessageObject.TYPE_GIF && buttonState == -1 && SharedConfig.isAutoplayGifs() && !currentMessageObject.isRepostPreview && photoImage.getAnimation() == null) {
+                } else if (currentMessageObject.type == MessageObject.TYPE_GIF && buttonState == -1 && SharedConfig.isAutoplayGifs() && !currentMessageObject.isRepostPreview && photoImage.getAnimation() == null
+                        && !org.telegram.messenger.xmpp.MonogramAttachments.has(currentMessageObject.messageOwner)) {
                     imagePressed = false;
                     result = false;
                 }

@@ -5321,7 +5321,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     monogramSource = size == null ? null : getFileLoader().getPathToAttach(size, true);
                     if (monogramSource != null && !monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(size);
                 } else if (!TextUtils.isEmpty(newMsg.attachPath)) monogramSource = new File(newMsg.attachPath);
-                if (document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
+                String gifSource = params == null ? null : params.get("monogram-gif-source");
+                if (gifSource != null) monogramSource = org.telegram.messenger.xmpp.MonogramGiphy.sourceFile(gifSource);
+                if (gifSource == null && document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
                     monogramSource = getFileLoader().getPathToAttach(document);
                     if (!monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(document, true);
                 }
@@ -10308,22 +10310,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (result == null) {
             return;
         }
-        if (org.telegram.messenger.xmpp.MonogramGiphy.isResult(result) && !params.containsKey("monogramGifDownloaded")) {
-            final int account = accountInstance.getCurrentAccount();
-            final long user = accountInstance.getUserConfig().getClientUserId();
-            android.widget.Toast.makeText(ApplicationLoader.applicationContext, "Downloading GIF…", android.widget.Toast.LENGTH_SHORT).show();
-            org.telegram.messenger.xmpp.MonogramGiphy.download(account, result, success -> {
-                if (user != accountInstance.getUserConfig().getClientUserId()) return;
-                if (!success) {
-                    android.widget.Toast.makeText(ApplicationLoader.applicationContext, "Could not download GIF. Please try again.", android.widget.Toast.LENGTH_LONG).show();
-                    return;
-                }
-                HashMap<String, String> downloaded = new HashMap<>(params);
-                downloaded.remove("id"); downloaded.remove("query_id");
-                downloaded.put("monogramGifDownloaded", "1");
-                prepareSendingBotContextResult(fragment, accountInstance, result, downloaded, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, notify, scheduleDate, scheduleRepeatPeriod, sendMessageChatArguments, stars, monoForumPeerId);
-            });
-            return;
+        if (org.telegram.messenger.xmpp.MonogramGiphy.isResult(result)) {
+            params.remove("id"); params.remove("query_id");
+            params.put("monogram-gif-source", result.content.url);
         }
         if (result.send_message instanceof TLRPC.TL_botInlineMessageMediaAuto) {
             new Thread(() -> {
@@ -10391,6 +10380,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             switch (result.type) {
                                 case "gif": {
                                     fileName.file_name = "animation.gif";
+                                    if (org.telegram.messenger.xmpp.MonogramGiphy.isResult(result)) {
+                                        int[] dimensions = MessageObject.getInlineResultWidthAndHeight(result);
+                                        TLRPC.TL_documentAttributeImageSize imageSize = new TLRPC.TL_documentAttributeImageSize();
+                                        imageSize.w = dimensions[0]; imageSize.h = dimensions[1];
+                                        document.attributes.add(imageSize);
+                                        document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
+                                        document.size = result.content.size;
+                                    }
                                     if (finalPath.endsWith("mp4")) {
                                         document.mime_type = "video/mp4";
                                         document.attributes.add(new TLRPC.TL_documentAttributeAnimated());

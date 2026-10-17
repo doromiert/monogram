@@ -907,6 +907,10 @@ public final class MonogramController {
         java.util.Map<Long,ArrayList<MessageObject>> byPeer=new java.util.HashMap<>();
         for(int id:updated) if(!store.hiddenCorrection(id)) {
             TLRPC.Message message=store.getMessage(id,self); messages.add(message);
+            if(message.dialog_id==mediaHistoryPeer && MonogramAttachments.has(message)) {
+                File path=new File(message.attachPath);
+                if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
+            }
             byPeer.computeIfAbsent(message.dialog_id,ignored -> new ArrayList<>()).add(new MessageObject(account,message,true,true));
         }
         MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
@@ -1477,8 +1481,32 @@ public final class MonogramController {
         try {
             request.job.check();
             expected = session();
+            String queuedMode=request.message.params==null ? null : request.message.params.get(QUEUED_ENCRYPTION);
+            if(queuedMode!=null && !queuedMode.equals(encryption(request.message.dialog_id).name())) {
+                fileJobs.remove(request.localId,request.job);
+                TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400; error.text="MONOGRAM_SENDING_MODE_CHANGED";
+                Utilities.stageQueue.postRunnable(() -> callback.run(null,error)); return;
+            }
             if (!request.supported || request.message.dialog_id == 0 || store.jid(request.message.dialog_id).contains("/"))
                 throw new UnsupportedOperationException();
+            String gifSource=request.message.params==null ? null : request.message.params.get("monogram-gif-source");
+            if (gifSource!=null && (request.file==null || !request.file.isFile())) {
+                if (!MonogramGiphy.sourceFile(gifSource).equals(request.file)) throw new IllegalArgumentException("GIF source changed");
+                final long owner=accountEpoch;
+                AndroidUtilities.runOnUIThread(() -> {
+                    if(owner!=accountEpoch || request.job.cancelled()) return;
+                    MonogramGiphy.download(account,gifSource,success -> {
+                        if(owner!=accountEpoch || request.job.cancelled()) return;
+                        if(success) sendWorker.execute(() -> { if(owner==accountEpoch && !request.job.cancelled()) upload(request,callback); });
+                        else {
+                            fileJobs.remove(request.localId,request.job);
+                            TLRPC.TL_error error=fileError(new java.io.IOException("GIF source download failed"));
+                            Utilities.stageQueue.postRunnable(() -> { if(owner==accountEpoch && !request.job.cancelled()) callback.run(null,error); });
+                        }
+                    });
+                });
+                return;
+            }
             if (request.file == null || !request.file.isFile()) throw new java.io.FileNotFoundException();
         } catch (Exception e) {
             fileJobs.remove(request.localId, request.job);
@@ -1564,7 +1592,12 @@ public final class MonogramController {
         download(object, false);
     }
     private void finishDownload(int id, String name, FileTransfer.Job job) {
-        fileJobs.remove(id, job); fileNames.remove(name, job); automaticJobs.remove(id, job); clearProgress(name);
+        fileJobs.remove(id, job); fileNames.remove(name, job);
+        if(automaticJobs.remove(id,job)) {
+            File path=store.attachmentPath(id);
+            if(path==null || !path.isFile()) autoAttempted.remove(id);
+        }
+        clearProgress(name);
     }
     private void download(MessageObject object, boolean automatic) {
         if (!MonogramAttachments.has(object.messageOwner)) return;

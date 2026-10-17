@@ -1052,7 +1052,8 @@ public class ImageLoader {
                 boolean limitFps = false;
                 boolean precache = false;
                 boolean fistFrame = false;
-                boolean notCreateStream = false;
+                boolean notCreateStream = cacheImage.imageLocation.document != null
+                        && !TextUtils.isEmpty(cacheImage.imageLocation.document.localPath);
                 boolean pframe = false;
                 if (cacheImage.filter != null) {
                     String[] args = cacheImage.filter.split("_");
@@ -1174,7 +1175,8 @@ public class ImageLoader {
                     secureDocumentKey = null;
                     secureDocumentHash = null;
                 }
-                boolean canDeleteFile = true;
+                boolean canDeleteFile = cacheImage.imageLocation.document == null
+                        || TextUtils.isEmpty(cacheImage.imageLocation.document.localPath);
 
                 String mediaThumbPath = null;
                 if (cacheImage.imageLocation.path != null) {
@@ -3150,6 +3152,10 @@ public class ImageLoader {
                         }
                     }
 
+                    if (imageLocation.document != null && !TextUtils.isEmpty(imageLocation.document.localPath)) {
+                        File local = new File(imageLocation.document.localPath);
+                        if (local.isFile()) { cacheFile = local; cacheFileExists = true; onlyCache = true; }
+                    }
                     if (cacheFile == null) {
                         long fileSize = 0;
                         if (imageLocation.photoSize instanceof TLRPC.TL_photoStrippedSize || imageLocation.photoSize instanceof TLRPC.TL_photoPathSize) {
@@ -3230,13 +3236,14 @@ public class ImageLoader {
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), imageLocation.location.volume_id + "_" + imageLocation.location.local_id + ".temp");
                             }
                         }
-                        if (hasAutoplayFilter(filter) || isAnimatedAvatar(filter)) {
-                            img.imageType = FileLoader.IMAGE_TYPE_ANIMATION;
-                            img.size = fileSize;
-                            img.isPFrame = isPFrame(filter);
-                            if (AUTOPLAY_FILTER.equals(filter) || AUTOPLAY_FILTER_NONLOOP.equals(filter) || isAnimatedAvatar(filter)) {
-                                onlyCache = true;
-                            }
+                    }
+                    // Local XMPP files still need the same animation/preview setup as cached Telegram files.
+                    if (hasAutoplayFilter(filter) || isAnimatedAvatar(filter)) {
+                        img.imageType = FileLoader.IMAGE_TYPE_ANIMATION;
+                        img.size = imageLocation.document != null ? imageLocation.document.size : imageLocation.currentSize;
+                        img.isPFrame = isPFrame(filter);
+                        if (AUTOPLAY_FILTER.equals(filter) || AUTOPLAY_FILTER_NONLOOP.equals(filter) || isAnimatedAvatar(filter)) {
+                            onlyCache = true;
                         }
                     }
 

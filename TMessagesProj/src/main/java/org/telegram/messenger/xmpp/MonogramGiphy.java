@@ -127,10 +127,7 @@ public final class MonogramGiphy {
     private static TLRPC.WebDocument document(JSONObject image) {
         if (image == null) return null;
         String url = image.optString("url");
-        Uri uri = Uri.parse(url);
-        String host = uri.getHost();
-        if (url.length() > 4096 || uri.getFragment() != null || !"https".equals(uri.getScheme()) || host == null || !(host.equals("giphy.com") || host.endsWith(".giphy.com"))
-                || uri.getUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 443)) return null;
+        if (!validAssetUrl(url)) return null;
         int width = image.optInt("width"), height = image.optInt("height");
         if (width <= 0 || height <= 0 || width > 16384 || height > 16384) return null;
         TLRPC.TL_webDocumentNoProxy document = new TLRPC.TL_webDocumentNoProxy();
@@ -140,11 +137,21 @@ public final class MonogramGiphy {
         size.w = width; size.h = height; document.attributes.add(size);
         return document;
     }
-    /** Download with Telegram's existing HTTP loader before the XMPP file adapter needs a local file. */
-    public static void download(int account, TLRPC.BotInlineResult result, java.util.function.Consumer<Boolean> callback) {
-        String url = result.content.url;
-        java.io.File file = new java.io.File(org.telegram.messenger.FileLoader.getDirectory(org.telegram.messenger.FileLoader.MEDIA_DIR_CACHE),
+    private static boolean validAssetUrl(String url) {
+        if (url == null || url.length() > 4096) return false;
+        Uri uri = Uri.parse(url); String host = uri.getHost();
+        return uri.getFragment() == null && "https".equals(uri.getScheme()) && host != null
+                && (host.equals("giphy.com") || host.endsWith(".giphy.com")) && uri.getUserInfo() == null
+                && (uri.getPort() == -1 || uri.getPort() == 443);
+    }
+    public static java.io.File sourceFile(String url) {
+        if (!validAssetUrl(url)) throw new IllegalArgumentException("Invalid GIF source");
+        return new java.io.File(org.telegram.messenger.FileLoader.getDirectory(org.telegram.messenger.FileLoader.MEDIA_DIR_CACHE),
                 org.telegram.messenger.Utilities.MD5(url) + "." + org.telegram.messenger.ImageLoader.getHttpUrlExtension(url, "gif"));
+    }
+    /** The outgoing message already exists in the native outbox while this source is fetched. */
+    public static void download(int account, String url, java.util.function.Consumer<Boolean> callback) {
+        java.io.File file = sourceFile(url);
         if (file.isFile() && file.length() > 0) { callback.accept(true); return; }
         org.telegram.messenger.NotificationCenter center = org.telegram.messenger.NotificationCenter.getInstance(account);
         class Download implements org.telegram.messenger.NotificationCenter.NotificationCenterDelegate, Runnable {

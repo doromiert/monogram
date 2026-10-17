@@ -17,7 +17,9 @@ public final class MonogramFileRequest extends TLObject {
         boolean generated=message.media!=null && message.media.photo!=null;
         if(message.media!=null && message.media.document!=null)
             for(TLRPC.DocumentAttribute attribute:message.media.document.attributes)
-                if(attribute instanceof TLRPC.TL_documentAttributeAudio && attribute.voice) generated=true;
+                if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.round_message)
+                    return "round_video_"+java.util.UUID.randomUUID()+".mp4";
+                else if(attribute instanceof TLRPC.TL_documentAttributeAudio && attribute.voice) generated=true;
         return com.negzero.monogram.xmpp.FileTransfer.uploadName(file.getName(),mime,generated);
     }
     public MonogramFileRequest(TLRPC.Message message, File file, String mime, String caption) {

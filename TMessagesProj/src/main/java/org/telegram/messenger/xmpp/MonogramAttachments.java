@@ -37,7 +37,11 @@ public final class MonogramAttachments {
         message.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
         message.attachPath = file.getAbsolutePath();
         message.media = saved != null && !(saved.photo != null && isGif(file)) ? saved : media(message.id, message.date, file, name);
-        if (message.media.document != null && file.isFile()) message.media.document.localPath = file.getAbsolutePath();
+        if (message.media.document != null && file.isFile()) {
+            message.media.document.localPath = file.getAbsolutePath();
+            message.media.document.size = file.length();
+            markRoundVideo(message.media.document,name);
+        }
         message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA;
     }
     static TLRPC.MessageMedia media(int id, int date, File file, String name) {
@@ -69,9 +73,11 @@ public final class MonogramAttachments {
     }
     static boolean needsMediaInfo(TLRPC.Document document) {
         if(document==null) return false;
-        for(TLRPC.DocumentAttribute attribute:document.attributes)
-            if(attribute instanceof TLRPC.TL_documentAttributeAudio || attribute instanceof TLRPC.TL_documentAttributeVideo
-                    || attribute instanceof TLRPC.TL_documentAttributeAnimated) return false;
+        for(TLRPC.DocumentAttribute attribute:document.attributes) {
+            if(attribute instanceof TLRPC.TL_documentAttributeAudio && (attribute.voice || attribute.duration>0)) return false;
+            if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.w>0 && attribute.h>0) return false;
+            if(attribute instanceof TLRPC.TL_documentAttributeAnimated) return false;
+        }
         return probeMediaType(document.mime_type);
     }
     private static boolean probeMediaType(String mime) {
@@ -109,6 +115,7 @@ public final class MonogramAttachments {
             TLRPC.TL_documentAttributeVideo attribute=new TLRPC.TL_documentAttributeVideo();
             org.telegram.messenger.SendMessagesHelper.fillVideoAttribute(file.getAbsolutePath(),attribute,null);
             if(attribute.w>0 && attribute.h>0 && attribute.duration>=0) document.attributes.add(attribute);
+            markRoundVideo(document,name);
         }
         return media;
     }
@@ -131,8 +138,16 @@ public final class MonogramAttachments {
             } else if(old instanceof TLRPC.TL_documentAttributeAudio) {
                 found.voice=old.voice;
                 if(old.waveform!=null) { found.waveform=old.waveform.clone(); found.flags|=4; }
-            } else if(old instanceof TLRPC.TL_documentAttributeVideo) found.round_message=old.round_message;
+            } else if(old instanceof TLRPC.TL_documentAttributeVideo) found.round_message |= old.round_message;
         }
+    }
+    private static void markRoundVideo(TLRPC.Document document,String name) {
+        if(name==null || !name.toLowerCase(java.util.Locale.ROOT).startsWith("round_video_")
+                || !name.toLowerCase(java.util.Locale.ROOT).endsWith(".mp4") || document.mime_type==null
+                || !document.mime_type.startsWith("video/")) return;
+        for(TLRPC.DocumentAttribute attribute:document.attributes)
+            if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.w>0 && attribute.w==attribute.h
+                    && attribute.duration>0) attribute.round_message=true;
     }
     private static boolean isGif(File file) {
         if (!file.isFile()) return false;
