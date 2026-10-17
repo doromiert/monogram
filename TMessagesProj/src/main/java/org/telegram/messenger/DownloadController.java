@@ -115,10 +115,10 @@ public class DownloadController extends BaseController implements NotificationCe
                 mask[1] = Utilities.parseInt(args[1]);
                 mask[2] = Utilities.parseInt(args[2]);
                 mask[3] = Utilities.parseInt(args[3]);
-                sizes[PRESET_SIZE_NUM_PHOTO] = Utilities.parseInt(args[4]);
-                sizes[PRESET_SIZE_NUM_VIDEO] = Utilities.parseInt(args[5]);
-                sizes[PRESET_SIZE_NUM_DOCUMENT] = Utilities.parseInt(args[6]);
-                sizes[PRESET_SIZE_NUM_AUDIO] = Utilities.parseInt(args[7]);
+                sizes[PRESET_SIZE_NUM_PHOTO] = Utilities.parseLong(args[4]);
+                sizes[PRESET_SIZE_NUM_VIDEO] = Utilities.parseLong(args[5]);
+                sizes[PRESET_SIZE_NUM_DOCUMENT] = Utilities.parseLong(args[6]);
+                sizes[PRESET_SIZE_NUM_AUDIO] = Utilities.parseLong(args[7]);
                 preloadVideo = Utilities.parseInt(args[8]) == 1;
                 preloadMusic = Utilities.parseInt(args[9]) == 1;
                 enabled = Utilities.parseInt(args[10]) == 1;

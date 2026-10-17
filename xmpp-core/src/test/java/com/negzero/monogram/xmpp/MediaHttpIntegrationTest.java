@@ -28,8 +28,8 @@ class MediaHttpIntegrationTest {
             String path = exchange.getRequestURI().getPath();
             exchange.getResponseHeaders().set("Content-Type", path.equals("/not-media.jpg") ? "text/html"
                     : path.equals("/video") ? "video/mp4" : "application/octet-stream");
-            boolean chunked = path.equals("/unknown.mp3") || path.equals("/dishonest.mp3");
-            byte[] body = path.equals("/large.mp3") || path.equals("/dishonest.mp3") ? large : small;
+            boolean chunked = path.equals("/unknown.mp3") || path.equals("/dishonest.mp3") || path.equals("/oversized-chunked.mp3");
+            byte[] body = path.equals("/large.mp3") || path.equals("/dishonest.mp3") || path.equals("/oversized-chunked.mp3") ? large : small;
             if (path.equals("/dishonest.mp3")) exchange.getResponseHeaders().set("Content-Length", "511");
             try {
                 exchange.sendResponseHeaders(200, chunked ? 0 : body.length);
@@ -60,6 +60,15 @@ class MediaHttpIntegrationTest {
             assertArrayEquals(small, Files.readAllBytes(destination.toPath()), "Rejected media must preserve the verified copy");
             FileShare verified = FileShare.describe(FileLink.parse(base + "/image.jpg"), destination, "photo.jpg", "image/jpeg");
             assertTrue(FileTransfer.download(verified, destination, new FileTransfer.Job(), null, null));
+            FileShare chunked = FileShare.describe(FileLink.parse(base + "/unknown.mp3"), destination, "music.mp3", "audio/mpeg");
+            assertTrue(FileTransfer.download(chunked, destination, new FileTransfer.Job(), null, (type, size) -> 1024),
+                    "Chunked media with a declared SFS size must still use the automatic download policy");
+            assertFalse(FileTransfer.download(chunked, destination, new FileTransfer.Job(), null, (type, size) -> 510));
+            assertArrayEquals(small, Files.readAllBytes(destination.toPath()));
+            FileShare dishonestChunked = new FileShare(chunked.xml().replace("/unknown.mp3", "/oversized-chunked.mp3"));
+            assertEquals("SERVER_SIZE_LIMIT", assertThrows(FileTransfer.Failure.class,
+                    () -> FileTransfer.download(dishonestChunked, destination, new FileTransfer.Job(), null, (type, size) -> 1024)).reason);
+            assertArrayEquals(small, Files.readAllBytes(destination.toPath()));
             String correctHash = java.util.Base64.getEncoder().encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(small));
             FileShare wrongHash = new FileShare(verified.xml().replace(correctHash, java.util.Base64.getEncoder().encodeToString(new byte[32])));
             FileShare wrongSize = new FileShare(verified.xml().replace("<size>511</size>", "<size>510</size>"));

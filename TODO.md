@@ -43,6 +43,9 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 - [x] Build, publish and install [0.2.45](https://github.com/doromiert/monogram/releases/tag/v0.2.45) (72209, arm64, original signing key) from `auto-download-stability`. Nix build, package/signature and remote APK/tag verification pass. All 3,115 previous message identities, saved account/credential, OMEMO identity/trust and seven rooms survive on schema 16. Broad tests remain deferred as requested. Round/GIF autoplay, automatic-download continuity and picker stability remain phone verification items.
 
+- [o] Handle automatic media downloads when HTTPS uses chunked transfer encoding but XMPP SFS metadata supplies the plaintext file size. Use that declared size for policy admission only when Content-Length is absent, retain the actual stream cap and verify the final size/hash before replacing the cache. Unknown-size bare URLs still require a manual download. Phone server-specific behavior remains unverified.
+- [o] Preserve native automatic-download limits above 2 GB across settings reloads. The preset stores long sizes but parsed them with a 32-bit helper; use the existing long parser without changing the settings UI or transfer ceiling. A focused native preset round-trip check covers the 4000 MiB limit.
+
 ## Monocles parity checkpoint (2026-10-17)
 
 This is a quick source inventory, not a fresh interoperability certification. Baselines differ: the phone has Monocles 2.2.2, while upstream master is `129dbcc7cdc919c73a65e50ee121efecc36c5e7e`. Monocles' [own XEP declarations](https://codeberg.org/monocles/monocles_chat/src/commit/129dbcc7cdc919c73a65e50ee121efecc36c5e7e/monocles_chat.doap) describe its claimed protocol support; [its README](https://codeberg.org/monocles/monocles_chat/src/commit/129dbcc7cdc919c73a65e50ee121efecc36c5e7e/README.md) also documents OTR. **Monogram does not yet match Monocles overall.**

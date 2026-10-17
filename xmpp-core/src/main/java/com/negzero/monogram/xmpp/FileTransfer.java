@@ -140,7 +140,8 @@ public final class FileTransfer {
                     long length = contentLength(http);
                     long maximum = MAX_BYTES;
                     if (policy != null) {
-                        long plainSize = length - (link.encrypted() ? 16 : 0);
+                        long plainSize = length < 0 && sharing != null ? sharing.size
+                                : length - (link.encrypted() ? 16 : 0);
                         if (plainSize <= 0) return false;
                         maximum = Math.min(MAX_BYTES, policy.limit(http.getContentType(), plainSize));
                         if (maximum <= 0 || plainSize > maximum) return false;
