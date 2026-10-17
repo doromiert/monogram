@@ -220,6 +220,11 @@ public final class MonogramController {
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didUpdateConnectionState));
     }
     public void restore() { restore(false); }
+    public void networkChanged() {
+        XmppSession current = session;
+        if (current != null && current.connection().isAuthenticated()) current.checkConnection();
+        else restore();
+    }
     public void reconnect() { restore(true); }
     private synchronized void restore(boolean force) {
         if (restoring || !preferences.contains("jid")) return;

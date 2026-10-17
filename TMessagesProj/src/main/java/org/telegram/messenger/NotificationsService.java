@@ -58,13 +58,14 @@ public class NotificationsService extends Service {
             connectivity = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override public void onAvailable(Network network) { restoreConnections(); }
+                @Override public void onLost(Network network) { restoreConnections(); }
             };
             connectivity.registerDefaultNetworkCallback(networkCallback);
         }
     }
 
     private static void restoreConnections() {
-        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) MonogramController.get(account).restore();
+        for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) MonogramController.get(account).networkChanged();
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {

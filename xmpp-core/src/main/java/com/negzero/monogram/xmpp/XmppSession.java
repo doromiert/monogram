@@ -84,6 +84,23 @@ public final class XmppSession implements AutoCloseable {
     private volatile Exception modernFailure;
     private volatile boolean started, closed;
     private final java.util.concurrent.atomic.AtomicLong lifecycle = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicBoolean checkingConnection = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Android may change networks while the old TCP socket still appears authenticated. */
+    public void checkConnection() {
+        if (closed || !started || !connection.isAuthenticated() || !checkingConnection.compareAndSet(false,true)) return;
+        final long generation = lifecycle.get();
+        org.jivesoftware.smack.util.Async.go(() -> {
+            try {
+                boolean alive = org.jivesoftware.smackx.ping.PingManager.getInstanceFor(connection).pingMyServer(false,10000);
+                if (!alive && !closed && lifecycle.get()==generation && connection.isAuthenticated()) connection.pingTimedOut();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (org.jivesoftware.smack.SmackException.NotConnectedException disconnected) {
+                if (!closed && lifecycle.get()==generation) connection.setupFailed(disconnected);
+            } finally { checkingConnection.set(false); }
+        }, "Monogram connection check");
+    }
 
     public static synchronized void initializeOmemo(File privateDirectory) throws Exception {
         File root = privateDirectory.getCanonicalFile();

@@ -416,7 +416,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void checkConnection() {
-        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).networkChanged();
     }
 
     public void setPushConnectionEnabled(boolean value) {
@@ -523,6 +523,7 @@ public class ConnectionsManager extends BaseController {
             }
             if (lastPauseTime != 0 && System.currentTimeMillis() - lastPauseTime > 5000) {
                 getContactsController().checkContacts();
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).networkChanged();
             }
             lastPauseTime = 0;
             org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();

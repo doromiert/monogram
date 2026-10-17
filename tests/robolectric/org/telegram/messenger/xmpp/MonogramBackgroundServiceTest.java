@@ -31,8 +31,10 @@ public class MonogramBackgroundServiceTest {
     public static class Strings { @Implementation public static String getString(int id) { return "Monogram connection"; } }
     @Implements(value=MonogramController.class,isInAndroidSdk=false)
     public static class Accounts {
+        static int networkEvents;
         @Implementation public static MonogramController get(int account) { return Shadow.newInstanceOf(MonogramController.class); }
         @Implementation public void restore() {}
+        @Implementation public void networkChanged() { networkEvents++; }
     }
     @Test public void activeAccountGetsForegroundServiceAndNetworkListener() {
         Context context=RuntimeEnvironment.getApplication();
@@ -43,6 +45,13 @@ public class MonogramBackgroundServiceTest {
             assertEquals(android.app.Service.START_STICKY, service.get().onStartCommand(null,0,1));
             assertEquals(1028, org.robolectric.Shadows.shadowOf(service.get()).getLastForegroundNotificationId());
             assertTrue((org.robolectric.Shadows.shadowOf(service.get()).getLastForegroundNotification().flags & android.app.Notification.FLAG_ONGOING_EVENT)!=0);
+            android.net.ConnectivityManager connectivity = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            Accounts.networkEvents = 0;
+            for (android.net.ConnectivityManager.NetworkCallback callback : org.robolectric.Shadows.shadowOf(connectivity).getNetworkCallbacks()) {
+                callback.onAvailable(Shadow.newInstanceOf(android.net.Network.class));
+                callback.onLost(Shadow.newInstanceOf(android.net.Network.class));
+            }
+            assertEquals(2 * UserConfig.MAX_ACCOUNT_COUNT, Accounts.networkEvents);
         } finally { service.destroy(); }
     }
     @Test public void existingSettingsAndLogoutControlServiceAcrossAccounts() {
