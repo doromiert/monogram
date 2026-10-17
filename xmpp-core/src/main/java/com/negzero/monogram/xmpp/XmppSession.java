@@ -54,7 +54,7 @@ public final class XmppSession implements AutoCloseable {
         default void disconnected() {}
         default void disconnected(Exception error) { disconnected(); }
         default void reconnected(boolean resumed) {}
-        /** Call accepted only once the message has been stored; ratchet acknowledgements follow it. */
+        /** Call accepted only once the message has been stored; protocol acknowledgements follow it. */
         default void message(XmppMessage message, Runnable accepted) { message(message); accepted.run(); }
         default void message(XmppMessage message) {
             if (!message.readable || message.reactions != null) return;
@@ -95,7 +95,12 @@ public final class XmppSession implements AutoCloseable {
     private static final int MAX_MODERN_SETUP_MESSAGES=128;
     private static final long MAX_MODERN_SETUP_BYTES=4L*1024*1024;
     private final Object modernInboxLock=new Object();
-    private final java.util.ArrayDeque<Message> modernInbox=new java.util.ArrayDeque<>();
+    private static final class IncomingModern {
+        final Message stanza;
+        final DeliveryAcknowledgement receipt;
+        IncomingModern(Message stanza,DeliveryAcknowledgement receipt) { this.stanza=stanza;this.receipt=receipt; }
+    }
+    private final java.util.ArrayDeque<IncomingModern> modernInbox=new java.util.ArrayDeque<>();
     private long modernInboxBytes;
     private boolean journalBlocked;
     private long incomingAccepted;
@@ -168,7 +173,10 @@ public final class XmppSession implements AutoCloseable {
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
         ReconnectionManager.getInstanceFor(connection).enableAutomaticReconnection();
         DeliveryReceiptManager receipts = DeliveryReceiptManager.getInstanceFor(connection);
-        receipts.setAutoReceiptMode(DeliveryReceiptManager.AutoReceiptMode.ifIsSubscribed);
+        receipts.setAutoReceiptMode(DeliveryReceiptManager.AutoReceiptMode.disabled);
+        // Smack's request provider discards malformed attributes/children before we can validate them.
+        org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("request","urn:xmpp:receipts",
+                org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         trust = new IdentityTrust(trustFile);
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
@@ -221,19 +229,19 @@ public final class XmppSession implements AutoCloseable {
         omemo.addOmemoMessageListener(new OmemoMessageListener() {
             @Override public void onOmemoMessageReceived(Stanza stanza, OmemoMessage.Received decrypted) {
                 if (!decrypted.isKeyTransportMessage() && stanza instanceof Message && !isModern((Message)stanza) && !rooms.known(stanza.getFrom())) {
-                    deliver(listener, (Message) stanza, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString());
+                    deliver(listener, (Message) stanza, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString(),true);
                 }
             }
             @Override public void onOmemoCarbonCopyReceived(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction direction,
                     Message carbon, Message wrapping, OmemoMessage.Received decrypted) {
-                if (validCarbon(wrapping) && !isModern(carbon) && !decrypted.isKeyTransportMessage()) deliver(listener, carbon, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString());
+                if (validCarbon(wrapping) && !isModern(carbon) && !decrypted.isKeyTransportMessage()) deliver(listener, carbon, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString(),false);
             }
         });
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
                 receipt(carbon);
-                if (isModern(carbon)) deliverModern(carbon);
-                else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false);
+                if (isModern(carbon)) deliverModern(carbon,false);
+                else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false,null,false);
                 else legacyPending(carbon);
             }
         });
@@ -246,8 +254,8 @@ public final class XmppSession implements AutoCloseable {
         connection.addAsyncStanzaListener(stanza -> {
             Message message = (Message) stanza;
             if (rooms.known(message.getFrom())) return;
-            if (isModern(message)) deliverModern(message);
-            else if (!encrypted(message)) deliver(listener, message, message.getBody(), false);
+            if (isModern(message)) deliverModern(message,true);
+            else if (!encrypted(message)) deliver(listener, message, message.getBody(), false,null,true);
             else legacyPending(message);
         }, stanza -> stanza instanceof Message && (((Message) stanza).getType() == Message.Type.chat
                 || ((Message) stanza).getType() == Message.Type.normal));
@@ -302,14 +310,14 @@ public final class XmppSession implements AutoCloseable {
         return extension instanceof org.jivesoftware.smack.packet.StandardExtensionElement
                 && ((org.jivesoftware.smack.packet.StandardExtensionElement)extension).getFirstElement("payload",XmppOmemo2.NS) != null;
     }
-    private void deliverModern(Message stanza) {
+    private void deliverModern(Message stanza,boolean live) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (closed) return;
         if (connection.getUser()!=null && modernPayload(stanza)) {
             XmppMessage pending=XmppMessage.modern(stanza,null,connection.getUser().asEntityBareJid(),null,null);
             if (pending!=null) listener.messagePending(pending);
         }
-        queueModern(stanza);
+        queueModern(new IncomingModern(stanza,live ? DeliveryAcknowledgement.from(stanza,connection.getUser()==null ? null : connection.getUser().asEntityBareJid()) : null));
     }
     private long beginModernSetup() {
         synchronized(modernInboxLock) { modernSetup=true;modernInboxLock.notifyAll();return lifecycle.incrementAndGet(); }
@@ -327,24 +335,26 @@ public final class XmppSession implements AutoCloseable {
             }
         }
     }
-    private void queueModern(Message stanza) {
+    private void queueModern(IncomingModern incoming) {
+        Message stanza=incoming.stanza;
         java.io.IOException overflow=null;
         synchronized(modernInboxLock) {
             if(closed) return;
-            if(!modernSetup && !journalBlocked) { decryptModern(stanza,false);return; }
+            if(!modernSetup && !journalBlocked) { decryptModern(incoming,false);return; }
             long bytes=2L*stanza.toXML().length();
             if(modernInbox.size()<MAX_MODERN_SETUP_MESSAGES && bytes<=MAX_MODERN_SETUP_BYTES-modernInboxBytes) {
-                modernInbox.addLast(stanza);modernInboxBytes+=bytes;return;
+                modernInbox.addLast(incoming);modernInboxBytes+=bytes;return;
             }
             overflow=new java.io.IOException("OMEMO2 incoming inbox exceeded its bounded capacity; reconnect and recover history");
             modernFailure=overflow;modernSetup=false;
             // Preserve every provisional ID as unreadable; do not consume ratchets or acknowledge overflowed data.
             while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),true);
-            modernInboxBytes=0;decryptModern(stanza,true);
+            modernInboxBytes=0;decryptModern(incoming,true);
         }
         connection.setupFailed(overflow);
     }
-    private void decryptModern(Message stanza,boolean setupOverflow) {
+    private void decryptModern(IncomingModern incoming,boolean setupOverflow) {
+        Message stanza=incoming.stanza;
         try {
         crypto.execute(() -> {
             if (closed || connection.getUser() == null) return;
@@ -358,7 +368,7 @@ public final class XmppSession implements AutoCloseable {
                 synchronized(modernInboxLock) {
                     recover=!journalBlocked;journalBlocked=true;
                 }
-                queueModern(stanza);
+                queueModern(incoming);
                 if(recover) recoverIncoming();
                 synchronized(modernInboxLock) { if(revision!=incomingAccepted) retryModernInbox(); }
                 return;
@@ -367,19 +377,19 @@ public final class XmppSession implements AutoCloseable {
             if(received==null && !setupOverflow) {
                 boolean settingUp;
                 synchronized(modernInboxLock) { settingUp=modernSetup; }
-                if(settingUp) { queueModern(stanza);return; }
+                if(settingUp) { queueModern(incoming);return; }
             }
             if(failed!=null) modernFailure=failed;
             XmppMessage message = received==null ? XmppMessage.modern(stanza,null,
                     connection.getUser().asEntityBareJid(),null,null) : received.message;
-            if (message != null && modernPayload(stanza)) deliverDecodedModern(message,received);
+            if (message != null && modernPayload(stanza)) deliverDecodedModern(message,received,incoming.receipt);
             else afterModern(received);
         });
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) { /* The session closed before dispatch. */ }
     }
-    private void deliverDecodedModern(XmppMessage message,XmppOmemo2.Received received) {
+    private void deliverDecodedModern(XmppMessage message,XmppOmemo2.Received received,DeliveryAcknowledgement receipt) {
         java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
-        listener.message(message,() -> { if(accepted.compareAndSet(false,true)) afterModern(received); });
+        listener.message(message,() -> { if(accepted.compareAndSet(false,true)) afterModern(received,receipt!=null && receipt.accepts(message) ? receipt : null); });
     }
     /** Local recovery also runs before connecting: authenticated plaintext must not depend on network availability. */
     public void recoverIncoming() {
@@ -387,15 +397,17 @@ public final class XmppSession implements AutoCloseable {
         try {
             for(XmppOmemo2.Received pending:modern.pendingIncoming()) {
                 if(closed) return;
-                if(pending.message!=null) deliverDecodedModern(pending.message,pending);else afterModern(pending);
+                if(pending.message!=null) deliverDecodedModern(pending.message,pending,null);else afterModern(pending);
             }
         } catch(Exception failure) { modernFailure=failure; }
     }
-    private void afterModern(XmppOmemo2.Received received) {
+    private void afterModern(XmppOmemo2.Received received) { afterModern(received,null); }
+    private void afterModern(XmppOmemo2.Received received,DeliveryAcknowledgement receipt) {
         if (received == null || modern==null) return;
         try { if(!modern.acceptIncoming(received)) return; }
         catch(Exception failure) { modernFailure=failure;return; }
         if(received.message!=null) incomingCapacityChanged();
+        if(receipt!=null) acknowledgeDelivery(receipt);
         if(closed) return;
         try {
             crypto.execute(() -> {
@@ -419,8 +431,8 @@ public final class XmppSession implements AutoCloseable {
         synchronized(modernInboxLock) {
             if(closed || modernSetup || !journalBlocked) return;
             if(!modernInbox.isEmpty()) {
-                Message stanza=modernInbox.removeFirst();modernInboxBytes-=2L*stanza.toXML().length();
-                decryptModern(stanza,false);
+                IncomingModern incoming=modernInbox.removeFirst();modernInboxBytes-=2L*incoming.stanza.toXML().length();
+                decryptModern(incoming,false);
             }
             if(modernInbox.isEmpty()) journalBlocked=false;
         }
@@ -433,14 +445,33 @@ public final class XmppSession implements AutoCloseable {
     private boolean validCarbon(Message wrapping) {
         return connection.getUser() != null && connection.getUser().asEntityBareJid().equals(wrapping.getFrom());
     }
-    private void deliver(Listener listener, Message stanza, String body, boolean encrypted) { deliver(listener,stanza,body,encrypted,null); }
-    private void deliver(Listener listener, Message stanza, String body, boolean encrypted,String fingerprint) {
+    private void deliver(Listener listener, Message stanza, String body, boolean encrypted,String fingerprint,boolean live) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (connection.getUser() == null) return;
         // Public legacy reactions were already delivered by the raw/carbon listener.
         if (encrypted && MessageReactions.publicLegacy(stanza)) return;
         XmppMessage message = XmppMessage.from(stanza, connection.getUser().asEntityBareJid(), body, encrypted, true, null, null);
-        if (message != null) listener.message(message.withSenderFingerprint(fingerprint));
+        if (message == null) return;
+        message=message.withSenderFingerprint(fingerprint);
+        DeliveryAcknowledgement receipt=live ? DeliveryAcknowledgement.from(stanza,connection.getUser().asEntityBareJid()) : null;
+        if(receipt==null || !receipt.accepts(message)) { listener.message(message);return; }
+        java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
+        listener.message(message,() -> { if(accepted.compareAndSet(false,true)) acknowledgeDelivery(receipt); });
+    }
+
+    private void acknowledgeDelivery(DeliveryAcknowledgement receipt) {
+        long generation=lifecycle.get();
+        try {
+            crypto.execute(() -> {
+                if(closed || lifecycle.get()!=generation || !connection.isAuthenticated() || connection.getUser()==null
+                        || !receipt.own.equals(connection.getUser().asEntityBareJid())
+                        || rooms.known(receipt.sender) || rooms.known(receipt.peer)
+                        || !org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).isSubscribedToMyPresence(receipt.sender)) return;
+                try { connection.sendStanza(receipt.response()); }
+                catch(org.jivesoftware.smack.SmackException.NotConnectedException disconnected) { /* Retry requires a fresh live delivery. */ }
+                catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            });
+        } catch(java.util.concurrent.RejectedExecutionException stopped) { /* Session closed after storage acceptance. */ }
     }
 
     public static final class ArchivePage {

@@ -50,7 +50,7 @@ class ModernSessionIntegrationTest {
                     && ((StandardExtensionElement)stanza.getExtension("encrypted",XmppOmemo2.NS)).getFirstElement("payload",XmppOmemo2.NS)==null);
             MessageMarkup plainMarkup=formatted("Plain styled 😀");
             alice.send("sessionbob@localhost",plainMarkup.body,XmppMessage.Encryption.PLAIN,null,plainMarkup);
-            XmppMessage plainStyled=b.next();assertEquals("Plain styled 😀",plainStyled.markup.display().body);assertFalse(plainStyled.markup.ranges.isEmpty());
+            XmppMessage plainStyled=b.next();assertEquals("Plain styled 😀",plainStyled.markup.display().body);assertFalse(plainStyled.markup.ranges.isEmpty());b.store();
             java.util.concurrent.BlockingQueue<Message> protectedWires=new LinkedBlockingQueue<>();
             alice.connection().addStanzaInterceptor(stanza -> protectedWires.add((Message)stanza),stanza -> stanza instanceof Message
                     && stanza.hasExtension("encrypted",XmppOmemo2.NS) && ((StandardExtensionElement)stanza.getExtension("encrypted",XmppOmemo2.NS)).getFirstElement("payload",XmppOmemo2.NS)!=null);
