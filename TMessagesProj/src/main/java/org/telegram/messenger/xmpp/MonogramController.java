@@ -956,15 +956,21 @@ public final class MonogramController {
             });
         });
     }
+    private final MonogramOutbox outbox=new MonogramOutbox();
     public void loadHistory(long peer, int offset, int count, int loadType, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
-        long epoch = accountEpoch;
+        long epoch=accountEpoch;
+        if(offset<=0 || loadType==2 || loadType==3) {
+            MessagesStorage.getInstance(account).getMonogramOutbox(peer,pending -> loadHistory(peer,offset,count,loadType,epoch,pending,completed));
+        } else loadHistory(peer,offset,count,loadType,epoch,new ArrayList<>(),completed);
+    }
+    private void loadHistory(long peer,int offset,int count,int loadType,long epoch,ArrayList<TLRPC.Message> pending,java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
         cacheWorker.execute(() -> {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             mediaHistoryPeer = peer;
             ArchiveSync sync = archiveSync;
             boolean end=store.archiveComplete(peer);
             try {
-                result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
+                result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, Math.max(0,offset), count, loadType == 1));
                 if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
                 else result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
             } catch (RuntimeException failed) {
@@ -972,7 +978,11 @@ public final class MonogramController {
                 result.messages.clear(); result.users.clear(); end = true;
             }
             final boolean archiveEnd = end;
-            Utilities.stageQueue.postRunnable(() -> completed.accept(epoch == accountEpoch ? result : new TLRPC.TL_messages_messages(), archiveEnd));
+            Utilities.stageQueue.postRunnable(() -> {
+                if(epoch!=accountEpoch) { completed.accept(new TLRPC.TL_messages_messages(),archiveEnd); return; }
+                outbox.merge(peer,result.messages,pending);
+                completed.accept(result,archiveEnd);
+            });
         });
     }
     public void login(String jid, String password, String host, int port, Consumer<Exception> result) {
@@ -996,7 +1006,7 @@ public final class MonogramController {
     public void logout() {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        accountEpoch++; pendingSends.clear(); queuedEncryption.clear();
+        accountEpoch++; pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); outbox.clear();
         SharedPreferences.Editor roomPasswords=preferences.edit();
         for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
@@ -1632,6 +1642,7 @@ public final class MonogramController {
         else dispatchRequest(request,completed);
     }
     private static final String QUEUED_ENCRYPTION="monogram-encryption";
+    private final java.util.concurrent.ConcurrentHashMap<TLObject,Integer> queuedLocalIds=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,String> queuedEncryption=new java.util.concurrent.ConcurrentHashMap<>();
     public void prepareOutgoingMessage(TLRPC.Message message) {
         if(message.params==null) message.params=new java.util.HashMap<>();
@@ -1639,14 +1650,14 @@ public final class MonogramController {
     }
     public void prepareOutgoingRequest(TLObject request,TLRPC.Message message) {
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest)) return;
-        prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION));
+        prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
     }
     private static final class PendingSend {
         final long created=System.nanoTime();
         final String encryption;
-        final int token; final long owner; final TLObject request; final RequestDelegate completed;
+        final int token,localId; final long owner; final TLObject request; final RequestDelegate completed;
         final java.util.concurrent.atomic.AtomicBoolean scheduled=new java.util.concurrent.atomic.AtomicBoolean();
-        PendingSend(int token,long owner,TLObject request,RequestDelegate completed,String encryption) { this.encryption=encryption; this.token=token; this.owner=owner; this.request=request; this.completed=completed; }
+        PendingSend(int token,long owner,TLObject request,RequestDelegate completed,String encryption,int localId) { this.localId=localId; this.encryption=encryption; this.token=token; this.owner=owner; this.request=request; this.completed=completed; }
     }
     private final java.util.concurrent.ConcurrentHashMap<Integer,PendingSend> pendingSends=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicInteger localSendToken=new java.util.concurrent.atomic.AtomicInteger(-1);
@@ -1661,7 +1672,8 @@ public final class MonogramController {
         if(token==0) token=localSendToken.getAndDecrement();
         String mode=queuedEncryption.remove(request);
         if(mode==null) mode=encryption(sendingPeer(request)).name();
-        PendingSend pending=new PendingSend(token,accountEpoch,request,completed,mode);
+        Integer local=queuedLocalIds.remove(request);
+        PendingSend pending=new PendingSend(token,accountEpoch,request,completed,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local);
         pendingSends.put(token,pending); scheduleSend(pending);
     }
     private void scheduleSend(PendingSend pending) {
@@ -1697,7 +1709,26 @@ public final class MonogramController {
                     if(session!=null && session.connection().isAuthenticated()) flushPendingSends();
                     else if(preferences.contains("jid")) restore(); return;
                 }
-                if(pendingSends.remove(pending.token,pending)) pending.completed.run(response,error);
+                if(pendingSends.remove(pending.token,pending)) {
+                    if(error==null && response instanceof TLRPC.TL_updateShortSentMessage) {
+                        int id=((TLRPC.TL_updateShortSentMessage)response).id;
+                        worker.execute(() -> {
+                            if(pending.owner!=accountEpoch) return;
+                            try {
+                                if(id>0 && !store.hiddenCorrection(id)) {
+                                    TLRPC.Message sent=store.getMessage(id,self);
+                                    outbox.completed(pending.localId,sent);
+                                    TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=sent;
+                                    ArrayList<TLRPC.Update> updates=new ArrayList<>(); updates.add(update); publishCorrections(peer,updates);
+                                }
+                            } catch(RuntimeException unavailable) {
+                                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram sent-message refresh: "+unavailable.getClass().getSimpleName());
+                            } finally {
+                                Utilities.stageQueue.postRunnable(() -> { if(pending.owner==accountEpoch) pending.completed.run(response,null); });
+                            }
+                        });
+                    } else pending.completed.run(response,error);
+                }
             },pending.owner);
         });
     }

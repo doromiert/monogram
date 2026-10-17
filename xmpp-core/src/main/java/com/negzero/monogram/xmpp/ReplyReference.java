@@ -21,10 +21,12 @@ public final class ReplyReference {
     }
     public final String to, id, ranges;
     private final String prefix;
+    private final boolean structured;
     public ReplyReference(String to, String id) { this(to, id, "", ""); }
     public ReplyReference(String to, String id, String ranges) { this(to, id, ranges, ""); }
-    private ReplyReference(String to, String id, String ranges, String prefix) {
-        if (id == null || id.isEmpty() || id.length() > 4096) throw new IllegalArgumentException("Missing reply ID");
+    private ReplyReference(String to, String id, String ranges, String prefix) { this(to,id,ranges,prefix,true); }
+    private ReplyReference(String to,String id,String ranges,String prefix,boolean structured) {
+        if (structured && (id == null || id.isEmpty() || id.length() > 4096)) throw new IllegalArgumentException("Missing reply ID");
         if (to != null) {
             try {
                 org.jxmpp.jid.Jid jid = JidCreate.from(to);
@@ -32,17 +34,20 @@ public final class ReplyReference {
                 to = jid.toString();
             } catch (org.jxmpp.stringprep.XmppStringprepException invalid) { throw new IllegalArgumentException("Invalid reply author", invalid); }
         }
-        this.to = to; this.id = id; this.ranges = ranges == null ? "" : ranges; this.prefix = prefix;
+        this.to = to; this.id = id; this.ranges = ranges == null ? "" : ranges; this.prefix = prefix; this.structured=structured;
     }
+    /** Plain quoted text for rooms/old imports with no interoperable reply ID. */
+    public static ReplyReference quoteOnly(String text) { return new ReplyReference(null,"","","",false).quoted(text); }
     public ReplyReference quoted(String text) {
         if (text == null || text.isEmpty()) return this;
         int count = text.codePointCount(0, text.length());
         if (count > 512) text = text.substring(0, text.offsetByCodePoints(0, 512)) + "…";
         String prefix = "> " + text.replace("\n", "\n> ") + "\n";
-        return new ReplyReference(to, id, "0:" + prefix.codePointCount(0, prefix.length()), prefix);
+        return new ReplyReference(to, id, "0:" + prefix.codePointCount(0, prefix.length()), prefix,structured);
     }
     public String wireBody(String body) { return prefix + body; }
     public void addTo(Message message) {
+        if(!structured) return;
         StandardExtensionElement.Builder reply = StandardExtensionElement.builder("reply", NAMESPACE).addAttribute("id", id);
         if (to != null) reply.addAttribute("to", to);
         message.addExtension(reply.build());

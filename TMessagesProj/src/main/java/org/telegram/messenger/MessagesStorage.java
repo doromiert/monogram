@@ -8577,6 +8577,41 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    /** Read pending and failed native messages for the XMPP history adapter, on the storage queue. */
+    public void getMonogramOutbox(long dialogId,Consumer<ArrayList<TLRPC.Message>> callback) {
+        storageQueue.postRunnable(() -> {
+            ArrayList<TLRPC.Message> messages=new ArrayList<>();
+            SQLiteCursor cursor=null;
+            try {
+                cursor=database.queryFinalized("SELECT m.data,m.mid,m.date,m.send_state,m.read_state,r.random_id,m.replydata FROM messages_v2 m LEFT JOIN randoms_v2 r ON r.mid=m.mid AND r.uid=m.uid WHERE m.uid=? AND m.mid<0 AND m.out=1 AND m.send_state!=0 ORDER BY m.date DESC,m.mid ASC",dialogId);
+                while(cursor.next()) {
+                    NativeByteBuffer data=cursor.byteBufferValue(0);
+                    if(data==null) continue;
+                    try {
+                        TLRPC.Message message=TLRPC.Message.TLdeserialize(data,data.readInt32(false),false);
+                        if(message==null) continue;
+                        message.readAttachPath(data,getUserConfig().clientUserId);
+                        message.id=cursor.intValue(1); message.date=cursor.intValue(2);
+                        message.send_state=cursor.intValue(3); MessageObject.setUnreadFlags(message,cursor.intValue(4));
+                        message.dialog_id=dialogId;
+                        if(!cursor.isNull(5)) message.random_id=cursor.longValue(5);
+                        NativeByteBuffer reply=cursor.byteBufferValue(6);
+                        if(reply!=null) try {
+                            message.replyMessage=TLRPC.Message.TLdeserialize(reply,reply.readInt32(false),false);
+                            if(message.replyMessage!=null) message.replyMessage.readAttachPath(reply,getUserConfig().clientUserId);
+                        } finally { reply.reuse(); }
+                        messages.add(message);
+                    } catch(Exception invalid) {
+                        if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram outbox row: "+invalid.getClass().getSimpleName());
+                    } finally { data.reuse(); }
+                }
+            } catch(Exception unavailable) {
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram outbox load: "+unavailable.getClass().getSimpleName());
+            } finally { if(cursor!=null) cursor.dispose(); }
+            callback.accept(messages);
+        });
+    }
+
     public void getUnsentMessages(int count) {
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;

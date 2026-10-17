@@ -60,4 +60,14 @@ class ReplyReferenceTest {
         ReplyReference bounded = reply.quoted(new String(new char[600]).replace('\0', 'x') + "😀");
         assertTrue(bounded.wireBody("Answer").length() < 525);
     }
+    @Test void quoteOnlyKeepsLiteralContextWithoutUnsupportedReplyMetadata() throws Exception {
+        ReplyReference quote=ReplyReference.quoteOnly("First line\nSecond line");
+        org.jivesoftware.smack.packet.Message message=new org.jivesoftware.smack.packet.Message();
+        message.setBody(quote.wireBody("Answer")); quote.addTo(message);
+        assertEquals("> First line\n> Second line\nAnswer",message.getBody());
+        assertFalse(message.hasExtension("reply",ReplyReference.NAMESPACE));
+        assertFalse(message.hasExtension("fallback",ReplyReference.FALLBACK));
+        assertNull(ReplyReference.from(message,message.getBody()));
+    }
+
 }

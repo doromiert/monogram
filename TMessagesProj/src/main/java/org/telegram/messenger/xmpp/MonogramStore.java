@@ -910,6 +910,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
     }
     synchronized ReplyReference replyTo(int target, long peer, long self, boolean encrypted, String quote, int quoteOffset) {
+        if(hiddenCorrection(target)) throw new IllegalArgumentException("Reply target is unavailable");
         TLRPC.Message original = getMessage(target, self, false);
         if (original.dialog_id != peer) throw new IllegalArgumentException("Reply target belongs to another conversation");
         String author = null, id = null;
@@ -928,17 +929,21 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
         }
         }
-        if (id == null) throw new IllegalArgumentException("Reply target has no XMPP ID");
+
         if (author == null) {
             try (Cursor c = getReadableDatabase().rawQuery("SELECT sender FROM message_senders WHERE message=? ORDER BY instr(sender,'/') DESC LIMIT 1", new String[]{Integer.toString(target)})) {
                 if (c.moveToFirst()) author = c.getString(0);
             }
         }
         if (author == null) author = jid(original.out ? self : peer);
-        ReplyReference reference = new ReplyReference(author, id);
+        ReplyReference reference = id==null ? ReplyReference.quoteOnly("") : new ReplyReference(author,id);
         // An encrypted original must never be quoted into a plaintext reply.
         try (Cursor c = getReadableDatabase().rawQuery("SELECT max(encrypted),min(readable) FROM messages WHERE id IN (?,?)", new String[]{Integer.toString(target),Integer.toString(payload(target))})) {
-            c.moveToFirst(); if (!encrypted && c.getInt(0) == 1 || c.getInt(1) == 0) return reference;
+            c.moveToFirst();
+            if(!encrypted && c.getInt(0)==1 || c.getInt(1)==0) {
+                if(id==null) throw new IllegalArgumentException("Original message cannot be quoted in this encryption mode");
+                return reference;
+            }
         }
         String text = MonogramAttachments.has(original) && (original.message == null || original.message.isEmpty()) ? "Attachment" : original.message;
         if (quote != null && !quote.isEmpty()) {
