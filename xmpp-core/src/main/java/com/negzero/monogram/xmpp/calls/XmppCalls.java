@@ -40,7 +40,7 @@ public final class XmppCalls implements AutoCloseable {
     private static final Listener NONE=new Listener() {};
     private static final class Candidate { final String mid,value,ufrag;final int index;Candidate(String mid,int index,String value,String ufrag) { this.mid=mid;this.index=index;this.value=value;this.ufrag=ufrag; } }
     private static final class Entry {
-        Call call;State state;boolean accepted,offerRequested,remoteApplied,remoteAudioMuted,remoteVideoMuted,localAudioMuted,localVideoMuted;CallDescription local,remote;
+        Call call;State state;boolean accepted,offerRequested,remoteApplied,descriptionAcknowledged,wantedAudioMuted,wantedVideoMuted,remoteAudioMuted,remoteVideoMuted,localAudioMuted,localVideoMuted;CallDescription local,remote;
         final List<Candidate> candidates=new ArrayList<>(),localCandidates=new ArrayList<>();int candidateBytes;ScheduledFuture<?> timeout;
         Entry(Call call,State state) { this.call=call;this.state=state; }
     }
@@ -71,7 +71,10 @@ public final class XmppCalls implements AutoCloseable {
         messages=stanza -> { Message m=(Message)stanza;if(m.getType()==Message.Type.chat || m.getType()==Message.Type.normal) execute(() -> incomingMessage(m,false)); };
         connection.addAsyncStanzaListener(messages,stanza -> stanza instanceof Message && stanza.hasExtension(JMI));
         carbons=(direction,forwarded,wrapping) -> {
-            if(connection.getUser()!=null && wrapping.getFrom()!=null && wrapping.getFrom().isEntityBareJid() && wrapping.getFrom().equals(connection.getUser().asBareJid())) execute(() -> incomingMessage(forwarded,true));
+            if(connection.getUser()==null || wrapping.getFrom()==null || !wrapping.getFrom().isEntityBareJid() || !wrapping.getFrom().equals(connection.getUser().asBareJid()) || forwarded.getFrom()==null) return;
+            boolean own=forwarded.getFrom().asBareJid().equals(connection.getUser().asBareJid());
+            if((direction==org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.sent)!=own) return;
+            execute(() -> incomingMessage(forwarded,true));
         };CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener(carbons);
         presences=stanza -> { Presence p=(Presence)stanza;if(p.getFrom()!=null && p.getFrom().asEntityBareJidIfPossible()!=null) execute(() -> presenceChanged(p.getFrom().asBareJid().toString())); };
         connection.addAsyncStanzaListener(presences,stanza -> stanza instanceof Presence && (((Presence)stanza).getType()==Presence.Type.available || ((Presence)stanza).getType()==Presence.Type.unavailable));
@@ -151,26 +154,29 @@ public final class XmppCalls implements AutoCloseable {
             if(!offer && e.remote==null) throw invalid("Missing offer");validateRoles(parsed,offer);
             if(e.remote!=null) matchingContents(e.remote,parsed);e.local=parsed;
             iq(offer?"session-initiate":"session-accept",description(parsed,e.call.outgoing),null);
-            for(Candidate c:new ArrayList<>(e.localCandidates)) sendCandidate(e,c);e.localCandidates.clear();emit(State.CONNECTING,null);timeout(sid,45000,"timeout");
+            emit(State.CONNECTING,null);timeout(sid,45000,"timeout");
         }catch(RuntimeException invalid) { terminate("failed-application"); }
     }); }
     public void candidate(String sid,String mid,int mLineIndex,String candidate) { command(sid,e -> {
         try {
             token(mid,64);line(candidate);if(candidate.length()>2048 || mLineIndex<0 || mLineIndex>1) throw invalid("Invalid candidate");
             Candidate c=new Candidate(mid,mLineIndex,candidate,null);
-            if(e.local==null) { if(e.localCandidates.size()>=MAX_CANDIDATES) throw invalid("Too many local candidates");e.localCandidates.add(c); }else sendCandidate(e,c);
+            if(e.local==null || !e.descriptionAcknowledged) { if(e.localCandidates.size()>=MAX_CANDIDATES) throw invalid("Too many local candidates");e.localCandidates.add(c); }else sendCandidate(e,c);
         }catch(RuntimeException invalid) { terminate("failed-transport"); }
     }); }
     public void remoteDescriptionApplied(String sid) { command(sid,e -> { if(e.remote==null) return;for(Candidate c:e.candidates) { int index=contentIndex(e.remote,c.mid);if(index<0 || !e.remote.contents.get(index).ufrag.equals(c.ufrag)) { terminate("failed-transport");return; } }
         e.remoteApplied=true;for(Candidate c:e.candidates) listener.remoteCandidate(e.call,c.mid,contentIndex(e.remote,c.mid),c.value);e.candidates.clear();e.candidateBytes=0; }); }
     public void mediaMuted(String sid,boolean audioMuted,boolean videoMuted) { command(sid,e -> {
-        if(e.local==null) return;StandardExtensionElement.Builder info=StandardExtensionElement.builder("jingle",NS);
+        e.wantedAudioMuted=audioMuted;e.wantedVideoMuted=videoMuted;sendMediaState(e);
+    }); }
+    private void sendMediaState(Entry e) {
+        if(e.local==null || !e.descriptionAcknowledged) return;StandardExtensionElement.Builder info=StandardExtensionElement.builder("jingle",NS);
         for(Content c:e.local.contents) {
-            boolean audio="audio".equals(c.media),muted=audio?audioMuted:videoMuted,previous=audio?e.localAudioMuted:e.localVideoMuted;
+            boolean audio="audio".equals(c.media),muted=audio?e.wantedAudioMuted:e.wantedVideoMuted,previous=audio?e.localAudioMuted:e.localVideoMuted;
             if(muted!=previous) info.addElement(StandardExtensionElement.builder(muted?"mute":"unmute","urn:xmpp:jingle:apps:rtp:info:1").addAttribute("creator","initiator").addAttribute("name",c.name).build());
         }
-        e.localAudioMuted=audioMuted;e.localVideoMuted=videoMuted;StandardExtensionElement payload=info.build();if(!payload.getElements().isEmpty()) iq("session-info",payload,null);
-    }); }
+        e.localAudioMuted=e.wantedAudioMuted;e.localVideoMuted=e.wantedVideoMuted;StandardExtensionElement payload=info.build();if(!payload.getElements().isEmpty()) iq("session-info",payload,null);
+    }
     public void mediaConnected(String sid) { command(sid,e -> { if(e.local==null || e.remote==null || !e.accepted && !e.call.outgoing) return;if(e.timeout!=null) e.timeout.cancel(false);emit(State.ACTIVE,null); }); }
     public void mediaFailed(String sid) { mediaFailed(sid,"Media connection failed"); }
     public void mediaFailed(String sid,String reason) { command(sid,e -> {
@@ -209,7 +215,16 @@ public final class XmppCalls implements AutoCloseable {
         if(payload!=null) for(StandardExtensionElement c:payload.getElements()) b.addElement(c);
         if(reason!=null) b.addElement(StandardExtensionElement.builder("reason",NS).addElement(StandardExtensionElement.builder(reason,NS).build()).build());
         Packet packet=new Packet(b.build());packet.setType(IQ.Type.set);
-        try { packet.setTo(JidCreate.entityFullFrom(call.fullPeer));connection.sendIqRequestAsync(packet).onError(error -> command(call.sid,e -> finish("signaling-error"))); }
+        try { packet.setTo(JidCreate.entityFullFrom(call.fullPeer));connection.sendIqRequestAsync(packet).onSuccess(answer -> {
+                if("session-initiate".equals(action) || "session-accept".equals(action)) command(call.sid,e -> {
+                    e.descriptionAcknowledged=true;
+                    for(Candidate candidate:new ArrayList<>(e.localCandidates)) sendCandidate(e,candidate);e.localCandidates.clear();sendMediaState(e);
+                });
+            }).onError(error -> {
+                if("session-info".equals(action) && error instanceof XMPPException.XMPPErrorException
+                        && ((XMPPException.XMPPErrorException)error).getStanzaError().getCondition()==StanzaError.Condition.feature_not_implemented) return;
+                command(call.sid,e -> finish("signaling-error"));
+            }); }
         catch(Exception failure) { finish("disconnected"); }
     }
     private synchronized void incomingMessage(Message message,boolean carbon) {
@@ -222,10 +237,12 @@ public final class XmppCalls implements AutoCloseable {
             age=System.currentTimeMillis()-stamp.getTime();if(age < -5000 || age>=45000) return;age=Math.max(0,age);
         }
         String own=connection.getUser().asBareJid().toString(),from=message.getFrom().toString();boolean self=message.getFrom().asBareJid().toString().equals(own);
-        if(carbon && !self) return;if(!self && !message.getTo().asBareJid().toString().equals(own)) return;
+        if(!self && !message.getTo().asBareJid().toString().equals(own)) return;
         List<StandardExtensionElement> actions=new ArrayList<>();for(ExtensionElement x:message.getExtensions()) if(JMI.equals(x.getNamespace()) && x instanceof StandardExtensionElement) actions.add((StandardExtensionElement)x);
         if(actions.size()!=1) return;StandardExtensionElement action=actions.get(0);String sid=action.getAttributeValue("id");try { token(sid,128); }catch(RuntimeException bad) { return; }
         String name=action.getElementName();
+        // Received carbons fan a bare proposal/retraction out to the account's other resources.
+        if(carbon && !self && (!message.getTo().isEntityBareJid() || !Arrays.asList("propose","retract").contains(name))) return;
         if(self) { if(active!=null && !active.call.outgoing && !active.accepted && active.call.sid.equals(sid) && !from.equals(connection.getUser().toString()) && Arrays.asList("accept","reject","proceed").contains(name)) finish("answered-elsewhere");return; }
         if(!message.getFrom().isEntityFullJid()) return;String bare=message.getFrom().asBareJid().toString();
         if("propose".equals(name)) {
@@ -275,21 +292,30 @@ public final class XmppCalls implements AutoCloseable {
         }catch(RuntimeException malformed) { reply(iq,StanzaError.Condition.bad_request); }
     }
     private void incomingMediaState(StandardExtensionElement root) {
-        if(root.getElements().isEmpty() || root.getElements().size()>2) throw invalid("Invalid RTP session info");
+        if(root.getElements().isEmpty()) return;
+        if(root.getElements().size()>2) throw invalid("Invalid RTP session info");
         boolean audio=active.remoteAudioMuted,video=active.remoteVideoMuted,changed=false;
         for(StandardExtensionElement info:root.getElements()) {
             if(!"urn:xmpp:jingle:apps:rtp:info:1".equals(info.getNamespace())) throw invalid("Invalid RTP info namespace");String name=info.getElementName();
-            if(Arrays.asList("ringing","active","hold","unhold").contains(name)) continue;
-            if(!Arrays.asList("mute","unmute").contains(name) || active.remote==null || !"initiator".equals(attr(info,"creator"))) throw invalid("Invalid RTP mute");
-            int index=contentIndex(active.remote,attr(info,"name"));if(index<0) throw invalid("Unknown RTP mute content");
-            boolean muted=name.equals("mute");if(active.remote.contents.get(index).media.equals("audio")) audio=muted;else video=muted;changed=true;
+            if(Arrays.asList("ringing","hold","unhold").contains(name)) continue;
+            if("active".equals(name)) {
+                String mid=info.getAttributeValue("name");if(mid==null) { audio=false;video=false; }
+                else { int index=contentIndex(active.remote,mid);if(index<0) throw invalid("Unknown RTP active content");if(active.remote.contents.get(index).media.equals("audio")) audio=false;else video=false; }
+                changed=true;continue;
+            }
+            if(!Arrays.asList("mute","unmute").contains(name) || active.remote==null) throw invalid("Invalid RTP mute");
+            String creator=attr(info,"creator");if(!Arrays.asList("initiator","responder").contains(creator)) throw invalid("Invalid RTP mute creator");
+            String mid=info.getAttributeValue("name");boolean muted=name.equals("mute");
+            if(mid==null) { audio=muted;video=active.call.video && muted; }
+            else { int index=contentIndex(active.remote,mid);if(index<0 || !"initiator".equals(creator)) throw invalid("Unknown RTP mute content");if(active.remote.contents.get(index).media.equals("audio")) audio=muted;else video=muted; }
+            changed=true;
         }
         if(changed) { active.remoteAudioMuted=audio;active.remoteVideoMuted=video;listener.remoteMediaState(active.call,audio,video); }
     }
     private void incomingCandidates(StandardExtensionElement root) {
         Entry e=active;if(root.getElements().size()>2) throw invalid("Too many candidate contents");
         for(StandardExtensionElement content:root.getElements()) {
-            if(!NS.equals(content.getNamespace()) || !"content".equals(content.getElementName())) throw invalid("Invalid candidate content");String mid=attr(content,"name");
+            if(!NS.equals(content.getNamespace()) || !"content".equals(content.getElementName()) || !"initiator".equals(attr(content,"creator"))) throw invalid("Invalid candidate content");String mid=attr(content,"name");
             StandardExtensionElement transport=JingleSdp.one(content,"transport",ICE);String ufrag=attr(transport,"ufrag");
             if(transport.getElements().size()>MAX_CANDIDATES) throw invalid("Too many candidates");
             for(StandardExtensionElement c:transport.getElements()) {

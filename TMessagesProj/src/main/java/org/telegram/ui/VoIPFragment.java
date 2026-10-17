@@ -316,6 +316,17 @@ public class VoIPFragment implements
     /* === pinch to zoom === */
 
     public static void show(Activity activity, int account) {
+        final VoIPCallController controller = VoIPCallControllers.get();
+        if (instance != null && instance.callController != null && instance.callController != controller) {
+            instance.callingUserTextureView.renderer.release();
+            instance.currentUserTextureView.renderer.release();
+            instance.callingUserMiniTextureRenderer.release();
+            if (instance.windowView != null) {
+                instance.windowView.finishImmediate();
+            }
+            instance.destroy();
+            instance = null;
+        }
         if (instance != null && instance.windowView.getParent() == null) {
             if (instance != null) {
                 instance.callingUserTextureView.renderer.release();
@@ -332,7 +343,6 @@ public class VoIPFragment implements
             return;
         }
         boolean transitionFromPip = VoIPPiPView.getInstance() != null;
-        final VoIPCallController controller = VoIPCallControllers.get();
         final VoIPServiceState legacyState = VoIPService.getSharedState();
         if (controller == null && legacyState == null) {
             return;
@@ -572,7 +582,14 @@ public class VoIPFragment implements
 
     private VoIPCallController getController() {
         if (callController != null) {
-            return VoIPCallControllers.isActive(callController) ? callController : null;
+            if (VoIPCallControllers.isActive(callController)) {
+                return callController;
+            }
+            int state = callController.getCallState();
+            if (state == VoIPService.STATE_BUSY || state == VoIPService.STATE_FAILED) {
+                return callController;
+            }
+            return null;
         }
         VoIPCallController active = VoIPCallControllers.get();
         if (active != null && active.getAccount() == currentAccount) {
@@ -1089,7 +1106,7 @@ public class VoIPFragment implements
         ViewCompat.setImportantForAccessibility(statusTextView, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         statusLayout.addView(statusTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 6));
 
-        if (legacyState != null && legacyState.getUser() != null && legacyState.isConference() && legacyState.getGroupCall() != null) {
+        if (initialController == null && legacyState != null && legacyState.getUser() != null && legacyState.isConference() && legacyState.getGroupCall() != null) {
             participantsView = new ConferenceParticipantsView(context);
             participantsView.set(currentAccount, legacyState.getUser().id, legacyState.getGroupParticipants(), legacyState.getGroupCall().participants_count);
             statusLayout.addView(participantsView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 30, 0, 22, 0, 0));
@@ -1154,6 +1171,7 @@ public class VoIPFragment implements
                 if (currentState == VoIPService.STATE_BUSY) {
                     VoIPCallController controller = getController();
                     if (controller != null && controller.hasCapability(VoIPCallController.CAP_RETRY)) {
+                        windowView.finish();
                         controller.retry();
                     }
                 } else {
@@ -2049,7 +2067,8 @@ public class VoIPFragment implements
         boolean wasVideo = callingUserIsVideo || currentUserIsVideo;
         if (service != null) {
             callingUserIsVideo = service.getRemoteVideoState() == Instance.VIDEO_STATE_ACTIVE;
-            currentUserIsVideo = service.getVideoState() == Instance.VIDEO_STATE_ACTIVE || service.getVideoState() == Instance.VIDEO_STATE_PAUSED;
+            currentUserIsVideo = service.getEglContext() != null
+                    && (service.getVideoState() == Instance.VIDEO_STATE_ACTIVE || service.getVideoState() == Instance.VIDEO_STATE_PAUSED);
             if (currentUserIsVideo && !isVideoCall) {
                 isVideoCall = true;
             }
@@ -2812,7 +2831,8 @@ public class VoIPFragment implements
         if (currentUserIsVideo || callingUserIsVideo) {
             isVideoAvailable = true;
         } else {
-            isVideoAvailable = service.hasCapability(VoIPCallController.CAP_VIDEO_UPGRADE) && service.isVideoAvailable();
+            isVideoAvailable = (service.isCallingVideo() && service.hasCapability(VoIPCallController.CAP_VIDEO))
+                    || (service.hasCapability(VoIPCallController.CAP_VIDEO_UPGRADE) && service.isVideoAvailable());
         }
         if (isVideoAvailable) {
             if (currentUserIsVideo) {

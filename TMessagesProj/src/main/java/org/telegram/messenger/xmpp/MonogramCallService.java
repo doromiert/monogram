@@ -49,12 +49,13 @@ public final class MonogramCallService extends Service {
         Network(List<com.negzero.monogram.xmpp.calls.XmppIceServers.IceServer> servers,boolean direct) { this.servers=servers;this.direct=direct; }
     }
     private static final class Binding {
-        final int account;final XmppSession session;final BooleanSupplier current;
-        Binding(int account,XmppSession session,BooleanSupplier current) { this.account=account;this.session=session;this.current=current; }
+        final int account;final XmppSession session;final BooleanSupplier current;final Long owner;final String ownerJid;
+        Binding(int account,XmppSession session,BooleanSupplier current) { this(account,session,current,null,null); }
+        Binding(int account,XmppSession session,BooleanSupplier current,Long owner,String ownerJid) { this.account=account;this.session=session;this.current=current;this.owner=owner;this.ownerJid=ownerJid; }
         boolean valid() { return bindings.get(account)==this && current.getAsBoolean(); }
     }
     public static void bind(int account,XmppSession session,BooleanSupplier current) {
-        Binding binding=new Binding(account,session,current);Binding old=bindings.put(account,binding);
+        Binding binding=new Binding(account,session,current,MonogramController.get(account).callOwner(),MonogramController.get(account).accountJid());Binding old=bindings.put(account,binding);
         if(old!=null) AndroidUtilities.runOnUIThread(() -> { Controller c=active();if(c!=null && c.binding==old) c.finish("disconnected",true); });
         session.calls.setListener(new XmppCalls.Listener() {
             private void dispatch(XmppCalls.Call call,java.util.function.Consumer<Controller> action) {
@@ -94,7 +95,7 @@ public final class MonogramCallService extends Service {
             }
             @Override public void remoteMediaState(XmppCalls.Call call,boolean audioMuted,boolean videoMuted) {
                 dispatch(call,c -> { c.remoteAudio=audioMuted ? Instance.AUDIO_STATE_MUTED : Instance.AUDIO_STATE_ACTIVE;
-                    c.remoteVideo=call.video && !videoMuted ? Instance.VIDEO_STATE_ACTIVE : Instance.VIDEO_STATE_INACTIVE;c.mediaChanged(); });
+                    c.remoteVideoMuted=videoMuted;c.updateRemoteVideo();c.mediaChanged(); });
             }
             @Override public void capabilities(String peer,XmppCalls.Capabilities capabilities) {
                 if(binding.valid()) MonogramController.get(account).callCapabilitiesChanged(peer);
@@ -213,6 +214,14 @@ public final class MonogramCallService extends Service {
     }
     @Override public IBinder onBind(Intent intent) { return null; }
 
+    static String callSummary(String reason,boolean failed,boolean outgoing,boolean accepted,boolean connected) {
+        if(connected) return failed ? "disconnect" : "hangup";
+        if("busy".equals(reason) || outgoing && "decline".equals(reason)) return "busy";
+        if("decline".equals(reason)) return "hangup";
+        if(!accepted || outgoing && !failed) return "missed";
+        return failed ? "disconnect" : "hangup";
+    }
+
     static final class Controller implements VoIPCallController {
         final Binding binding;final TLRPC.User user;final String token=UUID.randomUUID().toString();
         final List<Listener> listeners=new CopyOnWriteArrayList<>();
@@ -222,8 +231,8 @@ public final class MonogramCallService extends Service {
         MonogramCallService service;MonogramCallMedia media;
         int state=VoIPService.STATE_REQUESTING,remoteAudio=Instance.AUDIO_STATE_ACTIVE,remoteVideo=Instance.VIDEO_STATE_INACTIVE;
         volatile boolean ended;
-        boolean accepted,preparing,mediaReady,offerRequested,descriptionSent,remoteOffer,micMuted,videoEnabled,switching;
-        String remoteSdp,error;long started;
+        boolean accepted,preparing,mediaReady,offerRequested,descriptionSent,remoteOffer,micMuted,videoEnabled,switching,remoteVideoAvailable,remoteVideoMuted;
+        String remoteSdp,error;long started;final long created=System.currentTimeMillis();
         VideoSink localSink,remoteSink;
         Controller(Binding binding,XmppCalls.Call call,TLRPC.User user) { this.binding=binding;this.call=call;this.user=user;this.videoEnabled=call.video; }
         boolean valid() { return !ended && binding.valid() && VoIPCallControllers.isActive(this); }
@@ -258,12 +267,13 @@ public final class MonogramCallService extends Service {
                     private void ui(Runnable action) { AndroidUtilities.runOnUIThread(() -> { if(valid()) action.run(); }); }
                     public void localDescription(boolean offer,String sdp) { ui(() -> {
                         mediaReady=true;for(Listener l:listeners) l.onVideoAvailableChange(call.video);
-                        binding.session.calls.localDescription(call.sid,offer,sdp);mediaChanged(); }); }
+                        binding.session.calls.localDescription(call.sid,offer,sdp);
+                        binding.session.calls.mediaMuted(call.sid,micMuted,!videoEnabled);mediaChanged(); }); }
                     public void candidate(String mid,int line,String value) { if(valid()) binding.session.calls.candidate(call.sid,mid,line,value); }
                     public void remoteDescriptionApplied() { if(valid()) binding.session.calls.remoteDescriptionApplied(call.sid); }
                     public void connected() { ui(() -> { binding.session.calls.mediaConnected(call.sid);Controller.this.connected(); }); }
                     public void failed(String message) { ui(() -> fail(message)); }
-                    public void remoteVideo(boolean available) { ui(() -> { remoteVideo=available ? Instance.VIDEO_STATE_ACTIVE : Instance.VIDEO_STATE_INACTIVE;mediaChanged(); }); }
+                    public void remoteVideo(boolean available) { ui(() -> { remoteVideoAvailable=available;updateRemoteVideo();mediaChanged(); }); }
                     public void cameraSwitched(boolean front) { ui(() -> { switching=false;for(Listener l:listeners) l.onCameraSwitch(front); }); }
                     public void cameraFirstFrameAvailable() { ui(() -> { for(Listener l:listeners) l.onCameraFirstFrameAvailable(); }); }
                 });
@@ -288,11 +298,17 @@ public final class MonogramCallService extends Service {
             if(!valid()) return;if(started==0) started=SystemClock.elapsedRealtime();
             changeState(VoIPService.STATE_ESTABLISHED);
         }
+        void updateRemoteVideo() { remoteVideo=call.video && remoteVideoAvailable && !remoteVideoMuted ? Instance.VIDEO_STATE_ACTIVE : Instance.VIDEO_STATE_INACTIVE; }
         void mediaChanged() { for(Listener l:listeners) l.onMediaStateUpdated(remoteAudio,remoteVideo);if(service!=null) service.updateProximity(this); }
         void audioChanged() { for(Listener l:listeners) l.onAudioSettingsChanged();if(service!=null) service.updateProximity(this); }
         void fail(String reason) { if(!valid()) return;binding.session.calls.mediaFailed(call.sid,reason);finish(reason,true); }
         void finish(String reason,boolean failed) {
             if(ended) return;ended=true;error=reason;
+            if(binding.owner!=null && !Arrays.asList("answered-elsewhere","alternative-session").contains(reason)) {
+                String summary=callSummary(reason,failed,call.outgoing,accepted,started!=0);
+                MonogramController.get(binding.account).callEnded(binding.owner,binding.ownerJid,user.id,call.sid,call.outgoing,call.video,created,
+                        (int)Math.min(Integer.MAX_VALUE,getCallDuration()/1000),summary);
+            }
             state="busy".equals(reason) ? VoIPService.STATE_BUSY : failed ? VoIPService.STATE_FAILED : VoIPService.STATE_ENDED;
             MonogramCallMedia closing=media;media=null;
             MonogramCallService owned=service;service=null;

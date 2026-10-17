@@ -1415,6 +1415,25 @@ public final class MonogramController {
         result.full_user = store.fullUser(peer, self);
         applyCallCapabilities(peer,result.full_user);result.users.add(result.full_user.user);return result;
     }
+    long callOwner() { return accountEpoch; }
+    void callEnded(long owner,String ownerJid,long peer,String sid,boolean outgoing,boolean video,long timestamp,int duration,String reason) {
+        worker.execute(() -> {
+            if(!sameAccount(owner,ownerJid) || self<=0 || accountJid().isEmpty()) return;
+            try {
+                int id=store.saveCall(self,peer,sid,outgoing,video,timestamp,duration,reason);
+                if(id==0 || !UserConfig.getInstance(account).isClientActivated()) return;
+                TLRPC.Message message=store.getMessage(id,self);
+                ArrayList<TLRPC.Update> updates=new ArrayList<>();
+                TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage();update.message=message;updates.add(update);
+                ArrayList<TLRPC.User> users=new ArrayList<>();users.add(store.user(peer,self));users.add(ownUser());
+                Utilities.stageQueue.postRunnable(() -> {
+                    if(sameAccount(owner,ownerJid)) MessagesController.getInstance(account).processUpdateArray(updates,users,new ArrayList<>(),false,now());
+                });
+            } catch(Exception failure) {
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram call history: "+failure.getClass().getSimpleName());
+            }
+        });
+    }
     private MonogramCallPrivacy callPrivacy() throws Exception {
         return new MonogramCallPrivacy(account,accountJid(),id -> store.user(id,self),chat -> store.roomChat(-chat),
                 (peer,chat) -> store.roomMember(chat,peer));
@@ -2633,6 +2652,18 @@ public final class MonogramController {
             com.negzero.monogram.xmpp.XmppProfile changed=expected.profiles.roomAvatar(room,png);
             requireRoomSession(expected,epoch); profileVersions.merge(dialog,1L,Long::sum);
             store.profile(dialog,changed); publishRoom(dialog); return roomUpdates(dialog);
+        }
+        if(request instanceof TLRPC.TL_messages_deletePhoneCallHistory) {
+            if(((TLRPC.TL_messages_deletePhoneCallHistory)request).revoke)
+                throw new UnsupportedOperationException("Call history can only be deleted on this device");
+            TLRPC.TL_messages_affectedFoundMessages result=new TLRPC.TL_messages_affectedFoundMessages();
+            result.messages.addAll(store.callMessageIds(self));store.deleteMessages(result.messages);
+            androidx.collection.LongSparseArray<ArrayList<Integer>> removed=new androidx.collection.LongSparseArray<>();removed.put(0,result.messages);
+            long owner=accountEpoch;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(owner==accountEpoch) NotificationsController.getInstance(account).removeDeletedMessagesFromNotifications(removed,false);
+            });
+            return result;
         }
         if(request instanceof TLRPC.TL_messages_deleteMessages) {
             TLRPC.TL_messages_deleteMessages query=(TLRPC.TL_messages_deleteMessages)request;

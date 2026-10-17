@@ -50,6 +50,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_phone;
@@ -1155,18 +1156,21 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 			builder.setMessage(getString(R.string.DeleteSelectedCallsText));
 		}
 		final boolean[] checks = new boolean[]{false};
-		FrameLayout frameLayout = new FrameLayout(getParentActivity());
-		CheckBoxCell cell = new CheckBoxCell(getParentActivity(), 1);
-		cell.setBackground(Theme.getSelectorDrawable(false));
-		cell.setText(getString(R.string.DeleteCallsForEveryone), "", false, false);
-		cell.setPadding(LocaleController.isRTL ? AndroidUtilities.dp(8) : 0, 0, LocaleController.isRTL ? 0 : AndroidUtilities.dp(8), 0);
-		frameLayout.addView(cell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP | Gravity.LEFT, 8, 0, 8, 0));
-		cell.setOnClickListener(v -> {
-			CheckBoxCell cell1 = (CheckBoxCell) v;
-			checks[0] = !checks[0];
-			cell1.setChecked(checks[0], true);
-		});
-		builder.setView(frameLayout);
+		boolean xmppAccount = !MonogramController.get(currentAccount).accountJid().isEmpty();
+		if (!xmppAccount) {
+			FrameLayout frameLayout = new FrameLayout(getParentActivity());
+			CheckBoxCell cell = new CheckBoxCell(getParentActivity(), 1);
+			cell.setBackground(Theme.getSelectorDrawable(false));
+			cell.setText(getString(R.string.DeleteCallsForEveryone), "", false, false);
+			cell.setPadding(LocaleController.isRTL ? AndroidUtilities.dp(8) : 0, 0, LocaleController.isRTL ? 0 : AndroidUtilities.dp(8), 0);
+			frameLayout.addView(cell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP | Gravity.LEFT, 8, 0, 8, 0));
+			cell.setOnClickListener(v -> {
+				CheckBoxCell cell1 = (CheckBoxCell) v;
+				checks[0] = !checks[0];
+				cell1.setChecked(checks[0], true);
+			});
+			builder.setView(frameLayout);
+		}
 		builder.setPositiveButton(getString(R.string.Delete), (dialogInterface, i) -> {
 			if (all) {
 				deleteAllMessages(checks[0]);
@@ -1199,7 +1203,8 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 				updateDeleteMessages.messages = res.messages;
 				updateDeleteMessages.pts = res.pts;
 				updateDeleteMessages.pts_count = res.pts_count;
-				final TLRPC.TL_updates updates = new TLRPC.TL_updates();
+				final TLRPC.TL_updates updates = MonogramController.get(currentAccount).accountJid().isEmpty()
+						? new TLRPC.TL_updates() : new MonogramController.Updates();
 				updates.updates.add(updateDeleteMessages);
 				getMessagesController().processUpdates(updates, false);
 				if (res.offset != 0) {

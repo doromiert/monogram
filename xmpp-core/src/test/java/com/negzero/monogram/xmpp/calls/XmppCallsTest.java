@@ -14,14 +14,20 @@ import static com.negzero.monogram.xmpp.calls.JingleCodec.*;
 class XmppCallsTest {
     static final class Connection extends XMPPTCPConnection {
         final BlockingQueue<Stanza> sent=new LinkedBlockingQueue<>();
+        volatile boolean holdDescription,unsupportedInfo;volatile IQ held;
         Connection() throws Exception { super(XMPPTCPConnectionConfiguration.builder().setXmppDomain("example.org").build());connected=true;authenticated=true;user=JidCreate.entityFullFrom("alice@example.org/phone"); }
         @Override protected void sendStanzaInternal(Stanza stanza) {
             sent.add(stanza);
             if(stanza instanceof org.jivesoftware.smack.roster.packet.RosterPacket && ((IQ)stanza).getType()==IQ.Type.get) {
                 org.jivesoftware.smack.roster.packet.RosterPacket answer=new org.jivesoftware.smack.roster.packet.RosterPacket();answer.setType(IQ.Type.result);answer.setStanzaId(stanza.getStanzaId());answer.setFrom(getXMPPServiceDomain());answer.setTo(user);invokeStanzaCollectorsAndNotifyRecvListeners(answer);
-            } else if(stanza instanceof IQ && ((IQ)stanza).getType()==IQ.Type.set) { IQ answer=IQ.createResultIQ((IQ)stanza);invokeStanzaCollectorsAndNotifyRecvListeners(answer); }
+            } else if(stanza instanceof IQ && ((IQ)stanza).getType()==IQ.Type.set) {
+                String action=stanza instanceof Packet?((Packet)stanza).element.getAttributeValue("action"):null;
+                if(holdDescription && ("session-initiate".equals(action) || "session-accept".equals(action))) { held=(IQ)stanza;return; }
+                IQ answer=unsupportedInfo && "session-info".equals(action)?IQ.createErrorResponse((IQ)stanza,StanzaError.getBuilder(StanzaError.Condition.feature_not_implemented)):IQ.createResultIQ((IQ)stanza);invokeStanzaCollectorsAndNotifyRecvListeners(answer);
+            }
         }
         void feed(Stanza stanza) { invokeStanzaCollectorsAndNotifyRecvListeners(stanza); }
+        void resumed() { callConnectionAuthenticatedListener(true); }
     }
     static final class Events implements XmppCalls.Listener {
         final BlockingQueue<XmppCalls.Call> incoming=new LinkedBlockingQueue<>(),requested=new LinkedBlockingQueue<>();
@@ -51,7 +57,7 @@ class XmppCallsTest {
             c.feed(jmi("proceed",call.sid,"bob@example.org/desktop",true));assertEquals("bob@example.org/desktop",next(events.requested).fullPeer);
             calls.localDescription(call.sid,true,JingleCodecTest.sdp(true,true));await(() -> c.sent.stream().anyMatch(s -> s instanceof Packet && "session-initiate".equals(((Packet)s).element.getAttributeValue("action"))));
             StandardExtensionElement candidate=StandardExtensionElement.builder("transport",ICE).addAttribute("ufrag","abcd").addElement(JingleCodec.candidate("candidate:1 1 udp 12345 192.0.2.1 1234 typ host ufrag abcd","abcd")).build();
-            StandardExtensionElement payload=StandardExtensionElement.builder("jingle",NS).addElement(StandardExtensionElement.builder("content",NS).addAttribute("name","1").addElement(candidate).build()).build();
+            StandardExtensionElement payload=StandardExtensionElement.builder("jingle",NS).addElement(StandardExtensionElement.builder("content",NS).addAttribute("creator","initiator").addAttribute("name","1").addElement(candidate).build()).build();
             c.feed(iq("transport-info",call.sid,payload,"bob@example.org/desktop"));assertNull(events.candidates.poll(80,TimeUnit.MILLISECONDS));
             c.feed(iq("session-accept",call.sid,description(JingleSdp.parse(JingleCodecTest.sdp(true,false)),false),"bob@example.org/other"));assertNull(events.descriptions.poll(80,TimeUnit.MILLISECONDS));
             c.feed(iq("session-accept",call.sid,description(JingleSdp.parse(JingleCodecTest.sdp(true,false)),false),"bob@example.org/desktop"));assertTrue(next(events.descriptions).contains("m=video"));
@@ -70,6 +76,32 @@ class XmppCallsTest {
             final String sid=call.sid;await(() -> c.sent.stream().anyMatch(s -> s instanceof Message && ((Message)s).hasExtension("proceed",JMI)));
             c.feed(iq("session-initiate",sid,description(JingleSdp.parse(JingleCodecTest.sdp(false,true)),true),"bob@example.org/desktop"));next(events.descriptions);next(events.requested);
             calls.localDescription(sid,false,JingleCodecTest.sdp(false,false));await(() -> c.sent.stream().anyMatch(s -> s instanceof Packet && "session-accept".equals(((Packet)s).element.getAttributeValue("action"))));calls.end(sid);next(events.ended);
+        }
+    }
+    @Test void receivedCarbonRingsAndRetractsOnlyBareAddressedProposalsFromValidatedOwnWrapper() throws Exception {
+        Connection c=new Connection();Events events=new Events();try(XmppCalls calls=new XmppCalls(c)) {
+            calls.setListener(events);c.resumed();Message proposal=jmi("propose","carbon","bob@example.org/desktop",true);proposal.setTo(c.getUser().asBareJid());
+            Message wrapper=new Message(c.getUser(),Message.Type.chat);wrapper.setFrom(JidCreate.entityBareFrom("mallory@example.org"));
+            wrapper.addExtension(new org.jivesoftware.smackx.carbons.packet.CarbonExtension(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.received,new org.jivesoftware.smackx.forward.packet.Forwarded<Message>(proposal)));c.feed(wrapper);assertNull(events.incoming.poll(80,TimeUnit.MILLISECONDS));
+            wrapper.setFrom(c.getUser().asBareJid());c.feed(wrapper);assertEquals("carbon",next(events.incoming).sid);
+            Message retract=jmi("retract","carbon","bob@example.org/desktop",false);retract.setTo(c.getUser().asBareJid());
+            wrapper=new Message(c.getUser(),Message.Type.chat);wrapper.setFrom(c.getUser().asBareJid());wrapper.addExtension(new org.jivesoftware.smackx.carbons.packet.CarbonExtension(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.received,new org.jivesoftware.smackx.forward.packet.Forwarded<Message>(retract)));c.feed(wrapper);assertEquals("cancel",next(events.ended));
+            Message targeted=jmi("propose","targeted","bob@example.org/desktop",true);targeted.setTo(JidCreate.entityFullFrom("alice@example.org/tablet"));
+            wrapper=new Message(c.getUser(),Message.Type.chat);wrapper.setFrom(c.getUser().asBareJid());wrapper.addExtension(new org.jivesoftware.smackx.carbons.packet.CarbonExtension(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.received,new org.jivesoftware.smackx.forward.packet.Forwarded<Message>(targeted)));c.feed(wrapper);assertNull(events.incoming.poll(80,TimeUnit.MILLISECONDS));
+        }
+    }
+    @Test void descriptionAckGatesTrickleAndPendingMuteWhileOptionalInfoErrorsDoNotHangUp() throws Exception {
+        Connection c=new Connection();c.holdDescription=true;c.unsupportedInfo=true;Events events=new Events();try(XmppCalls calls=new XmppCalls(c)) {
+            calls.setListener(events);XmppCalls.Call call=calls.start("bob@example.org",true);c.feed(jmi("proceed",call.sid,"bob@example.org/desktop",true));next(events.requested);
+            calls.mediaMuted(call.sid,true,true);calls.candidate(call.sid,"0",0,"candidate:1 1 udp 12345 192.0.2.1 1234 typ host ufrag abcd");calls.localDescription(call.sid,true,JingleCodecTest.sdp(true,true));await(() -> c.held!=null);
+            assertFalse(c.sent.stream().anyMatch(stanza -> stanza instanceof Packet && Arrays.asList("transport-info","session-info").contains(((Packet)stanza).element.getAttributeValue("action"))));
+            c.feed(IQ.createResultIQ(c.held));await(() -> c.sent.stream().anyMatch(stanza -> stanza instanceof Packet && "transport-info".equals(((Packet)stanza).element.getAttributeValue("action"))));await(() -> c.sent.stream().anyMatch(stanza -> stanza instanceof Packet && "session-info".equals(((Packet)stanza).element.getAttributeValue("action"))));
+            assertNull(events.ended.poll(80,TimeUnit.MILLISECONDS));assertEquals(call.sid,calls.current().sid);
+            c.feed(iq("session-accept",call.sid,description(JingleSdp.parse(JingleCodecTest.sdp(true,false)),false),"bob@example.org/desktop"));next(events.descriptions);
+            StandardExtensionElement all=StandardExtensionElement.builder("jingle",NS).addElement(StandardExtensionElement.builder("mute","urn:xmpp:jingle:apps:rtp:info:1").addAttribute("creator","responder").build()).build();c.feed(iq("session-info",call.sid,all,"bob@example.org/desktop"));assertEquals("true:true",next(events.muted));
+            StandardExtensionElement active=StandardExtensionElement.builder("jingle",NS).addElement(StandardExtensionElement.builder("active","urn:xmpp:jingle:apps:rtp:info:1").build()).build();c.feed(iq("session-info",call.sid,active,"bob@example.org/desktop"));assertEquals("false:false",next(events.muted));
+            Packet ping=iq("session-info",call.sid,null,"bob@example.org/desktop");c.feed(ping);await(() -> c.sent.stream().anyMatch(stanza -> stanza instanceof IQ && ((IQ)stanza).getType()==IQ.Type.result && ping.getStanzaId().equals(stanza.getStanzaId())));
+            calls.end(call.sid);next(events.ended);
         }
     }
     @Test void parsedFreshOfflineProposalMayRingButExpiredHistoryCannot() throws Exception {
@@ -101,7 +133,11 @@ class XmppCallsTest {
         try {
             XmppCalls.Call outgoing=calls.start("bob@example.org",false);
             c.feed(jmi("propose","glare","bob@example.org/desktop",false));await(() -> c.sent.stream().anyMatch(s -> s instanceof Message && s.hasExtension("reject",JMI)));assertEquals(outgoing.sid,calls.current().sid);assertTrue(events.incoming.isEmpty());
-            c.feed(jmi("propose","busy","carol@example.org/phone",false));calls.end(outgoing.sid);next(events.ended);
+            c.feed(jmi("propose","busy","carol@example.org/phone",false));
+            await(() -> c.sent.stream().anyMatch(stanza -> stanza instanceof Message && stanza.hasExtension("reject",JMI)
+                    && "busy".equals(((StandardExtensionElement)stanza.getExtension("reject",JMI)).getAttributeValue("id"))
+                    && "carol@example.org/phone".equals(String.valueOf(stanza.getTo()))));
+            assertEquals(outgoing.sid,calls.current().sid);assertTrue(events.incoming.isEmpty());calls.end(outgoing.sid);next(events.ended);
             c.feed(jmi("propose","retract","bob@example.org/desktop",false));next(events.incoming);c.feed(jmi("retract","retract","bob@example.org/desktop",false));assertEquals("cancel",next(events.ended));
             XmppCalls.Call timed=calls.start("bob@example.org",false);await(() -> c.sent.stream().anyMatch(s -> s instanceof Message && s.hasExtension("propose",JMI) && timed.sid.equals(((StandardExtensionElement)s.getExtension("propose",JMI)).getAttributeValue("id"))));
             java.lang.reflect.Method timeout=XmppCalls.class.getDeclaredMethod("timeout",String.class,long.class,String.class);timeout.setAccessible(true);synchronized(calls) { timeout.invoke(calls,timed.sid,20L,"timeout"); }assertEquals("timeout",next(events.ended));

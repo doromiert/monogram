@@ -27,6 +27,9 @@ class JingleCodecTest {
             }
             assertEquals(after.contents.size(),JingleSdp.parse(JingleSdp.serialize(after)).contents.size());
         }
+        String scoped=sdp(false,true).replace("a=group:BUNDLE 0\r\n","a=group:BUNDLE 0\r\na=inactive\r\n").replace("a=sendrecv","a=recvonly");
+        assertEquals("recvonly",JingleSdp.parse(scoped).contents.get(0).direction,"Media direction overrides the session default");
+        assertThrows(IllegalArgumentException.class,() -> JingleSdp.parse(sdp(false,true).replace("a=sendrecv","a=sendonly\r\na=recvonly")));
         CallDescription onlySend=JingleSdp.parse(sdp(true,false).replace("a=sendrecv","a=sendonly").replace("extmap:1 ","extmap:1/sendonly "));
         CallDescription mapped=JingleSdp.fromJingle(description(onlySend,false),false);assertEquals("sendonly",mapped.contents.get(0).direction);assertTrue(mapped.contents.get(0).attributes.stream().anyMatch(x -> x.startsWith("extmap:1/sendonly ")));
     }

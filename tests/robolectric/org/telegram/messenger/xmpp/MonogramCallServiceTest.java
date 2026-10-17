@@ -93,6 +93,25 @@ public class MonogramCallServiceTest {
         assertFalse(incoming.accepted);assertFalse(incoming.preparing);assertFalse(incoming.mediaReady);assertNull(incoming.media);
         assertEquals("pending remote offer",incoming.remoteSdp);assertNull(Shadows.shadowOf(application).getNextStartedService());
     }
+    @Test public void terminalSummarySeparatesMissedRejectedCompletedAndDisconnectedCalls() {
+        assertEquals("missed",MonogramCallService.callSummary("timeout",false,false,false,false));
+        assertEquals("hangup",MonogramCallService.callSummary("decline",false,false,false,false));
+        assertEquals("busy",MonogramCallService.callSummary("decline",false,true,true,false));
+        assertEquals("hangup",MonogramCallService.callSummary("success",false,true,true,true));
+        assertEquals("disconnect",MonogramCallService.callSummary("disconnected",true,false,true,true));
+        assertEquals("missed",MonogramCallService.callSummary("success",false,true,true,false));
+    }
+    @Test public void videoMuteBeforeTrackArrivalStaysMutedUntilExplicitUnmute() throws Exception {
+        MonogramCallService.Controller c=controller(0,false,true,() -> true,null);
+        c.remoteVideoMuted=true;c.updateRemoteVideo();
+        assertEquals(org.telegram.messenger.voip.Instance.VIDEO_STATE_INACTIVE,c.getRemoteVideoState());
+        c.remoteVideoAvailable=true;c.updateRemoteVideo();
+        assertEquals(org.telegram.messenger.voip.Instance.VIDEO_STATE_INACTIVE,c.getRemoteVideoState());
+        c.remoteVideoMuted=false;c.updateRemoteVideo();
+        assertEquals(org.telegram.messenger.voip.Instance.VIDEO_STATE_ACTIVE,c.getRemoteVideoState());
+        c.remoteVideoAvailable=false;c.updateRemoteVideo();
+        assertEquals(org.telegram.messenger.voip.Instance.VIDEO_STATE_INACTIVE,c.getRemoteVideoState());
+    }
     @Test public void staleServiceStartCannotStopAServiceOwnedByTheReplacementCall() throws Exception {
         MonogramCallService.Controller old=controller(0,true,false,() -> true,null);
         Intent stale=MonogramCallService.intent(application,MonogramCallService.class,old,MonogramCallService.ACCEPT);

@@ -25,10 +25,10 @@ public class MonogramProtocolStoreTest {
             try (MonogramStore store=new MonogramStore(context,file)) {
                 self=store.peer("alice@example.org"); peer=store.peer("bob@example.org");
                 old=store.save(MessageFixture.replyMessage("same-id","same-origin","same-archive","Keep existing plaintext",true,false,100000,"phone",false,null));
-                MonogramStoreDeviceTest.legacyProtocols(store.getWritableDatabase()); store.getWritableDatabase().setVersion(8);
+                MonogramStoreDeviceTest.legacyProtocols(store.getWritableDatabase());store.getWritableDatabase().setVersion(8);
             }
             try (MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(23,store.getReadableDatabase().getVersion()); assertEquals(-1,protocol(store,old));
+                assertEquals(24,store.getReadableDatabase().getVersion()); assertEquals(-1,protocol(store,old));
                 XmppMessage missing=MessageFixture.modern("same-id","same-archive",null,false,100000,null,null,null);
                 assertTrue(store.saveArchive(peer,MessageFixture.page(missing),true,null));
                 assertEquals("same-archive",store.archiveCursor(peer,false));

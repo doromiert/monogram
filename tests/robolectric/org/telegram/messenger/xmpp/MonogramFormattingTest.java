@@ -95,8 +95,8 @@ public class MonogramFormattingTest {
     @Test public void schema22MigrationPreservesExistingMessagesWithoutInventingFormatting() throws Exception {
         int id=store.save(MessageFixture.replyMessage("old","old",null,"Keep me",true,false,100000,"phone",false,null));
         store.getWritableDatabase().execSQL("DROP TRIGGER clear_message_formatting");store.getWritableDatabase().execSQL("DROP TRIGGER delete_message_formatting");
-        store.getWritableDatabase().execSQL("DROP TABLE message_formatting");store.getWritableDatabase().setVersion(22);reopen();
-        assertEquals(23,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertEquals(0,rows());
+        store.getWritableDatabase().execSQL("DROP TABLE message_formatting");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(22);reopen();
+        assertEquals(24,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertEquals(0,rows());
     }
     @Test public void searchMatchesDisplayedPhrasesAcrossFormattingAndCurrentCorrectionsAndCaptions() throws Exception {
         MessageMarkup first=styled("hello world",span(new TLRPC.TL_messageEntityBold(),0,5));

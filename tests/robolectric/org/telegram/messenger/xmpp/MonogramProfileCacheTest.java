@@ -46,10 +46,10 @@ public class MonogramProfileCacheTest {
             self=store.peer("alice@example.org");peer=store.peer("bob@example.org");
             message=store.save(MessageFixture.replyMessage("keep-message",null,null,"Keep this",true,false,100000,"phone",false,null));
             store.profile(peer,new XmppProfile("<vCard xmlns='vcard-temp'><FN>Bob</FN></vCard>","Bobby",source));image=store.avatar(peer);
-            store.getWritableDatabase().execSQL("DROP TABLE profile_avatar_sources");store.getWritableDatabase().setVersion(19);
+            store.getWritableDatabase().execSQL("DROP TABLE profile_avatar_sources");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(19);
         }
         try(MonogramStore store=new MonogramStore(context,file)) {
-            assertEquals(23,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
+            assertEquals(24,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
             assertEquals(image,store.avatar(peer));assertEquals("Bobby",store.profile(peer).nickname);
             assertArrayEquals(Files.readAllBytes(image.toPath()),store.profileForRefresh(peer).avatar);
             store.profile(peer,new XmppProfile(store.profile(peer).xml(),"New nickname",source));

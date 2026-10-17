@@ -134,20 +134,6 @@ public class VoIPHelper {
 	}
 
 	private static void startXmppCall(TLRPC.User user, boolean videoCall, Activity activity, int account) {
-		if (Build.VERSION.SDK_INT >= 23) {
-			ArrayList<String> permissions = new ArrayList<>();
-			if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-				permissions.add(Manifest.permission.RECORD_AUDIO);
-			}
-			if (videoCall && activity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-				permissions.add(Manifest.permission.CAMERA);
-			}
-			if (!permissions.isEmpty()) {
-				activity.requestPermissions(permissions.toArray(new String[0]), videoCall ? 102 : 101);
-				return;
-			}
-		}
-
 		VoIPCallController active = VoIPCallControllers.get();
 		if (active == null) {
 			MonogramCallService.start(activity, account, user.id, videoCall);

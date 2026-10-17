@@ -26,8 +26,7 @@ public final class JingleSdp {
             List<String> attrs=new ArrayList<>();for(String l:section) if(l.startsWith("a=")) attrs.add(l.substring(2));
             if(global.contains("a=extmap-allow-mixed") && !attrs.contains("extmap-allow-mixed")) attrs.add("extmap-allow-mixed");
             String mid=required(section,global,"a=mid:"),ufrag=required(section,global,"a=ice-ufrag:"),pwd=required(section,global,"a=ice-pwd:"),finger=required(section,global,"a=fingerprint:");
-            if(!finger.startsWith("sha-256 ")) throw invalid("DTLS SHA-256 required");String direction="sendrecv";
-            for(String d:Arrays.asList("sendrecv","sendonly","recvonly","inactive")) if(attrs.contains(d) || global.contains("a="+d)) direction=d;
+            if(!finger.startsWith("sha-256 ")) throw invalid("DTLS SHA-256 required");String direction=direction(section);if(direction==null) direction=direction(global);if(direction==null) direction="sendrecv";
             Set<String> offered=new LinkedHashSet<>();for(int i=3;i<m.length;i++) { number(m[i],0,127);if(!offered.add(m[i])) throw invalid("Duplicate SDP payload"); }
             Set<String> described=new HashSet<>();for(String a:attrs) if(a.startsWith("rtpmap:")) described.add(a.substring(7).split(" ",2)[0]);if(!offered.equals(described)) throw invalid("SDP codec list mismatch");
             Content c=new Content(mid,m[0],direction,ufrag,pwd,finger.substring(8),required(section,global,"a=setup:"),attrs);rtp(c);transport(c,true);contents.add(c);
@@ -90,6 +89,9 @@ public final class JingleSdp {
     private static void feedback(List<String> a,String id,StandardExtensionElement p) {
         if("rtcp-fb".equals(p.getElementName())) a.add("rtcp-fb:"+id+" "+attr(p,"type")+(p.getAttributeValue("subtype")==null?"":" "+attr(p,"subtype")));
         else if("rtcp-fb-trr-int".equals(p.getElementName())) a.add("rtcp-fb:"+id+" trr-int "+attr(p,"value"));
+    }
+    private static String direction(List<String> lines) {
+        String found=null;for(String line:lines) if(Arrays.asList("a=sendrecv","a=sendonly","a=recvonly","a=inactive").contains(line)) { if(found!=null) throw invalid("Conflicting SDP directions");found=line.substring(2); }return found;
     }
     private static String value(List<String> lines,String prefix) { String found=null;for(String s:lines) if(s.startsWith(prefix)) { if(found!=null) throw invalid("Duplicate SDP attribute");found=s.substring(prefix.length()); }return found; }
     private static String required(List<String> media,List<String> global,String prefix) { String v=value(media,prefix);if(v==null) v=value(global,prefix);if(v==null) throw invalid("Missing SDP attribute");return v; }

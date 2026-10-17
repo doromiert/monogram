@@ -51,10 +51,10 @@ public class MonogramRoomRosterTest {
             self=store.peer("alice@example.org");room=store.room("room@conference.example.org","Alice");
             message=store.save(MessageFixture.replyMessage("old-message",null,null,"Keep this",true,false,100000,"phone",false,null));
             store.getWritableDatabase().execSQL("UPDATE rooms SET description='Keep description' WHERE id=?",new Object[]{-room});
-            store.getWritableDatabase().execSQL("DROP TABLE room_affiliations");store.getWritableDatabase().setVersion(18);
+            store.getWritableDatabase().execSQL("DROP TABLE room_affiliations");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(18);
         }
         try(MonogramStore store=new MonogramStore(context,file)) {
-            assertEquals(23,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
+            assertEquals(24,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
             assertEquals("Keep description",store.roomFull(room,self).full_chat.about);store.roomRoster(room,members());
         }
         try(MonogramStore store=new MonogramStore(context,file)) {

@@ -46,7 +46,7 @@ public class MonogramDeletionTest {
                 MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(14);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(23,store.getReadableDatabase().getVersion());
+                assertEquals(24,store.getReadableDatabase().getVersion());
                 assertEquals("Keep me",store.getMessage(kept,self).message);
             }
         } finally { context.deleteDatabase(file); }
