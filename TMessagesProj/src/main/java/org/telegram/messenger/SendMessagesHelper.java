@@ -10207,7 +10207,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     if (finalError == ERROR_TYPE_UNSUPPORTED) {
                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.UnsupportedAttachment));
                     } else if (finalError == ERROR_TYPE_FILE_TOO_LARGE) {
-                        NotificationCenter.getInstance(accountInstance.getCurrentAccount()).postNotificationName(NotificationCenter.currentUserShowLimitReachedDialog, LimitReachedBottomSheet.TYPE_LARGE_FILE);
+                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.formatString(R.string.MonogramFileSizeLimit,AndroidUtilities.formatFileSize(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES)));
                     }
                 } catch (Exception e) {
                     FileLog.e(e);

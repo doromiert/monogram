@@ -1346,6 +1346,7 @@ public final class MonogramController {
             try {
                 final String uploadName=request.uploadName();
                 progress(progressName,0,request.file.length(),true,false);
+                FileTransfer.checkUploadSize(expected.connection(),request.file.length(),encrypted,job);
                 snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
                 FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
                         modern ? "application/octet-stream" : request.mime, encrypted, job,

@@ -199,7 +199,7 @@ public class FileLoader extends BaseController {
     private final FileLoaderPriorityQueue[] largeFilesQueue = new FileLoaderPriorityQueue[5];
 
     public final static long DEFAULT_MAX_FILE_SIZE = 1024L * 1024L * 2000L;
-    public final static long DEFAULT_MAX_FILE_SIZE_PREMIUM = DEFAULT_MAX_FILE_SIZE * 2L;
+    public final static long DEFAULT_MAX_FILE_SIZE_PREMIUM = com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES;
 
     public final static int PRELOAD_CACHE_TYPE = 11;
 
@@ -1918,11 +1918,7 @@ public class FileLoader extends BaseController {
     }
 
     public static boolean checkUploadFileSize(int currentAccount, long length) {
-        boolean premium = AccountInstance.getInstance(currentAccount).getUserConfig().isPremium();
-        if (length < DEFAULT_MAX_FILE_SIZE || (length < DEFAULT_MAX_FILE_SIZE_PREMIUM && premium)) {
-            return true;
-        }
-        return false;
+        return length <= DEFAULT_MAX_FILE_SIZE_PREMIUM;
     }
 
     private static class LoadOperationUIObject {

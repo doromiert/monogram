@@ -15,7 +15,7 @@ import org.jivesoftware.smackx.httpfileupload.element.Slot;
 
 /** Blocking, bounded-memory HTTPS transfers, used on a file-I/O executor. */
 public final class FileTransfer {
-    public static final long MAX_BYTES = 100L * 1024 * 1024;
+    public static final long MAX_BYTES = 4000L * 1024 * 1024;
     public interface Progress { void update(long bytes, long total); }
     public interface DownloadPolicy { long limit(String contentType, long plainSize); }
     public static final class Job {
@@ -53,21 +53,33 @@ public final class FileTransfer {
         for(int i=0;i<8;i++) suffix.append((char)('a'+random.nextInt(26)));
         return (System.currentTimeMillis()/1000)+"_"+suffix+extension.toLowerCase(java.util.Locale.ROOT);
     }
+    /** Check the provider before making an immutable private copy of a potentially large input. */
+    public static void checkUploadSize(XMPPConnection connection,long length,boolean encrypted,Job job) throws Exception {
+        uploadService(connection,length,encrypted,job);
+    }
+    private static HttpFileUploadManager uploadService(XMPPConnection connection,long length,boolean encrypted,Job job) throws Exception {
+        job.check();
+        if(length<=0 || length>MAX_BYTES) throw new Failure("FILE_SIZE");
+        long size=length+(encrypted ? 16 : 0);
+        HttpFileUploadManager manager=HttpFileUploadManager.getInstanceFor(connection);
+        try {
+            if(!manager.isUploadServiceDiscovered() && !manager.discoverUploadService()) throw new Failure("NO_UPLOAD_SERVICE");
+        } catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
+            throw new XmppRequestException("File upload service discovery",error);
+        }
+        job.check();
+        if(!manager.getDefaultUploadService().acceptsFileOfSize(size)) throw new Failure("SERVER_SIZE_LIMIT");
+        return manager;
+    }
     public static FileLink upload(XMPPConnection connection, File file, String mime, boolean encrypted, Job job, Progress progress) throws Exception {
         return upload(connection, file, file.getName(), mime, encrypted, job, progress);
     }
     public static FileLink upload(XMPPConnection connection, File file, String filename, String mime, boolean encrypted, Job job, Progress progress) throws Exception {
         job.check();
         long length = file.length();
-        if (!file.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
+        if (!file.isFile()) throw new Failure("FILE_SIZE");
+        HttpFileUploadManager manager = uploadService(connection,length,encrypted,job);
         long size = length + (encrypted ? 16 : 0);
-        HttpFileUploadManager manager = HttpFileUploadManager.getInstanceFor(connection);
-        try {
-            if (!manager.isUploadServiceDiscovered() && !manager.discoverUploadService()) throw new Failure("NO_UPLOAD_SERVICE");
-        } catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
-            throw new XmppRequestException("File upload service discovery",error);
-        }
-        if (!manager.getDefaultUploadService().acceptsFileOfSize(size)) throw new Failure("SERVER_SIZE_LIMIT");
         String contentType = encrypted ? "application/octet-stream" : mime;
         Slot slot;
         try { slot=manager.requestSlot(filename, size, contentType); }
@@ -125,7 +137,7 @@ public final class FileTransfer {
                         url = new URL(url, location); continue;
                     }
                     if (status != 200) throw new Failure("DOWNLOAD_HTTP_" + status);
-                    long length = http.getContentLength();
+                    long length = contentLength(http);
                     long maximum = MAX_BYTES;
                     if (policy != null) {
                         long plainSize = length - (link.encrypted() ? 16 : 0);
@@ -133,7 +145,7 @@ public final class FileTransfer {
                         maximum = Math.min(MAX_BYTES, policy.limit(http.getContentType(), plainSize));
                         if (maximum <= 0 || plainSize > maximum) return false;
                     }
-                    if (length > MAX_BYTES + 16) throw new Failure("SERVER_SIZE_LIMIT");
+                    if (length > MAX_BYTES + (link.encrypted() ? 16 : 0)) throw new Failure("SERVER_SIZE_LIMIT");
                     try (InputStream in = http.getInputStream(); FileOutputStream out = new FileOutputStream(partial)) {
                         copy(in, out, maximum + (link.encrypted() ? 16 : 0), length, link.encrypted() ? cipher(false, link.iv, link.key) : null, job, progress);
                         out.getFD().sync();
@@ -147,6 +159,14 @@ public final class FileTransfer {
             }
             throw new Failure("DOWNLOAD_REDIRECT");
         } finally { if (partial.exists() && !partial.delete()) partial.deleteOnExit(); }
+    }
+    private static long contentLength(HttpURLConnection http) throws Failure {
+        // Android 23 has no getContentLengthLong; the int getter overflows for large files.
+        String value=http.getHeaderField("Content-Length");
+        if(value==null) return -1;
+        value=value.trim();
+        if(!value.matches("[0-9]+")) throw new Failure("TRANSFER_SIZE");
+        try { return Long.parseLong(value); } catch(NumberFormatException invalid) { throw new Failure("TRANSFER_SIZE"); }
     }
     private static HttpURLConnection open(URL url, Job job) throws IOException {
         job.check();

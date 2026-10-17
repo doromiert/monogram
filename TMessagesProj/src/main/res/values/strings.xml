@@ -11551,4 +11551,5 @@
     <string name="MonogramSavedGifsEmpty">Save a GIF from a chat to reuse it here.</string>
     <string name="MonogramSearchSavedGifs">Search saved GIFs</string>
     <string name="MonogramFavoriteEmoji">Favorite emoji</string>
+    <string name="MonogramFileSizeLimit">Choose a non-empty file up to %1$s. Your provider may have a smaller limit.</string>
 </resources>

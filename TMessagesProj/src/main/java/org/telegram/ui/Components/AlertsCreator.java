@@ -319,7 +319,7 @@ public class AlertsCreator {
             case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":
                 text = "This file exceeds the upload service's size limit. Choose a smaller file and retry."; break;
             case "MONOGRAM_FILE_FILE_SIZE":
-                text = "Choose a non-empty file up to 100 MiB. Your provider may have a smaller limit."; break;
+                text = LocaleController.formatString(R.string.MonogramFileSizeLimit, AndroidUtilities.formatFileSize(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES)); break;
             case "MONOGRAM_FILE_AUTHENTICATION":
                 text = "The encrypted file could not be verified. It has not been opened. You can retry the download."; break;
             case "MONOGRAM_FILE_INTEGRITY":
