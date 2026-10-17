@@ -9,6 +9,7 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
+- [x] Build/publish/install regression checkpoint 0.2.41 (72169) through wireless ADB with the same signer. Two focused checks pass for international phone links and message search pagination/Unicode/deletion protection. Account, credential, OMEMO identity/trust, all 3,074 prior message identities and seven rooms survive; schema stays 16 (3,100 messages after installation). Visual/touch checks and the newly reported media regressions remain open.
 - [o] Receive round video notes as round videos: use the compatible `round_video_*.mp4` filename hint together with validated video metadata, retain the hint when uploading, and render through Telegram's native round-video playback controls. Screenshot confirms the other end currently receives an ordinary video/file.
 - [o] Fix new GIF regressions before parity work: sent GIFs do not animate, taps open the message menu instead of fullscreen, and GIPHY sends show no pending bubble until the source download completes. Inspect native document/image keys for local GIFs and move source fetching into the persisted pending-send flow; real sending/playback remains unverified.
 - [o] Restore video autoplay and automatic media downloads using Telegram's existing settings. Check shared local-file image keys, download policy routing and retry bookkeeping; keep this with the GIF regression investigation rather than adding another download preference.
