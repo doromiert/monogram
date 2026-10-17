@@ -254,7 +254,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                 getChildBounds(selectFrom, from);
                 getChildBounds(selectTo, to);
                 AndroidUtilities.lerp(from, to, selectT - selectFrom, rect);
-                float isEmojiTabs = emojiTabs == null ? 0 : 1f - Utilities.clamp01(Math.abs(selectT - (1 + (giftsTab != null ? 1 : 0) + (favoriteTab != null ? 1 : 0))));
+                float isEmojiTabs = emojiTabs == null ? 0 : 1f - Utilities.clamp01(Math.abs(selectT - indexOfChild(emojiTabs)));
                 float isMiddle = 4f * selectAnimationT * (1f - selectAnimationT);
                 float hw = rect.width() / 2 * (1f + isMiddle * .3f);
                 float hh = rect.height() / 2 * (1f - isMiddle * .05f);
@@ -276,7 +276,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
 
                 if (forceTabsShow) {
                     path.rewind();
-                    getChildBounds(1, rect);
+                    getChildBounds(emojiTabs == null ? 1 : indexOfChild(emojiTabs), rect);
                     path.addRoundRect(rect, AndroidUtilities.dpf2(16), AndroidUtilities.dpf2(16), Path.Direction.CW);
                     paint.setColor(selectorColor());
                     paint.setAlpha((int) (paint.getAlpha() * .5f));
@@ -693,11 +693,13 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
         }
         selectedFullIndex = index;
         final int wasSelected = selected;
+        int emojiTabsStart = -1;
         for (int i = 0, j = 0; i < contentView.getChildCount(); ++i, ++j) {
             View child = contentView.getChildAt(i);
             int from = j;
             if (child instanceof EmojiTabsView) {
                 EmojiTabsView tabs = (EmojiTabsView) child;
+                emojiTabsStart = j;
                 for (int a = 0; a < tabs.contentView.getChildCount(); ++a, ++j) {
                     View child2 = tabs.contentView.getChildAt(a);
                     if (child2 instanceof EmojiTabButton) {
@@ -712,6 +714,8 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                 selected = i;
             }
         }
+        final int emojiTabsIndex = emojiTabs == null ? -1 : contentView.indexOfChild(emojiTabs);
+        if (emojiTabs != null) emojiTabs.show(selected == emojiTabsIndex || forceTabsShow, animated);
         if (wasSelected != selected) {
             if (selectAnimator != null) {
                 selectAnimator.cancel();
@@ -733,12 +737,8 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                 contentView.invalidate();
             }
 
-            if (emojiTabs != null) {
-                emojiTabs.show(selected == 1 || forceTabsShow, animated);
-            }
-
             View child = contentView.getChildAt(selected);
-            if (selected >= 2) {
+            if (selected >= 2 && child != emojiTabs) {
                 scrollToVisible(child.getLeft(), child.getRight());
             } else {
                 scrollTo(0);
@@ -746,8 +746,8 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
         }
 
         if (wasIndex != index) {
-            if (emojiTabs != null && selected == 1 && index >= 1 && index <= 1 + emojiTabs.contentView.getChildCount()) {
-                emojiTabs.scrollToVisible(AndroidUtilities.dp(36 * (index - 1) - 6), AndroidUtilities.dp(36 * (index - 1) - 6 + 30));
+            if (emojiTabs != null && selected == emojiTabsIndex && index >= emojiTabsStart && index < emojiTabsStart + emojiTabs.contentView.getChildCount()) {
+                emojiTabs.scrollToVisible(AndroidUtilities.dp(32 * (index - emojiTabsStart) - 6), AndroidUtilities.dp(32 * (index - emojiTabsStart) - 6 + 30));
             }
             wasIndex = index;
         }
