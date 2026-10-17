@@ -2,7 +2,9 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
-- [o] Clean up queued upload cancellation immediately: clear native progress and the matching encoding notification; keep late completion/progress from a cancelled worker from affecting a retry. Register queued uploads before dispatch and check cancellation before preparation/upload resumes. Four focused progress/cancellation/notification checks and Nix APK packaging pass. Real-phone cancellation timing remains to verify; delivery pending.
+- [x] Build, publish and install [0.2.71](https://github.com/doromiert/monogram/releases/tag/v0.2.71) (72469, arm64, original signer) from `upload-cancellation-cleanup`, source `f7603c7f3`. Nix packaging and four focused progress/cancellation/encoding-notification checks pass; published APK checksum, size and source tag match. ADB confirms the version and foreground service, preserving account settings, two checked key files and all 549 pre-update message identities. Actual phone cancellation timing remains unverified.
+
+- [o] Clean up queued upload cancellation immediately: clear native progress and the matching encoding notification; keep late completion/progress from a cancelled worker from affecting a retry. Register queued uploads before dispatch and check cancellation before preparation/upload resumes. Four focused progress/cancellation/notification checks and Nix APK packaging pass. Published and installed 0.2.71; real-phone cancellation timing remains to verify.
 
 - [x] Build, publish and install [0.2.70](https://github.com/doromiert/monogram/releases/tag/v0.2.70) (72459, arm64, original signer) from `upload-and-reaction-loading`, source `0d0f58dd6`. Nix packaging and four focused progress/queue/favorite-order checks pass; published APK checksum, size and source tag match. ADB confirms the version and foreground service, preserving current account settings, two checked key files and all 546 pre-update message identities. Actual upload waiting, cold reaction loading and picker rendering remain unverified.
 
