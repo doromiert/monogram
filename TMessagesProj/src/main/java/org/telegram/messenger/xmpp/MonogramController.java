@@ -1682,6 +1682,47 @@ public final class MonogramController {
         if(path!=null) { fileNames.remove(path,job); clearProgress(path); }
         AndroidUtilities.runOnUIThread(() -> org.telegram.messenger.VideoEncodingService.uploadFinished(account,path));
     }
+    public void retryForward(TLRPC.Message pending) {
+        TLRPC.Message source=null;
+        try {
+            if(pending.params!=null && pending.params.containsKey("fwd_id")) {
+                TLRPC.Message saved=store.getMessage(Integer.parseInt(pending.params.get("fwd_id")),self);
+                if(Long.toString(saved.dialog_id).equals(pending.params.get("fwd_peer"))) source=saved;
+            }
+        } catch(RuntimeException unavailable) { /* A cached local file can still be sent if the original was removed. */ }
+        MonogramForwarding.retry(pending,source);
+    }
+    public File forwardSource(java.util.Map<String,String> params) {
+        try {
+            int id=Integer.parseInt(params.get(MonogramForwarding.SOURCE));
+            TLRPC.Message source=store.getMessage(id,self);
+            if(!MonogramAttachments.has(source) || !source.params.get(MonogramAttachments.PARAM).equals(params.get(MonogramForwarding.ADDRESS))) return null;
+            return store.attachmentPath(id);
+        } catch(RuntimeException invalid) { return null; }
+    }
+    private void prepareForwardFile(MonogramFileRequest request,XmppSession expected) throws Exception {
+        if(request.message.params==null || !request.message.params.containsKey(MonogramForwarding.SOURCE)) return;
+        if(session!=expected || request.file==null || !request.file.equals(forwardSource(request.message.params)))
+            throw new java.io.IOException("The forwarded attachment is no longer available");
+        int id=Integer.parseInt(request.message.params.get(MonogramForwarding.SOURCE));
+        String address=request.message.params.get(MonogramForwarding.ADDRESS);
+        FileLink link=FileLink.parse(address);
+        com.negzero.monogram.xmpp.FileShare sharing=store.sharing(id);
+        if(sharing!=null && !address.equals(sharing.link.wireUrl)) throw new java.io.IOException("Attachment reference changed");
+        boolean cached=store.hasCachedAttachment(address,request.file);
+        if(cached && sharing!=null) {
+            try { sharing.verify(request.file,request.job); }
+            catch(java.io.IOException invalid) { request.job.check();cached=false; }
+        }
+        if(!cached) {
+            FileTransfer.Progress onProgress=(bytes,total) -> progress(request.message.attachPath,bytes,total,false,link.encrypted());
+            boolean downloaded=sharing==null ? FileTransfer.download(link,request.file,request.job,onProgress,null)
+                    : FileTransfer.download(sharing,request.file,request.job,onProgress,null);
+            if(!downloaded) throw new java.io.IOException("Cannot download the forwarded attachment");
+        }
+        request.job.check();
+        if(session!=expected) throw new IllegalStateException("Account connection changed");
+    }
     private void upload(MonogramFileRequest request, RequestDelegate callback) {
         final XmppSession expected;
         try {
@@ -1713,7 +1754,8 @@ public final class MonogramController {
                 });
                 return;
             }
-            if (request.file == null || !request.file.isFile()) throw new java.io.FileNotFoundException();
+            boolean forwarded=request.message.params!=null && request.message.params.containsKey(MonogramForwarding.SOURCE);
+            if (request.file == null || !forwarded && !request.file.isFile()) throw new java.io.FileNotFoundException();
         } catch (Exception e) {
             finishUpload(request.localId,request.message.attachPath,request.job);
             TLRPC.TL_error error = fileError(e);
@@ -1738,6 +1780,7 @@ public final class MonogramController {
         fileWorker.execute(() -> {
             File snapshot = null;
             try {
+                prepareForwardFile(request,expected);
                 final String uploadName=request.uploadName();
                 progress(progressName,0,request.file.length(),true,false);
                 FileTransfer.checkUploadSize(expected.connection(),request.file.length(),encrypted,job);

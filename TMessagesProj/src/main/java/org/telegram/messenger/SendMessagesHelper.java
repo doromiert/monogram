@@ -1822,6 +1822,12 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (messageObject == null) {
             return;
         }
+        if (did > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(did)) {
+            ArrayList<MessageObject> messages = new ArrayList<>();
+            messages.add(messageObject);
+            sendMessage(messages, did, true, false, true, 0, 0);
+            return;
+        }
         if (messageObject.messageOwner.media != null && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaEmpty) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaGame) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaInvoice)) {
             HashMap<String, String> params = null;
             if (DialogObject.isEncryptedDialog(did) && messageObject.messageOwner.peer_id != null && (messageObject.messageOwner.media.photo instanceof TLRPC.TL_photo || messageObject.messageOwner.media.document instanceof TLRPC.TL_document)) {
@@ -2276,6 +2282,25 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         MessageSuggestionParams suggestionParams
     ) {
         if (messages == null || messages.isEmpty()) {
+            return 0;
+        }
+        if (peer > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(peer)) {
+            ArrayList<SendMessageParams> copies = new ArrayList<>();
+            try {
+                for (MessageObject source : messages) {
+                    SendMessageParams copy = org.telegram.messenger.xmpp.MonogramForwarding.copy(source.messageOwner, peer, hideCaption);
+                    copy.notify = notify;
+                    copy.scheduleDate = scheduleDate;
+                    copy.scheduleRepeatPeriod = scheduleRepeatPeriod;
+                    copy.replyToTopMsg = replyToTopMsg;
+                    copies.add(copy);
+                }
+            } catch (IllegalArgumentException unsupported) {
+                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if (fragment != null) AlertsCreator.showSimpleAlert(fragment, LocaleController.getString(R.string.AppName), unsupported.getMessage());
+                return 0;
+            }
+            for (SendMessageParams copy : copies) sendMessage(copy);
             return 0;
         }
         int sendResult = 0;
@@ -4464,6 +4489,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void sendMessage(SendMessageParams sendMessageParams) {
+        if (sendMessageParams.retryMessageObject != null
+                && (sendMessageParams.peer > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(sendMessageParams.peer))) {
+            TLRPC.Message pending = sendMessageParams.retryMessageObject.messageOwner;
+            if (pending.fwd_from != null || pending.params != null && pending.params.containsKey("fwd_id")) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).retryForward(pending);
+                sendMessageParams.params = pending.params;
+            }
+        }
         final SendMessageChatArguments sendMessageChatArguments = sendMessageParams.sendMessageChatArguments != null ?
                 sendMessageParams.sendMessageChatArguments : SendMessageChatArguments.EMPTY;
         String message = sendMessageParams.message;
@@ -5326,6 +5359,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (gifSource == null && document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
                     monogramSource = getFileLoader().getPathToAttach(document);
                     if (!monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(document, true);
+                }
+                if (params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramForwarding.SOURCE)) {
+                    monogramSource = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).forwardSource(params);
                 }
                 if (monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
                 groupId = 0; newMsg.grouped_id = 0; newMsg.flags &= ~131072;

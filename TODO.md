@@ -2,6 +2,8 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
+- [o] Fix native message forwarding: replace Telegram's unsupported server-side forward RPC with ordinary XMPP text/media sends, preserving destination OMEMO policy and persistent outbox. Download uncached source attachments, verify them and freshly upload for the destination without reusing the source chat's encrypted link; keep captions/round-video attributes and exclude source replies/security settings. Build and focused verification in progress; real phone forwarding remains to verify.
+
 Work only in `~/Projects/monogram`, using Git branches. Do not create separate source checkouts in other project folders.
 Reuse the existing upstream feature implementations and redesigned UI components (`MainTabsActivity`, `UniversalFragment`, native settings/presets); do not add parallel custom settings for features Telegram already supplies.
 
