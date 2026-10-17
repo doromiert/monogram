@@ -2127,7 +2127,7 @@ public class EmojiView extends FrameLayout implements
                     }
                 };
 //                gifSearchField.setVisibility(INVISIBLE);
-                gifSearchField.searchEditText.setHint(getString(R.string.MonogramSearchSavedGifs));
+                gifSearchField.searchEditText.setHint("Search GIFs · Powered by GIPHY");
                 gifContainer.addView(gifSearchField, new FrameLayout.LayoutParams(LayoutHelper.MATCH_PARENT, searchFieldHeight + AndroidUtilities.getShadowHeight()));
 
                 gifTabs = new DraggableScrollSlidingTabStrip(context, resourcesProvider);
@@ -6117,6 +6117,10 @@ public class EmojiView extends FrameLayout implements
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        if (gifAdapter != null) gifAdapter.loadTrendingGifs();
+        if (gifSearchAdapter != null && gifSearchField != null && !TextUtils.isEmpty(gifSearchField.searchEditText.getText())) {
+            gifSearchAdapter.search(gifSearchField.searchEditText.getText().toString(), false);
+        }
 
         if (observersGroup != null) {
             observersGroup.removeAllObservers();
@@ -6178,6 +6182,11 @@ public class EmojiView extends FrameLayout implements
     }
 
     public void onDestroy() {
+        if (gifAdapter != null) gifAdapter.cancelSearch();
+        if (gifSearchAdapter != null) {
+            gifSearchAdapter.cancelSearch();
+            if (gifSearchAdapter.searchRunnable != null) AndroidUtilities.cancelRunOnUIThread(gifSearchAdapter.searchRunnable);
+        }
         if (observersGroup != null) {
             observersGroup.removeAllObservers();
             observersGroup = null;
@@ -6187,6 +6196,11 @@ public class EmojiView extends FrameLayout implements
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        if (gifAdapter != null) gifAdapter.cancelSearch();
+        if (gifSearchAdapter != null) {
+            gifSearchAdapter.cancelSearch();
+            if (gifSearchAdapter.searchRunnable != null) AndroidUtilities.cancelRunOnUIThread(gifSearchAdapter.searchRunnable);
+        }
         if (colorPickerView != null && colorPickerView.isShowing()) {
             colorPickerView.dismiss();
         }
@@ -8623,6 +8637,8 @@ public class EmojiView extends FrameLayout implements
         private final int maxRecentRowsCount;
 
         private int reqId;
+        private org.telegram.messenger.xmpp.MonogramGiphy.Request giphyRequest;
+        private int searchGeneration;
         private TLRPC.User bot;
         private String nextSearchOffset;
         private boolean searchEndReached;
@@ -8697,7 +8713,7 @@ public class EmojiView extends FrameLayout implements
                     break;
                 case 2:
                     final StickerSetNameCell cell1 = new StickerSetNameCell(context, false, resourcesProvider, glassDesign);
-                    cell1.setText(getString(R.string.FeaturedGifs), 0);
+                    cell1.setText("Powered by GIPHY", 0);
                     view = cell1;
                     final RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT);
                     lp.topMargin = AndroidUtilities.dp(2.5f);
@@ -8719,7 +8735,9 @@ public class EmojiView extends FrameLayout implements
                 case 0: {
                     ContextLinkCell cell = (ContextLinkCell) holder.itemView;
                     if (firstResultItem >= 0 && position >= firstResultItem) {
-                        cell.setGif(results.get(position - firstResultItem).document, false);
+                        TLRPC.BotInlineResult result = results.get(position - firstResultItem);
+                        if (result.document != null) cell.setGif(result.document, false);
+                        else cell.setLink(result, null, true, false, false, true);
                     } else {
                         cell.setGif(recentGifs.get(position - (addSearch ? 1 : 0)), false);
                     }
@@ -8814,12 +8832,7 @@ public class EmojiView extends FrameLayout implements
             if (withRecent) {
                 return;
             }
-            if (reqId != 0) {
-                if (reqId >= 0) {
-                    ConnectionsManager.getInstance(currentAccount).cancelRequest(reqId, true);
-                }
-                reqId = 0;
-            }
+            cancelSearch();
             lastSearchIsEmoji = false;
             if (progressEmptyView != null) {
                 progressEmptyView.setLoadingState(false);
@@ -8865,25 +8878,62 @@ public class EmojiView extends FrameLayout implements
         }
 
         protected void search(final String query, final String offset, boolean searchUser, boolean isEmoji, boolean cache) {
+            cancelSearch();
+            final int generation = searchGeneration;
             lastSearchImageString = query;
             lastSearchIsEmoji = isEmoji;
+            boolean first = TextUtils.isEmpty(offset);
+            if (first) { results.clear(); resultsMap.clear(); }
             searchEndReached = true;
             nextSearchOffset = "";
-            results.clear(); resultsMap.clear();
-            String text = query == null ? "" : query.toLowerCase(java.util.Locale.ROOT).trim();
-            if (!withRecent) {
-                for (TLRPC.Document document : MediaDataController.getInstance(currentAccount).getRecentGifs()) {
-                    if (!text.isEmpty() && !FileLoader.getDocumentFileName(document).toLowerCase(java.util.Locale.ROOT).contains(text)) continue;
-                    TLRPC.TL_botInlineMediaResult result = new TLRPC.TL_botInlineMediaResult();
-                    result.id = "local-gif-" + document.id; result.type = "gif"; result.document = document;
-                    results.add(result); resultsMap.put(result.id, result);
+            if (!withRecent && gifGridView.getAdapter() != this) gifGridView.setAdapter(this);
+            if (!org.telegram.messenger.xmpp.MonogramGiphy.configured(currentAccount)) {
+                if (!withRecent) {
+                    String text = query == null ? "" : query.toLowerCase(java.util.Locale.ROOT).trim();
+                    for (TLRPC.Document document : MediaDataController.getInstance(currentAccount).getRecentGifs()) {
+                        if (!text.isEmpty() && !FileLoader.getDocumentFileName(document).toLowerCase(java.util.Locale.ROOT).contains(text)) continue;
+                        TLRPC.TL_botInlineMediaResult result = new TLRPC.TL_botInlineMediaResult();
+                        result.id = "local-gif-" + document.id; result.type = "gif"; result.document = document;
+                        results.add(result); resultsMap.put(result.id, result);
+                    }
                 }
-                gifSearchField.showProgress(false);
+                progressEmptyView.textView.setText(withRecent ? getString(R.string.MonogramSavedGifsEmpty)
+                        : "Add a GIPHY key in Settings → GIF search");
                 progressEmptyView.setLoadingState(false);
-                if (gifGridView.getAdapter() != this) gifGridView.setAdapter(this);
+                gifSearchField.showProgress(false);
+                notifyDataSetChanged();
+                return;
             }
+            reqId = 1;
+            progressEmptyView.setLoadingState(first && results.isEmpty());
+            gifSearchField.showProgress(true);
             notifyDataSetChanged();
-            if (!withRecent && TextUtils.isEmpty(offset)) scrollGifsToTop();
+            if (!withRecent && first) scrollGifsToTop();
+            giphyRequest = org.telegram.messenger.xmpp.MonogramGiphy.search(currentAccount, query, offset, (page, error) -> {
+                if (generation != searchGeneration) return;
+                reqId = 0; giphyRequest = null;
+                if (page != null) {
+                    for (TLRPC.BotInlineResult result : page.results) {
+                        if (!resultsMap.containsKey(result.id)) { results.add(result); resultsMap.put(result.id, result); }
+                    }
+                    nextSearchOffset = page.nextOffset;
+                    searchEndReached = TextUtils.isEmpty(nextSearchOffset);
+                }
+                progressEmptyView.textView.setText(error != null ? error : "No GIFs found · Powered by GIPHY");
+                progressEmptyView.setLoadingState(false);
+                gifSearchField.showProgress(false);
+                notifyDataSetChanged();
+                if (error != null && !results.isEmpty()) {
+                    android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
+        private void cancelSearch() {
+            searchGeneration++;
+            if (giphyRequest != null) { giphyRequest.cancel(); giphyRequest = null; }
+            reqId = 0;
+
         }
     }
 
@@ -8901,7 +8951,7 @@ public class EmojiView extends FrameLayout implements
             setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
                 @Override
                 public int getSpanSize(int position) {
-                    if (position == 0 && gifAdapter.addSearch || gifGridView.getAdapter() == gifSearchAdapter && gifSearchAdapter.results.isEmpty() || gifGridView.getAdapter() == gifAdapter && gifAdapter.recentItemsCount == 0) {
+                    if (position == 0 && gifAdapter.addSearch || gifGridView.getAdapter() == gifSearchAdapter && gifSearchAdapter.results.isEmpty() || gifGridView.getAdapter() == gifAdapter && gifAdapter.recentItemsCount == 0 && gifAdapter.results.isEmpty()) {
                         return getSpanCount();
                     }
                     return getSpanSizeForItem(position - (gifAdapter.addSearch ? 1 : 0));
@@ -8911,52 +8961,28 @@ public class EmojiView extends FrameLayout implements
 
         @Override
         protected Size getSizeForItem(int i) {
+            GifAdapter adapter = gifGridView.getAdapter() == gifAdapter ? gifAdapter : gifSearchAdapter;
+            int position = i + (adapter.addSearch ? 1 : 0);
+            if (position < 0 || position >= adapter.itemsCount || adapter.getItemViewType(position) != 0) return null;
             TLRPC.Document document;
-            ArrayList<TLRPC.DocumentAttribute> attributes;
-            if (gifGridView.getAdapter() == gifAdapter) {
-                if (i > gifAdapter.recentItemsCount) {
-                    TLRPC.BotInlineResult result = gifAdapter.results.get(i - gifAdapter.recentItemsCount - 1);
-                    document = result.document;
-                    if (document != null) {
-                        attributes = document.attributes;
-                    } else if (result.content != null) {
-                        attributes = result.content.attributes;
-                    } else if (result.thumb != null) {
-                        attributes = result.thumb.attributes;
-                    } else {
-                        attributes = null;
-                    }
-                } else if (i == gifAdapter.recentItemsCount) {
-                    return null;
-                } else {
-                    document = recentGifs.get(i);
-                    attributes = document.attributes;
-                }
-            } else if (!gifSearchAdapter.results.isEmpty()) {
-                TLRPC.BotInlineResult result = gifSearchAdapter.results.get(i);
+            List<TLRPC.DocumentAttribute> attributes;
+            if (adapter.firstResultItem >= 0 && position >= adapter.firstResultItem) {
+                TLRPC.BotInlineResult result = adapter.results.get(position - adapter.firstResultItem);
                 document = result.document;
-                if (document != null) {
-                    attributes = document.attributes;
-                } else if (result.content != null) {
-                    attributes = result.content.attributes;
-                } else if (result.thumb != null) {
-                    attributes = result.thumb.attributes;
-                } else {
-                    attributes = null;
-                }
+                attributes = document != null ? document.attributes : result.content != null ? result.content.attributes
+                        : result.thumb != null ? result.thumb.attributes : null;
             } else {
-                document = null;
-                attributes = null;
+                document = recentGifs.get(i);
+                attributes = document.attributes;
             }
             return getSizeForItem(document, attributes);
         }
 
         @Override
         protected int getFlowItemCount() {
-            if (gifGridView.getAdapter() == gifSearchAdapter && gifSearchAdapter.results.isEmpty() || gifGridView.getAdapter() == gifAdapter && gifAdapter.recentItemsCount == 0) {
-                return 0;
-            }
-            return getItemCount() - 1;
+            GifAdapter adapter = gifGridView.getAdapter() == gifAdapter ? gifAdapter : gifSearchAdapter;
+            if (adapter.results.isEmpty() && adapter.recentItemsCount == 0) return 0;
+            return adapter.itemsCount - (adapter.addSearch ? 1 : 0);
         }
 
         public Size getSizeForItem(TLRPC.Document document) {

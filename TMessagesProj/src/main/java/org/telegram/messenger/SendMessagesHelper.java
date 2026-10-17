@@ -10256,6 +10256,23 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (result == null) {
             return;
         }
+        if (org.telegram.messenger.xmpp.MonogramGiphy.isResult(result) && !params.containsKey("monogramGifDownloaded")) {
+            final int account = accountInstance.getCurrentAccount();
+            final long user = accountInstance.getUserConfig().getClientUserId();
+            android.widget.Toast.makeText(ApplicationLoader.applicationContext, "Downloading GIF…", android.widget.Toast.LENGTH_SHORT).show();
+            org.telegram.messenger.xmpp.MonogramGiphy.download(account, result, success -> {
+                if (user != accountInstance.getUserConfig().getClientUserId()) return;
+                if (!success) {
+                    android.widget.Toast.makeText(ApplicationLoader.applicationContext, "Could not download GIF. Please try again.", android.widget.Toast.LENGTH_LONG).show();
+                    return;
+                }
+                HashMap<String, String> downloaded = new HashMap<>(params);
+                downloaded.remove("id"); downloaded.remove("query_id");
+                downloaded.put("monogramGifDownloaded", "1");
+                prepareSendingBotContextResult(fragment, accountInstance, result, downloaded, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, notify, scheduleDate, scheduleRepeatPeriod, sendMessageChatArguments, stars, monoForumPeerId);
+            });
+            return;
+        }
         if (result.send_message instanceof TLRPC.TL_botInlineMessageMediaAuto) {
             new Thread(() -> {
                 boolean isEncrypted = DialogObject.isEncryptedDialog(dialogId);

@@ -194,7 +194,7 @@ public class ContextLinkCell extends FrameLayout implements DownloadController.F
         TLRPC.PhotoSize currentPhotoObjectThumb = null;
         ArrayList<TLRPC.PhotoSize> photoThumbs = null;
         WebFile webFile = null;
-        TLRPC.TL_webDocument webDocument = null;
+        TLRPC.WebDocument webDocument = null;
         String urlLocation = null;
 
         if (documentAttach != null) {
@@ -257,26 +257,27 @@ public class ContextLinkCell extends FrameLayout implements DownloadController.F
             }
         }
         if (inlineResult != null) {
-            if (inlineResult.content instanceof TLRPC.TL_webDocument) {
+            if (inlineResult.content instanceof TLRPC.WebDocument) {
                 if (inlineResult.type != null) {
                     if (inlineResult.type.startsWith("gif")) {
-                        if (inlineResult.thumb instanceof TLRPC.TL_webDocument && "video/mp4".equals(inlineResult.thumb.mime_type)) {
-                            webDocument = (TLRPC.TL_webDocument) inlineResult.thumb;
+                        if (inlineResult.thumb instanceof TLRPC.WebDocument && "video/mp4".equals(inlineResult.thumb.mime_type)) {
+                            webDocument = (TLRPC.WebDocument) inlineResult.thumb;
                         } else {
-                            webDocument = (TLRPC.TL_webDocument) inlineResult.content;
+                            webDocument = inlineResult.content instanceof TLRPC.TL_webDocumentNoProxy && inlineResult.thumb != null
+                                    ? inlineResult.thumb : inlineResult.content;
                         }
                         documentAttachType = DOCUMENT_ATTACH_TYPE_GIF;
                     } else if (inlineResult.type.equals("photo")) {
-                        if (inlineResult.thumb instanceof TLRPC.TL_webDocument) {
-                            webDocument = (TLRPC.TL_webDocument) inlineResult.thumb;
+                        if (inlineResult.thumb instanceof TLRPC.WebDocument) {
+                            webDocument = (TLRPC.WebDocument) inlineResult.thumb;
                         } else {
-                            webDocument = (TLRPC.TL_webDocument) inlineResult.content;
+                            webDocument = (TLRPC.WebDocument) inlineResult.content;
                         }
                     }
                 }
             }
-            if (webDocument == null && (inlineResult.thumb instanceof TLRPC.TL_webDocument)) {
-                webDocument = (TLRPC.TL_webDocument) inlineResult.thumb;
+            if (webDocument == null && (inlineResult.thumb instanceof TLRPC.WebDocument)) {
+                webDocument = (TLRPC.WebDocument) inlineResult.thumb;
             }
             if (webDocument == null && currentPhotoObject == null && currentPhotoObjectThumb == null) {
                 if (inlineResult.send_message instanceof TLRPC.TL_botInlineMessageMediaVenue || inlineResult.send_message instanceof TLRPC.TL_botInlineMessageMediaGeo) {
@@ -734,7 +735,7 @@ public class ContextLinkCell extends FrameLayout implements DownloadController.F
                 radialProgress.setProgress(0, false);
                 if (documentAttach != null) {
                     FileLoader.getInstance(currentAccount).loadFile(documentAttach, inlineResult, FileLoader.PRIORITY_NORMAL, 0);
-                } else if (inlineResult.content instanceof TLRPC.TL_webDocument) {
+                } else if (inlineResult.content instanceof TLRPC.WebDocument) {
                     FileLoader.getInstance(currentAccount).loadFile(WebFile.createWithWebDocument(inlineResult.content), FileLoader.PRIORITY_HIGH, 1);
                 }
                 buttonState = 4;
@@ -743,7 +744,7 @@ public class ContextLinkCell extends FrameLayout implements DownloadController.F
             } else if (buttonState == 4) {
                 if (documentAttach != null) {
                     FileLoader.getInstance(currentAccount).cancelLoadFile(documentAttach);
-                } else if (inlineResult.content instanceof TLRPC.TL_webDocument) {
+                } else if (inlineResult.content instanceof TLRPC.WebDocument) {
                     FileLoader.getInstance(currentAccount).cancelLoadFile(WebFile.createWithWebDocument(inlineResult.content));
                 }
                 buttonState = 2;
@@ -896,7 +897,7 @@ public class ContextLinkCell extends FrameLayout implements DownloadController.F
                         if (documentAttach != null) {
                             fileName = FileLoader.getAttachFileName(documentAttach);
                             cacheFile = FileLoader.getInstance(currentAccount).getPathToAttach(documentAttach);
-                        } else if (inlineResult.content instanceof TLRPC.TL_webDocument) {
+                        } else if (inlineResult.content instanceof TLRPC.WebDocument) {
                             fileName = Utilities.MD5(inlineResult.content.url) + "." + ImageLoader.getHttpUrlExtension(inlineResult.content.url, documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC ? "mp3" : "ogg");
                             cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), fileName);
                         }
@@ -909,13 +910,13 @@ public class ContextLinkCell extends FrameLayout implements DownloadController.F
                                 currentPhotoObject = FileLoader.getClosestPhotoSizeWithSize(inlineResult.photo.sizes, AndroidUtilities.getPhotoSize(), true);
                                 fileName = FileLoader.getAttachFileName(currentPhotoObject);
                                 cacheFile = FileLoader.getInstance(currentAccount).getPathToAttach(currentPhotoObject);
-                            } else if (inlineResult.content instanceof TLRPC.TL_webDocument) {
+                            } else if (inlineResult.content instanceof TLRPC.WebDocument) {
                                 fileName = Utilities.MD5(inlineResult.content.url) + "." + ImageLoader.getHttpUrlExtension(inlineResult.content.url, FileLoader.getMimeTypePart(inlineResult.content.mime_type));
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), fileName);
-                                if (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF && inlineResult.thumb instanceof TLRPC.TL_webDocument && "video/mp4".equals(inlineResult.thumb.mime_type)) {
+                                if (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF && inlineResult.thumb instanceof TLRPC.WebDocument && "video/mp4".equals(inlineResult.thumb.mime_type)) {
                                     fileName = null;
                                 }
-                            } else if (inlineResult.thumb instanceof TLRPC.TL_webDocument) {
+                            } else if (inlineResult.thumb instanceof TLRPC.WebDocument) {
                                 fileName = Utilities.MD5(inlineResult.thumb.url) + "." + ImageLoader.getHttpUrlExtension(inlineResult.thumb.url, FileLoader.getMimeTypePart(inlineResult.thumb.mime_type));
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), fileName);
                             }

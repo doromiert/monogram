@@ -12325,8 +12325,10 @@ public class ChatActivityEnterView extends FrameLayout implements
                                 TLRPC.User bot = (TLRPC.User) parent;
 
                                 HashMap<String, String> params = new HashMap<>();
-                                params.put("id", result.id);
-                                params.put("query_id", "" + result.query_id);
+                                if (!org.telegram.messenger.xmpp.MonogramGiphy.isResult(result)) {
+                                    params.put("id", result.id);
+                                    params.put("query_id", "" + result.query_id);
+                                }
                                 params.put("force_gif", "1");
 
                                 if (storyItem == null) {
