@@ -21,6 +21,8 @@ public final class MonogramStoreDeviceTest {
     }
     static void legacyDeletions(SQLiteDatabase db) {
         db.execSQL("DROP TABLE message_retractions");
+        db.execSQL("DROP TABLE retraction_sources");
+        db.execSQL("ALTER TABLE messages DROP COLUMN sender_fingerprint");
         db.execSQL("ALTER TABLE messages DROP COLUMN deleted");
     }
     static void legacyProtocols(SQLiteDatabase db) {

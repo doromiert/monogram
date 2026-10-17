@@ -12,30 +12,50 @@ final class MonogramRetractions {
     private final MonogramStore store;
     MonogramRetractions(MonogramStore store) { this.store=store; }
     static void create(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE message_retractions (peer INTEGER NOT NULL,actor TEXT NOT NULL,target TEXT NOT NULL,legacy INTEGER NOT NULL,identity TEXT NOT NULL,real_jid TEXT,stable_id TEXT,verified INTEGER NOT NULL DEFAULT 0,resolved INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(peer,actor,target,legacy,identity))");
+        db.execSQL("CREATE TABLE message_retractions (peer INTEGER NOT NULL,actor TEXT NOT NULL,target TEXT NOT NULL,legacy INTEGER NOT NULL,identity TEXT NOT NULL,real_jid TEXT,stable_id TEXT,verified INTEGER NOT NULL DEFAULT 0,resolved INTEGER NOT NULL DEFAULT 0,protocol INTEGER NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(peer,actor,target,legacy,identity,protocol,fingerprint))");
+        db.execSQL("CREATE TABLE retraction_sources (message INTEGER PRIMARY KEY,hidden INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE INDEX pending_retractions ON message_retractions(peer,resolved)");
     }
+    static String fingerprint(String value) {
+        return value!=null && value.matches("(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{66})") ? value.toLowerCase(Locale.ROOT) : null;
+    }
     void save(XmppMessage message) {
-        record(store.peer(message.peer.toString()),message.sender.split("/",2)[0],message.retraction,null,null,false);
+        if(!message.readable || message.encrypted && fingerprint(message.senderFingerprint)==null) return;
+        long peer=store.peer(message.peer.toString());
+        record(peer,message.sender.split("/",2)[0],message.retraction,null,null,false,message.encryption.ordinal(),message.senderFingerprint);
+        source(peer,message.sender,message.ids,message.encryption.ordinal());
     }
     void save(XmppRoomMessage message) {
-        record(store.knownRoom(message.room.toString()),message.sender,message.retraction,message.realSender,message.occupantId,message.realSenderVerified);
+        if(!message.readable || message.encrypted && fingerprint(message.senderFingerprint)==null) return;
+        long peer=store.knownRoom(message.room.toString());
+        record(peer,message.sender,message.retraction,message.realSender,message.occupantId,message.realSenderVerified,message.encryption.ordinal(),message.senderFingerprint);
+        source(peer,message.sender,message.ids,message.encryption.ordinal());
     }
-    private void record(long peer,String actor,MessageRetraction request,String real,String stable,boolean verified) {
+    private void source(long peer,String sender,Map<String,String> ids,int protocol) {
+        String wire=ids.get("stanza"); if(protocol!=2 || wire==null) return;
+        SQLiteDatabase db=store.getWritableDatabase();
+        // A protected control stanza may already have an unreadable outer-stanza placeholder.
+        try(Cursor c=db.rawQuery("SELECT DISTINCT m.id FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND m.encryption=? AND m.readable=0 AND i.kind='stanza' AND i.value=? AND i.namespace=?",
+                new String[]{Long.toString(peer),Integer.toString(protocol),sender+"\n"+wire,Integer.toString(protocol)})) {
+            while(c.moveToNext()) { ContentValues value=new ContentValues(); value.put("message",c.getInt(0)); db.insertWithOnConflict("retraction_sources",null,value,SQLiteDatabase.CONFLICT_IGNORE); }
+        }
+    }
+    private void record(long peer,String actor,MessageRetraction request,String real,String stable,boolean verified,int protocol,String fingerprint) {
         if(peer==0 || request==null) return;
+        String key=protocol==0 ? "" : fingerprint(fingerprint);
         ContentValues value=new ContentValues(); value.put("peer",peer); value.put("actor",actor); value.put("target",request.id); value.put("legacy",request.legacy);
         value.put("identity",stable!=null ? "occupant:"+stable : verified && real!=null ? "jid:"+real : "");
-        value.put("real_jid",real); value.put("stable_id",stable); value.put("verified",verified);
+        value.put("real_jid",real); value.put("stable_id",stable); value.put("verified",verified); value.put("protocol",protocol); value.put("fingerprint",key);
         store.getWritableDatabase().insertWithOnConflict("message_retractions",null,value,SQLiteDatabase.CONFLICT_IGNORE);
         if(verified) store.getWritableDatabase().update("message_retractions",value,
-                "peer=? AND actor=? AND target=? AND legacy=? AND verified=0 AND (stable_id IS NULL OR stable_id=?)",
-                new String[]{Long.toString(peer),actor,request.id,request.legacy ? "1" : "0",stable});
+                "peer=? AND actor=? AND target=? AND legacy=? AND protocol=? AND fingerprint=? AND verified=0 AND identity=?",
+                new String[]{Long.toString(peer),actor,request.id,request.legacy ? "1" : "0",Integer.toString(protocol),key,value.getAsString("identity")});
     }
     Set<Integer> reconcile(long peer) {
         SQLiteDatabase db=store.getWritableDatabase(); Set<Integer> removed=new HashSet<>();
         db.beginTransaction();
         try {
-        try(Cursor events=db.rawQuery("SELECT actor,target,legacy,real_jid,stable_id,verified,rowid FROM message_retractions WHERE peer=? AND resolved=0",new String[]{Long.toString(peer)})) {
+        try(Cursor events=db.rawQuery("SELECT actor,target,legacy,real_jid,stable_id,verified,rowid,protocol,fingerprint FROM message_retractions WHERE peer=? AND resolved=0",new String[]{Long.toString(peer)})) {
             while(events.moveToNext()) {
                 String actor=events.getString(0),reference=events.getString(1); boolean legacy=events.getInt(2)!=0;
                 String kind=legacy ? "origin" : peer<0 ? "archive" : "stanza";
@@ -51,15 +71,27 @@ final class MonogramRetractions {
                         target=candidate;
                     }
                 }
-                if(ambiguous || target==0 || peer<0 && !roomAuthor(target,actor,events.getString(3),events.getString(4),events.getInt(5)!=0)) continue;
+                if(ambiguous || target==0 || !encryptionMatches(target,events.getInt(7),events.getString(8)) || peer<0 && !roomAuthor(target,actor,events.getString(3),events.getString(4),events.getInt(5)!=0)) continue;
                 if(!store.hiddenCorrection(target)) removed.add(target);
                 db.execSQL("UPDATE message_retractions SET resolved=? WHERE rowid=?",new Object[]{target,events.getLong(6)});
+            }
+        }
+        try(Cursor sources=db.rawQuery("SELECT s.message FROM retraction_sources s JOIN messages m ON m.id=s.message WHERE m.peer=? AND s.hidden=0",new String[]{Long.toString(peer)})) {
+            while(sources.moveToNext()) {
+                int id=sources.getInt(0); if(!store.hiddenCorrection(id)) removed.add(id);
+                db.execSQL("UPDATE retraction_sources SET hidden=1 WHERE message=?",new Object[]{id});
             }
         }
         if(!removed.isEmpty()) store.deleteMessages(removed);
         db.setTransactionSuccessful();
         return removed;
         } finally { db.endTransaction(); }
+    }
+    private boolean encryptionMatches(int id,int protocol,String fingerprint) {
+        try(Cursor c=store.getReadableDatabase().rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END,sender_fingerprint FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
+            if(!c.moveToFirst()) return false;
+            return c.getInt(0)==0 || c.getInt(0)==protocol && !c.isNull(1) && c.getString(1).equals(fingerprint);
+        }
     }
     private boolean directAuthor(int id,String author) {
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT sender FROM message_senders WHERE message=?",new String[]{Integer.toString(id)})) {
@@ -75,8 +107,8 @@ final class MonogramRetractions {
         }
     }
     static final class Target {
-        final int id; final long peer; final String current,legacy,sender,stable;
-        Target(int id,long peer,String current,String legacy,String sender,String stable) { this.id=id; this.peer=peer; this.current=current; this.legacy=legacy; this.sender=sender; this.stable=stable; }
+        final int id; final long peer; final String current,legacy,sender,stable,fingerprint; final XmppMessage.Encryption encryption;
+        Target(int id,long peer,String current,String legacy,String sender,String stable,String fingerprint,XmppMessage.Encryption encryption) { this.fingerprint=fingerprint; this.encryption=encryption; this.id=id; this.peer=peer; this.current=current; this.legacy=legacy; this.sender=sender; this.stable=stable; }
     }
     Target target(int id,long peer,long self) {
         org.telegram.tgnet.TLRPC.Message message=store.getMessage(id,self);
@@ -92,7 +124,10 @@ final class MonogramRetractions {
         if(current==null && legacy==null) throw new IllegalArgumentException("Original message reference is unavailable");
         if(current!=null) unique(peer,peer<0 ? "archive" : "stanza",current,peer>0,store.jid(self));
         if(legacy!=null) unique(peer,"origin",legacy,peer<0,store.jid(self));
-        return new Target(id,peer,current,legacy,sender,stable);
+        try(Cursor c=store.getReadableDatabase().rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END,sender_fingerprint FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
+            if(!c.moveToFirst()) throw new IllegalArgumentException("Missing original message");
+            return new Target(id,peer,current,legacy,sender,stable,c.getString(1),XmppMessage.Encryption.values()[c.getInt(0)]);
+        }
     }
     private void unique(long peer,String kind,String reference,boolean scoped,String own) {
         String value=scoped ? "substr(i.value,instr(i.value,char(10))+1)" : "i.value";

@@ -7,18 +7,30 @@ import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
     public static XmppMessage retraction(String reference,boolean legacy,boolean outgoing,String resource) throws Exception {
+        return encryptedRetraction(reference,legacy,outgoing,resource,null);
+    }
+    public static XmppMessage encryptedRetraction(String reference,boolean legacy,boolean outgoing,String resource,String fingerprint) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
         wire.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/"+resource)); wire.setStanzaId(java.util.UUID.randomUUID().toString());
         new MessageRetraction(reference,legacy).addTo(wire);
-        return XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,null);
+        return XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),fingerprint!=null,true,null,null).withSenderFingerprint(fingerprint);
     }
     public static XmppRoomMessage roomRetraction(String room,String nick,String real,String stable,String reference,boolean legacy) throws Exception {
+        return roomRetraction(room,nick,real,stable,reference,legacy,null);
+    }
+    public static XmppRoomMessage roomRetraction(String room,String nick,String real,String stable,String reference,boolean legacy,String fingerprint) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
         wire.setFrom(JidCreate.entityFullFrom(room+"/"+nick)); wire.setStanzaId(java.util.UUID.randomUUID().toString());
         new MessageRetraction(reference,legacy).addTo(wire);
-        XmppRoomMessage value=XmppRoomMessage.archived(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom("alice@example.org"),"",wire.getBody(),false,true,null,new java.util.Date(200000));
+        XmppRoomMessage value=XmppRoomMessage.archived(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom("alice@example.org"),"",wire.getBody(),fingerprint!=null,true,null,new java.util.Date(200000));
         if(real!=null) value=value.identified(real,JidCreate.entityBareFrom("alice@example.org"));
-        return value.withOccupantId(stable);
+        return value.withOccupantId(stable).withSenderFingerprint(fingerprint);
+    }
+    public static XmppMessage modernRetraction(String wireId,String reference,String fingerprint) throws Exception {
+        Message message=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.chat);
+        message.setFrom(JidCreate.entityFullFrom("bob@example.org/phone")); message.setStanzaId(wireId);
+        new MessageRetraction(reference,false).addTo(message);
+        return XmppMessage.modern(message,message,JidCreate.entityBareFrom("alice@example.org"),null,null).withSenderFingerprint(fingerprint);
     }
     public static XmppMessage modern(String id, String archive, String body, boolean outgoing, long time,
                                      ReplyReference reply, String correction, FileShare sharing) throws Exception {

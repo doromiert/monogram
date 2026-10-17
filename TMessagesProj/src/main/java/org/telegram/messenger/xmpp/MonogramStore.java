@@ -28,7 +28,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
         addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
-        addDeletions(db); MonogramRetractions.create(db);
+        addDeletions(db); addSenderFingerprints(db); MonogramRetractions.create(db);
     }
     private void addMessageMetadata(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN readable INTEGER NOT NULL DEFAULT 1");
@@ -95,7 +95,21 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<14) addRoomAuthorVerification(db);
         if(oldVersion<14) MonogramReactions.create(db);
         if(oldVersion<15) addDeletions(db);
-        if(oldVersion<16) MonogramRetractions.create(db);
+        if(oldVersion<16) { addSenderFingerprints(db); MonogramRetractions.create(db); }
+    }
+    private void addSenderFingerprints(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN sender_fingerprint TEXT");
+    }
+    private void rememberFingerprint(SQLiteDatabase db,int id,boolean readable,int protocol,String fingerprint) {
+        if(!readable || protocol==0 || fingerprint==null) return;
+        String normalized=MonogramRetractions.fingerprint(fingerprint);
+        if(normalized==null) throw new IllegalArgumentException("Invalid authenticated sender fingerprint");
+        try(Cursor c=db.rawQuery("SELECT sender_fingerprint FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
+            if(!c.moveToFirst()) throw new IllegalStateException("Missing fingerprint target");
+            if(!c.isNull(0) && !normalized.equals(c.getString(0))) throw new IllegalStateException("Conflicting authenticated sender fingerprints");
+        }
+        ContentValues value=new ContentValues(); value.put("sender_fingerprint",normalized);
+        db.update("messages",value,"id=? AND sender_fingerprint IS NULL",new String[]{Integer.toString(id)});
     }
     private void addDeletions(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
@@ -170,7 +184,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         profileCache.clear();
         db.beginTransaction();
-        try { db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -330,6 +344,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                     }
                 }
             }
+            rememberFingerprint(db,id,message.readable,message.encryption.ordinal(),message.senderFingerprint);
             if(message.realSenderVerified && message.realSender!=null) {
                 long sender=roomUser(dialog,message.sender,message.realSender,self);
                 try(Cursor c=db.rawQuery("SELECT s.user,m.outgoing,CASE WHEN a.verified=1 THEN a.real_jid END FROM room_senders s JOIN messages m ON m.id=s.message LEFT JOIN room_message_actors a ON a.message=m.id WHERE m.id=?",new String[]{Integer.toString(id)})) {
@@ -584,6 +599,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 identity.put("namespace",namespace(message));
                 db.insertWithOnConflict("message_ids", null, identity, SQLiteDatabase.CONFLICT_IGNORE);
             }
+            rememberFingerprint(db,id,message.readable,protocol(message),message.senderFingerprint);
             ContentValues sender = new ContentValues(); sender.put("message", id); sender.put("sender", message.sender);
             db.insertWithOnConflict("message_senders", null, sender, SQLiteDatabase.CONFLICT_IGNORE);
             if (message.correction != null) {

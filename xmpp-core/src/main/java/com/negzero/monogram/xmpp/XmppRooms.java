@@ -428,6 +428,16 @@ public final class XmppRooms implements AutoCloseable {
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         String wireBody=reply==null ? body : reply.wireBody(body);
         Map<String,String> skipped=new TreeMap<>();
+        Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped);
+        if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
+        if(sharing!=null) sharing.addTo(message,wireBody);
+        String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
+        XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
+        if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
+        sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
+        chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
+    }
+    private Message roomMessage(MultiUserChat chat,String jid,String wireBody,boolean encrypted,Set<String> excluded,boolean automatic,Map<String,String> skipped) throws Exception {
         Message message;
         if (encrypted) {
             Set<BareJid> members;
@@ -457,13 +467,7 @@ public final class XmppRooms implements AutoCloseable {
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
             message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
         } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(wireBody); }
-        if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
-        if(sharing!=null) sharing.addTo(message,wireBody);
-        String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
-        XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
-        if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
-        sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
-        chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
+        return message;
     }
     private static final class Unavailable {
         final long until=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
@@ -531,15 +535,18 @@ public final class XmppRooms implements AutoCloseable {
     }
     /** Explicit plaintext metadata, matching XEP-0444 clients that use legacy OMEMO for text. */
     public boolean legacyRetractions(String jid) throws Exception { return legacyRetractions.getOrDefault(chat(jid).getRoom(),false); }
-    public void sendRetraction(String jid,MessageRetraction request,String originalSender,String originalStable) throws Exception {
+    public void sendRetraction(String jid,MessageRetraction request,String originalSender,String originalStable,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         EntityFullJid own=JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname());
         String stable=stableOccupants.contains(chat.getRoom()) ? occupantId(chat.getOccupantPresence(own)) : null;
         if(!own.toString().equals(originalSender) && (stable==null || !stable.equals(originalStable)))
             throw new IllegalArgumentException("The room cannot verify this message belongs to your current occupant");
-        Message wire=new Message(chat.getRoom(),Message.Type.groupchat); String id=UUID.randomUUID().toString();
-        wire.setStanzaId(id); wire.addExtension(new OriginIdElement(id)); request.addTo(wire);
+        Message wire=roomMessage(chat,jid,MessageRetraction.FALLBACK_BODY,encrypted,excluded,automatic,new TreeMap<>());
+        if(!own.equals(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))) throw new IllegalStateException("Room nickname changed before retraction");
+        String id=UUID.randomUUID().toString();
+        wire.setStanzaId(id); wire.addExtension(new OriginIdElement(id)); request.addMetadataTo(wire);
+        wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         org.jivesoftware.smack.StanzaCollector collector=connection.createStanzaCollector(stanza -> stanza instanceof Message
                 && id.equals(stanza.getStanzaId()) && stanza.getFrom()!=null
                 && (((Message)stanza).getType()==Message.Type.error && chat.getRoom().equals(stanza.getFrom().asBareJid())

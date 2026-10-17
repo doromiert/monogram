@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.jivesoftware.smack.ConnectionConfiguration.SecurityMode;
 import org.jivesoftware.smack.ReconnectionManager;
 import org.jivesoftware.smack.packet.Message;
+import org.jivesoftware.smack.packet.StandardExtensionElement;
 import org.jivesoftware.smack.packet.Stanza;
 import org.jivesoftware.smack.tcp.XMPPTCPConnection;
 import org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration;
@@ -422,17 +423,25 @@ public final class XmppSession implements AutoCloseable {
         return send(jid, sharing.body(caption), false, false, reply, null, sharing);
     }
     private String sendModern(String jid, String body, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
+        return sendModern(jid,body,reply,correction,sharing,null);
+    }
+    private String sendModern(String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction) throws Exception {
         if (!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         Message clear = new Message(directRecipient(jid),Message.Type.chat);
         clear.setFrom(connection.getUser()); String id = UUID.randomUUID().toString(); clear.setStanzaId(id);
         if (reply != null) { body = reply.wireBody(body); reply.addTo(clear); }
         clear.setBody(body); if (correction != null) correction.addTo(clear); if (sharing != null) sharing.addTo(clear,body);
+        if(retraction!=null) retraction.addMetadataTo(clear);
         Message wire = modern.encrypt(clear);
+        if(retraction!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         wire.addExtension(new OriginIdElement(id)); DeliveryReceiptManager.addDeliveryReceiptRequest(wire); chatStates.decorate(wire);
         connection.sendStanza(wire); chatStates.sent(wire); return id;
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
+        return send(jid,body,encrypted,attachment,reply,correction,sharing,null);
+    }
+    private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction) throws Exception {
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         EntityBareJid recipient = directRecipient(jid);
         String attachmentUrl = body;
@@ -468,6 +477,10 @@ public final class XmppSession implements AutoCloseable {
         if (reply != null) reply.addTo(message);
         if (correction != null) correction.addTo(message);
         if (sharing != null) sharing.addTo(message, body);
+        if(retraction!=null) {
+            retraction.addMetadataTo(message);
+            message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
+        }
         String id = UUID.randomUUID().toString();
         message.setStanzaId(id);
         message.addExtension(new OriginIdElement(id));
@@ -477,7 +490,7 @@ public final class XmppSession implements AutoCloseable {
         chatStates.sent(message);
         return id;
     }
-    /** Legacy OMEMO protects bodies only. Callers must explicitly choose plaintext metadata. */
+    /** Select the peer's advertised retraction format independently of message encryption. */
     public boolean legacyRetractions(String jid) throws Exception {
         org.jivesoftware.smack.packet.Presence presence=org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).getPresence(directRecipient(jid));
         if(presence.isAvailable() && presence.getFrom()!=null && presence.getFrom().hasResource()) try {
@@ -486,11 +499,9 @@ public final class XmppSession implements AutoCloseable {
         } catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException unsupported) { }
         return false;
     }
-    /** Retraction requests identify the original stanza publicly, without its body or file URL. */
-    public void sendRetraction(String jid,MessageRetraction request) throws Exception {
-        Message wire=new Message(directRecipient(jid),Message.Type.chat);
-        String id=UUID.randomUUID().toString(); wire.setStanzaId(id); wire.addExtension(new OriginIdElement(id));
-        request.addTo(wire); connection.sendStanza(wire);
+    public void sendRetraction(String jid,MessageRetraction request,XmppMessage.Encryption encryption) throws Exception {
+        if(encryption==XmppMessage.Encryption.OMEMO2) sendModern(jid,MessageRetraction.FALLBACK_BODY,null,null,null,request);
+        else send(jid,MessageRetraction.FALLBACK_BODY,encryption!=XmppMessage.Encryption.PLAIN,false,null,null,null,request);
     }
     public String sendReactions(String jid,MessageReactions reactions,XmppMessage.Encryption encryption) throws Exception {
         if(encryption==XmppMessage.Encryption.LEGACY_OMEMO)

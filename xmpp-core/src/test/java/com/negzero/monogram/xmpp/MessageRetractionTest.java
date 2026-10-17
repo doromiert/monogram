@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MessageRetractionTest {
     private Message wire(String payload) throws Exception {
         MessageRetraction.initialize();
-        return PacketParserUtils.parseStanza("<message from='bob@example.org/phone' to='alice@example.org' type='chat' id='event'>"+payload+"</message>");
+        return PacketParserUtils.parseStanza("<message xmlns='jabber:client' from='bob@example.org/phone' to='alice@example.org' type='chat' id='event'>"+payload+"</message>");
     }
     @Test void bothFormatsParseAndFallbackNeverBecomesMessageContent() throws Exception {
         for(boolean legacy:new boolean[]{false,true}) {
@@ -34,6 +34,10 @@ class MessageRetractionTest {
         Message outer=wire(""); new MessageRetraction("forged",false).addTo(outer);
         XmppMessage model=XmppMessage.modern(outer,authenticated,JidCreate.entityBareFrom("alice@example.org"),null,null);
         assertEquals("original",model.retraction.id); assertNull(model.body);
-        assertNull(XmppMessage.from(outer,JidCreate.entityBareFrom("alice@example.org"),"Legacy encrypted body",true,true,null,null));
+        XmppMessage legacy=XmppMessage.from(outer,JidCreate.entityBareFrom("alice@example.org"),"Legacy encrypted body",true,true,null,null);
+        assertNotNull(legacy.retraction); assertNull(legacy.body);
+        Message encrypted=wire("<body>Encrypted fallback</body>");
+        new MessageRetraction("original",true).addMetadataTo(encrypted);
+        assertEquals("Encrypted fallback",encrypted.getBody());
     }
 }

@@ -18,13 +18,18 @@ public final class MessageRetraction {
                 "retract",ns,org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("apply-to",FASTEN,org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
     }
+    public static final String FALLBACK_BODY="A previous message was retracted.";
     public void addTo(Message message) {
+        message.setBody(FALLBACK_BODY);
+        addMetadataTo(message);
+        message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
+    }
+    /** Metadata stays outside legacy OMEMO, but inside modern OMEMO's authenticated SCE. */
+    public void addMetadataTo(Message message) {
         StandardExtensionElement retract=legacy ? StandardExtensionElement.builder("retract",LEGACY).build()
                 : StandardExtensionElement.builder("retract",NAMESPACE).addAttribute("id",id).build();
         message.addExtension(legacy ? StandardExtensionElement.builder("apply-to",FASTEN).addAttribute("id",id).addElement(retract).build() : retract);
-        message.setBody("A previous message was retracted.");
         message.addExtension(StandardExtensionElement.builder("fallback",ReplyReference.FALLBACK).addAttribute("for",legacy ? LEGACY : NAMESPACE).build());
-        message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
     }
     public static MessageRetraction from(Message message) {
         List<ExtensionElement> current=message.getExtensions("retract",NAMESPACE);
