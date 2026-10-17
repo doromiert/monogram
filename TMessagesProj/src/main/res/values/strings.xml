@@ -11558,4 +11558,26 @@
     <string name="MonogramSearchSavedGifs">Search saved GIFs</string>
     <string name="MonogramFavoriteEmoji">Favorite emoji</string>
     <string name="MonogramFileSizeLimit">Choose a non-empty file up to %1$s. Your provider may have a smaller limit.</string>
+    <string name="MonogramLoginTitle">Your Jabber account</string>
+    <string name="MonogramLoginHelp">Sign in with your full Jabber address and password.</string>
+    <string name="MonogramLoginAddress">Jabber address</string>
+    <string name="MonogramLoginAdvanced">Advanced connection settings</string>
+    <string name="MonogramLoginHideAdvanced">Hide advanced settings</string>
+    <string name="MonogramLoginServer">Server override (optional)</string>
+    <string name="MonogramLoginPort">Port (5222)</string>
+    <string name="MonogramLoginPortError">Enter a port between 1 and 65535.</string>
+    <string name="MonogramLoginAddressError">Enter your full Jabber address, such as you@example.org.</string>
+    <string name="MonogramLoginPasswordError">Enter your password.</string>
+    <string name="MonogramLoginFailed">Could not sign in. Check your address, password and server TLS certificate.</string>
+    <string name="MonogramIntroServerTitle">Your server</string>
+    <string name="MonogramIntroFreeTitle">Free to use</string>
+    <string name="MonogramIntroGroupsTitle">Together</string>
+    <string name="MonogramIntroPrivateTitle">Encrypted</string>
+    <string name="MonogramIntroHistoryTitle">Your conversations</string>
+    <string name="MonogramIntroWelcome">**Monogram** brings Telegram’s familiar interface to **Jabber**.</string>
+    <string name="MonogramIntroServer">Use your **XMPP account** to talk with people on other Jabber servers.</string>
+    <string name="MonogramIntroFree">Chat without a Telegram subscription. Add up to **four Jabber accounts**.</string>
+    <string name="MonogramIntroGroups">Keep in touch in **direct conversations** and **group chats**.</string>
+    <string name="MonogramIntroPrivate">Use **OMEMO encryption** with compatible clients and review your contacts’ fingerprints.</string>
+    <string name="MonogramIntroHistory">Keep conversations cached on this device. Sync available history from your **Jabber server**.</string>
 </resources>

@@ -97,7 +97,9 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
     private final Object pagerHeaderTag = new Object(),
             pagerMessageTag = new Object();
 
-    private final int currentAccount = UserConfig.selectedAccount;
+    public IntroActivity() {}
+
+    public IntroActivity(int account) { currentAccount = account; }
 
     private ViewPager viewPager;
     private BottomPagesView bottomPages;
@@ -112,7 +114,6 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
     private int lastPage = 0;
     private boolean justCreated = false;
     private boolean startPressed = false;
-    private Drawable logoDrawable;
     private CharSequence[] titles;
     private String[] messages;
     private int currentViewPagerPage;
@@ -133,33 +134,26 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
         MessagesController.getGlobalMainSettings().edit().putLong("intro_crashed_time", System.currentTimeMillis()).apply();
 
         titles = new CharSequence[]{
-                null,
-                LocaleController.getString(R.string.Page2Title),
-                LocaleController.getString(R.string.Page3Title),
-                LocaleController.getString(R.string.Page5Title),
-                LocaleController.getString(R.string.Page4Title),
-                LocaleController.getString(R.string.Page6Title)
+                LocaleController.getString(R.string.AppName),
+                LocaleController.getString(R.string.MonogramIntroServerTitle),
+                LocaleController.getString(R.string.MonogramIntroFreeTitle),
+                LocaleController.getString(R.string.MonogramIntroGroupsTitle),
+                LocaleController.getString(R.string.MonogramIntroPrivateTitle),
+                LocaleController.getString(R.string.MonogramIntroHistoryTitle)
         };
         messages = new String[]{
-                LocaleController.getString(R.string.Page1Message),
-                LocaleController.getString(R.string.Page2Message),
-                LocaleController.getString(R.string.Page3Message),
-                LocaleController.getString(R.string.Page5Message),
-                LocaleController.getString(R.string.Page4Message),
-                LocaleController.getString(R.string.Page6Message)
+                LocaleController.getString(R.string.MonogramIntroWelcome),
+                LocaleController.getString(R.string.MonogramIntroServer),
+                LocaleController.getString(R.string.MonogramIntroFree),
+                LocaleController.getString(R.string.MonogramIntroGroups),
+                LocaleController.getString(R.string.MonogramIntroPrivate),
+                LocaleController.getString(R.string.MonogramIntroHistory)
         };
         return true;
     }
 
     @Override
     public View createView(Context context) {
-        logoDrawable = context.getResources().getDrawable(R.drawable.telegram_logo).mutate();
-        logoDrawable.setBounds(0, dp(8.666f), dp(115), dp(35));
-        SpannableStringBuilder ssb = new SpannableStringBuilder(LocaleController.getString(R.string.Page1Title));
-        ssb.setSpan(new ImageSpan(logoDrawable), 0, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        titles[0] = ssb;
-
-
         actionBar.setAddToContainer(false);
 
         ScrollView scrollView = new ScrollView(context);
@@ -384,7 +378,8 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
             }
             startPressed = true;
 
-            presentFragment(new LoginActivity().setIntroView(frameContainerView, startMessagingButton), true);
+            MessagesController.getGlobalMainSettings().edit().putBoolean("monogram_intro_seen", true).apply();
+            presentFragment(new LoginActivity(currentAccount).setIntroView(frameContainerView, startMessagingButton), true);
             destroyed = true;
         });
 
@@ -413,7 +408,8 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
 
                         NotificationCenter.getGlobalInstance().removeObserver(this, id);
                         AndroidUtilities.runOnUIThread(()->{
-                            presentFragment(new LoginActivity().setIntroView(frameContainerView, startMessagingButton), true);
+                            MessagesController.getGlobalMainSettings().edit().putBoolean("monogram_intro_seen", true).apply();
+                            presentFragment(new LoginActivity(currentAccount).setIntroView(frameContainerView, startMessagingButton), true);
                             destroyed = true;
                         }, 100);
                     }
@@ -962,7 +958,6 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
 
     private void updateColors(boolean fromTheme) {
         startMessagingButtonBackground.setColors(new int[]{getThemedColor(Theme.key_featuredStickers_addButton), getThemedColor(Theme.key_featuredStickers_addButton2)});
-        logoDrawable.setColorFilter(Theme.multAlpha(getThemedColor(Theme.key_actionBarDefaultTitle), 0.9f), PorterDuff.Mode.MULTIPLY);
         fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         switchLanguageTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
         startMessagingButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));

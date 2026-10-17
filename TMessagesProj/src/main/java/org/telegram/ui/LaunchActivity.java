@@ -1086,7 +1086,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private BaseFragment getClientNotActivatedFragment() {
-        return new MonogramLoginActivity(currentAccount);
+        return UserConfig.getActivatedAccountsCount() == 0 && !MessagesController.getGlobalMainSettings().getBoolean("monogram_intro_seen", false)
+                ? new IntroActivity(currentAccount) : new MonogramLoginActivity(currentAccount);
     }
 
     public FireworksOverlay getFireworksOverlay() {

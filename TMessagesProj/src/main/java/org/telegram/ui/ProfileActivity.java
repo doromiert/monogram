@@ -14573,15 +14573,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         BulletinFactory.of(f).createCopyBulletin(getString(R.string.TextCopied)).show();
                     }),
                     new SearchResult(502, getString(R.string.AddAnotherAccount), 0, () -> {
-                        int freeAccount = -1;
-                        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-                            if (!UserConfig.getInstance(a).isClientActivated()) {
-                                freeAccount = a;
-                                break;
-                            }
-                        }
+                        int freeAccount = UserConfig.getFreeAccount();
                         if (freeAccount >= 0) {
-                            f.presentFragment(new LoginActivity(freeAccount));
+                            f.presentFragment(new MonogramLoginActivity(freeAccount));
                         }
                     }).withLink("tg://settings/edit/add-account"),
                     // TODO:
