@@ -42,6 +42,7 @@ public final class MonogramAttachments {
             message.media.document.localPath = file.getAbsolutePath();
             message.media.document.size = file.length();
             markRoundVideo(message.media.document,name);
+            markAnimatedMp4(message.media.document,name);
         }
         message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA;
     }
@@ -75,7 +76,7 @@ public final class MonogramAttachments {
     static boolean needsMediaRefresh(TLRPC.Message message) {
         if (needsMediaInfo(message)) return true;
         TLRPC.Document document = message.media == null ? null : message.media.document;
-        return document != null && (MessageObject.isVideoDocument(document) || MessageObject.isRoundVideoDocument(document))
+        return document != null && (MessageObject.isVideoDocument(document) || MessageObject.isRoundVideoDocument(document) || isAnimatedMp4(document))
                 && !hasThumbnail(document);
     }
     private static boolean hasThumbnail(TLRPC.Document document) {
@@ -97,11 +98,13 @@ public final class MonogramAttachments {
     }
     static boolean needsMediaInfo(TLRPC.Document document) {
         if(document==null) return false;
+        boolean animated=false;
         for(TLRPC.DocumentAttribute attribute:document.attributes) {
             if(attribute instanceof TLRPC.TL_documentAttributeAudio && (attribute.voice || attribute.duration>0)) return false;
             if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.w>0 && attribute.h>0) return false;
-            if(attribute instanceof TLRPC.TL_documentAttributeAnimated) return false;
+            if(attribute instanceof TLRPC.TL_documentAttributeAnimated) animated=true;
         }
+        if(animated && !"video/mp4".equals(document.mime_type)) return false;
         return probeMediaType(document.mime_type);
     }
     private static boolean probeMediaType(String mime) {
@@ -114,6 +117,7 @@ public final class MonogramAttachments {
         if(media.document==null || "image/gif".equals(media.document.mime_type) || !file.isFile()) return media;
         TLRPC.Document document=media.document;
         document.mime_type=mimeType(name,contentType);
+        markAnimatedMp4(document,name);
         if(!probeMediaType(document.mime_type)) return media;
         android.media.MediaMetadataRetriever metadata=null;
         boolean video=document.mime_type.startsWith("video/");
@@ -181,6 +185,19 @@ public final class MonogramAttachments {
             if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.w>0 && attribute.w==attribute.h
                     && attribute.duration>0) attribute.round_message=true;
     }
+    private static boolean isAnimatedMp4(String name,String mime) {
+        return "animation.gif".equals(name) && "video/mp4".equals(mime);
+    }
+    private static boolean isAnimatedMp4(TLRPC.Document document) {
+        if(document==null || !"video/mp4".equals(document.mime_type)) return false;
+        for(TLRPC.DocumentAttribute attribute:document.attributes)
+            if(attribute instanceof TLRPC.TL_documentAttributeAnimated) return true;
+        return false;
+    }
+    private static void markAnimatedMp4(TLRPC.Document document,String name) {
+        if(!isAnimatedMp4(name,document.mime_type) || isAnimatedMp4(document)) return;
+        document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
+    }
     private static boolean isGif(File file) {
         if (!file.isFile()) return false;
         try (java.io.InputStream input = new java.io.FileInputStream(file)) {
@@ -218,7 +235,10 @@ public final class MonogramAttachments {
         TLRPC.TL_documentAttributeFilename filename = new TLRPC.TL_documentAttributeFilename(); filename.file_name = name;
         media.document.attributes.add(filename);
         if (mime.equals("image/gif")) media.document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
-        else if (mime.startsWith("video/")) media.document.attributes.add(new TLRPC.TL_documentAttributeVideo());
+        else if (mime.startsWith("video/")) {
+            media.document.attributes.add(new TLRPC.TL_documentAttributeVideo());
+            markAnimatedMp4(media.document,name);
+        }
         else if (mime.startsWith("audio/")) media.document.attributes.add(new TLRPC.TL_documentAttributeAudio());
         return media;
     }

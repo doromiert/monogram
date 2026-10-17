@@ -141,8 +141,31 @@ public final class XmppRooms implements AutoCloseable {
         return own!=null && own.getRole()!=null && own.getRole()!=MUCRole.visitor && own.getRole()!=MUCRole.none;
     }
     boolean acceptsChatState(EntityFullJid from) {
+        if(from==null) return false;
         MultiUserChat chat=chats.get(from.asEntityBareJid());
         return chat!=null && chat.isJoined() && !from.getResourcepart().equals(chat.getNickname()) && chat.getOccupant(from)!=null;
+    }
+    boolean ownChatStateOccupant(EntityFullJid from) {
+        if(from==null) return false;
+        MultiUserChat chat=chats.get(from.asEntityBareJid());
+        return chat!=null && from.getResourcepart().equals(chat.getNickname());
+    }
+    String chatStateIdentity(EntityFullJid from) {
+        if(!acceptsChatState(from)) return null;
+        MultiUserChat chat=chats.get(from.asEntityBareJid());
+        Presence presence=chat.getOccupantPresence(from);
+        if(presence==null || !presence.isAvailable()) return null;
+        if(stableOccupants.contains(chat.getRoom())) {
+            String id=occupantId(presence);
+            return id==null ? null : "id:"+id;
+        }
+        org.jivesoftware.smackx.muc.Occupant occupant=chat.getOccupant(from);
+        return occupant==null ? null : occupant.getJid()==null ? from.toString() : occupant.getJid().asBareJid().toString();
+    }
+    boolean matchesChatStateIdentity(Message message) {
+        EntityFullJid from=message.getFrom().asEntityFullJidIfPossible();
+        String current=chatStateIdentity(from);
+        return current!=null && (!stableOccupants.contains(from.asEntityBareJid()) || current.equals("id:"+occupantId(message)));
     }
     public State state(String jid) throws Exception { return new State(chat(jid)); }
     private MultiUserChat chat(String jid) throws Exception {
@@ -168,7 +191,14 @@ public final class XmppRooms implements AutoCloseable {
                     if (pending!=null) listener.roomMessagePending(identify(created,message,pending));
                 } else deliver(created,message,encrypted ? null : message.getBody(),encrypted,!encrypted);
             });
-            created.addParticipantListener(presence -> queueState(created));
+            created.addParticipantListener(presence -> {
+                if(chatStates!=null && presence.getType()==Presence.Type.unavailable) {
+                    org.jivesoftware.smackx.muc.packet.MUCUser muc=org.jivesoftware.smackx.muc.packet.MUCUser.from(presence);
+                    if(muc!=null && muc.getStatus().contains(org.jivesoftware.smackx.muc.packet.MUCUser.Status.create(110))) chatStates.roomLeft(created.getRoom());
+                    else chatStates.unavailable(presence);
+                }
+                queueState(created);
+            });
             created.addSubjectUpdatedListener((subject,from) -> queueState(created));
             return created;
         });
@@ -187,8 +217,11 @@ public final class XmppRooms implements AutoCloseable {
         legacyRetractions.put(chat.getRoom(),!features.containsFeature(MessageRetraction.NAMESPACE) && features.containsFeature(MessageRetraction.LEGACY));
         if(features.containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
         else stableOccupants.remove(chat.getRoom());
-        if (!chat.isJoined()) chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
-                .withPassword(password).requestMaxStanzasHistory(features.containsFeature("urn:xmpp:mam:2") ? 0 : 50).build());
+        if (!chat.isJoined()) {
+            if(chatStates!=null) chatStates.roomLeft(chat.getRoom());
+            chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
+                    .withPassword(password).requestMaxStanzasHistory(features.containsFeature("urn:xmpp:mam:2") ? 0 : 50).build());
+        }
         if(password!=null) passwords.put(chat.getRoom(),password);
         State state=new State(chat,info.getName(),info.getDescription()); listener.roomChanged(state); return state;
     }
@@ -398,7 +431,9 @@ public final class XmppRooms implements AutoCloseable {
         return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete());
     }
     public void leave(String jid) throws Exception {
-        MultiUserChat chat=chat(jid); if (chat.isJoined()) chat.leave(); listener.roomChanged(new State(chat));
+        MultiUserChat chat=chat(jid);
+        if(chatStates!=null) chatStates.roomLeft(chat.getRoom());
+        if (chat.isJoined()) chat.leave(); listener.roomChanged(new State(chat));
     }
     public void nickname(String jid,String nickname) throws Exception {
         Resourcepart.from(nickname); MultiUserChat chat=chat(jid);
@@ -472,6 +507,11 @@ public final class XmppRooms implements AutoCloseable {
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic) throws Exception {
         if(link.encrypted()!=encrypted || encrypted && sharing!=null) throw new IllegalArgumentException("File encryption mismatch");
         return send(jid,sharing==null ? link.wireUrl : sharing.body(caption),encrypted,sharing,reply,null,excluded,automatic);
+    }
+    public XmppRoomMessage correctFile(String jid,FileShare sharing,String caption,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic) throws Exception {
+        // Legacy room OMEMO does not authenticate attachment metadata.
+        if(sharing==null || sharing.link.encrypted() || correction==null) throw new IllegalArgumentException("Unsupported encrypted caption correction");
+        return send(jid,sharing.body(caption),false,sharing,reply,correction,excluded,automatic);
     }
     static Set<BareJid> recipients(Set<BareJid> members,BareJid own,Set<String> excluded) throws Exception {
         Set<BareJid> recipients=new HashSet<>(members);

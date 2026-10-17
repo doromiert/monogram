@@ -53,7 +53,6 @@ import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.TranslateAlert2;
 
@@ -220,8 +219,8 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.updateSearchSettings);
                     } else if (position == autoTranslationPosition) {
                         boolean value = !getChatValue();
-                        if (value && !getUserConfig().isPremium()) {
-                            showDialog(new PremiumFeatureBottomSheet(LanguageSelectActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_TRANSLATIONS, false));
+                        if (value && !org.telegram.messenger.xmpp.MonogramTranslation.isConfigured(currentAccount)) {
+                            presentFragment(new MonogramTranslationSettingsActivity(currentAccount));
                             return;
                         }
                         getMessagesController().getTranslateController().setChatTranslateEnabled(value);
@@ -297,7 +296,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                 }
                 boolean search = listView.getAdapter() == searchListViewAdapter;
                 if (!search) {
-                    position -= languagesStartsPosition; // (7 - (!(getChatValue() || getContextValue()) ? 1 : 0) - (getMessagesController().premiumFeaturesBlocked() ? 1 : 0));
+                    position -= languagesStartsPosition;
                 }
                 LocaleController.LocaleInfo localeInfo;
                 if (search) {
@@ -351,7 +350,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                 }
                 boolean search = listView.getAdapter() == searchListViewAdapter;
                 if (!search) {
-                    position -= languagesStartsPosition; // (7 - (!(getChatValue() || getContextValue()) ? 1 : 0) - (getMessagesController().premiumFeaturesBlocked() ? 1 : 0));
+                    position -= languagesStartsPosition;
                 }
                 LocaleController.LocaleInfo localeInfo;
                 if (search) {
@@ -600,7 +599,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                     if (getMessagesController().isTranslationsManualEnabled()) {
                         count++;
                     }
-                    if (getMessagesController().isTranslationsAutoEnabled() && !getMessagesController().premiumFeaturesBlocked()) {
+                    if (getMessagesController().isTranslationsAutoEnabled()) {
                         count++;
                     }
                     if (getChatValue() || getContextValue()) {
@@ -666,7 +665,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
             switch (holder.getItemViewType()) {
                 case VIEW_TYPE_LANGUAGE: {
                     if (!search) {
-                        position -= languagesStartsPosition; // (7 - (!(getChatValue() || getContextValue()) ? 1 : 0) - (getMessagesController().premiumFeaturesBlocked() ? 1 : 0));
+                        position -= languagesStartsPosition;
                     }
                     TextRadioCell textSettingsCell = (TextRadioCell) holder.itemView;
                     textSettingsCell.updateRTL();
@@ -769,7 +768,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                         cell.setCheckBoxIcon(0);
                     } else if (position == autoTranslationPosition) {
                         cell.setTextAndCheck(LocaleController.getString(R.string.ShowTranslateChatButton), getChatValue(), getContextValue() || getChatValue());
-                        cell.setCheckBoxIcon(!getUserConfig().isPremium() ? R.drawable.permission_locked : 0);
+                        cell.setCheckBoxIcon(0);
                     }
                     break;
                 }
@@ -811,7 +810,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                     } else {
                         manualTranslationPosition = -1;
                     }
-                    if (getMessagesController().isTranslationsAutoEnabled() && !getMessagesController().premiumFeaturesBlocked()) {
+                    if (getMessagesController().isTranslationsAutoEnabled()) {
                         if (i-- == 0) {
                             autoTranslationPosition = position;
                             return VIEW_TYPE_SWITCH;

@@ -1040,6 +1040,7 @@ public class NotificationsController extends BaseController implements Notificat
         }
 
         ArrayList<MessageObject> popupArrayAdd = new ArrayList<>(0);
+        ArrayList<MessageObject> popupArrayRemove = new ArrayList<>(0);
         notificationsQueue.postRunnable(() -> {
             boolean updated = false;
             for (int a = 0, N = editedMessages.size(); a < N; a++) {
@@ -1065,6 +1066,8 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                     if (oldMessage != null) {
                         updated = true;
+                        popupArrayRemove.add(oldMessage);
+                        popupArrayAdd.add(messageObject);
                         sparseArray.put(messageObject.getId(), messageObject);
                         int idx = pushMessages.indexOf(oldMessage);
                         if (idx >= 0) {
@@ -1078,6 +1081,26 @@ public class NotificationsController extends BaseController implements Notificat
                 }
             }
             if (updated) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    boolean popupUpdated = false;
+                    for (int i = 0; i < popupArrayRemove.size(); i++) {
+                        MessageObject oldMessage = popupArrayRemove.get(i);
+                        MessageObject messageObject = popupArrayAdd.get(i);
+                        int idx = popupMessages.indexOf(oldMessage);
+                        if (idx >= 0) {
+                            popupMessages.set(idx, messageObject);
+                            popupUpdated = true;
+                        }
+                        idx = popupReplyMessages.indexOf(oldMessage);
+                        if (idx >= 0) {
+                            popupReplyMessages.set(idx, messageObject);
+                            popupUpdated = true;
+                        }
+                    }
+                    if (popupUpdated) {
+                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.pushMessagesUpdated);
+                    }
+                });
                 showOrUpdateNotification(false);
             }
         });

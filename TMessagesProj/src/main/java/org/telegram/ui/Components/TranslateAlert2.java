@@ -313,14 +313,7 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
             reqId = null;
         }
 
-        final String method = MessagesController.getInstance(currentAccount).translationsManualEnabled;
-        if ("alternative".equalsIgnoreCase(method)) {
-            translateAlt();
-            return;
-        }/* else if ("system".equalsIgnoreCase(method)) {
-            translateSystem();
-            return;
-        }*/
+        // Monogram's configured provider handles the native translation request.
 
         String lang = toLanguage;
         if (lang != null) {
@@ -387,9 +380,9 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
                     adapter.updateMainView(textViewContainer);
                 } else if (firstTranslation) {
                     dismiss();
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.TranslationFailedAlert2));
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, translationError(err));
                 } else {
-                    BulletinFactory.of((FrameLayout) containerView, resourcesProvider).createErrorBulletin(LocaleController.getString(R.string.TranslationFailedAlert2)).show();
+                    BulletinFactory.of((FrameLayout) containerView, resourcesProvider).createErrorBulletin(translationError(err)).show();
                     headerView.toLanguageTextView.setText(languageName(toLanguage = prevToLanguage));
                     adapter.updateMainView(textViewContainer);
                 }
@@ -430,14 +423,24 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
                     adapter.updateMainView(textViewContainer);
                 } else if (firstTranslation) {
                     dismiss();
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.TranslationFailedAlert2));
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, translationError(err));
                 } else {
-                    BulletinFactory.of((FrameLayout) containerView, resourcesProvider).createErrorBulletin(LocaleController.getString(R.string.TranslationFailedAlert2)).show();
+                    BulletinFactory.of((FrameLayout) containerView, resourcesProvider).createErrorBulletin(translationError(err)).show();
                     headerView.toLanguageTextView.setText(languageName(toLanguage = prevToLanguage));
                     adapter.updateMainView(textViewContainer);
                 }
             });
         });
+    }
+
+    private String translationError(TLRPC.TL_error error) {
+        if (error != null && "TRANSLATION_NOT_CONFIGURED".equals(error.text)) {
+            return "Set up translation in Settings → Translation.";
+        }
+        if (error != null && "TRANSLATION_AUTH_FAILED".equals(error.text)) {
+            return "Check the provider and API key in Settings → Translation.";
+        }
+        return LocaleController.getString(R.string.TranslationFailedAlert2);
     }
 
     public static final String[] userAgents = new String[] {

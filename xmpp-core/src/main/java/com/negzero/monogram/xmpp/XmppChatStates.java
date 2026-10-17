@@ -30,7 +30,12 @@ public final class XmppChatStates implements AutoCloseable {
     private final BiConsumer<EntityBareJid, Boolean> listener;
     private final XmppRooms rooms;
     private final BiConsumer<EntityFullJid, Boolean> roomListener;
-    private final Map<EntityFullJid, Long> roomComposing = new LinkedHashMap<>();
+    private final Map<EntityFullJid, RoomTyping> roomComposing = new LinkedHashMap<>();
+    private static final class RoomTyping {
+        final String identity;
+        final long until;
+        RoomTyping(String identity, long until) { this.identity = identity; this.until = until; }
+    }
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "Monogram chat states"); thread.setDaemon(true); return thread;
     });
@@ -84,6 +89,8 @@ public final class XmppChatStates implements AutoCloseable {
         Conversation chat = conversation(peer);
         if (rooms != null && rooms.known(peer)) {
             if (!rooms.canSendChatState(peer)) return;
+            // XEP-0085 §5.5: closing a room view must not announce departure from the room.
+            if (state == ChatState.gone) state = ChatState.inactive;
             chat.target = peer; chat.supported = true;
         }
         chat.inputAt = chat.activityAt = now();
@@ -151,8 +158,12 @@ public final class XmppChatStates implements AutoCloseable {
     private void receiveRoom(Message message) {
         EntityFullJid from = message.getFrom() == null ? null : message.getFrom().asEntityFullJidIfPossible();
         if (closed || rooms == null || connection.getUser() == null || from == null || !rooms.acceptsChatState(from) || stale(message)
-                || message.getTo() != null && !connection.getUser().asBareJid().equals(message.getTo().asBareJid())) return;
+                || message.getTo() != null && !connection.getUser().asBareJid().equals(message.getTo().asBareJid())
+                || message.getTo() != null && message.getTo().isEntityFullJid() && !message.getTo().equals(connection.getUser())) return;
+        String identity = rooms.chatStateIdentity(from);
+        if (identity == null || !rooms.matchesChatStateIdentity(message)) return;
         ChatState state = read(message);
+        if (state == ChatState.gone) return;
         boolean content = message.getBody() != null || message.hasExtension("encrypted", "eu.siacs.conversations.axolotl") || message.hasExtension("encrypted", "urn:xmpp:omemo:2");
         if (state == null && !content) return;
         if (state == ChatState.composing) {
@@ -160,7 +171,8 @@ public final class XmppChatStates implements AutoCloseable {
                 EntityFullJid oldest = roomComposing.keySet().iterator().next();
                 roomComposing.remove(oldest); roomListener.accept(oldest, false);
             }
-            boolean added = roomComposing.put(from, now() + TYPING_TIMEOUT_MILLIS) == null;
+            RoomTyping previous = roomComposing.put(from, new RoomTyping(identity, now() + TYPING_TIMEOUT_MILLIS));
+            boolean added = previous == null || !identity.equals(previous.identity);
             if (added) roomListener.accept(from, true);
         } else if (roomComposing.remove(from) != null) roomListener.accept(from, false);
     }
@@ -192,9 +204,10 @@ public final class XmppChatStates implements AutoCloseable {
         if (wasTyping != !chat.composing.isEmpty()) listener.accept(peer, !chat.composing.isEmpty());
         if (chat.desired != null && enabled) worker.execute(() -> flush(peer));
     }
-    private synchronized void unavailable(Presence presence) {
+    synchronized void unavailable(Presence presence) {
         if (presence.getFrom() == null) return;
         EntityFullJid occupant = presence.getFrom().asEntityFullJidIfPossible();
+        if (rooms != null && rooms.ownChatStateOccupant(occupant)) roomLeft(occupant.asEntityBareJid());
         if (occupant != null && roomComposing.remove(occupant) != null) roomListener.accept(occupant, false);
         EntityBareJid peer = presence.getFrom().asEntityBareJidIfPossible();
         Conversation chat = conversations.get(peer);
@@ -206,12 +219,22 @@ public final class XmppChatStates implements AutoCloseable {
             chat.target = null; chat.supported = null; chat.explicit = false; chat.sent = null;
         }
     }
+    /** A room session cannot carry typing state or queued sends into a later join. */
+    synchronized void roomLeft(EntityBareJid room) {
+        conversations.remove(room);
+        for (EntityFullJid occupant : new ArrayList<>(roomComposing.keySet())) {
+            if (occupant.asEntityBareJid().equals(room)) {
+                roomComposing.remove(occupant); roomListener.accept(occupant, false);
+            }
+        }
+    }
     void tick(long time) {
         ArrayList<EntityBareJid> peers;
         synchronized (this) {
             if (closed) return;
             for (EntityFullJid occupant : new ArrayList<>(roomComposing.keySet())) {
-                if (roomComposing.get(occupant) <= time || rooms == null || !rooms.acceptsChatState(occupant)) {
+                RoomTyping typing = roomComposing.get(occupant);
+                if (typing.until <= time || rooms == null || !typing.identity.equals(rooms.chatStateIdentity(occupant))) {
                     roomComposing.remove(occupant); roomListener.accept(occupant, false);
                 }
             }
@@ -232,12 +255,13 @@ public final class XmppChatStates implements AutoCloseable {
         for (EntityBareJid peer : peers) flush(peer);
     }
     private void flush(EntityBareJid peer) {
-        Message message; ChatState state; Jid target; long epoch;
+        Message message; ChatState state; Jid target; long epoch; Conversation pending;
         synchronized (this) {
             Conversation chat = conversations.get(peer);
             if (closed || !enabled || !connection.isAuthenticated() || chat == null || !Boolean.TRUE.equals(chat.supported)
                     || chat.target == null || chat.desired == null || chat.desired == chat.sent) return;
             state = chat.desired; target = chat.target; epoch = generation;
+            pending = chat;
             boolean room = rooms != null && rooms.known(peer);
             if (room && !rooms.canSendChatState(peer)) return;
             message = new Message(target, room ? Message.Type.groupchat : Message.Type.chat); message.addExtension(new ChatStateExtension(state));
@@ -247,7 +271,8 @@ public final class XmppChatStates implements AutoCloseable {
             // Serialize with the privacy switch so disabling cannot leave a queued state send behind.
             synchronized (this) {
                 Conversation chat = conversations.get(peer);
-                if (closed || !enabled || epoch != generation || chat == null || chat.desired != state || !target.equals(chat.target) || chat.sent == state) return;
+                if (closed || !enabled || epoch != generation || chat != pending || chat.desired != state || !target.equals(chat.target) || chat.sent == state
+                        || rooms != null && rooms.known(peer) && !rooms.canSendChatState(peer)) return;
                 connection.sendStanza(message); chat.sent = state;
             }
         } catch (Exception disconnected) { /* Typing never becomes an offline message or a failed chat bubble. */ }

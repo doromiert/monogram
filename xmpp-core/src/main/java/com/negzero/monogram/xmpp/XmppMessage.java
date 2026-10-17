@@ -168,10 +168,14 @@ public final class XmppMessage {
         return from(message, own.asEntityBareJidIfPossible(), reply == null ? link.wireUrl : reply.wireBody(link.wireUrl), encrypted, true, null, null);
     }
     public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileShare sharing, String caption, ReplyReference reply) throws Exception {
+        return sentFile(own,peer,id,sharing,caption,reply,null);
+    }
+    public static XmppMessage sentFile(org.jxmpp.jid.Jid own, String peer, String id, FileShare sharing, String caption, ReplyReference reply, MessageCorrection correction) throws Exception {
         Message message = new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer), Message.Type.chat);
         message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         String body = sharing.body(caption);
         if (reply != null) { reply.addTo(message); body = reply.wireBody(body); }
+        if (correction != null) correction.addTo(message);
         sharing.addTo(message, body);
         message.setBody(body);
         return sharing.link.encrypted() ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)

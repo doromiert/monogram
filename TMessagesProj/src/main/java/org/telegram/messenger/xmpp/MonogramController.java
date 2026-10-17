@@ -1183,6 +1183,10 @@ public final class MonogramController {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
         synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); outbox.clear();
+        for(TranslationRequest translation:translationRequests.values()) translation.cancel();
+        translationRequests.clear();
+        try { MonogramTranslation.clearConfiguration(account); }
+        catch(java.io.IOException unavailable) { throw new IllegalStateException("Cannot clear translation settings",unavailable); }
         SharedPreferences.Editor roomPasswords=preferences.edit();
         for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
@@ -2007,9 +2011,18 @@ public final class MonogramController {
         return peer==null ? 0 : peer.chat_id!=0 ? -peer.chat_id : peer.channel_id!=0 ? -peer.channel_id : peer.user_id;
     }
     private String sendErrorKey(long peer) { return "last-send-error-"+accountJid()+"\n"+peer; }
+    private MonogramStore.EditTarget editTarget(int id,long peer) {
+        MonogramStore.EditTarget target=store.editTarget(id,peer,self);
+        if(target.sharing!=null && target.encryption==XmppMessage.Encryption.PLAIN && encryption(peer)!=XmppMessage.Encryption.PLAIN)
+            throw new IllegalArgumentException("An unencrypted attachment caption cannot be edited while this chat requires encryption");
+        return target;
+    }
     public String lastSendError(long peer) { return preferences.getString(sendErrorKey(peer),null); }
     public void request(TLObject request,RequestDelegate callback) { request(0,request,callback); }
     public void request(int token,TLObject request,RequestDelegate callback) {
+        if(request instanceof TLRPC.TL_messages_translateText) {
+            translate(token,(TLRPC.TL_messages_translateText)request,callback);return;
+        }
         final long peer=sendingPeer(request),owner=accountEpoch;
         RequestDelegate completed=(response,error) -> {
             if(peer!=0 && owner==accountEpoch) {
@@ -2046,8 +2059,45 @@ public final class MonogramController {
     }
     private final java.util.concurrent.ConcurrentHashMap<Integer,PendingSend> pendingSends=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicInteger localSendToken=new java.util.concurrent.atomic.AtomicInteger(-1);
+    private static final class TranslationRequest {
+        final java.util.concurrent.atomic.AtomicBoolean cancelled=new java.util.concurrent.atomic.AtomicBoolean();
+        volatile Runnable cancelNetwork;
+        void cancel() { cancelled.set(true);Runnable pending=cancelNetwork;if(pending!=null) pending.run(); }
+        void network(Runnable pending) { cancelNetwork=pending;if(cancelled.get() && pending!=null) pending.run(); }
+    }
+    private final java.util.concurrent.ConcurrentHashMap<Integer,TranslationRequest> translationRequests=new java.util.concurrent.ConcurrentHashMap<>();
+    private void translate(int token,TLRPC.TL_messages_translateText request,RequestDelegate callback) {
+        final int key=token==0 ? localSendToken.getAndDecrement() : token;
+        final long owner=accountEpoch;
+        TranslationRequest pending=new TranslationRequest();
+        TranslationRequest previous=translationRequests.put(key,pending);if(previous!=null) previous.cancel();
+        RequestDelegate completed=(result,error) -> Utilities.stageQueue.postRunnable(() -> {
+            if(translationRequests.remove(key,pending) && !pending.cancelled.get() && owner==accountEpoch && callback!=null) callback.run(result,error);
+        });
+        cacheWorker.execute(() -> {
+            if(pending.cancelled.get() || owner!=accountEpoch) { translationRequests.remove(key,pending);return; }
+            try {
+                TLRPC.TL_messages_translateText input=new TLRPC.TL_messages_translateText();input.flags=2;input.to_lang=request.to_lang;
+                if((request.flags&1)!=0) {
+                    if((request.flags&2)!=0 || request.peer==null || request.id.isEmpty() || request.id.size()>100)
+                        throw new IllegalArgumentException("Invalid translation selection");
+                    long dialog=request.peer.chat_id>0 ? -request.peer.chat_id : request.peer.user_id;
+                    if(dialog==0 || request.peer.channel_id!=0) throw new IllegalArgumentException("Unknown conversation");
+                    for(int id:request.id) input.text.add(store.translationText(id,dialog,self));
+                } else if((request.flags&2)!=0) input.text.addAll(request.text);
+                else throw new IllegalArgumentException("Missing translation text");
+                if(pending.cancelled.get() || owner!=accountEpoch) { translationRequests.remove(key,pending);return; }
+                pending.network(MonogramTranslation.request(account,input,completed));
+                if(owner!=accountEpoch) pending.cancel();
+            } catch(Exception invalid) {
+                TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;error.text="MONOGRAM_TRANSLATION_TEXT_UNAVAILABLE";
+                completed.run(null,error);
+            }
+        });
+    }
     public int queuedSendCount() { return (int)pendingSends.values().stream().filter(send -> !send.scheduled.get()).count(); }
     public void cancelRequest(int token) {
+        TranslationRequest translation=translationRequests.remove(token);if(translation!=null) translation.cancel();
         PendingSend pending=pendingSends.remove(token);
         if(pending!=null && pending.request instanceof MonogramFileRequest) {
             MonogramFileRequest file=(MonogramFileRequest)pending.request; file.job.cancel();
@@ -2552,25 +2602,32 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_messages_getMessageEditData) {
             TLRPC.TL_messages_getMessageEditData query = (TLRPC.TL_messages_getMessageEditData) request;
             if (query.peer == null || query.peer.user_id<=0 && query.peer.chat_id<=0) throw new IllegalArgumentException("Conversation required");
-            store.editTarget(query.id, query.peer.chat_id>0 ? -query.peer.chat_id : query.peer.user_id, self);
-            return new TLRPC.TL_messages_messageEditData();
+            MonogramStore.EditTarget target=editTarget(query.id, query.peer.chat_id>0 ? -query.peer.chat_id : query.peer.user_id);
+            TLRPC.TL_messages_messageEditData result=new TLRPC.TL_messages_messageEditData(); result.caption=target.sharing!=null;
+            return result;
         }
         if (request instanceof TLRPC.TL_messages_editMessage) {
             TLRPC.TL_messages_editMessage edit = (TLRPC.TL_messages_editMessage) request;
             if (edit.peer == null || edit.peer.user_id == 0 && edit.peer.chat_id == 0 || edit.media != null || edit.schedule_date != 0 || edit.quick_reply_shortcut_id != 0
                     || (edit.flags & 2048) == 0) throw new UnsupportedOperationException();
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
-            MonogramStore.EditTarget target = store.editTarget(edit.id, peer, self);
-            XmppMessage.Encryption mode = target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
+            MonogramStore.EditTarget target = editTarget(edit.id, peer);
+            XmppMessage.Encryption mode = target.sharing!=null ? target.encryption
+                    : target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
             int saved;
             if(peer<0) {
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(peer),edit.message,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
+                com.negzero.monogram.xmpp.XmppRoomMessage message=target.sharing==null
+                        ? session().rooms.send(store.jid(peer),edit.message,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer))
+                        : session().rooms.correctFile(store.jid(peer),target.sharing,edit.message,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
                 saved=store.saveRoom(message,self); if(message.encrypted) reportSkippedRecipients(peer,message);
             }
             else {
                 XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-                String stanza=expected.correct(store.jid(peer),edit.message,mode,target.reply,target.correction);
-                saved=store.save(XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,edit.message,mode,target.reply,target.correction).withSenderFingerprint(fingerprint));
+                String stanza=target.sharing==null ? expected.correct(store.jid(peer),edit.message,mode,target.reply,target.correction)
+                        : expected.correctFile(store.jid(peer),target.sharing,edit.message,mode,target.reply,target.correction);
+                XmppMessage message=target.sharing==null ? XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,edit.message,mode,target.reply,target.correction)
+                        : XmppMessage.sentFile(expected.connection().getUser(),store.jid(peer),stanza,target.sharing,edit.message,target.reply,target.correction);
+                saved=store.save(message.withSenderFingerprint(fingerprint));
             }
             MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, java.util.Collections.singleton(saved));
             refreshReplies(peer, corrections.edited);

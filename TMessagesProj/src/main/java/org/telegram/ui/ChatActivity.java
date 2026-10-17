@@ -18995,9 +18995,11 @@ public class ChatActivity extends BaseFragment implements
         if (requestCode == BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE) {
             if (chatAttachAlert != null) {
                 chatAttachAlert.getPhotoLayout().checkStorage();
+                chatAttachAlert.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
             }
             if (chatThemeBottomSheet != null && chatThemeBottomSheet.chatAttachAlert != null) {
                 chatThemeBottomSheet.chatAttachAlert.getPhotoLayout().checkStorage();
+                chatThemeBottomSheet.chatAttachAlert.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
             }
         } else if ((requestCode == BasePermissionsActivity.REQUEST_CODE_ATTACH_CONTACT || requestCode == 30) && chatAttachAlert != null) {
             chatAttachAlert.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);

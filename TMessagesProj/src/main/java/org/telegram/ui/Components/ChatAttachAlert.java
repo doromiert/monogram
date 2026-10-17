@@ -1076,6 +1076,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     private ValueAnimator sendButtonColorAnimator;
 
     private long selectedId;
+    private boolean openMusicAfterPermission;
 
     protected float cornerRadius = 1.0f;
 
@@ -2809,10 +2810,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     }
                     if (Build.VERSION.SDK_INT >= 33) {
                         if (activity.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            openMusicAfterPermission = true;
                             activity.requestPermissions(new String[]{Manifest.permission.READ_MEDIA_AUDIO}, BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE);
                             return;
                         }
                     } else if (Build.VERSION.SDK_INT >= 23 && activity.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                        openMusicAfterPermission = true;
                         AndroidUtilities.findActivity(getContext()).requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE);
                         return;
                     }
@@ -4520,10 +4523,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             if (activity != null) {
                 if (Build.VERSION.SDK_INT >= 33) {
                     if (activity.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        openMusicAfterPermission = true;
                         activity.requestPermissions(new String[]{Manifest.permission.READ_MEDIA_AUDIO}, BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE);
                         return;
                     }
                 } else if (Build.VERSION.SDK_INT >= 23 && activity.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    openMusicAfterPermission = true;
                     activity.requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE);
                     return;
                 }
@@ -4908,7 +4913,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
-        if (requestCode == BasePermissionsActivity.REQUEST_CODE_ATTACH_CONTACT && grantResults != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE && openMusicAfterPermission) {
+            openMusicAfterPermission = false;
+            if (grantResults != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED && isShowing()) {
+                openAudioLayout(true);
+            }
+        } else if (requestCode == BasePermissionsActivity.REQUEST_CODE_ATTACH_CONTACT && grantResults != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             openContactsLayout();
         } else if (requestCode == 30 && locationLayout != null && currentAttachLayout == locationLayout && isShowing()) {
             locationLayout.openShareLiveLocation();

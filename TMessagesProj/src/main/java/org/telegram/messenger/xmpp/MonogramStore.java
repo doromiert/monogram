@@ -788,10 +788,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                         try (Cursor original = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
                             if (!original.moveToFirst() || Math.max(original.getInt(0), protectedModes.getOrDefault(target, 0)) > c.getInt(4)) target = 0;
                         }
-                        // shortcut: text corrections only; support media replacement with the caption/file-sharing implementation.
-                        try (Cursor attachment = db.rawQuery("SELECT 1 FROM attachments WHERE message IN (?,?)", new String[]{Integer.toString(target), Integer.toString(event)})) {
-                            if (attachment.moveToFirst()) target = 0;
-                        }
+                        if (target != 0 && !captionOnlyAttachmentCorrection(db, target, event, c.getInt(4))) target = 0;
                     }
                     if (target != 0) protectedModes.put(target, c.getInt(4));
                     if (old != target) {
@@ -825,19 +822,65 @@ final class MonogramStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful(); return changes;
         } finally { db.endTransaction(); }
     }
+    /** A correction may change an attachment caption, never its source, integrity metadata, or local media identity. */
+    private boolean captionOnlyAttachmentCorrection(SQLiteDatabase db, int target, int event, int correctionProtocol) {
+        String originalUrl = null, originalSharing = null, correctionUrl = null, correctionSharing = null, path = null;
+        byte[] media = null; boolean originalAttachment = false, correctionAttachment = false;
+        try (Cursor c = db.rawQuery("SELECT message,url,sharing,path,media FROM attachments WHERE message IN (?,?)", new String[]{Integer.toString(target), Integer.toString(event)})) {
+            while (c.moveToNext()) {
+                if (c.getInt(0) == target) {
+                    originalAttachment = true; originalUrl = c.getString(1); originalSharing = c.getString(2); path = c.getString(3); media = c.isNull(4) ? null : c.getBlob(4);
+                } else {
+                    correctionAttachment = true; correctionUrl = c.getString(1); correctionSharing = c.getString(2);
+                }
+            }
+        }
+        if (!originalAttachment && !correctionAttachment) return true;
+        if (!originalAttachment || !correctionAttachment || correctionProtocol == XmppMessage.Encryption.LEGACY_OMEMO.ordinal()
+                || !sameAttachment(originalUrl, originalSharing, correctionUrl, correctionSharing)) return false;
+        try (Cursor c = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END FROM messages WHERE id=?", new String[]{Integer.toString(target)})) {
+            if (!c.moveToFirst() || c.getInt(0) == XmppMessage.Encryption.LEGACY_OMEMO.ordinal()) return false;
+        }
+        ContentValues preserved = new ContentValues();
+        if (path == null) preserved.putNull("path"); else preserved.put("path", path);
+        if (media == null) preserved.putNull("media"); else preserved.put("media", media);
+        return db.update("attachments", preserved, "message=?", new String[]{Integer.toString(event)}) == 1;
+    }
+    private boolean sameAttachment(String originalUrl, String originalXml, String correctionUrl, String correctionXml) {
+        if (!java.util.Objects.equals(originalUrl, correctionUrl) || originalXml == null || !originalXml.equals(correctionXml)) return false;
+        try {
+            com.negzero.monogram.xmpp.FileShare original = sharing(originalUrl, originalXml);
+            com.negzero.monogram.xmpp.FileShare correction = sharing(correctionUrl, correctionXml);
+            return original != null && correction != null && original.cacheKey().equals(correction.cacheKey());
+        } catch (Exception invalid) { return false; }
+    }
+    synchronized TLRPC.TL_textWithEntities translationText(int id,long peer,long self) {
+        if(id<=0 || hiddenMessage(id)) throw new IllegalArgumentException("Message unavailable for translation");
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT peer,readable,deleted FROM messages WHERE id=?",new String[]{Integer.toString(payload(id))})) {
+            if(!c.moveToFirst() || c.getLong(0)!=peer || c.getInt(1)==0 || c.getInt(2)!=0)
+                throw new IllegalArgumentException("Message unavailable for translation");
+        }
+        TLRPC.Message message=getMessage(id,self);
+        if(message.message==null || message.message.isEmpty()) throw new IllegalArgumentException("Message has no text to translate");
+        TLRPC.TL_textWithEntities result=new TLRPC.TL_textWithEntities();result.text=message.message;result.entities.addAll(message.entities);
+        return result;
+    }
     static final class EditTarget {
         final com.negzero.monogram.xmpp.MessageCorrection correction;
         final boolean encrypted;
         final XmppMessage.Encryption encryption;
         final ReplyReference reply;
-        EditTarget(String id, int protocol, ReplyReference reply) {
+        final com.negzero.monogram.xmpp.FileShare sharing;
+        EditTarget(String id, int protocol, ReplyReference reply, com.negzero.monogram.xmpp.FileShare sharing) {
             this.correction = new com.negzero.monogram.xmpp.MessageCorrection(id); this.encrypted = protocol > 0; this.reply = reply;
             this.encryption = protocol == 2 ? XmppMessage.Encryption.OMEMO2 : protocol == 1 ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
+            this.sharing = sharing;
         }
     }
     synchronized EditTarget editTarget(int id, long peer, long self) {
         TLRPC.Message original = getMessage(id, self);
-        if (!original.out || original.dialog_id != peer || MonogramAttachments.has(original)) throw new IllegalArgumentException("Only your text messages can be edited");
+        boolean attachment = MonogramAttachments.has(original);
+        if (!original.out || original.dialog_id != peer) throw new IllegalArgumentException("Only your messages can be edited");
         SQLiteDatabase db = getReadableDatabase(); String wire = null; int protocol;
         if(peer<0) try(Cursor actor=db.rawQuery("SELECT 1 FROM room_message_actors WHERE message=? AND verified=1 AND real_jid=?",new String[]{Integer.toString(id),jid(self)})) {
             if(!actor.moveToFirst()) throw new IllegalArgumentException("Original room author is not verified; refresh room history");
@@ -861,7 +904,17 @@ final class MonogramStore extends SQLiteOpenHelper {
         try (Cursor c = db.rawQuery("SELECT author,target FROM replies WHERE message=?", new String[]{Integer.toString(payload(id))})) {
             if (c.moveToFirst()) reply = new ReplyReference(c.getString(0), c.getString(1));
         }
-        return new EditTarget(wire, protocol, reply);
+        com.negzero.monogram.xmpp.FileShare sharing = null;
+        if (attachment) {
+            if (protocol == XmppMessage.Encryption.LEGACY_OMEMO.ordinal()) throw new IllegalArgumentException("Legacy OMEMO attachment captions cannot be edited");
+            try (Cursor c = db.rawQuery("SELECT url,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(payload(id))})) {
+                if (!c.moveToFirst()) throw new IllegalArgumentException("Attachment metadata unavailable");
+                sharing = sharing(c.getString(0), c.getString(1));
+                if (sharing == null) throw new IllegalArgumentException("Attachment metadata unavailable");
+            } catch (IllegalArgumentException unavailable) { throw unavailable; }
+            catch (Exception invalid) { throw new IllegalArgumentException("Attachment metadata unavailable", invalid); }
+        }
+        return new EditTarget(wire, protocol, reply, sharing);
     }
     synchronized void resetArchiveCursor() {
         SQLiteDatabase db = getWritableDatabase();
@@ -1157,7 +1210,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
     }
     private synchronized void decorate(TLRPC.Message message, int payload) {
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,media,caption,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(payload)})) {
+        // Caption edits share the original transfer/cache; later downloads must remain visible through the edit.
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT a.url,a.path,a.media,COALESCE(c.caption,a.caption),a.sharing FROM attachments a LEFT JOIN attachments c ON c.message=? WHERE a.message=?", new String[]{Integer.toString(payload),Integer.toString(message.id)})) {
             if (c.moveToFirst()) {
                 com.negzero.monogram.xmpp.FileLink link = com.negzero.monogram.xmpp.FileLink.parse(c.getString(0));
                 com.negzero.monogram.xmpp.FileShare sharing = sharing(link.wireUrl, c.getString(4));

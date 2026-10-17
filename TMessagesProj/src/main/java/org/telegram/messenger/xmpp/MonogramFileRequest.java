@@ -25,13 +25,18 @@ public final class MonogramFileRequest extends TLObject {
     public String uploadName() {
         boolean generated=message.media!=null && message.media.photo!=null;
         String name=file.getName();
+        String nativeName=null;
+        boolean animated=false;
         if(message.media!=null && message.media.document!=null)
             for(TLRPC.DocumentAttribute attribute:message.media.document.attributes)
                 if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.round_message)
                     return "round_video_"+java.util.UUID.randomUUID()+".mp4";
                 else if(attribute instanceof TLRPC.TL_documentAttributeAudio && attribute.voice) generated=true;
-                else if(attribute instanceof TLRPC.TL_documentAttributeFilename && message.params!=null
-                        && message.params.containsKey(MonogramForwarding.SOURCE) && attribute.file_name!=null && !attribute.file_name.isEmpty()) name=attribute.file_name;
+                else if(attribute instanceof TLRPC.TL_documentAttributeFilename
+                        && attribute.file_name!=null && !attribute.file_name.isEmpty()) nativeName=attribute.file_name;
+                else if(attribute instanceof TLRPC.TL_documentAttributeAnimated) animated=true;
+        if(animated && "video/mp4".equals(mime)) name="animation.gif";
+        else if(!generated && nativeName!=null) name=nativeName;
         return com.negzero.monogram.xmpp.FileTransfer.uploadName(name,mime,generated);
     }
     public MonogramFileRequest(TLRPC.Message message, File file, String mime, String caption) {

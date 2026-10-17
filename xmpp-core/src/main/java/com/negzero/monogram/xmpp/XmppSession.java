@@ -468,6 +468,13 @@ public final class XmppSession implements AutoCloseable {
         if (sharing.link.encrypted()) return sendModern(jid,sharing.body(caption),reply,null,sharing);
         return send(jid, sharing.body(caption), false, false, reply, null, sharing);
     }
+    public String correctFile(String jid, FileShare sharing, String caption, XmppMessage.Encryption encryption, ReplyReference reply, MessageCorrection correction) throws Exception {
+        if (sharing == null || correction == null || encryption == XmppMessage.Encryption.LEGACY_OMEMO
+                || sharing.link.encrypted() != (encryption == XmppMessage.Encryption.OMEMO2))
+            throw new IllegalArgumentException("Caption encryption mode mismatch");
+        return encryption == XmppMessage.Encryption.OMEMO2 ? sendModern(jid,sharing.body(caption),reply,correction,sharing)
+                : send(jid,sharing.body(caption),false,false,reply,correction,sharing);
+    }
     private String sendModern(String jid, String body, ReplyReference reply, MessageCorrection correction, FileShare sharing) throws Exception {
         return sendModern(jid,body,reply,correction,sharing,null);
     }

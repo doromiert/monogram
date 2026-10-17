@@ -11727,7 +11727,8 @@ public class MessageObject {
         final TLRPC.MessageMedia media = getMedia(message);
         if (message.peer_id.chat_id != 0 || message.peer_id.user_id != 0 && chat == null) {
             return !scheduled && message.id > 0 && message.out && message.rich_message == null
-                    && (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage);
+                    && (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage
+                    || org.telegram.messenger.xmpp.MonogramAttachments.has(message));
         }
         if (media != null && message.rich_message == null && (isRoundVideoDocument(media.document) || isStickerDocument(media.document) || isAnimatedStickerDocument(media.document, true) || isLocationMessage(message))) {
             return false;

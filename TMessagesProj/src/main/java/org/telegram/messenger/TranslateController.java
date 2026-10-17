@@ -91,39 +91,29 @@ public class TranslateController extends BaseController {
     }
 
     public boolean isFeatureAvailable() {
-        return isChatTranslateEnabled() && UserConfig.getInstance(currentAccount).isPremium();
+        return isChatTranslateEnabled();
     }
 
     public boolean isFeatureAvailable(long dialogId) {
-        if (!isChatTranslateEnabled()) {
-            return false;
-        }
-        final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
-        return (
-            UserConfig.getInstance(currentAccount).isPremium() ||
-            chat != null && chat.autotranslation
-        );
+        return isChatTranslateEnabled();
     }
 
     private Boolean chatTranslateEnabled;
     private Boolean contextTranslateEnabled;
 
     public boolean isChatTranslateEnabled() {
-        if (!getMessagesController().isTranslationsAutoEnabled()) {
+        if (!org.telegram.messenger.xmpp.MonogramTranslation.isConfigured(currentAccount)) {
             return false;
         }
         if (chatTranslateEnabled == null) {
-            chatTranslateEnabled = messagesController.getMainSettings().getBoolean("translate_chat_button", true);
+            chatTranslateEnabled = messagesController.getMainSettings().getBoolean("translate_chat_button", false);
         }
         return chatTranslateEnabled;
     }
 
     public boolean isContextTranslateEnabled() {
-        if (!getMessagesController().isTranslationsManualEnabled()) {
-            return false;
-        }
         if (contextTranslateEnabled == null) {
-            contextTranslateEnabled = messagesController.getMainSettings().getBoolean("translate_button", MessagesController.getGlobalMainSettings().getBoolean("translate_button", false));
+            contextTranslateEnabled = messagesController.getMainSettings().getBoolean("translate_button", true);
         }
         return contextTranslateEnabled;
     }
@@ -345,11 +335,6 @@ public class TranslateController extends BaseController {
     }
 
     public void setHideTranslateDialog(long dialogId, boolean hide, boolean doNotNotify) {
-        TLRPC.TL_messages_togglePeerTranslations req = new TLRPC.TL_messages_togglePeerTranslations();
-        req.peer = getMessagesController().getInputPeer(dialogId);
-        req.disabled = hide;
-        getConnectionsManager().sendRequest(req, null);
-
         TLRPC.ChatFull chatFull = getMessagesController().getChatFull(-dialogId);
         if (chatFull != null) {
             chatFull.translations_disabled = hide;
@@ -1774,14 +1759,7 @@ public class TranslateController extends BaseController {
     }
 
     private boolean isLanguageRestricted(String lng) {
-        if (getUserConfig().isPremium()) {
-            return RestrictedLanguagesSelectActivity.getRestrictedLanguages().contains(lng);
-        }
-        try {
-            return TextUtils.equals(LocaleController.getInstance().getCurrentLocaleInfo().pluralLangCode, lng);
-        } catch (Exception ignore) {
-            return false;
-        }
+        return RestrictedLanguagesSelectActivity.getRestrictedLanguages().contains(lng);
     }
 
     private void loadTranslatingDialogsCached() {

@@ -18,6 +18,28 @@ import org.telegram.tgnet.TLRPC;
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
         shadows=MonogramMessageRegressionTest.Device.class)
 public class MonogramMediaRegressionTest {
+    @Test public void animatedMp4IntentSurvivesUploadMetadataAndPrivateCacheBinding() throws Exception {
+        TLRPC.Message message=new TLRPC.TL_message();message.id=44;
+        message.media=MonogramAttachments.remoteMedia(44,"animation.gif","video/mp4",3);
+        assertTrue(MessageObject.isGifMessage(message));assertTrue(MonogramAttachments.needsMediaInfo(message));
+        TLRPC.DocumentAttribute video=message.media.document.attributes.stream().filter(a -> a instanceof TLRPC.TL_documentAttributeVideo).findFirst().get();
+        video.w=video.h=128;video.duration=1;
+        assertFalse(MonogramAttachments.needsMediaInfo(message));assertTrue(MonogramAttachments.needsMediaRefresh(message));
+        File file=File.createTempFile("animated-cache-",".mp4");
+        try {
+            Files.write(file.toPath(),new byte[]{1,2,3});
+            assertEquals("animation.gif",new MonogramFileRequest(message,file,"video/mp4","").uploadName());
+            MonogramAttachments.apply(message,FileLink.parse("https://files.example.org/animation.gif"),file,message.media,"caption","animation.gif");
+            assertTrue(MessageObject.isGifMessage(message));assertEquals("video/mp4",message.media.document.mime_type);
+            assertEquals(file.getAbsolutePath(),message.media.document.localPath);
+            TLRPC.MessageMedia ordinary=MonogramAttachments.remoteMedia(45,"ordinary.mp4","video/mp4",3);
+            assertFalse(MessageObject.isGifDocument(ordinary.document));
+            MonogramAttachments.preserveMediaAttributes(message.media,ordinary);
+            assertTrue(MessageObject.isGifDocument(ordinary.document));
+            TLRPC.Message named=new TLRPC.TL_message();named.media=MonogramAttachments.remoteMedia(46,"original-name.mp4","video/mp4",3);
+            assertEquals("original-name.mp4",new MonogramFileRequest(named,file,"video/mp4","").uploadName());
+        } finally { file.delete(); }
+    }
     @Test public void localDocumentsHavePathScopedKeysEvenWithoutTelegramIds() {
         ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
         TLRPC.Document first=new TLRPC.TL_document(); first.localPath="/private/account0/gif";
