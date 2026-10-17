@@ -64,6 +64,54 @@ public final class MonogramAttachments {
         media.document = document;
         return media;
     }
+    static boolean needsMediaInfo(TLRPC.Message message) {
+        return message.media!=null && needsMediaInfo(message.media.document);
+    }
+    static boolean needsMediaInfo(TLRPC.Document document) {
+        if(document==null) return false;
+        for(TLRPC.DocumentAttribute attribute:document.attributes)
+            if(attribute instanceof TLRPC.TL_documentAttributeAudio || attribute instanceof TLRPC.TL_documentAttributeVideo
+                    || attribute instanceof TLRPC.TL_documentAttributeAnimated) return false;
+        return probeMediaType(document.mime_type);
+    }
+    private static boolean probeMediaType(String mime) {
+        return mime==null || mime.isEmpty() || mime.startsWith("audio/") || mime.startsWith("video/")
+                || mime.equals("application/octet-stream") || mime.equals("binary/octet-stream") || mime.equals("application/ogg");
+    }
+    /** Only call on a file-I/O executor after the file's transport/integrity checks have completed. */
+    static TLRPC.MessageMedia decodedMedia(int id,int date,File file,String name,String contentType) {
+        TLRPC.MessageMedia media=media(id,date,file,name);
+        if(media.document==null || "image/gif".equals(media.document.mime_type) || !file.isFile()) return media;
+        TLRPC.Document document=media.document;
+        document.mime_type=mimeType(name,contentType);
+        if(!probeMediaType(document.mime_type)) return media;
+        android.media.MediaMetadataRetriever metadata=null;
+        boolean video=document.mime_type.startsWith("video/");
+        try {
+            metadata=new android.media.MediaMetadataRetriever(); metadata.setDataSource(file.getAbsolutePath());
+            String actual=metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_MIMETYPE);
+            if(actual!=null && (actual.startsWith("audio/") || actual.startsWith("video/") || actual.equals("application/ogg"))) document.mime_type=actual;
+            video="yes".equals(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO));
+            boolean audio="yes".equals(metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO));
+            if(!video && (audio || document.mime_type.startsWith("audio/"))) {
+                TLRPC.TL_documentAttributeAudio attribute=new TLRPC.TL_documentAttributeAudio();
+                String duration=metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+                if(duration!=null) attribute.duration=(int)Math.min(Integer.MAX_VALUE,Math.max(0,Math.ceil(Long.parseLong(duration)/1000.0)));
+                attribute.title=metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE);
+                attribute.performer=metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST);
+                if(attribute.title!=null && !attribute.title.isEmpty()) { attribute.title=attribute.title.substring(0,Math.min(512,attribute.title.length())); attribute.flags|=1; }
+                if(attribute.performer!=null && !attribute.performer.isEmpty()) { attribute.performer=attribute.performer.substring(0,Math.min(512,attribute.performer.length())); attribute.flags|=2; }
+                document.attributes.add(attribute);
+            }
+        } catch(Exception unsupported) { /* Leave unsupported/corrupt formats available as ordinary documents. */ }
+        finally { if(metadata!=null) try { metadata.release(); } catch(Exception ignored) { } }
+        if(video) {
+            TLRPC.TL_documentAttributeVideo attribute=new TLRPC.TL_documentAttributeVideo();
+            org.telegram.messenger.SendMessagesHelper.fillVideoAttribute(file.getAbsolutePath(),attribute,null);
+            if(attribute.w>0 && attribute.h>0 && attribute.duration>=0) document.attributes.add(attribute);
+        }
+        return media;
+    }
     private static boolean isGif(File file) {
         if (!file.isFile()) return false;
         try (java.io.InputStream input = new java.io.FileInputStream(file)) {
@@ -82,14 +130,18 @@ public final class MonogramAttachments {
         size.location.file_reference = new byte[0]; photo.sizes.add(size); media.photo = photo;
         return media;
     }
-    /** Native remote placeholders and DownloadController metadata; image pixels require verified local bytes. */
-    public static TLRPC.MessageMedia remoteMedia(int id, String name, String contentType, long size) {
+    private static String mimeType(String name,String contentType) {
         String mime = contentType == null ? "application/octet-stream" : contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
         if (mime.equals("application/octet-stream") || mime.equals("binary/octet-stream")) {
             int dot = name.lastIndexOf('.');
             String inferred = dot < 0 ? null : android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
             if (inferred != null) mime = inferred;
         }
+        return mime;
+    }
+    /** Native remote placeholders and DownloadController metadata; image pixels require verified local bytes. */
+    public static TLRPC.MessageMedia remoteMedia(int id, String name, String contentType, long size) {
+        String mime = mimeType(name,contentType);
         if (mime.startsWith("image/") && !mime.equals("image/gif")) return photo(id, 0, 1, 1, size);
         TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1;
         media.document = new TLRPC.TL_document(); media.document.id = id; media.document.mime_type = mime; media.document.size = Math.max(0, size);

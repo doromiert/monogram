@@ -999,7 +999,7 @@ public final class MonogramController {
             sessionEpoch++; archiveSync = null;
             for (FileTransfer.Job job : fileJobs.values()) job.cancel();
             fileJobs.clear(); fileNames.clear();
-            automaticJobs.clear(); autoAttempted.clear();
+            automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
             store.clear(); self = 0;
             state(ConnectionsManager.ConnectionStateWaitingForNetwork);
         });
@@ -1244,8 +1244,44 @@ public final class MonogramController {
                 || reply.monoforum_peer_id != null || reply.reply_to_peer_id != null && (peer<0 ? -reply.reply_to_peer_id.chat_id : reply.reply_to_peer_id.user_id) != peer) throw new UnsupportedOperationException();
         return replyTo(reply.reply_to_msg_id, peer, encrypted, reply.quote_text, reply.quote_offset);
     }
+    private final java.util.Set<Integer> mediaInfoScanned=java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Integer,Boolean>());
+    private void refreshCachedMedia(TLRPC.Message message,File path) {
+        if(!MonogramAttachments.needsMediaInfo(message) || !mediaInfoScanned.add(message.id)) return;
+        if(mediaInfoScanned.size()>4096) { mediaInfoScanned.clear(); mediaInfoScanned.add(message.id); }
+        final long owner=accountEpoch;
+        final String address=message.params.get(MonogramAttachments.PARAM);
+        fileWorker.execute(() -> {
+            if(owner!=accountEpoch || !path.isFile()) return;
+            try {
+                com.negzero.monogram.xmpp.FileShare sharing=store.sharing(message.id);
+                String filename=sharing==null ? com.negzero.monogram.xmpp.FileLink.parse(address).fileName() : sharing.name;
+                TLRPC.MessageMedia media=MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime);
+                if(media.document==null || MonogramAttachments.needsMediaInfo(media.document)) return;
+                worker.execute(() -> {
+                    if(owner!=accountEpoch) return;
+                    try {
+                        TLRPC.Message current=store.getMessage(message.id,self);
+                        if(!address.equals(current.params.get(MonogramAttachments.PARAM)) || !path.equals(store.attachmentPath(message.id)) || !MonogramAttachments.needsMediaInfo(current)) return;
+                        media.document.date=current.date;
+                        store.attach(message.id,address,path,media);
+                        TLRPC.Message updated=store.getMessage(message.id,self);
+                        ArrayList<TLRPC.Message> stored=new ArrayList<>(); stored.add(updated);
+                        MessagesStorage.getInstance(account).putMessages(stored,false,true,false,0,0,0);
+                        AndroidUtilities.runOnUIThread(() -> {
+                            if(owner!=accountEpoch) return;
+                            ArrayList<MessageObject> objects=new ArrayList<>(); objects.add(new MessageObject(account,updated,true,true));
+                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,updated.dialog_id,objects);
+                        });
+                    } catch(Exception changed) { /* Cached metadata cannot replace a changed/deleted attachment. */ }
+                });
+            } catch(Exception unavailable) { /* Metadata is optional; retain the cached document. */ }
+        });
+    }
     private void maybeAutoDownload(TLRPC.Message message) {
-        if (DownloadController.getInstance(account).getCurrentDownloadMask() == 0 || !MonogramAttachments.has(message) || new File(message.attachPath).isFile()) return;
+        if (!MonogramAttachments.has(message)) return;
+        File path=new File(message.attachPath);
+        if(path.isFile()) { refreshCachedMedia(message,path); return; }
+        if(DownloadController.getInstance(account).getCurrentDownloadMask()==0) return;
         final com.negzero.monogram.xmpp.FileShare sharing;
         try { sharing = store.sharing(message.id); }
         catch (IllegalStateException invalid) { return; }
@@ -1430,12 +1466,18 @@ public final class MonogramController {
                     AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0));
                     return;
                 }
+                job.check();
+                TLRPC.MessageMedia decoded=MonogramAttachments.decodedMedia(id,object.messageOwner.date,path,filename,
+                        sharing==null && object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : sharing==null ? null : sharing.mime);
+                job.check();
                 worker.execute(() -> {
                     try {
                         job.check();
                         if (sessionEpoch != epoch) return;
                         TLRPC.Message saved = store.getMessage(id, self);
-                        store.attach(id, address, path, MonogramAttachments.media(id, saved.date, path, filename));
+                        if(decoded.document!=null) decoded.document.date=saved.date;
+                        if(decoded.photo!=null) decoded.photo.date=saved.date;
+                        store.attach(id, address, path, decoded);
                         TLRPC.Message updated = store.getMessage(id, self);
                         MonogramAttachments.apply(object.messageOwner, link, path, updated.media, updated.message, filename);
                         ArrayList<TLRPC.Message> messages = new ArrayList<>(); messages.add(updated);
