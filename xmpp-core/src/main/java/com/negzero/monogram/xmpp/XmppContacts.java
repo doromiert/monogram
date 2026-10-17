@@ -21,10 +21,14 @@ public final class XmppContacts implements AutoCloseable {
     }
     public static final class PresenceState {
         public static final PresenceState UNKNOWN = new PresenceState(false, false, 0);
-        public final boolean visible, online;
+        public final boolean visible, online, available;
+        public final Presence.Mode mode;
         public final long lastSeen;
         public PresenceState(boolean visible, boolean online, long lastSeen) {
-            this.visible=visible; this.online=online; this.lastSeen=lastSeen;
+            this(visible,online,online,null,lastSeen);
+        }
+        private PresenceState(boolean visible, boolean online, boolean available, Presence.Mode mode, long lastSeen) {
+            this.visible=visible; this.online=online; this.available=available; this.mode=mode; this.lastSeen=lastSeen;
         }
     }
     private final XMPPConnection connection;
@@ -58,14 +62,34 @@ public final class XmppContacts implements AutoCloseable {
         EntityBareJid jid=contact(address);
         RosterEntry entry=roster.getEntry(jid);
         if(!connection.isAuthenticated() || !roster.isLoaded() || entry==null || !entry.canSeeHisPresence()) return PresenceState.UNKNOWN;
-        return new PresenceState(true,roster.getPresence(jid).isAvailable(),0);
+        return aggregate(roster.getAllPresences(jid),System.currentTimeMillis()/1000);
+    }
+    static PresenceState aggregate(java.util.List<Presence> resources,long now) {
+        boolean available=false,allIdle=true;
+        long latestIdle=0;
+        Presence.Mode mode=Presence.Mode.xa;
+        for(Presence resource:resources) {
+            if(!resource.isAvailable()) continue;
+            available=true;
+            Presence.Mode current=resource.getMode();
+            org.jivesoftware.smackx.last_interaction.element.IdleElement idle=
+                    org.jivesoftware.smackx.last_interaction.element.IdleElement.fromPresence(resource);
+            if(idle==null && (current==Presence.Mode.available || current==Presence.Mode.chat))
+                return new PresenceState(true,true,true,current,0);
+            long since=idle==null ? 0 : idle.getSince().getTime()/1000;
+            if(since<=0 || since>now) allIdle=false;
+            else latestIdle=Math.max(latestIdle,since);
+            if(current==Presence.Mode.dnd) mode=Presence.Mode.dnd;
+            else if(mode!=Presence.Mode.dnd && current!=Presence.Mode.xa) mode=Presence.Mode.away;
+        }
+        return new PresenceState(true,false,available,available ? mode : null,allIdle ? latestIdle : 0);
     }
     public PresenceState lastSeen(String address) throws Exception {
         PresenceState before=presence(address);
-        if(!before.visible || before.online) return before;
+        if(!before.visible || before.available) return before;
         long seconds=org.jivesoftware.smackx.iqlast.LastActivityManager.getInstanceFor(connection).getLastActivity(contact(address)).lastActivity;
         PresenceState after=presence(address);
-        if(!after.visible || after.online) return after;
+        if(!after.visible || after.available) return after;
         return new PresenceState(true,false,lastSeenTimestamp(System.currentTimeMillis()/1000,seconds));
     }
     static long lastSeenTimestamp(long now,long seconds) {

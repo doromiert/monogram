@@ -2499,6 +2499,8 @@
     <string name="NotificationsService">Keep-Alive Service</string>
     <string name="MonogramConnecting">Connecting to XMPP…</string>
     <string name="MonogramPresenceUnavailable">Presence unavailable</string>
+    <string name="MonogramPresenceAway">Away</string>
+    <string name="MonogramPresenceBusy">Do not disturb</string>
     <string name="MonogramBackgroundConnection">Keeping your Jabber accounts connected</string>
     <string name="NotificationsServiceInfo">Relaunch app when shut down. Enable for reliable notifications.</string>
     <string name="NotificationsServiceConnection">Background Connection</string>

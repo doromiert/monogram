@@ -137,10 +137,10 @@ public final class MonogramController {
         try {
             com.negzero.monogram.xmpp.XmppContacts.PresenceState value=expected.contacts.presence(store.jid(peer));
             com.negzero.monogram.xmpp.XmppContacts.PresenceState old=presences.get(peer);
-            if(value.visible && !value.online && old!=null && old.visible && !old.online && old.lastSeen>0) value=old;
+            if(value.visible && !value.available && old!=null && old.visible && !old.available && old.lastSeen>0) value=old;
             presences.put(peer,value); publishPresence();
             long now=android.os.SystemClock.elapsedRealtime();
-            if(!query || !value.visible || value.online || value.lastSeen>0 || now-lastPresenceQueries.getOrDefault(peer,Long.MIN_VALUE/2)<60000) return;
+            if(!query || !value.visible || value.available || value.lastSeen>0 || now-lastPresenceQueries.getOrDefault(peer,Long.MIN_VALUE/2)<60000) return;
             lastPresenceQueries.put(peer,now);
             String jid=store.jid(peer);
             final com.negzero.monogram.xmpp.XmppContacts.PresenceState requested=value;
@@ -151,7 +151,7 @@ public final class MonogramController {
                         if(session!=expected || sessionEpoch!=epoch || state!=ConnectionsManager.ConnectionStateConnected || presences.get(peer)!=requested) return;
                         try {
                             com.negzero.monogram.xmpp.XmppContacts.PresenceState current=expected.contacts.presence(jid);
-                            presences.put(peer,current.visible && !current.online ? result : current); publishPresence();
+                            presences.put(peer,current.visible && !current.available ? result : current); publishPresence();
                         } catch(Exception unavailable) { }
                     });
                 } catch(Exception unavailable) { /* Last activity is optional and can be refused. */ }
@@ -673,7 +673,8 @@ public final class MonogramController {
     private void incomingRoom(com.negzero.monogram.xmpp.XmppRoomMessage message) {
         long dialog=store.knownRoom(message.room.toString()); if(dialog==0) return;
         if(message.reactions!=null) { publishReactions(dialog,store.reactions.save(message,self)); return; }
-        int id=store.saveRoom(message,self);
+        java.util.Set<Integer> replaced=new java.util.HashSet<>();
+        int id=store.saveRoom(message,self,replaced);
         java.util.Set<Integer> updated=new java.util.HashSet<>(); if(id!=0) updated.add(id);
         MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(dialog,updated);
         updated.addAll(corrections.edited); refreshReplies(dialog,updated);
@@ -683,7 +684,11 @@ public final class MonogramController {
         ArrayList<TLRPC.Update> updates=correctionUpdates(corrections,id);
         if(id!=0 && !store.hiddenCorrection(id)) {
             maybeAutoDownload(store.getMessage(id,self));
-            TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=store.getMessage(id,self); updates.add(update);
+            if(replaced.contains(id)) {
+                TL_update.TL_updateEditMessage update=new TL_update.TL_updateEditMessage(); update.message=store.getMessage(id,self); updates.add(update);
+            } else {
+                TL_update.TL_updateNewMessage update=new TL_update.TL_updateNewMessage(); update.message=store.getMessage(id,self); updates.add(update);
+            }
         }
         if(updates.isEmpty()) return;
         ArrayList<TLRPC.User> users=store.roomUsers(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
@@ -806,6 +811,7 @@ public final class MonogramController {
             try {
                 java.util.Set<Integer> updated=new java.util.HashSet<>();
                 boolean changed=store.saveRoomArchive(task.peer,page,task.backwards || initial,self,updated);
+                refreshNotifications(updated);
                 MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(task.peer,updated);
                 updated.addAll(corrections.edited); refreshReplies(task.peer,updated);
                 publishCorrections(task.peer,correctionUpdates(corrections,0));
@@ -877,6 +883,7 @@ public final class MonogramController {
     private void archivePage(ArchiveSync sync, ArchiveTask task, XmppSession.ArchivePage page, boolean initial) {
         java.util.Set<Integer> updated = new java.util.HashSet<>();
         boolean changed = store.saveArchive(task.peer, page, task.backwards || initial, updated);
+        refreshNotifications(updated);
         page.stored();
         java.util.Set<Long> replyPeers = new java.util.HashSet<>();
         for (XmppMessage message : page.messages) replyPeers.add(store.peer(message.peer.toString()));
@@ -1107,7 +1114,7 @@ public final class MonogramController {
                 if(owner!=accountEpoch) return;
                 org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
                 if(org.telegram.ui.Components.BulletinFactory.canShowBulletin(fragment))
-                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.drawable.msg_info,
+                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.chats_infotip,
                         "Sent with unavailable recipients skipped. Details in Conversation security.").show();
             });
         }
@@ -1218,6 +1225,24 @@ public final class MonogramController {
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now()));
     }
     private void refreshReplies(long peer) { refreshReplies(peer, java.util.Collections.emptySet()); }
+    private void refreshNotifications(java.util.Set<Integer> updated) {
+        if(updated.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
+        long owner=accountEpoch;
+        androidx.collection.LongSparseArray<ArrayList<MessageObject>> edits=new androidx.collection.LongSparseArray<>();
+        for(int id:updated) {
+            if(store.hiddenCorrection(id)) continue;
+            TLRPC.Message message=store.getMessage(id,self);
+            if(message.out) continue;
+            ArrayList<MessageObject> messages=edits.get(message.dialog_id);
+            if(messages==null) { messages=new ArrayList<>(); edits.put(message.dialog_id,messages); }
+            messages.add(new MessageObject(account,message,true,true));
+        }
+        // Stay behind pending live notifications; only replace entries still in the notification tray.
+        Utilities.stageQueue.postRunnable(() -> MessagesStorage.getInstance(account).getStorageQueue().postRunnable(() ->
+                AndroidUtilities.runOnUIThread(() -> {
+                    if(accountEpoch==owner) org.telegram.messenger.NotificationsController.getInstance(account).processEditedMessages(edits);
+                })));
+    }
     private void refreshReplies(long peer, java.util.Set<Integer> updated) {
         ArrayList<TLRPC.Message> changed = store.changedReplies(peer, self, updated);
         if (changed.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;

@@ -242,6 +242,9 @@ final class MonogramStore extends SQLiteOpenHelper {
         result.full_chat=full; return result;
     }
     synchronized int saveRoom(com.negzero.monogram.xmpp.XmppRoomMessage message,long self) {
+        return saveRoom(message,self,null);
+    }
+    synchronized int saveRoom(com.negzero.monogram.xmpp.XmppRoomMessage message,long self,java.util.Set<Integer> replaced) {
         if(message.reactions!=null) { reactions.save(message,self); return 0; }
         long dialog=knownRoom(message.room.toString()); if (dialog==0) throw new IllegalArgumentException("Unknown room message");
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
@@ -325,7 +328,9 @@ final class MonogramStore extends SQLiteOpenHelper {
                     changed|=db.update("attachments",attachment,"message=? AND url=? AND sharing IS NULL",new String[]{Integer.toString(id),message.attachment.wireUrl})>0;
                 }
             }
-            db.setTransactionSuccessful(); return changed ? id : 0;
+            db.setTransactionSuccessful();
+            if(changed && existing!=0 && replaced!=null) replaced.add(id);
+            return changed ? id : 0;
         } finally { db.endTransaction(); }
     }
     private void addBookmarks(SQLiteDatabase db) {

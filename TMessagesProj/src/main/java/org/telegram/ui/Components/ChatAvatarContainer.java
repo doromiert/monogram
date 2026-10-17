@@ -1247,6 +1247,8 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                         newStatus=getString(R.string.Online); useOnlineColor=true;
                     } else if(presence.visible && presence.lastSeen>0 && presence.lastSeen<=Integer.MAX_VALUE) {
                         newStatus=LocaleController.formatDateOnline((int)presence.lastSeen,allowShorterStatus ? statusMadeShorter : null);
+                    } else if(presence.available) {
+                        newStatus=getString(presence.mode==org.jivesoftware.smack.packet.Presence.Mode.dnd ? R.string.MonogramPresenceBusy : R.string.MonogramPresenceAway);
                     } else {
                         newStatus=getString(presence.visible ? R.string.VoipOfflineTitle : R.string.MonogramPresenceUnavailable);
                     }
