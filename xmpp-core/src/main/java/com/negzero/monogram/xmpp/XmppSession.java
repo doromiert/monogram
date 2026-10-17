@@ -23,7 +23,6 @@ import org.jivesoftware.smackx.omemo.element.OmemoElement;
 import org.jivesoftware.smackx.omemo.element.OmemoElement_VAxolotl;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.listener.OmemoMessageListener;
-import org.jivesoftware.smackx.omemo.signal.SignalCachingOmemoStore;
 import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
 import org.jivesoftware.smackx.omemo.signal.SignalOmemoService;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
@@ -121,7 +120,7 @@ public final class XmppSession implements AutoCloseable {
         SignalOmemoService.acknowledgeLicense();
         SignalOmemoService.setup();
         ((SignalOmemoService) SignalOmemoService.getInstance()).setOmemoStoreBackend(
-                new SignalCachingOmemoStore(new SignalFileBasedOmemoStore(root)));
+                new org.jivesoftware.smackx.omemo.MonogramDeviceLists(new SignalFileBasedOmemoStore(root)));
         keyRoot = root;
     }
 
@@ -608,6 +607,7 @@ public final class XmppSession implements AutoCloseable {
     public Set<OmemoDevice> devices(String jid) throws Exception {
         EntityBareJid contact = JidCreate.entityBareFrom(jid);
         try {
+            if(connection.getUser()!=null && !contact.equals(connection.getUser().asBareJid())) return refreshRemoteDevices(contact);
             omemo.requestDeviceListUpdateFor(contact);
             deviceListRefresh.put(contact.toString(),System.nanoTime());
             return omemo.getDevicesOf(contact);
@@ -620,10 +620,32 @@ public final class XmppSession implements AutoCloseable {
             throw e;
         }
     }
+    private Set<OmemoDevice> refreshRemoteDevices(EntityBareJid contact) throws Exception {
+        long generation=lifecycle.get();
+        if(closed || !connection.isAuthenticated()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
+        org.jivesoftware.smackx.omemo.MonogramDeviceLists.Snapshot snapshot=org.jivesoftware.smackx.omemo.MonogramDeviceLists.snapshot(omemo,contact);
+        org.jivesoftware.smackx.omemo.element.OmemoDeviceListElement fetched;
+        try { fetched=legacyDiscovery.fetchDeviceList(contact); }
+        catch(Exception failure) {
+            if(closed || generation!=lifecycle.get() || !connection.isAuthenticated()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
+            throw failure;
+        }
+        synchronized(omemo) {
+            if(closed || generation!=lifecycle.get() || !connection.isAuthenticated()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
+            Set<OmemoDevice> devices;
+            try { devices=org.jivesoftware.smackx.omemo.MonogramDeviceLists.apply(omemo,snapshot,fetched); }
+            catch(java.util.ConcurrentModificationException changed) {
+                OmemoSendException retry=new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED,"Device list changed during lookup; retry the message.");retry.initCause(changed);throw retry;
+            }
+            if(closed || generation!=lifecycle.get()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
+            deviceListRefresh.put(contact.toString(),System.nanoTime());return devices;
+        }
+    }
     private final java.util.concurrent.ExecutorService deviceRefreshWorker=java.util.concurrent.Executors.newSingleThreadExecutor(r -> { Thread thread=new Thread(r,"Monogram device lists"); thread.setDaemon(true); return thread; });
     private final Set<String> pendingDeviceRefresh=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private Set<OmemoDevice> sendingDevices(String address) throws Exception {
-        Set<OmemoDevice> cached=omemo.getDevicesOf(JidCreate.entityBareFrom(address));
+        EntityBareJid contact=JidCreate.entityBareFrom(address);
+        Set<OmemoDevice> cached=omemo.getDevicesOf(contact);
         if(cached.isEmpty()) return devices(address);
         Long refreshed=deviceListRefresh.get(address);
         if((refreshed==null || System.nanoTime()-refreshed>java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) && pendingDeviceRefresh.add(address)) {

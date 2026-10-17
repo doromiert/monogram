@@ -586,28 +586,50 @@ public final class XmppRooms implements AutoCloseable {
         Set<OmemoDevice> devices=new HashSet<>();
         Set<BareJid> targets=new LinkedHashSet<>(recipients);
         if(!automatic) targets.add(connection.getUser().asBareJid());
-        // Keep Smack's device-list merge/PEP lifecycle, without holding the encryption monitor while waiting.
+        Map<BareJid,Callable<Set<OmemoDevice>>> coldLists=new LinkedHashMap<>();
+        Map<BareJid,Lookup<Set<OmemoDevice>>> lists=new HashMap<>();
+        EntityFullJid account=connection.getUser();
+        for(BareJid recipient:targets) {
+            if(closed || account==null) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
+            if(automatic) {
+                Set<OmemoDevice> cached=omemo.getDevicesOf(recipient);
+                if(!cached.isEmpty()) { lists.put(recipient,new Lookup<>(cached,null));continue; }
+                try { checkUnavailable(recipient.toString()); }
+                catch(Exception backoff) { lists.put(recipient,new Lookup<>(null,backoff));continue; }
+            }
+            if(recipient.equals(account.asBareJid())) {
+                // Own-list refresh retains Smack's publication and device cleanup lifecycle.
+                try { lists.put(recipient,new Lookup<>(deviceLookup.devices(recipient),null)); }
+                catch(InterruptedException interrupted) { Thread.currentThread().interrupt();throw interrupted; }
+                catch(Exception error) { lists.put(recipient,new Lookup<>(null,error)); }
+            } else coldLists.put(recipient,() -> deviceLookup.devices(recipient));
+        }
+        lists.putAll(parallelLookups(coldLists,bundleLookups,pendingBundles,lookupDeadline(),
+                () -> !closed && connection.isAuthenticated() && account.equals(connection.getUser()),(recipient,result) -> {
+            if(automatic && result.error!=null && unavailable(result.error))
+                unavailable.putIfAbsent(recipient.toString(),new Unavailable(result.error));
+            else if(automatic && result.error==null && result.value.isEmpty())
+                unavailable.putIfAbsent(recipient.toString(),new Unavailable(new OmemoSendException(OmemoSendException.Reason.NO_DEVICES)));
+        }));
         for(BareJid recipient:targets) {
             if(closed) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
-            Set<OmemoDevice> found;
-            String key=recipient.toString();
+            Set<OmemoDevice> found;String key=recipient.toString();Lookup<Set<OmemoDevice>> result=lists.get(recipient);
             if(!automatic) {
-                try { found=deviceLookup.devices(recipient); }
+                try { if(result.error!=null) throw result.error;found=result.value; }
                 catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
                 catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
                 if(found.isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,key);
                 deviceLists.put(recipient,new HashSet<>(found));devices.addAll(found);continue;
             }
             try {
-                found=omemo.getDevicesOf(recipient);
-                if(found.isEmpty()) { checkUnavailable(key); found=deviceLookup.devices(recipient); }
+                if(result.error!=null) throw result.error;found=result.value;
                 unavailable.remove(key);
             } catch(Exception error) {
                 if(!unavailable(error)) throw error;
                 unavailable.putIfAbsent(key,new Unavailable(error));found=omemo.getDevicesOf(recipient);
                 if(found.isEmpty()) skipped.put(key,XmppRequestException.describe(error));
             }
-            if(found.isEmpty() && !recipient.equals(connection.getUser().asBareJid()) && !skipped.containsKey(key)) {
+            if(found.isEmpty() && !recipient.equals(account.asBareJid()) && !skipped.containsKey(key)) {
                 skipped.put(key,"No published OMEMO devices");unavailable.put(key,new Unavailable(new OmemoSendException(OmemoSendException.Reason.NO_DEVICES)));
             }
             deviceLists.put(recipient,new HashSet<>(found));devices.addAll(found);
@@ -626,8 +648,7 @@ public final class XmppRooms implements AutoCloseable {
             }
         }
         // One PEP bundle may need a node lookup and an items lookup; let real IQ failures reach backoff.
-        long budget=Math.min(TimeUnit.MINUTES.toNanos(1),2*TimeUnit.MILLISECONDS.toNanos(Math.min(connection.getReplyTimeout(),30000))+TimeUnit.SECONDS.toNanos(1));
-        long deadline=System.nanoTime()+budget;
+        long deadline=lookupDeadline();
         prepared.putAll(parallelLookups(cold,bundleLookups,pendingBundles,deadline,() -> !closed,(device,result) -> {
             if(!automatic) return;
             if(result.error!=null && unavailable(result.error)) unavailable.putIfAbsent(deviceKey(device),new Unavailable(result.error));
@@ -679,6 +700,10 @@ public final class XmppRooms implements AutoCloseable {
             return ciphertext;
         }
     }
+    private long lookupDeadline() {
+        long budget=Math.min(TimeUnit.MINUTES.toNanos(1),2*TimeUnit.MILLISECONDS.toNanos(Math.min(connection.getReplyTimeout(),30000))+TimeUnit.SECONDS.toNanos(1));
+        return System.nanoTime()+budget;
+    }
     private static String deviceKey(OmemoDevice device) { return device.getJid()+" · device "+device.getDeviceId(); }
     static final class Lookup<T> {
         final T value;final Exception error;
@@ -693,7 +718,7 @@ public final class XmppRooms implements AutoCloseable {
             while(next.hasNext() || !running.isEmpty()) {
                 if(!current.getAsBoolean()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
                 while(next.hasNext() && running.size()<4) {
-                    if(System.nanoTime()>=deadline) throw new TimeoutException("Room bundle preparation timed out");
+                    if(System.nanoTime()>=deadline) throw new TimeoutException("Room device preparation timed out");
                     Map.Entry<K,Callable<V>> job=next.next();Callable<V> operation=job.getValue();
                     Future<Lookup<V>> future=completion.submit(() -> {
                         try { return new Lookup<>(operation.call(),null); }
@@ -703,7 +728,7 @@ public final class XmppRooms implements AutoCloseable {
                     running.put(future,job.getKey());outstanding.add(future);
                     if(!current.getAsBoolean()) future.cancel(true);
                 }
-                long remaining=deadline-System.nanoTime();if(remaining<=0) throw new TimeoutException("Room bundle preparation timed out");
+                long remaining=deadline-System.nanoTime();if(remaining<=0) throw new TimeoutException("Room device preparation timed out");
                 Future<Lookup<V>> finished=completion.poll(Math.min(remaining,TimeUnit.MILLISECONDS.toNanos(100)),TimeUnit.NANOSECONDS);
                 if(finished==null) continue;
                 K key=running.remove(finished);outstanding.remove(finished);Lookup<V> result=finished.get();results.put(key,result);
@@ -711,7 +736,7 @@ public final class XmppRooms implements AutoCloseable {
             }
             return results;
         } catch(TimeoutException | RejectedExecutionException timedOut) {
-            throw lookupTimeout("OMEMO bundle preparation did not finish; no message was sent.",timedOut);
+            throw lookupTimeout("OMEMO device preparation did not finish; no message was sent.",timedOut);
         } catch(CancellationException cancelled) {
             throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
         } catch(ExecutionException failed) {

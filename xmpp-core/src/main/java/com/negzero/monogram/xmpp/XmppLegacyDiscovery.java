@@ -16,6 +16,14 @@ final class XmppLegacyDiscovery {
     private final XMPPConnection connection;
     private final int deviceId;
     XmppLegacyDiscovery(XMPPConnection connection,int deviceId) { this.connection=connection; this.deviceId=deviceId; }
+    OmemoDeviceListElement fetchDeviceList(BareJid address) throws Exception {
+        try {
+            LeafNode node=PubSubManager.getInstanceFor(connection,address).getLeafNode("eu.siacs.conversations.axolotl.devicelist");
+            if(node==null) return null;
+            List<PayloadItem<OmemoDeviceListElement>> items=node.getItems();
+            return items.isEmpty() ? null : items.get(items.size()-1).getPayload();
+        } catch(PubSubException.NotAPubSubNodeException absent) { return null; }
+    }
     Set<OmemoDevice> devices(BareJid address) throws Exception {
         LeafNode node=PubSubManager.getInstanceFor(connection,address).getLeafNode("eu.siacs.conversations.axolotl.devicelist");
         List<PayloadItem<OmemoDeviceListElement>> items=node.getItems();

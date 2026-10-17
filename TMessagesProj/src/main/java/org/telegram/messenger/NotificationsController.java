@@ -6088,7 +6088,7 @@ public class NotificationsController extends BaseController implements Notificat
     public void setDialogNotificationsSettings(long dialog_id, long topicId, int setting) {
         SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
         SharedPreferences.Editor editor = preferences.edit();
-        TLRPC.Dialog dialog = MessagesController.getInstance(UserConfig.selectedAccount).dialogs_dict.get(dialog_id);
+        TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(dialog_id);
         if (setting == SETTING_MUTE_UNMUTE) {
             boolean defaultEnabled = isGlobalNotificationsEnabled(dialog_id, false, false);
             if (defaultEnabled) {
@@ -6102,7 +6102,7 @@ public class NotificationsController extends BaseController implements Notificat
                 dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
             }
         } else {
-            int untilTime = ConnectionsManager.getInstance(UserConfig.selectedAccount).getCurrentTime();
+            int untilTime = getConnectionsManager().getCurrentTime();
             if (setting == SETTING_MUTE_HOUR) {
                 untilTime += 60 * 60;
             } else if (setting == SETTING_MUTE_8_HOURS) {
@@ -6121,8 +6121,8 @@ public class NotificationsController extends BaseController implements Notificat
                 editor.putInt("notifyuntil_" + NotificationsController.getSharedPrefKey(dialog_id, topicId), untilTime);
                 flags = ((long) untilTime << 32) | 1;
             }
-            NotificationsController.getInstance(UserConfig.selectedAccount).removeNotificationsForDialog(dialog_id);
-            MessagesStorage.getInstance(UserConfig.selectedAccount).setDialogFlags(dialog_id, flags);
+            removeNotificationsForDialog(dialog_id);
+            getMessagesStorage().setDialogFlags(dialog_id, flags);
             if (dialog != null) {
                 dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
                 dialog.notify_settings.mute_until = untilTime;

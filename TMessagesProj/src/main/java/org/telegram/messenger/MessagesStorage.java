@@ -17662,9 +17662,11 @@ public class MessagesStorage extends BaseController {
                     }
 
                     if (dialog.notify_settings != null) {
+                        new NotificationsSettingsFacade(currentAccount).restoreLocalNotificationSettings(dialog.id, 0, dialog.notify_settings);
                         state_settings.requery();
                         state_settings.bindLong(1, dialog.id);
-                        state_settings.bindInteger(2, dialog.notify_settings.mute_until != 0 ? 1 : 0);
+                        int until = dialog.notify_settings.mute_until;
+                        state_settings.bindLong(2, until == 0 ? 0 : until == Integer.MAX_VALUE ? 1 : ((long) until << 32) | 1);
                         state_settings.step();
                     }
                 }

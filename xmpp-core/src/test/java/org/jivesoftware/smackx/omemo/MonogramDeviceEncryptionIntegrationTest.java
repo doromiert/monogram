@@ -9,7 +9,6 @@ import org.jivesoftware.smack.packet.IQ;
 import org.jivesoftware.smackx.omemo.element.OmemoBundleElement;
 import org.jivesoftware.smackx.omemo.exceptions.NoIdentityKeyException;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
-import org.jivesoftware.smackx.omemo.signal.SignalCachingOmemoStore;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -31,7 +30,7 @@ class MonogramDeviceEncryptionIntegrationTest {
             OmemoManager manager=OmemoManager.getInstanceFor(alice.connection(),5901);
             OmemoManager receiver=OmemoManager.getInstanceFor(bob.connection(),5902);
             OmemoDevice device=receiver.getOwnDevice();
-            SignalCachingOmemoStore store=(SignalCachingOmemoStore)manager.getOmemoService().getOmemoStoreBackend();
+            MonogramDeviceLists store=(MonogramDeviceLists)manager.getOmemoService().getOmemoStoreBackend();
             alice.connection().addStanzaInterceptor(stanza -> {
                 assertFalse(localOnly.get(),"Local apply/fingerprint must not fall back to IQ lookups");
                 if(stanza.getTo()!=null && stanza.getTo().asBareJid().equals(device.getJid())
