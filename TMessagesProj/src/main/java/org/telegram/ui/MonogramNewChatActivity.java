@@ -31,6 +31,7 @@ public final class MonogramNewChatActivity extends UniversalFragment {
         items.add(UItem.asButton(1, opening ? "Opening…" : "Start conversation").accent().setEnabled(!opening));
         items.add(UItem.asShadow(status));
         items.add(UItem.asButton(2, "Join an XMPP room"));
+        items.add(UItem.asButton(3, "Invite someone to your server"));
     }
     private void open() {
         if (opening) return;
@@ -43,6 +44,6 @@ public final class MonogramNewChatActivity extends UniversalFragment {
             ChatActivity chat = new ChatActivity(args); chat.setCurrentAccount(currentAccount); presentFragment(chat, true);
         });
     }
-    @Override protected void onClick(UItem item, View view, int position, float x, float y) { if (item.id == 1) open(); else if (item.id==2) presentFragment(new MonogramRoomActivity(currentAccount,0)); }
+    @Override protected void onClick(UItem item, View view, int position, float x, float y) { if (item.id == 1) open(); else if (item.id==2) presentFragment(new MonogramRoomActivity(currentAccount,0)); else if(item.id==3) presentFragment(new MonogramAccountInviteActivity(currentAccount)); }
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
 }

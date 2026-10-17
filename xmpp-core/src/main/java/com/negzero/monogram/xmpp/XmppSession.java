@@ -74,6 +74,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
     public final XmppContacts contacts;
+    public final XmppInvitations invitations;
     public final XmppChatStates chatStates;
     public final XmppFingerprints fingerprints;
     private final OmemoManager omemo;
@@ -174,6 +175,7 @@ public final class XmppSession implements AutoCloseable {
             return found;
         });
         rooms=new XmppRooms(connection,omemo,listener,contact -> sendingDevices(contact.toString()));
+        invitations=new XmppInvitations(connection);
         chatStates = new XmppChatStates(connection, listener::typing, rooms, listener::roomTyping);
         rooms.chatStates = chatStates;
         contacts=new XmppContacts(connection,rooms,listener::contactRequest);

@@ -671,6 +671,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 R.drawable.msg_gif, "GIF search", "GIPHY API key"));
         items.add(SettingCell.Factory.of(1002, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
                 R.drawable.msg_retry, "XMPP connection", "Connection status and reconnect"));
+        items.add(SettingCell.Factory.of(1004, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom,
+                R.drawable.msg_contact_add, "Invite to your server", "Create an account invitation link"));
         items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders), getString(R.string.SettingsFoldersInfo)));
         items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
@@ -776,6 +778,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 1002:
                 presentSettingFragment(new MonogramConnectionActivity(currentAccount));
+                break;
+            case 1004:
+                presentSettingFragment(new MonogramAccountInviteActivity(currentAccount));
                 break;
             case 7:
                 presentSettingFragment(new FiltersSetupActivity());

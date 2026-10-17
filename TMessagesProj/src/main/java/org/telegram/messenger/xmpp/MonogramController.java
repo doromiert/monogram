@@ -105,6 +105,44 @@ public final class MonogramController {
         });
     }
     public com.negzero.monogram.xmpp.XmppContacts.State contactAuthorization(String address) throws Exception { return session().contacts.state(address); }
+    public static final class AccountInvitation {
+        private final XmppSession session;
+        private final long epoch,owner;
+        private final com.negzero.monogram.xmpp.XmppInvitations.Request request;
+        public final com.negzero.monogram.xmpp.XmppInvitations.Invitation result;
+        public final boolean usernameRequired,rosterSubscription;
+        private AccountInvitation(XmppSession session,long epoch,long owner,com.negzero.monogram.xmpp.XmppInvitations.Request request,
+                                  com.negzero.monogram.xmpp.XmppInvitations.Invitation result) {
+            this.session=session;this.epoch=epoch;this.owner=owner;this.request=request;this.result=result;
+            usernameRequired=result==null && request.usernameRequired;rosterSubscription=result==null && request.rosterSubscription;
+        }
+    }
+    public void accountInvitation(AccountInvitation pending,String username,boolean subscribe,java.util.function.BiConsumer<AccountInvitation,String> callback) {
+        XmppSession expected=pending==null ? session : pending.session;long epoch=pending==null ? sessionEpoch : pending.epoch;long owner=pending==null ? accountEpoch : pending.owner;
+        profileWorker.execute(() -> {
+            AccountInvitation value=null;String error=null;
+            com.negzero.monogram.xmpp.XmppInvitations.Request request=pending==null ? null : pending.request;
+            try {
+                if(expected==null || state!=ConnectionsManager.ConnectionStateConnected) throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Connect to XMPP before creating an invitation.");
+                requireRoomSession(expected,epoch);if(owner!=accountEpoch) throw new IllegalStateException("Account changed");
+                com.negzero.monogram.xmpp.XmppInvitations.Invitation result;
+                if(request==null) { request=expected.invitations.begin();result=request.invitation; }
+                else result=expected.invitations.complete(request,username,subscribe);
+                requireRoomSession(expected,epoch);if(owner!=accountEpoch) throw new IllegalStateException("Account changed");value=new AccountInvitation(expected,epoch,owner,request,result);
+            } catch(Exception failed) {
+                if(expected!=null) expected.invitations.cancel(request);
+                error=failed instanceof com.negzero.monogram.xmpp.XmppInvitations.InvitationException ? failed.getMessage() : com.negzero.monogram.xmpp.XmppRequestException.describe(failed);
+            }
+            final AccountInvitation invitation=value;final String failure=error;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(expected!=session || epoch!=sessionEpoch || owner!=accountEpoch) { cancelAccountInvitation(invitation);callback.accept(null,"Account connection changed. Please retry."); }
+                else callback.accept(invitation,failure);
+            });
+        });
+    }
+    public void cancelAccountInvitation(AccountInvitation pending) {
+        if(pending!=null && pending.result==null) profileWorker.execute(() -> pending.session.invitations.cancel(pending.request));
+    }
     public void contactAuthorization(String address,com.negzero.monogram.xmpp.XmppContacts.Action action,Consumer<String> completed) {
         final long owner=accountEpoch; final String jid=accountJid();
         worker.execute(() -> {
