@@ -32,6 +32,8 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 - [ ] Modernize the custom Monogram settings and Conversation security screens: their current UI uses the older framework/style. Compare with other settings screens in this Telegram base and reuse the current settings components, layout, navigation and interactions. Preserve existing security choices and behavior while replacing the outdated presentation.
 
+- [x] Build, publish and install 0.2.43 (72189, arm64, original signing key) from `media-regressions` through wireless ADB. Nix build passes. All 3,107 prior message identities, saved credentials, OMEMO identity/trust and seven rooms survive on schema 16. This adds the local-file autoplay classification/decoder-stream correction after 0.2.42 feedback; phone GIF/video playback and picker stability remain open above.
+
 ## Monocles parity checkpoint (2026-10-17)
 
 This is a quick source inventory, not a fresh interoperability certification. Baselines differ: the phone has Monocles 2.2.2, while upstream master is `129dbcc7cdc919c73a65e50ee121efecc36c5e7e`. Monocles' [own XEP declarations](https://codeberg.org/monocles/monocles_chat/src/commit/129dbcc7cdc919c73a65e50ee121efecc36c5e7e/monocles_chat.doap) describe its claimed protocol support; [its README](https://codeberg.org/monocles/monocles_chat/src/commit/129dbcc7cdc919c73a65e50ee121efecc36c5e7e/README.md) also documents OTR. **Monogram does not yet match Monocles overall.**
