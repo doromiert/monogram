@@ -5355,6 +5355,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             String monogramCaption = caption;
             File monogramSource = null;
             if (monogramFile) {
+                boolean audioSource = org.telegram.messenger.xmpp.MonogramAudioSources.isAudioSource(newMsg.attachPath);
                 if (photo != null) {
                     TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 10000);
                     monogramSource = size == null ? null : getFileLoader().getPathToAttach(size, true);
@@ -5362,14 +5363,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 } else if (!TextUtils.isEmpty(newMsg.attachPath)) monogramSource = new File(newMsg.attachPath);
                 String gifSource = params == null ? null : params.get("monogram-gif-source");
                 if (gifSource != null) monogramSource = org.telegram.messenger.xmpp.MonogramGiphy.sourceFile(gifSource);
-                if (gifSource == null && document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
+                if (!audioSource && gifSource == null && document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
                     monogramSource = getFileLoader().getPathToAttach(document);
                     if (!monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(document, true);
                 }
                 if (params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramForwarding.SOURCE)) {
                     monogramSource = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).forwardSource(params);
                 }
-                if (monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
+                if (!audioSource && monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
                 groupId = 0; newMsg.grouped_id = 0; newMsg.flags &= ~131072;
                 if (newMsg.params == null) newMsg.params = new HashMap<>();
                 if (newMsg.params.containsKey("monogramCaption")) monogramCaption = newMsg.params.get("monogramCaption");
@@ -10096,6 +10097,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             for (int a = 0; a < count; a++) {
                 final MessageObject messageObject = messageObjects.get(a);
                 String originalPath = messageObject.messageOwner.attachPath;
+                final boolean contentSource = org.telegram.messenger.xmpp.MonogramAudioSources.isAudioSource(originalPath);
                 final File f = new File(originalPath);
 
                 boolean isEncrypted = DialogObject.isEncryptedDialog(dialogId);
@@ -10104,13 +10106,13 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     mediaCount = 0;
                 }
 
-                if (originalPath != null && originalPath.length() > 0) {
+                if (!contentSource && originalPath != null && originalPath.length() > 0) {
                     originalPath += "audio" + f.length();
                 }
 
                 TLRPC.TL_document document = null;
                 String parentObject = null;
-                if (!isEncrypted && !TextUtils.isEmpty(originalPath) && !forceDisableCheckSentMedia) {
+                if (!contentSource && !isEncrypted && !TextUtils.isEmpty(originalPath) && !forceDisableCheckSentMedia) {
                     Object[] sentData = accountInstance.getMessagesStorage().getSentFile(originalPath, !isEncrypted ? MessagesStorage.SENT_FILE_TYPE_AUDIO : MessagesStorage.SENT_FILE_TYPE_AUDIO_ENCRYPTED);
                     if (sentData != null && sentData[0] instanceof TLRPC.TL_document) {
                         document = (TLRPC.TL_document) sentData[0];
@@ -10122,7 +10124,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     document = (TLRPC.TL_document) messageObject.messageOwner.media.document;
                 }
 
-                if (document != null && document.thumbs.isEmpty()) {
+                if (!contentSource && document != null && document.thumbs.isEmpty()) {
                     Bitmap cover = null;
                     final AudioInfo audioInfo = AudioInfo.getAudioInfo(f);
                     if (audioInfo != null) {

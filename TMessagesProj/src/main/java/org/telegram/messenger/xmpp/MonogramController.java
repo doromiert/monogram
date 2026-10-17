@@ -1196,8 +1196,7 @@ public final class MonogramController {
             typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
             if (session != null) { session.close(); session = null; }
             sessionEpoch++; archiveSync = null;
-            for (FileTransfer.Job job : fileJobs.values()) job.cancel();
-            fileJobs.clear(); fileNames.clear();
+            cancelFileTransfers();
             automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
             store.clear(); self = 0;
             state(ConnectionsManager.ConnectionStateWaitingForNetwork);
@@ -1700,9 +1699,21 @@ public final class MonogramController {
         FileTransfer.Job job = name == null ? null : fileNames.get(name);
         if (job != null) {
             job.cancel();
+            for(PendingSend pending:pendingSends.values())
+                if(pending.request instanceof MonogramFileRequest && ((MonogramFileRequest)pending.request).job==job) cancelRequest(pending.token);
             for(java.util.Map.Entry<Integer,FileTransfer.Job> entry:fileJobs.entrySet())
                 if(entry.getValue()==job) finishUpload(entry.getKey(),name,job);
-            fileNames.remove(name,job);
+            finishUpload(0,name,job);
+        }
+    }
+    private void cancelFileTransfers() {
+        synchronized(fileNames) {
+            for(FileTransfer.Job job:fileJobs.values()) job.cancel();
+            for(java.util.Map.Entry<String,FileTransfer.Job> entry:fileNames.entrySet()) {
+                entry.getValue().cancel();
+                finishUpload(0,entry.getKey(),entry.getValue());
+            }
+            fileJobs.clear();
         }
     }
     private final java.util.concurrent.ConcurrentHashMap<String,Long> progressUpdates=new java.util.concurrent.ConcurrentHashMap<>();
@@ -1822,7 +1833,7 @@ public final class MonogramController {
                 return;
             }
             boolean forwarded=request.message.params!=null && request.message.params.containsKey(MonogramForwarding.SOURCE);
-            if (request.file == null || !forwarded && !request.file.isFile()) throw new java.io.FileNotFoundException();
+            if (request.file == null || !forwarded && !request.file.isFile() && !MonogramAudioSources.isAudioSource(request.message.attachPath)) throw new java.io.FileNotFoundException();
         } catch (Exception e) {
             finishUpload(request.localId,request.message.attachPath,request.job);
             TLRPC.TL_error error = fileError(e);
@@ -1858,9 +1869,17 @@ public final class MonogramController {
                 prepareForwardFile(request,expected);
                 job.check();
                 final String uploadName=request.uploadName();
-                uploadProgress.update(0,request.file.length());
-                FileTransfer.checkUploadSize(expected.connection(),request.file.length(),encrypted,job);
-                snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
+                if(MonogramAudioSources.isAudioSource(progressName)) {
+                    long declared=request.message.media.document==null ? 0 : request.message.media.document.size;
+                    if(declared>0) FileTransfer.checkUploadSize(expected.connection(),declared,encrypted,job);
+                    snapshot=MonogramAudioSources.materialize(account,android.net.Uri.parse(progressName),uploadName,
+                            declared>0 ? Math.min(declared,FileTransfer.MAX_BYTES) : FileTransfer.MAX_BYTES,job::cancelled);
+                    FileTransfer.checkUploadSize(expected.connection(),snapshot.length(),encrypted,job);
+                } else {
+                    FileTransfer.checkUploadSize(expected.connection(),request.file.length(),encrypted,job);
+                    snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
+                }
+                uploadProgress.update(0,snapshot.length());
                 FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
                         modern ? "application/octet-stream" : request.mime, encrypted, job,
                         uploadProgress);
@@ -2133,8 +2152,12 @@ public final class MonogramController {
             }
             if(!pending.encryption.equals(encryption(peer).name())) {
                 if(pendingSends.remove(pending.token,pending)) {
+                    if(pending.request instanceof MonogramFileRequest) {
+                        MonogramFileRequest file=(MonogramFileRequest)pending.request;
+                        finishUpload(file.localId,file.message.attachPath,file.job);
+                    }
                     TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400; error.text="MONOGRAM_SENDING_MODE_CHANGED";
-                    Utilities.stageQueue.postRunnable(() -> pending.completed.run(null,error));
+                    Utilities.stageQueue.postRunnable(() -> { if(pending.owner==accountEpoch) pending.completed.run(null,error); });
                 }
                 return;
             }

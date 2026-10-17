@@ -15,7 +15,7 @@ import org.telegram.tgnet.TLRPC;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramUploadProgressTest.Loader.class,MonogramMessageRegressionTest.Device.class,MonogramUploadProgressTest.Encoding.class,MonogramUploadProgressTest.Controller.class})
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramUploadProgressTest.Loader.class,MonogramMessageRegressionTest.Device.class,MonogramUploadProgressTest.Encoding.class,MonogramUploadProgressTest.Controller.class,MonogramEditingTest.PendingSession.class})
 public class MonogramUploadProgressTest {
     @Implements(value=ImageLoader.class,isInAndroidSdk=false)
     public static class Loader {
@@ -36,7 +36,7 @@ public class MonogramUploadProgressTest {
     private MonogramController controller() {
         org.telegram.messenger.ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
         MonogramController controller=ReflectionHelpers.callConstructor(MonogramController.class,ReflectionHelpers.ClassParameter.from(int.class,0));
-        for(String field:new String[]{"fileJobs","fileNames","pendingSends","progressUpdates"})
+        for(String field:new String[]{"fileJobs","fileNames","pendingSends","progressUpdates","translationRequests"})
             ReflectionHelpers.setField(controller,field,new ConcurrentHashMap<>());
         org.telegram.messenger.ApplicationLoader.applicationHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         Encoding.finished=0;
@@ -79,6 +79,57 @@ public class MonogramUploadProgressTest {
         controller.cancelFile(retry.message.attachPath);
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(1,Encoding.finished);
         assertTrue(retry.job.cancelled());assertNull(ImageLoader.getInstance().getFileProgressSizes(retry.message.attachPath));
+    }
+    @Test public void cancellationByPathRemovesQueuedRequestAndLogoutCleanupFinishesEveryPath() throws Exception {
+        MonogramController controller=controller();MonogramFileRequest request=request();register(controller,request);
+        Class<?> type=Class.forName(MonogramController.class.getName()+"$PendingSend");
+        java.lang.reflect.Constructor<?> constructor=type.getDeclaredConstructors()[0];constructor.setAccessible(true);
+        Object pending=constructor.newInstance(7,0L,request,null,"PLAIN",request.localId);
+        ConcurrentHashMap<Integer,Object> sends=ReflectionHelpers.getField(controller,"pendingSends");sends.put(7,pending);
+        controller.cancelFile(request.message.attachPath);
+        assertTrue(sends.isEmpty());assertTrue(request.job.cancelled());
+        assertNull(ImageLoader.getInstance().getFileProgressSizes(request.message.attachPath));
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(1,Encoding.finished);
+
+        MonogramFileRequest retry=request();register(controller,retry);
+        com.negzero.monogram.xmpp.FileTransfer.Job orphan=new com.negzero.monogram.xmpp.FileTransfer.Job();
+        ConcurrentHashMap<String,com.negzero.monogram.xmpp.FileTransfer.Job> names=ReflectionHelpers.getField(controller,"fileNames");
+        names.put("/private/another-upload.mp4",orphan);
+        ImageLoader.getInstance().setFileProgress("/private/another-upload.mp4",4,10);
+        ReflectionHelpers.callInstanceMethod(controller,"cancelFileTransfers");
+        assertTrue(retry.job.cancelled());assertTrue(orphan.cancelled());assertTrue(names.isEmpty());
+        assertTrue(((ConcurrentHashMap<?,?>)ReflectionHelpers.getField(controller,"fileJobs")).isEmpty());
+        assertNull(ImageLoader.getInstance().getFileProgressSizes(retry.message.attachPath));
+        assertNull(ImageLoader.getInstance().getFileProgressSizes("/private/another-upload.mp4"));
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(3,Encoding.finished);
+    }
+    @Test public void queuedModeChangeFinishesPreparationBeforeReportingFailure() throws Exception {
+        MonogramController controller=controller();MonogramFileRequest request=request();request.message.dialog_id=7;register(controller,request);
+        ReflectionHelpers.setField(controller,"preferences",RuntimeEnvironment.getApplication().getSharedPreferences("upload-mode-test",0));
+        controller.setEncryption(7,com.negzero.monogram.xmpp.XmppMessage.Encryption.PLAIN);
+        org.jivesoftware.smack.tcp.XMPPTCPConnection connection=new org.jivesoftware.smack.tcp.XMPPTCPConnection(
+                org.jivesoftware.smack.tcp.XMPPTCPConnectionConfiguration.builder().setXmppDomain("example.org").build());
+        ReflectionHelpers.setField(connection,"authenticated",true);
+        com.negzero.monogram.xmpp.XmppSession session=Shadow.newInstanceOf(com.negzero.monogram.xmpp.XmppSession.class);
+        MonogramEditingTest.PendingSession network=Shadow.extract(session);network.connection=connection;
+        ReflectionHelpers.setField(controller,"session",session);
+        java.util.concurrent.ExecutorService executor=java.util.concurrent.Executors.newSingleThreadExecutor();
+        ReflectionHelpers.setField(controller,"sendWorker",executor);
+        java.util.concurrent.CountDownLatch completed=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+        org.telegram.tgnet.RequestDelegate callback=(response,failure) -> { error.set(failure.text);completed.countDown(); };
+        Class<?> type=Class.forName(MonogramController.class.getName()+"$PendingSend");
+        java.lang.reflect.Constructor<?> constructor=type.getDeclaredConstructors()[0];constructor.setAccessible(true);
+        Object pending=constructor.newInstance(7,0L,request,callback,"LEGACY_OMEMO",request.localId);
+        ConcurrentHashMap<Integer,Object> sends=ReflectionHelpers.getField(controller,"pendingSends");sends.put(7,pending);
+        try {
+            ReflectionHelpers.callInstanceMethod(controller,"scheduleSend",ReflectionHelpers.ClassParameter.from((Class)type,pending));
+            assertTrue(completed.await(5,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("MONOGRAM_SENDING_MODE_CHANGED",error.get());assertTrue(sends.isEmpty());
+            assertNull(ImageLoader.getInstance().getFileProgressSizes(request.message.attachPath));
+            assertTrue(((ConcurrentHashMap<?,?>)ReflectionHelpers.getField(controller,"fileJobs")).isEmpty());
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(1,Encoding.finished);
+        } finally { executor.shutdownNow(); }
     }
     @Test public void queuedAndPreparedFilesNeverInheritMissingOrCompletedUploadProgress() throws Exception {
         File file=File.createTempFile("upload-progress",".bin",RuntimeEnvironment.getApplication().getCacheDir());

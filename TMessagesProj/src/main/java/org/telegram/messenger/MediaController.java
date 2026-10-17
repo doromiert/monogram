@@ -207,6 +207,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         public String genre;
         public int duration;
         public String path;
+        public Uri uri;
+        public String mimeType;
+        public String displayName;
+        public long size;
         public MessageObject messageObject;
     }
 
@@ -3117,6 +3121,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         }
 
         MessageObject nextAudio = currentPlayList.get(nextIndex);
+        if (org.telegram.messenger.xmpp.MonogramAudioSources.isAudioSource(nextAudio.messageOwner.attachPath)) {
+            return;
+        }
         File file = null;
         if (!TextUtils.isEmpty(nextAudio.messageOwner.attachPath)) {
             file = new File(nextAudio.messageOwner.attachPath);
@@ -3654,9 +3661,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         lastSaveTime = 0;
         playMusicAgain = false;
         seekToProgressPending = 0;
+        final Uri contentSource = messageObject.isMusic() ? org.telegram.messenger.xmpp.MonogramAudioSources.contentUri(messageObject.messageOwner.attachPath) : null;
         File file = null;
-        boolean exists = false;
-        if (messageObject.messageOwner.attachPath != null && messageObject.messageOwner.attachPath.length() > 0) {
+        boolean exists = contentSource != null;
+        if (contentSource == null && messageObject.messageOwner.attachPath != null && messageObject.messageOwner.attachPath.length() > 0) {
             file = new File(messageObject.messageOwner.attachPath);
             exists = file.exists();
             if (!exists) {
@@ -3665,7 +3673,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         }
         final File cacheFile = file != null ? file : FileLoader.getInstance(messageObject.currentAccount).getPathToMessage(messageObject.messageOwner);
         boolean canStream = SharedConfig.streamMedia && (messageObject.isMusic() || messageObject.isRoundVideo() || messageObject.isVideo() && messageObject.canStreamVideo()) && !messageObject.shouldEncryptPhotoOrVideo() && !DialogObject.isEncryptedDialog(messageObject.getDialogId());
-        if (cacheFile != file && !(exists = cacheFile.exists()) && !canStream) {
+        if (contentSource == null && cacheFile != file && !(exists = cacheFile.exists()) && !canStream) {
             FileLoader.getInstance(messageObject.currentAccount).loadFile(messageObject.getDocument(), messageObject, FileLoader.PRIORITY_LOW, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
             downloadingCurrentMessage = true;
             isPaused = false;
@@ -3919,10 +3927,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     }
                 });
                 if (exists) {
-                    if (!messageObject.mediaExists && cacheFile != file) {
+                    if (contentSource == null && !messageObject.mediaExists && cacheFile != file) {
                         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(NotificationCenter.fileLoaded, FileLoader.getAttachFileName(messageObject.getDocument()), cacheFile));
                     }
-                    audioPlayer.preparePlayer(Uri.fromFile(cacheFile), "other");
+                    audioPlayer.preparePlayer(contentSource != null ? contentSource : Uri.fromFile(cacheFile), "other");
                     isStreamingCurrentAudio = false;
                 } else {
                     int reference = FileLoader.getInstance(messageObject.currentAccount).getFileReference(messageObject);
@@ -3959,7 +3967,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     }
                 } else {
                     try {
-                        audioInfo = AudioInfo.getAudioInfo(cacheFile);
+                        audioInfo = contentSource == null ? AudioInfo.getAudioInfo(cacheFile) : null;
                     } catch (Exception e) {
                         FileLog.e(e);
                     }
