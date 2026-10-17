@@ -18,15 +18,15 @@ public class MonogramDeletionTest {
         try {
             try(MonogramStore store=new MonogramStore(context,file)) {
                 self=store.peer("alice@example.org"); peer=store.peer("bob@example.org");
-                id=store.save(MessageFixture.replyMessage("wire","origin",null,"Delete me",true,false,100000,"phone",false,null));
+                id=store.save(MessageFixture.replyMessage("wire","origin",null,"Delete me",true,false,100000,"phone",true,null));
                 store.deleteMessages(Collections.singleton(id));
-                assertEquals(0,store.save(MessageFixture.replyMessage("wire","origin","archive","Delete me",true,false,100000,"phone",false,null)));
+                assertEquals(0,store.save(MessageFixture.replyMessage("wire","origin","archive","Delete me",true,false,100000,"phone",true,null)));
                 assertTrue(store.history(peer,self,0,50).isEmpty());
                 assertEquals("",store.getMessage(id,self).message); assertTrue(store.hiddenCorrection(id));
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
                 assertTrue(store.history(peer,self,0,50).isEmpty());
-                assertEquals(0,store.save(MessageFixture.replyMessage("wire","origin","archive",null,false,false,100000,"phone",false,null)));
+                assertEquals(0,store.save(MessageFixture.replyMessage("wire","origin","archive",null,false,false,100000,"phone",true,null)));
             }
         } finally { context.deleteDatabase(file); }
     }
@@ -37,10 +37,10 @@ public class MonogramDeletionTest {
         try {
             try(MonogramStore store=new MonogramStore(context,file)) {
                 self=store.peer("alice@example.org"); dialog=store.room(room,"Alice");
-                int id=store.saveRoom(MessageFixture.roomText(room,"Bob","wire","archive",null,"bob@example.org","bob",100000,false,null,null),self);
+                int id=store.saveRoom(MessageFixture.roomArchive(room,"Bob","wire","archive","mam",null,100000,true),self);
                 kept=store.saveRoom(MessageFixture.roomText(room,"Bob","keep","archive-keep","Keep me","bob@example.org","bob",101000,false,null,null),self);
                 store.deleteMessages(Collections.singleton(id));
-                assertEquals(0,store.saveRoom(MessageFixture.roomText(room,"Bob","wire","archive","Late plaintext","bob@example.org","bob",100000,false,null,null),self));
+                assertEquals(0,store.saveRoom(MessageFixture.roomArchive(room,"Bob","wire","archive","mam","Late plaintext",100000,true),self));
                 assertEquals(1,store.history(dialog,self,0,50).size());
                 // Recreate the actual pre-deletion schema, then exercise the migration on reopening.
                 store.getWritableDatabase().execSQL("ALTER TABLE messages DROP COLUMN deleted"); store.getWritableDatabase().setVersion(14);
