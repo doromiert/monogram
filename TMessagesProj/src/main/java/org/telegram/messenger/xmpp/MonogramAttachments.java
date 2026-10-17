@@ -7,6 +7,7 @@ import com.negzero.monogram.xmpp.FileLink;
 import java.io.File;
 import java.security.MessageDigest;
 import java.util.HashMap;
+import org.telegram.messenger.MessageObject;
 import org.telegram.tgnet.TLRPC;
 
 public final class MonogramAttachments {
@@ -71,6 +72,12 @@ public final class MonogramAttachments {
     static boolean needsMediaInfo(TLRPC.Message message) {
         return message.media!=null && needsMediaInfo(message.media.document);
     }
+    static boolean needsMediaRefresh(TLRPC.Message message) {
+        if (needsMediaInfo(message)) return true;
+        TLRPC.Document document = message.media == null ? null : message.media.document;
+        return document != null && (MessageObject.isVideoDocument(document) || MessageObject.isRoundVideoDocument(document))
+                && document.thumbs.isEmpty();
+    }
     static boolean needsMediaInfo(TLRPC.Document document) {
         if(document==null) return false;
         for(TLRPC.DocumentAttribute attribute:document.attributes) {
@@ -116,6 +123,14 @@ public final class MonogramAttachments {
             org.telegram.messenger.SendMessagesHelper.fillVideoAttribute(file.getAbsolutePath(),attribute,null);
             if(attribute.w>0 && attribute.h>0 && attribute.duration>=0) document.attributes.add(attribute);
             markRoundVideo(document,name);
+            android.graphics.Bitmap frame = org.telegram.messenger.SendMessagesHelper.createVideoThumbnail(
+                    file.getAbsolutePath(), android.provider.MediaStore.Video.Thumbnails.MINI_KIND);
+            if (frame != null) {
+                try {
+                    TLRPC.PhotoSize thumb = org.telegram.messenger.ImageLoader.scaleAndSaveImage(null, frame, 320, 320, 80, false, true);
+                    if (thumb != null) { document.thumbs.add(thumb); document.flags |= 1; }
+                } finally { frame.recycle(); }
+            }
         }
         return media;
     }

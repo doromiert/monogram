@@ -53,6 +53,9 @@ public class MonogramMediaRegressionTest {
             video.h=128;
             MonogramAttachments.apply(message,FileLink.parse("https://files.example.org/round_video_note.mp4"),file,media,"","round_video_note.mp4");
             assertTrue(video.round_message); assertFalse(MonogramAttachments.needsMediaInfo(message));
+            assertTrue(MonogramAttachments.needsMediaRefresh(message));
+            media.document.thumbs.add(new TLRPC.TL_photoSize_layer127());
+            assertFalse(MonogramAttachments.needsMediaRefresh(message));
             assertTrue(new MonogramFileRequest(message,file,"video/mp4","").uploadName().startsWith("round_video_"));
             TLRPC.MessageMedia old=MonogramAttachments.remoteMedia(8,"note.mp4","video/mp4",1);
             MonogramAttachments.preserveMediaAttributes(old,media); assertTrue(video.round_message);

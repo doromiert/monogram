@@ -1374,7 +1374,7 @@ public final class MonogramController {
     }
     private final java.util.Set<Integer> mediaInfoScanned=java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Integer,Boolean>());
     private void refreshCachedMedia(TLRPC.Message message,File path) {
-        if(!MonogramAttachments.needsMediaInfo(message) || !mediaInfoScanned.add(message.id)) return;
+        if(!MonogramAttachments.needsMediaRefresh(message) || !mediaInfoScanned.add(message.id)) return;
         if(mediaInfoScanned.size()>4096) { mediaInfoScanned.clear(); mediaInfoScanned.add(message.id); }
         final long owner=accountEpoch;
         final String address=message.params.get(MonogramAttachments.PARAM);
@@ -1389,7 +1389,8 @@ public final class MonogramController {
                     if(owner!=accountEpoch) return;
                     try {
                         TLRPC.Message current=store.getMessage(message.id,self);
-                        if(!address.equals(current.params.get(MonogramAttachments.PARAM)) || !path.equals(store.attachmentPath(message.id)) || !MonogramAttachments.needsMediaInfo(current)) return;
+                        if(!address.equals(current.params.get(MonogramAttachments.PARAM)) || !path.equals(store.attachmentPath(message.id)) || !MonogramAttachments.needsMediaRefresh(current)) return;
+                        MonogramAttachments.preserveMediaAttributes(current.media,media);
                         media.document.date=current.date;
                         store.attach(message.id,address,path,media);
                         TLRPC.Message updated=store.getMessage(message.id,self);
