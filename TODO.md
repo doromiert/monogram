@@ -292,6 +292,8 @@ Reference APK: `~/extera/exteraGram-full-universal-20261004.apk`. The user repor
 
 ## Premium features and monetization
 
+- [o] Remove unsupported monetization from the current Settings page and its search: Wallet, Stars, TON earnings, Premium/Business subscription promotions, gifts and subscription-grace suggestions, including row actions and eager balance fetching. Retain native settings, free feature controls, accounts and search result IDs; drop retired promotional results from persisted search recents by their existing lookup. Wider profile/chat/deep-link entry points, dependency removal and applicable free feature gates remain unfinished. Source audit confirms legacy profile settings rows, the account-add footer, LaunchActivity subscription/Stars/TON/gift links, and Wallet/Billing Gradle dependencies still require removal; this pass does not certify full monetization cleanup.
+
 - [ ] Inventory Telegram Premium/Pro features; make every frontend-only feature and every feature that translates to XMPP available free in Monogram, without premium gates or upsells.
 - [ ] Remove monetization features that cannot be ported to XMPP, including the Telegram wallet, purchase/subscription flows and their UI entry points. Audit Stars, paid media/messages, gifts, ads and related Telegram-only service requests.
 - [ ] Verify that supported features work without a paid Telegram account and that removed monetization controls cannot be reached through settings, navigation, notifications or links.
