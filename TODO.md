@@ -2,6 +2,8 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
+Execution constraint (2026-10-18): resume with one thread at a time tomorrow; no parallel subagents unless the user changes this. Current blocking tasks are finished and delivered in 0.2.90.
+
 
 - [o] **Top priority: make Monogram sufficient to uninstall Monocles for daily use.** Close the reported messaging, encryption, media, background-delivery and chat-management gaps before optional features or exhaustive protocol parity. Installed/source implementation alone does not close a reported runtime failure.
 - [ ] Daily-use gate: DMs and MUCs send/receive encrypted text and attachments reliably, retain queued/failed messages across navigation/restarts, reconnect in the background and recover offline/connecting-time messages without dropping them.
