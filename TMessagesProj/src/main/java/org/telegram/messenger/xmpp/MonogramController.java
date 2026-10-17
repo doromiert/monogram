@@ -214,7 +214,7 @@ public final class MonogramController {
     private void state(int value) {
         state = value;
         if (value != ConnectionsManager.ConnectionStateConnected) {
-            presences.clear(); clearRoomTyping();
+            presences.clear(); clearRoomTyping(); rosterLoads.clear();rosterAttempts.clear();
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
         }
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.didUpdateConnectionState));
@@ -301,8 +301,22 @@ public final class MonogramController {
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
                             store.roomState(room,self); if(room.joined) flushPendingSends(); long dialog=store.knownRoom(room.room.toString());
-                            if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) queueRoomArchive(dialog,session); else if(!room.joined) joinedRooms.remove(dialog); }
+                            if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) { refreshRoomRoster(dialog,true); queueRoomArchive(dialog,session); } else if(!room.joined) joinedRooms.remove(dialog); }
                         } });
+                    }
+                    @Override public void roomInviteFailed(String room,String target,String condition) {
+                        worker.execute(() -> {
+                            if(sessionEpoch!=epoch || session==null) return;
+                            long dialog=store.knownRoom(room);if(dialog==0) return;
+                            String detail="Could not invite "+target+" to "+store.room(dialog).title+": server replied "+condition+".";
+                            preferences.edit().putString("last-room-invite-error-"+dialog,detail).apply();
+                            AndroidUtilities.runOnUIThread(() -> {
+                                if(sessionEpoch!=epoch || !org.telegram.ui.LaunchActivity.isActive) return;
+                                org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                                if(fragment!=null && fragment.getCurrentAccount()==account && fragment.getParentActivity()!=null)
+                                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(R.raw.chats_infotip,detail).show();
+                            });
+                        });
                     }
                     @Override public void reactionRejected(String from,String id) {
                         worker.execute(() -> { if(sessionEpoch!=epoch || session==null) return;
@@ -541,6 +555,7 @@ public final class MonogramController {
     }
     public boolean isRoom(long dialog) { return dialog<0 && store.rooms().contains(dialog); }
     public String roomNickname(long dialog) { return store.room(dialog).nickname; }
+    public String lastRoomInviteError(long dialog) { return preferences.getString("last-room-invite-error-"+dialog,null); }
     private String roomInvitationsKey() { return "room-invitations-"+accountJid(); }
     private org.json.JSONObject roomInvitationData() {
         try { return new org.json.JSONObject(preferences.getString(roomInvitationsKey(),"{}")); }
@@ -681,7 +696,8 @@ public final class MonogramController {
         TLRPC.Chat chat=store.roomChat(dialog); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(chat);
         ArrayList<TLRPC.User> users=store.roomUsers(dialog,self);
         if(store.profile(dialog)==null) refreshProfile(dialog);
-        for(TLRPC.User user:users) if(user.id!=self && store.profile(user.id)==null) refreshProfile(user.id);
+        java.util.Set<Long> active=store.activeRoomUsers(dialog);
+        for(TLRPC.User user:users) if(user.id!=self && active.contains(user.id) && store.profile(user.id)==null) refreshProfile(user.id);
         MessagesStorage.getInstance(account).putUsersAndChats(users,chats,true,true);
         AndroidUtilities.runOnUIThread(() -> { MessagesController.getInstance(account).putUsers(users,false); MessagesController.getInstance(account).putChat(chat,false);
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_ALL); });
@@ -1045,7 +1061,7 @@ public final class MonogramController {
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
         accountEpoch++; pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); outbox.clear();
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -1067,6 +1083,7 @@ public final class MonogramController {
     }
     public com.negzero.monogram.xmpp.XmppProfile cachedProfile(long peer) { return store.profile(peer); }
     public void refreshProfile(long peer) { refreshProfile(peer,null); }
+    public void refreshVisibleRoomMember(long room,long peer) { if(peer>0 && isRoom(room) && store.profile(peer)==null) refreshProfile(peer); }
     private void refreshProfile(long peer,Runnable completed) {
         if(peer==0) { if(completed!=null) completed.run(); return; }
         synchronized(profileLoads) {
@@ -1870,6 +1887,35 @@ public final class MonogramController {
                     && UserConfig.getInstance(account).getClientUserId()==self) SendMessagesHelper.getInstance(account).checkUnsentMessages();
         });
     }
+    private final java.util.Map<Long,XmppSession> rosterLoads=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<Long,Long> rosterAttempts=new java.util.concurrent.ConcurrentHashMap<>();
+    public void refreshRoomRoster(long dialog,boolean force) {
+        XmppSession expected=session;long epoch=sessionEpoch;
+        if(expected==null || state!=ConnectionsManager.ConnectionStateConnected || !isRoom(dialog)) return;
+        long now=android.os.SystemClock.elapsedRealtime();
+        if((!force && now-rosterAttempts.getOrDefault(dialog,Long.MIN_VALUE/2)<30000) || rosterLoads.putIfAbsent(dialog,expected)!=null) return;
+        rosterAttempts.put(dialog,now);
+        roomWorker.execute(() -> {
+            try {
+                requireRoomSession(expected,epoch);
+                java.util.Map<String,String> members=expected.rooms.roster(store.room(dialog).jid);
+                worker.execute(() -> {
+                    try {
+                        requireRoomSession(expected,epoch);store.roomRoster(dialog,members);publishRoom(dialog);
+                        TLRPC.TL_messages_chatFull full=store.roomFull(dialog,self);
+                        MessagesStorage.getInstance(account).updateChatInfo(full.full_chat,false);
+                        AndroidUtilities.runOnUIThread(() -> {
+                            if(session!=expected || sessionEpoch!=epoch) return;
+                            MessagesController.getInstance(account).putUsers(full.users,false);
+                            MessagesController.getInstance(account).putChatFull(full.full_chat);
+                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.chatInfoDidLoad,full.full_chat,0,false,false);
+                        });
+                    } catch(Exception failed) { /* Keep the last complete roster if the account changed or storage failed. */ }
+                    finally { rosterLoads.remove(dialog,expected); }
+                });
+            } catch(Exception failed) { rosterLoads.remove(dialog,expected); }
+        });
+    }
     private static boolean roomMutation(TLObject request) {
         return request instanceof TLRPC.TL_messages_createChat || request instanceof TLRPC.TL_messages_addChatUser
                 || request instanceof TLRPC.TL_messages_editChatTitle || request instanceof TLRPC.TL_messages_editChatAbout
@@ -1918,7 +1964,7 @@ public final class MonogramController {
             catch(Exception failed) { failures.add(address+": "+roomError(failed)); }
         }
         requireRoomSession(expected,epoch);
-        result.updates=roomUpdates(dialog);
+        result.updates=roomUpdates(dialog);refreshRoomRoster(dialog,true);
         result.failure=failures.isEmpty() ? null : "The group was created, but these invitations failed:\n\n"+android.text.TextUtils.join("\n",failures);
         return result;
     }
@@ -2024,7 +2070,8 @@ public final class MonogramController {
             TLRPC.TL_messages_addChatUser query=(TLRPC.TL_messages_addChatUser)request;
             long dialog=-query.chat_id; String address=inviteAddress(query.user_id);
             XmppSession expected=session(); long epoch=sessionEpoch;
-            expected.rooms.invite(store.room(dialog).jid,address,"Join us in this room"); requireRoomSession(expected,epoch);
+            preferences.edit().remove("last-room-invite-error-"+dialog).apply();
+            expected.rooms.invite(store.room(dialog).jid,address,"Join us in this room"); requireRoomSession(expected,epoch);refreshRoomRoster(dialog,true);
             TLRPC.TL_messages_invitedUsers result=new TLRPC.TL_messages_invitedUsers(); result.updates=roomUpdates(dialog); return result;
         }
         if(request instanceof TLRPC.TL_messages_editChatTitle || request instanceof TLRPC.TL_messages_editChatAbout) {
@@ -2157,7 +2204,9 @@ public final class MonogramController {
             TLRPC.TL_messages_chats result=new TLRPC.TL_messages_chats();
             for(long id:((TLRPC.TL_messages_getChats)request).id) result.chats.add(store.roomChat(-id)); return result;
         }
-        if (request instanceof TLRPC.TL_messages_getFullChat) return store.roomFull(-((TLRPC.TL_messages_getFullChat)request).chat_id,self);
+        if (request instanceof TLRPC.TL_messages_getFullChat) {
+            long dialog=-((TLRPC.TL_messages_getFullChat)request).chat_id;refreshRoomRoster(dialog,false);return store.roomFull(dialog,self);
+        }
         if (request instanceof TLRPC.TL_messages_deleteChatUser) {
             TLRPC.TL_messages_deleteChatUser leave=(TLRPC.TL_messages_deleteChatUser)request;
             if (!(leave.user_id instanceof TLRPC.TL_inputUserSelf) && leave.user_id.user_id!=self) throw new UnsupportedOperationException();

@@ -88,7 +88,7 @@ public class MonogramReceiptsTest {
                 MonogramStoreDeviceTest.legacyRoomDescription(store.getWritableDatabase()); store.getWritableDatabase().execSQL("DROP TABLE message_receipts"); store.getWritableDatabase().setVersion(16);
             }
             try(MonogramStore reopened=store(file)) {
-                assertEquals(18,reopened.getReadableDatabase().getVersion());
+                assertEquals(19,reopened.getReadableDatabase().getVersion());
                 assertEquals("Message",reopened.getMessage(id,self).message); assertTrue(MessageObject.isUnread(reopened.getMessage(id,self)));
             }
         } finally { RuntimeEnvironment.getApplication().deleteDatabase(file); }

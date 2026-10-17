@@ -76,6 +76,8 @@ public final class MonogramRoomActivity extends UniversalFragment implements org
         items.add(UItem.asButton(1,busy ? "Connecting…" : creating ? "Create room" : dialog==0 ? "Join room" : "Rejoin room").accent().setEnabled(!busy));
         items.add(UItem.asShadow("OMEMO is enabled by default. Encrypted sending requires a members-only room that reveals member addresses, and trusted devices for every member. It never falls back to plain messages."));
         if(dialog!=0) {
+            String inviteError=MonogramController.get(currentAccount).lastRoomInviteError(dialog);
+            if(inviteError!=null) items.add(UItem.asShadow(inviteError));
             items.add(UItem.asButton(8,"Participants and room actions"));
             items.add(UItem.asButton(3,"Change nickname").setEnabled(!busy));
             items.add(UItem.asButton(4,R.drawable.msg_secret,"Conversation security"));
@@ -92,6 +94,7 @@ public final class MonogramRoomActivity extends UniversalFragment implements org
         }
         if(status!=null) items.add(UItem.asShadow(status));
     }
+    @Override public void onResume() { super.onResume();refresh(); }
     private void refresh() { if(listView!=null) listView.adapter.update(true); }
     private void join() {
         if(busy) return;

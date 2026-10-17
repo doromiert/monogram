@@ -15,11 +15,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfEnvironmentVariable(named="MONOGRAM_IT",matches="1")
 class XmppRoomsIntegrationTest {
     final File root=new File(System.getenv("MONOGRAM_IT_STATE"));
+    final BlockingQueue<String> rejectedInvitations=new LinkedBlockingQueue<>();
     XmppSession session(String user,int device,BlockingQueue<XmppRoomMessage> messages) throws Exception {
         return new XmppSession(new Account("room"+user+"@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Room-"+device),
                 "monogram-test",device,new File(root,"room-trust-"+device),new XmppSession.Listener() {
             public void message(org.jxmpp.jid.EntityBareJid from,String id,String body,boolean encrypted) { fail("Room content must not become a direct conversation"); }
             public void roomMessage(XmppRoomMessage message) { messages.add(message); }
+            public void roomInviteFailed(String room,String target,String condition) { rejectedInvitations.add(target+":"+condition); }
         });
     }
     XmppRoomMessage readable(BlockingQueue<XmppRoomMessage> messages,String body) throws Exception {
@@ -41,12 +43,20 @@ class XmppRoomsIntegrationTest {
             assertTrue(info.isMembersOnly()); assertTrue(info.isNonanonymous());
             assertThrows(Exception.class,() -> bob.rooms.join(room,"Bob",null));
             alice.rooms.invite(room,"roombob@localhost","Join this test room");
+            alice.rooms.invite(room,"alice@localhost","Offline member");
+            assertEquals("member",alice.rooms.roster(room).get("alice@localhost"));
+            assertEquals(1,alice.rooms.state(room).occupants.size());
             Exception failure=null;
             for(int attempt=0;attempt<10;attempt++) {
                 try { bob.rooms.join(room,"Bob",null); failure=null; break; }
                 catch(Exception pending) { failure=pending; Thread.sleep(100); }
             }
             if(failure!=null) throw failure;
+            FillableForm invitationPolicy=MultiUserChatManager.getInstanceFor(alice.connection()).getMultiUserChat(created.room).getConfigurationForm().getFillableForm();
+            invitationPolicy.setAnswer("{http://prosody.im/protocol/muc}roomconfig_allowmemberinvites",false);
+            MultiUserChatManager.getInstanceFor(alice.connection()).getMultiUserChat(created.room).sendConfigurationForm(invitationPolicy);
+            bob.rooms.invite(room,"bob@localhost","Should be rejected by room policy");
+            String rejected=rejectedInvitations.poll(10,TimeUnit.SECONDS);assertNotNull(rejected);assertTrue(rejected.startsWith("bob@localhost:"));
             XmppRooms.State changed=alice.rooms.configure(room,"Renamed group","Group description");
             assertEquals("Renamed group",changed.title); assertEquals("Group description",changed.description);
             assertThrows(Exception.class,() -> bob.rooms.configure(room,"Not the owner",null));

@@ -9569,6 +9569,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        if(chatId>0) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshRoomRoster(-chatId,false);
         if (sharedMediaLayout != null) {
             sharedMediaLayout.onResume();
         }
@@ -14145,6 +14146,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             TagEditCell.showInfoSheet(getContext(), currentAccount, getDialogId(), user, finalRole, isAdmin, isOwner, canEditAdmin, resourceProvider);
                         });
                         userCell.setData(user, null, null, 0, position != membersEndRow - 1);
+                        if(chatId>0 && user!=null) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshVisibleRoomMember(-chatId,user.id);
                     }
                     break;
                 case VIEW_TYPE_BOTTOM_PADDING:

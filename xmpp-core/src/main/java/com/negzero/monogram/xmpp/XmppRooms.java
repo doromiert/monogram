@@ -57,6 +57,18 @@ public final class XmppRooms implements AutoCloseable {
         Thread thread=new Thread(r,"Monogram room presence"); thread.setDaemon(true); return thread;
     });
     private final Map<EntityBareJid,java.util.concurrent.ScheduledFuture<?>> pendingPresence=new ConcurrentHashMap<>();
+    private final RoomInvitations outgoingInvitations=new RoomInvitations();
+    private final org.jivesoftware.smack.StanzaListener invitationInterceptor=stanza -> trackInvitation((Message)stanza);
+    private final org.jivesoftware.smack.StanzaListener invitationErrors=stanza -> rejectInvitation((Message)stanza);
+    private void rejectInvitation(Message error) {
+        RoomInvitations.Pending invitation=outgoingInvitations.rejected(error);
+        if(!closed && invitation!=null) listener.roomInviteFailed(invitation.room.toString(),invitation.target.toString(),error.getError().getCondition().toString());
+    }
+    private void trackInvitation(Message message) {
+        if(closed || connection.getUser()==null || message.getTo()==null || !message.getTo().isEntityBareJid()) return;
+        MultiUserChat chat=chats.get(message.getTo().asEntityBareJidIfPossible());
+        if(chat!=null && chat.isJoined()) outgoingInvitations.sent(message,chat.getRoom(),connection.getUser().asBareJid());
+    }
     private volatile boolean closed;
     interface DeviceLookup { Set<OmemoDevice> devices(BareJid contact) throws Exception; }
     private final DeviceLookup deviceLookup;
@@ -64,6 +76,8 @@ public final class XmppRooms implements AutoCloseable {
         this.connection=connection; this.omemo=omemo; this.listener=listener; this.deviceLookup=deviceLookup;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
+        connection.addStanzaInterceptor(invitationInterceptor,stanza -> stanza instanceof Message && stanza.hasExtension("x",RoomInvitations.NS));
+        connection.addAsyncStanzaListener(invitationErrors,stanza -> stanza instanceof Message && ((Message)stanza).getType()==Message.Type.error);
         MultiUserChatManager manager=MultiUserChatManager.getInstanceFor(connection);
         manager.setAutoJoinOnReconnect(false);
         manager.addInvitationListener((conn,room,inviter,reason,password,message,invitation) -> {
@@ -243,14 +257,17 @@ public final class XmppRooms implements AutoCloseable {
         }
         queueState(chat);
     }
-    public Map<String,String> affiliations(String jid) throws Exception {
+    public Map<String,String> affiliations(String jid) throws Exception { return affiliations(jid,true); }
+    public Map<String,String> roster(String jid) throws Exception { return affiliations(jid,false); }
+    private Map<String,String> affiliations(String jid,boolean includeOutcasts) throws Exception {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Join the room before managing memberships.");
         Map<MUCAffiliation,org.jivesoftware.smack.StanzaCollector> queries=new LinkedHashMap<>();
         Map<String,String> result=new TreeMap<>();
         long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(connection.getReplyTimeout());
         try {
-            for(MUCAffiliation affiliation:new MUCAffiliation[]{MUCAffiliation.member,MUCAffiliation.admin,MUCAffiliation.owner,MUCAffiliation.outcast}) {
+            for(MUCAffiliation affiliation:includeOutcasts ? new MUCAffiliation[]{MUCAffiliation.member,MUCAffiliation.admin,MUCAffiliation.owner,MUCAffiliation.outcast}
+                    : new MUCAffiliation[]{MUCAffiliation.member,MUCAffiliation.admin,MUCAffiliation.owner}) {
                 org.jivesoftware.smackx.muc.packet.MUCAdmin query=new org.jivesoftware.smackx.muc.packet.MUCAdmin();
                 query.setTo(chat.getRoom()); query.setType(IQ.Type.get);
                 query.addItem(new org.jivesoftware.smackx.muc.packet.MUCItem(affiliation));
@@ -604,5 +621,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { closed=true; presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
+    @Override public void close() { closed=true; connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
 }

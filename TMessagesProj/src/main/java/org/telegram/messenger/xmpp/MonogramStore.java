@@ -30,11 +30,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 18); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 19); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addRoomAffiliations(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
         addDeletions(db); addSenderFingerprints(db); MonogramRetractions.create(db);
         MonogramReceipts.create(db);
     }
@@ -88,7 +88,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 18 || oldVersion < 1 || oldVersion > 17) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 19 || oldVersion < 1 || oldVersion > 18) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -105,7 +105,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<15) addDeletions(db);
         if(oldVersion<16) { addSenderFingerprints(db); MonogramRetractions.create(db); }
         if(oldVersion<17) MonogramReceipts.create(db);
-        if(oldVersion>=10) db.execSQL("ALTER TABLE rooms ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+        if(oldVersion>=10 && oldVersion<18) db.execSQL("ALTER TABLE rooms ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+        addRoomAffiliations(db);
     }
     private void addSenderFingerprints(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN sender_fingerprint TEXT");
@@ -196,13 +197,43 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY AUTOINCREMENT,jid TEXT NOT NULL UNIQUE,nickname TEXT NOT NULL,title TEXT NOT NULL,subject TEXT NOT NULL DEFAULT '',description TEXT NOT NULL DEFAULT '',autojoin INTEGER NOT NULL DEFAULT 1)");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_participants (room INTEGER NOT NULL,occupant TEXT NOT NULL,user INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 0,real_jid TEXT,PRIMARY KEY(room,occupant))");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_senders (message INTEGER PRIMARY KEY,user INTEGER NOT NULL)");
+    }
+    private void addRoomAffiliations(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS room_affiliations (room INTEGER NOT NULL,user INTEGER NOT NULL,affiliation TEXT NOT NULL,PRIMARY KEY(room,user))");
+    }
+    synchronized void roomRoster(long dialog,java.util.Map<String,String> roster) throws Exception {
+        room(dialog);
+        java.util.Map<Long,String> members=new java.util.LinkedHashMap<>();
+        for(java.util.Map.Entry<String,String> member:roster.entrySet()) {
+            if(!org.jxmpp.jid.impl.JidCreate.from(member.getKey()).isEntityBareJid()
+                    || !java.util.Arrays.asList("member","admin","owner").contains(member.getValue()))
+                throw new IllegalArgumentException("Invalid room member");
+            members.put(peer(member.getKey()),member.getValue());
+        }
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try {
+            db.delete("room_affiliations","room=?",new String[]{Long.toString(-dialog)});
+            for(java.util.Map.Entry<Long,String> member:members.entrySet()) {
+                ContentValues values=new ContentValues();values.put("room",-dialog);values.put("user",member.getKey());values.put("affiliation",member.getValue());
+                db.insertOrThrow("room_affiliations",null,values);
+            }
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
+    private static final String ROOM_MEMBERS="SELECT user FROM room_participants WHERE room=? AND active=1 UNION SELECT user FROM room_affiliations WHERE room=?";
+    synchronized java.util.Set<Long> activeRoomUsers(long dialog) {
+        java.util.Set<Long> users=new java.util.HashSet<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT user FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) {
+            while(c.moveToNext()) users.add(c.getLong(0));
+        }
+        return users;
     }
     static final class Room {
         final long dialog;
@@ -269,7 +300,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized ArrayList<TLRPC.User> roomUsers(long dialog,long self) {
         java.util.Set<Long> ids=new java.util.LinkedHashSet<>(); ids.add(self);
-        try (Cursor c=getReadableDatabase().rawQuery("SELECT user FROM room_participants WHERE room=? UNION SELECT s.user FROM room_senders s JOIN messages m ON m.id=s.message WHERE m.peer=?",new String[]{Long.toString(-dialog),Long.toString(dialog)})) {
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT user FROM room_participants WHERE room=? UNION SELECT s.user FROM room_senders s JOIN messages m ON m.id=s.message WHERE m.peer=? UNION SELECT user FROM room_affiliations WHERE room=?",new String[]{Long.toString(-dialog),Long.toString(dialog),Long.toString(-dialog)})) {
             while(c.moveToNext()) ids.add(c.getLong(0));
         }
         ArrayList<TLRPC.User> result=new ArrayList<>(); for (long id:ids) result.add(user(id,self)); return result;
@@ -300,7 +331,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             chat.photo=new TLRPC.TL_chatPhoto(); chat.photo.photo_id=MonogramProfiles.photo(dialog,avatar).id;
             chat.photo.photo_small=chat.photo.photo_big=MonogramProfiles.location(dialog); chat.photo.dc_id=Integer.MIN_VALUE;
         }
-        try (Cursor c=getReadableDatabase().rawQuery("SELECT count(DISTINCT user) FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) { c.moveToFirst(); chat.participants_count=c.getInt(0); }
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM ("+ROOM_MEMBERS+")",new String[]{Long.toString(-dialog),Long.toString(-dialog)})) { c.moveToFirst(); chat.participants_count=c.getInt(0); }
         return chat;
     }
     synchronized TLRPC.TL_messages_chatFull roomFull(long dialog,long self) {
@@ -308,8 +339,15 @@ final class MonogramStore extends SQLiteOpenHelper {
         result.chats.add(roomChat(dialog)); result.users.addAll(roomUsers(dialog,self));
         TLRPC.TL_chatFull full=new TLRPC.TL_chatFull(); full.id=-dialog; full.about=room.description;
         full.notify_settings=new TLRPC.TL_peerNotifySettings(); full.participants=new TLRPC.TL_chatParticipants(); full.participants.chat_id=-dialog; full.participants.version=1;
-        try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT user FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) {
-            while(c.moveToNext()) { TLRPC.TL_chatParticipant participant=new TLRPC.TL_chatParticipant(); participant.user_id=c.getLong(0); full.participants.participants.add(participant); }
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT members.user,a.affiliation FROM ("+ROOM_MEMBERS+") members LEFT JOIN room_affiliations a ON a.room=? AND a.user=members.user",
+                new String[]{Long.toString(-dialog),Long.toString(-dialog),Long.toString(-dialog)})) {
+            while(c.moveToNext()) {
+                String affiliation=c.getString(1);
+                if(c.getLong(0)==self && result.chats.get(0).creator) affiliation="owner";
+                TLRPC.ChatParticipant participant="owner".equals(affiliation) ? new TLRPC.TL_chatParticipantCreator()
+                        : "admin".equals(affiliation) ? new TLRPC.TL_chatParticipantAdmin() : new TLRPC.TL_chatParticipant();
+                participant.user_id=c.getLong(0);full.participants.participants.add(participant);
+            }
         }
         full.chat_photo=MonogramProfiles.photo(dialog,avatar(dialog));
         if(full.chat_photo instanceof TLRPC.TL_photo) full.flags|=4;
