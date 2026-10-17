@@ -9,9 +9,11 @@ The goal is a Monogram Android client based on current official Telegram source,
 
 ## Newly reported regressions (2026-10-17)
 
+- [o] Creating a new group chat and adding people to an existing group are broken (user reports). Inspect native entry points, room creation/configuration, membership authorization and invitations; retain existing group UI and expose actual server errors. Group name, description and avatar editing are also reported broken.
+
 - [x] Build, publish and install [0.2.59](https://github.com/doromiert/monogram/releases/tag/v0.2.59) (72349, arm64, original signer) from `jabber-onboarding`, source `058e8396c`. Nix packaging, the focused account-slot check and source checks pass; published APK digest/source match. ADB confirms the version and preservation of the current account settings, two existing key files and all 454 identities present immediately before installation. Account state changed before this update, so this does not claim preservation of the older 3,178-message snapshot. Actual native onboarding/login interaction remains unverified; no phone UI navigation or synthetic sign-in was performed.
 
-- [o] Music attachment picker opens with an empty list / missing tracks (user confirmed). Inspect Android media permission refresh and MediaStore filtering; keep Telegram’s existing music picker and file-send path.
+- [o] Music attachment picker opens with an empty list / missing tracks (user confirmed). Phone audio permission is granted; MediaStore contains 3,110 tracks, all marked as music. The picker scans every embedded cover before publishing any row. Publish indexed tracks first and load covers only for visible rows; skip missing-path entries, accept a null cursor and reload when reopening. Keep Telegram’s existing music picker and file-send path. Actual phone list population remains to verify.
 - [ ] Add server account invitations for invite-only XMPP instances. Discover supported invitation commands, create an invite only on explicit user action, and provide the returned invite link through the native copy/share UI. Keep server account invitations distinct from room invitations.
 - [ ] Restore the built-in browser for HTML-based widgets, including Monocles-compatible widget behavior where applicable. Reuse Telegram’s existing browser surface; audit the widget protocol and how it is transported before implementing it.
 

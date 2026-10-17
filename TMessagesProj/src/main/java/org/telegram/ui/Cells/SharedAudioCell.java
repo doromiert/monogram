@@ -255,6 +255,10 @@ public class SharedAudioCell extends FrameLayout implements DownloadController.F
         }
     }
 
+    public void updateAudioCover(MessageObject message) {
+        if (currentMessageObject == message && message.audioCover != null) radialProgress.setImageOverlay(message.audioCover);
+    }
+
     public void setMessageObject(MessageObject messageObject, boolean divider) {
         needDivider = divider;
         currentMessageObject = messageObject;
@@ -270,7 +274,7 @@ public class SharedAudioCell extends FrameLayout implements DownloadController.F
             if (cover != null) {
                 radialProgress.setImageOverlay(cover);
             } else {
-                final String artworkUrl = messageObject.getArtworkUrl(true);
+                final String artworkUrl = messageObject.getId() <= -1000000000 ? null : messageObject.getArtworkUrl(true);
                 if (!TextUtils.isEmpty(artworkUrl)) {
                     radialProgress.setImageOverlay(artworkUrl);
                 } else {

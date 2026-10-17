@@ -204,6 +204,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             @Override
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
                 parentAlert.updateLayout(ChatAttachAlertAudioLayout.this, true, dy);
+                loadVisibleCovers();
 //                if (listView.scrollingByUser) {
 //                    AndroidUtilities.hideKeyboard(searchField.editText);
 //                }
@@ -620,6 +621,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
     @Override
     public void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
+        loadAudio();
         searchChats();
         savedMusicList.load();
 
@@ -710,7 +712,37 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
         delegate = audioSelectDelegate;
     }
 
+    private final java.util.Set<MessageObject> requestedCovers = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    private void loadVisibleCovers() {
+        for (int index = 0; index < listView.getChildCount(); index++) {
+            View view = listView.getChildAt(index);
+            if (!(view instanceof SharedAudioCell)) continue;
+            SharedAudioCell cell = (SharedAudioCell) view;
+            MessageObject message = cell.getMessage();
+            if (message == null || message.getId() > -1000000000 || message.audioCover != null
+                    || TextUtils.isEmpty(message.messageOwner.attachPath) || !requestedCovers.add(message)) continue;
+            final File file = new File(message.messageOwner.attachPath);
+            Utilities.globalQueue.postRunnable(() -> {
+                try {
+                    AudioInfo info = AudioInfo.getAudioInfo(file);
+                    Bitmap source = info == null ? null : info.getSmallCover();
+                    if (source == null) return;
+                    int size = dp(44);
+                    float scale = Math.min(1f, Math.min((float) size / source.getWidth(), (float) size / source.getHeight()));
+                    Bitmap cover = scale < 1f ? Bitmap.createScaledBitmap(source,
+                            Math.max(1, (int) (source.getWidth() * scale)), Math.max(1, (int) (source.getHeight() * scale)), true) : source;
+                    AndroidUtilities.runOnUIThread(() -> {
+                        message.audioCover = cover;
+                        cell.updateAudioCover(message);
+                    });
+                } catch (Exception failed) { FileLog.e(failed); }
+            });
+        }
+    }
+
     private void loadAudio() {
+        if (loadingAudio) return;
         loadingAudio = true;
         Utilities.globalQueue.postRunnable(() -> {
             String[] projection = {
@@ -725,7 +757,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             final ArrayList<MediaController.AudioEntry> newAudioEntries = new ArrayList<>();
             try (Cursor cursor = ApplicationLoader.applicationContext.getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection, MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.TITLE)) {
                 int id = -2000000000;
-                while (cursor.moveToNext()) {
+                while (cursor != null && cursor.moveToNext()) {
                     final MediaController.AudioEntry audioEntry = new MediaController.AudioEntry();
                     audioEntry.id = cursor.getInt(0);
                     audioEntry.author = cursor.getString(1);
@@ -734,6 +766,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                     audioEntry.duration = (int) (cursor.getLong(4) / 1000);
                     audioEntry.genre = cursor.getString(5);
 
+                    if (TextUtils.isEmpty(audioEntry.path)) continue;
                     final File file = new File(audioEntry.path);
 
                     final TLRPC.TL_message message = new TLRPC.TL_message();
@@ -757,7 +790,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                     message.media.document.file_reference = new byte[0];
                     message.media.document.date = message.date;
                     message.media.document.mime_type = "audio/" + (ext.length() > 0 ? ext : "mp3");
-                    message.media.document.size = (int) file.length();
+                    message.media.document.size = file.length();
                     message.media.document.dc_id = 0;
 
                     final TLRPC.TL_documentAttributeAudio attributeAudio = new TLRPC.TL_documentAttributeAudio();
@@ -773,18 +806,6 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
                     audioEntry.messageObject = new MessageObject(parentAlert.currentAccount, message, false, true);
 
-                    final AudioInfo info = AudioInfo.getAudioInfo(file);
-                    if (info != null && info.getCover() != null) {
-                        final int size = dp(44);
-                        final Bitmap bitmap = info.getCover();
-                        if (bitmap.getWidth() > size || bitmap.getHeight() > size) {
-                            final float scale = Math.min((float) size / bitmap.getWidth(), (float) size / bitmap.getHeight());
-                            audioEntry.messageObject.audioCover = Bitmap.createScaledBitmap(bitmap, (int) (bitmap.getWidth() * scale), (int) (bitmap.getHeight() * scale), true);
-                        } else {
-                            audioEntry.messageObject.audioCover = bitmap;
-                        }
-                    }
-
                     newAudioEntries.add(audioEntry);
                     id--;
                 }
@@ -795,6 +816,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
                 loadingAudio = false;
                 audioEntries = newAudioEntries;
                 updateWithSavingScroll();
+                listView.post(this::loadVisibleCovers);
             });
         });
     }
