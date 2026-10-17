@@ -28,7 +28,7 @@ public class MonogramProtocolStoreTest {
                 MonogramStoreDeviceTest.legacyProtocols(store.getWritableDatabase()); store.getWritableDatabase().setVersion(8);
             }
             try (MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(19,store.getReadableDatabase().getVersion()); assertEquals(-1,protocol(store,old));
+                assertEquals(20,store.getReadableDatabase().getVersion()); assertEquals(-1,protocol(store,old));
                 XmppMessage missing=MessageFixture.modern("same-id","same-archive",null,false,100000,null,null,null);
                 assertTrue(store.saveArchive(peer,MessageFixture.page(missing),true,null));
                 assertEquals("same-archive",store.archiveCursor(peer,false));

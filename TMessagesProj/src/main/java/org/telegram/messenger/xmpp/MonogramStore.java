@@ -30,11 +30,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 19); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 20); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
-        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addRooms(db); addRoomAffiliations(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
+        addMessageMetadata(db); addAttachments(db); addProfiles(db); addReplies(db); addCorrections(db); addCaptions(db); addProtocols(db); addProfileSources(db); addRooms(db); addRoomAffiliations(db); addBookmarks(db); addRoomProfiles(db); addRoomAuthorVerification(db); MonogramReactions.create(db);
         addDeletions(db); addSenderFingerprints(db); MonogramRetractions.create(db);
         MonogramReceipts.create(db);
     }
@@ -88,7 +88,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 19 || oldVersion < 1 || oldVersion > 18) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 20 || oldVersion < 1 || oldVersion > 19) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -106,7 +106,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<16) { addSenderFingerprints(db); MonogramRetractions.create(db); }
         if(oldVersion<17) MonogramReceipts.create(db);
         if(oldVersion>=10 && oldVersion<18) db.execSQL("ALTER TABLE rooms ADD COLUMN description TEXT NOT NULL DEFAULT ''");
-        addRoomAffiliations(db);
+        addRoomAffiliations(db);addProfileSources(db);
+    }
+    private static void addProfileSources(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
     }
     private void addSenderFingerprints(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN sender_fingerprint TEXT");
@@ -197,7 +200,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -541,6 +544,21 @@ final class MonogramStore extends SQLiteOpenHelper {
             profileCache.put(peer, result); return result;
         } catch (Exception invalid) { return null; }
     }
+    /** Load image bytes only for a refresh, never for ordinary member-list/name reads. */
+    synchronized com.negzero.monogram.xmpp.XmppProfile profileForRefresh(long peer) throws Exception {
+        com.negzero.monogram.xmpp.XmppProfile cached=profile(peer);if(cached==null) return null;
+        byte[] bytes=null;
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT bytes FROM profile_avatar_sources WHERE peer=?",new String[]{Long.toString(peer)})) {
+            if(c.moveToFirst()) bytes=c.getBlob(0);
+        }
+        if(bytes==null) {
+            java.io.File image=avatar(peer);
+            if(image!=null && image.isFile() && image.length()>0 && image.length()<=com.negzero.monogram.xmpp.XmppProfile.MAX_AVATAR_BYTES) {
+                bytes=new byte[(int)image.length()];try(java.io.DataInputStream input=new java.io.DataInputStream(new java.io.FileInputStream(image))) { input.readFully(bytes); }
+            } else bytes=new byte[0];
+        }
+        return new com.negzero.monogram.xmpp.XmppProfile(cached.xml(),cached.nickname,bytes);
+    }
     synchronized void rosterName(long peer, String name) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues empty = new ContentValues(); empty.put("peer", peer);
@@ -555,11 +573,16 @@ final class MonogramStore extends SQLiteOpenHelper {
         java.io.File avatar = png.length == 0 ? null : MonogramProfiles.cache(storeContext, database, png);
         ContentValues empty = new ContentValues(); empty.put("peer", peer);
         SQLiteDatabase db = getWritableDatabase();
-        db.insertWithOnConflict("profiles", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
-        ContentValues value = new ContentValues(); value.put("card", profile.xml()); value.put("nickname", profile.nickname);
-        if (avatar == null) value.putNull("avatar"); else value.put("avatar", avatar.getAbsolutePath());
-        db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
-        profileCache.remove(peer);
+        db.beginTransaction();
+        try {
+            db.insertWithOnConflict("profiles", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
+            ContentValues value = new ContentValues(); value.put("card", profile.xml()); value.put("nickname", profile.nickname);
+            if (avatar == null) value.putNull("avatar"); else value.put("avatar", avatar.getAbsolutePath());
+            db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
+            ContentValues source=new ContentValues();source.put("peer",peer);source.put("bytes",profile.avatar);
+            if(db.insertWithOnConflict("profile_avatar_sources",null,source,SQLiteDatabase.CONFLICT_REPLACE)<0) throw new IllegalStateException("Cannot save profile avatar source");
+            db.setTransactionSuccessful();profileCache.remove(peer);
+        } finally { db.endTransaction(); }
     }
     synchronized java.io.File avatar(long peer) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT avatar FROM profiles WHERE peer=?", new String[]{Long.toString(peer)})) {

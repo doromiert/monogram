@@ -43,7 +43,6 @@ public final class MonogramController {
     private final ExecutorService fileWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService profileWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService fingerprintWorker=Executors.newFixedThreadPool(2);
-    private final java.util.Map<Long,java.util.List<Runnable>> profileCompletions=new java.util.HashMap<>();
     private final ExecutorService autoDownloadWorker = Executors.newSingleThreadExecutor();
     private final java.util.concurrent.ConcurrentHashMap<Integer, FileTransfer.Job> fileJobs = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<String, FileTransfer.Job> fileNames = new java.util.concurrent.ConcurrentHashMap<>();
@@ -62,7 +61,7 @@ public final class MonogramController {
     private volatile ArchiveSync archiveSync;
     private final java.util.concurrent.ConcurrentHashMap<Long, Long> profileVersions = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Long> roomMetadataDirty=java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final java.util.Set<Long> profileLoads = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
+    private final MonogramProfileLoads profileLoads=new MonogramProfileLoads();
     private final java.util.Set<Long> typingPeers = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Long, Boolean>());
     private final java.util.concurrent.ConcurrentHashMap<Long, String> typingAddresses = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<Long,com.negzero.monogram.xmpp.XmppContacts.PresenceState> presences=new java.util.concurrent.ConcurrentHashMap<>();
@@ -827,7 +826,6 @@ public final class MonogramController {
         if(!currentArchive(sync) || sync.windows.containsKey(peer) || !sync.preparing.add(peer)) return;
         sync.peers.add(peer);
         java.util.Set<Long> profiles=new java.util.LinkedHashSet<>(); if(peer!=0) profiles.add(peer); profiles.add(self);
-        if(peer<0) for(TLRPC.User user:store.roomUsers(peer,self)) profiles.add(user.id);
         java.util.concurrent.atomic.AtomicInteger remaining=new java.util.concurrent.atomic.AtomicInteger(profiles.size());
         Runnable profileReady=() -> {
             if(remaining.decrementAndGet()!=0 || !currentArchive(sync)) return;
@@ -1148,7 +1146,7 @@ public final class MonogramController {
     public void logout() {
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        accountEpoch++; pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); outbox.clear();
+        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); outbox.clear();
         SharedPreferences.Editor roomPasswords=preferences.edit();
         for(String key:preferences.getAll().keySet()) if(key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
@@ -1176,56 +1174,64 @@ public final class MonogramController {
     private void changedProfile(long peer) {
         profileVersions.merge(peer,1L,Long::sum);refreshProfile(peer);
     }
-    private void refreshProfile(long peer,Runnable completed) {
-        if(peer==0) { if(completed!=null) completed.run(); return; }
-        synchronized(profileLoads) {
-            if(completed!=null) profileCompletions.computeIfAbsent(peer,key -> new ArrayList<>()).add(completed);
-            if(!profileLoads.add(peer)) return;
-        }
-        final XmppSession expected=session;final long epoch=sessionEpoch;
-        final String jid;
+    private void refreshProfile(long peer,Runnable completed) { refreshProfile(peer,completed,accountEpoch); }
+    private void refreshProfile(long peer,Runnable completed,long owner) {
+        if(owner!=accountEpoch) return;
+        if(peer==0) { if(completed!=null) completed.run();return; }
+        final XmppSession expected=session;final long epoch=sessionEpoch;final String jid;
         try { jid=store.jid(peer); }
-        catch(IllegalArgumentException unknown) { finishProfile(peer);return; }
-        final long version=profileVersions.getOrDefault(peer,0L);
-        final com.negzero.monogram.xmpp.XmppProfile cachedRoom=peer<0 ? store.profile(peer) : null;
-        final boolean metadata=peer<0 && roomMetadataDirty.contains(peer);
+        catch(IllegalArgumentException unknown) { if(completed!=null && owner==accountEpoch) completed.run();return; }
+        final MonogramProfileLoads.Load load;
+        synchronized(profileLoads) {
+            if(owner!=accountEpoch) return;
+            if(expected!=session || epoch!=sessionEpoch) { worker.execute(() -> refreshProfile(peer,completed,owner));return; }
+            load=profileLoads.begin(peer,expected,owner,epoch,jid,completed);
+        }
+        if(load==null) return;
         profileWorker.execute(() -> {
-            if(expected==null || session!=expected || sessionEpoch!=epoch) { worker.execute(() -> finishProfile(peer,expected,epoch,version));return; }
+            final long version=profileVersions.getOrDefault(peer,0L);
+            if(!currentProfileLoad(peer,load)) { worker.execute(() -> finishProfile(peer,load,version));return; }
+            final com.negzero.monogram.xmpp.XmppProfile cached;
+            try { cached=store.profileForRefresh(peer); }
+            catch(Exception failed) { worker.execute(() -> finishProfile(peer,load,version));return; }
+            if(!currentProfileLoad(peer,load)) { worker.execute(() -> finishProfile(peer,load,version));return; }
             org.jivesoftware.smackx.muc.RoomInfo information=null;
-            if(metadata) try { information=expected.rooms.information(jid); }
+            if(peer<0 && roomMetadataDirty.contains(peer)) try { information=expected.rooms.information(jid); }
             catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram room metadata: "+failed.getClass().getSimpleName()); }
             com.negzero.monogram.xmpp.XmppProfile fetched=null;
-            try { fetched=peer<0 ? expected.profiles.loadRoom(jid,cachedRoom,information) : expected.profiles.load(jid); }
+            try { fetched=peer<0 ? expected.profiles.loadRoom(jid,cached,information) : expected.profiles.load(jid,cached); }
             catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile: "+failed.getClass().getSimpleName()); }
             final org.jivesoftware.smackx.muc.RoomInfo info=information;
             final com.negzero.monogram.xmpp.XmppProfile profile=fetched;
-            worker.execute(() -> {
+            // Apply before taking another image so the worker queue cannot retain unbounded source bytes.
+            try { worker.submit(() -> {
                 try {
-                    if(sessionEpoch!=epoch || session!=expected || profileVersions.getOrDefault(peer,0L)!=version) return;
+                    if(!currentProfileLoad(peer,load) || profileVersions.getOrDefault(peer,0L)!=version) return;
                     if(info!=null) { store.roomMetadata(peer,info.getName(),info.getDescription());if(profile!=null) roomMetadataDirty.remove(peer); }
-                    if(profile!=null && profile!=cachedRoom) {
+                    if(profile!=null && profile!=cached) {
                         try { store.profile(peer,profile);if(peer==self) expected.profiles.useOwnProfile(profile); }
                         catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile cache: "+failed.getClass().getSimpleName()); }
                     }
                     if(peer<0 && (info!=null || profile!=null)) { publishRoom(peer);publishRoomInfo(peer,expected,epoch); }
                     else if(profile!=null) publishProfile(peer,epoch);
                 } catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile publication: "+failed.getClass().getSimpleName()); }
-                finally { finishProfile(peer,expected,epoch,version); }
-            });
+                finally { finishProfile(peer,load,version); }
+            }).get(); }
+            catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            catch(Exception failed) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram profile handoff: "+failed.getClass().getSimpleName()); }
         });
     }
-    private void finishProfile(long peer,XmppSession expected,long epoch,long version) {
-        if(expected!=null && session==expected && sessionEpoch==epoch && profileVersions.getOrDefault(peer,0L)!=version) {
-            // A hint received during a fetch invalidates its result and needs one follow-up fetch.
-            synchronized(profileLoads) { profileLoads.remove(peer); }
-            refreshProfile(peer);return;
-        }
-        finishProfile(peer);
+    private boolean currentProfileLoad(long peer,MonogramProfileLoads.Load load) {
+        return load.owner==accountEpoch && load.connection!=null && session==load.connection && sessionEpoch==load.epoch && profileLoads.current(peer,load);
     }
-    private void finishProfile(long peer) {
-        java.util.List<Runnable> callbacks;
-        synchronized(profileLoads) { profileLoads.remove(peer); callbacks=profileCompletions.remove(peer); }
-        if(callbacks!=null) for(Runnable callback:callbacks) callback.run();
+    private void finishProfile(long peer,MonogramProfileLoads.Load load,long version) {
+        java.util.List<Runnable> callbacks=profileLoads.finish(peer,load);if(callbacks==null || load.owner!=accountEpoch) return;
+        Runnable completed=callbacks.isEmpty() ? null : () -> {
+            for(Runnable callback:callbacks) { if(load.owner!=accountEpoch) return;callback.run(); }
+        };
+        if(load.connection!=null && session==load.connection && sessionEpoch==load.epoch && profileVersions.getOrDefault(peer,0L)!=version)
+            refreshProfile(peer,completed,load.owner);
+        else if(completed!=null) completed.run();
     }
     private final java.util.concurrent.ConcurrentHashMap<Long,TLRPC.User> pendingProfileUsers=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicBoolean profilePublishQueued=new java.util.concurrent.atomic.AtomicBoolean();
