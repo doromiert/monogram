@@ -588,6 +588,7 @@ public final class MonogramController {
             }
         });
         MonogramCallService.bind(account,connecting,() -> sessionEpoch==epoch && sameAccount(owner,details.jid.toString()));
+        bindUnavailableRecipients(connecting,epoch,owner,details.jid.toString());
         for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
         connecting.chatStates.setEnabled(typingEnabled());
         connecting.recoverIncoming();
@@ -1301,7 +1302,7 @@ public final class MonogramController {
         try { MonogramTranslation.clearConfiguration(account); }
         catch(java.io.IOException unavailable) { throw new IllegalStateException("Cannot clear translation settings",unavailable); }
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -1515,6 +1516,50 @@ public final class MonogramController {
         if(!preferences.edit().putBoolean(automaticRecipientsKey(peer),enabled).commit()) throw new IllegalStateException("Could not save recipient policy");
     }
     public String skippedRoomRecipients(long peer) { return preferences.getString("last-skipped-"+accountJid()+"\n"+peer,null); }
+    private static String unavailableRecipientsKey(String jid) { return "unavailable-room-recipients-"+jid; }
+    private java.util.Map<String,String> unavailableRecipients(String jid) {
+        java.util.Map<String,String> result=new java.util.LinkedHashMap<>();
+        String raw=preferences.getString(unavailableRecipientsKey(jid),"");
+        if(raw.length()>262144) return result;
+        try {
+            org.json.JSONObject data=new org.json.JSONObject(raw);
+            java.util.Iterator<String> keys=data.keys();
+            while(keys.hasNext() && result.size()<512) {
+                String key=keys.next();Object reason=data.opt(key);
+                if(key.length()<=3200 && reason instanceof String && ((String)reason).length()<=512) result.put(key,(String)reason);
+            }
+        } catch(org.json.JSONException invalid) { /* A disposable performance cache must not prevent sign-in. */ }
+        return result;
+    }
+    private void saveUnavailableRecipients(String jid,java.util.Map<String,String> values) {
+        org.json.JSONObject data=new org.json.JSONObject();int size=2;
+        for(java.util.Map.Entry<String,String> entry:new java.util.TreeMap<>(values).entrySet()) {
+            if(entry.getKey().length()>3200 || entry.getValue()==null || entry.getValue().length()>512) continue;
+            int encoded=org.json.JSONObject.quote(entry.getKey()).length()+org.json.JSONObject.quote(entry.getValue()).length()+2;
+            if(size+encoded>262000 || data.length()>=512) break;
+            size+=encoded;
+            try { data.put(entry.getKey(),entry.getValue()); } catch(org.json.JSONException invalid) { }
+        }
+        SharedPreferences.Editor edit=preferences.edit();String key=unavailableRecipientsKey(jid);
+        if(data.length()==0) edit.remove(key);else edit.putString(key,data.toString());
+        edit.apply();
+    }
+    private void bindUnavailableRecipients(XmppSession expected,long epoch,long owner,String jid) {
+        java.util.concurrent.atomic.AtomicReference<java.util.Map<String,String>> pending=new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicBoolean queued=new java.util.concurrent.atomic.AtomicBoolean();
+        Runnable persist=new Runnable() {
+            public void run() {
+                java.util.Map<String,String> snapshot=pending.getAndSet(null);
+                if(snapshot!=null && session==expected && sessionEpoch==epoch && sameAccount(owner,jid)) saveUnavailableRecipients(jid,snapshot);
+                queued.set(false);
+                if(pending.get()!=null && queued.compareAndSet(false,true)) worker.execute(this);
+            }
+        };
+        expected.rooms.setUnavailableCache(unavailableRecipients(jid),snapshot -> {
+            pending.set(snapshot);
+            if(queued.compareAndSet(false,true)) worker.execute(persist);
+        });
+    }
     private void reportSkippedRecipients(long peer,com.negzero.monogram.xmpp.XmppRoomMessage message) {
         String key="last-skipped-"+accountJid()+"\n"+peer;
         SharedPreferences.Editor edit=preferences.edit();
@@ -1523,14 +1568,6 @@ public final class MonogramController {
             StringBuilder report=new StringBuilder("Last encrypted send · ").append(new java.util.Date(message.timestamp)).append("\n");
             message.skippedRecipients.forEach((recipient,reason) -> report.append(recipient).append(": ").append(reason).append('\n'));
             edit.putString(key,report.toString());
-            long owner=accountEpoch;
-            AndroidUtilities.runOnUIThread(() -> {
-                if(owner!=accountEpoch) return;
-                org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
-                if(org.telegram.ui.Components.BulletinFactory.canShowBulletin(fragment))
-                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.chats_infotip,
-                        "Sent with unavailable recipients skipped. Details in Conversation security.").show();
-            });
         }
         edit.apply();
     }

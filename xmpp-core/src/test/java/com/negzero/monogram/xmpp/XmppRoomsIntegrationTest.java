@@ -85,6 +85,118 @@ class XmppRoomsIntegrationTest {
     private MessageMarkup formatted(String body) {
         return new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(0,body.codePointCount(0,body.length()),Collections.singleton(MessageMarkup.Style.STRONG),null))).styled();
     }
+    @SuppressWarnings("unchecked") private static <T> T privateField(Object object,String name) throws Exception {
+        java.lang.reflect.Field field=object.getClass().getDeclaredField(name);field.setAccessible(true);return (T)field.get(object);
+    }
+    private void eventually(Callable<Boolean> condition) throws Exception {
+        long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+        while(System.nanoTime()<end) { if(condition.call()) return;Thread.sleep(20); }
+        assertTrue(condition.call(),"Asynchronous room recovery did not finish");
+    }
+    private void publishOnlyCurrentDevice(XmppSession session) throws Exception {
+        org.jivesoftware.smackx.pubsub.PubSubManager.getInstanceFor(session.connection(),session.connection().getUser().asBareJid())
+                .getOrCreateLeafNode("eu.siacs.conversations.axolotl.devicelist")
+                .publish(new org.jivesoftware.smackx.pubsub.PayloadItem<>("current",new org.jivesoftware.smackx.omemo.element.OmemoDeviceListElement_VAxolotl(Collections.singleton(session.ownDeviceId()))));
+        session.devices(session.ownJid());
+    }
+    private XmppSession.Listener recoveryListener(BlockingQueue<XmppRoomMessage> messages) {
+        return new XmppSession.Listener() {
+            public void message(org.jxmpp.jid.EntityBareJid sender,String id,String body,boolean encrypted) { fail("Room recovery must not create a direct conversation"); }
+            public void roomMessage(XmppRoomMessage message) { if(messages!=null) messages.add(message); }
+        };
+    }
+    private final class RecoveryRoom implements AutoCloseable {
+        final BlockingQueue<XmppRoomMessage> messages=new LinkedBlockingQueue<>();
+        final BlockingQueue<Map<String,String>> snapshots=new LinkedBlockingQueue<>();
+        final XmppSession alice,bob;final String room;
+        RecoveryRoom(int id,boolean trustBob,Map<String,String> restored) throws Exception {
+            XmppSession.initializeOmemo(new File(root,"keys"),LegacyOmemoTestDatabase.shared());
+            alice=new XmppSession(new Account("callsalice@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Room-recovery-"+id),"monogram-test",id,new File(root,"recovery-trust-"+id),recoveryListener(null));
+            bob=new XmppSession(new Account("callsbob@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Room-recovery-"+(id+1)),"monogram-test",id+1,new File(root,"recovery-trust-"+(id+1)),recoveryListener(messages));
+            alice.rooms.setUnavailableCache(restored,snapshots::add);alice.connect();bob.connect();
+            publishOnlyCurrentDevice(alice);publishOnlyCurrentDevice(bob);
+            alice.devices(bob.ownJid());
+            if(trustBob) for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:alice.devices(bob.ownJid())) alice.decide(device,alice.fingerprint(device),true);
+            room=alice.rooms.createPrivate("Alice","Unavailable recipient fixture").room.toString();
+            alice.rooms.invite(room,bob.ownJid(),null);bob.rooms.join(room,"Bob",null);
+        }
+        public void close() { alice.close();bob.close(); }
+    }
+    @Test void rememberedRecipientProbeIsPostSendCoalescedAndCannotBlockLaterMessages() throws Exception {
+        CountDownLatch probing=new CountDownLatch(1),release=new CountDownLatch(1);
+        ExecutorService sends=Executors.newSingleThreadExecutor();
+        try(RecoveryRoom fixture=new RecoveryRoom(3901,true,Collections.emptyMap());
+            XmppSession restored=new XmppSession(new Account("alice@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Room-recovered-recipient"),"monogram-test",3903,new File(root,"recovery-trust-3903"),recoveryListener(null))) {
+            restored.connect();publishOnlyCurrentDevice(restored);
+            String target=restored.ownJid();MultiUserChat chat=MultiUserChatManager.getInstanceFor(fixture.alice.connection()).getMultiUserChat(JidCreate.entityBareFrom(fixture.room));chat.grantMembership(JidCreate.bareFrom(target));
+            XmppRooms.DeviceLookup original=privateField(fixture.alice.rooms,"deviceLookup");
+            java.util.concurrent.atomic.AtomicInteger lookups=new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicBoolean sent=new java.util.concurrent.atomic.AtomicBoolean(),earlyProbe=new java.util.concurrent.atomic.AtomicBoolean();
+            org.jivesoftware.smack.StanzaListener sentWire=stanza -> sent.set(true);
+            fixture.alice.connection().addStanzaInterceptor(sentWire,stanza -> stanza instanceof Message && Message.Type.groupchat==((Message)stanza).getType() && fixture.room.equals(String.valueOf(stanza.getTo())));
+            XmppRooms.DeviceLookup controlled=contact -> {
+                if(!target.equals(contact.toString())) return original.devices(contact);
+                int invocation=lookups.incrementAndGet();
+                if(invocation==1) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
+                earlyProbe.set(!sent.get());probing.countDown();
+                if(!release.await(30,TimeUnit.SECONDS)) throw new java.io.IOException("Fixture probe remained blocked");
+                return original.devices(contact);
+            };
+            java.lang.reflect.Field lookup=XmppRooms.class.getDeclaredField("deviceLookup");lookup.setAccessible(true);lookup.set(fixture.alice.rooms,controlled);
+            try {
+                XmppRoomMessage first=sends.submit(() -> fixture.alice.rooms.send(fixture.room,"first remembered skip",true,Collections.emptySet(),true)).get(10,TimeUnit.SECONDS);
+                assertTrue(first.skippedRecipients.containsKey(target));assertTrue(readable(fixture.messages,"first remembered skip").encrypted);
+                assertTrue(probing.await(10,TimeUnit.SECONDS));assertFalse(earlyProbe.get(),"Recovery must begin after the room ciphertext is sent");
+                for(String body:Arrays.asList("blocked probe second send","blocked probe third send")) {
+                    XmppRoomMessage next=sends.submit(() -> fixture.alice.rooms.send(fixture.room,body,true,Collections.emptySet(),true)).get(10,TimeUnit.SECONDS);
+                    assertTrue(next.skippedRecipients.containsKey(target));assertTrue(readable(fixture.messages,body).encrypted);
+                }
+                assertEquals(2,lookups.get(),"Remembered failure must avoid foreground lookup and coalesce the blocked background job");
+                release.countDown();
+                eventually(() -> fixture.snapshots.stream().anyMatch(snapshot -> !snapshot.containsKey(target)));
+                assertEquals(OmemoSendException.Reason.TRUST_REQUIRED,assertThrows(OmemoSendException.class,() -> fixture.alice.rooms.send(fixture.room,"recovery must not approve identity",true,Collections.emptySet(),true)).reason);
+                for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:fixture.alice.devices(target)) fixture.alice.decide(device,fixture.alice.fingerprint(device),true);
+                assertFalse(fixture.alice.rooms.send(fixture.room,"recovered recipient eligible",true,Collections.emptySet(),true).skippedRecipients.containsKey(target));
+                assertTrue(readable(fixture.messages,"recovered recipient eligible").encrypted);
+            } finally { release.countDown();fixture.alice.connection().removeStanzaInterceptor(sentWire); }
+        } finally { release.countDown();sends.shutdownNow(); }
+    }
+    @Test void allSkippedDeviceRecoveryFetchesOnceAndLeavesRatchetAndTrustForForegroundSend() throws Exception {
+        String key="callsbob@localhost · device 3912";
+        CountDownLatch fetching=new CountDownLatch(1),release=new CountDownLatch(1);
+        ExecutorService sends=Executors.newSingleThreadExecutor();
+        try(RecoveryRoom fixture=new RecoveryRoom(3911,false,Collections.singletonMap(key,"Previously unavailable bundle"))) {
+            org.jivesoftware.smackx.omemo.OmemoManager manager=privateField(fixture.alice,"omemo");
+            org.jivesoftware.smackx.omemo.internal.OmemoDevice recipient=new org.jivesoftware.smackx.omemo.internal.OmemoDevice(JidCreate.bareFrom(fixture.bob.ownJid()),fixture.bob.ownDeviceId());
+            java.util.concurrent.atomic.AtomicInteger requests=new java.util.concurrent.atomic.AtomicInteger();
+            org.jivesoftware.smack.StanzaListener blockBundle=stanza -> {
+                requests.incrementAndGet();fetching.countDown();
+                try { if(!release.await(30,TimeUnit.SECONDS)) throw new AssertionError("Fixture bundle probe remained blocked"); }
+                catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            };
+            fixture.alice.connection().addStanzaInterceptor(blockBundle,stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.toXML().toString().contains("eu.siacs.conversations.axolotl.bundles:3912"));
+            try {
+                for(int attempt=0;attempt<2;attempt++) {
+                    OmemoSendException failure=sends.submit(() -> assertThrows(OmemoSendException.class,() -> fixture.alice.rooms.send(fixture.room,"all recipients remembered unavailable",true,Collections.emptySet(),true))).get(10,TimeUnit.SECONDS);
+                    assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,failure.reason);
+                    assertTrue(fetching.await(10,TimeUnit.SECONDS));
+                }
+                assertEquals(1,requests.get(),"All-skipped attempts must schedule only one blocked public bundle probe");
+                assertTrue(org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(manager,recipient));
+                release.countDown();
+                eventually(() -> { synchronized(privateField(fixture.alice.rooms,"unavailableLock")) { Map<?,?> recovered=privateField(fixture.alice.rooms,"recoveredBundles");return recovered.containsKey(key); } });
+                assertTrue(org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(manager,recipient),"Recovery may fetch public keys but must not advance Signal state");
+                int fetched=requests.get();
+                assertEquals(OmemoSendException.Reason.TRUST_REQUIRED,assertThrows(OmemoSendException.class,() -> fixture.alice.rooms.send(fixture.room,"cached bundle still requires trust",true,Collections.emptySet(),true)).reason);
+                assertEquals(fetched,requests.get(),"Foreground preparation must consume the recovered bundle without another fetch");
+                fixture.alice.decide(recipient,fixture.alice.fingerprint(recipient),true);
+                assertTrue(fixture.alice.rooms.send(fixture.room,"cached device recovered",true,Collections.emptySet(),true).skippedRecipients.isEmpty());
+                assertTrue(readable(fixture.messages,"cached device recovered").encrypted);
+                fixture.alice.rooms.retryUnavailable();
+                assertTrue(fixture.snapshots.stream().anyMatch(Map::isEmpty));
+            } finally { release.countDown();fixture.alice.connection().removeStanzaInterceptor(blockBundle); }
+        } finally { release.countDown();sends.shutdownNow(); }
+    }
     @Test void joinNativeRoomTransportEncryptOfflineMembersAndRejoinHistory() throws Exception {
         XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<XmppRoomMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();

@@ -92,6 +92,7 @@ public final class XmppRooms implements AutoCloseable {
     XmppSession legacySession;
     XmppRooms(XMPPConnection connection,OmemoManager omemo,XmppSession.Listener listener,DeviceLookup deviceLookup) {
         this.connection=connection; this.omemo=omemo; this.listener=listener; this.deviceLookup=deviceLookup;
+        recoveryLookups.allowCoreThreadTimeOut(true);connection.addConnectionListener(recoveryLifecycle);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         connection.addStanzaInterceptor(invitationInterceptor,stanza -> stanza instanceof Message && stanza.hasExtension("x",RoomInvitations.NS));
@@ -597,9 +598,11 @@ public final class XmppRooms implements AutoCloseable {
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        Map<String,Unavailable> failures=new LinkedHashMap<>();
+        try {
         String wireBody=reply==null ? body : reply.wireBody(body);
         Map<String,String> skipped=new TreeMap<>();
-        Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped);
+        Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped,failures);
         if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
         if(!encrypted && markup!=null) markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         if(sharing!=null) sharing.addTo(message,wireBody);
@@ -609,40 +612,169 @@ public final class XmppRooms implements AutoCloseable {
         if(markup!=null) sent=sent.withMarkup(markup);
         sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
         chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
+        } finally { if(automatic && encrypted) recoverUnavailable(failures); }
     }
-    private Message roomMessage(MultiUserChat chat,String jid,String wireBody,boolean encrypted,Set<String> excluded,boolean automatic,Map<String,String> skipped) throws Exception {
+    private Message roomMessage(MultiUserChat chat,String jid,String wireBody,boolean encrypted,Set<String> excluded,boolean automatic,Map<String,String> skipped,Map<String,Unavailable> failures) throws Exception {
         Message message;
         if (encrypted) {
             Set<BareJid> members;
             try { members=members(jid); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the membership check.",timeout); }
             Set<BareJid> recipients=recipients(members,connection.getUser().asBareJid(),excluded);
-            OmemoMessage.Sent ciphertext=encryptRecipients(recipients,wireBody,skipped,automatic);
+            OmemoMessage.Sent ciphertext=encryptRecipients(recipients,wireBody,skipped,automatic,failures);
             try { if (!members(jid).equals(members)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
             message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
         } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(wireBody); }
         return message;
     }
+    private static final int MAX_UNAVAILABLE=512,MAX_RECOVERED=32,MAX_BUNDLE_CHARS=256*1024,MAX_RECOVERED_CHARS=1024*1024;
+    private static final String DEVICE_SEPARATOR=" · device ";
+    private static final class CachedUnavailable extends Exception { CachedUnavailable(String reason) { super(reason); } }
     private static final class Unavailable {
-        final long until=System.nanoTime()+java.util.concurrent.TimeUnit.MINUTES.toNanos(1);
-        final Exception error;
-        Unavailable(Exception error) { this.error=error; }
+        final Exception error;final String reason;long lastQueued;
+        Unavailable(Exception error) { this.error=error;this.reason=unavailableReason(error); }
     }
-    private final Map<String,Unavailable> unavailable=new ConcurrentHashMap<>();
-    public void retryUnavailable() { unavailable.clear(); }
+    private static final class RecoveredBundle {
+        final org.jivesoftware.smackx.omemo.element.OmemoBundleElement bundle;final Unavailable failure;final EntityFullJid account;
+        final long generation,time=System.nanoTime();final String ownIdentity,identity;final int chars;
+        RecoveredBundle(org.jivesoftware.smackx.omemo.element.OmemoBundleElement bundle,Unavailable failure,EntityFullJid account,long generation,String ownIdentity,String identity,int chars) {
+            this.bundle=bundle;this.failure=failure;this.account=account;this.generation=generation;this.ownIdentity=ownIdentity;this.identity=identity;this.chars=chars;
+        }
+    }
+    private final Object unavailableLock=new Object();
+    private final LinkedHashMap<String,Unavailable> unavailable=new LinkedHashMap<>();
+    private final LinkedHashMap<String,RecoveredBundle> recoveredBundles=new LinkedHashMap<>();
+    private final Map<String,Future<?>> recovering=new HashMap<>();
+    private final ThreadPoolExecutor recoveryLookups=new ThreadPoolExecutor(2,2,30,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r -> { Thread thread=new Thread(r,"Monogram room recovery");thread.setDaemon(true);return thread; });
+    private java.util.function.Consumer<Map<String,String>> unavailableChanged;
+    private long recoveryGeneration,recoverySequence;private int recoveredChars;
+    private final org.jivesoftware.smack.ConnectionListener recoveryLifecycle=new org.jivesoftware.smack.ConnectionListener() {
+        @Override public void connectionClosed() { cancelRecovery(); }
+        @Override public void connectionClosedOnError(Exception error) { cancelRecovery(); }
+    };
+    /** Install before connect. This cache contains delivery failures, never trust or presence decisions. */
+    public void setUnavailableCache(Map<String,String> restored,java.util.function.Consumer<Map<String,String>> changed) {
+        synchronized(unavailableLock) {
+            cancelRecovery();unavailable.clear();unavailableChanged=changed;
+            if(restored!=null) for(Map.Entry<String,String> entry:restored.entrySet()) {
+                if(unavailable.size()>=MAX_UNAVAILABLE) break;String key=entry.getKey(),reason=entry.getValue();
+                if(!validUnavailableKey(key) || reason==null || reason.isEmpty() || reason.length()>512 || reason.chars().anyMatch(Character::isISOControl)) continue;
+                unavailable.put(key,new Unavailable(new CachedUnavailable(reason)));
+            }
+        }
+    }
+    private static boolean validUnavailableKey(String key) {
+        if(key==null || key.length()>3200) return false;
+        try { int split=key.lastIndexOf(DEVICE_SEPARATOR);String jid=split<0?key:key.substring(0,split);
+            if(!JidCreate.entityBareFrom(jid).toString().equals(jid)) return false;
+            if(split>=0) { String id=key.substring(split+DEVICE_SEPARATOR.length());int device=Integer.parseInt(id);if(device<=0 || !Integer.toString(device).equals(id)) return false; }
+            return true;
+        }catch(Exception invalid) { return false; }
+    }
+    private void changedUnavailable() {
+        if(unavailableChanged==null || closed) return;Map<String,String> snapshot=new TreeMap<>();unavailable.forEach((key,value) -> snapshot.put(key,value.reason));
+        try { unavailableChanged.accept(Collections.unmodifiableMap(snapshot)); }catch(RuntimeException ignored) { /* Disposable cache persistence must never fail a send. */ }
+    }
+    public void retryUnavailable() { synchronized(unavailableLock) { cancelRecovery();boolean changed=!unavailable.isEmpty();unavailable.clear();if(changed) changedUnavailable(); } }
+    private void cancelRecovery() { synchronized(unavailableLock) { recoveryGeneration++;for(Future<?> future:new ArrayList<>(recovering.values())) future.cancel(true);recovering.clear();recoveryLookups.purge();recoveredBundles.clear();recoveredChars=0; } }
+    private void removeRecovered(String key) { RecoveredBundle previous=recoveredBundles.remove(key);if(previous!=null) recoveredChars-=previous.chars; }
+    private void forgetUnavailable(String key) { synchronized(unavailableLock) { if(unavailable.remove(key)!=null) { removeRecovered(key);Future<?> job=recovering.remove(key);if(job!=null) job.cancel(true);changedUnavailable(); } } }
+    private Unavailable rememberUnavailable(String key,Exception error,Map<String,Unavailable> attempt) {
+        synchronized(unavailableLock) {
+            Unavailable previous=unavailable.get(key);
+            if(previous==null) {
+                if(unavailable.size()>=MAX_UNAVAILABLE) { String oldest=unavailable.keySet().iterator().next();unavailable.remove(oldest);removeRecovered(oldest);Future<?> job=recovering.remove(oldest);if(job!=null) job.cancel(true); }
+                previous=new Unavailable(error);unavailable.put(key,previous);changedUnavailable();
+            }
+            attempted(attempt,key,previous);return previous;
+        }
+    }
+    private static void attempted(Map<String,Unavailable> attempt,String key,Unavailable failure) {
+        if(!attempt.containsKey(key) && attempt.size()>=MAX_UNAVAILABLE) attempt.remove(attempt.keySet().iterator().next());
+        attempt.put(key,failure);
+    }
+    private static String unavailableReason(Exception error) {
+        String text=error instanceof CachedUnavailable ? error.getMessage() : XmppRequestException.describe(error);
+        if(text==null || text.trim().isEmpty()) text="OMEMO recipient unavailable";
+        text=text.replaceAll("[\\p{Cntrl}]"," ");return text.substring(0,Math.min(512,text.length()));
+    }
     private static boolean unavailable(Exception error) {
-        return error instanceof org.jivesoftware.smack.SmackException.NoResponseException
+        return error instanceof CachedUnavailable || error instanceof org.jivesoftware.smack.SmackException.NoResponseException
             || error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
             || error instanceof org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException
             || error instanceof OmemoSendException && (((OmemoSendException)error).reason==OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED || ((OmemoSendException)error).reason==OmemoSendException.Reason.NO_DEVICES);
     }
-    private void checkUnavailable(String key) throws Exception {
-        Unavailable last=unavailable.get(key);
-        if(last!=null && System.nanoTime()<last.until) throw last.error;
-        unavailable.remove(key);
+    private void checkUnavailable(String key,Map<String,Unavailable> attempt) throws Exception {
+        synchronized(unavailableLock) { Unavailable last=unavailable.get(key);if(last!=null) { attempted(attempt,key,last);throw last.error; } }
     }
-    private OmemoMessage.Sent encryptRecipients(Set<BareJid> recipients,String body,Map<String,String> skipped,boolean automatic) throws Exception {
+    private String storedIdentity(OmemoDevice device) throws Exception {
+        try { return org.jivesoftware.smackx.omemo.MonogramLegacyOmemoService.instance().records().getFingerprint(omemo.getOwnDevice(),device).toString(); }
+        catch(org.jivesoftware.smackx.omemo.exceptions.NoIdentityKeyException absent) { return null; }
+    }
+    private String ownIdentity() throws Exception { return org.jivesoftware.smackx.omemo.MonogramLegacyOmemoService.instance().records().getFingerprint(omemo.getOwnDevice()).toString(); }
+    private org.jivesoftware.smackx.omemo.element.OmemoBundleElement takeRecovered(OmemoDevice device) throws Exception {
+        String key=deviceKey(device);
+        synchronized(unavailableLock) { if(!recoveredBundles.containsKey(key)) return null; }
+        String identity=storedIdentity(device),own=ownIdentity();
+        synchronized(unavailableLock) {
+            RecoveredBundle ready=recoveredBundles.get(key);if(ready==null) return null;removeRecovered(key);
+            if(ready.failure!=unavailable.get(key) || ready.generation!=recoveryGeneration || closed || !ready.account.equals(connection.getUser())
+                    || !ready.ownIdentity.equals(own) || !Objects.equals(ready.identity,identity) || System.nanoTime()-ready.time>TimeUnit.MINUTES.toNanos(1)) return null;
+            return ready.bundle;
+        }
+    }
+    private boolean recoveryCurrent(String key,Unavailable failure,long generation,EntityFullJid account) {
+        return !closed && recoveryGeneration==generation && unavailable.get(key)==failure && connection.isAuthenticated() && account.equals(connection.getUser());
+    }
+    private void recoverUnavailable(Map<String,Unavailable> attempt) {
+        EntityFullJid account=connection.getUser();if(closed || account==null || !connection.isAuthenticated()) return;
+        synchronized(unavailableLock) {
+            List<Map.Entry<String,Unavailable>> candidates=new ArrayList<>(attempt.entrySet());
+            candidates.sort(Comparator.comparingLong(entry -> entry.getValue().lastQueued));
+            for(Map.Entry<String,Unavailable> entry:candidates) {
+                String key=entry.getKey();Unavailable failure=entry.getValue();long generation=recoveryGeneration;
+                if(!recoveryCurrent(key,failure,generation,account) || recovering.containsKey(key)) continue;
+                RecoveredBundle ready=recoveredBundles.get(key);if(ready!=null && System.nanoTime()-ready.time<TimeUnit.MINUTES.toNanos(1)) continue;
+                FutureTask<Void> task=new FutureTask<Void>(() -> { recoverUnavailable(key,failure,generation,account);return null; }) {
+                    @Override protected void done() { synchronized(unavailableLock) { if(recovering.get(key)==this) recovering.remove(key); } }
+                };
+                recovering.put(key,task);
+                try { recoveryLookups.execute(task);failure.lastQueued=++recoverySequence; }catch(RejectedExecutionException busy) { recovering.remove(key);task.cancel(false); }
+            }
+        }
+    }
+    private void recoverUnavailable(String key,Unavailable failure,long generation,EntityFullJid account) {
+        try {
+            int split=key.lastIndexOf(DEVICE_SEPARATOR);BareJid recipient=JidCreate.entityBareFrom(split<0?key:key.substring(0,split));
+            synchronized(unavailableLock) { if(!recoveryCurrent(key,failure,generation,account)) return; }
+            if(split<0) {
+                // Own-list refresh can publish and wait under Smack's manager lock; initialization restores it locally.
+                if(recipient.equals(account.asBareJid())) return;
+                Set<OmemoDevice> devices=deviceLookup.devices(recipient);
+                if(devices==null || devices.isEmpty() || devices.stream().anyMatch(device -> !device.getJid().equals(recipient) || device.getDeviceId()<=0)) return;
+                synchronized(unavailableLock) { if(recoveryCurrent(key,failure,generation,account)) { unavailable.remove(key);removeRecovered(key);changedUnavailable(); } }
+            } else {
+                OmemoDevice device=new OmemoDevice(recipient,Integer.parseInt(key.substring(split+DEVICE_SEPARATOR.length())));String own,identity;
+                synchronized(omemo) { own=ownIdentity();identity=storedIdentity(device); }
+                org.jivesoftware.smackx.omemo.element.OmemoBundleElement bundle=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.fetchBundle(connection,device);
+                if(bundle==null) return;int chars=bundle.toXML().length();if(chars>MAX_BUNDLE_CHARS || bundle.getPreKeys().isEmpty() || bundle.getPreKeys().size()>1000) return;
+                org.whispersystems.libsignal.IdentityKey publicIdentity=new org.whispersystems.libsignal.IdentityKey(bundle.getIdentityKey(),0);
+                if(!org.whispersystems.libsignal.ecc.Curve.verifySignature(publicIdentity.getPublicKey(),bundle.getSignedPreKey(),bundle.getSignedPreKeySignature())) return;
+                if(org.jivesoftware.smackx.omemo.MonogramLegacyOmemoService.instance().records().keyUtil().BUNDLE.bundles(bundle,device).isEmpty()) return;
+                synchronized(omemo) {
+                    if(!own.equals(ownIdentity()) || !Objects.equals(identity,storedIdentity(device))) return;
+                    synchronized(unavailableLock) {
+                        if(!recoveryCurrent(key,failure,generation,account)) return;removeRecovered(key);
+                        while(!recoveredBundles.isEmpty() && (recoveredBundles.size()>=MAX_RECOVERED || recoveredChars+chars>MAX_RECOVERED_CHARS)) removeRecovered(recoveredBundles.keySet().iterator().next());
+                        recoveredBundles.put(key,new RecoveredBundle(bundle,failure,account,generation,own,identity,chars));recoveredChars+=chars;
+                    }
+                }
+            }
+        }catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        catch(Exception ignored) { /* Failed recovery retains the remembered failure for the next post-send probe. */ }
+    }
+    private OmemoMessage.Sent encryptRecipients(Set<BareJid> recipients,String body,Map<String,String> skipped,boolean automatic,Map<String,Unavailable> failures) throws Exception {
         Map<BareJid,Set<OmemoDevice>> deviceLists=new LinkedHashMap<>();
         Set<OmemoDevice> devices=new HashSet<>();
         Set<BareJid> targets=new LinkedHashSet<>(recipients);
@@ -655,7 +787,7 @@ public final class XmppRooms implements AutoCloseable {
             if(automatic) {
                 Set<OmemoDevice> cached=omemo.getDevicesOf(recipient);
                 if(!cached.isEmpty()) { lists.put(recipient,new Lookup<>(cached,null));continue; }
-                try { checkUnavailable(recipient.toString()); }
+                try { checkUnavailable(recipient.toString(),failures); }
                 catch(Exception backoff) { lists.put(recipient,new Lookup<>(null,backoff));continue; }
             }
             if(recipient.equals(account.asBareJid())) {
@@ -668,9 +800,9 @@ public final class XmppRooms implements AutoCloseable {
         lists.putAll(parallelLookups(coldLists,bundleLookups,pendingBundles,lookupDeadline(),
                 () -> !closed && connection.isAuthenticated() && account.equals(connection.getUser()),(recipient,result) -> {
             if(automatic && result.error!=null && unavailable(result.error))
-                unavailable.putIfAbsent(recipient.toString(),new Unavailable(result.error));
+                rememberUnavailable(recipient.toString(),result.error,failures);
             else if(automatic && result.error==null && result.value.isEmpty())
-                unavailable.putIfAbsent(recipient.toString(),new Unavailable(new OmemoSendException(OmemoSendException.Reason.NO_DEVICES)));
+                rememberUnavailable(recipient.toString(),new OmemoSendException(OmemoSendException.Reason.NO_DEVICES),failures);
         }));
         for(BareJid recipient:targets) {
             if(closed) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
@@ -684,14 +816,14 @@ public final class XmppRooms implements AutoCloseable {
             }
             try {
                 if(result.error!=null) throw result.error;found=result.value;
-                unavailable.remove(key);
+                forgetUnavailable(key);
             } catch(Exception error) {
                 if(!unavailable(error)) throw error;
-                unavailable.putIfAbsent(key,new Unavailable(error));found=omemo.getDevicesOf(recipient);
-                if(found.isEmpty()) skipped.put(key,XmppRequestException.describe(error));
+                rememberUnavailable(key,error,failures);found=omemo.getDevicesOf(recipient);
+                if(found.isEmpty()) skipped.put(key,unavailableReason(error));
             }
             if(found.isEmpty() && !recipient.equals(account.asBareJid()) && !skipped.containsKey(key)) {
-                skipped.put(key,"No published OMEMO devices");unavailable.put(key,new Unavailable(new OmemoSendException(OmemoSendException.Reason.NO_DEVICES)));
+                skipped.put(key,"No published OMEMO devices");rememberUnavailable(key,new OmemoSendException(OmemoSendException.Reason.NO_DEVICES),failures);
             }
             deviceLists.put(recipient,new HashSet<>(found));devices.addAll(found);
         }
@@ -700,11 +832,14 @@ public final class XmppRooms implements AutoCloseable {
         Map<OmemoDevice,Lookup<org.jivesoftware.smackx.omemo.element.OmemoBundleElement>> prepared=new HashMap<>();
         synchronized(omemo) {
             for(OmemoDevice device:devices) {
-                if(automatic) {
-                    try { checkUnavailable(deviceKey(device)); }
+                boolean needs=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(omemo,device);
+                if(automatic && needs) {
+                    org.jivesoftware.smackx.omemo.element.OmemoBundleElement recovered=takeRecovered(device);
+                    if(recovered!=null) { prepared.put(device,new Lookup<>(recovered,null));continue; }
+                    try { checkUnavailable(deviceKey(device),failures); }
                     catch(Exception unavailable) { prepared.put(device,new Lookup<>(null,unavailable));continue; }
                 }
-                if(org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(omemo,device))
+                if(needs)
                     cold.put(device,() -> org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.fetchBundle(connection,device));
             }
         }
@@ -712,9 +847,8 @@ public final class XmppRooms implements AutoCloseable {
         long deadline=lookupDeadline();
         prepared.putAll(parallelLookups(cold,bundleLookups,pendingBundles,deadline,() -> !closed,(device,result) -> {
             if(!automatic) return;
-            if(result.error!=null && unavailable(result.error)) unavailable.putIfAbsent(deviceKey(device),new Unavailable(result.error));
-            else if(result.error==null && result.value==null) unavailable.putIfAbsent(deviceKey(device),new Unavailable(
-                    new org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException(device,new java.io.IOException("No published key bundle"))));
+            if(result.error!=null && unavailable(result.error)) rememberUnavailable(deviceKey(device),result.error,failures);
+            else if(result.error==null && result.value==null) rememberUnavailable(deviceKey(device),new org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException(device,new java.io.IOException("No published key bundle")),failures);
         }));
         synchronized(omemo) {
             if(closed) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
@@ -730,7 +864,7 @@ public final class XmppRooms implements AutoCloseable {
                     if(lookup!=null && lookup.error!=null && org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(omemo,device)) throw lookup.error;
                     if(org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(omemo,device) && lookup==null)
                         throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED,"An OMEMO session changed while preparing encryption; retry the message.");
-                    fingerprint=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.prepare(omemo,device,lookup==null ? null : lookup.value);unavailable.remove(key);
+                    fingerprint=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.prepare(omemo,device,lookup==null ? null : lookup.value);forgetUnavailable(key);
                 }
                 catch(Exception error) {
                     if(!automatic) {
@@ -743,7 +877,7 @@ public final class XmppRooms implements AutoCloseable {
                         throw error;
                     }
                     if(!unavailable(error)) throw error;
-                    unavailable.putIfAbsent(key,new Unavailable(error)); skipped.put(key,XmppRequestException.describe(error)); continue;
+                    rememberUnavailable(key,error,failures); skipped.put(key,unavailableReason(error)); continue;
                 }
                 if(automatic) {
                     if(!omemo.isDecidedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED,key);
@@ -824,7 +958,9 @@ public final class XmppRooms implements AutoCloseable {
         String stable=stableOccupants.contains(chat.getRoom()) ? occupantId(chat.getOccupantPresence(own)) : null;
         if(!own.toString().equals(originalSender) && (stable==null || !stable.equals(originalStable)))
             throw new IllegalArgumentException("The room cannot verify this message belongs to your current occupant");
-        Message wire=roomMessage(chat,jid,MessageRetraction.FALLBACK_BODY,encrypted,excluded,automatic,new TreeMap<>());
+        Map<String,Unavailable> failures=new LinkedHashMap<>();
+        try {
+        Message wire=roomMessage(chat,jid,MessageRetraction.FALLBACK_BODY,encrypted,excluded,automatic,new TreeMap<>(),failures);
         if(!own.equals(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))) throw new IllegalStateException("Room nickname changed before retraction");
         String id=UUID.randomUUID().toString();
         wire.setStanzaId(id); wire.addExtension(new OriginIdElement(id)); request.addMetadataTo(wire);
@@ -840,6 +976,7 @@ public final class XmppRooms implements AutoCloseable {
                 throw new java.io.IOException("Room did not confirm the requested retraction");
         }
         finally { collector.cancel(); }
+        } finally { if(automatic && encrypted) recoverUnavailable(failures); }
     }
     public XmppRoomMessage sendReactions(String jid,MessageReactions reactions) throws Exception {
         MultiUserChat chat=chat(jid);
@@ -850,5 +987,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { closed=true; for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
+    @Override public void close() { closed=true;cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
 }
