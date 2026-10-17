@@ -2,6 +2,8 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
+- [o] Reduce reaction work during message synchronization: reconcile aliases once per incoming message and once per distinct target reference, retain all late/ambiguous target handling, reuse the loaded message snapshot, skip profile/room work for empty updates and include only referenced message/reaction users in native reaction updates. Nine focused reaction persistence/native-update checks and Nix APK packaging pass. Real-phone sync/room latency and cross-client reaction display remain unverified; delivery pending.
+
 - [x] Build, publish and install [0.2.71](https://github.com/doromiert/monogram/releases/tag/v0.2.71) (72469, arm64, original signer) from `upload-cancellation-cleanup`, source `f7603c7f3`. Nix packaging and four focused progress/cancellation/encoding-notification checks pass; published APK checksum, size and source tag match. ADB confirms the version and foreground service, preserving account settings, two checked key files and all 549 pre-update message identities. Actual phone cancellation timing remains unverified.
 
 - [o] Clean up queued upload cancellation immediately: clear native progress and the matching encoding notification; keep late completion/progress from a cancelled worker from affecting a retry. Register queued uploads before dispatch and check cancellation before preparation/upload resumes. Four focused progress/cancellation/notification checks and Nix APK packaging pass. Published and installed 0.2.71; real-phone cancellation timing remains to verify.

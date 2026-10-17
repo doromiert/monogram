@@ -774,7 +774,7 @@ public final class MonogramController {
         java.util.Set<Integer> updated=new java.util.HashSet<>(); if(id!=0) updated.add(id);
         MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(dialog,updated);
         updated.addAll(corrections.edited); refreshReplies(dialog,updated);
-        publishReactions(dialog,store.reactions.reconcile(dialog));
+        publishReactions(dialog,java.util.Collections.emptySet());
         if(id!=0 && !store.hiddenMessage(id)) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
         if(!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.Update> updates=correctionUpdates(corrections,id);
@@ -1405,7 +1405,7 @@ public final class MonogramController {
         java.util.Set<Integer> updated = new java.util.HashSet<>(); if (id != 0) updated.add(id);
         MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, updated);
         updated.addAll(corrections.edited); refreshReplies(peer, updated);
-        publishReactions(peer,store.reactions.reconcile(peer));
+        publishReactions(peer,java.util.Collections.emptySet());
         ArrayList<TLRPC.Update> updates = correctionUpdates(corrections, id);
         if (id != 0 && !store.hiddenMessage(id)) {
             if(replaced.contains(id)) {
@@ -2265,18 +2265,25 @@ public final class MonogramController {
     public TLRPC.TL_messageReactions cachedReactions(int id) { return store.reactions.snapshot(id,self); }
     private Updates reactionUpdates(long peer,java.util.Collection<Integer> ids) {
         Updates result=new Updates(); result.date=now();
-        if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
-        else { result.users.add(store.user(peer,self)); result.users.add(ownUser()); }
+        java.util.Set<Long> users=new java.util.LinkedHashSet<>();
         for(int id:ids) {
             if(store.hiddenMessage(id)) continue;
-            if(store.getMessage(id,self).dialog_id!=peer) throw new IllegalArgumentException("Reaction target belongs to another conversation");
+            TLRPC.Message message=store.getMessage(id,self);
+            if(message.dialog_id!=peer) throw new IllegalArgumentException("Reaction target belongs to another conversation");
             TL_update.TL_updateMessageReactions update=new TL_update.TL_updateMessageReactions();
             update.peer=peer<0 ? new TLRPC.TL_peerChat() : new TLRPC.TL_peerUser();
             if(peer<0) update.peer.chat_id=-peer; else update.peer.user_id=peer;
-            update.msg_id=id; update.reactions=store.reactions.snapshot(id,self); result.updates.add(update);
+            update.msg_id=id; update.reactions=message.reactions; result.updates.add(update);
+            if(message.from_id!=null && message.from_id.user_id!=0) users.add(message.from_id.user_id);
+            for(TLRPC.MessagePeerReaction reaction:message.reactions.recent_reactions)
+                if(reaction.peer_id!=null && reaction.peer_id.user_id!=0) users.add(reaction.peer_id.user_id);
         }
         TL_update.TL_updateDeleteMessages hidden=new TL_update.TL_updateDeleteMessages(); hidden.messages.addAll(store.reactions.hidden(peer));
         if(!hidden.messages.isEmpty()) result.updates.add(hidden);
+        if(result.updates.isEmpty()) return result;
+        if(peer<0) result.chats.add(store.roomChat(peer)); else users.add(peer);
+        users.add(self);
+        for(long user:users) result.users.add(store.user(user,self));
         return result;
     }
     private void publishReactions(long peer,java.util.Collection<Integer> ids) {

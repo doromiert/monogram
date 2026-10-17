@@ -118,17 +118,31 @@ final class MonogramReactions {
     }
     /** Reconcile after a message/archive page or correction resolves new aliases. */
     Set<Integer> reconcile(long peer) {
-        Set<Integer> changed=new LinkedHashSet<>(); SQLiteDatabase db=store.getWritableDatabase();
-        try(Cursor c=db.rawQuery("SELECT id,target,message FROM reaction_events WHERE peer=?",new String[]{Long.toString(peer)})) {
-            while(c.moveToNext()) {
-                int target=resolve(peer,c.getString(1)),old=c.getInt(2);
-                if(target!=old) {
-                    db.execSQL("UPDATE reaction_events SET message=? WHERE id=?",new Object[]{target,c.getInt(0)});
-                    if(old!=0) changed.add(old); if(target!=0) changed.add(target);
+        // All updates to one referenced message share its resolution, regardless of actor or replay count.
+        synchronized(store) {
+            Set<Integer> changed=new LinkedHashSet<>(); SQLiteDatabase db=store.getWritableDatabase();
+            Map<String,Integer> resolved=new HashMap<>(),updates=new LinkedHashMap<>();
+            db.beginTransaction();
+            try {
+                try(Cursor c=db.rawQuery("SELECT target,message FROM reaction_events WHERE peer=? GROUP BY target,message",new String[]{Long.toString(peer)})) {
+                    while(c.moveToNext()) {
+                        String reference=c.getString(0); Integer target=resolved.get(reference);
+                        if(target==null) { target=resolve(peer,reference); resolved.put(reference,target); }
+                        int old=c.getInt(1);
+                        if(target!=old) {
+                            updates.put(reference,target);
+                            if(old!=0) changed.add(old); if(target!=0) changed.add(target);
+                        }
+                    }
                 }
+                for(Map.Entry<String,Integer> update:updates.entrySet())
+                    db.execSQL("UPDATE reaction_events SET message=? WHERE peer=? AND target=? AND message!=?",new Object[]{update.getValue(),peer,update.getKey(),update.getValue()});
+                db.setTransactionSuccessful();
+                return changed;
+            } finally {
+                db.endTransaction();
             }
         }
-        return changed;
     }
     Set<Integer> targets(long peer) {
         Set<Integer> ids=new LinkedHashSet<>();

@@ -13,8 +13,12 @@ import org.telegram.tgnet.*;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows=MonogramReactionsTest.Controller.class)
 public class MonogramReactionsTest {
+    @org.robolectric.annotation.Implements(value=MonogramController.class,isInAndroidSdk=false)
+    public static class Controller {
+        @org.robolectric.annotation.Implementation public void __constructor__(int account) {}
+    }
     Context context; MonogramStore store; long self,peer;
     @Before public void setup() {
         context=RuntimeEnvironment.getApplication(); ApplicationLoader.applicationContext=context;
@@ -125,6 +129,49 @@ public class MonogramReactionsTest {
         assertEquals(Collections.singletonMap("🔥",1),counts(original));
         assertTrue(store.getMessage(original,self).reactions.results.get(0).chosen);
         assertEquals(1,store.history(dialog,self,0,50).size());
+    }
+    @Test public void nativeReactionUpdatesIncludeOnlyReferencedUsersAndStillPublishRemovals() throws Exception {
+        String room="friends@conference.example.org";long dialog=store.room(room,"Alice");
+        for(int i=0;i<32;i++) store.roomUser(dialog,room+"/Unrelated"+i,"unrelated"+i+"@example.org",self);
+        MonogramController controller=org.robolectric.util.ReflectionHelpers.callConstructor(MonogramController.class,
+                org.robolectric.util.ReflectionHelpers.ClassParameter.from(int.class,0));
+        org.robolectric.util.ReflectionHelpers.setField(controller,"store",store);
+        org.robolectric.util.ReflectionHelpers.setField(controller,"self",self);
+        MonogramController.Updates unchanged=updates(controller,dialog,Collections.emptySet());
+        assertTrue(unchanged.updates.isEmpty());assertTrue(unchanged.users.isEmpty());assertTrue(unchanged.chats.isEmpty());
+        int original=store.saveRoom(MessageFixture.roomArchive(room,"Bob","original","room-id","mam-id","Hello",100000,false),self);
+        long sender=store.getMessage(original,self).from_id.user_id;
+        store.reactions.save(MessageFixture.disclosedReaction(room,"Carol","add","room-id","carol-stable","carol@example.org",Arrays.asList("👍","🔥"),200000),self);
+        MonogramController.Updates changed=updates(controller,dialog,Collections.singleton(original));
+        Set<Long> users=new LinkedHashSet<>();for(TLRPC.User user:changed.users) assertTrue(users.add(user.id));
+        assertEquals(new LinkedHashSet<>(Arrays.asList(self,sender,store.peer("carol@example.org"))),users);
+        assertEquals(1,changed.chats.size());assertEquals(1,changed.updates.size());
+        assertEquals(2,((org.telegram.tgnet.tl.TL_update.TL_updateMessageReactions)changed.updates.get(0)).reactions.results.size());
+        store.reactions.save(MessageFixture.disclosedReaction(room,"Carol","remove","room-id","carol-stable","carol@example.org",Collections.emptyList(),300000),self);
+        MonogramController.Updates removed=updates(controller,dialog,Collections.singleton(original));
+        assertEquals(1,removed.updates.size());
+        assertTrue(((org.telegram.tgnet.tl.TL_update.TL_updateMessageReactions)removed.updates.get(0)).reactions.results.isEmpty());
+    }
+    private MonogramController.Updates updates(MonogramController controller,long dialog,Collection<Integer> ids) {
+        return org.robolectric.util.ReflectionHelpers.callInstanceMethod(controller,"reactionUpdates",
+                org.robolectric.util.ReflectionHelpers.ClassParameter.from(long.class,dialog),
+                org.robolectric.util.ReflectionHelpers.ClassParameter.from(Collection.class,ids));
+    }
+    @Test public void groupedReconciliationMovesEveryEventWhenATargetAppearsOrBecomesAmbiguous() throws Exception {
+        for(int i=0;i<40;i++) react("early-"+i,"later",200000+i,false,false,i%2==0 ? "👍" : "🔥");
+        int original=text("later",false);
+        assertEquals(Collections.singleton(original),store.reactions.reconcile(peer));
+        assertEquals(Collections.singletonMap("🔥",1),counts(original));
+        assertTrue(store.reactions.reconcile(peer).isEmpty());
+        try(android.database.Cursor rows=store.getReadableDatabase().rawQuery("SELECT COUNT(*),MIN(message),MAX(message) FROM reaction_events WHERE peer=?",new String[]{Long.toString(peer)})) {
+            assertTrue(rows.moveToFirst());assertEquals(40,rows.getInt(0));assertEquals(original,rows.getInt(1));assertEquals(original,rows.getInt(2));
+        }
+        text("later",true);
+        assertEquals(Collections.singleton(original),store.reactions.reconcile(peer));
+        assertTrue(counts(original).isEmpty());
+        try(android.database.Cursor rows=store.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM reaction_events WHERE peer=? AND message!=0",new String[]{Long.toString(peer)})) {
+            assertTrue(rows.moveToFirst());assertEquals(0,rows.getInt(0));
+        }
     }
     @Test public void reactionWritesAndProfileWritesCompleteTogether() throws Exception {
         int original=text("concurrent-original",false);
