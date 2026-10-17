@@ -54,8 +54,26 @@ public final class XmppMessage {
         if (authenticated != null && (!java.util.Objects.equals(outer.getFrom(),authenticated.getFrom())
                 || !java.util.Objects.equals(outer.getTo(),authenticated.getTo()) || outer.getType() != authenticated.getType()))
             throw new IllegalArgumentException("Protected routing does not match its stanza");
-        return from(outer,authenticated,own,authenticated == null ? null : authenticated.getBody(),Encryption.OMEMO2,
+        XmppMessage message=from(outer,authenticated,own,authenticated == null ? null : authenticated.getBody(),Encryption.OMEMO2,
                 authenticated != null,archiveId,archiveTime);
+        if(message!=null) try {
+            Map<String,String> ids=new LinkedHashMap<>(message.ids);
+            ids.put("omemo2-cipher",XmppSession.hex(Omemo2IncomingJournal.envelope(outer).digest));
+            message=message.canonical(ids,message.timestamp,message.archived,message.markableId);
+        } catch(Exception malformedEnvelope) { /* Preserve the existing unreadable placeholder for unsupported ciphertext. */ }
+        return message;
+    }
+    XmppMessage canonical(Map<String,String> ids,long timestamp,boolean archived,String markableId) {
+        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup);
+    }
+    XmppMessage archived(String archiveId,Date time) {
+        if(archiveId==null && time==null) return this;
+        Map<String,String> merged=new LinkedHashMap<>(ids);
+        String cipher=merged.remove("omemo2-cipher");
+        if(archiveId!=null) merged.put("archive",archiveId);
+        if(cipher!=null) merged.put("omemo2-cipher",cipher);
+        return canonical(merged,time==null ? timestamp : time.getTime(),archived || archiveId!=null,markableId);
     }
     private static XmppMessage from(Message message, Message content, EntityBareJid own, String body, Encryption encryption,
                             boolean readable, String archiveId, Date archiveTime) {

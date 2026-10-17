@@ -97,6 +97,8 @@ public final class XmppSession implements AutoCloseable {
     private final Object modernInboxLock=new Object();
     private final java.util.ArrayDeque<Message> modernInbox=new java.util.ArrayDeque<>();
     private long modernInboxBytes;
+    private boolean journalBlocked;
+    private long incomingAccepted;
     private boolean modernSetup=true;
 
     /** Android may change networks while the old TCP socket still appears authenticated. */
@@ -310,26 +312,31 @@ public final class XmppSession implements AutoCloseable {
         queueModern(stanza);
     }
     private long beginModernSetup() {
-        synchronized(modernInboxLock) { modernSetup=true;return lifecycle.incrementAndGet(); }
+        synchronized(modernInboxLock) { modernSetup=true;modernInboxLock.notifyAll();return lifecycle.incrementAndGet(); }
     }
     private void finishModernSetup(long generation) {
         synchronized(modernInboxLock) {
             if(closed || lifecycle.get()!=generation || !connection.isAuthenticated()) return;
-            modernSetup=false;
-            while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),false);
-            modernInboxBytes=0;
+            modernSetup=false;modernInboxLock.notifyAll();
+            try { crypto.execute(this::recoverIncoming); }
+            catch(java.util.concurrent.RejectedExecutionException stopped) { /* Session closed during setup completion. */ }
+            if(journalBlocked) retryModernInbox();
+            else {
+                while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),false);
+                modernInboxBytes=0;
+            }
         }
     }
     private void queueModern(Message stanza) {
         java.io.IOException overflow=null;
         synchronized(modernInboxLock) {
             if(closed) return;
-            if(!modernSetup) { decryptModern(stanza,false);return; }
+            if(!modernSetup && !journalBlocked) { decryptModern(stanza,false);return; }
             long bytes=2L*stanza.toXML().length();
             if(modernInbox.size()<MAX_MODERN_SETUP_MESSAGES && bytes<=MAX_MODERN_SETUP_BYTES-modernInboxBytes) {
                 modernInbox.addLast(stanza);modernInboxBytes+=bytes;return;
             }
-            overflow=new java.io.IOException("OMEMO2 setup inbox exceeded its bounded capacity; reconnect and recover history");
+            overflow=new java.io.IOException("OMEMO2 incoming inbox exceeded its bounded capacity; reconnect and recover history");
             modernFailure=overflow;modernSetup=false;
             // Preserve every provisional ID as unreadable; do not consume ratchets or acknowledge overflowed data.
             while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),true);
@@ -343,7 +350,19 @@ public final class XmppSession implements AutoCloseable {
             if (closed || connection.getUser() == null) return;
             XmppOmemo2.Received received = null;
             Exception failed=null;
+            long revision;
+            synchronized(modernInboxLock) { revision=incomingAccepted; }
             try { if (!setupOverflow && modernAvailable()) received = modern.receive(stanza); }
+            catch (Omemo2IncomingJournal.FullException full) {
+                boolean recover;
+                synchronized(modernInboxLock) {
+                    recover=!journalBlocked;journalBlocked=true;
+                }
+                queueModern(stanza);
+                if(recover) recoverIncoming();
+                synchronized(modernInboxLock) { if(revision!=incomingAccepted) retryModernInbox(); }
+                return;
+            }
             catch (Exception error) { failed=error; }
             if(received==null && !setupOverflow) {
                 boolean settingUp;
@@ -351,27 +370,60 @@ public final class XmppSession implements AutoCloseable {
                 if(settingUp) { queueModern(stanza);return; }
             }
             if(failed!=null) modernFailure=failed;
-            XmppMessage message = XmppMessage.modern(stanza,received == null ? null : received.content,
-                    connection.getUser().asEntityBareJid(),null,null);
-            if(message!=null && received!=null) message=message.withSenderFingerprint(received.senderFingerprint);
-            final XmppOmemo2.Received decoded = received;
-            java.util.concurrent.atomic.AtomicBoolean accepted = new java.util.concurrent.atomic.AtomicBoolean();
-            if (message != null && modernPayload(stanza)) listener.message(message,() -> { if (accepted.compareAndSet(false,true)) afterModern(decoded); });
-            else afterModern(decoded);
+            XmppMessage message = received==null ? XmppMessage.modern(stanza,null,
+                    connection.getUser().asEntityBareJid(),null,null) : received.message;
+            if (message != null && modernPayload(stanza)) deliverDecodedModern(message,received);
+            else afterModern(received);
         });
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) { /* The session closed before dispatch. */ }
     }
+    private void deliverDecodedModern(XmppMessage message,XmppOmemo2.Received received) {
+        java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
+        listener.message(message,() -> { if(accepted.compareAndSet(false,true)) afterModern(received); });
+    }
+    /** Local recovery also runs before connecting: authenticated plaintext must not depend on network availability. */
+    public void recoverIncoming() {
+        if(closed || modern==null) return;
+        try {
+            for(XmppOmemo2.Received pending:modern.pendingIncoming()) {
+                if(closed) return;
+                if(pending.message!=null) deliverDecodedModern(pending.message,pending);else afterModern(pending);
+            }
+        } catch(Exception failure) { modernFailure=failure; }
+    }
     private void afterModern(XmppOmemo2.Received received) {
-        if (received == null || closed) return;
+        if (received == null || modern==null) return;
+        try { if(!modern.acceptIncoming(received)) return; }
+        catch(Exception failure) { modernFailure=failure;return; }
+        if(received.message!=null) incomingCapacityChanged();
+        if(closed) return;
         try {
             crypto.execute(() -> {
                 if (closed || !connection.isAuthenticated()) return;
                 try {
                     if (received.acknowledgement != null) connection.sendStanza(received.acknowledgement);
+                    modern.acknowledgeIncoming(received);
+                    incomingCapacityChanged();
                     if (received.replenish) modern.replenish();
                 } catch (Exception error) { modernFailure = error; }
             });
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) { /* The session closed after acceptance. */ }
+    }
+    private void incomingCapacityChanged() {
+        synchronized(modernInboxLock) {
+            incomingAccepted++;modernInboxLock.notifyAll();
+            retryModernInbox();
+        }
+    }
+    private void retryModernInbox() {
+        synchronized(modernInboxLock) {
+            if(closed || modernSetup || !journalBlocked) return;
+            if(!modernInbox.isEmpty()) {
+                Message stanza=modernInbox.removeFirst();modernInboxBytes-=2L*stanza.toXML().length();
+                decryptModern(stanza,false);
+            }
+            if(modernInbox.isEmpty()) journalBlocked=false;
+        }
     }
     public boolean modernAvailable() { return modern != null && modern.ready(); }
     public Exception modernFailure() { return modernFailure; }
@@ -418,7 +470,45 @@ public final class XmppSession implements AutoCloseable {
         if (after == null || after.isEmpty()) throw new IllegalArgumentException("Missing archive cursor");
         return archive(peer, null, after, limit);
     }
+    private void awaitModernSetup() throws Exception {
+        if(modern==null) return;
+        long timeout=Math.max(1000,Math.min(60000,connection.getReplyTimeout()*2));
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeout);
+        synchronized(modernInboxLock) {
+            while(modernSetup) {
+                if(closed || !connection.isAuthenticated()) throw new java.io.IOException("Archive interrupted by connection setup");
+                long remaining=deadline-System.nanoTime();
+                if(remaining<=0) throw new java.io.IOException("Archive is waiting for encryption setup");
+                java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(modernInboxLock,remaining);
+            }
+        }
+    }
+    private boolean interruptedModernSetup(long generation) {
+        synchronized(modernInboxLock) { return closed || modernSetup || lifecycle.get()!=generation || !connection.isAuthenticated(); }
+    }
+    private XmppOmemo2.Received receiveArchivedModern(Message stanza,Date time,String archiveId,long generation) throws Exception {
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(
+                Math.max(1000,Math.min(60000,connection.getReplyTimeout()*2)));
+        while(true) {
+            long revision;
+            synchronized(modernInboxLock) { revision=incomingAccepted; }
+            try { return modernAvailable() ? modern.receive(stanza,time,archiveId) : null; }
+            catch(Omemo2IncomingJournal.FullException full) {
+                // Archive decoding runs outside crypto: storage and ACK work must be able to free capacity.
+                recoverIncoming();
+                synchronized(modernInboxLock) {
+                    if(interruptedModernSetup(generation)) throw new java.io.IOException("Archive interrupted by encryption setup",full);
+                    long remaining=deadline-System.nanoTime();
+                    if(remaining<=0) throw full;
+                    if(revision==incomingAccepted) java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(modernInboxLock,
+                            Math.min(remaining,java.util.concurrent.TimeUnit.SECONDS.toNanos(1)));
+                }
+            }
+        }
+    }
     private ArchivePage archive(String peer, String before, String after, int limit) throws Exception {
+        awaitModernSetup();
+        EntityBareJid own=connection.getUser().asEntityBareJid();
         MamManager.MamQueryArgs.Builder args = MamManager.MamQueryArgs.builder()
                 .setResultPageSizeTo(Math.min(Math.max(limit, 1), 100));
         if (peer != null) args.limitResultsToJid(JidCreate.entityBareFrom(peer));
@@ -432,16 +522,20 @@ public final class XmppSession implements AutoCloseable {
             Message stanza = forwarded.getForwardedStanza();
             if (rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) continue;
             if (forwarded.getDelayInformation() == null) throw new java.io.IOException("Archive result has no timestamp");
-            EntityBareJid own = connection.getUser().asEntityBareJid();
             Date time = forwarded.getDelayInformation().getStamp();
             if (isModern(stanza)) {
                 if (!modernPayload(stanza) || XmppMessage.modern(stanza,null,own,result.getId(),time) == null) continue;
+                awaitModernSetup();long generation=lifecycle.get();
                 XmppOmemo2.Received received = null;
-                try { if (modernAvailable()) received = modern.receive(stanza,time); }
+                try { received = receiveArchivedModern(stanza,time,result.getId(),generation); }
+                catch (Omemo2IncomingJournal.FullException full) { modernFailure=full;throw full; }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
-                catch (Exception unavailable) { modernFailure = unavailable; }
-                XmppMessage message = XmppMessage.modern(stanza,received == null ? null : received.content,own,result.getId(),time);
-                if(message!=null && received!=null) message=message.withSenderFingerprint(received.senderFingerprint);
+                catch (Exception unavailable) {
+                    modernFailure = unavailable;
+                    if(interruptedModernSetup(generation)) throw new java.io.IOException("Archive interrupted by encryption setup",unavailable);
+                }
+                if(received==null && interruptedModernSetup(generation)) throw new java.io.IOException("Archive interrupted by encryption setup");
+                XmppMessage message = received==null ? XmppMessage.modern(stanza,null,own,result.getId(),time) : received.message;
                 if (message != null) messages.add(message);
                 final XmppOmemo2.Received decoded = received; accepted.add(() -> afterModern(decoded));
                 continue;
@@ -756,7 +850,7 @@ public final class XmppSession implements AutoCloseable {
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
-        synchronized(modernInboxLock) { modernInbox.clear();modernInboxBytes=0; }
+        synchronized(modernInboxLock) { modernInbox.clear();modernInboxBytes=0;modernInboxLock.notifyAll(); }
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
         chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);

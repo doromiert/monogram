@@ -127,10 +127,11 @@ class ModernSessionIntegrationTest {
                         catch(InterruptedException interrupted) { Thread.currentThread().interrupt();throw new AssertionError(interrupted); }
                     }
                 },stanza -> stanza instanceof org.jivesoftware.smack.packet.IQ);
-                java.util.concurrent.ExecutorService connector=java.util.concurrent.Executors.newSingleThreadExecutor();
+                java.util.concurrent.ExecutorService connector=java.util.concurrent.Executors.newFixedThreadPool(2);
                 try {
                     java.util.concurrent.Future<?> connected=connector.submit(() -> { try { bob.connect(); } catch(Exception error) { throw new RuntimeException(error); } });
                     assertTrue(setupEntered.await(10,TimeUnit.SECONDS));assertFalse(bob.modernAvailable());
+                    java.util.concurrent.Future<XmppSession.ArchivePage> archive=connector.submit(() -> bob.archiveBefore("sessionalice@localhost",null,10));
                     BlockingQueue<Message> controls=new LinkedBlockingQueue<>();
                     alice.connection().addAsyncStanzaListener(stanza -> controls.add((Message)stanza),stanza -> stanza instanceof Message
                             && stanza.hasExtension("encrypted",XmppOmemo2.NS)
@@ -140,14 +141,101 @@ class ModernSessionIntegrationTest {
                     alice.connection().sendStanza(alice.modern().encrypt(clear));
                     XmppMessage pending=b.pending.poll(5,TimeUnit.SECONDS);assertNotNull(pending);assertEquals(clear.getStanzaId(),pending.ids.get("stanza"));assertFalse(pending.readable);
                     assertNull(b.messages.poll(300,TimeUnit.MILLISECONDS),"Setup in progress must not publish a terminal unreadable result");
+                    assertFalse(archive.isDone(),"MAM decoding must wait for encryption setup outside the crypto executor");
                     assertNull(controls.poll(100,TimeUnit.MILLISECONDS));
                     releaseSetup.countDown();connected.get(10,TimeUnit.SECONDS);
                     XmppMessage delivered=b.next();assertTrue(delivered.readable,() -> "Modern setup drain failed: "+bob.modernFailure());
                     assertEquals(clear.getStanzaId(),delivered.ids.get("stanza"));assertEquals(clear.getBody(),delivered.body);
+                    XmppSession.ArchivePage cachedPage=archive.get(15,TimeUnit.SECONDS);
+                    XmppMessage cached=cachedPage.messages.stream().filter(message -> clear.getStanzaId().equals(message.ids.get("stanza"))).findFirst().orElseThrow(AssertionError::new);
+                    assertTrue(cached.readable);assertTrue(cached.archived);assertEquals(delivered.ids.get("omemo2-cipher"),cached.ids.get("omemo2-cipher"));
                     assertNull(controls.poll(200,TimeUnit.MILLISECONDS),"Queued decrypt must still wait for durable acceptance");
-                    b.store();assertNotNull(controls.poll(10,TimeUnit.SECONDS));
+                    b.store();cachedPage.stored();assertNotNull(controls.poll(10,TimeUnit.SECONDS));
                 } finally { releaseSetup.countDown();connector.shutdownNow();assertTrue(connector.awaitTermination(10,TimeUnit.SECONDS)); }
             }
+        }
+    }
+    @Test void committedIncomingContentRecoversOfflineAndAcceptanceAfterCloseReplaysOnlyStableAckOnNewResource() throws Exception {
+        Inbox a=new Inbox(),b=new Inbox(),recovery=new Inbox();
+        try(XmppSession alice=session("sessionalice",8811,true,a);XmppSession bob=session("sessionbob",8812,true,b)) {
+            alice.connect();bob.connect();trust(alice,"sessionbob@localhost");trust(bob,"sessionalice@localhost");trust(alice,"sessionalice@localhost");
+            BlockingQueue<Message> controls=new LinkedBlockingQueue<>();
+            alice.connection().addAsyncStanzaListener(stanza -> controls.add((Message)stanza),stanza -> stanza instanceof Message
+                    && stanza.hasExtension("encrypted",XmppOmemo2.NS)
+                    && ((StandardExtensionElement)stanza.getExtension("encrypted",XmppOmemo2.NS)).getFirstElement("payload",XmppOmemo2.NS)==null);
+            java.util.concurrent.atomic.AtomicReference<Message> wire=new java.util.concurrent.atomic.AtomicReference<>();
+            alice.connection().addStanzaInterceptor(stanza -> wire.set((Message)stanza),stanza -> stanza instanceof Message
+                    && stanza.hasExtension("encrypted",XmppOmemo2.NS) && ((StandardExtensionElement)stanza.getExtension("encrypted",XmppOmemo2.NS)).getFirstElement("payload",XmppOmemo2.NS)!=null);
+            MessageMarkup markup=formatted("Journal survives 😀");
+            String id=alice.send("sessionbob@localhost",markup.body,XmppMessage.Encryption.OMEMO2,null,markup);
+            XmppMessage delivered=b.next();assertTrue(delivered.readable);assertEquals(id,delivered.ids.get("stanza"));
+            Runnable acceptedAfterClose=b.accepted.poll(5,TimeUnit.SECONDS);assertNotNull(acceptedAfterClose);
+            // Smack omits the client's outbound from; a real MAM stanza has the server-supplied route.
+            Message mamWire=new Message(wire.get());mamWire.setFrom(JidCreate.from(delivered.sender));mamWire.setTo(JidCreate.entityBareFrom("sessionbob@localhost"));
+            XmppOmemo2.Received mamRetry=bob.modern().receive(mamWire,new java.util.Date(delivered.timestamp),"journal-mam");
+            assertEquals(delivered.body,mamRetry.message.body);assertEquals("journal-mam",mamRetry.message.ids.get("archive"));
+            assertEquals(delivered.ids.get("omemo2-cipher"),mamRetry.message.ids.get("omemo2-cipher"));
+            Omemo2Device durableDevice=bob.modern().device;bob.close();
+            File state=new File(System.getenv("MONOGRAM_IT_STATE"));
+            try(XmppSession reopened=new XmppSession(new Account("sessionbob@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Journal-Recovered"),
+                    "monogram-test",8812,new File(state,"journal-recovery.trust"),durableDevice,recovery)) {
+                reopened.recoverIncoming();
+                XmppMessage restored=recovery.next();assertEquals(delivered.ids,restored.ids);assertEquals(delivered.timestamp,restored.timestamp);
+                assertEquals(delivered.body,restored.body);assertEquals("Journal survives 😀",restored.markup.display().body);
+                assertFalse(reopened.connection().isConnected(),"Recovery must not require network authentication");
+                assertNull(controls.poll(200,TimeUnit.MILLISECONDS));
+                acceptedAfterClose.run();
+                XmppOmemo2.Received ackOnly=reopened.modern().pendingIncoming().get(0);assertNull(ackOnly.message);assertNull(ackOnly.content);
+                String ackId=ackOnly.acknowledgement.getStanzaId();assertNotNull(ackId);
+                reopened.recoverIncoming();assertNull(recovery.messages.poll(200,TimeUnit.MILLISECONDS),"ACK-only replay must not create another user message");
+                reopened.connect();
+                Message ack=controls.poll(10,TimeUnit.SECONDS);assertNotNull(ack);assertEquals(ackId,ack.getStanzaId());
+                assertEquals("sessionbob@localhost",ack.getFrom().asBareJid().toString());
+                long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+                while(!reopened.modern().pendingIncoming().isEmpty() && System.nanoTime()<deadline) Thread.sleep(20);
+                assertTrue(reopened.modern().pendingIncoming().isEmpty());
+            }
+        }
+    }
+    @Test void fullIncomingJournalRetainsLiveCiphertextUntilStorageAcceptanceReleasesCapacity() throws Exception {
+        Inbox a=new Inbox(),b=new Inbox();
+        try(XmppSession alice=session("sessionalice",9911,true,a);XmppSession bob=session("sessionbob",9912,true,b)) {
+            alice.connect();bob.connect();trust(alice,"sessionbob@localhost");trust(bob,"sessionalice@localhost");trust(alice,"sessionalice@localhost");
+            java.util.Set<String> sent=new java.util.HashSet<>();
+            for(int i=0;i<=Omemo2IncomingJournal.MAX_ENTRIES;i++)
+                sent.add(alice.send("sessionbob@localhost","Backpressure "+i,XmppMessage.Encryption.OMEMO2,null));
+            java.util.Set<String> delivered=new java.util.HashSet<>();long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(30);
+            while(delivered.size()<Omemo2IncomingJournal.MAX_ENTRIES && System.nanoTime()<deadline) {
+                XmppMessage message=b.messages.poll(1,TimeUnit.SECONDS);if(message==null) continue;
+                assertTrue(message.readable,() -> "Capacity must not turn ciphertext into terminal unreadable: "+bob.modernFailure());
+                assertTrue(sent.contains(message.ids.get("stanza")));delivered.add(message.ids.get("stanza"));
+            }
+            assertEquals(Omemo2IncomingJournal.MAX_ENTRIES,delivered.size());
+            java.util.Set<String> queued=new java.util.HashSet<>(sent);queued.removeAll(delivered);assertEquals(1,queued.size());String waiting=queued.iterator().next();
+            assertEquals(Omemo2IncomingJournal.MAX_ENTRIES,bob.modern().pendingIncoming().size());
+            java.lang.reflect.Field blockedField=XmppSession.class.getDeclaredField("journalBlocked"),lockField=XmppSession.class.getDeclaredField("modernInboxLock");
+            blockedField.setAccessible(true);lockField.setAccessible(true);Object lock=lockField.get(bob);boolean blocked=false;
+            deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+            while(System.nanoTime()<deadline) {
+                synchronized(lock) { blocked=blockedField.getBoolean(bob); }
+                if(blocked) break;Thread.sleep(20);
+            }
+            assertTrue(blocked,"The extra ciphertext must actually encounter FullException before capacity is released");
+            java.lang.reflect.Method beginSetup=XmppSession.class.getDeclaredMethod("beginModernSetup"),finishSetup=XmppSession.class.getDeclaredMethod("finishModernSetup",long.class);
+            beginSetup.setAccessible(true);finishSetup.setAccessible(true);long generation=(Long)beginSetup.invoke(bob);
+            for(int i=0;i<Omemo2IncomingJournal.MAX_ENTRIES;i++) b.store();
+            deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(30);
+            while(!bob.modern().pendingIncoming().isEmpty() && System.nanoTime()<deadline) Thread.sleep(20);
+            assertTrue(bob.modern().pendingIncoming().isEmpty(),"All original content and ACKs must leave the journal while setup is gated");
+            synchronized(lock) { assertTrue(blockedField.getBoolean(bob)); }
+            finishSetup.invoke(bob,generation); // No later storage callback is available to wake the queued ciphertext.
+            deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(30);
+            while(!delivered.contains(waiting) && System.nanoTime()<deadline) {
+                XmppMessage message=b.messages.poll(1,TimeUnit.SECONDS);if(message==null) continue;
+                assertTrue(message.readable,() -> "Queued ciphertext must survive journal capacity: "+bob.modernFailure());
+                assertTrue(sent.contains(message.ids.get("stanza")));delivered.add(message.ids.get("stanza"));
+            }
+            assertEquals(sent,delivered);
         }
     }
 }

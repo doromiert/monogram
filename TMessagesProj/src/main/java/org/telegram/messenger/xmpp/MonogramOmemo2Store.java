@@ -7,6 +7,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import com.negzero.monogram.xmpp.Omemo2Records;
+import com.negzero.monogram.xmpp.Omemo2IncomingJournal;
 import java.util.Arrays;
 import org.jxmpp.jid.impl.JidCreate;
 import org.telegram.messenger.ApplicationLoader;
@@ -59,6 +60,21 @@ final class MonogramOmemo2Store extends SQLiteOpenHelper {
             db.setTransactionSuccessful(); return selected;
         } finally { db.endTransaction(); }
     }
+    /** Revoke pending decrypted data without changing identities, trust, or the registered device. */
+    void clearIncoming(String account) throws Exception {
+        String owner=owner(account);
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try {
+            java.util.ArrayList<Integer> devices=new java.util.ArrayList<>();
+            try(Cursor rows=db.rawQuery("SELECT device FROM records WHERE owner=? UNION SELECT device FROM own_devices WHERE owner=?",new String[]{owner,owner})) {
+                while(rows.moveToNext()) devices.add(rows.getInt(0));
+            }
+            for(int device:devices) try(Omemo2Records tx=begin(owner,device)) {
+                Omemo2IncomingJournal.rotate(tx);tx.commit();
+            }
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
     Omemo2Records begin(String account, int device) throws Exception {
         if (device <= 0) throw new IllegalArgumentException("Invalid OMEMO2 device");
         String owner = owner(account);
@@ -71,9 +87,11 @@ final class MonogramOmemo2Store extends SQLiteOpenHelper {
             }
             String[] key(int kind, String peer, int id) throws Exception {
                 active();
-                if (kind < IDENTITY || kind > REJECTED || peer == null) throw new IllegalArgumentException("Invalid OMEMO2 record");
+                if (kind < IDENTITY || kind > INCOMING || peer == null) throw new IllegalArgumentException("Invalid OMEMO2 record");
                 if (kind >= SESSION && kind <= TRUSTED || kind == SEEN || kind == DEVICES || kind == REJECTED) {
                     if ((kind == DEVICES ? id != 0 : id <= 0) || !JidCreate.entityBareFrom(peer).toString().equals(peer)) throw new IllegalArgumentException("Invalid OMEMO2 peer/device");
+                } else if(kind==INCOMING) {
+                    if(!peer.isEmpty() || id<0 || id>Omemo2IncomingJournal.MAX_ENTRIES) throw new IllegalArgumentException("Invalid incoming OMEMO2 record");
                 } else if (!peer.isEmpty() || kind != IDENTITY && kind != META && id == 0) throw new IllegalArgumentException("Invalid local OMEMO2 record");
                 return new String[]{owner, Integer.toString(device), Integer.toString(kind), peer, Integer.toString(id)};
             }
@@ -93,7 +111,8 @@ final class MonogramOmemo2Store extends SQLiteOpenHelper {
             }
             @Override public void save(int kind, String peer, int id, byte[] value) throws Exception {
                 String[] args = key(kind, peer, id);
-                if (value != null && (value.length == 0 || value.length > 1024 * 1024 || kind == TRUSTED && value.length != 32)) throw new IllegalArgumentException("Invalid OMEMO2 record size");
+                int limit=kind==INCOMING ? Omemo2IncomingJournal.MAX_ENTRY_BYTES : 1024*1024;
+                if (value != null && (value.length == 0 || value.length > limit || kind == TRUSTED && value.length != 32)) throw new IllegalArgumentException("Invalid OMEMO2 record size");
                 if (kind == TRUSTED && !Arrays.equals(load(kind, peer, id), value)) {
                     db.delete("records", "owner=? AND device=? AND peer=? AND id=? AND kind IN (?,?)",
                             new String[]{owner, Integer.toString(device), peer, Integer.toString(id), Integer.toString(SESSION), Integer.toString(SESSION_IDENTITY)});

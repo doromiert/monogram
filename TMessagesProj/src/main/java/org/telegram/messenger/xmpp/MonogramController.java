@@ -582,6 +582,7 @@ public final class MonogramController {
         });
         for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
         connecting.chatStates.setEnabled(typingEnabled());
+        connecting.recoverIncoming();
         connecting.connect();
         synchronized(displayedSettingsLock) {
             session = connecting;
@@ -917,7 +918,7 @@ public final class MonogramController {
     private static final class ArchiveTask {
         final long peer;
         boolean backwards=true,resetAttempted,complete;
-        int loaded,desired=3;
+        int loaded,desired=3,capacityRetries;
         String before;
         ArchiveTask(long peer) { this.peer = peer; }
     }
@@ -1124,7 +1125,9 @@ public final class MonogramController {
     }
     private void archiveFailed(ArchiveSync sync, ArchiveTask task, Exception error) {
         sync.running=false;
-        if (!task.resetAttempted && error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
+        if(error instanceof com.negzero.monogram.xmpp.Omemo2IncomingJournal.FullException && task.capacityRetries++==0) {
+            sync.tasks.addLast(task);
+        } else if (!task.resetAttempted && error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
                 && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) error).getStanzaError().getCondition()
                 == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
             task.resetAttempted=true; task.before=null; task.loaded=0;
@@ -1275,6 +1278,7 @@ public final class MonogramController {
         });
     }
     public void logout() {
+        final String departing=accountJid();
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         synchronized(displayedSettingsLock) {
             displayedPrivacyEpoch++;displayedReady=false;
@@ -1295,6 +1299,8 @@ public final class MonogramController {
             typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
             if (session != null) { session.close(); session = null; }
             sessionEpoch++; archiveSync = null;
+            try { if(!departing.isEmpty()) modernStore.clearIncoming(departing); }
+            catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
             automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
             store.clear(); self = 0;
@@ -1509,7 +1515,12 @@ public final class MonogramController {
         worker.execute(() -> {
             // A reconnect may replace the session after decryption consumed a ratchet key.
             if(!sameAccount(owner,jid)) return;
-            incoming(message);
+            if(message.archived) {
+                long peer=store.peer(message.peer.toString());
+                java.util.Set<Integer> updated=new java.util.HashSet<>();int id=store.save(message);
+                if(id!=0) updated.add(id);
+                publishArchiveChanges(new ArchiveSync(null,owner,jid),java.util.Collections.singleton(peer),updated,id!=0);
+            } else incoming(message);
             if(accepted!=null) accepted.run();
         });
     }

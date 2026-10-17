@@ -31,6 +31,7 @@ public final class XmppOmemo2 implements AutoCloseable {
     private static final String PUBSUB = "http://jabber.org/protocol/pubsub", FORMS = "jabber:x:data";
     private final XMPPConnection connection;
     public final Omemo2Device device;
+    private final Omemo2IncomingJournal incoming;
     private final SecureRandom random = new SecureRandom();
     // Use Map's keySet signature: Android desugaring lacks ConcurrentHashMap's covariant overload.
     private final Map<String,Omemo2Bundle> bundles = new ConcurrentHashMap<>();
@@ -43,8 +44,9 @@ public final class XmppOmemo2 implements AutoCloseable {
     private final PepListener listener;
     private volatile boolean ready, closed;
     private volatile Exception lastError;
-    public XmppOmemo2(XMPPConnection connection, Omemo2Device device, Consumer<String> changed) {
+    public XmppOmemo2(XMPPConnection connection, Omemo2Device device, Consumer<String> changed) throws Exception {
         this.connection = connection; this.device = device; this.changed = changed;
+        incoming=new Omemo2IncomingJournal(device);
         FileShare.initialize(); MessageCorrection.initialize();
         ProviderManager.addExtensionProvider("encrypted",NS,StandardExtensionElementProvider.INSTANCE);
         listener = (from,event,message) -> {
@@ -222,15 +224,24 @@ public final class XmppOmemo2 implements AutoCloseable {
     }
     public static final class Received {
         public final Message content, acknowledgement;
+        public final XmppMessage message;
+        public final Omemo2IncomingJournal.Token token;
         public final boolean replenish;
         public final String senderFingerprint;
-        Received(Message content, Message acknowledgement, boolean replenish,String senderFingerprint) { this.content = content; this.acknowledgement = acknowledgement; this.replenish = replenish; this.senderFingerprint=senderFingerprint; }
+        Received(Message content, Message acknowledgement, boolean replenish,String senderFingerprint,XmppMessage message,Omemo2IncomingJournal.Token token) {
+            this.content = content; this.acknowledgement = acknowledgement; this.replenish = replenish; this.senderFingerprint=senderFingerprint;this.message=message;this.token=token;
+        }
     }
+    public List<Received> pendingIncoming() throws Exception { return incoming.pending(); }
+    public boolean acceptIncoming(Received received) throws Exception { return received==null || incoming.accept(received.token); }
+    public void acknowledgeIncoming(Received received) throws Exception { if(received!=null) incoming.acknowledge(received.token); }
     /** Persist content before sending its optional acknowledgement or refreshing public bundles. */
-    public Received receive(Message outer) throws Exception { return receive(outer,null); }
-    public Received receive(Message outer, java.util.Date archiveTime) throws Exception {
+    public Received receive(Message outer) throws Exception { return receive(outer,null,null); }
+    public Received receive(Message outer, java.util.Date archiveTime) throws Exception { return receive(outer,archiveTime,null); }
+    public Received receive(Message outer, java.util.Date archiveTime,String archiveId) throws Exception {
         requireReady(); Omemo2Payload.direct(outer);
         if (!outer.getFrom().asBareJid().toString().equals(device.jid) && !outer.getTo().asBareJid().toString().equals(device.jid)) throw Omemo2Bundle.invalid();
+        Omemo2IncomingJournal.Envelope envelope=Omemo2IncomingJournal.envelope(outer);
         List<ExtensionElement> encrypted = outer.getExtensions("encrypted",NS);
         if (encrypted.size() != 1 || !(encrypted.get(0) instanceof StandardExtensionElement)) throw Omemo2Bundle.invalid();
         StandardExtensionElement root = (StandardExtensionElement) encrypted.get(0);
@@ -250,12 +261,14 @@ public final class XmppOmemo2 implements AutoCloseable {
         if (selected == null) throw new java.security.GeneralSecurityException("OMEMO2 message is not addressed to this device");
         String flag = selected.getAttributeValue("kex"); boolean preKey = "true".equals(flag) || "1".equals(flag);
         if (flag != null && !preKey && !flag.equals("false") && !flag.equals("0")) throw Omemo2Bundle.invalid();
-        byte[] key = decode(selected.getText(),16384); if (preKey) bundle(peer,sender,true);
-        List<StandardExtensionElement> payloads = root.getElements("payload",NS);
-        if (payloads != null && payloads.size() > 1) throw Omemo2Bundle.invalid();
-        StandardExtensionElement payload = payloads == null || payloads.isEmpty() ? null : payloads.get(0);
-        byte[] ciphertext = payload == null ? null : decode(payload.getText(),Omemo2Payload.MAX+16);
+        byte[] key = decode(selected.getText(),16384);
+        try(Omemo2Records tx=device.records.begin()) {
+            Received cached=incoming.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
+        }
+        if (preKey) bundle(peer,sender,true);
+        byte[] ciphertext=envelope.ciphertext;
         try (Omemo2Records tx = device.records.begin()) {
+            Received cached=incoming.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
             byte[] material = Omemo2Native.decrypt(tx,device.id,peer,sender,key,preKey); Message content = null, ack = null;
             try {
                 if (ciphertext == null) {
@@ -268,13 +281,19 @@ public final class XmppOmemo2 implements AutoCloseable {
                 if (preKey) {
                     byte[][] reply = Omemo2Native.encrypt(tx,device.id,peer,sender,new byte[32]);
                     StandardExtensionElement keys = StandardExtensionElement.builder("keys",NS).addAttribute("jid",peer).addElement(key(sender,reply)).build();
-                    ack = new Message(outer.getFrom(),Message.Type.chat); ack.setFrom(connection.getUser());
+                    ack = new Message(outer.getFrom(),Message.Type.chat); ack.setFrom(JidCreate.entityBareFrom(device.jid));
                     ack.addExtension(StandardExtensionElement.builder("encrypted",NS).addElement(StandardExtensionElement.builder("header",NS)
                             .addAttribute("sid",Integer.toString(device.id)).addElement(keys).build()).build());
                 }
                 byte[] senderIdentity=tx.load(SESSION_IDENTITY,peer,sender);
                 String fingerprint=senderIdentity==null ? null : XmppSession.hex(senderIdentity);
-                boolean replenish = tx.ids(PRE_KEY).length < 50; tx.commit(); return new Received(content,ack,replenish,fingerprint);
+                boolean replenish = tx.ids(PRE_KEY).length < 50;
+                XmppMessage model=content==null ? null : XmppMessage.modern(outer,content,JidCreate.entityBareFrom(device.jid),archiveId,archiveTime);
+                if(model!=null) model=model.withSenderFingerprint(fingerprint);
+                Received received;
+                if(content!=null || ack!=null) received=incoming.append(tx,envelope.digest,outer,content,ack,model,fingerprint,replenish);
+                else received=new Received(null,null,replenish,fingerprint,null,null);
+                tx.commit();return received;
             } finally { Arrays.fill(material,(byte)0); }
         }
     }

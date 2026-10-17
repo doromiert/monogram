@@ -47,7 +47,11 @@ class Omemo2IntegrationTest {
         Message packet() throws Exception {
             Message packet = messages.poll(15,TimeUnit.SECONDS); assertNotNull(packet,"Expected an encrypted packet on the disposable connection"); return packet;
         }
-        void acknowledge(XmppOmemo2.Received received) throws Exception { if (received.acknowledgement != null) connection.sendStanza(received.acknowledgement); }
+        void acknowledge(XmppOmemo2.Received received) throws Exception {
+            if(!service.acceptIncoming(received)) return;
+            if(received.acknowledgement!=null) connection.sendStanza(received.acknowledgement);
+            service.acknowledgeIncoming(received);
+        }
         @Override public void close() { service.close(); connection.disconnect(); }
     }
     @Test void publicBundlesPrivateCaptionsCarbonsArchiveAndSessionAcknowledgements() throws Exception {

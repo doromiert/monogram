@@ -35,10 +35,14 @@ public class MonogramLateArchiveTest {
     @Implements(value=MessagesController.class,isInAndroidSdk=false)
     public static class NativeDialogs extends MonogramNotificationSettingsTest.Base {
         @Implementation public void __constructor__(int account) {}
-        static int publications;
+        static int publications,liveUpdates;
         @Implementation public static void __staticInitializer__() {}
         @Implementation public static MessagesController getInstance(int account) { return MonogramScreenWakeTest.instance(MessagesController.class,account); }
         @Implementation public void processLoadedDialogs(TLRPC.messages_Dialogs dialogs,ArrayList<TLRPC.EncryptedChat> encrypted,ArrayList<TLRPC.UserFull> full,int folder,int offset,int count,int type,boolean reset,boolean migrate,boolean cache) { publications++; }
+        @Implementation public boolean processUpdateArray(ArrayList<TLRPC.Update> updates,ArrayList<TLRPC.User> users,ArrayList<TLRPC.Chat> chats,boolean difference,int date) {
+            for(TLRPC.Update update:updates) if(update instanceof org.telegram.tgnet.tl.TL_update.TL_updateNewMessage) liveUpdates++;
+            return true;
+        }
     }
     @Implements(value=UserConfig.class,isInAndroidSdk=false)
     public static class Account extends MonogramNotificationSettingsTest.Base {
@@ -66,10 +70,11 @@ public class MonogramLateArchiveTest {
     @Implements(value=NotificationsController.class,isInAndroidSdk=false)
     public static class Notifications extends MonogramNotificationSettingsTest.Base {
         @Implementation public void __constructor__(int account) {}
-        static int edits;
+        static int edits,pushes;
         @Implementation public static void __staticInitializer__() {}
         @Implementation public static NotificationsController getInstance(int account) { return MonogramScreenWakeTest.instance(NotificationsController.class,account); }
         @Implementation public void processEditedMessages(androidx.collection.LongSparseArray<ArrayList<MessageObject>> messages) { edits++; }
+        @Implementation public void processNewMessages(ArrayList<MessageObject> messages,boolean last,boolean fcm,java.util.concurrent.CountDownLatch done) { pushes++; }
     }
     @Implements(value=MonogramController.class,isInAndroidSdk=false)
     public static class Controller { @Implementation public void __constructor__(int account) {} }
@@ -87,7 +92,7 @@ public class MonogramLateArchiveTest {
         ReflectionHelpers.setField(controller,"accountEpoch",7L);
         syncClass=Class.forName(MonogramController.class.getName()+"$ArchiveSync");
         taskClass=Class.forName(MonogramController.class.getName()+"$ArchiveTask");
-        Storage.saved.clear();Events.replaced.clear();Ui.pending.clear();NativeDialogs.publications=0;Notifications.edits=0;
+        Storage.saved.clear();Events.replaced.clear();Ui.pending.clear();NativeDialogs.publications=0;NativeDialogs.liveUpdates=0;Notifications.edits=0;Notifications.pushes=0;
     }
     @After public void close() { Ui.pending.clear();store.close();context.deleteDatabase("late-archive.db"); }
     private Object construct(Class<?> type,Class<?>[] parameters,Object... args) throws Exception {
@@ -126,5 +131,44 @@ public class MonogramLateArchiveTest {
         ReflectionHelpers.setField(controller,"accountEpoch",7L);completed.run();assertFalse(Storage.saved.isEmpty());
         ReflectionHelpers.setField(controller,"accountEpoch",8L);Ui.drain();
         assertTrue(Events.replaced.isEmpty());assertEquals(0,NativeDialogs.publications);assertEquals(0,Notifications.edits);
+    }
+    private void received(long owner,String jid,XmppMessage message,Runnable accepted) {
+        ReflectionHelpers.callInstanceMethod(controller,"received",ReflectionHelpers.ClassParameter.from(long.class,owner),
+                ReflectionHelpers.ClassParameter.from(String.class,jid),ReflectionHelpers.ClassParameter.from(XmppMessage.class,message),
+                ReflectionHelpers.ClassParameter.from(Runnable.class,accepted));
+    }
+    @Test public void journalReplayPublishesArchivedCanonicalHistorySilentlyAndAcceptsAfterSaving() throws Exception {
+        MonogramDisplayedPrivacyTest.Queue worker=new MonogramDisplayedPrivacyTest.Queue();ReflectionHelpers.setField(controller,"worker",worker);
+        XmppMessage recovered=page().messages.get(0);assertTrue(recovered.archived);
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();
+        received(7L,"alice@example.org",recovered,() -> {
+            assertEquals("Recovered after reconnect",store.history(peer,self,0,10).get(0).message);
+            assertEquals(1,Storage.saved.size());accepted.incrementAndGet();
+        });
+        assertEquals(0,accepted.get());assertTrue(store.history(peer,self,0,10).isEmpty());
+        worker.drain();assertEquals(1,accepted.get());
+        Ui.drain();
+        assertEquals(1,Events.replaced.size());assertEquals(Storage.saved.get(0).id,Events.replaced.get(0).getId());
+        assertEquals(1,NativeDialogs.publications);assertEquals(1,Notifications.edits);
+        assertEquals(0,NativeDialogs.liveUpdates);assertEquals(0,Notifications.pushes);
+        assertNull(store.archiveCursor(peer,false));assertNull(store.archiveCursor(false));
+    }
+    @Test public void failedReplaySaveDoesNotAcceptAndCanBeRetried() throws Exception {
+        MonogramDisplayedPrivacyTest.Queue worker=new MonogramDisplayedPrivacyTest.Queue();ReflectionHelpers.setField(controller,"worker",worker);
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();XmppMessage recovered=page().messages.get(0);
+        store.getWritableDatabase().execSQL("CREATE TRIGGER fail_replay BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'replay save refused'); END");
+        received(7L,"alice@example.org",recovered,accepted::incrementAndGet);
+        try { worker.drain();fail("Message save must fail"); } catch(android.database.sqlite.SQLiteException expected) {}
+        assertEquals(0,accepted.get());assertTrue(store.history(peer,self,0,10).isEmpty());assertTrue(Storage.saved.isEmpty());
+        store.getWritableDatabase().execSQL("DROP TRIGGER fail_replay");
+        received(7L,"alice@example.org",recovered,accepted::incrementAndGet);worker.drain();assertEquals(1,accepted.get());
+    }
+    @Test public void accountEpochOrJidMismatchRejectsReplayWithoutAcceptance() throws Exception {
+        MonogramDisplayedPrivacyTest.Queue worker=new MonogramDisplayedPrivacyTest.Queue();ReflectionHelpers.setField(controller,"worker",worker);
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();XmppMessage recovered=page().messages.get(0);
+        received(6L,"alice@example.org",recovered,accepted::incrementAndGet);
+        received(7L,"other@example.org",recovered,accepted::incrementAndGet);
+        worker.drain();Ui.drain();
+        assertEquals(0,accepted.get());assertTrue(store.history(peer,self,0,10).isEmpty());assertTrue(Storage.saved.isEmpty());assertTrue(Events.replaced.isEmpty());
     }
 }
