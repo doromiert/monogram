@@ -277,9 +277,23 @@ public final class MonogramController {
                     @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
                     @Override public void message(XmppMessage message) { received(owner,details.jid.toString(),message,null); }
                     @Override public void message(XmppMessage message,Runnable accepted) { received(owner,details.jid.toString(),message,accepted); }
+                    @Override public void messagePending(XmppMessage message) {
+                        worker.execute(() -> {
+                            if (!sameAccount(owner,details.jid.toString())) return;
+                            int id=store.savePending(message);
+                            decryptionTimeout(owner,details.jid.toString(),id,() -> incoming(message));
+                        });
+                    }
                     @Override public void receipt(com.negzero.monogram.xmpp.MessageReceipt receipt) { receivedReceipt(owner,details.jid.toString(),receipt); }
                     @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
                         worker.execute(() -> { if (sameAccount(owner,details.jid.toString())) incomingRoom(message); });
+                    }
+                    @Override public void roomMessagePending(com.negzero.monogram.xmpp.XmppRoomMessage message) {
+                        worker.execute(() -> {
+                            if (!sameAccount(owner,details.jid.toString())) return;
+                            int id=store.savePending(message,self);
+                            decryptionTimeout(owner,details.jid.toString(),id,() -> incomingRoom(message));
+                        });
                     }
                     @Override public void contactRequest(String address,boolean pending) {
                         worker.execute(() -> { if(sessionEpoch==epoch) recordContactRequest(details.jid.toString(),address,pending); });
@@ -686,10 +700,10 @@ public final class MonogramController {
         MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(dialog,updated);
         updated.addAll(corrections.edited); refreshReplies(dialog,updated);
         publishReactions(dialog,store.reactions.reconcile(dialog));
-        if(id!=0 && !store.hiddenCorrection(id)) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
+        if(id!=0 && !store.hiddenMessage(id)) { long sender=store.getMessage(id,self).from_id.user_id; if(sender!=self && store.profile(sender)==null) refreshProfile(sender); }
         if(!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.Update> updates=correctionUpdates(corrections,id);
-        if(id!=0 && !store.hiddenCorrection(id)) {
+        if(id!=0 && !store.hiddenMessage(id)) {
             maybeAutoDownload(store.getMessage(id,self));
             if(replaced.contains(id)) {
                 TL_update.TL_updateEditMessage update=new TL_update.TL_updateEditMessage(); update.message=store.getMessage(id,self); updates.add(update);
@@ -705,7 +719,7 @@ public final class MonogramController {
             AndroidUtilities.runOnUIThread(() -> {
                 if(sessionEpoch!=epoch) return;
                 ArrayList<MessageObject> changed=new ArrayList<>();
-                if(id!=0 && !store.hiddenCorrection(id)) changed.add(new MessageObject(account,store.getMessage(id,self),true,true));
+                if(id!=0 && !store.hiddenMessage(id)) changed.add(new MessageObject(account,store.getMessage(id,self),true,true));
                 for(int edited:corrections.edited) changed.add(new MessageObject(account,store.getMessage(edited,self),true,true));
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,dialog,changed);
             });
@@ -911,7 +925,7 @@ public final class MonogramController {
         if(updated.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.Message> messages=new ArrayList<>();
         java.util.Map<Long,ArrayList<MessageObject>> byPeer=new java.util.HashMap<>();
-        for(int id:updated) if(!store.hiddenCorrection(id)) {
+        for(int id:updated) if(!store.hiddenMessage(id)) {
             TLRPC.Message message=store.getMessage(id,self); messages.add(message);
             if(message.dialog_id==mediaHistoryPeer && MonogramAttachments.has(message)) {
                 File path=new File(message.attachPath);
@@ -1214,6 +1228,14 @@ public final class MonogramController {
     }
     private int now() { return (int) (System.currentTimeMillis() / 1000); }
     private boolean sameAccount(long owner,String jid) { return owner==accountEpoch && jid.equals(accountJid()) && self>0 && jid.equals(store.jid(self)); }
+    private void decryptionTimeout(long owner,String jid,int id,Runnable reveal) {
+        if (id<=0 || !store.pendingDecryption(id)) return;
+        Utilities.stageQueue.postRunnable(() -> worker.execute(() -> {
+            if (sameAccount(owner,jid) && store.pendingDecryption(id)) {
+                try { reveal.run(); } finally { store.finishPendingDecryption(id); }
+            }
+        }),5000);
+    }
     private void received(long owner,String jid,XmppMessage message,Runnable accepted) {
         worker.execute(() -> {
             // A reconnect may replace the session after decryption consumed a ratchet key.
@@ -1235,7 +1257,7 @@ public final class MonogramController {
         updated.addAll(corrections.edited); refreshReplies(peer, updated);
         publishReactions(peer,store.reactions.reconcile(peer));
         ArrayList<TLRPC.Update> updates = correctionUpdates(corrections, id);
-        if (id != 0 && !store.hiddenCorrection(id)) {
+        if (id != 0 && !store.hiddenMessage(id)) {
             if(replaced.contains(id)) {
                 TL_update.TL_updateEditMessage update=new TL_update.TL_updateEditMessage(); update.message=store.getMessage(id,self); updates.add(update);
             } else {
@@ -1247,7 +1269,7 @@ public final class MonogramController {
         ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(store.user(peer, self)); users.add(ownUser());
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date));
         if (typingPeers.contains(peer)) publishTyping(peer, true);
-        if (id != 0 && !store.hiddenCorrection(id)) maybeAutoDownload(store.getMessage(id, self));
+        if (id != 0 && !store.hiddenMessage(id)) maybeAutoDownload(store.getMessage(id, self));
     }
     private void receivedReceipt(long owner, String own, com.negzero.monogram.xmpp.MessageReceipt receipt) {
         // A very fast peer can acknowledge before send() returns and saves the local ID.
@@ -1256,7 +1278,7 @@ public final class MonogramController {
             long peer = store.knownPeer(receipt.peer.toString());
             ArrayList<TLRPC.Message> messages = new ArrayList<>();
             for (int id : store.receipt(peer,receipt.id,receipt.displayed))
-                if (!store.hiddenCorrection(id)) messages.add(store.getMessage(id,self));
+                if (!store.hiddenMessage(id)) messages.add(store.getMessage(id,self));
             if (messages.isEmpty()) return;
             MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
             Utilities.stageQueue.postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
@@ -1358,7 +1380,7 @@ public final class MonogramController {
         long owner=accountEpoch;
         androidx.collection.LongSparseArray<ArrayList<MessageObject>> edits=new androidx.collection.LongSparseArray<>();
         for(int id:updated) {
-            if(store.hiddenCorrection(id)) continue;
+            if(store.hiddenMessage(id)) continue;
             TLRPC.Message message=store.getMessage(id,self);
             if(message.out) continue;
             ArrayList<MessageObject> messages=edits.get(message.dialog_id);
@@ -1680,7 +1702,7 @@ public final class MonogramController {
                 worker.execute(() -> {
                     try {
                         job.check();
-                        if (sessionEpoch != epoch || store.hiddenCorrection(id)) return;
+                        if (sessionEpoch != epoch || store.hiddenMessage(id)) return;
                         TLRPC.Message saved = store.getMessage(id, self);
                         if(decoded.document!=null) decoded.document.date=saved.date;
                         if(decoded.photo!=null) decoded.photo.date=saved.date;
@@ -1811,7 +1833,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if(pending.owner!=accountEpoch) return;
                             try {
-                                if(id>0 && !store.hiddenCorrection(id)) {
+                                if(id>0 && !store.hiddenMessage(id)) {
                                     TLRPC.Message sent=store.getMessage(id,self);
                                     outbox.completed(pending.localId,sent);
                                 }
@@ -1895,7 +1917,7 @@ public final class MonogramController {
         if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
         else { result.users.add(store.user(peer,self)); result.users.add(ownUser()); }
         for(int id:ids) {
-            if(store.hiddenCorrection(id)) continue;
+            if(store.hiddenMessage(id)) continue;
             if(store.getMessage(id,self).dialog_id!=peer) throw new IllegalArgumentException("Reaction target belongs to another conversation");
             TL_update.TL_updateMessageReactions update=new TL_update.TL_updateMessageReactions();
             update.peer=peer<0 ? new TLRPC.TL_peerChat() : new TLRPC.TL_peerUser();
@@ -2030,7 +2052,7 @@ public final class MonogramController {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             java.util.Set<Long> peers = new java.util.HashSet<>();
             for (int input : ((TLRPC.TL_messages_getMessages) request).id) {
-                if(store.hiddenCorrection(input)) continue;
+                if(store.hiddenMessage(input)) continue;
                 try { TLRPC.Message message = store.getMessage(input, self); result.messages.add(message); peers.add(message.dialog_id); }
                 catch (IllegalArgumentException missing) { /* The requested local message is unavailable. */ }
             }

@@ -127,8 +127,15 @@ public final class XmppRooms implements AutoCloseable {
         return chats.computeIfAbsent(room,key -> {
             MultiUserChat created=MultiUserChatManager.getInstanceFor(connection).getMultiUserChat(key);
             created.addMessageListener(message -> {
+                if (closed || connection.getUser()==null) return;
                 boolean encrypted=message.hasExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE) || message.hasExtension("encrypted",XmppOmemo2.NS);
-                deliver(created,message,encrypted ? null : message.getBody(),encrypted,!encrypted);
+                if (encrypted && !message.hasExtension("encrypted",XmppOmemo2.NS)) {
+                    org.jivesoftware.smackx.omemo.element.OmemoElement element=message.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
+                    if (element!=null && element.isKeyTransportElement()) return;
+                    XmppRoomMessage pending=XmppRoomMessage.from(message,created.getRoom(),connection.getUser().asEntityBareJid(),
+                            created.getNickname()==null ? "" : created.getNickname().toString(),null,true,false);
+                    if (pending!=null) listener.roomMessagePending(identify(created,message,pending));
+                } else deliver(created,message,encrypted ? null : message.getBody(),encrypted,!encrypted);
             });
             created.addParticipantListener(presence -> queueState(created));
             created.addSubjectUpdatedListener((subject,from) -> queueState(created));

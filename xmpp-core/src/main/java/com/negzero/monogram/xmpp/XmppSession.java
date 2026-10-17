@@ -41,6 +41,8 @@ public final class XmppSession implements AutoCloseable {
         default void profileChanged(EntityBareJid jid) {}
         default void profileChanged(org.jxmpp.jid.Jid jid) { profileChanged(jid.asEntityBareJidIfPossible()); }
         default void roomMessage(XmppRoomMessage message) {}
+        default void roomMessagePending(XmppRoomMessage message) { roomMessage(message); }
+        default void messagePending(XmppMessage message) { message(message); }
         default void roomChanged(XmppRooms.State room) {}
         default void roomInvitation(String room,String inviter,String reason,String password) {}
         default void bookmarksChanged() {}
@@ -239,7 +241,7 @@ public final class XmppSession implements AutoCloseable {
         OmemoElement element=stanza.getExtension(OmemoElement.NAME_ENCRYPTED,OmemoElement_VAxolotl.NAMESPACE);
         if(element==null || element.isKeyTransportElement() || connection.getUser()==null || closed) return;
         XmppMessage message=XmppMessage.from(stanza,connection.getUser().asEntityBareJid(),null,true,false,null,null);
-        if(message!=null) listener.message(message);
+        if(message!=null) listener.messagePending(message);
     }
 
     private void receipt(Message stanza) {
@@ -259,6 +261,10 @@ public final class XmppSession implements AutoCloseable {
     private void deliverModern(Message stanza) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (closed) return;
+        if (connection.getUser()!=null && modernPayload(stanza)) {
+            XmppMessage pending=XmppMessage.modern(stanza,null,connection.getUser().asEntityBareJid(),null,null);
+            if (pending!=null) listener.messagePending(pending);
+        }
         try {
         crypto.execute(() -> {
             if (closed || connection.getUser() == null) return;

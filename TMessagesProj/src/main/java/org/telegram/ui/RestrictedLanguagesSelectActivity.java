@@ -14,9 +14,6 @@ import android.content.res.Resources;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.InputMethodInfo;
-import android.view.inputmethod.InputMethodManager;
-import android.view.inputmethod.InputMethodSubtype;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 
@@ -79,7 +76,7 @@ public class RestrictedLanguagesSelectActivity extends BaseFragment implements N
             gotRestrictedLanguages = true;
         }
         if (restrictedLanguages == null) {
-            restrictedLanguages = Sets.newHashSet(LocaleController.getInstance().getCurrentLocaleInfo().pluralLangCode);
+            restrictedLanguages = Sets.newHashSet(systemLanguage());
         }
         return restrictedLanguages;
     }
@@ -146,7 +143,6 @@ public class RestrictedLanguagesSelectActivity extends BaseFragment implements N
             return false;
         }
         language = language.toLowerCase();
-        LocaleController.LocaleInfo currentLocaleInfo = LocaleController.getInstance().getCurrentLocaleInfo();
         HashSet<String> selectedLanguages = getRestrictedLanguages();
 //        if (language != null && language.equals(currentLocaleInfo.pluralLangCode) && doNotTranslate) {
 ////            AndroidUtilities.shakeViewSpring(view);
@@ -158,11 +154,7 @@ public class RestrictedLanguagesSelectActivity extends BaseFragment implements N
         } else {
             selectedLanguages.add(language);
         }
-        if (selectedLanguages.size() == 1 && selectedLanguages.contains(currentLocaleInfo.pluralLangCode)) {
-            updateRestrictedLanguages(null, false);
-        } else {
-            updateRestrictedLanguages(selectedLanguages, false);
-        }
+        updateRestrictedLanguages(selectedLanguages, true);
         TranslateController.invalidateSuggestedLanguageCodes();
         return true;
     }
@@ -268,11 +260,7 @@ public class RestrictedLanguagesSelectActivity extends BaseFragment implements N
                 } else {
                     selectedLanguages.add(langCode);
                 }
-                if (selectedLanguages.size() == 1 && selectedLanguages.contains(currentLocaleInfo.pluralLangCode)) {
-                    updateRestrictedLanguages(null, null);
-                } else {
-                    updateRestrictedLanguages(selectedLanguages, true);
-                }
+                updateRestrictedLanguages(selectedLanguages, true);
 
                 if (search) {
                     for (int i = 0, p = 0; i < searchResult.size(); ++i, ++p) {
@@ -533,93 +521,36 @@ public class RestrictedLanguagesSelectActivity extends BaseFragment implements N
         checkRestrictedLanguages(false);
     }
 
-    public static final int LAST_DO_NOT_TRANSLATE_VERSION = 2;
+    private static String systemLanguage() {
+        return Resources.getSystem().getConfiguration().locale.getLanguage();
+    }
+
+    public static final int LAST_DO_NOT_TRANSLATE_VERSION = 3;
     public static void checkRestrictedLanguages(boolean accountsChanged) {
-        boolean manualChanged = MessagesController.getGlobalMainSettings().getBoolean("translate_button_restricted_languages_changed", false);
-        int version = MessagesController.getGlobalMainSettings().getInt("translate_button_restricted_languages_version", 0);
-
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        boolean manualChanged = preferences.getBoolean("translate_button_restricted_languages_changed", false);
+        int version = preferences.getInt("translate_button_restricted_languages_version", 0);
         if (version != LAST_DO_NOT_TRANSLATE_VERSION || accountsChanged && !manualChanged) {
-            getExtendedDoNotTranslate(languages -> {
-                final String currentLangCode = LocaleController.getInstance().getCurrentLocaleInfo().pluralLangCode;
-
-                languages.addAll(getRestrictedLanguages());
-                SharedPreferences.Editor edit = MessagesController.getGlobalMainSettings().edit();
-                if (languages.size() == 1 && TextUtils.equals(languages.iterator().next(), currentLangCode)) {
-                    edit.remove("translate_button_restricted_languages");
-                } else {
-                    edit.putStringSet("translate_button_restricted_languages", languages);
-                }
-                edit.putInt("translate_button_restricted_languages_version", LAST_DO_NOT_TRANSLATE_VERSION).apply();
-                invalidateRestrictedLanguages();
-
-                for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; ++i) {
-                    final int account = i;
-                    try {
-                        MessagesController.getInstance(account).getTranslateController().checkRestrictedLanguagesUpdate();
-                    } catch (Exception ignore) {}
-                }
-            });
+            // Replace old automatic keyboard exclusions; retain explicitly chosen languages.
+            SharedPreferences.Editor edit = preferences.edit();
+            if (!manualChanged) {
+                edit.remove("translate_button_restricted_languages");
+            }
+            edit.putInt("translate_button_restricted_languages_version", LAST_DO_NOT_TRANSLATE_VERSION).apply();
+            invalidateRestrictedLanguages();
+            TranslateController.invalidateSuggestedLanguageCodes();
+            for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; ++account) {
+                try {
+                    MessagesController.getInstance(account).getTranslateController().checkRestrictedLanguagesUpdate();
+                } catch (Exception ignore) {}
+            }
         }
     }
 
     public static void getExtendedDoNotTranslate(Utilities.Callback<HashSet<String>> onDone) {
-        if (onDone == null) {
-            return;
+        if (onDone != null) {
+            onDone.run(Sets.newHashSet(systemLanguage()));
         }
-
-        final HashSet<String> result = new HashSet<>();
-
-        Utilities.doCallbacks(
-            next -> {
-                try {
-                    String language = LocaleController.getInstance().getCurrentLocaleInfo().pluralLangCode;
-                    if (TranslateAlert2.languageName(language) != null) {
-                        result.add(language);
-                    }
-                } catch (Exception e0) {
-                    FileLog.e(e0);
-                }
-                next.run();
-            },
-            next -> {
-                try {
-                    String language = Resources.getSystem().getConfiguration().locale.getLanguage();
-                    if (TranslateAlert2.languageName(language) != null) {
-                        result.add(language);
-                    }
-                } catch (Exception e1) {
-                    FileLog.e(e1);
-                }
-                next.run();
-            },
-            next -> {
-                try {
-                    InputMethodManager imm = (InputMethodManager) ApplicationLoader.applicationContext.getSystemService(Context.INPUT_METHOD_SERVICE);
-                    List<InputMethodInfo> ims = imm.getEnabledInputMethodList();
-
-                    for (InputMethodInfo method : ims) {
-                        List<InputMethodSubtype> submethods = imm.getEnabledInputMethodSubtypeList(method, true);
-                        for (InputMethodSubtype submethod : submethods) {
-                            if ("keyboard".equals(submethod.getMode())) {
-                                String currentLocale = submethod.getLocale();
-                                if (currentLocale != null && currentLocale.contains("_")) {
-                                    currentLocale = currentLocale.split("_")[0];
-                                }
-
-                                if (TranslateAlert2.languageName(currentLocale) != null) {
-                                    result.add(currentLocale);
-                                }
-                            }
-                        }
-                    }
-                } catch (Exception e4) {
-                    FileLog.e(e4);
-                }
-
-                next.run();
-            },
-            next -> onDone.run(result)
-        );
     }
 
     @Override

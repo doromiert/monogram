@@ -86,6 +86,7 @@ public final class XmppMessage {
             if (own.toString().equals(id.getBy())) put(ids, "archive", id.getId());
         }
         if (archiveId != null) put(ids, "archive", archiveId);
+        if (ids.isEmpty() && encrypted) ids.put("local", opaqueId(message));
         ReplyReference reply = content == null ? null : ReplyReference.from(content, readable ? body : null);
         FileLink attachment = null;
         String mediaText = reply == null ? body : reply.withoutFallback(body);
@@ -115,6 +116,12 @@ public final class XmppMessage {
     public XmppMessage withSenderFingerprint(String fingerprint) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
                 attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint);
+    }
+    static String opaqueId(Message message) {
+        try {
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(message.toXML().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 
     public static XmppMessage sent(org.jxmpp.jid.Jid own, String peer, String id, String body, boolean encrypted) throws Exception {

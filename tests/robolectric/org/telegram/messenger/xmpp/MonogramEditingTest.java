@@ -21,7 +21,7 @@ import org.telegram.tgnet.TLRPC;
 
 /** Exercise the native editor's preflight request, not only correction storage. */
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest = Config.NONE, sdk = 36, application = android.app.Application.class,shadows={MonogramEditingTest.PendingSession.class})
+@Config(manifest = Config.NONE, sdk = 36, application = android.app.Application.class,shadows={MonogramEditingTest.PendingSession.class,MonogramMessageRegressionTest.Device.class})
 public class MonogramEditingTest {
     @org.robolectric.annotation.Implements(value=com.negzero.monogram.xmpp.XmppSession.class,isInAndroidSdk=false)
     public static class PendingSession {

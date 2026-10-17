@@ -6,6 +6,12 @@ import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
+    public static XmppMessage idlessEncrypted(boolean readable,String sender) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.chat);
+        wire.setFrom(JidCreate.entityFullFrom(sender)); wire.setStanzaId(null);
+        wire.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("encrypted","eu.siacs.conversations.axolotl").setText("ciphertext").build());
+        return XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),readable ? "Clear text" : null,true,readable,null,null);
+    }
     public static XmppMessage retraction(String reference,boolean legacy,boolean outgoing,String resource) throws Exception {
         return encryptedRetraction(reference,legacy,outgoing,resource,null);
     }
