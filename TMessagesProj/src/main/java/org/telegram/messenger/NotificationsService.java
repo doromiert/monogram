@@ -20,7 +20,7 @@ import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.ui.LaunchActivity;
 
 public class NotificationsService extends Service {
-    private static final String CHANNEL = "monogram_connection";
+    public static final String CONNECTION_CHANNEL = "monogram_connection";
     private static final int NOTIFICATION = 1028;
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -34,11 +34,22 @@ public class NotificationsService extends Service {
         return false;
     }
 
+    public static Intent notificationSettings(Context context) {
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationManager manager=(NotificationManager)context.getSystemService(NOTIFICATION_SERVICE);
+            Intent settings=new Intent(manager!=null && manager.getNotificationChannel(CONNECTION_CHANNEL)!=null
+                    ? android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS : android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            return settings.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,context.getPackageName())
+                    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID,CONNECTION_CHANNEL);
+        }
+        return new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:"+context.getPackageName()));
+    }
+
     @Override public void onCreate() {
         super.onCreate();
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL,
+            NotificationChannel channel = new NotificationChannel(CONNECTION_CHANNEL,
                     LocaleController.getString(R.string.NotificationsServiceConnection), NotificationManager.IMPORTANCE_LOW);
             channel.setShowBadge(false);
             manager.createNotificationChannel(channel);
@@ -46,7 +57,7 @@ public class NotificationsService extends Service {
         PendingIntent open = PendingIntent.getActivity(this, 0,
                 new Intent(this, LaunchActivity.class).setAction(Intent.ACTION_MAIN),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        android.app.Notification notification = new NotificationCompat.Builder(this, CHANNEL)
+        android.app.Notification notification = new NotificationCompat.Builder(this, CONNECTION_CHANNEL)
                 .setSmallIcon(R.drawable.notification).setContentTitle(LocaleController.getString(R.string.AppName))
                 .setContentText(LocaleController.getString(R.string.MonogramBackgroundConnection))
                 .setContentIntent(open).setOngoing(true).setSilent(true).setShowWhen(false)

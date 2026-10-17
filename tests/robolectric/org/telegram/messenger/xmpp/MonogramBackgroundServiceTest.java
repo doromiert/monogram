@@ -93,4 +93,18 @@ public class MonogramBackgroundServiceTest {
         receiver.onReceive(context,new android.content.Intent("org.telegram.start")); receiver.onReceive(context,null);
         assertEquals(2,Loader.starts);
     }
+    @Test public void hiddenConnectionCategoryKeepsServiceEnabledAndSettingsTargetOnlyThatChannel() {
+        Context context=RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("monogram-0",0).edit().putString("jid","alice@example.org").commit();
+        android.app.NotificationManager manager=(android.app.NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.createNotificationChannel(new android.app.NotificationChannel(NotificationsService.CONNECTION_CHANNEL,"Connection",android.app.NotificationManager.IMPORTANCE_NONE));
+        android.content.Intent settings=NotificationsService.notificationSettings(context);
+        assertEquals(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS,settings.getAction());
+        assertEquals(context.getPackageName(),settings.getStringExtra(android.provider.Settings.EXTRA_APP_PACKAGE));
+        assertEquals(NotificationsService.CONNECTION_CHANNEL,settings.getStringExtra(android.provider.Settings.EXTRA_CHANNEL_ID));
+        assertTrue(NotificationsService.enabled(context));
+        manager.deleteNotificationChannel(NotificationsService.CONNECTION_CHANNEL);
+        assertEquals(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS,NotificationsService.notificationSettings(context).getAction());
+    }
+
 }
