@@ -484,6 +484,13 @@ public final class MonogramController {
                             } catch(Exception ignored) { /* An unrelated/invalid error cannot change reaction state. */ }
                         });
                     }
+                    @Override public void blockedChanged(java.util.List<String> ignored) {
+                        worker.execute(() -> {
+                            XmppSession current=session;
+                            if(current!=null && sessionEpoch==epoch && sameAccount(owner,details.jid.toString()))
+                                rememberBlocked(current,epoch);
+                        });
+                    }
                     @Override public void bookmarksChanged() {
                         worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
@@ -553,7 +560,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null);
+                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch);
                         });
                     }
                 });
@@ -605,7 +612,7 @@ public final class MonogramController {
         state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence();
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
         recoverPendingSends();
-        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null);
+        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null); refreshBlocked(connecting,epoch);
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
         roomWorker.execute(() -> {
@@ -1302,7 +1309,7 @@ public final class MonogramController {
         try { MonogramTranslation.clearConfiguration(account); }
         catch(java.io.IOException unavailable) { throw new IllegalStateException("Cannot clear translation settings",unavailable); }
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("blocked-jids-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
@@ -1414,6 +1421,7 @@ public final class MonogramController {
     private TLRPC.TL_users_userFull profileResult(long peer) {
         TLRPC.TL_users_userFull result = new TLRPC.TL_users_userFull();
         result.full_user = store.fullUser(peer, self);
+        result.full_user.blocked=blockingCache().blocked(store.jid(peer));
         applyCallCapabilities(peer,result.full_user);result.users.add(result.full_user.user);return result;
     }
     long callOwner() { return accountEpoch; }
@@ -2648,7 +2656,60 @@ public final class MonogramController {
         final long owner=accountEpoch;
         cacheWorker.execute(() -> { if(accountEpoch==owner) try { publishReactions(peer,java.util.Collections.singleton(id)); } catch(IllegalArgumentException ignored) {} });
     }
+    private MonogramBlocking blockingCache() { return new MonogramBlocking(preferences,store,accountJid(),self); }
+    private void refreshBlocked(XmppSession expected,long epoch) {
+        profileWorker.execute(() -> {
+            try { expected.blocking.list(); worker.execute(() -> {
+                if(session==expected && sessionEpoch==epoch) rememberBlocked(expected,epoch);
+            }); } catch(Exception unavailable) { /* Keep the last acknowledged snapshot when disconnected or unsupported. */ }
+        });
+    }
+    private void rememberBlocked(XmppSession expected,long epoch) {
+        if(session!=expected || sessionEpoch!=epoch || !expected.ownJid().equals(accountJid())) return;
+        java.util.List<String> snapshot=expected.blocking.snapshot(); if(snapshot==null) return;
+        final long owner=accountEpoch;final String jid=accountJid();
+        try {
+            MonogramBlocking cache=blockingCache();cache.remember(snapshot);
+            TLRPC.TL_contacts_blockedSlice all=cache.page(snapshot,0,1000);
+            java.util.Set<Long> blocked=new java.util.LinkedHashSet<>();ArrayList<TLRPC.User> users=new ArrayList<>();
+            for(int offset=0;offset<snapshot.size();offset+=1000) {
+                TLRPC.TL_contacts_blockedSlice page=offset==0 ? all : cache.page(snapshot,offset,1000);
+                users.addAll(page.users);for(TLRPC.TL_peerBlocked item:page.blocked) blocked.add(item.peer_id.user_id);
+            }
+            java.util.Set<Long> effective=new java.util.HashSet<>();
+            for(long peer:store.peers()) if(MonogramBlocking.blocked(snapshot,store.jid(peer))) effective.add(peer);
+            AndroidUtilities.runOnUIThread(() -> {
+                if(session==expected && sessionEpoch==epoch && sameAccount(owner,jid))
+                    MessagesController.getInstance(account).applyMonogramBlockedPeers(users,blocked,effective::contains);
+            });
+        } catch(Exception invalid) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram blocking snapshot: "+invalid.getClass().getSimpleName()); }
+    }
+    private TLObject blockingRequest(TLObject request) throws Exception {
+        MonogramBlocking cache=blockingCache();XmppSession expected=session;long epoch=sessionEpoch;
+        boolean connected=expected!=null && expected.connection().isAuthenticated();
+        if(request instanceof TLRPC.TL_contacts_getBlocked) {
+            TLRPC.TL_contacts_getBlocked query=(TLRPC.TL_contacts_getBlocked)request;
+            if(query.my_stories_from) throw new UnsupportedOperationException();
+            java.util.List<String> list;
+            if(connected) {
+                list=expected.blocking.list();requireRoomSession(expected,epoch);rememberBlocked(expected,epoch);
+            } else { list=cache.cached();if(list==null) throw new IllegalStateException("XMPP is disconnected"); }
+            return cache.page(list,query.offset,query.limit);
+        }
+        TLRPC.InputPeer input;boolean block=request instanceof TLRPC.TL_contacts_block;
+        if(block) {
+            TLRPC.TL_contacts_block query=(TLRPC.TL_contacts_block)request;
+            if(query.my_stories_from) throw new UnsupportedOperationException();input=query.id;
+        } else {
+            TLRPC.TL_contacts_unblock query=(TLRPC.TL_contacts_unblock)request;
+            if(query.my_stories_from) throw new UnsupportedOperationException();input=query.id;
+        }
+        String target=cache.target(input);expected=session();epoch=sessionEpoch;
+        if(block) expected.blocking.block(target);else expected.blocking.unblock(target);
+        requireRoomSession(expected,epoch);rememberBlocked(expected,epoch);return new TLRPC.TL_boolTrue();
+    }
     private TLObject handle(TLObject request) throws Exception {
+        if(MonogramBlocking.handles(request)) return blockingRequest(request);
         if(MonogramCallPrivacy.handles(request)) return callPrivacy().handle(request);
         if(request instanceof TLRPC.TL_messages_createChat) return createNativeRoom((TLRPC.TL_messages_createChat)request);
         if(request instanceof TLRPC.TL_messages_addChatUser) {

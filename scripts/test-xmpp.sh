@@ -41,7 +41,7 @@ allow_user_invites = true
 registration_invite_only = true
 admins = { "roomalice@localhost" }
 log = { { levels = { min = "info" }; to = "console" } }
-modules_enabled = { "roster"; "lastactivity"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule"; "invites_adhoc"; "invites_register" }
+modules_enabled = { "blocklist"; "roster"; "lastactivity"; "vcard"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "private"; "smacks"; "mam"; "monogram_schedule"; "invites_adhoc"; "invites_register" }
 VirtualHost "localhost"
 authentication = "internal_hashed"
 ssl = { key = "$state/certs/localhost.key"; certificate = "$state/certs/localhost.crt" }
@@ -56,7 +56,7 @@ http_host = "localhost"
 http_file_share_size_limit = 1024*1024
 http_file_share_daily_quota = 10*1024*1024
 CONFIG
-for user in callsalice callsbob legacyjournalalice legacyjournalbob receiptalice receiptbob subscribealice subscribebob bookmarkmodern bookmarklegacy roomalice roombob alice bob typingalice typingbob modernalice modernbob peeralice peerbob firstpeeralice firstpeerbob devicealice devicebob sessionalice sessionbob fallbackalice fallbackbob; do
+for user in blockingalice blockingbob callsalice callsbob legacyjournalalice legacyjournalbob receiptalice receiptbob subscribealice subscribebob bookmarkmodern bookmarklegacy roomalice roombob alice bob typingalice typingbob modernalice modernbob peeralice peerbob firstpeeralice firstpeerbob devicealice devicebob sessionalice sessionbob fallbackalice fallbackbob; do
     prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-test
  done
 prosody --config "$state/prosody.cfg.lua" -F >"$state/server.log" 2>&1 &

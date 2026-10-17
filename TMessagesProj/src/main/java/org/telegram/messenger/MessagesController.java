@@ -270,6 +270,17 @@ public class MessagesController extends BaseController implements NotificationCe
     public LongSparseIntArray blockePeers = new LongSparseIntArray();
     public int totalBlockedCount = -1;
     public boolean blockedEndReached;
+    private long blockedPeersGeneration;
+    private long blockedPeersListRequest;
+    private boolean blockedPeersNeedReset;
+    private java.util.function.LongPredicate monogramEffectiveBlocked;
+    private final LongSparseArray<BlockedPeerRequest> blockedPeerRequests = new LongSparseArray<>();
+
+    private static class BlockedPeerRequest {
+        final boolean blocked;
+        final ArrayList<Runnable> callbacks = new ArrayList<>();
+        BlockedPeerRequest(boolean blocked) { this.blocked = blocked; }
+    }
 
     private LongSparseArray<ArrayList<Integer>> channelViewsToSend = new LongSparseArray<>();
     private LongSparseArray<SparseArray<MessageObject>> pollsToCheck = new LongSparseArray<>();
@@ -6434,6 +6445,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void cleanup() {
+        resetBlockedPeersState();
         getContactsController().cleanup();
         MediaController.getInstance().cleanup();
         getNotificationsController().cleanup();
@@ -6603,7 +6615,6 @@ public class MessagesController extends BaseController implements NotificationCe
         createdDialogMainThreadIds.clear();
         visibleDialogMainThreadIds.clear();
         visibleScheduledDialogMainThreadIds.clear();
-        blockePeers.clear();
         for (int a = 0; a < sendingTypings.length; a++) {
             if (sendingTypings[a] == null) {
                 continue;
@@ -6634,9 +6645,6 @@ public class MessagesController extends BaseController implements NotificationCe
         currentDeletingTaskMids = null;
         currentDeletingTaskMediaMids = null;
         gettingNewDeleteTask = false;
-        loadingBlockedPeers = false;
-        totalBlockedCount = -1;
-        blockedEndReached = false;
         firstGettingTask = false;
         updatingState = false;
         resetingDialogs = false;
@@ -8682,43 +8690,120 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void blockPeer(long id) {
-        TLRPC.User user = null;
-        TLRPC.Chat chat = null;
-        if (id > 0) {
-            user = getUser(id);
-            if (user == null) {
-                return;
-            }
+        changeBlockedPeer(id, true, null);
+    }
+
+    private void resetBlockedPeersState() {
+        blockedPeersGeneration++;
+        invalidateBlockedPeersList();
+        blockedPeerRequests.clear();
+        monogramEffectiveBlocked = null;
+        blockePeers.clear();
+        totalBlockedCount = -1;
+        blockedEndReached = false;
+    }
+
+    private void invalidateBlockedPeersList() {
+        blockedPeersListRequest++;
+        loadingBlockedPeers = false;
+        blockedPeersNeedReset = true;
+    }
+
+    private void setBlockedPeerState(long id, boolean blocked) {
+        boolean wasBlocked = blockePeers.indexOfKey(id) >= 0;
+        if (blocked) {
+            blockePeers.put(id, 1);
         } else {
-            chat = getChat(-id);
-            if (chat == null) {
-                return;
-            }
+            blockePeers.delete(id);
         }
-        if (blockePeers.indexOfKey(id) >= 0) {
+        if (wasBlocked != blocked && totalBlockedCount >= 0) {
+            totalBlockedCount = Math.max(0, totalBlockedCount + (blocked ? 1 : -1));
+        }
+        if (id > 0) {
+            TLRPC.UserFull full = fullUsers.get(id);
+            if (full != null) full.blocked = monogramEffectiveBlocked != null ? monogramEffectiveBlocked.test(id) : blocked;
+        } else {
+            TLRPC.ChatFull full = fullChats.get(-id);
+            if (full != null) full.blocked = blocked;
+        }
+    }
+
+    private void showBlockedPeersError(TLRPC.TL_error error, String action) {
+        String text;
+        if (error != null && "MONOGRAM_FEATURE_UNAVAILABLE".equals(error.text)) {
+            text = "Contact blocking is not supported by this XMPP server.";
+        } else if (error != null && "MONOGRAM_XMPP_DISCONNECTED".equals(error.text)) {
+            text = "Your XMPP account is disconnected. Reconnect and try again.";
+        } else {
+            text = "The XMPP server couldn't " + action + ". Try again.";
+        }
+        AlertsCreator.showSimpleAlert(null, LocaleController.getString(R.string.AppName), text);
+    }
+
+    public void applyMonogramBlockedPeers(ArrayList<TLRPC.User> users, java.util.Set<Long> blocked) {
+        applyMonogramBlockedPeers(users, blocked, blocked::contains);
+    }
+
+    public void applyMonogramBlockedPeers(ArrayList<TLRPC.User> users, java.util.Set<Long> blocked,
+                                         java.util.function.LongPredicate effectiveBlocked) {
+        invalidateBlockedPeersList();
+        monogramEffectiveBlocked = effectiveBlocked;
+        putUsers(users, false);
+        for (int i = 0; i < fullUsers.size(); i++) {
+            fullUsers.valueAt(i).blocked = effectiveBlocked.test(fullUsers.keyAt(i));
+        }
+        for (int i = 0; i < fullChats.size(); i++) {
+            fullChats.valueAt(i).blocked = blocked.contains(-fullChats.keyAt(i));
+        }
+        blockePeers.clear();
+        for (Long id : blocked) blockePeers.put(id, 1);
+        totalBlockedCount = blockePeers.size();
+        blockedEndReached = true;
+        blockedPeersNeedReset = false;
+        getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
+    }
+
+    private void changeBlockedPeer(long id, boolean blocked, Runnable callback) {
+        BlockedPeerRequest pending = blockedPeerRequests.get(id);
+        if (pending != null) {
+            if (pending.blocked == blocked && callback != null) pending.callbacks.add(callback);
             return;
         }
-        blockePeers.put(id, 1);
-        if (user != null) {
-            if (user.bot) {
-                getMediaDataController().removeInline(id);
-            } else {
-                getMediaDataController().removePeer(id);
-            }
-        }
-        if (totalBlockedCount >= 0) {
-            totalBlockedCount++;
-        }
-        getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
-        TLRPC.TL_contacts_block req = new TLRPC.TL_contacts_block();
-        if (user != null) {
-            req.id = getInputPeer(user);
+        TLRPC.User user = id > 0 ? getUser(id) : null;
+        TLRPC.Chat chat = id < 0 ? getChat(-id) : null;
+        if (user == null && chat == null) return;
+        if (blocked && blockePeers.indexOfKey(id) >= 0) return;
+        BlockedPeerRequest request = new BlockedPeerRequest(blocked);
+        if (callback != null) request.callbacks.add(callback);
+        blockedPeerRequests.put(id, request);
+        invalidateBlockedPeersList();
+        long generation = blockedPeersGeneration;
+        TLObject req;
+        if (blocked) {
+            TLRPC.TL_contacts_block block = new TLRPC.TL_contacts_block();
+            block.id = user != null ? getInputPeer(user) : getInputPeer(chat);
+            req = block;
         } else {
-            req.id = getInputPeer(chat);
+            TLRPC.TL_contacts_unblock unblock = new TLRPC.TL_contacts_unblock();
+            unblock.id = user != null ? getInputPeer(user) : getInputPeer(chat);
+            req = unblock;
         }
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-
-        });
+        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (generation != blockedPeersGeneration || blockedPeerRequests.get(id) != request) return;
+            blockedPeerRequests.remove(id);
+            if (error != null || !(response instanceof TLRPC.TL_boolTrue)) {
+                showBlockedPeersError(error, blocked ? "block this contact" : "unblock this contact");
+                return;
+            }
+            invalidateBlockedPeersList();
+            setBlockedPeerState(id, blocked);
+            if (blocked && user != null) {
+                if (user.bot) getMediaDataController().removeInline(id);
+                else getMediaDataController().removePeer(id);
+            }
+            getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
+            for (Runnable done : request.callbacks) done.run();
+        }));
     }
 
     public void setParticipantBannedRole(long chatId, TLRPC.User user, TLRPC.Chat chat, TLRPC.TL_chatBannedRights rights, boolean isChannel, BaseFragment parentFragment) {
@@ -8877,61 +8962,39 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void unblockPeer(long id, Runnable callback) {
-        TLRPC.TL_contacts_unblock req = new TLRPC.TL_contacts_unblock();
-        TLRPC.User user = null;
-        TLRPC.Chat chat = null;
-        if (id > 0) {
-            user = getUser(id);
-            if (user == null) {
-                return;
-            }
-        } else {
-            chat = getChat(-id);
-            if (chat == null) {
-                return;
-            }
-        }
-        totalBlockedCount--;
-        blockePeers.delete(id);
-        if (user != null) {
-            req.id = getInputPeer(user);
-        } else {
-            req.id = getInputPeer(chat);
-        }
-        getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
-        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (callback != null) {
-                callback.run();
-            }
-        }));
+        changeBlockedPeer(id, false, callback);
     }
 
     public void getBlockedPeers(boolean reset) {
-        if (!getUserConfig().isClientActivated() || loadingBlockedPeers) {
-            return;
-        }
+        if (!getUserConfig().isClientActivated() || (!reset && loadingBlockedPeers) || blockedPeerRequests.size() != 0) return;
+        final boolean replace = reset || blockedPeersNeedReset;
         loadingBlockedPeers = true;
+        long generation = blockedPeersGeneration;
+        long listRequest = ++blockedPeersListRequest;
         TLRPC.TL_contacts_getBlocked req = new TLRPC.TL_contacts_getBlocked();
-        req.offset = reset ? 0 : blockePeers.size();
-        req.limit = reset ? 20 : 100;
+        req.offset = replace ? 0 : blockePeers.size();
+        req.limit = replace ? 20 : 100;
         getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (response != null) {
-                TLRPC.contacts_Blocked res = (TLRPC.contacts_Blocked) response;
-                putUsers(res.users, false);
-                putChats(res.chats, false);
-                getMessagesStorage().putUsersAndChats(res.users, res.chats, true, true);
-                if (reset) {
-                    blockePeers.clear();
-                }
-                totalBlockedCount = Math.max(res.count, res.blocked.size());
-                blockedEndReached = res.blocked.size() < req.limit;
-                for (int a = 0, N = res.blocked.size(); a < N; a++) {
-                    TLRPC.TL_peerBlocked blocked = res.blocked.get(a);
-                    blockePeers.put(MessageObject.getPeerId(blocked.peer_id), 1);
-                }
-                loadingBlockedPeers = false;
+            if (generation != blockedPeersGeneration || listRequest != blockedPeersListRequest) return;
+            loadingBlockedPeers = false;
+            if (error != null || !(response instanceof TLRPC.contacts_Blocked)) {
                 getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
+                showBlockedPeersError(error, "load your blocked users");
+                return;
             }
+            TLRPC.contacts_Blocked res = (TLRPC.contacts_Blocked) response;
+            putUsers(res.users, false);
+            putChats(res.chats, false);
+            getMessagesStorage().putUsersAndChats(res.users, res.chats, true, true);
+            if (replace) blockePeers.clear();
+            for (int a = 0, N = res.blocked.size(); a < N; a++) {
+                TLRPC.TL_peerBlocked blocked = res.blocked.get(a);
+                setBlockedPeerState(MessageObject.getPeerId(blocked.peer_id), true);
+            }
+            totalBlockedCount = Math.max(res.count, blockePeers.size());
+            blockedEndReached = res.blocked.size() < req.limit;
+            blockedPeersNeedReset = false;
+            getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
         }));
     }
 
