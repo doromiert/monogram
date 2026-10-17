@@ -86,7 +86,6 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 
-import com.google.android.gms.common.api.Status;
 import com.google.common.primitives.Longs;
 
 import org.telegram.PhoneFormat.PhoneFormat;
@@ -113,6 +112,7 @@ import org.telegram.messenger.FingerprintController;
 import org.telegram.messenger.FlagSecureReason;
 import org.telegram.messenger.GenericProvider;
 import org.telegram.messenger.GiftAuctionController;
+import org.telegram.messenger.ILocationServiceProvider;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.LocationController;
@@ -363,7 +363,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     private List<Runnable> onUserLeaveHintListeners = new ArrayList<>();
 
-    private static final int PLAY_SERVICES_REQUEST_CHECK_SETTINGS = 140;
+    private static final int LOCATION_SETTINGS_REQUEST = 140;
+    private static final String STATE_LOCATION_SETTINGS_OPEN = "location_settings_open";
+    private static final String STATE_LOCATION_SETTINGS_ACCOUNT = "location_settings_account";
+    private static final String STATE_LOCATION_SETTINGS_USER = "location_settings_user";
+    private boolean locationSettingsOpen;
+    private int locationSettingsAccount = -1;
+    private long locationSettingsUserId;
     public static final int SCREEN_CAPTURE_REQUEST_CODE = 520;
     public static final int WEBVIEW_SHARE_API_REQUEST_CODE = 521;
 
@@ -411,6 +417,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         ApplicationLoader.postInitApplication();
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
+        if (savedInstanceState != null) {
+            locationSettingsOpen = savedInstanceState.getBoolean(STATE_LOCATION_SETTINGS_OPEN, false);
+            locationSettingsAccount = savedInstanceState.getInt(STATE_LOCATION_SETTINGS_ACCOUNT, -1);
+            locationSettingsUserId = savedInstanceState.getLong(STATE_LOCATION_SETTINGS_USER, 0);
+        }
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         if (!UserConfig.getInstance(currentAccount).isClientActivated()) {
             Intent intent = getIntent();
@@ -6662,8 +6673,18 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     service.createCaptureDevice(true);
                 }
             }
-        } else if (requestCode == PLAY_SERVICES_REQUEST_CHECK_SETTINGS) {
-            LocationController.getInstance(currentAccount).startFusedLocationRequest(resultCode == Activity.RESULT_OK);
+        } else if (requestCode == LOCATION_SETTINGS_REQUEST) {
+            final int account = locationSettingsAccount;
+            final long userId = locationSettingsUserId;
+            locationSettingsOpen = false;
+            locationSettingsAccount = -1;
+            locationSettingsUserId = 0;
+            if (account >= 0 && account < UserConfig.MAX_ACCOUNT_COUNT) {
+                UserConfig userConfig = UserConfig.getInstance(account);
+                if (userConfig.isClientActivated() && userId != 0 && userConfig.getClientUserId() == userId) {
+                    LocationController.getInstance(account).onLocationSettingsResult();
+                }
+            }
         } else if (requestCode == WEBVIEW_SHARE_API_REQUEST_CODE) {
             if (webviewShareAPIDoneListener != null) {
                 webviewShareAPIDoneListener.run(resultCode == RESULT_OK);
@@ -7489,11 +7510,24 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             }
         } else if (id == NotificationCenter.needShowPlayServicesAlert) {
-            try {
-                final Status status = (Status) args[0];
-                status.startResolutionForResult(this, PLAY_SERVICES_REQUEST_CHECK_SETTINGS);
-            } catch (Throwable ignore) {
-
+            if (!locationSettingsOpen && args.length > 0 && args[0] instanceof Integer
+                    && (Integer) args[0] == ILocationServiceProvider.STATUS_RESOLUTION_REQUIRED
+                    && account >= 0 && account < UserConfig.MAX_ACCOUNT_COUNT) {
+                UserConfig userConfig = UserConfig.getInstance(account);
+                if (!userConfig.isClientActivated()) {
+                    return;
+                }
+                locationSettingsOpen = true;
+                locationSettingsAccount = account;
+                locationSettingsUserId = userConfig.getClientUserId();
+                try {
+                    startActivityForResult(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS), LOCATION_SETTINGS_REQUEST);
+                } catch (Throwable error) {
+                    locationSettingsOpen = false;
+                    locationSettingsAccount = -1;
+                    locationSettingsUserId = 0;
+                    FileLog.e(error);
+                }
             }
         } else if (id == NotificationCenter.fileLoaded) {
             String path = (String) args[0];
@@ -8253,6 +8287,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onSaveInstanceState(Bundle outState) {
         try {
             super.onSaveInstanceState(outState);
+            outState.putBoolean(STATE_LOCATION_SETTINGS_OPEN, locationSettingsOpen);
+            outState.putInt(STATE_LOCATION_SETTINGS_ACCOUNT, locationSettingsAccount);
+            outState.putLong(STATE_LOCATION_SETTINGS_USER, locationSettingsUserId);
             BaseFragment lastFragment = null;
             if (AndroidUtilities.isTablet()) {
                 if (layersActionBarLayout != null && !layersActionBarLayout.getFragmentStack().isEmpty()) {

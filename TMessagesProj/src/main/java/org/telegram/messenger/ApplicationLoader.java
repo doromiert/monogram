@@ -81,7 +81,7 @@ public class ApplicationLoader extends Application {
         super.attachBaseContext(base);
     }
 
-    public static ILocationServiceProvider getLocationServiceProvider() {
+    public static synchronized ILocationServiceProvider getLocationServiceProvider() {
         if (locationServiceProvider == null) {
             locationServiceProvider = applicationLoaderInstance.onCreateLocationServiceProvider();
             locationServiceProvider.init(applicationContext);
@@ -90,7 +90,7 @@ public class ApplicationLoader extends Application {
     }
 
     protected ILocationServiceProvider onCreateLocationServiceProvider() {
-        return new GoogleLocationProvider();
+        return new AndroidLocationProvider();
     }
 
     public static IMapsProvider getMapsProvider() {
