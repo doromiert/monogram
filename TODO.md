@@ -68,7 +68,7 @@ This is a quick source inventory, not a fresh interoperability certification. Ba
 | Message search | Service delegates to its message search task | 0.2.41 searches cached current message text/captions with Unicode matching, filters and chronological pagination. Focused store checks pass; opening results on the phone remains to verify. Unfetched archive history is not searched. | P0 verification |
 | OTR/other legacy encryption | README explicitly supports OTR | Monogram currently implements legacy OMEMO and OMEMO 2, not an OTR frontend/transport. Record the encryption-mode gap rather than treating OMEMO alone as complete feature parity. | P2 |
 | Stories/social feeds | Declares XEP-0501 complete and 0277 partial | Not implemented in Monogram. Keep on the backburner as previously requested. | Backburner |
-| FOSS and monetization cleanup | Separate source-based client baseline; no complete dependency audit performed here | Current Telegram-derived Gradle file still lists Maps/Cast/Vision/Wear/ML Kit/Billing dependencies. The requested full FOSS cleanup and removal of unsupported monetization remain incomplete. | Required project work |
+| FOSS and monetization cleanup | Separate source-based client baseline; no complete dependency audit performed here | Current Telegram-derived Gradle file still lists Maps/Cast/Vision/ML Kit/Wallet/Billing dependencies; Google Wear authentication/SDK is removed in 0.2.48, verified in the runtime graph and APK. The requested full FOSS cleanup and removal of unsupported monetization remain incomplete. | Required project work |
 | Features intended to exceed the baseline | No claim about Monocles supporting these private-pack semantics | Favorite emoji sections, native Telegram reaction UI and configurable GIPHY search are implemented. Private encrypted sticker packs, named stickers/custom emoji, link embeds and applicable free frontend features remain backlog; none count as delivered advantages yet. | After P0/P1 |
 
 Parity gate: close the current user-visible regressions with real phone use and independent-client exchange first; then implement truthful receipt/read state, XMPP calls and remaining account/room functionality while completing FOSS cleanup. Keep stories and the watch client in the previously requested backlog order. Source presence and passing local checks alone do not establish parity.
@@ -79,12 +79,14 @@ Parity gate: close the current user-visible regressions with real phone use and 
 - [o] Next: MUCs, covering the room support and verification listed below.
 - [o] Then: message reactions in direct chats and MUCs, reusing Telegram's native controls. Published and installed 0.2.18 (71939) from `reactions`, including durable replacement sets, rollback, encrypted OMEMO 2 reactions and per-chat consent for public legacy-mode metadata. The 0.2.17 sync policy and bounded shared fingerprint discovery are included. Actual phone reaction interaction and full independent Android-client exchange remain.
 
+- [x] Remove the proprietary Google Wear SDK and unsupported Telegram watch authentication. 0.2.48 deletes the exported Telegram token-transfer service and its isolated sheet, and removes the Gradle dependency. Runtime dependency insight finds no Wear SDK; APK class/manifest inspection confirms the SDK/auth classes and exported service are absent, while AndroidX notification support and WearReplyReceiver remain. The dedicated Monogram watch client stays in the backlog; real watch interaction is not verified.
+
 ## Official Telegram base
 
 - [x] Reapply the Monogram changes onto `DrKLO/Telegram` 13.0.2, commit `f32ffeec763f0bdbf4bec25b52d654f77bff733d` (2026-10-13). The Git rebase is complete; build/runtime validation is tracked below.
 - [x] Update the pinned Nix environment for Java 21, SDK/build tools 35 and 36, NDK 27.2, CMake 3.22.1 and Rust 1.96.1.
 - [x] Build all current-base arm64 native libraries from source; remove bundled native archives/generated headers from Git tracking.
-- [o] Restore the FOSS replacements and remove proprietary runtime SDKs from the new base. Firebase, phone authentication, captcha/integrity and Google voice verification are removed. Remaining: Maps/location, Cast, Wear, Vision/ML Kit, Wallet and Play Billing.
+- [o] Restore the FOSS replacements and remove proprietary runtime SDKs from the new base. Firebase, phone authentication, captcha/integrity and Google voice verification are removed. Remaining: Maps/location, Cast, Vision/ML Kit, Wallet and Play Billing. Google Wear authentication removal is tracked below.
 - [o] Verify XMPP onboarding and request dispatch; prevent Telegram networking in startup, background work and unsupported actions.
 - [x] Compile the current-base Android Java sources with the XMPP adapter and Jabber account routes (138 tasks; BUILD SUCCESSFUL).
 - [x] Build the rebased arm64 APK 0.2.0 (71759) with Nix (301 tasks, BUILD SUCCESSFUL).
