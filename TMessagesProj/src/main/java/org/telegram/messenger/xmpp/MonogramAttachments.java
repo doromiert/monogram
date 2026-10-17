@@ -76,7 +76,24 @@ public final class MonogramAttachments {
         if (needsMediaInfo(message)) return true;
         TLRPC.Document document = message.media == null ? null : message.media.document;
         return document != null && (MessageObject.isVideoDocument(document) || MessageObject.isRoundVideoDocument(document))
-                && document.thumbs.isEmpty();
+                && !hasThumbnail(document);
+    }
+    private static boolean hasThumbnail(TLRPC.Document document) {
+        for (TLRPC.PhotoSize thumb : document.thumbs) {
+            if (thumb instanceof TLRPC.TL_photoStrippedSize || thumb instanceof TLRPC.TL_photoCachedSize) {
+                if (thumb.bytes != null && thumb.bytes.length > 0) return true;
+                continue;
+            }
+            String name = org.telegram.messenger.FileLoader.getAttachFileName(thumb);
+            if (name.isEmpty()) continue;
+            for (int type : new int[]{org.telegram.messenger.FileLoader.MEDIA_DIR_CACHE, org.telegram.messenger.FileLoader.MEDIA_DIR_IMAGE}) {
+                File directory = org.telegram.messenger.FileLoader.getDirectory(type);
+                if (directory == null) continue;
+                File file = new File(directory, name);
+                if (file.isFile() && file.length() > 0) return true;
+            }
+        }
+        return false;
     }
     static boolean needsMediaInfo(TLRPC.Document document) {
         if(document==null) return false;

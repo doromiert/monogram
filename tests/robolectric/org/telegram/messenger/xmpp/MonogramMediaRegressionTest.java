@@ -55,10 +55,39 @@ public class MonogramMediaRegressionTest {
             assertTrue(video.round_message); assertFalse(MonogramAttachments.needsMediaInfo(message));
             assertTrue(MonogramAttachments.needsMediaRefresh(message));
             media.document.thumbs.add(new TLRPC.TL_photoSize_layer127());
+            assertTrue(MonogramAttachments.needsMediaRefresh(message));
+            TLRPC.TL_photoStrippedSize stripped = new TLRPC.TL_photoStrippedSize();
+            media.document.thumbs.add(stripped);
+            assertTrue(MonogramAttachments.needsMediaRefresh(message));
+            stripped.bytes = new byte[]{1, 2, 3};
             assertFalse(MonogramAttachments.needsMediaRefresh(message));
             assertTrue(new MonogramFileRequest(message,file,"video/mp4","").uploadName().startsWith("round_video_"));
             TLRPC.MessageMedia old=MonogramAttachments.remoteMedia(8,"note.mp4","video/mp4",1);
             MonogramAttachments.preserveMediaAttributes(old,media); assertTrue(video.round_message);
         } finally { file.delete(); }
+    }
+    @Test public void deletedAndEmptyVideoThumbnailFilesAreRegenerated() throws Exception {
+        File directory = Files.createTempDirectory("video-thumb-cache").toFile();
+        android.util.SparseArray<File> original = org.robolectric.util.ReflectionHelpers.getStaticField(org.telegram.messenger.FileLoader.class, "mediaDirs");
+        android.util.SparseArray<File> directories = new android.util.SparseArray<>();
+        directories.put(org.telegram.messenger.FileLoader.MEDIA_DIR_CACHE, directory);
+        org.telegram.messenger.FileLoader.setMediaDirs(directories);
+        TLRPC.Message message = new TLRPC.TL_message();
+        message.media = MonogramAttachments.remoteMedia(9, "video.mp4", "video/mp4", 100);
+        TLRPC.DocumentAttribute video = message.media.document.attributes.stream().filter(a -> a instanceof TLRPC.TL_documentAttributeVideo).findFirst().get();
+        video.w = video.h = 128; video.duration = 1;
+        TLRPC.PhotoSize thumb = new TLRPC.TL_photoSize_layer127();
+        thumb.location = new TLRPC.TL_fileLocationToBeDeprecated(); thumb.location.volume_id = Integer.MIN_VALUE; thumb.location.local_id = -123;
+        message.media.document.thumbs.add(thumb);
+        File cached = new File(directory, org.telegram.messenger.FileLoader.getAttachFileName(thumb));
+        try {
+            assertTrue(MonogramAttachments.needsMediaRefresh(message));
+            Files.write(cached.toPath(), new byte[0]); assertTrue(MonogramAttachments.needsMediaRefresh(message));
+            Files.write(cached.toPath(), new byte[]{1}); assertFalse(MonogramAttachments.needsMediaRefresh(message));
+            cached.delete(); assertTrue(MonogramAttachments.needsMediaRefresh(message));
+        } finally {
+            org.telegram.messenger.FileLoader.setMediaDirs(original);
+            cached.delete(); directory.delete();
+        }
     }
 }

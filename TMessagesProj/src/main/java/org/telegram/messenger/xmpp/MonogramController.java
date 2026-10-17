@@ -1396,6 +1396,7 @@ public final class MonogramController {
                 com.negzero.monogram.xmpp.FileShare sharing=store.sharing(message.id);
                 String filename=sharing==null ? com.negzero.monogram.xmpp.FileLink.parse(address).fileName() : sharing.name;
                 TLRPC.MessageMedia media=MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime);
+                MonogramAttachments.preserveMediaAttributes(message.media,media);
                 if(media.document==null || MonogramAttachments.needsMediaInfo(media.document)) return;
                 worker.execute(() -> {
                     if(owner!=accountEpoch) return;
@@ -1406,6 +1407,7 @@ public final class MonogramController {
                         media.document.date=current.date;
                         store.attach(message.id,address,path,media);
                         TLRPC.Message updated=store.getMessage(message.id,self);
+                        if (!MonogramAttachments.needsMediaRefresh(updated)) mediaInfoScanned.remove(message.id);
                         ArrayList<TLRPC.Message> stored=new ArrayList<>(); stored.add(updated);
                         MessagesStorage.getInstance(account).putMessages(stored,false,true,false,0,0,0);
                         AndroidUtilities.runOnUIThread(() -> {
@@ -1656,6 +1658,7 @@ public final class MonogramController {
                         if(decoded.document!=null) decoded.document.date=saved.date;
                         if(decoded.photo!=null) decoded.photo.date=saved.date;
                         store.attach(id, address, path, decoded);
+                        mediaInfoScanned.remove(id);
                         TLRPC.Message updated = store.getMessage(id, self);
                         MonogramAttachments.apply(object.messageOwner, link, path, updated.media, updated.message, filename);
                         ArrayList<TLRPC.Message> messages = new ArrayList<>(); messages.add(updated);
