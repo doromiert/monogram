@@ -249,3 +249,10 @@ MUC controls add members-only/non-anonymous private room creation, mediated and 
 The existing XMPP connection page also shows Android battery optimization exemption state and offers explicit system exemption/app-settings actions, with a fallback when a vendor does not expose them. It does not automatically change battery policy; prolonged background/ColorOS behavior is still unverified.
 
 The Nix arm64 APK build passed and version 0.2.31 (72069) was installed through wireless ADB with the original signing identity. All 2,991 pre-update cached message identities, account/credential and legacy OMEMO identity/trust were preserved; schema 14 and seven rooms remain. The published APK digest and source tag match the local artifact at `c48fe5caefe83fa40d5a7d2ab44e20ef076c51a1`. These packaging/data checks do not verify the new UI or interoperability; the tests above remain deferred.
+
+
+## Native file limits and large streaming transfers (0.2.32)
+
+The XMPP transfer ceiling now matches the native 4,000 MiB file allowance, with the applicable Premium size gates/upgrade prompts removed. The provider’s advertised limit, including the 16-byte encrypted-file tag, is checked before the private upload snapshot and again before upload. Transfer buffers remain fixed-size; cancellation, HTTPS verification, authenticated-decryption commit and the existing automatic-download policy remain in place. HTTP Content-Length is read as a long directly from the header on Android 23+, avoiding the int getter’s size overflow above 2 GiB.
+
+The Nix arm64 APK built, passed the existing signing/package checks and was installed through wireless ADB. All 3,002 previous cached message identities, saved account/credential and legacy OMEMO identity/trust survived. GitHub’s asset size/digest and source tag match the local artifact at `3dfc165b0365cc28845d20a73d95469ef2b203e4`. Tests and actual multi-gigabyte transfers remain deferred; the implementation limit does not establish verified end-to-end large-file support.
