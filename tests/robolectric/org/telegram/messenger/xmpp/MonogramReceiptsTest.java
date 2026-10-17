@@ -48,6 +48,10 @@ public class MonogramReceiptsTest {
                 assertFalse(MessageObject.isUnread(reopened.history(peer,self,0,50).get(0)));
                 assertTrue(reopened.receipt(peer,"one",false).isEmpty());
                 assertFalse(MessageObject.isUnread(reopened.getMessage(id,self)));
+                reopened.clear();
+                try (android.database.Cursor c=reopened.getReadableDatabase().rawQuery("SELECT count(*) FROM message_receipts",null)) {
+                    assertTrue(c.moveToFirst()); assertEquals(0,c.getInt(0));
+                }
             }
         } finally { RuntimeEnvironment.getApplication().deleteDatabase(file); }
     }
