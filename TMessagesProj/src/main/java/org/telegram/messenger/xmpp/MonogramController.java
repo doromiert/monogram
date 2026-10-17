@@ -90,6 +90,23 @@ public final class MonogramController {
     public int state() { return state; }
     public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
     public String accountJid() { return preferences.getString("jid", ""); }
+    public void markLocalRead(long peer,java.util.Collection<Integer> anchors,boolean all,java.util.function.BiConsumer<java.util.Set<Integer>,Integer> callback) {
+        final long owner=accountEpoch;
+        ArrayList<Integer> requested=new ArrayList<>(anchors);
+        worker.execute(() -> {
+            java.util.Set<Integer> read;
+            try {
+                if(owner!=accountEpoch || accountJid().isEmpty()) { AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return; }
+                read=store.reads.through(peer,requested,all);
+                if(read==null) { AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return; }
+            } catch(Exception failure) {
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram local read: "+failure.getClass().getSimpleName());
+                AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return;
+            }
+            MessagesStorage.getInstance(account).processMonogramRead(peer,read,() -> owner==accountEpoch,count ->
+                    AndroidUtilities.runOnUIThread(() -> callback.accept(owner==accountEpoch && count>=0 ? read : null,count)));
+        });
+    }
     public java.util.Set<String> pendingContactRequests() {
         return new java.util.TreeSet<>(preferences.getStringSet("contact-requests-"+accountJid(),java.util.Collections.emptySet()));
     }

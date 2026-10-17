@@ -14659,7 +14659,34 @@ public class MessagesController extends BaseController implements NotificationCe
         getConnectionsManager().sendRequest(req, null);
     }
 
+    public void markMonogramMessagesAsRead(long dialogId,java.util.Collection<Integer> anchors,java.util.function.Consumer<java.util.Set<Integer>> callback) {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).markLocalRead(dialogId,anchors,anchors.contains(Integer.MAX_VALUE),(read,remaining) -> {
+            if(read==null) { if(callback!=null) callback.accept(null);return; }
+            dialogs_read_inbox_max.put(dialogId,0);
+            TLRPC.Dialog dialog=dialogs_dict.get(dialogId);
+            if(dialog!=null) {
+                int previous=dialog.unread_count;boolean marked=dialog.unread_mark;
+                dialog.unread_count=remaining;dialog.unread_mark=false;
+                if((previous!=0 || marked) && remaining==0) {
+                    if(!isDialogMuted(dialogId,0)) unreadUnmutedDialogs=Math.max(0,unreadUnmutedDialogs-1);
+                    for(int b=0;b<selectedDialogFilter.length;b++)
+                        if(selectedDialogFilter[b]!=null && (selectedDialogFilter[b].flags&DIALOG_FILTER_FLAG_EXCLUDE_READ)!=0) {
+                            sortDialogs(null);getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);break;
+                        }
+                }
+                getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces,UPDATE_MASK_READ_DIALOG_MESSAGE);
+            }
+            getNotificationsController().processMonogramReadMessages(dialogId,read,remaining);
+            if(callback!=null) callback.accept(read);
+        });
+    }
+
     public void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
+        if(threadId==0 && !DialogObject.isEncryptedDialog(dialogId)
+                && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            if(maxPositiveId>0) markMonogramMessagesAsRead(dialogId,java.util.Collections.singleton(maxPositiveId),null);
+            return;
+        }
         boolean createReadTask;
 
         if (threadId != 0) {

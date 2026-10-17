@@ -12,13 +12,14 @@ import org.robolectric.shadow.api.Shadow;
 import org.robolectric.util.ReflectionHelpers;
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
+import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.*;
 import org.telegram.tgnet.TLRPC;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
         shadows={MonogramMessageRegressionTest.Device.class,MonogramReadStateTest.Database.class,
-                MonogramReadStateTest.Rows.class,MonogramReadStateTest.Queue.class,MonogramReadStateTest.Storage.class,MonogramReadStateTest.Logging.class})
+                MonogramReadStateTest.Rows.class,MonogramReadStateTest.Queue.class,MonogramReadStateTest.Storage.class,MonogramReadStateTest.Logging.class,MonogramReadStateTest.Prepared.class})
 public class MonogramReadStateTest {
     static android.database.sqlite.SQLiteDatabase db;
     @Implements(value=FileLog.class,isInAndroidSdk=false)
@@ -31,13 +32,28 @@ public class MonogramReadStateTest {
     }
     @Implements(value=SQLiteDatabase.class,isInAndroidSdk=false)
     public static class Database {
+        @org.robolectric.annotation.RealObject SQLiteDatabase real;
         @Implementation public void __constructor__(String path) {}
+        @Implementation public void beginTransaction() { db.beginTransaction(); }
+        @Implementation public void commitTransaction() { if(db.inTransaction()) {db.setTransactionSuccessful();db.endTransaction();} }
+        @Implementation public SQLitePreparedStatement executeFast(String sql) {
+            return ReflectionHelpers.callConstructor(SQLitePreparedStatement.class,
+                    ReflectionHelpers.ClassParameter.from(SQLiteDatabase.class,real),ReflectionHelpers.ClassParameter.from(String.class,sql));
+        }
         @Implementation public SQLiteCursor queryFinalized(String sql,Object... arguments) {
             String[] args=Arrays.stream(arguments).map(String::valueOf).toArray(String[]::new);
             SQLiteCursor result=new SQLiteCursor(null);
             ((Rows)Shadow.extract(result)).cursor=db.rawQuery(sql,args);
             return result;
         }
+    }
+    @Implements(value=SQLitePreparedStatement.class,isInAndroidSdk=false)
+    public static class Prepared {
+        @org.robolectric.annotation.RealObject SQLitePreparedStatement real;
+        android.database.sqlite.SQLiteStatement statement;
+        @Implementation public void __constructor__(SQLiteDatabase ignored,String sql) {statement=db.compileStatement(sql);}
+        @Implementation public SQLitePreparedStatement stepThis() {statement.execute();return real;}
+        @Implementation public void dispose() {statement.close();}
     }
     @Implements(value=SQLiteCursor.class,isInAndroidSdk=false)
     public static class Rows {
@@ -109,5 +125,33 @@ public class MonogramReadStateTest {
         AtomicBoolean done=new AtomicBoolean();
         storage.restoreMonogramReadState(new ArrayList<>(Arrays.asList(message)),new ArrayList<>(Arrays.asList(dialog)),() -> done.set(true));
         assertTrue(done.get());assertTrue(message.unread);assertEquals(3,dialog.unread_count);
+    }
+    @Test public void chronologicalIdsPreserveNewerUnreadRowsMediaFlagsAndOtherPeerNotifications() {
+        db.execSQL("ALTER TABLE dialogs ADD COLUMN inbox_max INTEGER DEFAULT 0");
+        db.execSQL("CREATE TABLE unread_push_messages(uid INTEGER,mid INTEGER)");
+        db.execSQL("INSERT INTO messages_v2 VALUES(7,1,0,0),(7,9,0,2),(7,10,1,0),(8,9,0,0)");
+        db.execSQL("INSERT INTO dialogs VALUES(7,2,0,0,5,99)");
+        db.execSQL("INSERT INTO unread_push_messages VALUES(7,1),(7,9),(8,9)");
+        int[] counts=ReflectionHelpers.callInstanceMethod(storage,"markMonogramReadInternal",
+                ReflectionHelpers.ClassParameter.from(long.class,7L),ReflectionHelpers.ClassParameter.from(java.util.Collection.class,Arrays.asList(9,10)));
+        assertArrayEquals(new int[]{2,1},counts);
+        try(android.database.Cursor rows=db.rawQuery("SELECT mid,read_state FROM messages_v2 WHERE uid=7 ORDER BY mid",null)) {
+            assertTrue(rows.moveToNext());assertEquals(1,rows.getInt(0));assertEquals(0,rows.getInt(1));
+            assertTrue(rows.moveToNext());assertEquals(9,rows.getInt(0));assertEquals(3,rows.getInt(1));
+            assertTrue(rows.moveToNext());assertEquals(10,rows.getInt(0));assertEquals(0,rows.getInt(1));
+        }
+        try(android.database.Cursor rows=db.rawQuery("SELECT unread_count,flags,inbox_max FROM dialogs WHERE did=7",null)) {
+            assertTrue(rows.moveToFirst());assertEquals(1,rows.getInt(0));assertEquals(4,rows.getInt(1));assertEquals(0,rows.getInt(2));
+        }
+        try(android.database.Cursor rows=db.rawQuery("SELECT COUNT(*) FROM unread_push_messages",null)) {assertTrue(rows.moveToFirst());assertEquals(2,rows.getInt(0));}
+        assertArrayEquals(new int[]{1,0},ReflectionHelpers.callInstanceMethod(storage,"markMonogramReadInternal",
+                ReflectionHelpers.ClassParameter.from(long.class,7L),ReflectionHelpers.ClassParameter.from(java.util.Collection.class,Arrays.asList(1,9))));
+    }
+    @Test public void changedAccountDoesNotApplyQueuedReadIds() {
+        db.execSQL("INSERT INTO messages_v2 VALUES(7,9,0,0)");
+        java.util.concurrent.atomic.AtomicInteger result=new java.util.concurrent.atomic.AtomicInteger();
+        storage.processMonogramRead(7,new java.util.HashSet<>(Arrays.asList(9)),() -> false,result::set);
+        assertEquals(-1,result.get());
+        try(android.database.Cursor rows=db.rawQuery("SELECT read_state FROM messages_v2",null)) {assertTrue(rows.moveToFirst());assertEquals(0,rows.getInt(0));}
     }
 }

@@ -28,6 +28,7 @@ public final class MonogramReceipts {
     /** Reuse Telegram's persisted per-message flags, without treating a history fetch as a read. */
     public static void restoreIncoming(TLRPC.Message message, int flags) {
         if (message.out) return;
+        if(message.params!=null && "true".equals(message.params.get("monogram-local-read"))) flags|=1;
         message.unread = (flags & 1) == 0;
         message.media_unread = (flags & 2) == 0;
         if (message.params == null) message.params = new java.util.HashMap<>();
@@ -37,6 +38,13 @@ public final class MonogramReceipts {
         message.unread = false;
         if (!message.out && message.params != null && message.params.containsKey(INCOMING_UNREAD))
             message.params.put(INCOMING_UNREAD, "false");
+    }
+    public static void markLocalRead(TLRPC.Message message) {
+        if(message.out) return;
+        if(message.params==null) message.params=new java.util.HashMap<>();
+        message.params.put("monogram-local-read","true");
+        message.params.put(INCOMING_UNREAD,"false");
+        message.unread=false;
     }
     static void pending(TLRPC.Message message) {
         if (message.params == null) message.params = new java.util.HashMap<>();

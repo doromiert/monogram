@@ -888,6 +888,14 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void processReadMessages(LongSparseIntArray inbox, long dialogId, int maxDate, int maxId, boolean isPopup) {
+        processReadMessages(inbox,dialogId,maxDate,maxId,isPopup,null);
+    }
+    public void processMonogramReadMessages(long dialogId,java.util.Set<Integer> ids,int remaining) {
+        processReadMessages(null,dialogId,0,0,false,new java.util.HashSet<>(ids));
+        LongSparseIntArray changed=new LongSparseIntArray(1);changed.put(dialogId,remaining);
+        processDialogsUpdateRead(changed,true);
+    }
+    private void processReadMessages(LongSparseIntArray inbox,long dialogId,int maxDate,int maxId,boolean isPopup,java.util.Set<Integer> exactIds) {
         ArrayList<MessageObject> popupArrayRemove = new ArrayList<>(0);
         notificationsQueue.postRunnable(() -> {
             if (inbox != null) {
@@ -923,12 +931,14 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                 }
             }
-            if (dialogId != 0 && (maxId != 0 || maxDate != 0)) {
+            if (dialogId != 0 && (maxId != 0 || maxDate != 0 || exactIds!=null)) {
                 for (int a = 0; a < pushMessages.size(); a++) {
                     MessageObject messageObject = pushMessages.get(a);
                     if (messageObject.getDialogId() == dialogId && !messageObject.isStoryReactionPush) {
                         boolean remove = false;
-                        if (maxDate != 0) {
+                        if(exactIds!=null) {
+                            remove=exactIds.contains(messageObject.getId());
+                        } else if (maxDate != 0) {
                             if (messageObject.messageOwner.date <= maxDate) {
                                 remove = true;
                             }
@@ -1436,6 +1446,15 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void processDialogsUpdateRead(LongSparseIntArray dialogsToUpdate) {
+        processDialogsUpdateRead(dialogsToUpdate,false);
+    }
+    private static int monogramUnreadFloor(long dialogId,int reported,Iterable<MessageObject> messages) {
+        int pending=0;
+        for(MessageObject message:messages)
+            if(message.getDialogId()==dialogId && !message.messageOwner.from_scheduled && !message.isStoryReactionPush) pending++;
+        return Math.max(reported,pending);
+    }
+    private void processDialogsUpdateRead(LongSparseIntArray dialogsToUpdate,boolean preserveUnmatched) {
         ArrayList<MessageObject> popupArrayToRemove = new ArrayList<>();
         notificationsQueue.postRunnable(() -> {
             int old_unread_count = total_unread_count;
@@ -1476,6 +1495,8 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                 }
 
+                // A new push can arrive after the storage read snapshot; never clear it with a stale zero.
+                if(preserveUnmatched) newCount=monogramUnreadFloor(dialogId,newCount,pushMessages);
                 if (newCount == 0) {
                     smartNotificationsDialogs.remove(dialogId);
                 }

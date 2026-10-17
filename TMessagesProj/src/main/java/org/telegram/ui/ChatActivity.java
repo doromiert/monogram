@@ -898,6 +898,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean firstLoading = true;
     private boolean chatWasReset;
     private boolean firstUnreadSent;
+    private final java.util.Set<Integer> monogramPendingReads=new java.util.HashSet<>();
     private int loadsCount;
     private int last_message_id = 0;
     private long mergeDialogId;
@@ -16042,6 +16043,8 @@ public class ChatActivity extends BaseFragment implements
         int maxPositiveUnreadId = Integer.MIN_VALUE;
         int maxNegativeUnreadId = Integer.MAX_VALUE;
         int maxUnreadDate = Integer.MIN_VALUE;
+        boolean monogramRead=threadId==0 && currentEncryptedChat==null && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+        ArrayList<Integer> monogramVisibleReads=monogramRead ? new ArrayList<>() : null;
         int recyclerChatViewHeight = (contentView.getMeasuredHeight() - (inPreviewMode || isInsideContainer ? 0 : AndroidUtilities.dp(48)) - chatListView.getTop());
         pollsToCheck.clear();
         float clipTop = chatListViewPaddingTop;
@@ -16327,6 +16330,7 @@ public class ChatActivity extends BaseFragment implements
                     if (group != null) {
                         for (MessageObject msg : group.messages) {
                             final int msg_id = msg.getId();
+                            if(monogramRead && msg_id>0 && !msg.isOut()) monogramVisibleReads.add(msg_id);
                             if (msg_id > 0) {
                                 maxPositiveUnreadId = Math.max(maxPositiveUnreadId, msg_id);
                             }
@@ -16336,6 +16340,7 @@ public class ChatActivity extends BaseFragment implements
                             maxUnreadDate = Math.max(maxUnreadDate, msg.messageOwner.date);
                         }
                     } else {
+                        if(monogramRead && id>0 && !messageObject.isOut()) monogramVisibleReads.add(id);
                         if (id > 0) {
                             maxPositiveUnreadId = Math.max(maxPositiveUnreadId, messageObject.getId());
                         }
@@ -16665,7 +16670,14 @@ public class ChatActivity extends BaseFragment implements
         invalidateChatListViewTopPadding();
         if (!firstLoading && !paused && !inPreviewMode && (chatMode == 0 || chatMode == MODE_SUGGESTIONS) && !getMessagesController().ignoreSetOnline) {
             int scheduledRead = 0;
-            if ((maxPositiveUnreadId != Integer.MIN_VALUE || maxNegativeUnreadId != Integer.MAX_VALUE)) {
+            if(monogramRead) {
+                if(!monogramVisibleReads.isEmpty()) markMonogramVisibleRead(monogramVisibleReads);
+                else if(!firstUnreadSent && chatLayoutManager.findFirstVisibleItemPosition()==0) {
+                    for(MessageObject message:messages) if(message.getId()>0) {
+                        markMonogramVisibleRead(java.util.Collections.singletonList(message.getId()));break;
+                    }
+                }
+            } else if ((maxPositiveUnreadId != Integer.MIN_VALUE || maxNegativeUnreadId != Integer.MAX_VALUE)) {
                 int counterDecrement = 0;
                 for (int a = 0; a < messages.size(); a++) {
                     MessageObject messageObject = messages.get(a);
@@ -16745,6 +16757,23 @@ public class ChatActivity extends BaseFragment implements
 
     private boolean pinnedOnlyStarterMessage() {
         return pinnedMessageIds.size() == 1 && topicStarterMessageObject != null && pinnedMessageIds.get(0) == topicStarterMessageObject.getId();
+    }
+
+    private void markMonogramVisibleRead(java.util.Collection<Integer> anchors) {
+        ArrayList<Integer> requested=new ArrayList<>();
+        for(int id:anchors) if(id>0 && monogramPendingReads.add(id)) requested.add(id);
+        if(requested.isEmpty()) return;
+        getMessagesController().markMonogramMessagesAsRead(dialog_id,requested,read -> {
+            monogramPendingReads.removeAll(requested);
+            if(read==null) return;
+            int changed=0;
+            for(MessageObject message:messages) if(!message.isOut() && read.contains(message.getId()) && message.isUnread()) {
+                org.telegram.messenger.xmpp.MonogramReceipts.markLocalRead(message.messageOwner);changed++;
+            }
+            newUnreadMessageCount=Math.max(0,newUnreadMessageCount-changed);
+            firstUnreadSent=true;
+            if(fragmentView!=null) inlineUpdate1();
+        });
     }
 
     private void inlineUpdate1() {

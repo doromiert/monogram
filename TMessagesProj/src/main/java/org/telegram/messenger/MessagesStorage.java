@@ -8126,6 +8126,47 @@ public class MessagesStorage extends BaseController {
     }
 
 
+    private int[] markMonogramReadInternal(long dialogId, java.util.Collection<Integer> ids) throws Exception {
+        int previous=0,remaining=0;
+        SQLiteCursor cursor=database.queryFinalized("SELECT unread_count FROM dialogs WHERE did=?",dialogId);
+        try { if(cursor.next()) previous=cursor.intValue(0); } finally { cursor.dispose(); }
+        database.beginTransaction();
+        try {
+            ArrayList<Integer> batch=new ArrayList<>(256);
+            for(int id:ids) if(id>0) {
+                batch.add(id);
+                if(batch.size()==256) { markMonogramReadBatch(dialogId,batch);batch.clear(); }
+            }
+            if(!batch.isEmpty()) markMonogramReadBatch(dialogId,batch);
+            cursor=database.queryFinalized("SELECT COUNT(*) FROM messages_v2 WHERE uid=? AND out=0 AND mid>0 AND (read_state & 1)=0",dialogId);
+            try { if(cursor.next()) remaining=cursor.intValue(0); } finally { cursor.dispose(); }
+            database.executeFast("UPDATE dialogs SET unread_count="+remaining+",inbox_max=0,flags=COALESCE(flags,0)&~1 WHERE did="+dialogId).stepThis().dispose();
+            return new int[]{previous,remaining};
+        } finally { database.commitTransaction(); }
+    }
+    private void markMonogramReadBatch(long dialogId, ArrayList<Integer> ids) throws Exception {
+        String selection="uid="+dialogId+" AND mid IN ("+TextUtils.join(",",ids)+")";
+        database.executeFast("UPDATE messages_v2 SET read_state=read_state|1 WHERE "+selection+" AND out=0").stepThis().dispose();
+        database.executeFast("DELETE FROM unread_push_messages WHERE "+selection).stepThis().dispose();
+    }
+    public void processMonogramRead(long dialogId,java.util.Set<Integer> ids,java.util.function.BooleanSupplier current,java.util.function.IntConsumer callback) {
+        java.util.Set<Integer> snapshot=new java.util.LinkedHashSet<>(ids);
+        storageQueue.postRunnable(() -> {
+            if(!current.getAsBoolean()) { callback.accept(-1);return; }
+            int[] counts;
+            try { counts=markMonogramReadInternal(dialogId,snapshot); }
+            catch(Exception error) { checkSQLException(error);callback.accept(-1);return; }
+            try {
+                if(counts[0]!=0 && counts[1]==0) {
+                    LongSparseIntArray changed=new LongSparseIntArray();changed.put(dialogId,0);
+                    updateFiltersReadCounter(changed,null,true);
+                }
+                updateWidgets(dialogId);
+            } catch(Exception error) { checkSQLException(error); }
+            callback.accept(counts[1]);
+        });
+    }
+
     public void processPendingRead(long dialogId, int maxPositiveId, int maxNegativeId, int scheduledCount) {
         int maxDate = lastSavedDate;
         storageQueue.postRunnable(() -> {
