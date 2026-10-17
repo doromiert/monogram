@@ -79,6 +79,7 @@ public final class MonogramController {
         store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account); vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
+        AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).addObserver(this::historyMediaLoaded,NotificationCenter.messagesDidLoad));
     }
     public int state() { return state; }
     public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
@@ -956,8 +957,6 @@ public final class MonogramController {
                 result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, offset, count, loadType == 1));
                 if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
                 else result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
-                ArrayList<TLRPC.Message> automatic = new ArrayList<>(result.messages);
-                worker.execute(() -> { if (epoch == accountEpoch) for (TLRPC.Message message : automatic) maybeAutoDownload(message); });
             } catch (RuntimeException failed) {
                 if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram cached history: " + failed.getClass().getSimpleName());
                 result.messages.clear(); result.users.clear(); end = true;
@@ -1244,6 +1243,21 @@ public final class MonogramController {
                 || reply.monoforum_peer_id != null || reply.reply_to_peer_id != null && (peer<0 ? -reply.reply_to_peer_id.chat_id : reply.reply_to_peer_id.user_id) != peer) throw new UnsupportedOperationException();
         return replyTo(reply.reply_to_msg_id, peer, encrypted, reply.quote_text, reply.quote_offset);
     }
+    private void historyMediaLoaded(int notification,int currentAccount,Object... args) {
+        if(currentAccount!=account || args.length<3 || !(args[2] instanceof java.util.List)) return;
+        final long owner=accountEpoch;
+        ArrayList<TLRPC.Message> messages=new ArrayList<>();
+        for(Object item:(java.util.List<?>)args[2]) if(item instanceof MessageObject) messages.add(((MessageObject)item).messageOwner);
+        // Start media work after native history delivery, so replacements cannot precede their rows.
+        worker.execute(() -> {
+            if(owner!=accountEpoch) return;
+            for(TLRPC.Message message:messages) {
+                if(!MonogramAttachments.has(message)) continue;
+                File path=new File(message.attachPath);
+                if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
+            }
+        });
+    }
     private final java.util.Set<Integer> mediaInfoScanned=java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Integer,Boolean>());
     private void refreshCachedMedia(TLRPC.Message message,File path) {
         if(!MonogramAttachments.needsMediaInfo(message) || !mediaInfoScanned.add(message.id)) return;
@@ -1280,7 +1294,7 @@ public final class MonogramController {
     private void maybeAutoDownload(TLRPC.Message message) {
         if (!MonogramAttachments.has(message)) return;
         File path=new File(message.attachPath);
-        if(path.isFile()) { refreshCachedMedia(message,path); return; }
+        if(path.isFile()) return;
         if(DownloadController.getInstance(account).getCurrentDownloadMask()==0) return;
         final com.negzero.monogram.xmpp.FileShare sharing;
         try { sharing = store.sharing(message.id); }
