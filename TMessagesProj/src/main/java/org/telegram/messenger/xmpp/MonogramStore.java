@@ -1109,6 +1109,19 @@ final class MonogramStore extends SQLiteOpenHelper {
             return c.moveToFirst() ? sharing(c.getString(0), c.getString(1)) : null;
         } catch (Exception invalid) { throw new IllegalStateException("Invalid cached file description", invalid); }
     }
+    /** A late metadata upgrade or deletion must invalidate work verified against the earlier description. */
+    synchronized boolean attachDownloaded(int id,String url,com.negzero.monogram.xmpp.FileShare expected,java.io.File path,TLRPC.MessageMedia media) throws Exception {
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try {
+            if(hiddenMessage(id)) return false;
+            try(Cursor c=db.rawQuery("SELECT url,sharing FROM attachments WHERE message=?",new String[]{Integer.toString(id)})) {
+                if(!c.moveToFirst() || !url.equals(c.getString(0))) return false;
+                com.negzero.monogram.xmpp.FileShare current=sharing(url,c.getString(1));
+                if(expected==null ? current!=null : current==null || !expected.link.wireUrl.equals(url) || !expected.xml().equals(current.xml())) return false;
+            }
+            attach(id,url,path,media);db.setTransactionSuccessful();return true;
+        } finally { db.endTransaction(); }
+    }
     synchronized void attach(int id, String url, java.io.File path, TLRPC.MessageMedia media) {
         ContentValues empty = new ContentValues(); empty.put("message", id); empty.put("url", url);
         getWritableDatabase().insertWithOnConflict("attachments", null, empty, SQLiteDatabase.CONFLICT_IGNORE);

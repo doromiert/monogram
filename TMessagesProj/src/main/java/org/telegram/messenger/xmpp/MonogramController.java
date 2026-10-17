@@ -1605,7 +1605,7 @@ public final class MonogramController {
                         if(!address.equals(current.params.get(MonogramAttachments.PARAM)) || !path.equals(store.attachmentPath(message.id)) || !MonogramAttachments.needsMediaRefresh(current)) return;
                         MonogramAttachments.preserveMediaAttributes(current.media,media);
                         media.document.date=current.date;
-                        store.attach(message.id,address,path,media);
+                        if(!store.attachDownloaded(message.id,address,sharing,path,media)) return;
                         TLRPC.Message updated=store.getMessage(message.id,self);
                         ArrayList<TLRPC.Message> stored=new ArrayList<>(); stored.add(updated);
                         MessagesStorage.getInstance(account).putMessages(stored,false,true,false,0,0,0);
@@ -1721,6 +1721,7 @@ public final class MonogramController {
     }
     private void prepareForwardFile(MonogramFileRequest request,XmppSession expected) throws Exception {
         if(request.message.params==null || !request.message.params.containsKey(MonogramForwarding.SOURCE)) return;
+        long owner=accountEpoch;
         if(session!=expected || request.file==null || !request.file.equals(forwardSource(request.message.params)))
             throw new java.io.IOException("The forwarded attachment is no longer available");
         int id=Integer.parseInt(request.message.params.get(MonogramForwarding.SOURCE));
@@ -1740,7 +1741,10 @@ public final class MonogramController {
             if(!downloaded) throw new java.io.IOException("Cannot download the forwarded attachment");
         }
         request.job.check();
-        if(session!=expected) throw new IllegalStateException("Account connection changed");
+        if(session!=expected || owner!=accountEpoch) throw new IllegalStateException("Account connection changed");
+        TLRPC.Message source=store.getMessage(id,self);
+        if(!store.attachDownloaded(id,address,sharing,request.file,source.media))
+            throw new java.io.IOException("The forwarded attachment description changed. Please retry.");
     }
     private void upload(MonogramFileRequest request, RequestDelegate callback) {
         final XmppSession expected;
@@ -1876,6 +1880,7 @@ public final class MonogramController {
         String name = object.getFileName(); fileNames.put(name, job);
         String address = object.messageOwner.params.get(MonogramAttachments.PARAM);
         long epoch = sessionEpoch;
+        long owner = accountEpoch;
         (automatic ? autoDownloadWorker : fileWorker).execute(() -> {
             try {
                 job.check();
@@ -1895,7 +1900,9 @@ public final class MonogramController {
                 boolean downloaded = cached || (sharing == null ? FileTransfer.download(link, path, job, onProgress, policy) : FileTransfer.download(sharing, path, job, onProgress, policy));
                 if (!downloaded) {
                     finishDownload(id, name, job);
-                    AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0));
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if(owner==accountEpoch) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0);
+                    });
                     return;
                 }
                 job.check();
@@ -1904,33 +1911,40 @@ public final class MonogramController {
                 MonogramAttachments.preserveMediaAttributes(object.messageOwner.media,decoded);
                 job.check();
                 worker.execute(() -> {
+                    boolean sourceChanged=false;
                     try {
                         job.check();
-                        if (sessionEpoch != epoch || store.hiddenMessage(id)) return;
+                        if (sessionEpoch != epoch || owner!=accountEpoch || store.hiddenMessage(id)) return;
                         TLRPC.Message saved = store.getMessage(id, self);
                         if(decoded.document!=null) decoded.document.date=saved.date;
                         if(decoded.photo!=null) decoded.photo.date=saved.date;
-                        store.attach(id, address, path, decoded);
+                        if(!store.attachDownloaded(id,address,sharing,path,decoded)) { sourceChanged=true;return; }
                         mediaInfoScanned.remove(id);
                         TLRPC.Message updated = store.getMessage(id, self);
                         MonogramAttachments.apply(object.messageOwner, link, path, updated.media, updated.message, filename);
                         ArrayList<TLRPC.Message> messages = new ArrayList<>(); messages.add(updated);
                         MessagesStorage.getInstance(account).putMessages(messages, false, true, false, 0, 0, 0);
                         AndroidUtilities.runOnUIThread(() -> {
+                            if(owner!=accountEpoch || sessionEpoch!=epoch) return;
                             ArrayList<MessageObject> objects = new ArrayList<>(); objects.add(new MessageObject(account, updated, true, true));
                             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects, updated.dialog_id, objects);
                             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoaded, name, path);
                         });
-                    } catch (Exception e) { downloadError(name, object, job, e, automatic); }
-                    finally { finishDownload(id, name, job); }
+                    } catch (Exception e) { downloadError(name, object, job, e, automatic,owner); }
+                    finally {
+                        finishDownload(id, name, job);
+                        if(sourceChanged && automatic && owner==accountEpoch && sessionEpoch==epoch && !store.hiddenMessage(id))
+                            maybeAutoDownload(store.getMessage(id,self));
+                    }
                 });
             } catch (Exception e) {
-                downloadError(name, object, job, e, automatic); finishDownload(id, name, job);
+                downloadError(name, object, job, e, automatic,owner); finishDownload(id, name, job);
             }
         });
     }
-    private void downloadError(String name, MessageObject object, FileTransfer.Job job, Exception error, boolean automatic) {
+    private void downloadError(String name, MessageObject object, FileTransfer.Job job, Exception error, boolean automatic,long owner) {
         AndroidUtilities.runOnUIThread(() -> {
+            if(owner!=accountEpoch) return;
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0);
             if (!automatic && !job.cancelled()) org.telegram.ui.Components.AlertsCreator.processError(account, fileError(error), null,
                     new MonogramFileRequest(object.messageOwner, null, "application/octet-stream", ""));
