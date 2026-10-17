@@ -2,6 +2,8 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
+- [x] Build, publish and install [0.2.68](https://github.com/doromiert/monogram/releases/tag/v0.2.68) (72439, arm64, original signer) from `native-presence-status`, source `be9da2a15`. Nix packaging and three focused native-status checks pass; published APK checksum, size and source tag match. ADB confirms the version and foreground service, preserving current account settings, two checked key files and all 543 pre-update message identities. Live phone presence transitions and provider privacy behavior remain unverified.
+
 - [o] Keep native contact/profile/group-member status consistent with the XMPP chat header. Project authorized live presence into native user status on user loads, profile refreshes and coalesced presence updates; clear stale native online states on connection changes. Remove Telegram's online inference from messages, read markers and typing. Share away/busy/idle/last-seen/unavailable formatting, without inventing activity times or treating available idle resources as active. Three focused Android checks and Nix APK packaging pass; real-phone presence transitions and provider privacy behavior remain to verify.
 
 - [x] Build, publish and install [0.2.67](https://github.com/doromiert/monogram/releases/tag/v0.2.67) (72429, arm64, original signer) from `message-forwarding`, source `7e9b60f76`. Nix packaging and three focused forwarding checks pass; published APK checksum, size and source tag match. ADB confirms the version, foreground connection service and preservation of current account settings, two checked key files and all 540 pre-update message identities. Native phone forwarding and cross-client behavior remain unverified.
