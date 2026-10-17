@@ -101,6 +101,42 @@ class FileShareTest {
         assertNotEquals(expected.cacheKey(), new FileShare(description(URL, "<size>4</size>"+first.replace(sha, "AQ"+sha.substring(2))+second)).cacheKey());
         assertEquals(new FileShare(description(URL, first)).cacheKey(), new FileShare(description(URL, first.replace(sha, "\n "+sha+"\t"))).cacheKey());
     }
+    @Test void attachmentEquivalenceAcceptsKnownReorderingButNotReplacement() throws Exception {
+        String hash = "<hash xmlns='urn:xmpp:hashes:2' algo='sha-256'>" + java.util.Base64.getEncoder().encodeToString(new byte[32]) + "</hash>";
+        String xml = description(URL, "<size>4</size>" + hash);
+        FileShare original = new FileShare(xml);
+        String reordered = xml.replace("<name>photo.jpg</name><media-type>image/jpeg</media-type><size>4</size>" + hash,
+                hash + "<size>4</size><media-type>image/jpeg</media-type><name>photo.jpg</name>");
+        FileShare equivalent = new FileShare(reordered);
+        assertNotEquals(original.xml(), equivalent.xml());
+        assertTrue(original.sameAttachment(equivalent)); assertTrue(equivalent.sameAttachment(original));
+        for (String changed : new String[]{reordered.replace(URL, URL + "?replacement"),
+                reordered.replace("<size>4</size>", "<size>5</size>"), reordered.replace("photo.jpg", "renamed.jpg"),
+                reordered.replace("image/jpeg", "image/png"), reordered.replace(hash, ""),
+                reordered.replace("AAAAAAAA", "AQAAAAAA"), reordered.replace("disposition='inline'", "disposition='attachment'"),
+                reordered.replace("<file-sharing ", "<file-sharing id='new' ")}) {
+            assertFalse(original.sameAttachment(new FileShare(changed)), changed);
+        }
+        String secret = "aesgcm://example.org/photo.jpg#" + new String(new char[88]).replace('\0', 'a');
+        FileShare encrypted = new FileShare(xml.replace(URL, secret));
+        assertTrue(encrypted.sameAttachment(new FileShare(reordered.replace(URL, secret))));
+        assertFalse(encrypted.sameAttachment(new FileShare(reordered.replace(URL, secret.substring(0, secret.length()-1) + "b"))));
+        assertFalse(original.sameAttachment(null));
+    }
+    @Test void unknownAttachmentMetadataRequiresUnchangedSerialization() throws Exception {
+        for (String extra : new String[]{"<future xmlns='urn:example:future'>value</future>",
+                "<hash xmlns='urn:xmpp:hashes:2' algo='unknown'>AAAA</hash>",
+                "<desc xml:lang='en'>Description</desc>", "<width unit='pixels'>10</width>",
+                "<width>10</width><width>10</width>"}) {
+            String xml = description(URL, extra);
+            FileShare original = new FileShare(xml);
+            assertTrue(original.sameAttachment(new FileShare(xml)));
+            String reordered = xml.replace("<name>photo.jpg</name><media-type>image/jpeg</media-type>",
+                    "<media-type>image/jpeg</media-type><name>photo.jpg</name>");
+            assertFalse(original.sameAttachment(new FileShare(reordered)), extra);
+            if (extra.contains("value")) assertFalse(original.sameAttachment(new FileShare(xml.replace("value", "other"))));
+        }
+    }
     @Test void snapshotKeepsStableBytesAndCleansFailedCopies() throws Exception {
         java.nio.file.Path directory = Files.createTempDirectory("upload-snapshot-");
         java.io.File source = directory.resolve("source.bin").toFile();

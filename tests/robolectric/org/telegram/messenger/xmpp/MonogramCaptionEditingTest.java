@@ -32,6 +32,9 @@ public class MonogramCaptionEditingTest {
         return XmppMessage.sentFile(JidCreate.entityFullFrom(OWN+"/phone"),PEER,id,sharing,caption,null,correction);
     }
     private void assertCaptionRoundTrip(Context context,String database,FileShare sharing) throws Exception {
+        assertCaptionRoundTrip(context,database,sharing,sharing);
+    }
+    private void assertCaptionRoundTrip(Context context,String database,FileShare sharing,FileShare editedSharing) throws Exception {
         context.deleteDatabase(database); File cached=null; long self; int original;
         try {
             try(MonogramStore store=new MonogramStore(context,database)) {
@@ -41,7 +44,7 @@ public class MonogramCaptionEditingTest {
                 cached=store.attachmentFile(sharing); cached.getParentFile().mkdirs(); Files.write(cached.toPath(),new byte[]{1,2,3});
                 TLRPC.MessageMedia nativeMedia=MonogramAttachments.remoteMedia(original,sharing.name,sharing.mime,sharing.size);
                 store.attach(original,sharing.link.wireUrl,cached,nativeMedia);
-                int correction=store.save(file("caption-"+database,sharing,"After",new MessageCorrection("original-"+database)));
+                int correction=store.save(file("caption-"+database,editedSharing,"After",new MessageCorrection("original-"+database)));
                 assertTrue(store.reconcileCorrections(peer).hidden.contains(correction));
                 TLRPC.Message rendered=store.getMessage(original,self);
                 assertEquals(original,rendered.id); assertEquals("After",rendered.message); assertEquals(cached.getAbsolutePath(),rendered.attachPath);
@@ -62,6 +65,18 @@ public class MonogramCaptionEditingTest {
         Context context=RuntimeEnvironment.getApplication();
         assertCaptionRoundTrip(context,"caption-plain.db",sharing("https://files.example.org/plain.bin","plain.bin",(byte)1));
         assertCaptionRoundTrip(context,"caption-modern.db",sharing("aesgcm://files.example.org/private.bin#"+new String(new char[88]).replace('\0','a'),"private.bin",(byte)2));
+    }
+
+    @Test public void reorderedPlainAndModernDescriptionsKeepCachedAttachmentAcrossReopen() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();
+        for(String url:new String[]{"https://files.example.org/reordered.bin",
+                "aesgcm://files.example.org/reordered.bin#"+new String(new char[88]).replace('\0','a')}) {
+            FileShare original=sharing(url,"reordered.bin",(byte)5);
+            FileShare reordered=new FileShare(original.xml().replace("<name>reordered.bin</name>","")
+                    .replace("<size>","<name>reordered.bin</name><size>"));
+            assertNotEquals(original.xml(),reordered.xml());
+            assertCaptionRoundTrip(context,url.startsWith("https")?"caption-reorder-plain.db":"caption-reorder-modern.db",original,reordered);
+        }
     }
 
     @Test public void rejectsReplacementMissingLegacyDowngradeAndForeignCaptionCorrections() throws Exception {
