@@ -123,8 +123,12 @@ public final class MonogramAttachments {
                         || old instanceof TLRPC.TL_documentAttributeVideo && current instanceof TLRPC.TL_documentAttributeVideo
                         || old instanceof TLRPC.TL_documentAttributeAnimated && current instanceof TLRPC.TL_documentAttributeAnimated) { found=current; break; }
             }
-            if(found==null) decoded.document.attributes.add(old);
-            else if(old instanceof TLRPC.TL_documentAttributeAudio) {
+            if(found==null) {
+                // Remote placeholders have no verified duration/dimensions to preserve.
+                if(old instanceof TLRPC.TL_documentAttributeAudio && !old.voice && old.duration<=0) continue;
+                if(old instanceof TLRPC.TL_documentAttributeVideo && !old.round_message && (old.w<=0 || old.h<=0)) continue;
+                decoded.document.attributes.add(old);
+            } else if(old instanceof TLRPC.TL_documentAttributeAudio) {
                 found.voice=old.voice;
                 if(old.waveform!=null) { found.waveform=old.waveform.clone(); found.flags|=4; }
             } else if(old instanceof TLRPC.TL_documentAttributeVideo) found.round_message=old.round_message;
