@@ -556,25 +556,7 @@ public final class XmppRooms implements AutoCloseable {
             try { members=members(jid); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the membership check.",timeout); }
             Set<BareJid> recipients=recipients(members,connection.getUser().asBareJid(),excluded);
-            OmemoMessage.Sent ciphertext;
-            if(automatic) ciphertext=encryptAvailable(recipients,wireBody,skipped);
-            else {
-                for (BareJid recipient:recipients) {
-                    try { if(deviceLookup.devices(recipient).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,recipient.toString()); }
-                    catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
-                    catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
-                }
-
-                try { ciphertext=omemo.encrypt(recipients,wireBody); }
-                catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("An OMEMO bundle or session lookup timed out while preparing recipient devices.",timeout); }
-                if (!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
-                for (BareJid recipient:recipients) {
-                    if (recipient.equals(connection.getUser().asBareJid())) continue;
-                    boolean included=false;
-                    for (OmemoDevice device:ciphertext.getIntendedDevices()) if (device.getJid().equals(recipient)) included=true;
-                    if (!included) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
-                }
-            }
+            OmemoMessage.Sent ciphertext=encryptRecipients(recipients,wireBody,skipped,automatic);
             try { if (!members(jid).equals(members)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
             message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
@@ -599,14 +581,23 @@ public final class XmppRooms implements AutoCloseable {
         if(last!=null && System.nanoTime()<last.until) throw last.error;
         unavailable.remove(key);
     }
-    private OmemoMessage.Sent encryptAvailable(Set<BareJid> recipients,String body,Map<String,String> skipped) throws Exception {
+    private OmemoMessage.Sent encryptRecipients(Set<BareJid> recipients,String body,Map<String,String> skipped,boolean automatic) throws Exception {
         Map<BareJid,Set<OmemoDevice>> deviceLists=new LinkedHashMap<>();
         Set<OmemoDevice> devices=new HashSet<>();
+        Set<BareJid> targets=new LinkedHashSet<>(recipients);
+        if(!automatic) targets.add(connection.getUser().asBareJid());
         // Keep Smack's device-list merge/PEP lifecycle, without holding the encryption monitor while waiting.
-        for(BareJid recipient:recipients) {
+        for(BareJid recipient:targets) {
             if(closed) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
             Set<OmemoDevice> found;
             String key=recipient.toString();
+            if(!automatic) {
+                try { found=deviceLookup.devices(recipient); }
+                catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("Device list lookup timed out for "+recipient,timeout); }
+                catch(org.jivesoftware.smack.XMPPException.XMPPErrorException rejected) { throw new XmppRequestException("OMEMO device list for "+recipient,rejected); }
+                if(found.isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES,key);
+                deviceLists.put(recipient,new HashSet<>(found));devices.addAll(found);continue;
+            }
             try {
                 found=omemo.getDevicesOf(recipient);
                 if(found.isEmpty()) { checkUnavailable(key); found=deviceLookup.devices(recipient); }
@@ -626,8 +617,10 @@ public final class XmppRooms implements AutoCloseable {
         Map<OmemoDevice,Lookup<org.jivesoftware.smackx.omemo.element.OmemoBundleElement>> prepared=new HashMap<>();
         synchronized(omemo) {
             for(OmemoDevice device:devices) {
-                try { checkUnavailable(deviceKey(device)); }
-                catch(Exception unavailable) { prepared.put(device,new Lookup<>(null,unavailable));continue; }
+                if(automatic) {
+                    try { checkUnavailable(deviceKey(device)); }
+                    catch(Exception unavailable) { prepared.put(device,new Lookup<>(null,unavailable));continue; }
+                }
                 if(org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(omemo,device))
                     cold.put(device,() -> org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.fetchBundle(connection,device));
             }
@@ -636,6 +629,7 @@ public final class XmppRooms implements AutoCloseable {
         long budget=Math.min(TimeUnit.MINUTES.toNanos(1),2*TimeUnit.MILLISECONDS.toNanos(Math.min(connection.getReplyTimeout(),30000))+TimeUnit.SECONDS.toNanos(1));
         long deadline=System.nanoTime()+budget;
         prepared.putAll(parallelLookups(cold,bundleLookups,pendingBundles,deadline,() -> !closed,(device,result) -> {
+            if(!automatic) return;
             if(result.error!=null && unavailable(result.error)) unavailable.putIfAbsent(deviceKey(device),new Unavailable(result.error));
             else if(result.error==null && result.value==null) unavailable.putIfAbsent(deviceKey(device),new Unavailable(
                     new org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException(device,new java.io.IOException("No published key bundle"))));
@@ -657,11 +651,22 @@ public final class XmppRooms implements AutoCloseable {
                     fingerprint=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.prepare(omemo,device,lookup==null ? null : lookup.value);unavailable.remove(key);
                 }
                 catch(Exception error) {
+                    if(!automatic) {
+                        if(error instanceof org.jivesoftware.smack.SmackException.NoResponseException)
+                            throw lookupTimeout("An OMEMO bundle lookup timed out for "+key,error);
+                        if(error instanceof org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException) {
+                            OmemoSendException failed=new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,"Could not prepare a required OMEMO device: "+key);
+                            failed.initCause(error);throw failed;
+                        }
+                        throw error;
+                    }
                     if(!unavailable(error)) throw error;
                     unavailable.putIfAbsent(key,new Unavailable(error)); skipped.put(key,XmppRequestException.describe(error)); continue;
                 }
-                if(!omemo.isDecidedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED,key);
-                if(!omemo.isTrustedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,key);
+                if(automatic) {
+                    if(!omemo.isDecidedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED,key);
+                    if(!omemo.isTrustedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,key);
+                }
                 available.add(device);
             }
             if(recipients.stream().anyMatch(jid -> !jid.equals(connection.getUser().asBareJid()))
@@ -669,6 +674,8 @@ public final class XmppRooms implements AutoCloseable {
                 throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"No reachable trusted recipient remains; message was not sent.");
             OmemoMessage.Sent ciphertext=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.encrypt(omemo,available,body);
             if(!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
+            if(!automatic && !ciphertext.getIntendedDevices().containsAll(devices))
+                throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,"Encryption omitted a required room device; no message was sent.");
             return ciphertext;
         }
     }

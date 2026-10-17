@@ -156,6 +156,20 @@ class XmppRoomsIntegrationTest {
             XmppRoomMessage partial=alice.rooms.send(room,"one unreachable device",true,Collections.emptySet(),true);
             assertTrue(partial.skippedRecipients.keySet().stream().anyMatch(key -> key.endsWith("device 803")));
             assertTrue(readable(bobMessages,"one unreachable device").encrypted);
+            java.util.concurrent.atomic.AtomicInteger strictBundles=new java.util.concurrent.atomic.AtomicInteger(),strictRoomMessages=new java.util.concurrent.atomic.AtomicInteger();
+            org.jivesoftware.smack.StanzaListener strictProbe=stanza -> {
+                if(stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.toXML().toString().contains("eu.siacs.conversations.axolotl.bundles:803")) strictBundles.incrementAndGet();
+                if(stanza instanceof org.jivesoftware.smack.packet.Message && ((org.jivesoftware.smack.packet.Message)stanza).getType()==org.jivesoftware.smack.packet.Message.Type.groupchat
+                        && stanza.getTo()!=null && stanza.getTo().toString().equals(room)) strictRoomMessages.incrementAndGet();
+            };
+            alice.connection().addStanzaInterceptor(strictProbe,stanza -> true);
+            try {
+                OmemoSendException strictFailure=assertThrows(OmemoSendException.class,
+                        () -> alice.rooms.send(room,"Strict must not reuse automatic device skips",true,Collections.singleton(unavailable)));
+                assertEquals(OmemoSendException.Reason.DEVICE_FAILURE,strictFailure.reason);assertTrue(strictFailure.detail.contains("device 803"));
+                assertTrue(strictBundles.get()>0,"Strict mode must retry the cold device despite automatic backoff");
+                assertEquals(0,strictRoomMessages.get(),"A missing required device must prevent every room ciphertext send");
+            } finally { alice.connection().removeStanzaInterceptor(strictProbe); }
             devicesNode.publish(new org.jivesoftware.smackx.pubsub.PayloadItem<>("current",new org.jivesoftware.smackx.omemo.element.OmemoDeviceListElement_VAxolotl(Collections.singleton(bob.ownDeviceId()))));
             alice.devices(bob.ownJid());
             Set<String> excluded=Collections.singleton(unavailable);
