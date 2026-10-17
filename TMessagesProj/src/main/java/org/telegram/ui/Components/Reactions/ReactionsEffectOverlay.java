@@ -51,6 +51,7 @@ public class ReactionsEffectOverlay {
     public final static int ONLY_MOVE_ANIMATION = 2;
 
     private final int animationType;
+    private final boolean unicodeReaction;
     @SuppressLint("StaticFieldLeak")
     public static ReactionsEffectOverlay currentOverlay;
     @SuppressLint("StaticFieldLeak")
@@ -109,6 +110,8 @@ public class ReactionsEffectOverlay {
             this.groupId = 0;
         }
         this.reaction = visibleReaction;
+        this.unicodeReaction = visibleReaction.emojicon != null
+                && !MediaDataController.getInstance(currentAccount).getReactionsMap().containsKey(visibleReaction.emojicon);
         this.animationType = animationType;
         this.currentAccount = currentAccount;
         this.cell = cell;
@@ -218,6 +221,12 @@ public class ReactionsEffectOverlay {
 
             if (fromAnimationView instanceof SelectAnimatedEmojiDialog.ImageViewEmoji) {
                 SelectAnimatedEmojiDialog.ImageViewEmoji imageViewEmoji = (SelectAnimatedEmojiDialog.ImageViewEmoji) fromAnimationView;
+                if (unicodeReaction && imageViewEmoji.bigReactionSelectedProgress == 0) {
+                    float glyph = (viewSize - imageViewEmoji.getPaddingLeft() - imageViewEmoji.getPaddingRight()) * .87f * (imageViewEmoji.selected ? .86f : 1f);
+                    viewX += (viewSize - glyph) / 2f;
+                    viewY += (viewSize - glyph) / 2f;
+                    viewSize = glyph;
+                }
                 if (imageViewEmoji.bigReactionSelectedProgress > 0) {
                     float scale = 1 + 2 * imageViewEmoji.bigReactionSelectedProgress;
                     viewSize = fromAnimationView.getWidth() * scale;
@@ -229,10 +238,10 @@ public class ReactionsEffectOverlay {
             fromY = viewY;
             fromHeight = viewSize;
         } else if (holderView != null) {
-            holderView.getLocationOnScreen(loc);
-            fromX = loc[0] + holderView.loopImageView.getX();
-            fromY = loc[1] + holderView.loopImageView.getY();
-            fromHeight = holderView.loopImageView.getWidth() * holderView.getScaleX();
+            holderView.loopImageView.getLocationOnScreen(loc);
+            fromX = loc[0];
+            fromY = loc[1];
+            fromHeight = holderView.loopImageView.getWidth() * holderView.loopImageView.getScaleX() * holderView.getScaleX();
         } else if (reactionButton != null) {
             cell.getLocationInWindow(loc);
             fromX = loc[0] + (reactionButton.imageReceiver == null ? 0 : reactionButton.imageReceiver.getImageX());
@@ -344,6 +353,7 @@ public class ReactionsEffectOverlay {
                     if (reactionButton != null) {
                         toX += reactionButton.drawingImageRect.left;
                         toY += reactionButton.drawingImageRect.top;
+                        if (unicodeReaction && reactionButton.drawingImageRect.height() > 0) toH = reactionButton.drawingImageRect.height();
                     }
                     if (chatActivity != null) {
                         toY += chatActivity.drawingChatListViewYoffset;
@@ -461,7 +471,7 @@ public class ReactionsEffectOverlay {
                     }
                 }
 
-                if (emojiImageView.unicodeDrawable != null && System.currentTimeMillis() - startTime > 350 || animationType == ONLY_MOVE_ANIMATION || (wasScrolled && animationType == LONG_ANIMATION) || (animationType != SHORT_ANIMATION && (emojiImageView.wasPlaying && emojiImageView.getImageReceiver().getLottieAnimation() != null && !emojiImageView.getImageReceiver().getLottieAnimation().isRunning()) || (visibleReaction.documentId != 0 && System.currentTimeMillis() - startTime > 2000)) ||
+                if (unicodeReaction && System.currentTimeMillis() - startTime > 350 || animationType == ONLY_MOVE_ANIMATION || (wasScrolled && animationType == LONG_ANIMATION) || (animationType != SHORT_ANIMATION && (emojiImageView.wasPlaying && emojiImageView.getImageReceiver().getLottieAnimation() != null && !emojiImageView.getImageReceiver().getLottieAnimation().isRunning()) || (visibleReaction.documentId != 0 && System.currentTimeMillis() - startTime > 2000)) ||
                         (animationType == SHORT_ANIMATION && (effectImageView.wasPlaying && (effectImageView.getImageReceiver().getLottieAnimation() != null && !effectImageView.getImageReceiver().getLottieAnimation().isRunning())) || (visibleReaction.documentId != 0 && System.currentTimeMillis() - startTime > 2000))) {
                     if (ReactionsEffectOverlay.this.animateOutProgress != 1f) {
                         if (animationType == SHORT_ANIMATION) {
@@ -621,7 +631,6 @@ public class ReactionsEffectOverlay {
         if (visibleReaction.emojicon != null) {
             availableReaction = MediaDataController.getInstance(currentAccount).getReactionsMap().get(reaction.emojicon);
         }
-        boolean unicodeReaction = availableReaction == null && visibleReaction.emojicon != null;
         if (availableReaction != null || visibleReaction.documentId != 0 || unicodeReaction) {
             if (availableReaction != null) {
                 if (animationType != ONLY_MOVE_ANIMATION) {
@@ -651,8 +660,11 @@ public class ReactionsEffectOverlay {
                     emojiImageView.setImage(ImageLocation.getForDocument(document), emojiSizeForFilter + "_" + emojiSizeForFilter, null, null, 0, null);
                 }
             } else if (unicodeReaction) {
-                emojiImageView.unicodeDrawable = Emoji.getEmojiBigDrawable(visibleReaction.emojicon);
-                emojiStaticImageView.unicodeDrawable = Emoji.getEmojiBigDrawable(visibleReaction.emojicon);
+                // The short overlay supplies haptics; the flight already hands off the visible glyph.
+                if (animationType != SHORT_ANIMATION) {
+                    emojiImageView.unicodeDrawable = Emoji.getEmojiDrawable(visibleReaction.emojicon);
+                    emojiStaticImageView.unicodeDrawable = Emoji.getEmojiDrawable(visibleReaction.emojicon);
+                }
             } else {
                 if (animationType == LONG_ANIMATION) {
                     emojiImageView.setAnimatedReactionDrawable(new AnimatedEmojiDrawable(AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, currentAccount, visibleReaction.documentId));

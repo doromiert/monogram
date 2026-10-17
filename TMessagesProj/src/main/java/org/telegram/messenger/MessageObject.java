@@ -7637,7 +7637,7 @@ public class MessageObject {
         }
         String text = messageOwner.message;
         ArrayList<TLRPC.MessageEntity> entities = messageOwner.entities;
-        boolean forceManualEntities = false;
+        boolean forceManualEntities = !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
         if (type == TYPE_STORY) {
             if (messageOwner.media != null && messageOwner.media.storyItem != null) {
                 text = messageOwner.media.storyItem.caption;
@@ -7693,7 +7693,7 @@ public class MessageObject {
             );
 
             if (useManualParse) {
-                if (containsUrls(caption)) {
+                if (containsUrls(caption) || containsPhoneNumber(caption)) {
                     try {
                         AndroidUtilities.addLinksSafe((Spannable) caption, Linkify.WEB_URLS | Linkify.PHONE_NUMBERS, false, true);
                     } catch (Exception e) {
@@ -7912,15 +7912,19 @@ public class MessageObject {
     }
 
     public static void addLinks(boolean isOut, CharSequence messageText, boolean botCommands, boolean check, boolean internalOnly) {
-        if (messageText instanceof Spannable && containsUrls(messageText)) {
+        if (messageText instanceof Spannable && (containsUrls(messageText) || containsPhoneNumber(messageText))) {
             try {
-                AndroidUtilities.addLinksSafe((Spannable) messageText, Linkify.WEB_URLS, internalOnly, false);
+                AndroidUtilities.addLinksSafe((Spannable) messageText, Linkify.WEB_URLS | Linkify.PHONE_NUMBERS, internalOnly, false);
             } catch (Exception e) {
                 FileLog.e(e);
             }
             addPhoneLinks(messageText);
             addUrlsByPattern(isOut, messageText, botCommands, 0, 0, check);
         }
+    }
+
+    private static boolean containsPhoneNumber(CharSequence text) {
+        return text != null && text.length() <= 20 * 1024 && android.util.Patterns.PHONE.matcher(text).find();
     }
 
     public static void addPhoneLinks(CharSequence messageText) {
@@ -8593,7 +8597,7 @@ public class MessageObject {
             hasEntities = !getEntities().isEmpty();
         }
 
-        boolean useManualParse = !hasEntities && (
+        boolean useManualParse = !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty() || !hasEntities && (
             eventId != 0 ||
             messageOwner instanceof TLRPC.TL_message_old ||
             messageOwner instanceof TLRPC.TL_message_old2 ||

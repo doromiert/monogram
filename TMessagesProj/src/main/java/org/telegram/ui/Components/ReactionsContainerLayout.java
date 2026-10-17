@@ -1739,8 +1739,8 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 reactionHolderView.pressed = false;
                 reactionHolderView.loopImageView.setAlpha(1f);
                 if (skipEnterAnimation) {
-                    reactionHolderView.loopImageView.setScaleX(reactionHolderView.enterScale * (reactionHolderView.selected ? 0.76f : 1f));
-                    reactionHolderView.loopImageView.setScaleY(reactionHolderView.enterScale * (reactionHolderView.selected ? 0.76f : 1f));
+                    reactionHolderView.loopImageView.setScaleX(reactionHolderView.enterScale * reactionHolderView.selectionScale());
+                    reactionHolderView.loopImageView.setScaleY(reactionHolderView.enterScale * reactionHolderView.selectionScale());
                 } else {
                     reactionHolderView.resetAnimation();
                 }
@@ -2064,18 +2064,22 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
         public float enterScale = 1f;
         public ValueAnimator enterAnimator;
 
+        private float selectionScale() {
+            return selected ? (getWindowType() == SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI ? .86f : .76f) : 1f;
+        }
+
         public void updateSelected(ReactionsLayoutInBubble.VisibleReaction react, boolean animated) {
             boolean wasSelected = selected;
             selected = selectedReactions.contains(react);
             if (selected != wasSelected) {
                 if (!animated) {
-                    loopImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
-                    loopImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
-                    enterImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
-                    enterImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
+                    loopImageView.setScaleX(enterScale * selectionScale());
+                    loopImageView.setScaleY(enterScale * selectionScale());
+                    enterImageView.setScaleX(enterScale * selectionScale());
+                    enterImageView.setScaleY(enterScale * selectionScale());
                 } else {
-                    loopImageView.animate().scaleX(enterScale * (selected ? 0.76f : 1f)).scaleY(enterScale * (selected ? 0.76f : 1f)).setDuration(240).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
-                    enterImageView.animate().scaleX(enterScale * (selected ? 0.76f : 1f)).scaleY(enterScale * (selected ? 0.76f : 1f)).setDuration(240).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
+                    loopImageView.animate().scaleX(enterScale * selectionScale()).scaleY(enterScale * selectionScale()).setDuration(240).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
+                    enterImageView.animate().scaleX(enterScale * selectionScale()).scaleY(enterScale * selectionScale()).setDuration(240).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
                 }
 
                 requestLayout();
@@ -2148,16 +2152,22 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 enterImageView.setVisibility(View.VISIBLE);
                 loopImageView.setVisibility(View.GONE);
             }
-//            if (selected) {
-//                loopImageView.getLayoutParams().width = loopImageView.getLayoutParams().height = dp(26);
-//                enterImageView.getLayoutParams().width = enterImageView.getLayoutParams().height = dp(26);
-//            } else {
-                loopImageView.getLayoutParams().width = loopImageView.getLayoutParams().height = dp(34);
-                enterImageView.getLayoutParams().width = enterImageView.getLayoutParams().height = dp(34);
-//            }
         }
 
         private void updateImage(ReactionsLayoutInBubble.VisibleReaction react) {
+            int imageSize = dp(34);
+            if ((type == TYPE_DEFAULT || type == TYPE_STICKER_SET_EMOJI) && react != null && react.emojicon != null) {
+                float pickerWidth = type == TYPE_STICKER_SET_EMOJI && ReactionsContainerLayout.this.getMeasuredWidth() > 0
+                        ? ReactionsContainerLayout.this.getMeasuredWidth()
+                        : Math.min(dp(36) * 8 + dp(12), Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y));
+                imageSize = Math.round(((pickerWidth - dp(10)) / 8f - dp(2)) * .87f);
+            }
+            for (BackupImageView image : new BackupImageView[]{enterImageView, loopImageView, pressedBackupImageView}) {
+                if (image.getLayoutParams().width != imageSize || image.getLayoutParams().height != imageSize) {
+                    image.getLayoutParams().width = image.getLayoutParams().height = imageSize;
+                    image.requestLayout();
+                }
+            }
             if (react != null && react.isStar) {
                 enterImageView.getImageReceiver().setImageBitmap(new RLottieDrawable(R.raw.star_reaction, dp(30), dp(30)));
                 loopImageView.getImageReceiver().setImageBitmap(getContext().getResources().getDrawable(R.drawable.star_reaction));
@@ -2223,8 +2233,8 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 isEnter = true;
                 if (!hasEnterAnimation) {
                     loopImageView.setVisibility(VISIBLE);
-                    loopImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
-                    loopImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
+                    loopImageView.setScaleY(enterScale * selectionScale());
+                    loopImageView.setScaleX(enterScale * selectionScale());
                 }
                 return false;
             }
@@ -2249,8 +2259,8 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 if (enterImageView.getImageReceiver().getLottieAnimation() != null && isEnter && !enterImageView.getImageReceiver().getLottieAnimation().isRunning() && !enterImageView.getImageReceiver().getLottieAnimation().isGeneratingCache()) {
                     enterImageView.getImageReceiver().getLottieAnimation().setCurrentFrame(enterImageView.getImageReceiver().getLottieAnimation().getFramesCount() - 1, false);
                 }
-                loopImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
-                loopImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
+                loopImageView.setScaleY(enterScale * selectionScale());
+                loopImageView.setScaleX(enterScale * selectionScale());
             } else {
                 if (!isEnter) {
                     enterScale = 0f;
@@ -2259,8 +2269,8 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                     enterAnimator = ValueAnimator.ofFloat(0, 1f);
                     enterAnimator.addUpdateListener(anm -> {
                         enterScale = (float) anm.getAnimatedValue();
-                        loopImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
-                        loopImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
+                        loopImageView.setScaleY(enterScale * selectionScale());
+                        loopImageView.setScaleX(enterScale * selectionScale());
                     });
                     enterAnimator.setDuration(150);
                     enterAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
@@ -2286,13 +2296,13 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 loopImageView.setVisibility(View.INVISIBLE);
                 enterImageView.setVisibility(View.VISIBLE);
                 switchedToLoopView = false;
-                loopImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
-                loopImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
+                loopImageView.setScaleY(enterScale * selectionScale());
+                loopImageView.setScaleX(enterScale * selectionScale());
             } else {
                 loopImageView.animate().cancel();
                 if (skipEnterAnimation) {
-                    loopImageView.setScaleY(enterScale * (selected ? 0.76f : 1f));
-                    loopImageView.setScaleX(enterScale * (selected ? 0.76f : 1f));
+                    loopImageView.setScaleY(enterScale * selectionScale());
+                    loopImageView.setScaleX(enterScale * selectionScale());
                 } else {
                     loopImageView.setScaleY(0);
                     loopImageView.setScaleX(0);

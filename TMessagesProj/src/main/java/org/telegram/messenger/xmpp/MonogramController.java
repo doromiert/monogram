@@ -930,6 +930,9 @@ public final class MonogramController {
         }
         nextArchivePage(sync);
     }
+    private static long searchPeer(TLRPC.InputPeer peer) {
+        return peer==null ? 0 : peer.chat_id!=0 ? -peer.chat_id : peer.channel_id!=0 ? -peer.channel_id : peer.user_id;
+    }
     private TLRPC.TL_messages_dialogs dialogs() {
         TLRPC.TL_messages_dialogs result = new TLRPC.TL_messages_dialogs();
         for (long peer : store.peers()) {
@@ -1759,6 +1762,7 @@ public final class MonogramController {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
         boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
+                || request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
@@ -1949,6 +1953,25 @@ public final class MonogramController {
                 catch (IllegalArgumentException missing) { /* The requested local message is unavailable. */ }
             }
             for (long peer : peers) { if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); } result.users.add(ownUser()); return result;
+        }
+        if(request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal) {
+            TLRPC.TL_messages_messagesSlice result;
+            if(request instanceof TLRPC.TL_messages_search) {
+                TLRPC.TL_messages_search query=(TLRPC.TL_messages_search)request;
+                result=store.search(self,searchPeer(query.peer),query.q,query.offset_id,query.add_offset,query.limit,
+                        searchPeer(query.from_id),query.min_date,query.max_date,query.filter,false,false);
+            } else {
+                TLRPC.TL_messages_searchGlobal query=(TLRPC.TL_messages_searchGlobal)request;
+                result=query.broadcasts_only ? new TLRPC.TL_messages_messagesSlice() : store.search(self,0,query.q,query.offset_id,0,query.limit,
+                        0,query.min_date,query.max_date,query.filter,query.groups_only,query.users_only);
+            }
+            java.util.Set<Long> peers=new java.util.HashSet<>();
+            for(TLRPC.Message message:result.messages) peers.add(message.dialog_id);
+            for(long peer:peers) {
+                if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
+                else result.users.add(store.user(peer,self));
+            }
+            result.users.add(ownUser()); return result;
         }
         if (request instanceof TLRPC.TL_messages_getHistory) {
             TLRPC.TL_messages_getHistory query = (TLRPC.TL_messages_getHistory) request;

@@ -1370,15 +1370,16 @@ public class AndroidUtilities {
             }
         }
         final ArrayList<LinkSpec> links = new ArrayList<>();
+        boolean phoneLinks = false;
         if (!internalOnly && (mask & Linkify.PHONE_NUMBERS) != 0) {
-            Linkify.addLinks(text, Linkify.PHONE_NUMBERS);
+            phoneLinks = Linkify.addLinks(text, Linkify.PHONE_NUMBERS);
         }
         if ((mask & Linkify.WEB_URLS) != 0) {
             gatherLinks(links, text, LinkifyPort.WEB_URL, new String[]{"http://", "https://", "tg://", "tonsite://"}, sUrlMatchFilter, internalOnly);
         }
         pruneOverlaps(links);
         if (links.size() == 0) {
-            return false;
+            return phoneLinks;
         }
         for (int a = 0, N = links.size(); a < N; a++) {
             LinkSpec link = links.get(a);

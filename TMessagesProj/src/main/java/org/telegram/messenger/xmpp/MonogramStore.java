@@ -1082,6 +1082,66 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (forward) java.util.Collections.reverse(result);
         return result;
     }
+    synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
+            int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {
+        TLRPC.TL_messages_messagesSlice result=new TLRPC.TL_messages_messagesSlice();
+        String needle=query==null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
+        String sql="SELECT m.id,m.peer,p.body,COALESCE(a.caption,''),m.time_ms,m.archive_order FROM messages m "
+                +"LEFT JOIN applied_corrections ac ON ac.original=m.id JOIN messages p ON p.id=COALESCE(ac.message,m.id) "
+                +"LEFT JOIN attachments a ON a.message=p.id LEFT JOIN room_senders r ON r.message=m.id "
+                +"WHERE m.deleted=0 AND p.deleted=0 AND p.readable=1 "
+                +"AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) "
+                +"AND NOT EXISTS(SELECT 1 FROM reaction_sources x WHERE x.message=m.id) "
+                +"AND NOT EXISTS(SELECT 1 FROM retraction_sources x WHERE x.message=m.id AND x.hidden=1)";
+        ArrayList<String> args=new ArrayList<>();
+        if(peer!=0) { sql+=" AND m.peer=?"; args.add(Long.toString(peer)); }
+        if(groups) sql+=" AND m.peer<0";
+        if(users) sql+=" AND m.peer>0";
+        if(sender!=0) { sql+=" AND CASE WHEN m.outgoing=1 THEN ? ELSE COALESCE(r.user,m.peer) END=?"; args.add(Long.toString(self)); args.add(Long.toString(sender)); }
+        if(minDate>0) { sql+=" AND m.time>=?"; args.add(Integer.toString(minDate)); }
+        if(maxDate>0) { sql+=" AND m.time<=?"; args.add(Integer.toString(maxDate)); }
+        long[] anchor=null;
+        if(offset>0) try(Cursor c=getReadableDatabase().rawQuery("SELECT time_ms,archive_order,id FROM messages WHERE id=?"+(peer==0 ? "" : " AND peer=?"),
+                peer==0 ? new String[]{Integer.toString(offset)} : new String[]{Integer.toString(offset),Long.toString(peer)})) {
+            if(c.moveToFirst()) anchor=new long[]{c.getLong(0),c.getLong(1),c.getLong(2)};
+            else return result;
+        }
+        int remainingSkip=Math.max(0,skip), maximum=Math.min(100,Math.max(1,limit));
+        boolean unfiltered=filter==null || filter instanceof TLRPC.TL_inputMessagesFilterEmpty;
+        try(Cursor c=getReadableDatabase().rawQuery(sql+" ORDER BY m.time_ms DESC,m.archive_order DESC,m.id DESC",args.toArray(new String[0]))) {
+            while(c.moveToNext()) {
+                String text=c.getString(2),caption=c.getString(3);
+                if(!needle.isEmpty() && !(text==null ? "" : text).toLowerCase(java.util.Locale.ROOT).contains(needle)
+                        && !caption.toLowerCase(java.util.Locale.ROOT).contains(needle)) continue;
+                TLRPC.Message message=unfiltered ? null : getMessage(c.getInt(0),self);
+                if(!unfiltered && !matchesSearchFilter(message,filter)) continue;
+                result.count++;
+                if(anchor!=null && !(c.getLong(4)<anchor[0] || c.getLong(4)==anchor[0] && (c.getLong(5)<anchor[1] || c.getLong(5)==anchor[1] && c.getInt(0)<anchor[2]))) continue;
+                if(remainingSkip>0) { remainingSkip--; continue; }
+                if(result.messages.size()<maximum) result.messages.add(message==null ? getMessage(c.getInt(0),self) : message);
+            }
+        }
+        return result;
+    }
+    private boolean matchesSearchFilter(TLRPC.Message message,TLRPC.MessagesFilter filter) {
+        if(filter==null || filter instanceof TLRPC.TL_inputMessagesFilterEmpty) return true;
+        if(filter instanceof TLRPC.TL_inputMessagesFilterPhotos) return org.telegram.messenger.MessageObject.isPhoto(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterVideo) return org.telegram.messenger.MessageObject.isVideoMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterPhotoVideo) return org.telegram.messenger.MessageObject.isPhoto(message) || org.telegram.messenger.MessageObject.isVideoMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterMusic) return org.telegram.messenger.MessageObject.isMusicMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterVoice) return org.telegram.messenger.MessageObject.isVoiceMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterRoundVoice) return org.telegram.messenger.MessageObject.isVoiceMessage(message) || org.telegram.messenger.MessageObject.isRoundVideoMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterRoundVideo) return org.telegram.messenger.MessageObject.isRoundVideoMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterGif) return org.telegram.messenger.MessageObject.isGifMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterDocument) return message.media!=null && message.media.document!=null
+                && !org.telegram.messenger.MessageObject.isMusicMessage(message) && !org.telegram.messenger.MessageObject.isVoiceMessage(message)
+                && !org.telegram.messenger.MessageObject.isVideoMessage(message) && !org.telegram.messenger.MessageObject.isGifMessage(message)
+                && !org.telegram.messenger.MessageObject.isRoundVideoMessage(message);
+        if(filter instanceof TLRPC.TL_inputMessagesFilterUrl) return message.message!=null
+                && org.telegram.messenger.MessageObject.containsUrls(message.message)
+                && android.util.Patterns.WEB_URL.matcher(message.message).find();
+        return false;
+    }
     synchronized ArrayList<Long> peers() {
         ArrayList<Long> result = new ArrayList<>();
         try (Cursor c = getReadableDatabase().rawQuery("SELECT id FROM peers WHERE id NOT IN (SELECT user FROM room_participants WHERE occupant=peers.jid) ORDER BY id", null)) {
