@@ -1870,6 +1870,58 @@ public final class MonogramController {
                     && UserConfig.getInstance(account).getClientUserId()==self) SendMessagesHelper.getInstance(account).checkUnsentMessages();
         });
     }
+    private static boolean roomMutation(TLObject request) {
+        return request instanceof TLRPC.TL_messages_createChat || request instanceof TLRPC.TL_messages_addChatUser
+                || request instanceof TLRPC.TL_messages_editChatTitle || request instanceof TLRPC.TL_messages_editChatAbout
+                || request instanceof TLRPC.TL_messages_editChatPhoto;
+    }
+    private void requireRoomSession(XmppSession expected,long epoch) {
+        if(session!=expected || sessionEpoch!=epoch) throw new IllegalStateException("Account connection changed. Please retry.");
+    }
+    private Updates roomUpdates(long dialog) {
+        Updates updates=new Updates(); updates.date=now(); updates.chats.add(store.roomChat(dialog));
+        updates.users.addAll(store.roomUsers(dialog,self)); return updates;
+    }
+    private long nativeRoomState(XmppSession expected,long epoch,com.negzero.monogram.xmpp.XmppRooms.State room,boolean created) throws Exception {
+        return worker.submit(() -> {
+            requireRoomSession(expected,epoch);
+            long dialog=created ? store.room(room.room.toString(),room.nickname) : store.knownRoom(room.room.toString());
+            if(dialog==0) throw new IllegalArgumentException("Unknown room");
+            store.roomState(room,self); publishRoom(dialog);
+            if(created) {
+                dirtyRoomBookmark(dialog);
+                publishDialogs(dialogs(),() -> session==expected && sessionEpoch==epoch,() -> {});
+            }
+            return dialog;
+        }).get();
+    }
+    private String inviteAddress(TLRPC.InputUser input) throws Exception {
+        long peer=input instanceof TLRPC.TL_inputUserSelf ? self : input.user_id;
+        String address=store.jid(peer);
+        if(peer<=0 || !org.jxmpp.jid.impl.JidCreate.from(address).isEntityBareJid())
+            throw new IllegalArgumentException("Select a person's bare Jabber address, rather than an anonymous room nickname.");
+        return address;
+    }
+    private TLRPC.TL_messages_invitedUsers createNativeRoom(TLRPC.TL_messages_createChat request) throws Exception {
+        if(request.ttl_period>0) throw new IllegalArgumentException("Disappearing group messages are not supported by this XMPP room flow.");
+        java.util.LinkedHashMap<String,TLRPC.InputUser> invited=new java.util.LinkedHashMap<>();
+        for(TLRPC.InputUser input:request.users) { String address=inviteAddress(input); if(!address.equals(accountJid())) invited.put(address,input); }
+        XmppSession expected=session(); long epoch=sessionEpoch;
+        String nickname=org.jxmpp.jid.impl.JidCreate.entityBareFrom(accountJid()).getLocalpart().toString();
+        com.negzero.monogram.xmpp.XmppRooms.State room=expected.rooms.createPrivate(nickname,request.title);
+        requireRoomSession(expected,epoch);
+        long dialog=nativeRoomState(expected,epoch,room,true);
+        MonogramInvitedUsers result=new MonogramInvitedUsers(); java.util.ArrayList<String> failures=new java.util.ArrayList<>();
+        for(String address:invited.keySet()) {
+            requireRoomSession(expected,epoch);
+            try { expected.rooms.invite(room.room.toString(),address,"Join us in this room"); }
+            catch(Exception failed) { failures.add(address+": "+roomError(failed)); }
+        }
+        requireRoomSession(expected,epoch);
+        result.updates=roomUpdates(dialog);
+        result.failure=failures.isEmpty() ? null : "The group was created, but these invitations failed:\n\n"+android.text.TextUtils.join("\n",failures);
+        return result;
+    }
     private void dispatchRequest(TLObject request,RequestDelegate callback) { dispatchRequest(request,callback,accountEpoch); }
     private void dispatchRequest(TLObject request, RequestDelegate callback,long epoch) {
         if (request instanceof MonogramFileRequest) {
@@ -1882,12 +1934,13 @@ public final class MonogramController {
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
                 || request instanceof TLRPC.TL_messages_getMessagesReactions || request instanceof TLRPC.TL_messages_getMessageReactionsList
                 || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
-        (cached ? cacheWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction ? sendWorker : worker).execute(() -> {
+        (cached ? cacheWorker : roomMutation(request) ? roomWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction ? sendWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
             try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request); }
             catch (Exception e) {
                 error = new TLRPC.TL_error(); error.code = 400;
-                if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
+                if(roomMutation(request)) error.text="MONOGRAM_XMPP_ROOM: "+roomError(e);
+                else if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
                 else if(request instanceof TLRPC.TL_messages_sendReaction && e instanceof IllegalArgumentException) error.text="MONOGRAM_REACTION_UNAVAILABLE: "+e.getMessage();
                 else if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
                 else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
@@ -1897,6 +1950,15 @@ public final class MonogramController {
                 else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
                 else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
                 else error.text = "MONOGRAM_XMPP_FAILED|"+com.negzero.monogram.xmpp.XmppRequestException.describe(e);
+            }
+            if(error!=null && (request instanceof TLRPC.TL_messages_editChatTitle
+                    || request instanceof TLRPC.TL_messages_editChatAbout || request instanceof TLRPC.TL_messages_editChatPhoto)) {
+                final String detail=error.text;
+                AndroidUtilities.runOnUIThread(() -> {
+                    org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                    if(epoch==accountEpoch && fragment!=null && fragment.getCurrentAccount()==account && fragment.getParentActivity()!=null)
+                        org.telegram.ui.Components.AlertsCreator.showSimpleAlert(fragment,LocaleController.getString(R.string.AppName),detail);
+                });
             }
             final TLObject completed = response; final TLRPC.TL_error failed = error;
             if (callback != null) {
@@ -1957,6 +2019,45 @@ public final class MonogramController {
         cacheWorker.execute(() -> { if(accountEpoch==owner) try { publishReactions(peer,java.util.Collections.singleton(id)); } catch(IllegalArgumentException ignored) {} });
     }
     private TLObject handle(TLObject request) throws Exception {
+        if(request instanceof TLRPC.TL_messages_createChat) return createNativeRoom((TLRPC.TL_messages_createChat)request);
+        if(request instanceof TLRPC.TL_messages_addChatUser) {
+            TLRPC.TL_messages_addChatUser query=(TLRPC.TL_messages_addChatUser)request;
+            long dialog=-query.chat_id; String address=inviteAddress(query.user_id);
+            XmppSession expected=session(); long epoch=sessionEpoch;
+            expected.rooms.invite(store.room(dialog).jid,address,"Join us in this room"); requireRoomSession(expected,epoch);
+            TLRPC.TL_messages_invitedUsers result=new TLRPC.TL_messages_invitedUsers(); result.updates=roomUpdates(dialog); return result;
+        }
+        if(request instanceof TLRPC.TL_messages_editChatTitle || request instanceof TLRPC.TL_messages_editChatAbout) {
+            boolean title=request instanceof TLRPC.TL_messages_editChatTitle;
+            long dialog=title ? -((TLRPC.TL_messages_editChatTitle)request).chat_id : -((TLRPC.TL_messages_editChatAbout)request).peer.chat_id;
+            String value=title ? ((TLRPC.TL_messages_editChatTitle)request).title : ((TLRPC.TL_messages_editChatAbout)request).about;
+            XmppSession expected=session(); long epoch=sessionEpoch;
+            com.negzero.monogram.xmpp.XmppRooms.State room=expected.rooms.configure(store.room(dialog).jid,title ? value : null,title ? null : value);
+            nativeRoomState(expected,epoch,room,false);
+            return title ? roomUpdates(dialog) : new TLRPC.TL_boolTrue();
+        }
+        if(request instanceof TLRPC.TL_messages_editChatPhoto) {
+            TLRPC.TL_messages_editChatPhoto query=(TLRPC.TL_messages_editChatPhoto)request;
+            long dialog=-query.chat_id; String room=store.room(dialog).jid; byte[] png;
+            if(query.photo instanceof TLRPC.TL_inputChatPhotoEmpty) png=new byte[0];
+            else if(query.photo instanceof TLRPC.TL_inputChatUploadedPhoto) {
+                TLRPC.TL_inputChatUploadedPhoto upload=(TLRPC.TL_inputChatUploadedPhoto)query.photo;
+                if(!(upload.file instanceof MonogramAvatarFile) || upload.video!=null || upload.video_emoji_markup!=null)
+                    throw new IllegalArgumentException("Choose a static image for the room avatar.");
+                File source=((MonogramAvatarFile)upload.file).source;
+                if(!source.isFile() || source.length()==0 || source.length()>com.negzero.monogram.xmpp.XmppProfile.MAX_AVATAR_BYTES)
+                    throw new IllegalArgumentException("The room avatar file is missing or too large.");
+                byte[] bytes=new byte[(int)source.length()];
+                try(java.io.DataInputStream in=new java.io.DataInputStream(new java.io.FileInputStream(source))) { in.readFully(bytes); }
+                png=MonogramProfiles.png(bytes);
+            } else throw new IllegalArgumentException("Choose a new room avatar or remove the current one.");
+            XmppSession expected=session(); long epoch=sessionEpoch;
+            if(!expected.rooms.state(room).joined) throw new IllegalStateException("Join the room before changing its avatar.");
+            profileVersions.merge(dialog,1L,Long::sum);
+            com.negzero.monogram.xmpp.XmppProfile changed=expected.profiles.roomAvatar(room,png);
+            requireRoomSession(expected,epoch); profileVersions.merge(dialog,1L,Long::sum);
+            store.profile(dialog,changed); publishRoom(dialog); return roomUpdates(dialog);
+        }
         if(request instanceof TLRPC.TL_messages_deleteMessages) {
             TLRPC.TL_messages_deleteMessages query=(TLRPC.TL_messages_deleteMessages)request;
             if(query.revoke) throw new UnsupportedOperationException("XMPP message retraction is not implemented");

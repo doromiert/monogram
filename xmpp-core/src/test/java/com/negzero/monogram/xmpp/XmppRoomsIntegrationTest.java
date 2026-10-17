@@ -30,6 +30,33 @@ class XmppRoomsIntegrationTest {
         }
         fail("Room message did not arrive: "+body); return null;
     }
+    @Test void nativeCreationInvitationsConfigurationAndAvatar() throws Exception {
+        XmppSession.initializeOmemo(new File(root,"keys"));
+        BlockingQueue<XmppRoomMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();
+        try(XmppSession alice=session("alice",3101,aliceMessages); XmppSession bob=session("bob",3102,bobMessages)) {
+            alice.connect(); bob.connect();
+            XmppRooms.State created=alice.rooms.createPrivate("Alice","Native group");
+            String room=created.room.toString(); assertEquals("Native group",created.title); assertEquals("owner",created.affiliation);
+            RoomInfo info=MultiUserChatManager.getInstanceFor(alice.connection()).getRoomInfo(created.room);
+            assertTrue(info.isMembersOnly()); assertTrue(info.isNonanonymous());
+            assertThrows(Exception.class,() -> bob.rooms.join(room,"Bob",null));
+            alice.rooms.invite(room,"roombob@localhost","Join this test room");
+            Exception failure=null;
+            for(int attempt=0;attempt<10;attempt++) {
+                try { bob.rooms.join(room,"Bob",null); failure=null; break; }
+                catch(Exception pending) { failure=pending; Thread.sleep(100); }
+            }
+            if(failure!=null) throw failure;
+            XmppRooms.State changed=alice.rooms.configure(room,"Renamed group","Group description");
+            assertEquals("Renamed group",changed.title); assertEquals("Group description",changed.description);
+            assertThrows(Exception.class,() -> bob.rooms.configure(room,"Not the owner",null));
+            assertTrue(MultiUserChatManager.getInstanceFor(alice.connection()).getRoomInfo(created.room).isMembersOnly());
+            byte[] avatar=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+            alice.profiles.roomAvatar(room,avatar); assertArrayEquals(avatar,bob.profiles.loadRoom(room).avatar);
+            alice.profiles.roomAvatar(room,new byte[0]); assertEquals(0,bob.profiles.loadRoom(room).avatar.length);
+            assertEquals("",alice.rooms.configure(room,null,"").description);
+        }
+    }
     @Test void joinNativeRoomTransportEncryptOfflineMembersAndRejoinHistory() throws Exception {
         XmppSession.initializeOmemo(new File(root,"keys"));
         BlockingQueue<XmppRoomMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();

@@ -16,12 +16,38 @@ import org.telegram.tgnet.*;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows=MonogramMessageRegressionTest.Device.class)
 public class MonogramRoomStoreTest {
     @org.junit.Before public void nativeSerializationEnvironment() {
+        org.telegram.messenger.ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
     }
     final String room="friends@conference.example.org", own="alice@example.org";
+    @Test public void schemaSeventeenPreservesRoomsAndMapsVerifiedOwnerAndAdminRights() throws Exception {
+        Context context=RuntimeEnvironment.getApplication(); String file="room-description-migration.db"; context.deleteDatabase(file);
+        long dialog,self;
+        try {
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                self=store.peer(own);dialog=store.room(room,"Alice");
+                store.getWritableDatabase().execSQL("UPDATE rooms SET title='Existing group',subject='Keep topic' WHERE id=?",new Object[]{-dialog});
+                store.getWritableDatabase().execSQL("INSERT INTO room_permissions VALUES(?, 'moderator', 'owner')",new Object[]{-dialog});
+                MonogramStoreDeviceTest.legacyRoomDescription(store.getWritableDatabase());store.getWritableDatabase().setVersion(17);
+            }
+            try(MonogramStore store=new MonogramStore(context,file)) {
+                assertEquals(18,store.getReadableDatabase().getVersion());assertEquals(dialog,store.knownRoom(room));
+                assertEquals("Existing group",store.roomChat(dialog).title);assertEquals("Keep topic",store.room(dialog).subject);
+                assertTrue(store.roomChat(dialog).creator);assertEquals("",store.roomFull(dialog,self).full_chat.about);
+                store.getWritableDatabase().execSQL("UPDATE rooms SET description='Actual description' WHERE id=?",new Object[]{-dialog});
+                assertEquals("Actual description",store.roomFull(dialog,self).full_chat.about);
+                store.getWritableDatabase().execSQL("UPDATE room_permissions SET affiliation='admin' WHERE room=?",new Object[]{-dialog});
+                TLRPC.Chat admin=store.roomChat(dialog);assertFalse(admin.creator);assertTrue(admin.admin_rights.invite_users);assertFalse(admin.admin_rights.change_info);
+                store.getWritableDatabase().execSQL("UPDATE room_permissions SET affiliation='member',role='participant' WHERE room=?",new Object[]{-dialog});
+                assertFalse(store.roomChat(dialog).creator);assertNull(store.roomChat(dialog).admin_rights);
+                assertTrue(store.roomChat(dialog).default_banned_rights.change_info);
+            }
+        } finally {context.deleteDatabase(file);}
+    }
     @Test public void recipientChoicesPersistPerAccountAndRoomWithoutChangingTrust() throws Exception {
         Context context=RuntimeEnvironment.getApplication(); org.telegram.messenger.ApplicationLoader.applicationContext=context;
         android.content.SharedPreferences prefs=context.getSharedPreferences("monogram-0",Context.MODE_PRIVATE); prefs.edit().clear().putString("jid",own).commit();
@@ -124,7 +150,7 @@ public class MonogramRoomStoreTest {
                 assertEquals("Decrypted room text",store.getMessage(encrypted,self).message);
                 SerializedData data=new SerializedData(); store.roomFull(dialog,self).serializeToStream(data); byte[] bytes=data.toByteArray(); data.cleanup();
                 SerializedData input=new SerializedData(bytes); TLRPC.TL_messages_chatFull full=TLRPC.TL_messages_chatFull.TLdeserialize(input,input.readInt32(true),true); input.cleanup();
-                assertEquals(room,full.chats.get(0).title); assertEquals(room,full.full_chat.about);
+                assertEquals(room,full.chats.get(0).title); assertEquals("",full.full_chat.about);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
                 assertEquals(dialog,store.knownRoom(room)); assertEquals("Hello room",store.getMessage(first,self).message);
@@ -145,7 +171,7 @@ public class MonogramRoomStoreTest {
                 db.execSQL("DROP TABLE rooms"); db.execSQL("DROP TABLE room_participants"); db.execSQL("DROP TABLE room_senders"); db.execSQL("DROP TABLE room_message_actors"); MonogramStoreDeviceTest.legacyDeletions(db); db.setVersion(9);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(17,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
+                assertEquals(18,store.getReadableDatabase().getVersion()); assertEquals("Keep my direct chat",store.getMessage(original,self).message);
                 assertNull(store.archiveCursor(false)); assertTrue(store.rooms().isEmpty()); assertTrue(store.room(room,"Alice")<0);
             }
         } finally { context.deleteDatabase(file); }
@@ -159,7 +185,7 @@ public class MonogramRoomStoreTest {
                 store.getWritableDatabase().execSQL("DROP TABLE room_bookmarks"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(10);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(17,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
+                assertEquals(18,store.getReadableDatabase().getVersion()); assertEquals(0,store.pendingBookmarks().get(0).revision);
                 XmppBookmarks.Bookmark bookmark=XmppBookmarks.Bookmark.parse(room,"<conference xmlns='urn:xmpp:bookmarks:1' name='My existing group' autojoin='true'><nick>ExistingNick</nick></conference>");
                 store.importBookmark(bookmark,"vault-encrypted-xml","Alice");
                 assertTrue(store.pendingBookmarks().isEmpty()); assertEquals("ExistingNick",store.room(dialog).nickname); assertEquals("My existing group",store.roomChat(dialog).title);
@@ -243,7 +269,7 @@ public class MonogramRoomStoreTest {
                 store.getWritableDatabase().execSQL("DROP TABLE room_permissions"); store.getWritableDatabase().execSQL("DROP TABLE room_message_actors"); MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(11);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(17,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
+                assertEquals(18,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(message,self).message);
                 assertNull(store.archiveCursor(dialog,false)); assertEquals(dialog,store.knownRoom(room));
             }
         } finally { context.deleteDatabase(file); }
@@ -267,7 +293,9 @@ public class MonogramRoomStoreTest {
                 assertNull(store.getMessage(id,self).reply_to);
             }
             int noRoomId=store.saveRoom(event("Bob","no-room-id",null,"No room ID",false,true),self);
-            try { store.replyTo(noRoomId,dialog,self,false,null,0); fail("Client ID must not substitute for room ID"); } catch(IllegalArgumentException expected) {}
+            ReplyReference fallback=store.replyTo(noRoomId,dialog,self,false,null,0);
+            assertEquals("",fallback.id); assertNull(fallback.to);
+            assertTrue(fallback.wireBody("Answer").startsWith("> No room ID\n"));
         } finally { context.deleteDatabase(file); }
     }
     @Test public void correctionsBindStableAuthorsAndProtectEncryptedEditsAndReplyPreviews() throws Exception {
@@ -308,7 +336,7 @@ public class MonogramRoomStoreTest {
                 MonogramStoreDeviceTest.legacyDeletions(store.getWritableDatabase()); store.getWritableDatabase().setVersion(13);
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
-                assertEquals(17,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(original,self).message);
+                assertEquals(18,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(original,self).message);
                 try { store.editTarget(original,dialog,self); fail("Old unverified author accepted"); } catch(IllegalArgumentException expected) {}
                 store.saveRoom(message,self); assertEquals("mine",store.editTarget(original,dialog,self).correction.id);
                 assertEquals(1,store.history(dialog,self,0,100).size());

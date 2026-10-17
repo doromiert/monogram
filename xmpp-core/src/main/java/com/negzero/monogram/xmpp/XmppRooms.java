@@ -29,12 +29,12 @@ public final class XmppRooms implements AutoCloseable {
     }
     public static final class State {
         public final EntityBareJid room;
-        public final String nickname,subject,title,role,affiliation;
+        public final String nickname,subject,title,description,role,affiliation;
         public final boolean joined;
         public final List<Occupant> occupants;
-        State(MultiUserChat chat) { this(chat,null); }
-        State(MultiUserChat chat,String title) {
-            this.title=title; room=chat.getRoom(); nickname=chat.getNickname()==null ? "" : chat.getNickname().toString();
+        State(MultiUserChat chat) { this(chat,null,null); }
+        State(MultiUserChat chat,String title,String description) {
+            this.description=description; this.title=title; room=chat.getRoom(); nickname=chat.getNickname()==null ? "" : chat.getNickname().toString();
             subject=chat.getSubject()==null ? "" : chat.getSubject(); joined=chat.isJoined();
             org.jivesoftware.smackx.muc.Occupant own=chat.getNickname()==null ? null : chat.getOccupant(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()));
             role=own==null || own.getRole()==null ? "" : own.getRole().toString();
@@ -161,7 +161,31 @@ public final class XmppRooms implements AutoCloseable {
         if (!chat.isJoined()) chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
                 .withPassword(password).requestMaxStanzasHistory(features.containsFeature("urn:xmpp:mam:2") ? 0 : 50).build());
         if(password!=null) passwords.put(chat.getRoom(),password);
-        State state=new State(chat,info.getName()); listener.roomChanged(state); return state;
+        State state=new State(chat,info.getName(),info.getDescription()); listener.roomChanged(state); return state;
+    }
+    public State createPrivate(String nickname,String title) throws Exception {
+        if(title==null || title.trim().isEmpty()) throw new IllegalArgumentException("Enter a group name.");
+        List<DomainBareJid> services=services();
+        if(services.isEmpty()) throw new IllegalStateException("Your server did not advertise a group-chat service. Join a room using its full address instead.");
+        return create(java.util.UUID.randomUUID()+"@"+services.get(0),nickname,title.trim());
+    }
+    public State configure(String jid,String title,String description) throws Exception {
+        MultiUserChat chat=chat(jid);
+        if(!chat.isJoined()) throw new IllegalStateException("Join the room before editing it.");
+        org.jivesoftware.smackx.xdata.form.FillableForm form=chat.getConfigurationForm().getFillableForm();
+        if(title!=null) {
+            if(title.trim().isEmpty()) throw new IllegalArgumentException("Enter a group name.");
+            if(form.getField("muc#roomconfig_roomname")==null) throw new IllegalStateException("This server does not support changing the room name.");
+            form.setAnswer("muc#roomconfig_roomname",title.trim());
+        }
+        if(description!=null) {
+            if(form.getField("muc#roomconfig_roomdesc")==null) throw new IllegalStateException("This server does not support a room description.");
+            form.setAnswer("muc#roomconfig_roomdesc",description);
+        }
+        chat.sendConfigurationForm(form);
+        RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
+        State state=new State(chat,info.getName()==null || info.getName().isEmpty() ? title : info.getName(),
+                info.getDescription()==null ? description : info.getDescription()); listener.roomChanged(state); return state;
     }
     public State create(String jid,String nickname,String title) throws Exception {
         MultiUserChat chat=managed(jid);
@@ -178,7 +202,8 @@ public final class XmppRooms implements AutoCloseable {
             chat.sendConfigurationForm(form);
             RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
             if(!info.isMembersOnly() || !info.isNonanonymous()) throw new IllegalStateException("The server did not apply the required private room settings.");
-            return join(jid,nickname,null);
+            State joined=join(jid,nickname,null);
+            return joined.title==null || joined.title.isEmpty() ? new State(chat,title,joined.description) : joined;
         } catch(Exception failed) {
             try { chat.leave(); } catch(Exception ignored) { }
             throw new XmppRequestException("The room was created, but setup could not be completed. Its owner can configure it and rejoin",failed);

@@ -30,7 +30,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 17); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 18); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -88,7 +88,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 17 || oldVersion < 1 || oldVersion > 16) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 18 || oldVersion < 1 || oldVersion > 17) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -105,6 +105,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<15) addDeletions(db);
         if(oldVersion<16) { addSenderFingerprints(db); MonogramRetractions.create(db); }
         if(oldVersion<17) MonogramReceipts.create(db);
+        if(oldVersion>=10) db.execSQL("ALTER TABLE rooms ADD COLUMN description TEXT NOT NULL DEFAULT ''");
     }
     private void addSenderFingerprints(SQLiteDatabase db) {
         db.execSQL("ALTER TABLE messages ADD COLUMN sender_fingerprint TEXT");
@@ -199,19 +200,19 @@ final class MonogramStore extends SQLiteOpenHelper {
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY AUTOINCREMENT,jid TEXT NOT NULL UNIQUE,nickname TEXT NOT NULL,title TEXT NOT NULL,subject TEXT NOT NULL DEFAULT '',autojoin INTEGER NOT NULL DEFAULT 1)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS rooms (id INTEGER PRIMARY KEY AUTOINCREMENT,jid TEXT NOT NULL UNIQUE,nickname TEXT NOT NULL,title TEXT NOT NULL,subject TEXT NOT NULL DEFAULT '',description TEXT NOT NULL DEFAULT '',autojoin INTEGER NOT NULL DEFAULT 1)");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_participants (room INTEGER NOT NULL,occupant TEXT NOT NULL,user INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 0,real_jid TEXT,PRIMARY KEY(room,occupant))");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_senders (message INTEGER PRIMARY KEY,user INTEGER NOT NULL)");
     }
     static final class Room {
         final long dialog;
-        final String jid,nickname,title,subject;
+        final String jid,nickname,title,subject,description;
         final boolean autojoin;
-        Room(Cursor c) { dialog=-c.getLong(0); jid=c.getString(1); nickname=c.getString(2); title=c.getString(3); subject=c.getString(4); autojoin=c.getInt(5)!=0; }
+        Room(Cursor c) { dialog=-c.getLong(0); jid=c.getString(1); nickname=c.getString(2); title=c.getString(3); subject=c.getString(4); autojoin=c.getInt(5)!=0; description=c.getString(6); }
     }
     synchronized Room room(long dialog) {
         if (dialog>=0) throw new IllegalArgumentException("Room dialog required");
-        try (Cursor c=getReadableDatabase().rawQuery("SELECT id,jid,nickname,title,subject,autojoin FROM rooms WHERE id=?",new String[]{Long.toString(-dialog)})) {
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT id,jid,nickname,title,subject,autojoin,description FROM rooms WHERE id=?",new String[]{Long.toString(-dialog)})) {
             if (!c.moveToFirst()) throw new IllegalArgumentException("Unknown room"); return new Room(c);
         }
     }
@@ -250,11 +251,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
             ContentValues values=new ContentValues(); values.put("subject",state.subject);
-            if(state.title!=null && !state.title.trim().isEmpty()) {
-                try(Cursor c=db.rawQuery("SELECT name FROM room_bookmarks WHERE room=? AND present=1",new String[]{Long.toString(-dialog)})) {
-                    if(!c.moveToFirst() || c.getString(0).isEmpty()) values.put("title",state.title);
-                }
-            }
+            if(state.title!=null && !state.title.trim().isEmpty()) values.put("title",state.title);
+            if(state.description!=null) values.put("description",state.description);
             if (!state.nickname.isEmpty()) values.put("nickname",state.nickname);
             db.update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
             if(state.joined && !state.role.isEmpty()) {
@@ -280,9 +278,17 @@ final class MonogramStore extends SQLiteOpenHelper {
         Room room=room(dialog); TLRPC.TL_chat chat=new TLRPC.TL_chat();
         chat.id=-dialog; chat.title=room.title; chat.photo=new TLRPC.TL_chatPhotoEmpty(); chat.version=1; chat.left=!room.autojoin;
         // A missing rights object makes modern Telegram deny every send action.
-        chat.default_banned_rights=new TLRPC.TL_chatBannedRights(); chat.flags|=262144;
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT role FROM room_permissions WHERE room=?",new String[]{Long.toString(-dialog)})) {
-            if(c.moveToFirst() && "visitor".equals(c.getString(0))) {
+        chat.default_banned_rights=new TLRPC.TL_chatBannedRights(); chat.default_banned_rights.change_info=true; chat.flags|=262144;
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT role,affiliation FROM room_permissions WHERE room=?",new String[]{Long.toString(-dialog)})) {
+            boolean present=c.moveToFirst();
+            if(present) {
+                chat.creator="owner".equals(c.getString(1));
+                if("admin".equals(c.getString(1))) {
+                    chat.admin_rights=new TLRPC.TL_chatAdminRights(); chat.admin_rights.invite_users=true;
+                    chat.admin_rights.ban_users=true; chat.admin_rights.flags=16|32; chat.flags|=16384;
+                }
+            }
+            if(present && "visitor".equals(c.getString(0))) {
                 chat.default_banned_rights.send_messages=true; chat.default_banned_rights.send_plain=true; chat.default_banned_rights.send_media=true;
                 chat.default_banned_rights.send_photos=true; chat.default_banned_rights.send_videos=true; chat.default_banned_rights.send_docs=true;
                 chat.default_banned_rights.send_audios=true; chat.default_banned_rights.send_voices=true; chat.default_banned_rights.send_roundvideos=true;
@@ -300,7 +306,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized TLRPC.TL_messages_chatFull roomFull(long dialog,long self) {
         Room room=room(dialog); TLRPC.TL_messages_chatFull result=new TLRPC.TL_messages_chatFull();
         result.chats.add(roomChat(dialog)); result.users.addAll(roomUsers(dialog,self));
-        TLRPC.TL_chatFull full=new TLRPC.TL_chatFull(); full.id=-dialog; full.about=room.jid+(room.subject.isEmpty() ? "" : "\n\n"+room.subject);
+        TLRPC.TL_chatFull full=new TLRPC.TL_chatFull(); full.id=-dialog; full.about=room.description;
         full.notify_settings=new TLRPC.TL_peerNotifySettings(); full.participants=new TLRPC.TL_chatParticipants(); full.participants.chat_id=-dialog; full.participants.version=1;
         try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT user FROM room_participants WHERE room=? AND active=1",new String[]{Long.toString(-dialog)})) {
             while(c.moveToNext()) { TLRPC.TL_chatParticipant participant=new TLRPC.TL_chatParticipant(); participant.user_id=c.getLong(0); full.participants.participants.add(participant); }

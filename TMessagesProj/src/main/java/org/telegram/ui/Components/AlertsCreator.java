@@ -3717,6 +3717,16 @@ public class AlertsCreator {
     }
 
     public static void checkRestrictedInviteUsers(int currentAccount, TLRPC.Chat currentChat, TLRPC.TL_messages_invitedUsers invitedUsers) {
+        if(invitedUsers instanceof org.telegram.messenger.xmpp.MonogramInvitedUsers
+                && ((org.telegram.messenger.xmpp.MonogramInvitedUsers)invitedUsers).failure!=null) {
+            String failure=((org.telegram.messenger.xmpp.MonogramInvitedUsers)invitedUsers).failure;
+            AndroidUtilities.runOnUIThread(() -> {
+                BaseFragment fragment=LaunchActivity.getSafeLastFragment();
+                if(fragment!=null && fragment.getCurrentAccount()==currentAccount && fragment.getParentActivity()!=null)
+                    showSimpleAlert(fragment,getString(R.string.AppName),failure);
+            },200);
+            return;
+        }
         if (invitedUsers == null || invitedUsers.missing_invitees.isEmpty() || currentChat == null) {
             return;
         }

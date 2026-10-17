@@ -125,6 +125,14 @@ public final class XmppProfiles {
     }
     /** Room avatars use the room vCard, rather than a person's PEP nodes. */
     public XmppProfile loadRoom(String room) throws Exception { return card(JidCreate.entityBareFrom(room),false); }
+    public XmppProfile roomAvatar(String room,byte[] png) throws Exception {
+        XmppProfile.checkedAvatar(png);
+        EntityBareJid address=JidCreate.entityBareFrom(room);
+        XmppProfile changed=card(address,true).avatar(png,"image/png");
+        CardIq request=new CardIq(changed.card); request.setType(IQ.Type.set); request.setTo(address);
+        connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
+        return loadRoom(room);
+    }
     public void useOwnProfile(XmppProfile profile) throws Exception {
         String hash = sha1OrEmpty(profile.cardAvatar());
         if (hash.equals(ownAvatarHash)) return;

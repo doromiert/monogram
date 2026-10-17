@@ -19,7 +19,15 @@ public final class MonogramStoreDeviceTest {
         db.execSQL("INSERT INTO attachments SELECT message,url,path,media FROM caption_attachments");
         db.execSQL("DROP TABLE caption_attachments");
     }
+    static void legacyRoomDescription(SQLiteDatabase db) {
+        boolean found=false;
+        try(android.database.Cursor rows=db.rawQuery("PRAGMA table_info(rooms)",null)) {
+            while(rows.moveToNext()) if("description".equals(rows.getString(1))) found=true;
+        }
+        if(found) db.execSQL("ALTER TABLE rooms DROP COLUMN description");
+    }
     static void legacyDeletions(SQLiteDatabase db) {
+        legacyRoomDescription(db);
         db.execSQL("DROP TABLE message_retractions");
         db.execSQL("DROP TABLE retraction_sources");
         db.execSQL("ALTER TABLE messages DROP COLUMN sender_fingerprint");
@@ -27,6 +35,7 @@ public final class MonogramStoreDeviceTest {
     }
     static void legacyProtocols(SQLiteDatabase db) {
         legacyDeletions(db);
+        db.execSQL("DROP TABLE IF EXISTS rooms");
         db.execSQL("DROP TABLE IF EXISTS room_message_actors");
         db.execSQL("ALTER TABLE messages DROP COLUMN encryption");
         db.execSQL("ALTER TABLE message_ids RENAME TO protocol_message_ids");
@@ -58,7 +67,7 @@ public final class MonogramStoreDeviceTest {
                 old.setVersion(1);
             }
             try (MonogramStore store = new MonogramStore(context, "migration.db")) {
-                check(store.getReadableDatabase().getVersion() == 17, "Schema must migrate");
+                check(store.getReadableDatabase().getVersion() == 18, "Schema must migrate");
                 check(store.history(2, 1, 0, 100).get(0).id == 1, "Migration must preserve IDs");
                 check(store.history(2, 1, 0, 100).get(0).message.equals("known plaintext"), "Migration must preserve text");
                 check(store.save(MessageFixture.message("existing", "origin", "archive", null, false, false, 200000)) == 0,
@@ -219,7 +228,7 @@ public final class MonogramStoreDeviceTest {
                     old.setVersion(3);
                 }
                 try (MonogramStore migrated = new MonogramStore(context, "version2.db")) {
-                    check(migrated.getReadableDatabase().getVersion() == 17, "Schema 3 must migrate to 17");
+                    check(migrated.getReadableDatabase().getVersion() == 18, "Schema 3 must migrate to 18");
                     check(migrated.getMessage(1, 1).message.equals("existing v2"), "Schema 3 migration must retain known text");
                     TLRPC.Message archived = migrated.getMessage(2, 1);
                     check(MonogramAttachments.has(archived) && archived.message.isEmpty(),
@@ -235,7 +244,7 @@ public final class MonogramStoreDeviceTest {
                 legacyAttachments(previous); previous.setVersion(4);
             }
             try (MonogramStore migrated = new MonogramStore(context, "migration.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 17 && migrated.profile(1) == null, "Schema 4 must gain profiles without changing message tables");
+                check(migrated.getReadableDatabase().getVersion() == 18 && migrated.profile(1) == null, "Schema 4 must gain profiles without changing message tables");
                 check(migrated.getMessage(900, 1).message.equals("schema 4 preserved"), "Schema 4 messages must survive the profile migration");
             }
             TLRPC.MessageMedia remotePhoto = MonogramAttachments.remoteMedia(1, "photo.jpg", "application/octet-stream", 65537);

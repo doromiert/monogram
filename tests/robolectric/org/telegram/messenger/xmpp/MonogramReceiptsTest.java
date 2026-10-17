@@ -85,10 +85,10 @@ public class MonogramReceiptsTest {
         try {
             try(MonogramStore store=store(file)) {
                 self=store.peer("alice@example.org"); id=store.save(sent("existing",100000,"phone"));
-                store.getWritableDatabase().execSQL("DROP TABLE message_receipts"); store.getWritableDatabase().setVersion(16);
+                MonogramStoreDeviceTest.legacyRoomDescription(store.getWritableDatabase()); store.getWritableDatabase().execSQL("DROP TABLE message_receipts"); store.getWritableDatabase().setVersion(16);
             }
             try(MonogramStore reopened=store(file)) {
-                assertEquals(17,reopened.getReadableDatabase().getVersion());
+                assertEquals(18,reopened.getReadableDatabase().getVersion());
                 assertEquals("Message",reopened.getMessage(id,self).message); assertTrue(MessageObject.isUnread(reopened.getMessage(id,self)));
             }
         } finally { RuntimeEnvironment.getApplication().deleteDatabase(file); }
