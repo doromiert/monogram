@@ -7,6 +7,14 @@ Reuse the existing upstream feature implementations and redesigned UI components
 
 The goal is a Monogram Android client based on current official Telegram source, using ordinary XMPP/Jabber and interoperable OMEMO, with an optional server helper for features that need it. Nix is the development/build environment. Planned public home: https://monogram.neg-zero.com. Helper host: 192.168.1.24.
 
+## Newly reported regressions (2026-10-17)
+
+- [o] Restore reaction selection vibration and the flight animation from the picker to the message reaction; compare the pinned official Telegram implementation and retain native behavior for Unicode reactions.
+- [o] Check and restore the expanded emoji picker's native 3D scrolling effect against official Telegram source.
+- [o] Diagnose video upload failure from phone logs and saved send errors. The latest stored file error is `MONOGRAM_FEATURE_UNAVAILABLE`; the adapter currently rejects videos requiring conversion. Preserve Telegram's selected trim/compression rather than silently uploading the original.
+- [o] Fix outgoing messages playing the send animation twice: once on Send, then again on completion. Investigate the 0.2.39 outbox completion update while preserving pending messages across chat reopening.
+- [o] Fix messages arriving during connection/reconnection missing from the conversation after sync. Check archive catch-up and insertion into already-open chats, retaining the bounded 50-message paging policy.
+
 ## Priority order
 
 - [x] Build and deliver the current encrypted media/captions update: 0.2.13 includes modern OMEMO integration and local interoperability checks, is published, and is installed through wireless ADB. Phone picker/viewer interaction and complete independent Android-client exchange remain tracked below.
