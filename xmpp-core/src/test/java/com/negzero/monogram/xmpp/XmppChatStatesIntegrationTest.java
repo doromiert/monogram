@@ -33,7 +33,7 @@ class XmppChatStatesIntegrationTest {
         assertEquals(1, message.getExtensions().size(), "Standalone states cannot become messages, receipts or encrypted bodies");
     }
     @Test void standaloneTransitionsPrivacyAndResourceAggregation() throws Exception {
-        XmppSession.initializeOmemo(new File(root, "keys"));
+        XmppSession.initializeOmemo(new File(root, "keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<Boolean> incoming = new LinkedBlockingQueue<>();
         BlockingQueue<XmppMessage> bodies = new LinkedBlockingQueue<>();
         BlockingQueue<Message> sent = new LinkedBlockingQueue<>();

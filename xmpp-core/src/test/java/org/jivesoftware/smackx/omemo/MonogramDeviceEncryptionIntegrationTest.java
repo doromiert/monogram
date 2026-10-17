@@ -22,7 +22,7 @@ class MonogramDeviceEncryptionIntegrationTest {
                 "monogram-test",device,new File(root,"bridge-trust-"+device),(from,id,body,encrypted) -> {});
     }
     @Test void coldLocalApplyEncryptsWithoutIqAndNeverResetsSessionLearnedDuringFetch() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         ExecutorService learner=Executors.newSingleThreadExecutor();
         ThreadLocal<Boolean> localOnly=ThreadLocal.withInitial(() -> false);
         try(XmppSession alice=session("alice",5901);XmppSession bob=session("bob",5902)) {

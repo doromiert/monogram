@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfEnvironmentVariable(named="MONOGRAM_IT",matches="1")
 class XmppInvitationsIntegrationTest {
     @Test void discoversAuthorizedAdminAndUserRegistrationInvitations() throws Exception {
-        File root=new File(System.getenv("MONOGRAM_IT_STATE"));XmppSession.initializeOmemo(new File(root,"keys"));
+        File root=new File(System.getenv("MONOGRAM_IT_STATE"));XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         int device=3900;
         for(String user:new String[]{"roomalice","alice"}) {
             device++;

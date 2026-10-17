@@ -21,7 +21,7 @@ class XmppBookmarksIntegrationTest {
         });
     }
     @Test void privateModernBookmarksPreserveMetadataNotifyOwnDevicesAndImportLegacyRooms() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<Boolean> changes=new LinkedBlockingQueue<>();
         try(XmppSession alice=session("bookmarkmodern",801,new LinkedBlockingQueue<>()); XmppSession desktop=session("bookmarkmodern",802,changes); XmppSession bob=session("bookmarklegacy",803,new LinkedBlockingQueue<>())) {
             alice.connect(); desktop.connect(); bob.connect();

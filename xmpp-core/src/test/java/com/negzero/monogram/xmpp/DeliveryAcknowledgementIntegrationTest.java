@@ -28,7 +28,7 @@ class DeliveryAcknowledgementIntegrationTest {
         Runnable acceptance() throws Exception { Runnable value=accepted.poll(5,TimeUnit.SECONDS);assertNotNull(value);return value; }
     }
     XmppSession session(String user,int id,boolean modern,Inbox inbox) throws Exception {
-        File root=new File(System.getenv("MONOGRAM_IT_STATE"));XmppSession.initializeOmemo(new File(root,"keys"));
+        File root=new File(System.getenv("MONOGRAM_IT_STATE"));XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         return new XmppSession(new Account(user+"@localhost","127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Receipt-"+id),
                 "monogram-test",id,new File(root,"receipt-trust-"+id),
                 modern ? new Omemo2Device(user+"@localhost",id+1000,new Omemo2TestDatabase()) : null,inbox);

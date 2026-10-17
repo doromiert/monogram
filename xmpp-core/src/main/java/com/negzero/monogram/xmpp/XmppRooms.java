@@ -89,6 +89,7 @@ public final class XmppRooms implements AutoCloseable {
     private final Set<Future<?>> pendingBundles=ConcurrentHashMap.newKeySet();
     interface DeviceLookup { Set<OmemoDevice> devices(BareJid contact) throws Exception; }
     private final DeviceLookup deviceLookup;
+    XmppSession legacySession;
     XmppRooms(XMPPConnection connection,OmemoManager omemo,XmppSession.Listener listener,DeviceLookup deviceLookup) {
         this.connection=connection; this.omemo=omemo; this.listener=listener; this.deviceLookup=deviceLookup;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
@@ -119,10 +120,25 @@ public final class XmppRooms implements AutoCloseable {
                 if(room.isEntityBareJid()) invitation(room.asEntityBareJidOrThrow(),message.getFrom().toString(),invite.getAttributeValue("reason"),invite.getAttributeValue("password"));
             } catch(Exception invalid) { /* An invalid invitation cannot create or join a room. */ }
         },stanza -> stanza instanceof Message && stanza.hasExtension("x","jabber:x:conference"));
-        omemo.addOmemoMucMessageListener((chat,stanza,clear) -> {
-            if (!clear.isKeyTransportMessage() && stanza instanceof Message && !stanza.hasExtension("encrypted",XmppOmemo2.NS) && chats.get(chat.getRoom())==chat)
-                deliver(chat,(Message)stanza,clear.getBody(),true,true,clear.getSendersFingerprint().toString());
-        });
+    }
+    LegacyIncomingJournal.Context legacyContext(Message wire,boolean live,String archiveId,Date time) throws Exception {
+        if(closed || connection.getUser()==null || wire.getFrom()==null || MessageReactions.publicLegacy(wire)) return null;
+        MultiUserChat chat=chats.get(wire.getFrom().asEntityBareJidIfPossible());
+        if(chat==null || !chat.isJoined()) return null;
+        String author;
+        if(archiveId!=null || staleInvitation(wire)) {
+            // Delayed/history nicknames cannot be resolved through today's occupant map.
+            org.jivesoftware.smackx.muc.packet.MUCUser user=org.jivesoftware.smackx.muc.packet.MUCUser.from(wire);
+            author=user==null || user.getItem()==null || user.getItem().getJid()==null ? null : user.getItem().getJid().asBareJid().toString();
+        } else {
+            org.jivesoftware.smackx.muc.Occupant occupant=chat.getOccupant(wire.getFrom().asEntityFullJidIfPossible());
+            author=occupant==null || occupant.getJid()==null ? null : occupant.getJid().asBareJid().toString();
+        }
+        if(author==null) return null;
+        String nickname=chat.getNickname()==null ? "" : chat.getNickname().toString();
+        XmppRoomMessage snapshot=XmppRoomMessage.archived(wire,chat.getRoom(),connection.getUser().asEntityBareJid(),nickname,null,true,false,archiveId,time);
+        if(snapshot==null) return null;
+        return LegacyIncomingJournal.Context.room(wire,author,nickname,identify(chat,wire,snapshot),live);
     }
     private static boolean staleInvitation(Message message) {
         return message.hasExtension("urn:xmpp:delay") || message.hasExtension("jabber:x:delay") || message.hasExtension("urn:xmpp:forward:0")
@@ -192,7 +208,12 @@ public final class XmppRooms implements AutoCloseable {
                     if (element!=null && element.isKeyTransportElement()) return;
                     XmppRoomMessage pending=XmppRoomMessage.from(message,created.getRoom(),connection.getUser().asEntityBareJid(),
                             created.getNickname()==null ? "" : created.getNickname().toString(),null,true,false);
-                    if (pending!=null) listener.roomMessagePending(identify(created,message,pending));
+                    if (pending!=null) {
+                        pending=identify(created,message,pending);
+                        try { LegacyIncomingJournal.Context context=legacyContext(message,false,null,null);if(context!=null) pending=pending.withAliases(legacySession.legacyAliases(context)); }
+                        catch(Exception invalidRoute) { /* Do not alias a historical nickname through today's occupant. */ }
+                        listener.roomMessagePending(pending);
+                    }
                 } else deliver(created,message,encrypted ? null : message.getBody(),encrypted,!encrypted);
             });
             created.addParticipantListener(presence -> {
@@ -387,9 +408,16 @@ public final class XmppRooms implements AutoCloseable {
         public final List<XmppRoomMessage> messages;
         public final String firstId,lastId;
         public final boolean complete;
+        private final List<Runnable> accepted;
+        private final java.util.concurrent.atomic.AtomicBoolean stored=new java.util.concurrent.atomic.AtomicBoolean();
         public ArchivePage(List<XmppRoomMessage> messages,String firstId,String lastId,boolean complete) {
-            this.messages=Collections.unmodifiableList(new ArrayList<>(messages)); this.firstId=firstId; this.lastId=lastId; this.complete=complete;
+            this(messages,firstId,lastId,complete,Collections.emptyList());
         }
+        private ArchivePage(List<XmppRoomMessage> messages,String firstId,String lastId,boolean complete,List<Runnable> accepted) {
+            this.messages=Collections.unmodifiableList(new ArrayList<>(messages)); this.firstId=firstId; this.lastId=lastId; this.complete=complete;
+            this.accepted=Collections.unmodifiableList(new ArrayList<>(accepted));
+        }
+        public void stored() { if(stored.compareAndSet(false,true)) for(Runnable action:accepted) action.run(); }
     }
     public boolean hasArchive(String jid) throws Exception {
         return org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat(jid)).isSupported();
@@ -400,7 +428,7 @@ public final class XmppRooms implements AutoCloseable {
                 .setResultPageSizeTo(Math.min(Math.max(limit,1),100));
         if(before!=null) args.beforeUid(before); if(after!=null) args.afterUid(after);
         org.jivesoftware.smackx.mam.MamManager.MamQuery query=org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat).queryArchive(args.build());
-        List<XmppRoomMessage> messages=new ArrayList<>();
+        List<XmppRoomMessage> messages=new ArrayList<>();List<Runnable> accepted=new ArrayList<>();
         EntityBareJid own=connection.getUser().asEntityBareJid();
         for(org.jivesoftware.smackx.mam.element.MamElements.MamResultExtension result:query.getMamResultExtensions()) {
             org.jivesoftware.smackx.forward.packet.Forwarded<Message> forwarded=result.getForwarded();
@@ -419,9 +447,16 @@ public final class XmppRooms implements AutoCloseable {
                 Jid author=muc==null || muc.getItem()==null ? null : muc.getItem().getJid();
                 // A historical nickname cannot be resolved through today's occupant list.
                 if(author!=null) try {
-                    OmemoMessage.Received clear=omemo.decrypt(author.asBareJid(),element);
-                    if(clear.isKeyTransportMessage()) continue;
-                    body=clear.getBody(); readable=true; fingerprint=clear.getSendersFingerprint().toString();
+                    LegacyIncomingJournal.Context context=legacyContext(wire,false,result.getId(),time);
+                    if(context!=null) {
+                        LegacyIncomingJournal.Received decoded=legacySession.receiveLegacyArchive(context);
+                        if(decoded.roomMessage!=null) messages.add(decoded.roomMessage);
+                        else {
+                            XmppRoomMessage placeholder=XmppRoomMessage.archived(wire,chat.getRoom(),own,"",null,true,false,result.getId(),time);
+                            if(placeholder!=null) messages.add(placeholder.withAliases(legacySession.legacyAliases(context)));
+                        }
+                        accepted.add(() -> legacySession.acceptLegacy(decoded));continue;
+                    }
                 } catch(org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
                         | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
                         | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException unavailable) {
@@ -429,10 +464,15 @@ public final class XmppRooms implements AutoCloseable {
                 }
             }
             XmppRoomMessage message=XmppRoomMessage.archived(wire,chat.getRoom(),own,"",body,encrypted,readable,result.getId(),time);
-            if(message!=null) messages.add(identify(chat,wire,message.withSenderFingerprint(fingerprint)));
+            if(message!=null) {
+                message=identify(chat,wire,message.withSenderFingerprint(fingerprint));
+                if(encrypted && !modern) try { LegacyIncomingJournal.Context context=legacyContext(wire,false,result.getId(),time);if(context!=null) message=message.withAliases(legacySession.legacyAliases(context)); }
+                catch(Exception invalidRoute) { /* Historical author is required for an unreadable cipher alias. */ }
+                messages.add(message);
+            }
         }
         org.jivesoftware.smackx.rsm.packet.RSMSet rsm=query.getPage().getMamFinIq().getRSMSet();
-        return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete());
+        return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete(),accepted);
     }
     public void leave(String jid) throws Exception {
         MultiUserChat chat=chat(jid);

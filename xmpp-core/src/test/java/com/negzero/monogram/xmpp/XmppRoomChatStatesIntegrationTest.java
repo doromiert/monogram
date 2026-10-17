@@ -42,7 +42,7 @@ class XmppRoomChatStatesIntegrationTest {
         assertFalse(message.hasExtension("request","urn:xmpp:receipts"));
     }
     @Test void joinedRoomPrivacyIdentityExpiryAndSessionBoundaries() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<Boolean> aliceTyping=new LinkedBlockingQueue<>(),bobTyping=new LinkedBlockingQueue<>();
         BlockingQueue<XmppRoomMessage> aliceBodies=new LinkedBlockingQueue<>(),bobBodies=new LinkedBlockingQueue<>();
         BlockingQueue<Message> sent=new LinkedBlockingQueue<>();

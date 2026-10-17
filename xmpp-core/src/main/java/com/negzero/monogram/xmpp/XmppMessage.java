@@ -63,6 +63,7 @@ public final class XmppMessage {
         } catch(Exception malformedEnvelope) { /* Preserve the existing unreadable placeholder for unsupported ciphertext. */ }
         return message;
     }
+    XmppMessage withAliases(Map<String,String> aliases) { return canonical(aliases,timestamp,archived,markableId); }
     XmppMessage canonical(Map<String,String> ids,long timestamp,boolean archived,String markableId) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
                 attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup);

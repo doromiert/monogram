@@ -26,7 +26,7 @@ class MonogramDeviceListsSessionIntegrationTest {
                 "monogram-test",device,new File(root,"list-session-trust-"+device),(from,id,body,encrypted) -> {});
     }
     @Test void remoteSessionRefreshDoesNotHoldManagerMonitorOrOverwriteNewerPepList() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         try(XmppSession alice=session("alice",6801);XmppSession bob=session("bob",6802)) {
             alice.connect();bob.connect();
             OmemoManager manager=OmemoManager.getInstanceFor(alice.connection(),6801);

@@ -39,6 +39,7 @@ public final class MonogramController {
     private final ExecutorService sendWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService bookmarkWorker = Executors.newSingleThreadExecutor();
     private final java.util.Set<Long> joinedRooms = new java.util.HashSet<>();
+    private final java.util.Set<String> pendingRecoveryRooms=new java.util.HashSet<>();
     private volatile BookmarkSync bookmarkSync;
     private volatile String bookmarkStatus="Room bookmarks have not synced yet.";
     private final ExecutorService roomWorker = Executors.newSingleThreadExecutor();
@@ -61,6 +62,7 @@ public final class MonogramController {
     private final java.util.concurrent.atomic.AtomicLong displayedRequests=new java.util.concurrent.atomic.AtomicLong();
     private final MonogramStore store;
     private final MonogramOmemo2Store modernStore;
+    private final MonogramLegacyOmemoStore legacyStore;
     private final AccountVault vault;
     private volatile XmppSession session;
     private volatile long self;
@@ -88,7 +90,8 @@ public final class MonogramController {
     private MonogramController(int account) {
         this.account = account;
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
-        store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account); vault = new AccountVault(account);
+        store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account);
+        legacyStore=MonogramLegacyOmemoStore.application();vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
         displayedReady=readReceiptsEnabled();
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
@@ -399,12 +402,12 @@ public final class MonogramController {
     }
     private void connect(Account details, String password) throws Exception {
         if (session != null) { session.close(); session = null; }
-        joinedRooms.clear(); bookmarkSync=null; pendingProfileUsers.clear(); visibleHistory.clear();
+        joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();
         final long epoch = ++sessionEpoch, owner=accountEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
         AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
-        XmppSession.initializeOmemo(new File(ApplicationLoader.getFilesDirFixed(), "monogram-omemo"));
+        XmppSession.initializeOmemo(new File(ApplicationLoader.getFilesDirFixed(), "monogram-omemo"),legacyStore);
         int device = preferences.getInt("device", 0);
         if (device == 0) {
             device = org.jivesoftware.smackx.omemo.OmemoManager.randomDeviceId();
@@ -431,7 +434,10 @@ public final class MonogramController {
                     }
                     @Override public void receipt(com.negzero.monogram.xmpp.MessageReceipt receipt) { receivedReceipt(owner,details.jid.toString(),receipt); }
                     @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
-                        worker.execute(() -> { if (sameAccount(owner,details.jid.toString())) incomingRoom(message); });
+                        receivedRoom(owner,details.jid.toString(),message,null);
+                    }
+                    @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message,Runnable accepted) {
+                        receivedRoom(owner,details.jid.toString(),message,accepted);
                     }
                     @Override public void roomMessagePending(com.negzero.monogram.xmpp.XmppRoomMessage message) {
                         worker.execute(() -> {
@@ -448,6 +454,7 @@ public final class MonogramController {
                             store.roomState(room,self); if(room.joined) flushPendingSends(); long dialog=store.knownRoom(room.room.toString());
                             if(dialog!=0 && (room.title!=null || room.description!=null)) profileVersions.merge(dialog,1L,Long::sum);
                             if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) { refreshRoomRoster(dialog,true); queueRoomArchive(dialog,session); } else if(!room.joined) joinedRooms.remove(dialog); }
+                            if(dialog!=0 && pendingRecoveryRooms.remove(room.room.toString())) session.recoverRoomIncoming(room.room.toString());
                         } });
                     }
                     @Override public void roomMetadataChanged(String room) {
@@ -1029,6 +1036,7 @@ public final class MonogramController {
             int id=store.saveRoom(message,self); if(id!=0) { updated.add(id);changed=true; }
         }
         publishArchiveChanges(sync,java.util.Collections.singleton(task.peer),updated,changed);
+        page.stored();
         if(current) finishArchivePage(sync,task,page.firstId,page.complete);
     }
     private void nextArchivePage(ArchiveSync sync) {
@@ -1125,7 +1133,8 @@ public final class MonogramController {
     }
     private void archiveFailed(ArchiveSync sync, ArchiveTask task, Exception error) {
         sync.running=false;
-        if(error instanceof com.negzero.monogram.xmpp.Omemo2IncomingJournal.FullException && task.capacityRetries++==0) {
+        if((error instanceof com.negzero.monogram.xmpp.Omemo2IncomingJournal.FullException
+                || error instanceof com.negzero.monogram.xmpp.LegacyIncomingJournal.FullException) && task.capacityRetries++==0) {
             sync.tasks.addLast(task);
         } else if (!task.resetAttempted && error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
                 && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) error).getStanzaError().getCondition()
@@ -1298,8 +1307,8 @@ public final class MonogramController {
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
             typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
             if (session != null) { session.close(); session = null; }
-            sessionEpoch++; archiveSync = null;
-            try { if(!departing.isEmpty()) modernStore.clearIncoming(departing); }
+            sessionEpoch++; archiveSync = null;pendingRecoveryRooms.clear();
+            try { if(!departing.isEmpty()) { modernStore.clearIncoming(departing);legacyStore.clearIncoming(departing); } }
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
             automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
@@ -1521,6 +1530,20 @@ public final class MonogramController {
                 if(id!=0) updated.add(id);
                 publishArchiveChanges(new ArchiveSync(null,owner,jid),java.util.Collections.singleton(peer),updated,id!=0);
             } else incoming(message);
+            if(accepted!=null) accepted.run();
+        });
+    }
+    private void receivedRoom(long owner,String jid,com.negzero.monogram.xmpp.XmppRoomMessage message,Runnable accepted) {
+        worker.execute(() -> {
+            if(!sameAccount(owner,jid)) return;
+            long dialog=store.knownRoom(message.room.toString());
+            if(dialog==0) { if(accepted!=null) pendingRecoveryRooms.add(message.room.toString());return; }
+            pendingRecoveryRooms.remove(message.room.toString());
+            if(message.archived) {
+                java.util.Set<Integer> updated=new java.util.HashSet<>();int id=store.saveRoom(message,self);
+                if(id!=0) updated.add(id);
+                publishArchiveChanges(new ArchiveSync(null,owner,jid),java.util.Collections.singleton(dialog),updated,id!=0);
+            } else incomingRoom(message);
             if(accepted!=null) accepted.run();
         });
     }

@@ -31,6 +31,7 @@ public class MonogramLateArchiveTest {
         @Implementation public void putMessages(ArrayList<TLRPC.Message> messages,boolean transaction,boolean queue,boolean date,int mask,int mode,long thread) { saved.addAll(messages); }
         @Implementation public DispatchQueue getStorageQueue() { return new DispatchQueue("late-archive-test"); }
         @Implementation public void restoreMonogramReadState(ArrayList<TLRPC.Message> messages,ArrayList<TLRPC.Dialog> dialogs,Runnable done) { done.run(); }
+        @Implementation public void putUsersAndChats(List<TLRPC.User> users,List<TLRPC.Chat> chats,boolean transaction,boolean queue) {}
     }
     @Implements(value=MessagesController.class,isInAndroidSdk=false)
     public static class NativeDialogs extends MonogramNotificationSettingsTest.Base {
@@ -38,6 +39,8 @@ public class MonogramLateArchiveTest {
         static int publications,liveUpdates;
         @Implementation public static void __staticInitializer__() {}
         @Implementation public static MessagesController getInstance(int account) { return MonogramScreenWakeTest.instance(MessagesController.class,account); }
+        @Implementation public void putUsers(ArrayList<TLRPC.User> users,boolean cache) {}
+        @Implementation public void putChat(TLRPC.Chat chat,boolean cache) {}
         @Implementation public void processLoadedDialogs(TLRPC.messages_Dialogs dialogs,ArrayList<TLRPC.EncryptedChat> encrypted,ArrayList<TLRPC.UserFull> full,int folder,int offset,int count,int type,boolean reset,boolean migrate,boolean cache) { publications++; }
         @Implementation public boolean processUpdateArray(ArrayList<TLRPC.Update> updates,ArrayList<TLRPC.User> users,ArrayList<TLRPC.Chat> chats,boolean difference,int date) {
             for(TLRPC.Update update:updates) if(update instanceof org.telegram.tgnet.tl.TL_update.TL_updateNewMessage) liveUpdates++;
@@ -77,7 +80,10 @@ public class MonogramLateArchiveTest {
         @Implementation public void processNewMessages(ArrayList<MessageObject> messages,boolean last,boolean fcm,java.util.concurrent.CountDownLatch done) { pushes++; }
     }
     @Implements(value=MonogramController.class,isInAndroidSdk=false)
-    public static class Controller { @Implementation public void __constructor__(int account) {} }
+    public static class Controller {
+        @Implementation public void __constructor__(int account) {}
+        @Implementation public void refreshProfile(long peer) {}
+    }
     Context context;MonogramStore store;MonogramController controller;long self,peer;
     Class<?> syncClass,taskClass;
     @Before public void setup() throws Exception {
@@ -90,6 +96,7 @@ public class MonogramLateArchiveTest {
         ReflectionHelpers.setField(controller,"preferences",context.getSharedPreferences("late-archive",0));
         context.getSharedPreferences("late-archive",0).edit().clear().putString("jid","alice@example.org").commit();
         ReflectionHelpers.setField(controller,"accountEpoch",7L);
+        ReflectionHelpers.setField(controller,"pendingRecoveryRooms",new HashSet<String>());
         syncClass=Class.forName(MonogramController.class.getName()+"$ArchiveSync");
         taskClass=Class.forName(MonogramController.class.getName()+"$ArchiveTask");
         Storage.saved.clear();Events.replaced.clear();Ui.pending.clear();NativeDialogs.publications=0;NativeDialogs.liveUpdates=0;Notifications.edits=0;Notifications.pushes=0;
@@ -170,5 +177,77 @@ public class MonogramLateArchiveTest {
         received(7L,"other@example.org",recovered,accepted::incrementAndGet);
         worker.drain();Ui.drain();
         assertEquals(0,accepted.get());assertTrue(store.history(peer,self,0,10).isEmpty());assertTrue(Storage.saved.isEmpty());assertTrue(Events.replaced.isEmpty());
+    }
+    private static final String ROOM="friends@conference.example.org";
+    private XmppRoomMessage roomMessage() throws Exception {
+        return MessageFixture.roomText(ROOM,"Bob","room-recovered","room-mam-recovered","Room recovered after reconnect",
+                "bob@example.org","bob-stable",100000,true,null,null);
+    }
+    private void receivedRoom(long owner,String jid,XmppRoomMessage message,Runnable accepted) {
+        ReflectionHelpers.callInstanceMethod(controller,"receivedRoom",ReflectionHelpers.ClassParameter.from(long.class,owner),
+                ReflectionHelpers.ClassParameter.from(String.class,jid),ReflectionHelpers.ClassParameter.from(XmppRoomMessage.class,message),
+                ReflectionHelpers.ClassParameter.from(Runnable.class,accepted));
+    }
+    @Test public void roomJournalReplaySavesCanonicalHistoryAndNativeCacheBeforeAcceptanceWithoutLiveEvents() throws Exception {
+        long room=store.room(ROOM,"Alice");
+        MonogramDisplayedPrivacyTest.Queue worker=new MonogramDisplayedPrivacyTest.Queue();ReflectionHelpers.setField(controller,"worker",worker);
+        XmppRoomMessage recovered=roomMessage();assertTrue(recovered.archived);
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();
+        receivedRoom(7L,"alice@example.org",recovered,() -> {
+            assertEquals("Room recovered after reconnect",store.history(room,self,0,10).get(0).message);
+            assertEquals(1,Storage.saved.size());assertEquals(room,Storage.saved.get(0).dialog_id);accepted.incrementAndGet();
+        });
+        assertEquals(0,accepted.get());assertTrue(store.history(room,self,0,10).isEmpty());
+        worker.drain();assertEquals(1,accepted.get());Ui.drain();
+        assertEquals(1,Events.replaced.size());assertEquals(Storage.saved.get(0).id,Events.replaced.get(0).getId());
+        assertEquals(1,NativeDialogs.publications);assertEquals(1,Notifications.edits);
+        assertEquals(0,NativeDialogs.liveUpdates);assertEquals(0,Notifications.pushes);
+        assertNull(store.archiveCursor(room,false));assertNull(store.archiveCursor(false));
+        assertEquals(0,store.saveRoom(recovered,self));
+    }
+    @Test public void failedRoomReplaySaveLeavesUnacceptedJournalRetryable() throws Exception {
+        long room=store.room(ROOM,"Alice");
+        MonogramDisplayedPrivacyTest.Queue worker=new MonogramDisplayedPrivacyTest.Queue();ReflectionHelpers.setField(controller,"worker",worker);
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();XmppRoomMessage recovered=roomMessage();
+        store.getWritableDatabase().execSQL("CREATE TRIGGER fail_room_replay BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'room replay save refused'); END");
+        receivedRoom(7L,"alice@example.org",recovered,accepted::incrementAndGet);
+        try { worker.drain();fail("Room save must fail"); } catch(android.database.sqlite.SQLiteException expected) {}
+        assertEquals(0,accepted.get());assertTrue(store.history(room,self,0,10).isEmpty());assertTrue(Storage.saved.isEmpty());
+        store.getWritableDatabase().execSQL("DROP TRIGGER fail_room_replay");
+        receivedRoom(7L,"alice@example.org",recovered,accepted::incrementAndGet);worker.drain();assertEquals(1,accepted.get());
+    }
+    @Test public void unknownRoomAndAccountMismatchDoNotAcceptOrLosePendingRecovery() throws Exception {
+        MonogramDisplayedPrivacyTest.Queue worker=new MonogramDisplayedPrivacyTest.Queue();ReflectionHelpers.setField(controller,"worker",worker);
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();XmppRoomMessage recovered=roomMessage();
+        receivedRoom(6L,"alice@example.org",recovered,accepted::incrementAndGet);
+        receivedRoom(7L,"other@example.org",recovered,accepted::incrementAndGet);worker.drain();
+        Set<String> pending=ReflectionHelpers.getField(controller,"pendingRecoveryRooms");assertTrue(pending.isEmpty());
+        receivedRoom(7L,"alice@example.org",recovered,accepted::incrementAndGet);worker.drain();Ui.drain();
+        assertEquals(Collections.singleton(ROOM),pending);assertEquals(0,store.knownRoom(ROOM));
+        assertEquals(0,accepted.get());assertTrue(Storage.saved.isEmpty());assertTrue(Events.replaced.isEmpty());
+        long room=store.room(ROOM,"Alice");
+        receivedRoom(7L,"alice@example.org",recovered,accepted::incrementAndGet);worker.drain();
+        assertEquals(1,accepted.get());assertTrue(pending.isEmpty());assertEquals(1,store.history(room,self,0,10).size());
+    }
+    @Test public void roomArchivePageAcceptsOnlyAfterSuccessfulRoomAndNativeCacheStorage() throws Exception {
+        long room=store.room(ROOM,"Alice");XmppRoomMessage recovered=roomMessage();
+        java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();
+        Runnable callback=() -> {
+            assertEquals(1,store.history(room,self,0,10).size());assertEquals(1,Storage.saved.size());accepted.incrementAndGet();
+        };
+        XmppRooms.ArchivePage page=(XmppRooms.ArchivePage)construct(XmppRooms.ArchivePage.class,
+                new Class<?>[]{List.class,String.class,String.class,boolean.class,List.class},Collections.singletonList(recovered),
+                "room-mam-recovered","room-mam-recovered",true,Collections.singletonList(callback));
+        Object task=construct(taskClass,new Class<?>[]{long.class},room);
+        Method receive=MonogramController.class.getDeclaredMethod("roomArchivePage",syncClass,taskClass,XmppRooms.ArchivePage.class,boolean.class);receive.setAccessible(true);
+        Object oldSync=sync();
+        store.getWritableDatabase().execSQL("CREATE TRIGGER fail_room_page BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT,'room page save refused'); END");
+        try { receive.invoke(controller,oldSync,task,page,true);fail("Room archive save must fail"); }
+        catch(InvocationTargetException expected) { assertTrue(expected.getCause() instanceof android.database.sqlite.SQLiteException); }
+        assertEquals(0,accepted.get());assertTrue(store.history(room,self,0,10).isEmpty());assertTrue(Storage.saved.isEmpty());
+        store.getWritableDatabase().execSQL("DROP TRIGGER fail_room_page");
+        receive.invoke(controller,oldSync,task,page,true);assertEquals(1,accepted.get());
+        page.stored();assertEquals(1,accepted.get());assertNull(store.archiveCursor(room,false));
+        Ui.drain();assertEquals(0,NativeDialogs.liveUpdates);assertEquals(0,Notifications.pushes);
     }
 }

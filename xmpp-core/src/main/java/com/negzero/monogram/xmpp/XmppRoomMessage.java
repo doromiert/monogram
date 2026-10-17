@@ -35,6 +35,12 @@ public final class XmppRoomMessage {
         this.encryption=modern ? XmppMessage.Encryption.OMEMO2 : encrypted ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
         this.archived=archived; this.outgoing=outgoing; this.encrypted=encrypted; this.readable=readable; this.timestamp=timestamp;
     }
+    XmppRoomMessage withAliases(Map<String,String> aliases) { return canonical(aliases,timestamp,archived,outgoing,realSender,realSenderVerified,occupantId); }
+    XmppRoomMessage canonical(Map<String,String> ids,long timestamp,boolean archived,boolean outgoing,String realSender,boolean verified,String occupantId) {
+        return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
+                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,
+                reply,correction,verified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup);
+    }
     public static XmppRoomMessage from(Message wire,EntityBareJid room,EntityBareJid own,String nickname,
                                        String body,boolean encrypted,boolean readable) {
         return archived(wire,room,own,nickname,body,encrypted,readable,null,null);

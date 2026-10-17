@@ -24,7 +24,7 @@ class XmppDisplayedMarkersIntegrationTest {
         });
     }
     @Test void explicitOptInPresenceAuthorizationDedupAndNoFeedback() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<XmppMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();
         BlockingQueue<MessageReceipt> aliceReceipts=new LinkedBlockingQueue<>(),bobReceipts=new LinkedBlockingQueue<>();
         BlockingQueue<Message> markers=new LinkedBlockingQueue<>();

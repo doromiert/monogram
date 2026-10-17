@@ -22,9 +22,8 @@ import org.jivesoftware.smackx.omemo.OmemoMessage;
 import org.jivesoftware.smackx.omemo.element.OmemoElement;
 import org.jivesoftware.smackx.omemo.element.OmemoElement_VAxolotl;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
-import org.jivesoftware.smackx.omemo.listener.OmemoMessageListener;
 import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
-import org.jivesoftware.smackx.omemo.signal.SignalOmemoService;
+import org.jivesoftware.smackx.omemo.MonogramLegacyOmemoService;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
 import org.jivesoftware.smackx.receipts.DeliveryReceiptManager;
 import org.jivesoftware.smackx.sid.element.OriginIdElement;
@@ -40,6 +39,7 @@ public final class XmppSession implements AutoCloseable {
         default void profileChanged(EntityBareJid jid) {}
         default void profileChanged(org.jxmpp.jid.Jid jid) { profileChanged(jid.asEntityBareJidIfPossible()); }
         default void roomMessage(XmppRoomMessage message) {}
+        default void roomMessage(XmppRoomMessage message,Runnable accepted) { roomMessage(message);accepted.run(); }
         default void roomMessagePending(XmppRoomMessage message) { roomMessage(message); }
         default void messagePending(XmppMessage message) { message(message); }
         default void roomChanged(XmppRooms.State room) {}
@@ -63,7 +63,25 @@ public final class XmppSession implements AutoCloseable {
             else message(message.peer, id, message.body, message.encrypted);
         }
     }
+    private static final class IncomingCapacity {
+        private static final java.util.Map<String,java.util.Set<XmppSession>> listeners=new java.util.HashMap<>();
+        static synchronized void register(String key,XmppSession session) {
+            if(key!=null) listeners.computeIfAbsent(key,ignored -> java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>())).add(session);
+        }
+        static synchronized void unregister(String key,XmppSession session) {
+            java.util.Set<XmppSession> found=listeners.get(key);if(found==null) return;
+            found.remove(session);if(found.isEmpty()) listeners.remove(key);
+        }
+        static void changed(String key,XmppSession origin) {
+            if(key==null) return;List<XmppSession> copy;
+            synchronized(IncomingCapacity.class) {
+                java.util.Set<XmppSession> found=listeners.get(key);if(found==null) return;copy=new ArrayList<>(found);
+            }
+            for(XmppSession session:copy) session.capacityChanged(key,origin!=session);
+        }
+    }
     private static File keyRoot;
+    private static LegacyOmemoRecords.Factory legacyRecordsFactory;
     private static final class ManagedConnection extends XMPPTCPConnection {
         ManagedConnection(XMPPTCPConnectionConfiguration config) { super(config); }
         void pingTimedOut() { notifyConnectionError(new java.net.SocketTimeoutException("XMPP server ping timed out")); }
@@ -82,6 +100,19 @@ public final class XmppSession implements AutoCloseable {
     private final java.util.Map<String,Long> deviceListRefresh=new java.util.concurrent.ConcurrentHashMap<>();
     private final IdentityTrust trust;
     private final XmppOmemo2 modern;
+    private final LegacyIncomingJournal legacyIncoming;
+    private final String legacyCapacityKey,modernCapacityKey;
+    private boolean foreignAckScheduled;
+    private long foreignAckRevision;
+    private volatile Exception legacyFailure;
+    private final Object legacyInboxLock=new Object();
+    private final java.util.ArrayDeque<LegacyIncomingJournal.Context> legacyInbox=new java.util.ArrayDeque<>();
+    private long legacyInboxBytes,legacyAccepted;
+    private boolean legacyBlocked,legacyRetrying,foreignLegacyScheduled;
+    private long foreignLegacyRevision;
+    private final java.util.concurrent.ExecutorService legacyWorker=java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread thread=new Thread(r,"Monogram legacy recovery");thread.setDaemon(true);return thread;
+    });
     private final Listener listener;
     private final java.util.concurrent.ExecutorService crypto = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r,"Monogram OMEMO2"); thread.setDaemon(true); return thread;
@@ -123,18 +154,20 @@ public final class XmppSession implements AutoCloseable {
     }
 
     public static synchronized void initializeOmemo(File privateDirectory) throws Exception {
+        throw new IllegalStateException("Legacy OMEMO requires an explicit durable LegacyOmemoRecords.Factory");
+    }
+    public static synchronized void initializeOmemo(File privateDirectory,LegacyOmemoRecords.Factory factory) throws Exception {
+        if(factory==null) throw new IllegalArgumentException("A durable legacy OMEMO records factory is required");
         File root = privateDirectory.getCanonicalFile();
         if (keyRoot != null) {
-            if (!root.equals(keyRoot)) throw new IllegalStateException("OMEMO store already initialized elsewhere");
+            if (!root.equals(keyRoot) || legacyRecordsFactory!=factory) throw new IllegalStateException("OMEMO store already initialized with another root or records factory");
             return;
         }
         if (!root.isDirectory() && !root.mkdirs()) throw new java.io.IOException("Cannot create OMEMO key store");
         OmemoCryptoProvider.install();
-        SignalOmemoService.acknowledgeLicense();
-        SignalOmemoService.setup();
-        ((SignalOmemoService) SignalOmemoService.getInstance()).setOmemoStoreBackend(
-                new org.jivesoftware.smackx.omemo.MonogramDeviceLists(new SignalFileBasedOmemoStore(root)));
-        keyRoot = root;
+        org.jivesoftware.smackx.omemo.signal.SignalOmemoService.acknowledgeLicense();
+        MonogramLegacyOmemoService.setup(new org.jivesoftware.smackx.omemo.MonogramDeviceLists(new SignalFileBasedOmemoStore(root),factory));
+        keyRoot = root;legacyRecordsFactory=factory;
     }
 
     public XmppSession(Account account, String password, int deviceId, File trustFile, Listener listener) throws Exception {
@@ -151,6 +184,8 @@ public final class XmppSession implements AutoCloseable {
         connection = new ManagedConnection(config.build());
         connection.setReplyTimeout(15000);
         this.listener = listener;
+        legacyCapacityKey="legacy\n"+account.jid+"\n"+deviceId;
+        modernCapacityKey=modernDevice==null ? null : "modern\n"+modernDevice.jid+"\n"+modernDevice.id;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("encrypted",XmppOmemo2.NS,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         modern = modernDevice == null ? null : new XmppOmemo2(connection,modernDevice,jid -> {});
@@ -180,6 +215,7 @@ public final class XmppSession implements AutoCloseable {
         trust = new IdentityTrust(trustFile);
         omemo = OmemoManager.getInstanceFor(connection, deviceId);
         omemo.setTrustCallback(trust);
+        legacyIncoming=new LegacyIncomingJournal(MonogramLegacyOmemoService.instance().records(),new OmemoDevice(account.jid,deviceId));
         legacyDiscovery=new XmppLegacyDiscovery(connection,deviceId);
         fingerprints=new XmppFingerprints((XmppFingerprints.ProgressSource)(address,useModern,progress) -> {
             java.util.Map<OmemoDevice,OmemoFingerprint> found=new java.util.LinkedHashMap<>();
@@ -196,6 +232,7 @@ public final class XmppSession implements AutoCloseable {
             return found;
         });
         rooms=new XmppRooms(connection,omemo,listener,contact -> sendingDevices(contact.toString()));
+        rooms.legacySession=this;
         invitations=new XmppInvitations(connection);
         chatStates = new XmppChatStates(connection, listener::typing, rooms, listener::roomTyping);
         rooms.chatStates = chatStates;
@@ -226,16 +263,18 @@ public final class XmppSession implements AutoCloseable {
         org.jivesoftware.smackx.ping.PingManager ping = org.jivesoftware.smackx.ping.PingManager.getInstanceFor(connection);
         ping.setPingInterval(120);
         ping.registerPingFailedListener(() -> { if (!closed) connection.pingTimedOut(); });
-        omemo.addOmemoMessageListener(new OmemoMessageListener() {
-            @Override public void onOmemoMessageReceived(Stanza stanza, OmemoMessage.Received decrypted) {
-                if (!decrypted.isKeyTransportMessage() && stanza instanceof Message && !isModern((Message)stanza) && !rooms.known(stanza.getFrom())) {
-                    deliver(listener, (Message) stanza, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString(),true);
-                }
+        MonogramLegacyOmemoService.instance().register(omemo,legacyIncoming,new MonogramLegacyOmemoService.Receiver() {
+            public LegacyIncomingJournal.Context context(Message stanza,boolean live) throws Exception {
+                if(closed || connection.getUser()==null || isModern(stanza) || MessageReactions.publicLegacy(stanza)) return null;
+                if(stanza.getType()==Message.Type.groupchat) return live ? rooms.legacyContext(stanza,true,null,null) : null;
+                if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return null;
+                return LegacyIncomingJournal.Context.direct(stanza,connection.getUser().asEntityBareJid(),live,null,null);
             }
-            @Override public void onOmemoCarbonCopyReceived(org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction direction,
-                    Message carbon, Message wrapping, OmemoMessage.Received decrypted) {
-                if (validCarbon(wrapping) && !isModern(carbon) && !decrypted.isKeyTransportMessage()) deliver(listener, carbon, decrypted.getBody(), true,decrypted.getSendersFingerprint().toString(),false);
-            }
+            public void received(LegacyIncomingJournal.Received received) { deliverLegacy(received); }
+            public long capacityRevision() { synchronized(legacyInboxLock) { return legacyAccepted; } }
+            public void capacityChanged() { IncomingCapacity.changed(legacyCapacityKey,XmppSession.this); }
+            public void blocked(LegacyIncomingJournal.Context context,long revision) { queueLegacy(context,revision); }
+            public void failed(Exception error) { legacyFailure=error; }
         });
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
@@ -259,6 +298,7 @@ public final class XmppSession implements AutoCloseable {
             else legacyPending(message);
         }, stanza -> stanza instanceof Message && (((Message) stanza).getType() == Message.Type.chat
                 || ((Message) stanza).getType() == Message.Type.normal));
+        IncomingCapacity.register(legacyCapacityKey,this);IncomingCapacity.register(modernCapacityKey,this);
     }
 
     private void legacyPending(Message stanza) {
@@ -267,6 +307,8 @@ public final class XmppSession implements AutoCloseable {
         if(element==null || element.isKeyTransportElement() || connection.getUser()==null || closed) return;
         XmppMessage message=XmppMessage.from(stanza,connection.getUser().asEntityBareJid(),null,true,false,null,null);
         if(message!=null) {
+            try { message=message.withAliases(legacyIncoming.aliases(LegacyIncomingJournal.Context.direct(stanza,connection.getUser().asEntityBareJid(),false,null,null))); }
+            catch(Exception invalidRoute) { /* Keep the original provisional identity when no trustworthy digest can be made. */ }
             if(message.reactions!=null) listener.message(message); else listener.messagePending(message);
         }
     }
@@ -328,6 +370,7 @@ public final class XmppSession implements AutoCloseable {
             modernSetup=false;modernInboxLock.notifyAll();
             try { crypto.execute(this::recoverIncoming); }
             catch(java.util.concurrent.RejectedExecutionException stopped) { /* Session closed during setup completion. */ }
+            retryLegacyInbox();
             if(journalBlocked) retryModernInbox();
             else {
                 while(!modernInbox.isEmpty()) decryptModern(modernInbox.removeFirst(),false);
@@ -393,13 +436,23 @@ public final class XmppSession implements AutoCloseable {
     }
     /** Local recovery also runs before connecting: authenticated plaintext must not depend on network availability. */
     public void recoverIncoming() {
-        if(closed || modern==null) return;
+        if(closed) return;
+        try { for(LegacyIncomingJournal.Received pending:legacyIncoming.pending()) { if(closed) return;deliverLegacy(pending); } }
+        catch(Exception failure) { legacyFailure=failure; }
+        if(modern==null) return;
         try {
             for(XmppOmemo2.Received pending:modern.pendingIncoming()) {
                 if(closed) return;
                 if(pending.message!=null) deliverDecodedModern(pending.message,pending,null);else afterModern(pending);
             }
         } catch(Exception failure) { modernFailure=failure; }
+    }
+    /** Retry only a room whose native metadata has just become available. No connection or join is needed. */
+    public void recoverRoomIncoming(String room) {
+        if(closed || room==null) return;
+        try { for(LegacyIncomingJournal.Received pending:legacyIncoming.pending())
+            if(!closed && pending.roomMessage!=null && room.equals(pending.roomMessage.room.toString())) deliverLegacy(pending);
+        } catch(Exception failure) { legacyFailure=failure; }
     }
     private void afterModern(XmppOmemo2.Received received) { afterModern(received,null); }
     private void afterModern(XmppOmemo2.Received received,DeliveryAcknowledgement receipt) {
@@ -410,22 +463,65 @@ public final class XmppSession implements AutoCloseable {
         if(receipt!=null) acknowledgeDelivery(receipt);
         if(closed) return;
         try {
-            crypto.execute(() -> {
-                if (closed || !connection.isAuthenticated()) return;
-                try {
-                    if (received.acknowledgement != null) connection.sendStanza(received.acknowledgement);
-                    modern.acknowledgeIncoming(received);
-                    incomingCapacityChanged();
-                    if (received.replenish) modern.replenish();
-                } catch (Exception error) { modernFailure = error; }
-            });
+            crypto.execute(() -> completeModern(received));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) { /* The session closed after acceptance. */ }
     }
-    private void incomingCapacityChanged() {
-        synchronized(modernInboxLock) {
-            incomingAccepted++;modernInboxLock.notifyAll();
-            retryModernInbox();
+    private void completeModern(XmppOmemo2.Received received) {
+        if(closed || !connection.isAuthenticated()) return;
+        try {
+            if(received.acknowledgement!=null) connection.sendStanza(received.acknowledgement);
+            modern.acknowledgeIncoming(received);incomingCapacityChanged();
+            if(received.replenish) modern.replenish();
+        } catch(Exception error) { modernFailure=error; }
+    }
+    private void incomingCapacityChanged() { IncomingCapacity.changed(modernCapacityKey,this); }
+    private void capacityChanged(String key,boolean foreign) {
+        if(closed) return;
+        if(key.equals(legacyCapacityKey)) {
+            synchronized(legacyInboxLock) {
+                legacyAccepted++;legacyInboxLock.notifyAll();retryLegacyInbox();
+                if(foreign) { foreignLegacyRevision++;scheduleForeignLegacyCompletion(); }
+            }
+        } else {
+            synchronized(modernInboxLock) {
+                incomingAccepted++;modernInboxLock.notifyAll();retryModernInbox();
+                if(foreign) { foreignAckRevision++;scheduleForeignAcknowledgements(); }
+            }
         }
+    }
+    /** A closed predecessor can leave newly accepted ACK-only rows in the replacement's full journal. */
+    private void scheduleForeignAcknowledgements() {
+        if(closed || modern==null || foreignAckScheduled) return;foreignAckScheduled=true;
+        try { crypto.execute(() -> {
+            long revision;
+            do {
+                synchronized(modernInboxLock) { revision=foreignAckRevision; }
+                try {
+                    for(XmppOmemo2.Received pending:modern.pendingIncoming())
+                        if(pending.message==null && modern.acceptIncoming(pending)) completeModern(pending);
+                } catch(Exception failure) { modernFailure=failure; }
+                synchronized(modernInboxLock) {
+                    if(closed || revision==foreignAckRevision) { foreignAckScheduled=false;return; }
+                }
+            } while(true);
+        }); } catch(java.util.concurrent.RejectedExecutionException stopped) { foreignAckScheduled=false; }
+    }
+    private void scheduleForeignLegacyCompletion() {
+        if(closed || foreignLegacyScheduled) return;foreignLegacyScheduled=true;
+        try { legacyWorker.execute(() -> {
+            long revision;
+            do {
+                synchronized(legacyInboxLock) { revision=foreignLegacyRevision; }
+                try {
+                    for(LegacyIncomingJournal.Received pending:legacyIncoming.pending())
+                        if(pending.message==null && pending.roomMessage==null)
+                            MonogramLegacyOmemoService.instance().completePending(omemo,legacyIncoming,pending);
+                } catch(Exception failure) { legacyFailure=failure; }
+                synchronized(legacyInboxLock) {
+                    if(closed || revision==foreignLegacyRevision) { foreignLegacyScheduled=false;return; }
+                }
+            } while(true);
+        }); } catch(java.util.concurrent.RejectedExecutionException stopped) { foreignLegacyScheduled=false; }
     }
     private void retryModernInbox() {
         synchronized(modernInboxLock) {
@@ -474,6 +570,76 @@ public final class XmppSession implements AutoCloseable {
         } catch(java.util.concurrent.RejectedExecutionException stopped) { /* Session closed after storage acceptance. */ }
     }
 
+    private void deliverLegacy(LegacyIncomingJournal.Received received) {
+        if(closed) return;
+        java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
+        Runnable stored=() -> { if(accepted.compareAndSet(false,true)) acceptLegacy(received); };
+        if(received.roomMessage!=null) listener.roomMessage(received.roomMessage,stored);
+        else if(received.message!=null) listener.message(received.message,stored);
+        else acceptLegacy(received);
+    }
+    void acceptLegacy(LegacyIncomingJournal.Received received) {
+        try {
+            if(!legacyIncoming.accept(received)) return;
+            if(received.message!=null || received.roomMessage!=null) IncomingCapacity.changed(legacyCapacityKey,this);
+            if(!closed) try { legacyWorker.execute(() -> {
+                try { MonogramLegacyOmemoService.instance().completePending(omemo,legacyIncoming,received); }
+                catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                catch(Exception failure) { legacyFailure=failure; }
+            }); } catch(java.util.concurrent.RejectedExecutionException stopped) { /* Session closed after local acceptance. */ }
+            if(received.receiptEligible()) acknowledgeDelivery(received.context.receipt);
+        } catch(Exception failure) { legacyFailure=failure; }
+    }
+    java.util.Map<String,String> legacyAliases(LegacyIncomingJournal.Context context) throws Exception { return legacyIncoming.aliases(context); }
+    public Exception legacyFailure() { return legacyFailure; }
+    private void queueLegacy(LegacyIncomingJournal.Context context,long revision) {
+        boolean recover=false;java.io.IOException overflow=null;
+        synchronized(legacyInboxLock) {
+            if(closed) return;long bytes=context.retainedBytes();
+            if(legacyInbox.size()>=MAX_MODERN_SETUP_MESSAGES || bytes>MAX_MODERN_SETUP_BYTES-legacyInboxBytes) {
+                overflow=new java.io.IOException("Legacy incoming inbox is full; reconnect and recover history");legacyFailure=overflow;
+            } else {
+                recover=!legacyBlocked;legacyBlocked=true;legacyInbox.addLast(context);legacyInboxBytes+=bytes;
+                if(revision!=legacyAccepted) retryLegacyInbox();
+            }
+        }
+        if(overflow!=null) connection.setupFailed(overflow);
+        else if(recover) recoverIncoming();
+    }
+    private void retryLegacyInbox() {
+        synchronized(legacyInboxLock) {
+            if(closed || legacyRetrying || legacyInbox.isEmpty() || !connection.isAuthenticated()) return;
+            LegacyIncomingJournal.Context context=legacyInbox.removeFirst();legacyInboxBytes-=context.retainedBytes();legacyRetrying=true;
+            long revision=legacyAccepted;
+            try { legacyWorker.execute(() -> {
+                boolean completed=false;
+                try { completed=MonogramLegacyOmemoService.instance().retry(omemo,context); }
+                finally {
+                    synchronized(legacyInboxLock) {
+                        legacyRetrying=false;if(legacyInbox.isEmpty()) legacyBlocked=false;
+                        if(completed || revision!=legacyAccepted) retryLegacyInbox();
+                    }
+                }
+            }); } catch(java.util.concurrent.RejectedExecutionException stopped) { legacyRetrying=false; }
+        }
+    }
+    LegacyIncomingJournal.Received receiveLegacyArchive(LegacyIncomingJournal.Context context) throws Exception {
+        awaitModernSetup();
+        long generation=lifecycle.get(),deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
+        while(true) {
+            if(interruptedModernSetup(generation)) throw new java.io.IOException("Legacy archive interrupted by connection setup");
+            long revision;synchronized(legacyInboxLock) { revision=legacyAccepted; }
+            try { return MonogramLegacyOmemoService.instance().receive(omemo,legacyIncoming,context); }
+            catch(LegacyIncomingJournal.FullException full) {
+                recoverIncoming();
+                synchronized(legacyInboxLock) {
+                    long remaining=deadline-System.nanoTime();if(remaining<=0) throw full;
+                    if(revision==legacyAccepted) java.util.concurrent.TimeUnit.NANOSECONDS.timedWait(legacyInboxLock,Math.min(remaining,java.util.concurrent.TimeUnit.SECONDS.toNanos(1)));
+                }
+            }
+        }
+    }
+
     public static final class ArchivePage {
         public final List<XmppMessage> messages;
         public final String firstId, lastId;
@@ -502,7 +668,7 @@ public final class XmppSession implements AutoCloseable {
         return archive(peer, null, after, limit);
     }
     private void awaitModernSetup() throws Exception {
-        if(modern==null) return;
+        // This setup generation also covers legacy initialization when no modern device is configured.
         long timeout=Math.max(1000,Math.min(60000,connection.getReplyTimeout()*2));
         long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeout);
         synchronized(modernInboxLock) {
@@ -584,9 +750,13 @@ public final class XmppSession implements AutoCloseable {
                 OmemoElement element = stanza.getExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE);
                 if (element.isKeyTransportElement()) continue;
                 try {
-                    OmemoMessage.Received plaintext = omemo.decrypt(stanza.getFrom().asBareJid(), element);
-                    if (plaintext.isKeyTransportMessage()) continue;
-                    body = plaintext.getBody(); senderFingerprint=plaintext.getSendersFingerprint().toString();
+                    LegacyIncomingJournal.Received decoded=receiveLegacyArchive(LegacyIncomingJournal.Context.direct(stanza,own,false,result.getId(),time));
+                    if(decoded.message!=null) messages.add(decoded.message);
+                    else {
+                        XmppMessage placeholder=XmppMessage.from(stanza,own,null,true,false,result.getId(),time);
+                        if(placeholder!=null) messages.add(placeholder.withAliases(legacyIncoming.aliases(LegacyIncomingJournal.Context.direct(stanza,own,false,result.getId(),time))));
+                    }
+                    accepted.add(() -> acceptLegacy(decoded));continue;
                 } catch (org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
                         | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
                         | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException e) {
@@ -595,7 +765,11 @@ public final class XmppSession implements AutoCloseable {
                 }
             }
             XmppMessage message = XmppMessage.from(stanza, own, body, encrypted, readable, result.getId(), time);
-            if (message != null) messages.add(message.withSenderFingerprint(senderFingerprint));
+            if (message != null) {
+                if(encrypted) try { message=message.withAliases(legacyIncoming.aliases(LegacyIncomingJournal.Context.direct(stanza,own,false,result.getId(),time))); }
+                catch(Exception invalidRoute) { /* Preserve the explicit placeholder without an unverified private alias. */ }
+                messages.add(message.withSenderFingerprint(senderFingerprint));
+            }
         }
         org.jivesoftware.smackx.rsm.packet.RSMSet rsm = query.getPage().getMamFinIq().getRSMSet();
         return new ArchivePage(messages, rsm == null ? null : rsm.getFirst(), rsm == null ? null : rsm.getLast(), query.isComplete(),accepted);
@@ -881,7 +1055,10 @@ public final class XmppSession implements AutoCloseable {
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() {
         closed = true; started = false; lifecycle.incrementAndGet();
+        IncomingCapacity.unregister(legacyCapacityKey,this);IncomingCapacity.unregister(modernCapacityKey,this);
         synchronized(modernInboxLock) { modernInbox.clear();modernInboxBytes=0;modernInboxLock.notifyAll(); }
+        synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }
+        MonogramLegacyOmemoService.instance().unregister(omemo);legacyWorker.shutdownNow();
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
         chatStates.close(); contacts.close(); rooms.close(); bookmarks.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);

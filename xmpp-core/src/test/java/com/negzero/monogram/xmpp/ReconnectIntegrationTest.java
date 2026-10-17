@@ -48,7 +48,7 @@ class ReconnectIntegrationTest {
     @Test void tcpLossReportsStateAndRestoresEncryptedMessagingWithSameIdentity() throws Exception {
         File state = new File(System.getenv("MONOGRAM_IT_STATE"));
         int port = Integer.parseInt(System.getenv("MONOGRAM_IT_PORT"));
-        XmppSession.initializeOmemo(new File(state, "keys"));
+        XmppSession.initializeOmemo(new File(state, "keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<String> events = new LinkedBlockingQueue<>(), received = new LinkedBlockingQueue<>();
         try (CuttableProxy proxy = new CuttableProxy(port);
              XmppSession alice = new XmppSession(new Account("alice@localhost", "127.0.0.1", proxy.server.getLocalPort(), "Reconnect-Alice"),

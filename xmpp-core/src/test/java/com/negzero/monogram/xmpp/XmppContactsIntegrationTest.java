@@ -26,7 +26,7 @@ class XmppContactsIntegrationTest {
         assertTrue(ready.getAsBoolean());
     }
     @Test void manualRequestsUnlockPresenceProtectedKeysWithoutLosingRosterMetadata() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<String> aliceRequests=new LinkedBlockingQueue<>(),bobRequests=new LinkedBlockingQueue<>(),aliceCancelled=new LinkedBlockingQueue<>(),bobCancelled=new LinkedBlockingQueue<>(),messages=new LinkedBlockingQueue<>();
         String a="subscribealice@localhost",b="subscribebob@localhost";
         try(XmppSession alice=session("subscribealice",801,aliceRequests,aliceCancelled,messages); XmppSession bob=session("subscribebob",802,bobRequests,bobCancelled,messages)) {

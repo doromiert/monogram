@@ -6,6 +6,9 @@ import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
+    public static XmppRoomMessage withRoomAliases(XmppRoomMessage message,java.util.Map<String,String> aliases) {
+        return message.withAliases(aliases);
+    }
     public static XmppMessage markable(String stanza,String origin,String archive,String body,boolean outgoing,boolean readable,long time,String resource) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
         wire.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/"+resource));

@@ -40,7 +40,7 @@ class XmppRoomsIntegrationTest {
         fail("Room configuration hint did not arrive");
     }
     @Test void nativeCreationInvitationsConfigurationAndAvatar() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<XmppRoomMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();
         try(XmppSession alice=session("alice",3101,aliceMessages); XmppSession bob=session("bob",3102,bobMessages)) {
             alice.connect(); bob.connect();
@@ -86,7 +86,7 @@ class XmppRoomsIntegrationTest {
         return new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(0,body.codePointCount(0,body.length()),Collections.singleton(MessageMarkup.Style.STRONG),null))).styled();
     }
     @Test void joinNativeRoomTransportEncryptOfflineMembersAndRejoinHistory() throws Exception {
-        XmppSession.initializeOmemo(new File(root,"keys"));
+        XmppSession.initializeOmemo(new File(root,"keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         BlockingQueue<XmppRoomMessage> aliceMessages=new LinkedBlockingQueue<>(),bobMessages=new LinkedBlockingQueue<>();
         String room="friends@conference.localhost";
         try(XmppSession alice=session("alice",701,aliceMessages); XmppSession bob=session("bob",702,bobMessages)) {

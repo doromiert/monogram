@@ -74,7 +74,7 @@ class XmppIntegrationTest {
         } finally { worker.shutdownNow(); }
     }
     @Test void tlsPlaintextOmemoPersistenceAndOptionalScheduler() throws Exception {
-        XmppSession.initializeOmemo(new File(state, "keys"));
+        XmppSession.initializeOmemo(new File(state, "keys"),com.negzero.monogram.xmpp.LegacyOmemoTestDatabase.shared());
         XmppSession.Listener ignore = (sender, id, body, encrypted) -> {};
         BlockingQueue<XmppMessage> aliceMessages = new LinkedBlockingQueue<>();
         XmppSession.Listener aliceListener = new XmppSession.Listener() {

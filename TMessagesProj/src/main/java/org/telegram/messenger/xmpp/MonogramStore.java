@@ -164,7 +164,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private boolean rememberDeleted(SQLiteDatabase db,int id,long peer,java.util.Map<String,String> ids,String sender,boolean outgoing,int namespace,boolean room) {
         if(id==0 || !deleted(id)) return false;
         for(java.util.Map.Entry<String,String> alias:ids.entrySet()) {
-            boolean scoped=room ? !alias.getKey().equals("archive") && !alias.getKey().equals("mam") : alias.getKey().equals("stanza");
+            boolean scoped=room ? roomAuthorScoped(alias.getKey()) : alias.getKey().equals("stanza");
             ContentValues value=new ContentValues(); value.put("peer",peer); value.put("outgoing",outgoing); value.put("kind",alias.getKey());
             value.put("value",scoped ? sender+"\n"+alias.getValue() : alias.getValue()); value.put("namespace",namespace); value.put("message",id);
             db.insertWithOnConflict("message_ids",null,value,SQLiteDatabase.CONFLICT_IGNORE);
@@ -386,11 +386,11 @@ final class MonogramStore extends SQLiteOpenHelper {
         try {
             int existing=0;
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
-                String value=(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue();
+                String value=roomAuthorScoped(alias.getKey()) ? message.sender+"\n"+alias.getValue() : alias.getValue();
                 try (Cursor c=db.rawQuery("SELECT DISTINCT message FROM message_ids WHERE peer=? AND kind=? AND value=? AND namespace=?",new String[]{Long.toString(dialog),alias.getKey(),value,Integer.toString(message.encryption.ordinal())})) {
                     while(c.moveToNext()) {
                         int match=c.getInt(0);
-                        if(!alias.getKey().equals("archive") && !alias.getKey().equals("mam") && message.ids.get("archive")!=null) {
+                        if(roomAuthorScoped(alias.getKey()) && message.ids.get("archive")!=null) {
                             try(Cursor authority=db.rawQuery("SELECT value FROM message_ids WHERE message=? AND kind='archive'",new String[]{Integer.toString(match)})) {
                                 if(authority.moveToFirst() && !message.ids.get("archive").equals(authority.getString(0))) continue;
                             }
@@ -457,7 +457,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             if(message.reply!=null) changed|=saveReply(db,id,message.reply);
             for (Map.Entry<String,String> alias:message.ids.entrySet()) {
                 ContentValues identity=new ContentValues(); identity.put("peer",dialog); identity.put("outgoing",message.outgoing); identity.put("kind",alias.getKey());
-                identity.put("value",(alias.getKey().equals("archive") || alias.getKey().equals("mam")) ? alias.getValue() : message.sender+"\n"+alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
+                identity.put("value",roomAuthorScoped(alias.getKey()) ? message.sender+"\n"+alias.getValue() : alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
                 db.insertWithOnConflict("message_ids",null,identity,SQLiteDatabase.CONFLICT_IGNORE);
             }
             if(message.attachment!=null) {
@@ -760,6 +760,10 @@ final class MonogramStore extends SQLiteOpenHelper {
     private static String aliasValue(XmppMessage message, Map.Entry<String, String> alias) {
         // Client stanza IDs need only be unique within a stream, unlike origin/archive IDs.
         return alias.getKey().equals("stanza") ? message.sender + "\n" + alias.getValue() : alias.getValue();
+    }
+    private static boolean roomAuthorScoped(String kind) {
+        // Ciphertext aliases already bind the verified real sender and room, independent of nick changes.
+        return !kind.equals("archive") && !kind.equals("mam") && !kind.equals("legacy-cipher");
     }
     static final class CorrectionChanges {
         final java.util.Set<Integer> edited = new java.util.HashSet<>(), hidden = new java.util.HashSet<>(), shown = new java.util.HashSet<>();
