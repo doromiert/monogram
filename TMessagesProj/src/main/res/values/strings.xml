@@ -11591,4 +11591,5 @@
     <string name="MonogramDoubleTapInfo">Choose what double-tapping each kind of message does. Actions are available only when the message supports them. Deleting still asks for confirmation.</string>
     <string name="MonogramDoubleTapReactionInfo">Choose the emoji used when a double-tap action is set to Reactions.</string>
     <string name="MonogramRepeatMessage">Repeat message</string>
+    <string name="MonogramDoubleTapSettingsInfo">Choose actions for incoming and your own messages</string>
 </resources>

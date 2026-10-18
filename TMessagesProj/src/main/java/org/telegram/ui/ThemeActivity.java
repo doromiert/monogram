@@ -224,6 +224,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
     private int lastShadowRow;
     @Keep
     private int stickersRow;
+    private int doubleTapRow;
     private int stickersInfoRow;
     private int stickersSectionRow, mediaSoundSectionRow, otherSectionRow;
     private int mediaSoundHeaderRow, otherHeaderRow;
@@ -569,6 +570,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
         pauseOnRecordRow = -1;
         pauseOnMediaRow = -1;
         stickersRow = -1;
+        doubleTapRow = -1;
         stickersInfoRow = -1;
         stickersSectionRow = -1;
         mediaSoundHeaderRow = -1;
@@ -682,6 +684,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             nightThemeRow = rowCount++;
             browserRow = rowCount++;
             liteModeRow = rowCount++;
+            doubleTapRow = rowCount++;
             stickersRow = rowCount++;
             stickersSectionRow = rowCount++;
 
@@ -1484,6 +1487,8 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 createNewTheme();
             } else if (position == editThemeRow) {
                 editTheme();
+            } else if (position == doubleTapRow) {
+                presentFragment(new MonogramDoubleTapActivity(currentAccount));
             } else if (position == stickersRow) {
                 presentFragment(new StickersActivity(MediaDataController.TYPE_IMAGE, null));
             } else if (position == liteModeRow) {
@@ -2687,6 +2692,13 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                         cell.heightDp = 60;
                         cell.offsetFromImage = 64;
                         cell.imageLeft = 20;
+                    } else if (position == doubleTapRow) {
+                        cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
+                        cell.setTextAndIcon(getString(R.string.MonogramDoubleTapTitle), R.drawable.msg2_reactions2, true);
+                        cell.setSubtitle(getString(R.string.MonogramDoubleTapSettingsInfo));
+                        cell.offsetFromImage = 64;
+                        cell.heightDp = 60;
+                        cell.imageLeft = 20;
                     } else if (position == stickersRow) {
                         cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
                         cell.setTextAndIcon(getString(R.string.StickersName), R.drawable.msg2_sticker, false);
@@ -2768,7 +2780,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             } else if (position == bubbleRadiusRow) {
                 return TYPE_BUBBLE_RADIUS;
             } else if (position == backgroundRow || position == editThemeRow || position == createNewThemeRow ||
-                        position == liteModeRow || position == stickersRow) {
+                        position == liteModeRow || position == stickersRow || position == doubleTapRow) {
                 return TYPE_TEXT_PREFERENCE;
             } else if (position == swipeGestureRow) {
                 return TYPE_SWIPE_GESTURE;
