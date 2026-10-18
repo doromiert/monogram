@@ -22,6 +22,7 @@ public final class XmppMessage {
     public final FileShare sharing;
     public final String caption;
     public final MessageMarkup markup,captionMarkup;
+    public final InlineEmoji inlineEmoji;
     public final ReplyReference reply;
     public final MessageCorrection correction;
     public final MessageReactions reactions;
@@ -33,13 +34,13 @@ public final class XmppMessage {
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, Encryption encryption,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, String markableId, MessageMarkup markup, MessageMarkup captionMarkup) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, String markableId, MessageMarkup markup, MessageMarkup captionMarkup, InlineEmoji inlineEmoji) {
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encryption = encryption; this.encrypted = encryption != Encryption.PLAIN;
         this.readable = readable; this.outgoing = outgoing;
         this.archived = archived; this.timestamp = timestamp; this.attachment = attachment; this.reply = reply; this.correction = correction;
         this.sharing = sharing; this.caption = caption; this.reactions = reactions; this.retraction=retraction; this.senderFingerprint=senderFingerprint;
-        this.markableId=markableId;this.markup=markup;this.captionMarkup=captionMarkup;
+        this.markableId=markableId;this.markup=markup;this.captionMarkup=captionMarkup;this.inlineEmoji=inlineEmoji;
     }
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
@@ -66,7 +67,7 @@ public final class XmppMessage {
     XmppMessage withAliases(Map<String,String> aliases) { return canonical(aliases,timestamp,archived,markableId); }
     XmppMessage canonical(Map<String,String> ids,long timestamp,boolean archived,String markableId) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup);
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji);
     }
     XmppMessage archived(String archiveId,Date time) {
         if(archiveId==null && time==null) return this;
@@ -140,15 +141,27 @@ public final class XmppMessage {
         if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
         MessageMarkup markup=readable ? encryption==Encryption.LEGACY_OMEMO ? MessageMarkup.body(body) : MessageMarkup.from(content,body) : null;
         MessageMarkup captionMarkup=sharing==null || markup==null ? null : sharing.captionMarkup(content,body,reply,markup);
+        InlineEmoji inlineEmoji=readable && encryption!=Encryption.LEGACY_OMEMO && reactions==null && retraction==null ? InlineEmoji.from(content,body) : null;
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encryption, readable, outgoing, archiveId != null,
                 delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption, reactions, retraction, null,
-                !outgoing && reactions==null && retraction==null ? MessageReceipt.markableId(message) : null,markup,captionMarkup);
+                !outgoing && reactions==null && retraction==null ? MessageReceipt.markableId(message) : null,markup,captionMarkup,inlineEmoji);
     }
 
     public XmppMessage withSenderFingerprint(String fingerprint) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId,markup,captionMarkup);
+                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId,markup,captionMarkup,inlineEmoji);
+    }
+    public XmppMessage withInlineEmoji(InlineEmoji value) {
+        if(value==null) return this;
+        InlineEmoji full=value;
+        if(!body.equals(value.body)) {
+            if(!body.endsWith(value.body)) throw new IllegalArgumentException("Emoji belong to another body");
+            full=value.inBody(body,body.codePointCount(0,body.length()-value.body.length()));
+        }
+        MessageMarkup localMarkup=outgoing && encryption==Encryption.LEGACY_OMEMO && markup!=null ? markup.preservingBody() : markup;
+        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,localMarkup,captionMarkup,full);
     }
     public XmppMessage withMarkup(MessageMarkup value) {
         if(value==null) return this;
@@ -168,7 +181,7 @@ public final class XmppMessage {
         }
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
                 attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,full,
-                captionValue);
+                captionValue,inlineEmoji);
     }
     static String opaqueId(Message message) {
         try {

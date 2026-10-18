@@ -118,7 +118,7 @@ public class MonogramCallHistoryTest {
     @Test public void schemaTwentyThreeMigrationPreservesExistingMessagesAndAddsCallHistory() throws Exception {
         int existing=store.save(MessageFixture.message("before-migration","before-origin",null,"Existing history",true,false,50000));
         store.getWritableDatabase().execSQL("DROP TABLE call_events");store.getWritableDatabase().setVersion(23);reopen();
-        assertEquals(24,store.getReadableDatabase().getVersion());assertEquals("Existing history",store.getMessage(existing,self).message);
+        assertEquals(25,store.getReadableDatabase().getVersion());assertEquals("Existing history",store.getMessage(existing,self).message);
         assertEquals(0,count("call_events"));assertTrue(save("after-migration",true,true,100000,13,"hangup")>0);
         assertEquals(2,store.history(peer,self,0,10).size());
     }

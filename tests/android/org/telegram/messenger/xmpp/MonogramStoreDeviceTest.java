@@ -72,7 +72,7 @@ public final class MonogramStoreDeviceTest {
                 old.setVersion(1);
             }
             try (MonogramStore store = new MonogramStore(context, "migration.db")) {
-                check(store.getReadableDatabase().getVersion() == 24, "Schema must migrate");
+                check(store.getReadableDatabase().getVersion() == 25, "Schema must migrate");
                 check(store.history(2, 1, 0, 100).get(0).id == 1, "Migration must preserve IDs");
                 check(store.history(2, 1, 0, 100).get(0).message.equals("known plaintext"), "Migration must preserve text");
                 check(store.save(MessageFixture.message("existing", "origin", "archive", null, false, false, 200000)) == 0,
@@ -233,7 +233,7 @@ public final class MonogramStoreDeviceTest {
                     old.setVersion(3);
                 }
                 try (MonogramStore migrated = new MonogramStore(context, "version2.db")) {
-                    check(migrated.getReadableDatabase().getVersion() == 24, "Schema 3 must migrate to 24");
+                    check(migrated.getReadableDatabase().getVersion() == 25, "Schema 3 must migrate to 25");
                     check(migrated.getMessage(1, 1).message.equals("existing v2"), "Schema 3 migration must retain known text");
                     TLRPC.Message archived = migrated.getMessage(2, 1);
                     check(MonogramAttachments.has(archived) && archived.message.isEmpty(),
@@ -249,7 +249,7 @@ public final class MonogramStoreDeviceTest {
                 legacyAttachments(previous); previous.setVersion(4);
             }
             try (MonogramStore migrated = new MonogramStore(context, "migration.db")) {
-                check(migrated.getReadableDatabase().getVersion() == 24 && migrated.profile(1) == null, "Schema 4 must gain profiles without changing message tables");
+                check(migrated.getReadableDatabase().getVersion() == 25 && migrated.profile(1) == null, "Schema 4 must gain profiles without changing message tables");
                 check(migrated.getMessage(900, 1).message.equals("schema 4 preserved"), "Schema 4 messages must survive the profile migration");
             }
             TLRPC.MessageMedia remotePhoto = MonogramAttachments.remoteMedia(1, "photo.jpg", "application/octet-stream", 65537);

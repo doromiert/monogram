@@ -402,7 +402,7 @@ public final class MonogramController {
     }
     private void connect(Account details, String password) throws Exception {
         if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
-        joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();
+        joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();calendarHistory.clear();
         final long epoch = ++sessionEpoch, owner=accountEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
@@ -1190,8 +1190,10 @@ public final class MonogramController {
         return result;
     }
     private final java.util.concurrent.ConcurrentHashMap<Long,Integer> visibleHistory=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<Long> calendarHistory=java.util.concurrent.ConcurrentHashMap.newKeySet();
     public void historyVisible(long peer,int message) {
-        if(peer==0 || message<=0 || java.util.Objects.equals(visibleHistory.put(peer,message),message)) return;
+        // A date jump must not extend the unrelated newest-to-oldest sync window across a sparse cache.
+        if(peer==0 || message<=0 || calendarHistory.contains(peer) || java.util.Objects.equals(visibleHistory.put(peer,message),message)) return;
         final long owner=accountEpoch;
         cacheWorker.execute(() -> {
             int desired=store.newerMessages(peer,message)/50+3;
@@ -1204,21 +1206,73 @@ public final class MonogramController {
             });
         });
     }
+    public TLRPC.Document customEmoji(long id) { return store.customEmoji(id); }
     private final MonogramOutbox outbox=new MonogramOutbox();
     public void loadHistory(long peer, int offset, int count, int loadType, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
-        long epoch=accountEpoch;
-        if(offset<=0 || loadType==2 || loadType==3) {
-            MessagesStorage.getInstance(account).getMonogramOutbox(peer,pending -> loadHistory(peer,offset,count,loadType,epoch,pending,completed));
-        } else loadHistory(peer,offset,count,loadType,epoch,new ArrayList<>(),completed);
+        loadHistory(peer,offset,count,loadType,0,completed);
     }
-    private void loadHistory(long peer,int offset,int count,int loadType,long epoch,ArrayList<TLRPC.Message> pending,java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
+    public void loadHistory(long peer, int offset, int count, int loadType, int date, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
+        long epoch=accountEpoch;
+        if(loadType==4 && date>0) calendarHistory.add(peer);
+        else if(offset<=0 && loadType!=4) { calendarHistory.remove(peer);visibleHistory.remove(peer); }
+        XmppSession expected=session;
+        if(loadType==4 && date>0 && expected!=null && expected.connection().isAuthenticated()) {
+            loadCalendarHistory(peer,offset,count,date,epoch,expected,sessionEpoch,completed);return;
+        }
+        if(loadType!=4 && (offset<=0 || loadType==2 || loadType==3)) {
+            MessagesStorage.getInstance(account).getMonogramOutbox(peer,pending -> loadHistory(peer,offset,count,loadType,date,epoch,pending,completed));
+        } else loadHistory(peer,offset,count,loadType,date,epoch,new ArrayList<>(),completed);
+    }
+    private void loadCalendarHistory(long peer,int offset,int count,int date,long owner,XmppSession expected,long epoch,
+            java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
+        final String own=accountJid(),address=store.jid(peer);
+        archiveWorker.execute(() -> {
+            try {
+                if(session!=expected || sessionEpoch!=epoch || !sameAccount(owner,own)) throw new IllegalStateException("Account changed");
+                java.util.Date since=new java.util.Date((long)date*1000);
+                if(peer>0) {
+                    XmppSession.ArchivePage after=expected.archiveSince(address,since,50);
+                    worker.submit(() -> saveCalendarPage(peer,owner,own,after)).get();
+                    XmppSession.ArchivePage before=expected.archiveBefore(address,after.messages.isEmpty() ? null : after.firstId,50);
+                    worker.submit(() -> saveCalendarPage(peer,owner,own,before)).get();
+                } else {
+                    com.negzero.monogram.xmpp.XmppRooms.ArchivePage after=expected.rooms.archiveSince(address,since,50);
+                    worker.submit(() -> saveCalendarPage(peer,owner,own,after)).get();
+                    com.negzero.monogram.xmpp.XmppRooms.ArchivePage before=expected.rooms.archive(address,after.firstId==null ? "" : after.firstId,null,50);
+                    worker.submit(() -> saveCalendarPage(peer,owner,own,before)).get();
+                }
+            } catch(Exception unavailable) { /* Offline/unsupported archives retain the closest cached calendar window. */ }
+            loadHistory(peer,offset,count,4,date,owner,new ArrayList<>(),completed);
+        });
+    }
+    private void saveCalendarPage(long peer,long owner,String own,XmppSession.ArchivePage page) {
+        if(!sameAccount(owner,own)) return;
+        java.util.Set<Integer> updated=new java.util.HashSet<>();
+        store.saveCalendar(peer,page,updated);
+        page.stored();calendarPageSaved(peer,updated);
+    }
+    private void saveCalendarPage(long peer,long owner,String own,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page) {
+        if(!sameAccount(owner,own)) return;
+        java.util.Set<Integer> updated=new java.util.HashSet<>();
+        store.saveRoomCalendar(peer,page,self,updated);
+        page.stored();calendarPageSaved(peer,updated);
+    }
+    private void calendarPageSaved(long peer,java.util.Set<Integer> updated) {
+        applyRetractions(peer);MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(peer,updated);
+        updated.addAll(corrections.edited);publishCorrections(peer,correctionUpdates(corrections,0));
+        refreshNotifications(updated);refreshReplies(peer,updated);publishReactions(peer,null);
+    }
+    private void loadHistory(long peer,int offset,int count,int loadType,int date,long epoch,ArrayList<TLRPC.Message> pending,java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
         cacheWorker.execute(() -> {
+            if(epoch!=accountEpoch) { Utilities.stageQueue.postRunnable(() -> completed.accept(new TLRPC.TL_messages_messages(),true));return; }
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             mediaHistoryPeer = peer;
             ArchiveSync sync = archiveSync;
             boolean end=store.archiveComplete(peer);
             try {
-                result.messages.addAll(loadType == 3 && offset > 0 ? store.historyAround(peer, self, offset, count) : store.history(peer, self, Math.max(0,offset), count, loadType == 1));
+                result.messages.addAll(loadType==4 ? store.historyAroundDate(peer,self,date,count)
+                        : loadType==3 && offset>0 ? store.historyAround(peer,self,offset,count)
+                        : store.history(peer,self,Math.max(0,offset),count,loadType==1));
                 if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
                 else result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
             } catch (RuntimeException failed) {
@@ -1297,6 +1351,7 @@ public final class MonogramController {
     }
     public void logout() {
         final String departing=accountJid();
+        MonogramPacks.logout(account);
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         synchronized(displayedSettingsLock) {
             displayedPrivacyEpoch++;displayedReady=false;
@@ -2144,7 +2199,7 @@ public final class MonogramController {
                 FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
                         modern ? "application/octet-stream" : request.mime, encrypted, job,
                         uploadProgress);
-                com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, uploadName, request.mime, job);
+                com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : MonogramStickers.description(request.message, com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, uploadName, request.mime, job));
                 File cached = sharing == null ? store.attachmentFile(link.wireUrl) : store.attachmentFile(sharing);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
                 job.check();
@@ -2709,6 +2764,15 @@ public final class MonogramController {
         requireRoomSession(expected,epoch);rememberBlocked(expected,epoch);return new TLRPC.TL_boolTrue();
     }
     private TLObject handle(TLObject request) throws Exception {
+        if(request instanceof TLRPC.TL_messages_getCustomEmojiDocuments) {
+            org.telegram.tgnet.Vector<TLRPC.Document> result=new org.telegram.tgnet.Vector<>(TLRPC.Document::TLdeserialize);
+            for(long id:((TLRPC.TL_messages_getCustomEmojiDocuments)request).document_id) {
+                TLRPC.Document document=MonogramPacks.document(account,id);
+                if(document==null) document=customEmoji(id);
+                if(document!=null) result.objects.add(document);
+            }
+            return result;
+        }
         if(MonogramBlocking.handles(request)) return blockingRequest(request);
         if(MonogramCallPrivacy.handles(request)) return callPrivacy().handle(request);
         if(request instanceof TLRPC.TL_messages_createChat) return createNativeRoom((TLRPC.TL_messages_createChat)request);
@@ -2971,23 +3035,25 @@ public final class MonogramController {
                     || (edit.flags & 2048) == 0) throw new UnsupportedOperationException();
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
             MonogramStore.EditTarget target = editTarget(edit.id, peer);
-            MessageMarkup markup = MonogramFormatting.fromEntities(edit.message, edit.entities).styled();
+            com.negzero.monogram.xmpp.InlineEmoji inline=target.sharing==null ? MonogramEmojis.fromEntities(account,edit.message,edit.entities) : null;
+            MessageMarkup markup = MonogramFormatting.fromEntities(edit.message, edit.entities);
+            markup=inline==null ? markup.styled() : markup.preservingBody();
             XmppMessage.Encryption mode = target.sharing!=null ? target.encryption
                     : target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
             int saved;
             if(peer<0) {
                 com.negzero.monogram.xmpp.XmppRoomMessage message=target.sharing==null
-                        ? session().rooms.send(store.jid(peer),markup.body,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup)
+                        ? session().rooms.send(store.jid(peer),markup.body,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup,inline)
                         : session().rooms.correctFile(store.jid(peer),target.sharing,markup.body,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup);
                 saved=store.saveRoom(message,self); if(message.encrypted) reportSkippedRecipients(peer,message);
             }
             else {
                 XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-                String stanza=target.sharing==null ? expected.correct(store.jid(peer),markup.body,mode,target.reply,target.correction,markup)
+                String stanza=target.sharing==null ? expected.correct(store.jid(peer),markup.body,mode,target.reply,target.correction,markup,inline)
                         : expected.correctFile(store.jid(peer),target.sharing,markup.body,mode,target.reply,target.correction,markup);
                 XmppMessage message=target.sharing==null ? XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,markup.body,mode,target.reply,target.correction)
                         : XmppMessage.sentFile(expected.connection().getUser(),store.jid(peer),stanza,target.sharing,markup.body,target.reply,target.correction);
-                saved=store.save(message.withMarkup(markup).withSenderFingerprint(fingerprint));
+                saved=store.save(message.withMarkup(markup).withInlineEmoji(inline).withSenderFingerprint(fingerprint));
             }
             MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, java.util.Collections.singleton(saved));
             refreshReplies(peer, corrections.edited);
@@ -3000,12 +3066,14 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
-            MessageMarkup markup = MonogramFormatting.fromEntities(send.message, send.entities).styled();
+            com.negzero.monogram.xmpp.InlineEmoji inline=MonogramEmojis.fromEntities(account,send.message,send.entities);
+            MessageMarkup markup = MonogramFormatting.fromEntities(send.message, send.entities);
+            markup=inline==null ? markup.styled() : markup.preservingBody();
             if (send.peer.chat_id!=0) {
                 if (send.schedule_date!=0) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,encrypted(dialog),outgoingReply(send.reply_to,dialog,encrypted(dialog)),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup);
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,encrypted(dialog),outgoingReply(send.reply_to,dialog,encrypted(dialog)),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
@@ -3015,8 +3083,8 @@ public final class MonogramController {
             long peer = send.peer.user_id; XmppMessage.Encryption mode = encryption(peer);
             ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);
             XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-            String stanza = expected.send(store.jid(peer), markup.body, mode, reply, markup);
-            XmppMessage message = XmppMessage.sent(expected.connection().getUser(), store.jid(peer), stanza, markup.body, mode, reply,null).withMarkup(markup).withSenderFingerprint(fingerprint);
+            String stanza = expected.send(store.jid(peer), markup.body, mode, reply, markup,inline);
+            XmppMessage message = XmppMessage.sent(expected.connection().getUser(), store.jid(peer), stanza, markup.body, mode, reply,null).withMarkup(markup).withInlineEmoji(inline).withSenderFingerprint(fingerprint);
             int date = (int) (message.timestamp / 1000); int id = store.save(message);
             refreshReplies(peer);
             TLRPC.TL_updateShortSentMessage result = new TLRPC.TL_updateShortSentMessage();

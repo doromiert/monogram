@@ -1352,6 +1352,15 @@ public class MediaDataController extends BaseController {
     }
 
     public TLRPC.TL_messages_stickerSet getStickerSet(TLRPC.InputStickerSet inputStickerSet, Integer hash, boolean cacheOnly, boolean runWhenRemote, Utilities.Callback<TLRPC.TL_messages_stickerSet> onResponse) {
+        TLRPC.TL_messages_stickerSet localPack = org.telegram.messenger.xmpp.MonogramPacks.find(currentAccount, inputStickerSet);
+        if (localPack != null) {
+            if (onResponse != null) onResponse.run(localPack);
+            return localPack;
+        }
+        if (inputStickerSet != null && org.telegram.messenger.xmpp.MonogramPacks.isLocalId(inputStickerSet.id)) {
+            if (onResponse != null) onResponse.run(null);
+            return null;
+        }
         if (inputStickerSet == null) {
             return null;
         }
@@ -2939,6 +2948,16 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadStickers(int type, boolean cache, boolean force, boolean scheduleIfLoading, Utilities.Callback<ArrayList<TLRPC.TL_messages_stickerSet>> onFinish) {
+        if ((type == TYPE_IMAGE || type == TYPE_EMOJIPACKS) && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            final String owner = org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount);
+            getMessagesStorage().getStorageQueue().postRunnable(() -> {
+                if (!owner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
+                ArrayList<TLRPC.TL_messages_stickerSet> local = org.telegram.messenger.xmpp.MonogramPacks.sets(currentAccount, type == TYPE_EMOJIPACKS);
+                processLoadedStickers(type, local, false, (int) (System.currentTimeMillis() / 1000), calcStickersHash(local),
+                        () -> { if (onFinish != null) onFinish.run(local); }, owner, true);
+            });
+            return;
+        }
         if (loadingStickers[type]) {
             if (scheduleIfLoading) {
                 scheduledLoadStickers[type] = () -> loadStickers(type, false, force, false, onFinish);
@@ -3169,7 +3188,12 @@ public class MediaDataController extends BaseController {
     }
 
     private void processLoadedStickers(int type, ArrayList<TLRPC.TL_messages_stickerSet> res, boolean cache, int date, long hash, Runnable onFinish) {
+        processLoadedStickers(type, res, cache, date, hash, onFinish, org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount), false);
+    }
+
+    private void processLoadedStickers(int type, ArrayList<TLRPC.TL_messages_stickerSet> res, boolean cache, int date, long hash, Runnable onFinish, String monogramOwner, boolean localPacks) {
         AndroidUtilities.runOnUIThread(() -> {
+            if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
             loadingStickers[type] = false;
             stickersLoaded[type] = true;
             if (scheduledLoadStickers[type] != null) {
@@ -3178,8 +3202,10 @@ public class MediaDataController extends BaseController {
             }
         });
         Utilities.stageQueue.postRunnable(() -> {
+            if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
             if (cache && (res == null || BuildVars.DEBUG_PRIVATE_VERSION || Math.abs(System.currentTimeMillis() / 1000 - date) >= 60 * 60) || !cache && res == null && hash == 0) {
                 AndroidUtilities.runOnUIThread(() -> {
+                    if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
                     if (res != null && hash != 0) {
                         loadHash[type] = hash;
                     }
@@ -3243,10 +3269,11 @@ public class MediaDataController extends BaseController {
                         }
                     }
 
-                    if (!cache) {
+                    if (!cache && !localPacks) {
                         putStickersToCache(type, stickerSetsNew, date, hash);
                     }
                     AndroidUtilities.runOnUIThread(() -> {
+                        if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
                         for (int a = 0; a < stickerSets[type].size(); a++) {
                             TLRPC.StickerSet set = stickerSets[type].get(a).set;
                             stickerSetsById.remove(set.id);
@@ -3283,7 +3310,7 @@ public class MediaDataController extends BaseController {
                         onFinish.run();
                     }
                 }
-            } else if (!cache) {
+            } else if (!cache && !localPacks) {
                 AndroidUtilities.runOnUIThread(() -> loadDate[type] = date);
                 putStickersToCache(type, null, date, 0);
 
@@ -3381,6 +3408,11 @@ public class MediaDataController extends BaseController {
             throw new IllegalArgumentException("Invalid type of the given stickerSetObject: " + stickerSetObject.getClass());
         }
 
+        if (org.telegram.messenger.xmpp.MonogramPacks.find(currentAccount, getInputStickerSet(stickerSet)) != null) {
+            try { org.telegram.messenger.xmpp.MonogramPacks.installed(currentAccount, stickerSet.id, toggle == 2); }
+            catch (Exception failure) { org.telegram.ui.Components.BulletinFactory.of(baseFragment).createErrorBulletin("Could not update this local pack.").show(); }
+            return;
+        }
         int type1 = TYPE_IMAGE;
         if (stickerSet.masks) {
             type1 = TYPE_MASK;

@@ -11562,9 +11562,18 @@ public class MessagesController extends BaseController implements NotificationCe
             loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
         }
         if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && (dialogId > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialogId))) {
-            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadHistory(dialogId, max_id, count, load_type, (result, archiveEnd) ->
-                    processLoadedMessages(result, result.messages.size(), dialogId, mergeDialogId, count, max_id, offset_date,
-                            false, classGuid, 0, 0, 0, 0, load_type, archiveEnd, mode, 0, loadIndex, false, 0, processMessages, false, null));
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadHistory(dialogId, max_id, count, load_type, offset_date, (result, archiveEnd) -> {
+                int anchor=max_id;
+                if(load_type==LOAD_AROUND_DATE && offset_date>0 && !result.messages.isEmpty()) {
+                    anchor=result.messages.get(result.messages.size()-1).id;
+                    for(int i=result.messages.size()-1;i>=0;i--) if(result.messages.get(i).date>=offset_date) {
+                        anchor=result.messages.get(i).id;break;
+                    }
+                    if(result.messages.get(0).date<offset_date) anchor=result.messages.get(0).id;
+                }
+                processLoadedMessages(result, result.messages.size(), dialogId, mergeDialogId, count, anchor, offset_date,
+                        false, classGuid, 0, 0, 0, 0, load_type, archiveEnd, mode, 0, loadIndex, false, 0, processMessages, false, null);
+            });
             return;
         }
         if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && (fromCache || DialogObject.isEncryptedDialog(dialogId))) {

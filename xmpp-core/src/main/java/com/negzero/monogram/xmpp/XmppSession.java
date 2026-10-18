@@ -672,6 +672,11 @@ public final class XmppSession implements AutoCloseable {
         if (after == null || after.isEmpty()) throw new IllegalArgumentException("Missing archive cursor");
         return archive(peer, null, after, limit);
     }
+    /** First page on/after a calendar date; does not change any client sync cursor. */
+    public ArchivePage archiveSince(String peer,Date since,int limit) throws Exception {
+        if(since==null || since.getTime()<0) throw new IllegalArgumentException("Invalid archive date");
+        return archive(peer,null,null,limit,new Date(since.getTime()));
+    }
     private void awaitModernSetup() throws Exception {
         // This setup generation also covers legacy initialization when no modern device is configured.
         long timeout=Math.max(1000,Math.min(60000,connection.getReplyTimeout()*2));
@@ -709,11 +714,15 @@ public final class XmppSession implements AutoCloseable {
         }
     }
     private ArchivePage archive(String peer, String before, String after, int limit) throws Exception {
+        return archive(peer,before,after,limit,null);
+    }
+    private ArchivePage archive(String peer,String before,String after,int limit,Date since) throws Exception {
         awaitModernSetup();
         EntityBareJid own=connection.getUser().asEntityBareJid();
         MamManager.MamQueryArgs.Builder args = MamManager.MamQueryArgs.builder()
                 .setResultPageSizeTo(Math.min(Math.max(limit, 1), 100));
         if (peer != null) args.limitResultsToJid(JidCreate.entityBareFrom(peer));
+        if(since!=null) args.limitResultsSince(since);
         if (before != null) args.beforeUid(before);
         if (after != null) args.afterUid(after);
         MamManager.MamQuery query = MamManager.getInstanceFor(connection).queryArchive(args.build());
@@ -835,6 +844,15 @@ public final class XmppSession implements AutoCloseable {
         return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null,null,markup)
                 : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,correction,null,null,markup);
     }
+    public String send(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,null,null,null,markup,inline)
+                : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,null,null,null,markup,inline);
+    }
+    public String correct(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageCorrection correction,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        if(correction==null) throw new IllegalArgumentException("Missing correction reference");
+        return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null,null,markup,inline)
+                : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,correction,null,null,markup,inline);
+    }
     public String sendFile(String jid, FileLink link, boolean encrypted) throws Exception {
         return sendFile(jid, link, encrypted, null);
     }
@@ -884,6 +902,10 @@ public final class XmppSession implements AutoCloseable {
         return sendModern(jid,body,reply,correction,sharing,retraction,null);
     }
     private String sendModern(String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup) throws Exception {
+        return sendModern(jid,body,reply,correction,sharing,retraction,markup,null);
+    }
+    private String sendModern(String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
         if (!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
@@ -893,6 +915,7 @@ public final class XmppSession implements AutoCloseable {
         if (reply != null) { body = reply.wireBody(body); reply.addTo(clear); }
         clear.setBody(body); if (correction != null) correction.addTo(clear); if (sharing != null) sharing.addTo(clear,body);
         if(markup!=null) markup.inBody(body,prefix).addTo(clear);
+        if(inline!=null) inline.inBody(body,prefix).addTo(clear);
         if(retraction!=null) retraction.addMetadataTo(clear);
         Message wire = modern.encrypt(clear);
         if(retraction!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
@@ -907,6 +930,10 @@ public final class XmppSession implements AutoCloseable {
         return send(jid,body,encrypted,attachment,reply,correction,sharing,retraction,null);
     }
     private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup) throws Exception {
+        return send(jid,body,encrypted,attachment,reply,correction,sharing,retraction,markup,null);
+    }
+    private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
@@ -945,6 +972,7 @@ public final class XmppSession implements AutoCloseable {
         if (correction != null) correction.addTo(message);
         if (sharing != null) sharing.addTo(message, body);
         if(!encrypted && markup!=null) markup.inBody(body,prefix).addTo(message);
+        if(!encrypted && inline!=null) inline.inBody(body,prefix).addTo(message);
         if(retraction!=null) {
             retraction.addMetadataTo(message);
             message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());

@@ -1350,6 +1350,14 @@ public class FileLoader extends BaseController {
     public File getPathToAttach(TLObject attach, String size, String ext, boolean forceCache, boolean useFileDatabaseQueue) {
         if (attach instanceof TLRPC.PhotoSize) {
             TLRPC.FileLocation location = ((TLRPC.PhotoSize) attach).location;
+            if (location != null && org.telegram.messenger.xmpp.MonogramEmojis.isThumb(location.volume_id)) {
+                File local = org.telegram.messenger.xmpp.MonogramEmojis.thumb(currentAccount, location.volume_id, location.local_id);
+                return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-inline-emoji-unavailable") : local;
+            }
+            if (location != null && org.telegram.messenger.xmpp.MonogramPacks.isThumb(location.volume_id)) {
+                File local = org.telegram.messenger.xmpp.MonogramPacks.thumb(currentAccount, location.volume_id, location.local_id);
+                return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-pack-unavailable") : local;
+            }
             if (location != null && location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
                 File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(location.local_id);
                 return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-attachment-unavailable-" + location.local_id) : local;
@@ -1360,6 +1368,10 @@ public class FileLoader extends BaseController {
         if (profileLocation != null && profileLocation.volume_id == org.telegram.messenger.xmpp.MonogramProfiles.PHOTO_VOLUME) {
             File avatar = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(profileLocation.local_id);
             return avatar == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-avatar-missing") : avatar;
+        }
+        if (attach instanceof TLRPC.Document) {
+            TLRPC.Document document = (TLRPC.Document) attach;
+            if (!TextUtils.isEmpty(document.localPath) && org.telegram.messenger.xmpp.MonogramStickers.isSticker(document)) return new File(document.localPath);
         }
         File dir = null;
         long documentId = 0;

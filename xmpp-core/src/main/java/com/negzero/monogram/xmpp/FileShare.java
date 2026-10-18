@@ -29,15 +29,29 @@ public final class FileShare {
     public final long size;
     public final boolean manual;
     private final StandardExtensionElement element;
+    public static final String STICKERS = "urn:xmpp:stickers:0";
+    public final boolean sticker;
     private final Map<String, byte[]> hashes = new LinkedHashMap<>();
 
     public static void initialize() {
         ReplyReference.initialize();
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("file-sharing", NAMESPACE, StandardExtensionElementProvider.INSTANCE);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("x", OOB, StandardExtensionElementProvider.INSTANCE);
+        org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("sticker", STICKERS, StandardExtensionElementProvider.INSTANCE);
     }
     public FileShare(String xml) throws Exception { this(StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(xml))); }
-    private FileShare(StandardExtensionElement element) throws Exception {
+    private FileShare(StandardExtensionElement element) throws Exception { this(element, false); }
+    private FileShare(StandardExtensionElement stored, boolean marked) throws Exception {
+        if (stored.toXML().length() > 65536) throw new IOException("Invalid file description");
+        StandardExtensionElement element = stored;
+        if ("message".equals(stored.getElementName()) && "jabber:client".equals(stored.getNamespace())) {
+            StandardExtensionElement marker = only(stored, "sticker", STICKERS);
+            if (!attributes(stored) || !blank(stored) || stored.getElements().size() != 2 || marker == null
+                    || !attributes(marker) || !blank(marker) || !marker.getElements().isEmpty()) throw new IOException("Invalid stored sticker");
+            element = only(stored, "file-sharing", NAMESPACE); marked = true;
+            if (element == null) throw new IOException("Missing stored sticker description");
+        }
+        sticker = marked;
         if (!"file-sharing".equals(element.getElementName()) || !NAMESPACE.equals(element.getNamespace()) || element.toXML().length() > 65536) throw new IOException("Invalid file description");
         this.element = element;
         String disposition = element.getAttributeValue("disposition");
@@ -79,7 +93,11 @@ public final class FileShare {
         if ("id-blake2b256".equals(name)) return new Blake2bDigest(256);
         return null;
     }
-    public String xml() { return element.toXML().toString(); }
+    /** Local persistence retains the marker; addTo emits the two standard sibling elements. */
+    public String xml() {
+        return sticker ? "<message xmlns='jabber:client'><sticker xmlns='" + STICKERS + "'/>" + element.toXML() + "</message>" : element.toXML().toString();
+    }
+    public FileShare asSticker() throws Exception { return sticker ? this : new FileShare(element, true); }
     /**
      * True when this is the same attachment described with an equivalent, known SFS shape.
      * Unknown metadata remains significant unless its serialized representation is unchanged.
@@ -88,7 +106,7 @@ public final class FileShare {
         if (other == null) return false;
         if (xml().equals(other.xml())) return true;
         if (!knownDescription(element) || !knownDescription(other.element)) return false;
-        if (!link.wireUrl.equals(other.link.wireUrl) || manual != other.manual || size != other.size
+        if (sticker != other.sticker || !link.wireUrl.equals(other.link.wireUrl) || manual != other.manual || size != other.size
                 || !name.equals(other.name) || !mime.equals(other.mime)
                 || !same(element.getAttributeValue("disposition"), other.element.getAttributeValue("disposition"))
                 || !same(element.getAttributeValue("id"), other.element.getAttributeValue("id"))) return false;
@@ -223,7 +241,7 @@ public final class FileShare {
                         .addElement(StandardExtensionElement.builder("sources", NAMESPACE).addElement(StandardExtensionElement.builder("url-data", URL_DATA).addAttribute("target", url.getText()).build()).build()).build());
             }
             if (files.size() != 1 || !(files.get(0) instanceof StandardExtensionElement)) return null;
-            return new FileShare((StandardExtensionElement) files.get(0));
+            return new FileShare((StandardExtensionElement) files.get(0), message.getExtensions("sticker", STICKERS).size() == 1);
         }
         catch (Exception invalid) { return null; }
     }
@@ -233,6 +251,7 @@ public final class FileShare {
         if (start > 0 && body.charAt(start - 1) == '\n') start--;
         int fallbackStart = body.codePointCount(0, start);
         message.addExtension(element);
+        if (sticker) message.addExtension(StandardExtensionElement.builder("sticker", STICKERS).build());
         message.addExtension(StandardExtensionElement.builder("x", OOB).addElement("url", link.wireUrl).build());
         int end = body.codePointCount(0, body.length());
         for (String format : new String[]{NAMESPACE, OOB}) message.addExtension(StandardExtensionElement.builder("fallback", ReplyReference.FALLBACK).addAttribute("for", format)

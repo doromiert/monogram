@@ -140,6 +140,9 @@ final class Omemo2Payload {
     private static boolean allowed(String name, String namespace) {
         return (name.equals("body") || name.equals("subject") || name.equals("thread")) && CLIENT.equals(namespace)
                 || name.equals("file-sharing") && FileShare.NAMESPACE.equals(namespace)
+                || name.equals("sticker") && FileShare.STICKERS.equals(namespace)
+                || name.equals("html") && InlineEmoji.HTML.equals(namespace)
+                || name.equals("data") && InlineEmoji.BOB.equals(namespace)
                 || name.equals("x") && FileShare.OOB.equals(namespace)
                 || name.equals("reply") && ReplyReference.NAMESPACE.equals(namespace)
                 || name.equals("fallback") && ReplyReference.FALLBACK.equals(namespace)

@@ -129,6 +129,23 @@ public final class MonogramFormatting {
             apply(message,visible);
         } catch(IllegalArgumentException malformed) { /* Corrupt local formatting must not hide readable message text. */ }
     }
+    static com.negzero.monogram.xmpp.InlineEmoji projectInline(SQLiteDatabase db,int payload,com.negzero.monogram.xmpp.InlineEmoji inline,String visibleBody) {
+        MessageMarkup markup=MessageMarkup.body(inline.body);
+        try(Cursor row=db.rawQuery("SELECT body,markup FROM message_formatting WHERE message=?",new String[]{Integer.toString(payload)})) {
+            if(row.moveToFirst() && inline.body.equals(row.getString(0)) && !row.isNull(1)) {
+                MessageMarkup decoded=MessageMarkup.decode(inline.body,row.getString(1));if(decoded!=null) markup=decoded;
+            }
+        }
+        com.negzero.monogram.xmpp.InlineEmoji complete=markup.displayInline(inline);
+        if(complete!=null && Objects.equals(complete.body,visibleBody)) return complete;
+        try(Cursor reply=db.rawQuery("SELECT fallback FROM replies WHERE message=?",new String[]{Integer.toString(payload)})) {
+            if(reply.moveToFirst()) {
+                List<int[]> spans=fallback(reply.getString(0),inline.body.codePointCount(0,inline.body.length()));
+                inline=inline.without(spans);markup=markup.without(spans);
+            }
+        }
+        return markup.displayInline(inline);
+    }
     private static List<int[]> fallback(String encoded,int length) {
         List<int[]> ranges=new ArrayList<>();
         if(encoded==null || encoded.isEmpty()) return ranges;

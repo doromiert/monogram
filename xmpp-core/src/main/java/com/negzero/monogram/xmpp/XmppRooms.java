@@ -423,11 +423,19 @@ public final class XmppRooms implements AutoCloseable {
     public boolean hasArchive(String jid) throws Exception {
         return org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat(jid)).isSupported();
     }
+    public ArchivePage archiveSince(String jid,Date since,int limit) throws Exception {
+        if(since==null || since.getTime()<0) throw new IllegalArgumentException("Invalid archive date");
+        return archive(jid,null,null,limit,new Date(since.getTime()));
+    }
     public ArchivePage archive(String jid,String before,String after,int limit) throws Exception {
+        return archive(jid,before,after,limit,null);
+    }
+    private ArchivePage archive(String jid,String before,String after,int limit,Date since) throws Exception {
         MultiUserChat chat=chat(jid); if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.Builder args=org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.builder()
                 .setResultPageSizeTo(Math.min(Math.max(limit,1),100));
         if(before!=null) args.beforeUid(before); if(after!=null) args.afterUid(after);
+        if(since!=null) args.limitResultsSince(since);
         org.jivesoftware.smackx.mam.MamManager.MamQuery query=org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat).queryArchive(args.build());
         List<XmppRoomMessage> messages=new ArrayList<>();List<Runnable> accepted=new ArrayList<>();
         EntityBareJid own=connection.getUser().asEntityBareJid();
@@ -578,6 +586,9 @@ public final class XmppRooms implements AutoCloseable {
     public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
         return send(jid,body,encrypted,null,reply,correction,excluded,automatic,markup);
     }
+    public XmppRoomMessage send(String jid,String body,boolean encrypted,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        return send(jid,body,encrypted,null,reply,correction,excluded,automatic,markup,inline);
+    }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
         if(link.encrypted()!=encrypted || encrypted && sharing!=null || sharing!=null && !sharing.link.wireUrl.equals(link.wireUrl)) throw new IllegalArgumentException("Attachment encryption mode mismatch");
         if(markup!=null && (sharing==null || !markup.body.equals(caption==null ? "" : caption))) throw new IllegalArgumentException("Markup belongs to another caption");
@@ -594,6 +605,10 @@ public final class XmppRooms implements AutoCloseable {
         return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,null);
     }
     private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,markup,null);
+    }
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         MultiUserChat chat=chat(jid);
@@ -606,10 +621,12 @@ public final class XmppRooms implements AutoCloseable {
         if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
         if(!encrypted && markup!=null) markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         if(sharing!=null) sharing.addTo(message,wireBody);
+        if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
         if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
         if(markup!=null) sent=sent.withMarkup(markup);
+        if(inline!=null) sent=sent.withInlineEmoji(inline);
         sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
         chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
         } finally { if(automatic && encrypted) recoverUnavailable(failures); }

@@ -26,6 +26,24 @@ class FileShareTest {
         return "<file-sharing xmlns='urn:xmpp:sfs:0' disposition='inline'><file xmlns='urn:xmpp:file:metadata:0'><name>photo.jpg</name><media-type>image/jpeg</media-type>" + metadata
                 + "</file><sources><url-data xmlns='http://jabber.org/protocol/url-data' target='" + source + "'/></sources></file-sharing>";
     }
+    @Test void stickerMarkerUsesStandardSiblingsAndPersistsWithoutAcceptingForgedOuterMetadata() throws Exception {
+        FileShare normal = new FileShare(description(URL, ""));
+        FileShare sticker = normal.asSticker(); assertTrue(sticker.sticker); assertFalse(normal.sticker);
+        assertFalse(normal.sameAttachment(sticker)); assertTrue(sticker.sameAttachment(new FileShare(sticker.xml())));
+        Message message = stanza(sticker.body("😘"), ""); sticker.addTo(message, message.getBody());
+        assertTrue(message.hasExtension("sticker", FileShare.STICKERS));
+        assertEquals(1, message.getExtensions("file-sharing", FileShare.NAMESPACE).size());
+        FileShare incoming = FileShare.from(PacketParserUtils.parseStanza(message.toXML().toString()));
+        assertNotNull(incoming); assertTrue(incoming.sticker);
+        assertFalse(FileShare.from(stanza(normal.body("x"), normal.xml())).sticker);
+        assertNull(read(message, true, true, "Authenticated text").sharing, "Legacy body-only OMEMO cannot trust an external sticker marker");
+        String nested = "<message xmlns='jabber:client'><sticker xmlns='urn:xmpp:stickers:0'/>" + normal.xml();
+        assertThrows(Exception.class, () -> new FileShare(nested + normal.xml() + "</message>"));
+        assertThrows(Exception.class, () -> new FileShare(nested + "<extra xmlns='urn:test'/></message>"));
+        assertThrows(Exception.class, () -> new FileShare(nested.replace("<sticker xmlns", "<sticker surprise='1' xmlns") + "</message>"));
+        byte[] envelope = Omemo2Payload.envelope(message, new java.security.SecureRandom());
+        assertTrue(FileShare.from(Omemo2Payload.content(message, envelope)).sticker, "Modern OMEMO carries the marker inside the authenticated envelope");
+    }
     @Test void captionsAndReplyFallbacksUseUnicodeCodePoints() throws Exception {
         java.io.File file = Files.createTempFile("share-", ".jpg").toFile();
         try {

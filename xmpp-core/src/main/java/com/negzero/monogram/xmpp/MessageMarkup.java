@@ -53,6 +53,7 @@ public final class MessageMarkup {
         this.body=body;this.ranges=Collections.unmodifiableList(copy);
     }
     public static void initialize() {
+        InlineEmoji.initialize();
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("markup",NAMESPACE,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("unstyled",STYLING,
@@ -171,6 +172,16 @@ public final class MessageMarkup {
         try { return mapped(parsed.text,parsed.removed,styles,true); }
         catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true); }
     }
+    public InlineEmoji displayInline(InlineEmoji inline) {
+        if(inline==null || !body.equals(inline.body)) return null;
+        if(unstyled || body.codePointCount(0,body.length())>65536) return inline;
+        Styling parsed=new Styling(body);parsed.parse();List<int[]> removed=new ArrayList<>();
+        for(int i=0;i<parsed.removed.length;) {
+            if(!parsed.removed[i]) { i++;continue; } int start=i;while(i<parsed.removed.length && parsed.removed[i]) i++;
+            removed.add(new int[]{start,i});
+        }
+        return inline.without(removed);
+    }
     private static List<Range> normalize(Collection<Range> source) {
         List<Range> blocks=new ArrayList<>(),inline=new ArrayList<>();TreeSet<Integer> boundaries=new TreeSet<>();
         for(Range range:source) {
@@ -187,6 +198,7 @@ public final class MessageMarkup {
         return result;
     }
     /** Native entities become interoperable body directives only when the literal text survives round-trip exactly. */
+    public MessageMarkup preservingBody() { return new MessageMarkup(body,ranges,true); }
     public MessageMarkup styled() {
         if(ranges.isEmpty()) return new MessageMarkup(body,ranges,true);
         int[] text=body.codePoints().toArray();Map<Integer,StringBuilder> opens=new HashMap<>(),closes=new HashMap<>();

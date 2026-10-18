@@ -669,6 +669,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(6, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, getString(R.string.SettingsData), getString(R.string.SettingsDataInfo)));
         items.add(SettingCell.Factory.of(1003, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
                 R.drawable.msg_gif, "GIF search", "GIPHY API key"));
+        items.add(SettingCell.Factory.of(1006, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                R.drawable.msg_sticker, "Stickers and custom emoji", "Private packs and Telegram imports"));
         items.add(SettingCell.Factory.of(1005, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom,
                 R.drawable.msg_translate, "Translation", "LibreTranslate, Google Cloud and DeepL"));
         items.add(SettingCell.Factory.of(1002, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
@@ -777,6 +779,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 1003:
                 presentSettingFragment(new MonogramGifSettingsActivity(currentAccount));
+                break;
+            case 1006:
+                presentSettingFragment(new MonogramPacksActivity(currentAccount));
                 break;
             case 1005:
                 presentSettingFragment(new MonogramTranslationSettingsActivity(currentAccount));
