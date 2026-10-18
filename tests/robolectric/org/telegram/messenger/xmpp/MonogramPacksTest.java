@@ -102,6 +102,50 @@ public class MonogramPacksTest {
         assertEquals(item.name,restored.items.get(0).name);assertTrue(restored.privatePack);assertFalse(restored.connected);
         assertTrue(restored.source.startsWith("xmsp:"));assertNotNull(MonogramPacks.document(0,restored.items.get(0).id));archive.get().delete();
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void namedStickerCanBeCreatedAndAddedToAnExistingPack() throws Exception {
+        jid="named-sticker@example.org";
+        for(int pass=0;pass<2;pass++) {
+            byte[] image=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+            android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/named"+pass);
+            org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,new java.io.ByteArrayInputStream(image));
+            long id=pass==0 ? 0 : MonogramPacks.packs(0).get(0).id;
+            java.util.concurrent.CountDownLatch saved=new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+            MonogramPacks.saveSticker(0,id,"Friends",uri,"Wave "+pass,"👋",failure->{error.set(failure);saved.countDown();});
+            assertTrue(saved.await(10,java.util.concurrent.TimeUnit.SECONDS));assertNull(error.get());
+            java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+            ArrayList<MonogramPacks.Pack> packs=MonogramPacks.packs(0);assertEquals(1,packs.size());
+            assertEquals(pass+1,packs.get(0).items.size());
+            assertEquals("Wave "+pass,packs.get(0).items.get(pass).name);
+            assertEquals("👋",packs.get(0).items.get(pass).emoji);
+            if(pass>0) assertEquals(id,packs.get(0).id);
+        }
+    }
+    @Test public void packOrderSurvivesRestartWithoutMovingEmojiOrHiddenPacks() throws Exception {
+        jid="order@example.org";
+        String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        ArrayList<MonogramPacks.Pack> packs=new ArrayList<>();
+        for(int i=0;i<5;i++) {
+            MonogramPacks.Pack pack=new MonogramPacks.Pack();pack.id=0x4d50003000000001L+i;
+            pack.name="Pack "+i;pack.source="local:fixture";pack.emojis=i==1;pack.installed=i!=3;
+            MonogramPacks.Item item=new MonogramPacks.Item();item.id=0x4d50004000000001L+i;
+            item.name="Sticker";item.emoji="🙂";item.mime="image/png";item.file="artwork.png";item.width=item.height=1;pack.items.add(item);
+            packs.add(pack);
+        }
+        ReflectionHelpers.callStaticMethod(MonogramPacks.class,"write",ReflectionHelpers.ClassParameter.from(String.class,scope),ReflectionHelpers.ClassParameter.from(ArrayList.class,packs));
+        MonogramPacks.reorder(0,false,java.util.Arrays.asList(packs.get(4).id,packs.get(4).id,123L,packs.get(0).id));
+        java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+        ArrayList<MonogramPacks.Pack> restored=MonogramPacks.packs(0);
+        int[] expected={4,1,0,3,2};
+        for(int i=0;i<5;i++) {
+            assertEquals(packs.get(expected[i]).id,restored.get(i).id);
+            assertEquals(packs.get(expected[i]).items.get(0).id,restored.get(i).items.get(0).id);
+        }
+        assertEquals(packs.get(4).id,MonogramPacks.sets(0,false).get(0).set.id);
+        assertEquals(packs.get(1).id,MonogramPacks.sets(0,true).get(0).set.id);
+        jid="order-other@example.org";assertTrue(MonogramPacks.packs(0).isEmpty());
+    }
     @Test public void detachAndNativeEditsPersistWithoutStickerOrPackCountCaps() throws Exception {
         jid="editor@example.org";
         String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));

@@ -2213,6 +2213,15 @@ public class MediaDataController extends BaseController {
 
     public void calcNewHash(int type) {
         loadHash[type] = calcStickersHash(stickerSets[type]);
+        if ((type == TYPE_IMAGE || type == TYPE_EMOJIPACKS) && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            ArrayList<Long> order = new ArrayList<>();
+            for (TLRPC.TL_messages_stickerSet set : stickerSets[type]) order.add(set.set.id);
+            try {
+                org.telegram.messenger.xmpp.MonogramPacks.reorder(currentAccount, type == TYPE_EMOJIPACKS, order);
+            } catch (Exception error) {
+                FileLog.e(error);
+            }
+        }
     }
 
     public void storeTempStickerSet(TLRPC.TL_messages_stickerSet set) {

@@ -2312,7 +2312,16 @@ public class ContentPreviewViewer {
 
         final TLRPC.TL_messages_getMyStickers request = new TLRPC.TL_messages_getMyStickers();
         request.limit = 100;
-        getMyStickersRemote(request, stickerSetCoveredList);
+        if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            for (TLRPC.TL_messages_stickerSet pack : org.telegram.messenger.xmpp.MonogramPacks.sets(currentAccount, false)) {
+                TLRPC.TL_stickerSetCovered cover = new TLRPC.TL_stickerSetCovered();
+                cover.set = pack.set;
+                if (!pack.documents.isEmpty()) cover.cover = pack.documents.get(0);
+                stickerSetCoveredList.add(cover);
+            }
+        } else {
+            getMyStickersRemote(request, stickerSetCoveredList);
+        }
 
         RecyclerListView listView = new RecyclerListView(parentActivity) {
             @Override

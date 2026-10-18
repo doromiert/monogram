@@ -165,7 +165,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     private boolean isEditModeEnabled;
     private boolean localOptionsAdded;
     private String localPackOwner;
-    private static java.lang.ref.WeakReference<StickersAlert> addingLocalStickers;
+    private static StickersAlert addingLocalStickers;
     private static final int LOCAL_STICKER_FILES = 7212;
 
 
@@ -1301,12 +1301,76 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     }
     private void addLocalStickers() {
         editableLocalPack(() -> {
+            ChatAttachAlert picker = new ChatAttachAlert(getContext(), parentFragment, false, false, false, resourcesProvider);
+            picker.setupPhotoPicker("Add stickers");
+            picker.setMaxSelectedPhotos(0, true);
+            picker.setDelegate(new ChatAttachAlert.ChatAttachViewDelegate() {
+                @Override
+                public void didPressedButton(int button, boolean arg, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia, boolean forceDocument, long payStars) {
+                    ArrayList<Uri> files = new ArrayList<>();
+                    try {
+                        for (Object key : picker.getPhotoLayout().getSelectedPhotosOrder()) {
+                            Object selected = picker.getPhotoLayout().getSelectedPhotos().get(key);
+                            if (!(selected instanceof MediaController.PhotoEntry)) continue;
+                            MediaController.PhotoEntry photo = (MediaController.PhotoEntry) selected;
+                            String path = photo.imagePath != null ? photo.imagePath : photo.path;
+                            if (path == null) throw new IllegalArgumentException("The selected image is unavailable.");
+                            files.add(androidx.core.content.FileProvider.getUriForFile(getContext(),
+                                    org.telegram.messenger.ApplicationLoader.getApplicationId() + ".provider", new java.io.File(path)));
+                        }
+                        if (files.isEmpty()) return;
+                        picker.dismiss();
+                        addLocalStickerUris(files);
+                    } catch (Exception failed) {
+                        localPackError("Could not read the selected images. Try Import sticker files from the pack menu.");
+                    }
+                }
+            });
+            picker.init();
+            picker.getPhotoLayout().loadGalleryPhotos();
+            picker.show();
+        });
+    }
+    private void addLocalStickerUris(ArrayList<Uri> files) {
+        if (files.isEmpty() || localPack() == null) return;
+        // External pickers pause the fragment and dismiss its dialog; restore a fresh pack sheet.
+        if (isDismissed()) {
+            TLRPC.TL_inputStickerSetID input = new TLRPC.TL_inputStickerSetID();input.id = stickerSet.set.id;
+            StickersAlert restored = new StickersAlert(getContext(), parentFragment, input,
+                    MonogramPacks.find(currentAccount,input), delegate, resourcesProvider, false);
+            if (parentFragment != null) parentFragment.showDialog(restored);else restored.show();
+            restored.addLocalStickerUris(files);
+            return;
+        }
+        MonogramPacks.Callback finished = error -> {
+            if(isDismissed() || localPack()==null) return;
+            pickerBottomLayout.setEnabled(true);reloadLocalPack();
+            if(error!=null) localPackError(error);
+        };
+        if (files.size() == 1) {
+            org.telegram.ui.Cells.EditTextCell name = new org.telegram.ui.Cells.EditTextCell(getContext(), "Sticker name", false);
+            name.editText.setSingleLine(true);
+            name.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
+            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(name)
+                    .setPositiveButton(LocaleController.getString(R.string.Save), (dialog, which) -> {
+                        if (localPack() == null) return;
+                        pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
+                        MonogramPacks.saveSticker(currentAccount, stickerSet.set.id, stickerSet.set.title,
+                                files.get(0), name.getText().toString(), "🙂", finished);
+                    }).setNegativeButton(LocaleController.getString(R.string.Cancel), null).show();
+        } else {
+            pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
+            MonogramPacks.addItems(currentAccount,stickerSet.set.id,files,finished);
+        }
+    }
+    private void importLocalStickerFiles() {
+        editableLocalPack(() -> {
             try {
                 android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
                         .setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE)
                         .putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE,true)
                         .putExtra(android.content.Intent.EXTRA_MIME_TYPES,new String[]{"image/*","video/webm","application/gzip","application/x-tgsticker","application/octet-stream"});
-                addingLocalStickers=new java.lang.ref.WeakReference<>(this);
+                addingLocalStickers=this;
                 Activity activity=parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity();
                 if(activity==null) throw new IllegalStateException("Reopen the pack to select files.");
                 activity.startActivityForResult(intent,LOCAL_STICKER_FILES);
@@ -1315,18 +1379,13 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     }
     public static boolean onLocalStickerFilesResult(int requestCode,int resultCode,android.content.Intent data) {
         if(requestCode!=LOCAL_STICKER_FILES) return false;
-        StickersAlert sheet=addingLocalStickers==null ? null : addingLocalStickers.get();addingLocalStickers=null;
-        if(sheet==null || sheet.isDismissed() || sheet.localPack()==null || resultCode!=Activity.RESULT_OK || data==null) return true;
+        StickersAlert sheet=addingLocalStickers;addingLocalStickers=null;
+        if(sheet==null || sheet.localPack()==null || resultCode!=Activity.RESULT_OK || data==null) return true;
         ArrayList<Uri> files=new ArrayList<>();
         if(data.getClipData()!=null) for(int i=0;i<data.getClipData().getItemCount();i++) files.add(data.getClipData().getItemAt(i).getUri());
         else if(data.getData()!=null) files.add(data.getData());
         if(files.isEmpty()) return true;
-        sheet.pickerBottomLayout.setText("Adding stickers…",true);sheet.pickerBottomLayout.setEnabled(false);
-        MonogramPacks.addItems(sheet.currentAccount,sheet.stickerSet.set.id,files,error -> {
-            if(sheet.isDismissed() || sheet.localPack()==null) return;
-            sheet.pickerBottomLayout.setEnabled(true);sheet.reloadLocalPack();
-            if(error!=null) sheet.localPackError(error);
-        });
+        sheet.addLocalStickerUris(files);
         return true;
     }
 
@@ -1338,6 +1397,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 optionsButton.addSubItem(103,R.drawable.tabs_reorder,LocaleController.getString(R.string.StickersReorder));
                 optionsButton.addSubItem(104,R.drawable.msg_edit,LocaleController.getString(R.string.EditName));
                 optionsButton.addSubItem(106,R.drawable.menu_sticker_add,"Add stickers");
+                optionsButton.addSubItem(108,R.drawable.msg_gallery,"Import sticker files");
                 optionsButton.addSubItem(107,R.drawable.msg_link,"Detach from Telegram");
                 optionsButton.addSubItem(105,R.drawable.msg_delete,"Remove pack");
                 localOptionsAdded=true;
@@ -1457,6 +1517,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                     .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
             else if(id==106) addLocalStickers();
             else if(id==107) detachLocalPack(null);
+            else if(id==108) importLocalStickerFiles();
             return;
         }
         if (stickerSet == null) {

@@ -268,7 +268,7 @@ public final class MonogramPacks {
         long account = Long.parseLong(scope.substring(scope.indexOf('-') + 1, scope.indexOf('-') + 9), 16);
         return THUMB_VOLUME | account << 16 | (id >>> 32 & 0xffffL);
     }
-    static String name(String value) {
+    public static String name(String value) {
         String name = value == null ? "" : value.trim();
         if (name.isEmpty() || name.length() > 100 || name.codePoints().anyMatch(Character::isISOControl)) throw new IllegalArgumentException("Names must contain 1–100 characters.");
         return name;
@@ -309,6 +309,21 @@ public final class MonogramPacks {
         ArrayList<TLRPC.TL_messages_stickerSet> result = new ArrayList<>(); String scope = scope(account);
         for (Pack pack : read(scope)) if (pack.installed && pack.emojis == emojis) result.add(set(scope, pack));
         return result;
+    }
+    public static synchronized void reorder(int account, boolean emojis, List<Long> order) throws Exception {
+        String scope = scope(account);
+        ArrayList<Pack> packs = copy(read(scope));
+        Map<Long, Integer> positions = new HashMap<>();
+        for (Long id : order) if (id != null && !positions.containsKey(id)) positions.put(id, positions.size());
+        ArrayList<Pack> ordered = new ArrayList<>();
+        for (Pack pack : packs) if (pack.installed && pack.emojis == emojis) ordered.add(pack);
+        ordered.sort(Comparator.comparingInt(pack -> positions.getOrDefault(pack.id, Integer.MAX_VALUE)));
+        int index = 0;
+        for (int i = 0; i < packs.size(); i++) {
+            Pack pack = packs.get(i);
+            if (pack.installed && pack.emojis == emojis) packs.set(i, ordered.get(index++));
+        }
+        write(scope, packs);
     }
     public static synchronized TLRPC.TL_messages_stickerSet find(int account, TLRPC.InputStickerSet input) {
         if (input == null) return null;
@@ -654,6 +669,13 @@ public final class MonogramPacks {
         return create(account,pack.name,pack.emojis,sources,packId,callback);
     }
     private static Request create(int account,String title,boolean emojis,ArrayList<Uri> sources,long targetPackId,Callback callback) {
+        return create(account,title,emojis,sources,targetPackId,"🙂",null,callback);
+    }
+    public static Request saveSticker(int account,long packId,String title,Uri source,String stickerName,String emoji,Callback callback) {
+        ArrayList<Uri> sources=new ArrayList<>();sources.add(source);
+        return create(account,title,false,sources,packId,emoji,stickerName,callback);
+    }
+    private static Request create(int account,String title,boolean emojis,ArrayList<Uri> sources,long targetPackId,String emoji,String stickerName,Callback callback) {
         final Request operation = new Request(account);
         final String expectedOwner = owner(account);
         final String expectedScope = scope(account);
@@ -674,7 +696,7 @@ public final class MonogramPacks {
                     try (InputStream input = ApplicationLoader.applicationContext.getContentResolver().openInputStream(source)) {
                         if (input == null) throw new IOException(); data = bytes(input, MAX_FILE, operation);
                     }
-                    String ext; Item item = new Item(); item.id = id(expectedScope, pending); item.name = "Item " + (pack.items.size() + 1); item.emoji = "🙂";
+                    String ext; Item item = new Item(); item.id = id(expectedScope, pending); item.name = stickerName == null ? "Item " + (pack.items.size() + 1) : name(stickerName); item.emoji = tag(emoji);
                     if (data.length > 4 && (data[0] & 255) == 31 && (data[1] & 255) == 139) { ext = ".tgs"; item.mime = "application/x-tgsticker"; item.width = item.height = 512; }
                     else if (data.length > 4 && (data[0] & 255) == 26 && (data[1] & 255) == 69 && (data[2] & 255) == 223 && (data[3] & 255) == 163) {
                         ext = ".webm"; item.mime = "video/webm"; item.width = item.height = 512;
