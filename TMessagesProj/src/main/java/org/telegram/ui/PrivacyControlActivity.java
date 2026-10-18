@@ -105,6 +105,8 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
 
     private ListAdapter listAdapter;
     private CrossfadeDrawable doneButtonDrawable;
+    private Drawable doneButtonCheckmark;
+    private CircularProgressDrawable doneButtonProgressDrawable;
     private View doneButton;
     private RecyclerListView listView;
     private MessageCell messageCell;
@@ -564,9 +566,10 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
 
         ActionBarMenu menu = actionBar.createMenu();
 
-        final Drawable checkmark = context.getResources().getDrawable(R.drawable.ic_ab_done).mutate();
-        checkmark.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultIcon), PorterDuff.Mode.MULTIPLY));
-        doneButtonDrawable = new CrossfadeDrawable(checkmark, new CircularProgressDrawable(Theme.getColor(Theme.key_actionBarDefaultIcon)));
+        doneButtonCheckmark = context.getResources().getDrawable(R.drawable.ic_ab_done).mutate();
+        doneButtonProgressDrawable = new CircularProgressDrawable(getThemedColor(Theme.key_actionBarDefaultIcon));
+        doneButtonDrawable = new CrossfadeDrawable(doneButtonCheckmark, doneButtonProgressDrawable);
+        updateDoneButtonColors();
         doneButton = menu.addItemWithWidth(done_button, doneButtonDrawable, dp(56), LocaleController.getString(R.string.Done));
         boolean hasChanges = hasChanges();
         doneButton.setAlpha(hasChanges ? 1.0f : 0.0f);
@@ -578,7 +581,7 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
 
         fragmentView = new FrameLayout(context);
         FrameLayout frameLayout = (FrameLayout) fragmentView;
-        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        frameLayout.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
         listView = new RecyclerListView(context);
         listView.setSections();
@@ -1752,27 +1755,27 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
             View view;
             switch (viewType) {
                 case 0:
-                    view = new TextSettingsCell(mContext);
+                    view = new TextSettingsCell(mContext, getResourceProvider());
                     ((TextSettingsCell) view).setCanDisable(true);
                     break;
                 case 1:
-                    view = new TextInfoPrivacyCell(mContext);
+                    view = new TextInfoPrivacyCell(mContext, getResourceProvider());
                     break;
                 case 2:
-                    view = new HeaderCell(mContext);
+                    view = new HeaderCell(mContext, getResourceProvider());
                     break;
                 case 3:
-                    view = new RadioCell(mContext);
+                    view = new RadioCell(mContext, getResourceProvider());
                     break;
                 case 4:
                     view = messageCell;
                     break;
                 case 5:
                 default:
-                    view = new ShadowSectionCell(mContext);
+                    view = new ShadowSectionCell(mContext, getResourceProvider());
                     break;
                 case 6:
-                    setAvatarCell = new TextCell(getContext());
+                    setAvatarCell = new TextCell(getContext(), getResourceProvider());
                     if (avatarForRest == null) {
                         setAvatarCell.setTextAndIcon(formatString(R.string.SetPhotoForRest), R.drawable.msg_addphoto, false);
                     } else {
@@ -1787,7 +1790,7 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
                     break;
                 case 7:
                     oldAvatarView = new BackupImageView(getContext());
-                    oldPhotoCell = new TextCell(getContext()) {
+                    oldPhotoCell = new TextCell(getContext(), getResourceProvider()) {
                         @Override
                         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
@@ -1865,7 +1868,9 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
             switch (holder.getItemViewType()) {
                 case 0:
                     TextSettingsCell textCell = (TextSettingsCell) holder.itemView;
-                    textCell.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
+                    int textColorKey = position == readPremiumRow ? Theme.key_windowBackgroundWhiteBlueText : Theme.key_windowBackgroundWhiteBlackText;
+                    textCell.getTextView().setTag(textColorKey);
+                    textCell.setTextColor(getThemedColor(textColorKey));
                     if (position == alwaysShareRow) {
                         String value;
                         if (currentPlus.size() != 0) {
@@ -1932,7 +1937,6 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
                         textCell.setTextAndValue(LocaleController.getString(R.string.PrivacyP2P2), value, false);
                     } else if (position == readPremiumRow) {
                         textCell.setText(LocaleController.getString(getUserConfig().isPremium() ? R.string.PrivacyLastSeenPremiumForPremium : R.string.PrivacyLastSeenPremium), false);
-                        textCell.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlueText));
                     }
                     break;
                 case 1:
@@ -2098,7 +2102,7 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
                     } else if (position == giftTypesInfoRow) {
                         privacyCell.setText(LocaleController.getString(R.string.PrivacyGiftsTypeInfo));
                     }
-                    privacyCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+                    privacyCell.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
                     break;
                 case 2:
                     HeaderCell headerCell = (HeaderCell) holder.itemView;
@@ -2359,16 +2363,30 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
         }
     }
 
+    private void updateDoneButtonColors() {
+        int color = getThemedColor(Theme.key_actionBarDefaultIcon);
+        if (doneButtonCheckmark != null) {
+            doneButtonCheckmark.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
+        }
+        if (doneButtonProgressDrawable != null) {
+            doneButtonProgressDrawable.setColor(color);
+        }
+        if (doneButtonDrawable != null) {
+            doneButtonDrawable.invalidateSelf();
+        }
+    }
+
     @Override
     public ArrayList<ThemeDescription> getThemeDescriptions() {
         ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, HeaderCell.class, RadioCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
-        themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, HeaderCell.class, RadioCell.class, TextCheckCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
         themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
+        themeDescriptions.add(new ThemeDescription(null, 0, null, null, null, this::updateDoneButtonColors, Theme.key_actionBarDefaultIcon));
         themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
         themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_actionBarDefaultSelector));
 
@@ -2376,19 +2394,31 @@ public class PrivacyControlActivity extends BaseFragment implements Notification
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{View.class}, Theme.dividerPaint, null, null, Theme.key_divider));
 
-        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueText));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER | ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGray));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGray));
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER | ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGray));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGray));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{RadioCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKBOX, new Class[]{RadioCell.class}, new String[]{"radioButton"}, null, null, null, Theme.key_radioBackground));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKBOXCHECK, new Class[]{RadioCell.class}, new String[]{"radioButton"}, null, null, null, Theme.key_radioBackgroundChecked));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrack));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
+
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueButton));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueIcon));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_text_RedRegular));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_text_RedRegular));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, null, null, new Drawable[]{Theme.chat_msgInDrawable, Theme.chat_msgInMediaDrawable}, null, Theme.key_chat_inBubble));
         themeDescriptions.add(new ThemeDescription(listView, 0, null, null, new Drawable[]{Theme.chat_msgInSelectedDrawable, Theme.chat_msgInMediaSelectedDrawable}, null, Theme.key_chat_inBubbleSelected));

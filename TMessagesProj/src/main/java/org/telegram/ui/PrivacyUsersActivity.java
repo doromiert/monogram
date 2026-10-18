@@ -157,7 +157,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
 
         fragmentView = new FrameLayout(context);
         FrameLayout frameLayout = (FrameLayout) fragmentView;
-        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        frameLayout.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
         emptyView = new EmptyTextProgressView(context);
         if (currentType == TYPE_BLOCKED) {
@@ -172,7 +172,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
         actionBar.setAdaptiveBackground(listView);
         listView.setItemSelectorColorProvider(position -> {
             if (position == deleteAllRow) {
-                return Theme.multAlpha(Theme.getColor(Theme.key_text_RedRegular), .12f);
+                return Theme.multAlpha(getThemedColor(Theme.key_text_RedRegular), .12f);
             }
             return null;
         });
@@ -413,7 +413,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
             View view;
             switch (viewType) {
                 case 0:
-                    view = new ManageChatUserCell(mContext, 7, 6, true);
+                    view = new ManageChatUserCell(mContext, 7, 6, true, getResourceProvider());
                     ((ManageChatUserCell) view).setDelegate((cell, click) -> {
                         if (click) {
                             showUnblockAlert((Long) cell.getTag(), cell);
@@ -422,19 +422,19 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
                     });
                     break;
                 case 1:
-                    view = new TextInfoPrivacyCell(mContext);
+                    view = new TextInfoPrivacyCell(mContext, getResourceProvider());
                     break;
                 case 2:
                     view = new ManageChatTextCell(mContext);
                     break;
                 case 3:
                 default:
-                    HeaderCell headerCell = new HeaderCell(mContext, Theme.key_windowBackgroundWhiteBlueHeader, 21, 11, false);
+                    HeaderCell headerCell = new HeaderCell(mContext, Theme.key_windowBackgroundWhiteBlueHeader, 21, 11, false, getResourceProvider());
                     headerCell.setHeight(43);
                     view = headerCell;
                     break;
                 case 4:
-                    TextCell textCell = new TextCell(parent.getContext());
+                    TextCell textCell = new TextCell(parent.getContext(), getResourceProvider());
                     textCell.setText(LocaleController.getString(R.string.NotificationsDeleteAllException), false);
                     textCell.setColors(-1, Theme.key_text_RedRegular);
                     view = textCell;
@@ -544,11 +544,19 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
 
         ThemeDescription.ThemeDescriptionDelegate cellDelegate = () -> {
             if (listView != null) {
-                int count = listView.getChildCount();
-                for (int a = 0; a < count; a++) {
-                    View child = listView.getChildAt(a);
+                listView.forAllChild(child -> {
                     if (child instanceof ManageChatUserCell) {
                         ((ManageChatUserCell) child).update(0);
+                    } else if (child instanceof TextCell) {
+                        ((TextCell) child).updateColors();
+                    }
+                });
+                for (int i = 0; i < listView.getCachedChildCount(); i++) {
+                    View child = listView.getCachedChildAt(i);
+                    if (child instanceof ManageChatUserCell) {
+                        ((ManageChatUserCell) child).update(0);
+                    } else if (child instanceof TextCell) {
+                        ((TextCell) child).updateColors();
                     }
                 }
             }
@@ -557,7 +565,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
 
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{ManageChatUserCell.class, ManageChatTextCell.class, HeaderCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{ManageChatUserCell.class, ManageChatTextCell.class, HeaderCell.class, TextCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
@@ -570,7 +578,9 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
         themeDescriptions.add(new ThemeDescription(emptyView, ThemeDescription.FLAG_TEXTCOLOR, null, null, null, null, Theme.key_emptyListPlaceholder));
         themeDescriptions.add(new ThemeDescription(emptyView, ThemeDescription.FLAG_PROGRESSBAR, null, null, null, null, Theme.key_progressCircle));
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{ManageChatUserCell.class}, new String[]{"nameTextView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{ManageChatUserCell.class}, new String[]{"statusColor"}, null, null, cellDelegate, Theme.key_windowBackgroundWhiteGrayText));
@@ -590,6 +600,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{ManageChatTextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayIcon));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{ManageChatTextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueButton));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{ManageChatTextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueIcon));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_text_RedRegular));
 
         return themeDescriptions;
     }
