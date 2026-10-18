@@ -67,6 +67,24 @@ class LegacyIncomingIntegrationTest {
         catch(OmemoSendException changed) { if(changed.reason!=OmemoSendException.Reason.ROOM_CHANGED || !(changed.getCause() instanceof ConcurrentModificationException) || attempt>=4) throw changed;Thread.sleep(50); }
         for(OmemoDevice device:devices) session.decide(device,session.fingerprint(device),true);
     }
+    @Test void readOnlyOwnDeviceCannotBlockTrustedDirectRecipients() throws Exception {
+        Inbox a=new Inbox(),b=new Inbox(),old=new Inbox();int sender=9821,recipient=9822,stale=9823;
+        try(XmppSession alice=session(true,sender,a);XmppSession oldAlice=session(true,stale,old);XmppSession bob=session(false,recipient,b)) {
+            alice.connect();oldAlice.connect();bob.connect();trust(alice,ALICE);trust(alice,BOB);trust(bob,ALICE);
+            MonogramSignalStore records=MonogramLegacyOmemoService.instance().records();
+            OmemoDevice own=new OmemoDevice(JidCreate.bareFrom(ALICE),sender),readOnly=new OmemoDevice(JidCreate.bareFrom(ALICE),stale);
+            int limit=OmemoConfiguration.getMaxReadOnlyMessageCount();assertTrue(OmemoConfiguration.getIgnoreReadOnlyDevices());
+            records.storeOmemoMessageCounter(own,readOnly,limit);
+            String id=alice.send(BOB,"A quiet own device must not block this encrypted DM",true);
+            XmppMessage received=b.next();assertEquals(id,received.ids.get("stanza"));assertTrue(received.readable);
+            assertEquals("A quiet own device must not block this encrypted DM",received.body);
+            assertEquals(limit,records.loadOmemoMessageCounter(own,readOnly));
+            assertEquals(org.jivesoftware.smackx.omemo.trust.TrustState.trusted,alice.trustState(readOnly,alice.fingerprint(readOnly)));
+            for(OmemoDevice device:alice.devices(BOB)) records.storeOmemoMessageCounter(own,device,limit);
+            OmemoSendException failure=assertThrows(OmemoSendException.class,() -> alice.send(BOB,"Must not send only to ourselves",true));
+            assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,failure.reason);
+        }
+    }
     @Test void encryptedStickerHintReachesLiveAndArchivedRecipient() throws Exception {
         Inbox a=new Inbox(),b=new Inbox();
         try(XmppSession alice=session(true,9791,a);XmppSession bob=session(false,9792,b)) {

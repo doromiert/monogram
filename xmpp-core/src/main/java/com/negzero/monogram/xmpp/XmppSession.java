@@ -22,6 +22,7 @@ import org.jivesoftware.smackx.omemo.OmemoMessage;
 import org.jivesoftware.smackx.omemo.element.OmemoElement;
 import org.jivesoftware.smackx.omemo.element.OmemoElement_VAxolotl;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
+import org.jivesoftware.smackx.omemo.exceptions.ReadOnlyDeviceException;
 import org.jivesoftware.smackx.omemo.signal.SignalFileBasedOmemoStore;
 import org.jivesoftware.smackx.omemo.MonogramLegacyOmemoService;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
@@ -966,8 +967,11 @@ public final class XmppSession implements AutoCloseable {
             }
             OmemoMessage.Sent ciphertext = omemo.encrypt(recipient, body);
             for (OmemoDevice skipped : ciphertext.getSkippedDevices().keySet()) {
+                // Smack intentionally excludes devices silent for 400 sends, including our own old clients.
+                if (ciphertext.getSkippedDevices().get(skipped) instanceof ReadOnlyDeviceException) continue;
                 if (trust.getTrust(skipped, omemo.getFingerprint(skipped)) != org.jivesoftware.smackx.omemo.trust.TrustState.untrusted) {
-                    throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
+                    throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,
+                            "Device "+skipped.getDeviceId()+": "+ciphertext.getSkippedDevices().get(skipped).getClass().getSimpleName());
                 }
             }
             boolean recipientIncluded = false;
