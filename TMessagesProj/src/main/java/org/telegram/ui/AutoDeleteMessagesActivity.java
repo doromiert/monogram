@@ -21,6 +21,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.RadioCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
@@ -46,6 +47,8 @@ public class AutoDeleteMessagesActivity extends BaseFragment implements Notifica
     RadioCellInternal afterOneMonth;
     RadioCellInternal customTimeButton;
     LinearLayout checkBoxContainer;
+    SectionsScrollView scrollView;
+    TextInfoPrivacyCell textInfoPrivacyCell;
 
     ArrayList<RadioCellInternal> arrayList = new ArrayList<>();
 
@@ -84,10 +87,10 @@ public class AutoDeleteMessagesActivity extends BaseFragment implements Notifica
 
         fragmentView = new FrameLayout(context);
         FrameLayout frameLayout = (FrameLayout) fragmentView;
-        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        frameLayout.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
         LinearLayout mainContainer = new SectionsScrollView.SectionsLinearLayout(getContext());
-        SectionsScrollView scrollView = new SectionsScrollView(getContext(), mainContainer, resourceProvider);
+        scrollView = new SectionsScrollView(getContext(), mainContainer, resourceProvider);
         mainContainer.setOrientation(LinearLayout.VERTICAL);
         scrollView.addView(mainContainer);
         frameLayout.addView(scrollView);
@@ -103,10 +106,10 @@ public class AutoDeleteMessagesActivity extends BaseFragment implements Notifica
 
         checkBoxContainer = new LinearLayout(getContext());
         checkBoxContainer.setOrientation(LinearLayout.VERTICAL);
-        checkBoxContainer.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        checkBoxContainer.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
         mainContainer.addView(checkBoxContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-        HeaderCell headerCell = new HeaderCell(getContext());
+        HeaderCell headerCell = new HeaderCell(getContext(), resourceProvider);
         headerCell.setText(LocaleController.getString(R.string.MessageLifetime));
         checkBoxContainer.addView(headerCell);
 
@@ -143,7 +146,7 @@ public class AutoDeleteMessagesActivity extends BaseFragment implements Notifica
 
         updateItems();
 
-        TextInfoPrivacyCell textInfoPrivacyCell = new TextInfoPrivacyCell(context, 12, resourceProvider);
+        textInfoPrivacyCell = new TextInfoPrivacyCell(context, 12, resourceProvider);
         CharSequence infoText = AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.GlobalAutoDeleteInfo), new Runnable() {
             @Override
             public void run() {
@@ -182,7 +185,7 @@ public class AutoDeleteMessagesActivity extends BaseFragment implements Notifica
 
     private void updateItems() {
         for (int i = 0; i < arrayList.size(); i++) {
-            arrayList.get(i).setBackground(Theme.createSelectorWithBackgroundDrawable(Theme.getColor(Theme.key_windowBackgroundWhite), Theme.getColor(Theme.key_listSelector)));
+            arrayList.get(i).setBackground(Theme.createSelectorWithBackgroundDrawable(getThemedColor(Theme.key_windowBackgroundWhite), getThemedColor(Theme.key_listSelector)));
             arrayList.get(i).setOnClickListener(v -> {
                 if (v == customTimeButton) {
                     AlertsCreator.createAutoDeleteDatePickerDialog(getContext(), 1, null, new AlertsCreator.ScheduleDatePickerDelegate() {
@@ -308,7 +311,37 @@ public class AutoDeleteMessagesActivity extends BaseFragment implements Notifica
         int time;
 
         public RadioCellInternal(Context context) {
-            super(context);
+            super(context, resourceProvider);
+        }
+    }
+
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> descriptions = new ArrayList<>();
+        ThemeDescription.ThemeDescriptionDelegate selectorDelegate = this::updateRadioSelectors;
+
+        descriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_actionBarDefaultSelector));
+        descriptions.add(new ThemeDescription(scrollView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
+        descriptions.add(new ThemeDescription(checkBoxContainer, ThemeDescription.FLAG_BACKGROUND, null, null, null, selectorDelegate, Theme.key_windowBackgroundWhite));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, selectorDelegate, Theme.key_listSelector));
+        descriptions.add(new ThemeDescription(checkBoxContainer, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
+        descriptions.add(new ThemeDescription(checkBoxContainer, 0, new Class[]{RadioCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        descriptions.add(new ThemeDescription(checkBoxContainer, ThemeDescription.FLAG_CHECKBOX, new Class[]{RadioCell.class}, new String[]{"radioButton"}, null, null, null, Theme.key_radioBackground));
+        descriptions.add(new ThemeDescription(checkBoxContainer, ThemeDescription.FLAG_CHECKBOXCHECK, new Class[]{RadioCell.class}, new String[]{"radioButton"}, null, null, null, Theme.key_radioBackgroundChecked));
+        descriptions.add(new ThemeDescription(checkBoxContainer, 0, new Class[]{RadioCell.class}, Theme.dividerPaint, null, null, Theme.key_divider));
+        descriptions.add(new ThemeDescription(textInfoPrivacyCell, ThemeDescription.FLAG_BACKGROUNDFILTER, null, null, null, null, Theme.key_windowBackgroundGrayShadow));
+        descriptions.add(new ThemeDescription(textInfoPrivacyCell, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        descriptions.add(new ThemeDescription(textInfoPrivacyCell, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
+
+        return descriptions;
+    }
+
+    private void updateRadioSelectors() {
+        for (RadioCellInternal cell : arrayList) {
+            cell.setBackground(Theme.createSelectorWithBackgroundDrawable(getThemedColor(Theme.key_windowBackgroundWhite), getThemedColor(Theme.key_listSelector)));
         }
     }
 

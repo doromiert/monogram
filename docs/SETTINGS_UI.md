@@ -95,7 +95,7 @@ The original custom/stock route review still applies. Full individual stock-scre
 
 Delivery: 0.2.95 (72709), source `0be82b0ba`, built with Nix and installed through wireless ADB. Eighteen focused cases pass (five settings render cases, eight packs, four profile/alias/cache, one native storage); the earlier three portable-archive checks also pass. Installation preserves all 896 prior message identities, 608 read IDs, nine anchors, ten native notification entries, 132 pack files and existing account/legacy/modern identities. Schema 26 is active and the foreground connection service is present. The exact reported remote import has not been reproduced; ask for the new screen's copyable diagnostic rather than claim it fixed the cause.
 
-## Nested settings follow-up (unreleased)
+## Nested settings follow-up (0.2.96)
 
 The native Do Not Translate page used TextCheckbox2Cell but its theme descriptions still targeted the retired LanguageCell. Bindings now cover the actual checkbox row labels, secondary names, headers and card backgrounds. Its existing native sections, selection and search behavior are preserved. Five offscreen cases cover this page and the new-proxy form in light/dark/RTL/large-font and same-instance theme changes. The rendered checkbox labels and card surfaces were inspected.
 
@@ -113,13 +113,13 @@ The accompanying sticker repair preserves legacy-OMEMO sticker presentation with
 Delivery: 0.2.96 (72719), source `546db8ca7`, published with the original signing identity. APK SHA-256 `238f3728a5d5c582bd1d7318ad4e6d5631083bdd1e42fb1761711e671ccf6f55`, 69,532,679 bytes; remote digest and tag match. ADB was unreachable (No route to host), so the authorized Codex bot delivered the APK download link. No phone installation, preservation or runtime verification is claimed for this release.
 
 
-## Language page follow-up (unreleased)
+## Language page follow-up (0.2.97)
 
 The top-level Language page still described retired LanguageCell rows although its actual adapter creates TextRadioCell, HeaderCell, TextCheckCell and TextSettingsCell. Theme bindings now target the actual primary/secondary labels, radio states, section backgrounds, translation switches, animated values and explanatory text/links. Selection, search, translation/provider state and account routing are unchanged.
 
 Five native offscreen cases cover light/dark/RTL/1.3 font configuration and same-instance light → dark → light transitions, before/after scrolling. Primary/secondary language-label colors are asserted through the actual screen descriptions. Inspected output confirms native rounded sections, legible translation controls and radio rows in light/dark and mirrored RTL. The first fixture attempts lacked initialized synthetic account shadows; a later fixture-only LocaleController constructor reset RTL/configuration. Both were corrected without production changes. Native cells use their existing dp text sizing, so a 1.3 configuration does not imply every label grows. Evidence: `.state/settings-language-light-followup.log`, `.state/settings-language-final-followup.log`, `.state/settings-language-config-followup.log`, and `language-*` PNGs in `.state/settings-renders/`.
 
-This source change is not in the published 0.2.96 APK. Full stock-page/dialog and real-device acceptance remain open; this follow-up does not complete the settings goal.
+This change was published in 0.2.97. Full stock-page/dialog and real-device acceptance remain open; this follow-up does not complete the settings goal.
 
 
 ## Network Usage native follow-up (0.2.97)
@@ -133,3 +133,14 @@ Verification: five populated native screen cases pass for light/dark/RTL/1.3 fon
 Dialog diagnostic follow-up: actual native provider rows and Cancel have nonzero geometry, visible state and full alpha. Explicit software-window rendering plus invalidation still omits some child content in offscreen captures. This remains an unaccepted capture, not evidence to change production dialog layout. Logs/trees: `.state/settings-dialog-layout-diagnostic.log`, `.state/settings-dialog-software-capture.log`, `dialogs-light-*-tree.txt`. No dialog actions were confirmed. Full remaining stock-page/dialog/device acceptance stays open.
 
 Delivery: 0.2.97 (72729), source `6b5e6b0b9`, original signer and arm64 ABI verified. APK SHA-256 `e6119a6d18c6eaee900ca2e8879892884a922c04ae2d9c96153cc44581f6a944`, 69,534,204 bytes; published asset and source tag match. ADB remains unreachable; the authorized Codex bot delivered the verified APK download link. The phone was not installed, navigated or runtime-verified for this release.
+
+
+## Auto-delete and Browser follow-up (unreleased)
+
+Both pages already used native sections/adaptive headers but lacked live bindings for their current controls. Auto-delete now updates the page/card/header, radio labels and checked colors, dividers, selectors and footer text/links through native theme descriptions. Dynamically added custom duration rows use the same provider and bindings; checked state and timer values are not changed by color refresh. Timer confirmation, onPause persistence and remote actions are untouched.
+
+Browser now updates native section/header/button/value/check/footer colors and preserves accent/destructive tags. Its primary ripple card retains the native white label, blue switch palette and checked/unchecked background. Color refresh includes visible, hidden, scrap and cached recycler children, so scrolled-out controls retain their correct presentation when returning. Website rows refresh title/subtitle/options/fallback favicon colors and use relative native frames/text gravity/pivot/divider in RTL, with the same LTR dimensions. Browser help text now refers to Monogram and the in-app browser. Preferences, domains, favicons, navigation and data-clearing callbacks are unchanged.
+
+Five native render cases pass for four states each: default and custom-three-day Auto-delete, enabled Browser with synthetic history/cache/cookies/exception data, and external-browser mode with an exception. Configurations cover light/dark/RTL/1.3 font configuration and same-instance light/dark/restored themes. Two affected cases were rerun after the ripple/cache and RTL corrections; assertions inspect custom TTL preservation, actual radio/footer colors, website icon/options positions and the returned enable card's label/background/state. The remote auto-delete illustration fetch is isolated; its artwork is not validated. No lifecycle persistence or destructive/provider action was invoked. Evidence: `.state/settings-forms-light-check.log`, `.state/settings-forms-final-check.log`, `.state/settings-forms-repair-check.log`, and `forms-*` PNGs under `.state/settings-renders/`.
+
+Inspected native rounded cards, custom timer selection, dark timer controls and mirrored website rows. Some explanatory text is absent in the offscreen returned-to-top browser capture despite controls rendering and passing color/state checks; this capture remains unaccepted for full returned-view content, like the dialog-capture limitation above. Do not infer a production layout bug or complete acceptance from it. Full stock/dialog/device review remains in progress. These source changes are not included in the published 0.2.97 APK.
