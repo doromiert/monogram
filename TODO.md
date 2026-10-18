@@ -2,6 +2,10 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
+- [o] Add opt-in, bounded local message XML capture/view/copy/clear under XMPP connection, plus per-message sticker/storage/rendering diagnostics for the unreproduced 0.2.98 received-sticker bug.
+- [ ] Fix chat theme loading and empty theme previews; restore selected accent colors instead of blue in every color variant (user screenshots 9358/9359). After XML debugging, add Exteragram-style Monet dynamic-color themes using the local Exteragram artifact/source where appropriate.
+
+
 Execution constraint (2026-10-18): user resumed work and authorized one subagent for custom stickers/emojis and Telegram-link import, with root on usability. Keep parallelism limited; current blocking tasks are delivered in 0.2.90.
 
 

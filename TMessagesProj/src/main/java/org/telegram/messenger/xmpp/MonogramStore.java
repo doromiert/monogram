@@ -1344,6 +1344,27 @@ final class MonogramStore extends SQLiteOpenHelper {
         media.serializeToStream(bytes); values.put("media", bytes.toByteArray()); bytes.cleanup();
         if (getWritableDatabase().update("attachments", values, "message=? AND url=?", new String[]{Integer.toString(id), url}) != 1) throw new IllegalStateException("Attachment reference changed");
     }
+    synchronized String debugMessage(int id,long self) {
+        TLRPC.Message message=getMessage(id,self);
+        StringBuilder result=new StringBuilder("Local message ID: ").append(id).append("\nEncryption mode: ").append(encryptionOf(id));
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT kind,value FROM message_ids WHERE message=?",new String[]{Integer.toString(id)})) {
+            while(c.moveToNext()) result.append("\n").append(c.getString(0)).append(": ").append(c.getString(1));
+        }
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT display_sticker,sharing,path FROM attachments WHERE message=?",new String[]{Integer.toString(id)})) {
+            if(c.moveToFirst()) {
+                result.append("\nLegacy sticker hint: ").append(c.getInt(0)!=0);
+                result.append("\nCached file present: ").append(c.getString(2)!=null && new java.io.File(c.getString(2)).isFile());
+                result.append("\n\nStored file-sharing XML:\n").append(c.isNull(1) ? "Not present (normal for legacy OMEMO)." : c.getString(1));
+            }
+        }
+        result.append("\n\nProjected media: ").append(message.media==null ? "none" : message.media.getClass().getSimpleName());
+        TLRPC.Document document=message.media==null ? null : message.media.document;
+        if(document!=null) {
+            result.append("\nMIME: ").append(document.mime_type);
+            for(TLRPC.DocumentAttribute attr:document.attributes) result.append("\nAttribute: ").append(attr.getClass().getSimpleName());
+        }
+        return result.toString();
+    }
     synchronized TLRPC.Message getMessage(int id, long self) { return getMessage(id, self, true); }
     private TLRPC.Message getMessage(int id, long self, boolean embedReply) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT peer,body,outgoing,time FROM messages WHERE id=?", new String[]{Integer.toString(id)})) {

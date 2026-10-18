@@ -62,6 +62,10 @@ public class MonogramStickerHintTest {
         MessageObject object=new MessageObject(0,restored,false,false);object.setType();
         assertEquals(MessageObject.TYPE_STICKER,object.type);
         assertTrue(object.isSticker());
+        String diagnostics=store.debugMessage(id,self);
+        assertTrue(diagnostics.contains("Legacy sticker hint: true"));
+        assertTrue(diagnostics.contains("TL_documentAttributeSticker"));
+        assertTrue(diagnostics.contains("Cached file present: true"));
     }
     @Test public void decryptedDisplayHintProjectsOnlyTheCachedMediaAndSurvivesReopen() throws Exception {
         FileLink link=link("opaque.png");store.attachmentFile(link.wireUrl).delete();XmppMessage model=message("hinted",link,true);int id=Math.abs(store.save(model));

@@ -34,6 +34,7 @@ import org.jxmpp.jid.impl.JidCreate;
 public final class XmppSession implements AutoCloseable {
     public interface Listener {
         void message(EntityBareJid sender, String id, String body, boolean encrypted);
+        default void debugMessageXml(boolean outgoing,Message stanza) {}
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
         default void receipt(MessageReceipt receipt) {}
         default void profileChanged(EntityBareJid jid) {}
@@ -187,6 +188,8 @@ public final class XmppSession implements AutoCloseable {
         connection = new ManagedConnection(config.build());
         connection.setReplyTimeout(15000);
         this.listener = listener;
+        connection.addAsyncStanzaListener(stanza -> debugMessageXml(false,(Message)stanza),stanza -> stanza instanceof Message);
+        connection.addStanzaSendingListener(stanza -> debugMessageXml(true,(Message)stanza),stanza -> stanza instanceof Message);
         legacyCapacityKey="legacy\n"+account.jid+"\n"+deviceId;
         modernCapacityKey=modernDevice==null ? null : "modern\n"+modernDevice.jid+"\n"+modernDevice.id;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("encrypted",XmppOmemo2.NS,
@@ -545,6 +548,10 @@ public final class XmppSession implements AutoCloseable {
     }
     private boolean validCarbon(Message wrapping) {
         return connection.getUser() != null && connection.getUser().asEntityBareJid().equals(wrapping.getFrom());
+    }
+    private void debugMessageXml(boolean outgoing,Message stanza) {
+        try { listener.debugMessageXml(outgoing,stanza); }
+        catch(RuntimeException diagnosticFailure) { /* Optional debugging must not interrupt messaging. */ }
     }
     private void deliver(Listener listener, Message stanza, String body, boolean encrypted,String fingerprint,boolean live) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;

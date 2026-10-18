@@ -51,12 +51,15 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
             items.add(UItem.asButton(5,R.drawable.msg_notifications,"Connection notice",visibility));
         }
         items.add(UItem.asShadow("Monogram keeps its XMPP connection in a foreground notification. Android battery optimization and additional phone-specific restrictions can still interrupt it; allow background activity in the system settings. To hide the ongoing notice, turn off only the Connection notification category in Android settings. Keep message notifications enabled."));
+        items.add(UItem.asButton(6,R.drawable.msg_settings,"XMPP debugging"));
+        items.add(UItem.asShadow(null));
         items.add(UItem.asHeader("Contacts and rooms"));
         items.add(UItem.asSettingsCell(2,"Requests and invitations",Integer.toString(controller.pendingContactRequests().size()+controller.pendingRoomInvitations().size())));
         items.add(UItem.asShadow(null));
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.id == 1) MonogramController.get(currentAccount).reconnect();
+        else if(item.id==6) presentFragment(new MonogramDebugActivity(currentAccount));
         else if(item.id==2) presentFragment(new MonogramContactActivity(currentAccount,null));
         else if(item.id==3 || item.id==4 || item.id==5) {
             android.content.Intent intent=item.id==5 ? NotificationsService.notificationSettings(getContext()) : new android.content.Intent(item.id==3 ? android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS : android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

@@ -93,9 +93,26 @@ public final class MonogramController {
         store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account);
         legacyStore=MonogramLegacyOmemoStore.application();vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
+        debugLog.enabled(preferences.getBoolean("debug-message-xml",false));
         displayedReady=readReceiptsEnabled();
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).addObserver(this::historyMediaLoaded,NotificationCenter.messagesDidLoad));
+    }
+    public final com.negzero.monogram.xmpp.XmppDebugLog debugLog=new com.negzero.monogram.xmpp.XmppDebugLog();
+    public void debugCapture(boolean enabled) {
+        preferences.edit().putBoolean("debug-message-xml",enabled).apply();debugLog.enabled(enabled);
+    }
+    public void inspectMessage(MessageObject object,java.util.function.Consumer<String> callback) {
+        final int id=object.getId(),rendered=object.type;final long owner=accountEpoch;
+        worker.execute(() -> {
+            String details;
+            try {
+                if(owner!=accountEpoch) return;
+                details="Displayed media type: "+rendered+"\nDisplayed as sticker: "+object.isAnyKindOfSticker()+"\n\n"+store.debugMessage(id,self);
+            } catch(Exception unavailable) { details="Message diagnostics unavailable: "+unavailable.getClass().getSimpleName(); }
+            final String result=details;
+            AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch) callback.accept(result); });
+        });
     }
     public int state() { return state; }
     public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
@@ -422,6 +439,9 @@ public final class MonogramController {
                 new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
                         () -> modernStore.begin(details.jid.toString(),modernDevice)),
                 new XmppSession.Listener() {
+                    @Override public void debugMessageXml(boolean outgoing,org.jivesoftware.smack.packet.Message stanza) {
+                        if(owner==accountEpoch && debugLog.enabled()) debugLog.record(outgoing ? "Sent XML" : "Received XML",stanza.toXML().toString());
+                    }
                     @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
                     @Override public void message(XmppMessage message) { received(owner,details.jid.toString(),message,null); }
                     @Override public void message(XmppMessage message,Runnable accepted) { received(owner,details.jid.toString(),message,accepted); }
@@ -1351,6 +1371,7 @@ public final class MonogramController {
     }
     public void logout() {
         final String departing=accountJid();
+        debugCapture(false);
         MonogramPacks.logout(account);
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         synchronized(displayedSettingsLock) {

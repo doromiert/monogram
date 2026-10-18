@@ -1263,6 +1263,7 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_VIEW_STATISTICS = 115;
     public final static int OPTION_WELCOME_REVERT = 116;
     public final static int OPTION_SEND_MONEY = 117;
+    public final static int OPTION_MONOGRAM_DIAGNOSTICS = 118;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -31107,6 +31108,10 @@ public class ChatActivity extends BaseFragment implements
             ArrayList<CharSequence> items = new ArrayList<>();
             final ArrayList<Integer> options = new ArrayList<>();
             View optionsView = null;
+            if(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).debugLog.enabled()) {
+                items.add("Message diagnostics");options.add(OPTION_MONOGRAM_DIAGNOSTICS);icons.add(R.drawable.msg_info);
+            }
+
 
             if (AndroidUtilities.isAccessibilityScreenReaderEnabled() && message.messageOwner != null && message.messageOwner.from_id != null && message.messageOwner.from_id.user_id != getUserConfig().clientUserId && chatMode != MODE_SAVED) {
                 items.add(LocaleController.getString(R.string.OpenProfile));
@@ -33534,6 +33539,11 @@ public class ChatActivity extends BaseFragment implements
         }
         boolean preserveDim = false;
         switch (option) {
+            case OPTION_MONOGRAM_DIAGNOSTICS: {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).inspectMessage(selectedObject,
+                        text -> MonogramDebugActivity.showText(this,"Message diagnostics",text));
+                break;
+            }
             case OPTION_RETRY: {
                 final MessageObject object = selectedObject;
                 final MessageObject.GroupedMessages group = selectedObjectGroup;
