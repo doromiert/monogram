@@ -11,9 +11,8 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 
-public final class MonogramNewChatActivity extends UniversalFragment {
+public final class MonogramNewChatActivity extends MonogramSettingsActivity {
     private EditTextCell address;
     private boolean opening;
     private String status;

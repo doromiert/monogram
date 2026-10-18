@@ -10,9 +10,8 @@ import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 
-public final class MonogramConnectionActivity extends UniversalFragment implements NotificationCenter.NotificationCenterDelegate {
+public final class MonogramConnectionActivity extends MonogramSettingsActivity implements NotificationCenter.NotificationCenterDelegate {
     public MonogramConnectionActivity(int account) { currentAccount = account; }
     @Override public boolean onFragmentCreate() {
         super.onFragmentCreate();
@@ -27,20 +26,24 @@ public final class MonogramConnectionActivity extends UniversalFragment implemen
     }
     @Override protected CharSequence getTitle() { return "XMPP connection"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-        int state = MonogramController.get(currentAccount).state();
-        items.add(UItem.asHeader(state == ConnectionsManager.ConnectionStateConnected ? "Connected to XMPP"
-                : state == ConnectionsManager.ConnectionStateConnecting ? "Connecting to XMPP…" : "Disconnected from XMPP"));
-        int queued=MonogramController.get(currentAccount).queuedSendCount();
-        if(queued>0) items.add(UItem.asShadow(queued+" messages waiting to send after reconnecting."));
-        String failure=MonogramController.get(currentAccount).lastDisconnect();
-        if(failure!=null) items.add(UItem.asShadow("Last disconnect: "+failure));
+        MonogramController controller=MonogramController.get(currentAccount);
+        int state = controller.state();
+        items.add(UItem.asHeader("Connection"));
+        String label=state==ConnectionsManager.ConnectionStateConnected ? "Connected"
+                : state==ConnectionsManager.ConnectionStateConnecting ? "Connecting…" : "Disconnected";
+        items.add(UItem.asSettingsCell(0,"Status",label).setEnabled(false));
         items.add(UItem.asButton(1, R.drawable.msg_retry, "Reconnect").accent().setEnabled(state != ConnectionsManager.ConnectionStateConnecting));
-        items.add(UItem.asShadow("Monogram retries automatically when the connection drops. Reconnecting uses your saved login and preserves your messages and OMEMO keys."));
+        String details="Monogram retries automatically when the connection drops. Reconnecting uses your saved login and preserves your messages and OMEMO keys.";
+        int queued=controller.queuedSendCount();
+        if(queued>0) details+="\n\n"+queued+" messages waiting to send after reconnecting.";
+        String failure=controller.lastDisconnect();
+        if(failure!=null) details+="\n\nLast disconnect: "+failure;
+        items.add(UItem.asShadow(details));
         android.os.PowerManager power=(android.os.PowerManager)getContext().getSystemService(android.content.Context.POWER_SERVICE);
         boolean unrestricted=power!=null && power.isIgnoringBatteryOptimizations(getContext().getPackageName());
         items.add(UItem.asHeader("Background connection"));
-        items.add(UItem.asButton(3,unrestricted ? "Battery optimization exemption enabled" : "Allow unrestricted background connection").setEnabled(!unrestricted));
-        items.add(UItem.asButton(4,"App battery and background settings"));
+        items.add(UItem.asSettingsCell(3,"Battery optimization",unrestricted ? "Unrestricted" : "Restricted").setEnabled(!unrestricted));
+        items.add(UItem.asButton(4,"App background settings"));
         if(android.os.Build.VERSION.SDK_INT>=26) {
             android.app.NotificationManager manager=(android.app.NotificationManager)getContext().getSystemService(android.content.Context.NOTIFICATION_SERVICE);
             android.app.NotificationChannel channel=manager==null ? null : manager.getNotificationChannel(NotificationsService.CONNECTION_CHANNEL);
@@ -48,7 +51,9 @@ public final class MonogramConnectionActivity extends UniversalFragment implemen
             items.add(UItem.asButton(5,R.drawable.msg_notifications,"Connection notification",visibility));
         }
         items.add(UItem.asShadow("Monogram keeps its XMPP connection in a foreground notification. Android battery optimization and additional phone-specific restrictions can still interrupt it; allow background activity in the system settings. To hide the ongoing notice, turn off only the Connection notification category in Android settings. Keep message notifications enabled."));
-        items.add(UItem.asButton(2,"Requests and invitations",Integer.toString(MonogramController.get(currentAccount).pendingContactRequests().size()+MonogramController.get(currentAccount).pendingRoomInvitations().size())));
+        items.add(UItem.asHeader("Contacts and rooms"));
+        items.add(UItem.asSettingsCell(2,"Requests and invitations",Integer.toString(controller.pendingContactRequests().size()+controller.pendingRoomInvitations().size())));
+        items.add(UItem.asShadow(null));
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.id == 1) MonogramController.get(currentAccount).reconnect();

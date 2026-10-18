@@ -16,7 +16,7 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.*;
 
 /** Current room occupants and server-authorized XEP-0045 actions. */
-public final class MonogramRoomMembersActivity extends UniversalFragment implements NotificationCenter.NotificationCenterDelegate {
+public final class MonogramRoomMembersActivity extends MonogramSettingsActivity implements NotificationCenter.NotificationCenterDelegate {
     private final long room;
     private XmppRooms.State state;
     private boolean busy, destroyed;

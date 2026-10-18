@@ -14,10 +14,9 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 
 /** Native settings components; invitation tokens stay in this screen's memory only. */
-public final class MonogramAccountInviteActivity extends UniversalFragment {
+public final class MonogramAccountInviteActivity extends MonogramSettingsActivity {
     private MonogramController.AccountInvitation invitation;
     private EditTextCell username;
     private boolean busy,destroyed,subscribe;
@@ -33,8 +32,8 @@ public final class MonogramAccountInviteActivity extends UniversalFragment {
         return super.createView(context);
     }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
-        items.add(UItem.asHeader("New XMPP account"));
         items.add(UItem.asShadow("Create a link that lets someone register on your XMPP server. Your server decides whether your account can issue invitations."));
+        items.add(UItem.asHeader("New XMPP account"));
         if(invitation!=null && invitation.result!=null) {
             items.add(UItem.asButton(2,R.drawable.msg_copy,"Copy invitation link"));
             items.add(UItem.asButton(3,R.drawable.msg_share,"Share invitation link").accent());

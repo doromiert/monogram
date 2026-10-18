@@ -344,6 +344,8 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForDocument(TLRPC.PhotoSize photoSize, TLRPC.Document document) {
+        ImageLocation localSticker = org.telegram.messenger.xmpp.MonogramStickers.localThumbnail(photoSize, document);
+        if (localSticker != null) return localSticker;
         if (photoSize instanceof TLRPC.TL_photoStrippedSize || photoSize instanceof TLRPC.TL_photoPathSize) {
             ImageLocation imageLocation = new ImageLocation();
             imageLocation.photoSize = photoSize;

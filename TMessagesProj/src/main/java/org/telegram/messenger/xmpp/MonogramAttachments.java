@@ -156,6 +156,7 @@ public final class MonogramAttachments {
         return media;
     }
     static void preserveMediaAttributes(TLRPC.MessageMedia previous,TLRPC.MessageMedia decoded) {
+        if (previous != null && decoded != null) MonogramStickers.preserveAttributes(previous.document, decoded.document);
         if(previous==null || previous.document==null || decoded.document==null) return;
         for(TLRPC.DocumentAttribute old:previous.document.attributes) {
             if(!(old instanceof TLRPC.TL_documentAttributeAudio) && !(old instanceof TLRPC.TL_documentAttributeVideo)

@@ -10,9 +10,8 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 
-public final class MonogramGifSettingsActivity extends UniversalFragment {
+public final class MonogramGifSettingsActivity extends MonogramSettingsActivity {
     public MonogramGifSettingsActivity(int account) { currentAccount = account; }
     @Override protected CharSequence getTitle() { return "GIF search"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {

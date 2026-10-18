@@ -1928,7 +1928,7 @@ public final class MonogramController {
                 if(owner!=accountEpoch || !path.isFile()) return;
                 com.negzero.monogram.xmpp.FileShare sharing=store.sharing(message.id);
                 String filename=sharing==null ? com.negzero.monogram.xmpp.FileLink.parse(address).fileName() : sharing.name;
-                TLRPC.MessageMedia media=MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime);
+                TLRPC.MessageMedia media=MonogramStickers.preserve(message.media,MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime));
                 MonogramAttachments.preserveMediaAttributes(message.media,media);
                 if(media.document==null || MonogramAttachments.needsMediaInfo(media.document)) return;
                 worker.execute(() -> {
@@ -2300,8 +2300,8 @@ public final class MonogramController {
                     return;
                 }
                 job.check();
-                TLRPC.MessageMedia decoded=MonogramAttachments.decodedMedia(id,object.messageOwner.date,path,filename,
-                        sharing==null && object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : sharing==null ? null : sharing.mime);
+                TLRPC.MessageMedia decoded=MonogramStickers.preserve(object.messageOwner.media,MonogramAttachments.decodedMedia(id,object.messageOwner.date,path,filename,
+                        sharing==null && object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : sharing==null ? null : sharing.mime));
                 MonogramAttachments.preserveMediaAttributes(object.messageOwner.media,decoded);
                 job.check();
                 worker.execute(() -> {

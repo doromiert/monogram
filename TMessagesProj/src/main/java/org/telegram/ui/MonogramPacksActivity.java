@@ -16,10 +16,9 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.StickersAlert;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 
 /** Native Telegram settings, pack preview and pickers backed by account-local XMPP assets. */
-public final class MonogramPacksActivity extends UniversalFragment {
+public final class MonogramPacksActivity extends MonogramSettingsActivity {
     private final long packId;
     private int initialAction;
     private String initialLink, lastError;
@@ -28,7 +27,11 @@ public final class MonogramPacksActivity extends UniversalFragment {
     private boolean busy, creatingEmojis;
     private String creatingName;
     private MonogramPacks.Request request;
-    private AlertDialog importProgress;
+    private MonogramPacks.ImportProgress importState;
+    private boolean watchingImport;
+    private org.telegram.ui.Components.LineProgressView importLine;
+    private android.widget.FrameLayout importMeter;
+    private final MonogramPacks.ImportObserver importObserver=this::importChanged;
     public MonogramPacksActivity(int account) { this(account, 0); }
     public MonogramPacksActivity(int account, boolean importPack) { this(account); initialAction = importPack ? 1 : 2; }
     public MonogramPacksActivity(int account, String link) { this(account); initialAction = 1; initialLink = link; }
@@ -47,13 +50,38 @@ public final class MonogramPacksActivity extends UniversalFragment {
         packs = MonogramPacks.packs(currentAccount); pack = null;
         for (MonogramPacks.Pack candidate : packs) if (candidate.id == packId) pack = candidate;
         if (packId == 0) {
+            if(importState!=null) {
+                items.add(UItem.asHeader("Telegram import"));
+                String count=importState.total>0 ? importState.completed+" / "+importState.total : "Preparing…";
+                items.add(UItem.asSettingsCell(0,importState.complete ? "Pack imported" : importState.cancelled ? "Import cancelled" : importState.active ? "Stickers downloaded" : "Import failed",count));
+                if(importState.active) {
+                    if(importMeter==null) {
+                        importMeter=new android.widget.FrameLayout(getContext());
+                        importLine=new org.telegram.ui.Components.LineProgressView(getContext());
+                        importMeter.addView(importLine,org.telegram.ui.Components.LayoutHelper.createFrame(-1,3,android.view.Gravity.CENTER,21,0,21,0));
+                        importMeter.setLayoutParams(new android.view.ViewGroup.LayoutParams(-1,org.telegram.messenger.AndroidUtilities.dp(24)));
+                    }
+                    importLine.setProgressColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhiteBlueText4,getResourceProvider()));
+                    importLine.setBackColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_listSelector,getResourceProvider()));
+                    float fraction=importState.totalBytes>0 ? Math.min(1f,(float)importState.currentBytes/importState.totalBytes) : 0;
+                    importLine.setProgress(importState.total>0 ? Math.min(1f,(importState.completed+fraction)/importState.total) : 0,true);
+                    items.add(UItem.asCustom(importMeter));
+                    items.add(UItem.asButton(20,"Cancel import").red());
+                }
+                String detail=importState.stage;
+                if(importState.active && importState.currentBytes>0) detail+="\n"+org.telegram.messenger.AndroidUtilities.formatFileSize(importState.currentBytes)
+                        +(importState.totalBytes>0 ? " / "+org.telegram.messenger.AndroidUtilities.formatFileSize(importState.totalBytes) : " downloaded");
+                if(importState.active) detail+="\nYou can leave this screen while the import continues.";
+                if(importState.error!=null) detail+="\n"+importState.error;
+                items.add(UItem.asShadow(detail));
+            }
             items.add(UItem.asHeader("Private packs"));
             if (MonogramPacks.storageError(currentAccount)) items.add(UItem.asShadow("Saved pack data could not be read and has been preserved. Restore a valid backup before adding or changing packs."));
             items.add(UItem.asButton(1, "Import Telegram pack link"));
             items.add(UItem.asButton(2, "Create sticker pack"));
             items.add(UItem.asButton(3, "Create custom emoji pack"));
             items.add(UItem.asShadow("Packs stay on this phone for this Jabber account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Inline emoji in media captions are not supported yet."));
-            if (busy) items.add(UItem.asShadow("Preparing pack… Keep this screen open until the import finishes."));
+            if (busy) items.add(UItem.asShadow("Preparing local pack…"));
             if (lastError != null) items.add(UItem.asShadow(lastError));
             items.add(UItem.asHeader("Your packs"));
             int index = 0;
@@ -76,7 +104,8 @@ public final class MonogramPacksActivity extends UniversalFragment {
         }
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
-        if (busy) return;
+        if(item.id==20) { MonogramPacks.cancelImport(currentAccount);return; }
+        if (busy || importState!=null && importState.active) return;
         if (item.object instanceof MonogramPacks.Pack) { presentFragment(new MonogramPacksActivity(currentAccount, ((MonogramPacks.Pack) item.object).id)); return; }
         if (item.object instanceof MonogramPacks.Item && pack != null) {
             MonogramPacks.Item entry = (MonogramPacks.Item) item.object;
@@ -135,14 +164,9 @@ public final class MonogramPacksActivity extends UniversalFragment {
             });
             return;
         }
-        lastError=null;busy=true;update();
-        importProgress=new AlertDialog(getContext(),AlertDialog.ALERT_TYPE_SPINNER);
-        importProgress.setOnCancelListener(dialog -> {
-            if(request!=null) request.cancel();
-            importProgress=null;busy=false;lastError="Pack import cancelled.";update();
-        });
-        showDialog(importProgress);
-        request=MonogramPacks.importTelegram(currentAccount,link,this::finished);
+        lastError=null;
+        try { MonogramPacks.startImport(currentAccount,link); importState=MonogramPacks.importProgress(currentAccount);update(); }
+        catch(Exception invalid) { finished(invalid.getMessage()); }
     }
     private void input(String title, String value, boolean secret, java.util.function.Consumer<String> save) {
         EditTextCell input = new EditTextCell(getContext(), title, false); input.editText.setSingleLine(true);
@@ -160,11 +184,26 @@ public final class MonogramPacksActivity extends UniversalFragment {
     private UItem row(int id, String title, String subtitle, Object object) { UItem item = UItem.asButton(id, title, subtitle); item.object = object; return item; }
     private void update() { if (listView != null) { listView.adapter.update(true); if (pack != null && actionBar != null) actionBar.setTitle(pack.name); } }
     private void finished(String error) {
-        if(importProgress!=null) { importProgress.dismiss();importProgress=null; }
         busy = false; lastError=error; update(); if (error != null) error(error);
     }
     private void error(String text) { if (getParentActivity() != null) showDialog(new AlertDialog.Builder(getContext()).setTitle("Stickers and custom emoji").setMessage(text == null ? "Could not update the pack." : text).setPositiveButton("OK", null).create()); }
-    @Override public void onFragmentDestroy() { if (request != null) request.cancel(); super.onFragmentDestroy(); }
-    @Override public void onResume() { super.onResume(); update(); }
+    private void importChanged(MonogramPacks.ImportProgress progress) {
+        if(!watchingImport) return;
+        importState=progress;update();
+    }
+    @Override public void onFragmentDestroy() {
+        watchingImport=false;MonogramPacks.removeImportObserver(currentAccount,importObserver);
+        if (request != null) request.cancel();
+        super.onFragmentDestroy();
+    }
+    @Override public void onPause() {
+        watchingImport=false;MonogramPacks.removeImportObserver(currentAccount,importObserver);
+        super.onPause();
+    }
+    @Override public void onResume() {
+        super.onResume();watchingImport=true;
+        MonogramPacks.addImportObserver(currentAccount,importObserver);
+        importState=MonogramPacks.importProgress(currentAccount);update();
+    }
     @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
 }

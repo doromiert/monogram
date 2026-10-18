@@ -6183,7 +6183,8 @@ public class EmojiView extends FrameLayout implements
                 .add(NotificationCenter.currentUserPremiumStatusChanged);
 
             AndroidUtilities.runOnUIThread(() -> {
-                updateStickerTabs(false);
+                updateStickerTabs(true);
+                if(emojiAdapter!=null) emojiAdapter.notifyDataSetChanged(true);
                 reloadStickersAdapter();
             });
         }
@@ -6200,7 +6201,8 @@ public class EmojiView extends FrameLayout implements
                 NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.stickersDidLoad);
                 if (stickersGridAdapter != null) {
                     NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.recentDocumentsDidLoad);
-                    updateStickerTabs(false);
+                    updateStickerTabs(true);
+                    emojiAdapter.notifyDataSetChanged(true);
                     reloadStickersAdapter();
                 /*if (gifGridView != null && delegate != null) {
                     delegate.onTabOpened(pager != null && pager.getCurrentItem() == 1 ? 1  : );

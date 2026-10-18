@@ -41,6 +41,41 @@ public final class MonogramStickers {
         TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1; media.document = document;
         message.media = media; message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA;
     }
+    public static org.telegram.messenger.ImageLocation localThumbnail(TLRPC.PhotoSize thumb, TLRPC.Document document) {
+        if (thumb == null || thumb.location == null || document == null || !isSticker(document)
+                || document.localPath == null || document.localPath.isEmpty() || !new File(document.localPath).isFile()) return null;
+        long volume = thumb.location.volume_id;
+        if (!MonogramPacks.isThumb(volume) && !MonogramEmojis.isThumb(volume) && volume != MonogramAttachments.PHOTO_VOLUME) return null;
+        org.telegram.messenger.ImageLocation local = org.telegram.messenger.ImageLocation.getForPath(document.localPath);
+        if ("application/x-tgsticker".equals(document.mime_type)) local.imageType = org.telegram.messenger.FileLoader.IMAGE_TYPE_LOTTIE;
+        else if ("video/webm".equals(document.mime_type)) local.imageType = org.telegram.messenger.FileLoader.IMAGE_TYPE_ANIMATION;
+        return local;
+    }
+    /** File probing may improve geometry without discarding a known private local sticker kind. */
+    public static TLRPC.MessageMedia preserve(TLRPC.MessageMedia previous, TLRPC.MessageMedia decoded) {
+        if (previous == null || previous.document == null || decoded == null || !isSticker(previous.document)
+                || !supported(previous.document.mime_type)) return decoded;
+        TLRPC.Document source = previous.document;
+        if (decoded.document == null) {
+            if (decoded.photo == null || !("image/png".equals(source.mime_type) || "image/webp".equals(source.mime_type))) return decoded;
+            TLRPC.TL_document document = new TLRPC.TL_document(); document.id = source.id; document.date = source.date;
+            document.dc_id = Integer.MIN_VALUE; document.file_reference = new byte[0]; document.mime_type = source.mime_type;
+            document.size = source.size; document.localPath = source.localPath; document.thumbs.addAll(source.thumbs); document.flags = source.flags;
+            TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1; media.document = document; decoded = media;
+        }
+        preserveAttributes(source, decoded.document);
+        return decoded;
+    }
+    static void preserveAttributes(TLRPC.Document source, TLRPC.Document decoded) {
+        if (source == null || decoded == null || !isSticker(source)) return;
+        for (TLRPC.DocumentAttribute old : source.attributes) {
+            if (!(old instanceof TLRPC.TL_documentAttributeSticker) && !(old instanceof TLRPC.TL_documentAttributeCustomEmoji)
+                    && !(old instanceof TLRPC.TL_documentAttributeImageSize) && !(old instanceof TLRPC.TL_documentAttributeFilename)) continue;
+            boolean exists = false;
+            for (TLRPC.DocumentAttribute current : decoded.attributes) if (current.getClass() == old.getClass()) { exists = true; break; }
+            if (!exists) decoded.attributes.add(old);
+        }
+    }
     public static boolean supported(String mime) {
         return "image/webp".equals(mime) || "image/png".equals(mime) || "application/x-tgsticker".equals(mime) || "video/webm".equals(mime);
     }

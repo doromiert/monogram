@@ -14,7 +14,7 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.*;
 
 /** Native room entry and room-specific controls; conversations use ChatActivity. */
-public final class MonogramRoomActivity extends UniversalFragment implements org.telegram.messenger.NotificationCenter.NotificationCenterDelegate {
+public final class MonogramRoomActivity extends MonogramSettingsActivity implements org.telegram.messenger.NotificationCenter.NotificationCenterDelegate {
     private final long dialog;
     private EditTextCell address,nickname,password,title;
     private final boolean creating;

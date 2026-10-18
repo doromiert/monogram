@@ -45,13 +45,101 @@ public final class MonogramPacks {
         public final ArrayList<Item> items = new ArrayList<>();
     }
     public interface Callback { void done(String error); }
+    public interface ImportObserver { void changed(ImportProgress progress); }
+    public static final class ImportProgress {
+        public final String stage, packName, error;
+        public final int completed, total;
+        public final long currentBytes, totalBytes;
+        public final boolean active, cancelled, complete;
+        private ImportProgress(String stage, String packName, String error, int completed, int total,
+                long currentBytes, long totalBytes, boolean active, boolean cancelled) {
+            this.stage = stage; this.packName = packName; this.error = error; this.completed = completed; this.total = total;
+            this.currentBytes = currentBytes; this.totalBytes = totalBytes; this.active = active; this.cancelled = cancelled;
+            complete = !active && !cancelled && error == null;
+        }
+    }
+    private static final java.util.concurrent.ConcurrentHashMap<String, ImportJob> IMPORTS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<ImportObserver>>> IMPORT_OBSERVERS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Set<String> IMPORT_NOTIFICATIONS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final class ImportJob {
+        final int account;
+        final String owner;
+        final Request request;
+        volatile ImportProgress progress;
+        ImportJob(int account) {
+            this.account = account; request = new Request(account); owner = request.owner; request.importJob = this;
+            progress = new ImportProgress("Queued", "", null, 0, 0, 0, -1, true, false);
+        }
+        synchronized void update(String stage, String packName, int completed, int total, long bytes, long length) {
+            if (!progress.active || request.cancelled) return;
+            progress = new ImportProgress(stage, packName, null, completed, total, bytes, length, true, false);
+            notifyImport(this);
+        }
+        synchronized void bytes(long bytes, long length) {
+            ImportProgress old = progress;
+            update(old.stage, old.packName, old.completed, old.total, bytes, length);
+        }
+        synchronized void finished(String error) {
+            ImportProgress old = progress;
+            boolean cancelled = request.cancelled && !request.committed;
+            progress = new ImportProgress(cancelled ? "Cancelled" : error == null ? "Complete" : "Import failed", old.packName,
+                    cancelled ? null : error, error == null && !cancelled ? old.total : old.completed, old.total,
+                    old.currentBytes, old.totalBytes, false, cancelled);
+            notifyImport(this);
+        }
+    }
+    public static ImportProgress importProgress(int account) { ImportJob job = IMPORTS.get(owner(account)); return job == null ? null : job.progress; }
+    public static void addImportObserver(int account, ImportObserver observer) {
+        if (observer == null) return;
+        String key = owner(account);
+        java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<ImportObserver>> observers = IMPORT_OBSERVERS.computeIfAbsent(key, ignored -> new java.util.concurrent.CopyOnWriteArrayList<>());
+        for (java.lang.ref.WeakReference<ImportObserver> entry : observers) if (entry.get() == observer) return;
+        observers.add(new java.lang.ref.WeakReference<>(observer));
+        ImportJob job = IMPORTS.get(key); if (job != null) notifyImport(job);
+    }
+    public static void removeImportObserver(int account, ImportObserver observer) {
+        // Removal also works after logout/account replacement without retaining the previous owner.
+        for (java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<ImportObserver>> observers : IMPORT_OBSERVERS.values())
+            for (java.lang.ref.WeakReference<ImportObserver> entry : observers) if (entry.get() == null || entry.get() == observer) observers.remove(entry);
+    }
+    public static void cancelImport(int account) {
+        ImportJob job = IMPORTS.get(owner(account)); if (job == null || !job.progress.active) return;
+        job.request.cancel();
+        synchronized (job) {
+            if (job.request.committed || !job.progress.active) return;
+            ImportProgress old = job.progress;
+            job.progress = new ImportProgress("Cancelling…", old.packName, null, old.completed, old.total, old.currentBytes, old.totalBytes, true, false);
+        }
+        notifyImport(job);
+    }
+    private static void notifyImport(ImportJob job) {
+        if (!IMPORT_OBSERVERS.containsKey(job.owner) || !IMPORT_NOTIFICATIONS.add(job.owner)) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            IMPORT_NOTIFICATIONS.remove(job.owner);
+            if (!job.owner.equals(owner(job.account))) return;
+            ImportJob current = IMPORTS.get(job.owner); if (current == null) return;
+            java.util.concurrent.CopyOnWriteArrayList<java.lang.ref.WeakReference<ImportObserver>> observers = IMPORT_OBSERVERS.get(job.owner);
+            if (observers == null) return;
+            for (java.lang.ref.WeakReference<ImportObserver> entry : observers) {
+                ImportObserver observer = entry.get();
+                if (observer == null) observers.remove(entry);
+                else try { observer.changed(current.progress); } catch (RuntimeException ignored) { }
+            }
+        }, 100);
+    }
     public static final class Request {
         private final int account;
         private final String owner;
-        private volatile boolean cancelled;
+        private volatile boolean cancelled, committed;
         private HttpsURLConnection connection;
+        private ImportJob importJob;
+        private boolean mediaDownload;
+        private long downloadLength = -1;
         private Request(int account) { this.account = account; owner = owner(account); }
-        public synchronized void cancel() { cancelled = true; if (connection != null) connection.disconnect(); }
+        public synchronized void cancel() {
+            if (importJob != null && committed) return;
+            cancelled = true; if (connection != null) connection.disconnect();
+        }
         private void check() throws ImportFailure {
             if (cancelled || !owner.equals(owner(account))) throw new ImportFailure("Pack import cancelled.");
         }
@@ -72,6 +160,9 @@ public final class MonogramPacks {
         return ApplicationLoader.applicationContext.getSharedPreferences("monogram-packs-" + scope(account), Context.MODE_PRIVATE);
     }
     public static synchronized void logout(int account) {
+        for (ImportJob job : IMPORTS.values()) if (job.account == account) {
+            job.request.cancel(); IMPORTS.remove(job.owner, job); IMPORT_OBSERVERS.remove(job.owner); IMPORT_NOTIFICATIONS.remove(job.owner);
+        }
         GENERATIONS.computeIfAbsent(account, ignored -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
         preferences(account).edit().remove("token").apply();
         CACHE.remove(scope(account));
@@ -260,25 +351,36 @@ public final class MonogramPacks {
         if (path.size() != 2 || !(path.get(0).equals("addstickers") || path.get(0).equals("addemoji")) || !path.get(1).matches("[A-Za-z0-9_]{1,64}")) throw new IllegalArgumentException("Invalid Telegram pack link.");
         return new Link(path.get(1), path.get(0).equals("addemoji"));
     }
-    public static Request importTelegram(int account, String link, Callback callback) {
-        final Request operation = new Request(account);
-        final Link parsed;
-        try { parsed = parseLink(link); } catch (Exception invalid) { callback.done(invalid.getMessage()); return operation; }
-        final String expectedOwner = owner(account);
+    /** Account-owned import: leaving a screen only removes its observer, never cancels this job. */
+    public static void startImport(int account, String link) {
+        final Link parsed = parseLink(link);
         final String expectedScope = scope(account), encryptedToken = preferences(account).getString("token", null);
-        if (encryptedToken == null) { callback.done("Add your own Telegram bot token first. The import uses Telegram’s official Bot API."); return operation; }
+        if (encryptedToken == null) throw new IllegalStateException("Add your own Telegram bot token first. The import uses Telegram’s official Bot API.");
+        final ImportJob job = new ImportJob(account);
+        ImportJob previous = IMPORTS.putIfAbsent(job.owner, job);
+        if (previous != null) {
+            if (previous.progress.active || !IMPORTS.replace(job.owner, previous, job)) throw new IllegalStateException("A pack is already being imported. Wait for it to finish or cancel it.");
+        }
+        final Request operation = job.request;
+        final String expectedOwner = job.owner;
+        notifyImport(job);
         WORKER.execute(() -> {
             String error = null; ArrayList<File> temporary = new ArrayList<>();
             try {
+                operation.check();
+                job.update("Loading pack", "", 0, 0, 0, -1);
                 String token = new AccountVault(account).decrypt(encryptedToken);
                 JSONObject result = request(token, "getStickerSet", "name", parsed.name, operation).getJSONObject("result");
                 if (!parsed.name.equalsIgnoreCase(result.getString("name")) || parsed.emojis != "custom_emoji".equals(result.optString("sticker_type"))) throw new IOException();
                 Set<Long> pending = new HashSet<>(); Pack pack = new Pack(); pack.id = id(expectedScope, pending); pack.name = name(result.getString("title")); pack.source = link; pack.emojis = parsed.emojis;
                 JSONArray stickers = result.getJSONArray("stickers"); if (stickers.length() < 1 || stickers.length() > 200) throw new ImportFailure("Packs must contain 1–200 items.");
+                synchronized (MonogramPacks.class) {
+                    for (Pack old : read(expectedScope)) if (old.source.equals(link) && old.installed) throw new ImportFailure("This pack is already installed.");
+                }
                 File dir = directory(expectedScope); if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException();
                 long total = 0;
                 for (int i = 0; i < stickers.length(); i++) {
-                    operation.check();
+                    operation.check(); job.update("Getting file details", pack.name, i, stickers.length(), 0, -1);
                     JSONObject sticker = stickers.getJSONObject(i); String fileId = sticker.getString("file_id");
                     JSONObject remote = request(token, "getFile", "file_id", fileId, operation).getJSONObject("result");
                     String path = remote.getString("file_path");
@@ -288,25 +390,36 @@ public final class MonogramPacks {
                     item.mime = ext.equals(".tgs") ? "application/x-tgsticker" : ext.equals(".webm") ? "video/webm" : ext.equals(".png") ? "image/png" : "image/webp";
                     item.width = dimension(sticker.optInt("width", 512)); item.height = dimension(sticker.optInt("height", 512));
                     File target = new File(dir, item.file); temporary.add(target);
-                    byte[] data = download("https://api.telegram.org/file/bot" + token + "/" + path, MAX_FILE, operation);
+                    job.update("Downloading file", pack.name, i, stickers.length(), 0, -1);
+                    operation.mediaDownload = true; byte[] data;
+                    try { data = download("https://api.telegram.org/file/bot" + token + "/" + path, MAX_FILE, operation); }
+                    finally { operation.mediaDownload = false; }
+                    operation.check(); job.update("Checking file", pack.name, i, stickers.length(), data.length, operation.downloadLength);
                     validateMedia(data, item.mime);
                     total += data.length; if (total > MAX_PACK) throw new ImportFailure("A pack may use up to 100 MB on this phone.");
+                    operation.check();
                     try (FileOutputStream output = new FileOutputStream(target)) { output.write(data); output.getFD().sync(); }
-                    pack.items.add(item);
+                    pack.items.add(item); job.update("Files downloaded", pack.name, i + 1, stickers.length(), 0, -1);
                 }
+                job.update("Saving pack", pack.name, stickers.length(), stickers.length(), 0, -1);
                 synchronized (MonogramPacks.class) {
                     if (!expectedOwner.equals(owner(account))) throw new ImportFailure("The account changed. Import again on the intended account.");
                     ArrayList<Pack> packs = new ArrayList<>(read(expectedScope));
                     for (Pack old : packs) if (old.source.equals(link) && old.installed) throw new ImportFailure("This pack is already installed.");
-                    synchronized (operation) { operation.check(); packs.add(0, pack); write(expectedScope, packs); temporary.clear(); }
+                    synchronized (operation) {
+                        operation.check(); packs.add(0, pack); write(expectedScope, packs); operation.committed = true; temporary.clear();
+                    }
                 }
             } catch (ImportFailure failure) { error = failure.getMessage(); }
             catch (Exception unavailable) { error = "Could not import the pack. Check the link, bot token and connection. Telegram permits bot file downloads up to 20 MB per item."; }
             finally { for (File file : temporary) file.delete(); }
             final String failure = error;
-            AndroidUtilities.runOnUIThread(() -> { if (!expectedOwner.equals(owner(account)) || operation.cancelled) return; if (failure == null) refresh(account); callback.done(failure); });
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!expectedOwner.equals(owner(account)) || IMPORTS.get(expectedOwner) != job) return;
+                try { if (operation.committed) refresh(account); }
+                finally { job.finished(failure); }
+            });
         });
-        return operation;
     }
     /** Copy selected files into account-private storage; source paths and names are never uploaded. */
     public static Request create(int account, String title, boolean emojis, ArrayList<Uri> sources, Callback callback) {
@@ -399,13 +512,19 @@ public final class MonogramPacks {
         connection.setConnectTimeout(10000); connection.setReadTimeout(20000); connection.setInstanceFollowRedirects(false);
         try { operation.attach(connection); if (connection.getResponseCode() != 200) throw new IOException();
             if (connection.getContentLength() > limit) throw new IOException();
+            if (operation.importJob != null && operation.mediaDownload) {
+                operation.downloadLength = connection.getContentLength() >= 0 ? connection.getContentLength() : -1;
+                operation.importJob.bytes(0, operation.downloadLength);
+            }
             try (InputStream input = connection.getInputStream()) { return bytes(input, limit, operation); }
         } finally { operation.detach(connection); connection.disconnect(); }
     }
     private static byte[] bytes(InputStream input, int limit) throws Exception { return bytes(input, limit, null); }
     private static byte[] bytes(InputStream input, int limit, Request operation) throws Exception {
         ByteArrayOutputStream body = new ByteArrayOutputStream(); byte[] buffer = new byte[16384]; int count;
-        while ((count = input.read(buffer)) != -1) { if (operation != null) operation.check(); if (body.size() + count > limit) throw new IOException(); body.write(buffer, 0, count); }
+        while ((count = input.read(buffer)) != -1) { if (operation != null) operation.check(); if (body.size() + count > limit) throw new IOException(); body.write(buffer, 0, count);
+            if (operation != null && operation.importJob != null && operation.mediaDownload) operation.importJob.bytes(body.size(), operation.downloadLength);
+        }
         return body.toByteArray();
     }
 }

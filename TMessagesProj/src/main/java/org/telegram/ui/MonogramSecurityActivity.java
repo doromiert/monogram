@@ -11,7 +11,6 @@ import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
 import com.negzero.monogram.xmpp.XmppMessage;
@@ -19,7 +18,7 @@ import com.negzero.monogram.xmpp.Omemo2Bundle;
 import org.telegram.messenger.Utilities;
 import org.jxmpp.jid.impl.JidCreate;
 
-public final class MonogramSecurityActivity extends UniversalFragment {
+public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     private final long peer;
     private final Map<OmemoDevice, OmemoFingerprint> identities = new LinkedHashMap<>();
     private final Map<OmemoDevice, String> states = new LinkedHashMap<>();
@@ -137,24 +136,28 @@ public final class MonogramSecurityActivity extends UniversalFragment {
     @Override protected CharSequence getTitle() { return "Conversation security"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
-        items.add(UItem.asHeader(controller.jid(peer)));
+        items.add(UItem.asHeader("Encryption"));
         String sendError=controller.lastSendError(peer);
         if(sendError!=null) items.add(UItem.asShadow("Last send failure: "+org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(sendError)));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Available devices need compatible trusted keys. OMEMO 2 rooms are not available yet."));
-        items.add(UItem.asShadow("Compare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
-        items.add(UItem.asCheck(7,"Allow unencrypted reactions (legacy OMEMO)").setChecked(controller.plainReactionsAllowed(peer)));
+        items.add(UItem.asShadow(controller.jid(peer)+"\n\nCompare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
+        items.add(UItem.asHeader("Reactions"));
+        items.add(UItem.asCheck(7,"Allow unencrypted reactions").setChecked(controller.plainReactionsAllowed(peer)));
         items.add(UItem.asShadow("Standard reactions are visible to the server with legacy OMEMO. OMEMO 2 direct chats encrypt reactions; this permission never changes message encryption."));
+        items.add(UItem.asHeader("Connection and verification"));
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
         items.add(UItem.asButton(8,"Contact authorization").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         items.add(UItem.asShadow(null));
         if (status != null) items.add(UItem.asShadow(status));
         if (ownFingerprint != null) {
+            items.add(UItem.asHeader("Your device"));
             items.add(UItem.asButton(3,modern ? "Your OMEMO 2 fingerprint" : "Your legacy OMEMO fingerprint")); items.add(UItem.asShadow(ownFingerprint));
         }
         if(peer<0) {
+            items.add(UItem.asHeader("Recipient policy"));
             items.add(UItem.asCheck(9,"Skip unreachable devices automatically").setChecked(controller.automaticRoomRecipients(peer)));
             items.add(UItem.asShadow("Unavailable device lists or key bundles are skipped for this send. Skipped devices cannot read it. Offline devices with usable keys remain included; unknown or changed fingerprints still require approval. Turn this off to require every selected recipient."));
             String skipped=controller.skippedRoomRecipients(peer); if(skipped!=null) items.add(UItem.asShadow(skipped));
@@ -172,6 +175,7 @@ public final class MonogramSecurityActivity extends UniversalFragment {
             items.add(UItem.asShadow(null));
         }
         if (!identities.isEmpty()) {
+            items.add(UItem.asHeader("Devices"));
             items.add(UItem.asButton(2, saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
             items.add(UItem.asShadow(null));
             int id = 100;

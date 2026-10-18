@@ -3154,7 +3154,10 @@ public class ImageLoader {
 
                     if (imageLocation.document != null && !TextUtils.isEmpty(imageLocation.document.localPath)) {
                         File local = new File(imageLocation.document.localPath);
-                        if (local.isFile()) { cacheFile = local; cacheFileExists = true; onlyCache = true; }
+                        if (local.isFile()) {
+                            cacheFile = local; cacheFileExists = true; onlyCache = true;
+                            if ("application/x-tgsticker".equals(imageLocation.document.mime_type)) img.imageType = FileLoader.IMAGE_TYPE_LOTTIE;
+                        }
                     }
                     if (cacheFile == null) {
                         long fileSize = 0;

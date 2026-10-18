@@ -10,7 +10,7 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.*;
 
 /** Native contact authorization and the account's durable incoming request list. */
-public final class MonogramContactActivity extends UniversalFragment implements NotificationCenter.NotificationCenterDelegate {
+public final class MonogramContactActivity extends MonogramSettingsActivity implements NotificationCenter.NotificationCenterDelegate {
     private final String address;
     private final ArrayList<String> requests=new ArrayList<>();
     private XmppContacts.State state;

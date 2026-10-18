@@ -14569,7 +14569,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             final int currentAccount = f.getCurrentAccount();
             final Theme.ResourcesProvider resourcesProvider = f.getResourceProvider();
             return new SearchResult[]{
-                    new SearchResult(500, getString(R.string.EditName), 0, () -> f.presentFragment(new ChangeNameActivity(resourcesProvider))),
+                    new SearchResult(500, getString(R.string.EditName), 0, () -> f.presentFragment(new UserInfoActivity())),
                     new SearchResult(501, getString(R.string.MonogramJabberId), 0, () -> {
                         AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
                         BulletinFactory.of(f).createCopyBulletin(getString(R.string.TextCopied)).show();

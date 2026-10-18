@@ -15,9 +15,8 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalFragment;
 
-public final class MonogramTranslationSettingsActivity extends UniversalFragment {
+public final class MonogramTranslationSettingsActivity extends MonogramSettingsActivity {
     private static final String LIBRE = "libretranslate";
     private static final String GOOGLE = "google";
     private static final String DEEPL = "deepl";
@@ -45,15 +44,15 @@ public final class MonogramTranslationSettingsActivity extends UniversalFragment
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         boolean configured = MonogramTranslation.isConfigured(currentAccount);
         items.add(UItem.asHeader("Translation provider"));
-        items.add(UItem.asButton(1, "Provider", providerName(provider)));
+        items.add(UItem.asSettingsCell(1, "Provider", providerName(provider)));
         if (LIBRE.equals(provider)) {
-            items.add(UItem.asButton(2, "Server URL", TextUtils.isEmpty(endpoint) ? "Required" : endpoint));
+            items.add(UItem.asSettingsCell(2, "Server URL", TextUtils.isEmpty(endpoint) ? "Required" : endpoint));
         } else if (DEEPL.equals(provider)) {
-            items.add(UItem.asButton(2, "DeepL plan", MonogramTranslation.DEEPL_PRO_ENDPOINT.equals(endpoint) ? "Pro" : "Free"));
+            items.add(UItem.asSettingsCell(2, "DeepL plan", MonogramTranslation.DEEPL_PRO_ENDPOINT.equals(endpoint) ? "Pro" : "Free"));
         }
         boolean sameConfiguration = provider.equals(originalProvider) && TextUtils.equals(endpoint, originalEndpoint);
         String keyStatus = pendingKey != null ? "Ready to save" : LIBRE.equals(provider) ? "Optional" : configured && sameConfiguration ? "Stored securely" : "Required";
-        items.add(UItem.asButton(3, "API key", keyStatus));
+        items.add(UItem.asSettingsCell(3, "API key", keyStatus));
         items.add(UItem.asButton(4, "Save configuration").accent());
         items.add(UItem.asShadow("Messages are sent as plaintext to the configured provider when you translate a message or enable chat translation. Google Cloud Translation and DeepL require an API key. LibreTranslate requires an explicit HTTPS server URL and may require a key. API keys are stored encrypted for this account and are never shown here. Changing provider or server never reuses the previous key."));
         if (configured) {
