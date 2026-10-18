@@ -19,11 +19,9 @@ import org.telegram.ui.Components.UniversalAdapter;
 
 /** Native Telegram settings, pack preview and pickers backed by account-local XMPP assets. */
 public final class MonogramPacksActivity extends MonogramSettingsActivity {
-    private final long packId;
     private int initialAction;
     private String initialLink, lastError;
     private ArrayList<MonogramPacks.Pack> packs = new ArrayList<>();
-    private MonogramPacks.Pack pack;
     private boolean busy, creatingEmojis;
     private String creatingName;
     private MonogramPacks.Request request;
@@ -32,10 +30,9 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
     private org.telegram.ui.Components.LineProgressView importLine;
     private android.widget.FrameLayout importMeter;
     private final MonogramPacks.ImportObserver importObserver=this::importChanged;
-    public MonogramPacksActivity(int account) { this(account, 0); }
+    public MonogramPacksActivity(int account) { currentAccount=account; }
     public MonogramPacksActivity(int account, boolean importPack) { this(account); initialAction = importPack ? 1 : 2; }
     public MonogramPacksActivity(int account, String link) { this(account); initialAction = 1; initialLink = link; }
-    private MonogramPacksActivity(int account, long pack) { currentAccount = account; packId = pack; }
     @Override public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
         super.onTransitionAnimationEnd(isOpen, backward);
         if(isOpen && !backward && initialAction!=0) {
@@ -45,11 +42,10 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             },100);
         }
     }
-    @Override protected CharSequence getTitle() { return packId == 0 ? "Stickers and custom emoji" : pack == null ? "Local pack" : pack.name; }
+    @Override protected CharSequence getTitle() { return "Stickers and custom emoji"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-        packs = MonogramPacks.packs(currentAccount); pack = null;
-        for (MonogramPacks.Pack candidate : packs) if (candidate.id == packId) pack = candidate;
-        if (packId == 0) {
+        packs = MonogramPacks.packs(currentAccount);
+        {
             if(importState!=null) {
                 items.add(UItem.asHeader("Telegram import"));
                 String count=importState.total>0 ? importState.completed+" / "+importState.total : importState.active ? "Preparing…" : "";
@@ -70,6 +66,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
                 }
                 if(importState.error!=null) items.add(UItem.asButton(21,"View import error"));
                 String detail=importState.stage;
+                if(!importState.packName.isEmpty()) detail+=" · "+importState.packName;
                 if(importState.active && importState.currentBytes>0) detail+="\n"+org.telegram.messenger.AndroidUtilities.formatFileSize(importState.currentBytes)
                         +(importState.totalBytes>0 ? " / "+org.telegram.messenger.AndroidUtilities.formatFileSize(importState.totalBytes) : " downloaded");
                 if(importState.active) detail+="\nYou can leave this screen while the import continues.";
@@ -78,7 +75,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             }
             items.add(UItem.asHeader("Private packs"));
             if (MonogramPacks.storageError(currentAccount)) items.add(UItem.asShadow("Saved pack data could not be read and has been preserved. Restore a valid backup before adding or changing packs."));
-            items.add(UItem.asButton(1, "Import Telegram pack link"));
+            items.add(UItem.asButton(1, "Import Telegram pack links"));
             items.add(UItem.asButton(2, "Create sticker pack"));
             items.add(UItem.asButton(3, "Create custom emoji pack"));
             items.add(UItem.asShadow("Packs stay on this phone for this Jabber account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Inline emoji in media captions are not supported yet."));
@@ -93,18 +90,9 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             items.add(UItem.asButton(4, MonogramPacks.configured(currentAccount) ? "Replace bot token" : "Add bot token", MonogramPacks.configured(currentAccount) ? "Configured" : "Not configured"));
             if (MonogramPacks.configured(currentAccount)) items.add(UItem.asButton(5, "Remove bot token").red());
             items.add(UItem.asShadow("Import uses Telegram’s official Bot API and contacts api.telegram.org directly. Create a bot with @BotFather and paste its token here. The token is stored encrypted on this phone. It is never sent to your Jabber server. Imported artwork remains subject to its creator’s rights."));
-        } else if (pack != null) {
-            items.add(UItem.asHeader(pack.name));
-            items.add(UItem.asButton(10, "Preview pack"));
-            items.add(UItem.asButton(11, "Rename pack"));
-            items.add(UItem.asButton(12, "Remove pack").red());
-            items.add(UItem.asShadow("Tap an item to edit its name or associated emoji. Names are separate from emoji tags. Removing a pack hides it from the keyboard; files are retained for existing messages."));
-            for (int i = 0; i < pack.items.size(); i++) {
-                MonogramPacks.Item entry = pack.items.get(i);
-                items.add(row(100 + i, entry.name, entry.emoji, entry));
-            }
         }
     }
+
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         if(item.id==21 && importState!=null && importState.error!=null) {
             String detail=importState.error;
@@ -114,19 +102,14 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
         }
         if(item.id==20) { MonogramPacks.cancelImport(currentAccount);return; }
         if (busy || importState!=null && importState.active) return;
-        if (item.object instanceof MonogramPacks.Pack) { presentFragment(new MonogramPacksActivity(currentAccount, ((MonogramPacks.Pack) item.object).id)); return; }
-        if (item.object instanceof MonogramPacks.Item && pack != null) {
-            MonogramPacks.Item entry = (MonogramPacks.Item) item.object;
-            showDialog(new AlertDialog.Builder(getContext()).setTitle(entry.name).setItems(new CharSequence[]{"Rename", "Change emoji tag"}, (dialog, which) ->
-                    input(which == 0 ? "Item name" : "Associated emoji", which == 0 ? entry.name : entry.emoji, false, value -> {
-                        try { MonogramPacks.rename(currentAccount, pack.id, entry.id, value, which == 1); update(); }
-                        catch (Exception failed) { error(failed.getMessage()); }
-                    })).create()); return;
+        if (item.object instanceof MonogramPacks.Pack) {
+            TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=((MonogramPacks.Pack)item.object).id;
+            showDialog(new StickersAlert(getContext(),this,input,MonogramPacks.find(currentAccount,input),null,false));return;
         }
-        if (packId == 0) {
+        {
             if (item.id == 1) {
                 String link=initialLink;initialLink=null;
-                input("Telegram pack link", link==null ? "" : link, false, this::importPack);
+                input("Telegram pack links", link==null ? "" : link, false, this::importPack);
             }
             else if (item.id == 2 || item.id == 3) {
                 creatingEmojis = item.id == 3;
@@ -143,26 +126,23 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             });
             else if (item.id == 5) showDialog(new AlertDialog.Builder(getContext()).setTitle("Remove bot token?").setMessage("Imported packs remain available offline.")
                     .setPositiveButton("Remove", (dialog, which) -> { try { MonogramPacks.saveToken(currentAccount, ""); update(); } catch (Exception failed) { error("Could not remove the token."); } }).setNegativeButton("Cancel", null).create());
-        } else if (pack != null) {
-            if (item.id == 10) {
-                TLRPC.TL_inputStickerSetID input = new TLRPC.TL_inputStickerSetID(); input.id = pack.id;
-                showDialog(new StickersAlert(getContext(), this, input, MonogramPacks.find(currentAccount, input), null, false));
-            } else if (item.id == 11) input("Pack name", pack.name, false, value -> {
-                try { MonogramPacks.rename(currentAccount, pack.id, 0, value, false); update(); } catch (Exception failed) { error(failed.getMessage()); }
-            });
-            else if (item.id == 12) showDialog(new AlertDialog.Builder(getContext()).setTitle("Remove pack?").setPositiveButton("Remove", (dialog, which) -> {
-                try { MonogramPacks.remove(currentAccount, pack.id); finishFragment(); } catch (Exception failed) { error("Could not remove the pack."); }
-            }).setNegativeButton("Cancel", null).create());
         }
     }
+
     @Override public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
         super.onActivityResultFragment(requestCode, resultCode, data);
         if (requestCode != 7201 || resultCode != Activity.RESULT_OK || data == null || creatingName == null) return;
         ArrayList<Uri> uris = new ArrayList<>();
         if (data.getClipData() != null) {
-            for (int i = 0; i < data.getClipData().getItemCount() && i < 201; i++) uris.add(data.getClipData().getItemAt(i).getUri());
+            for (int i = 0; i < data.getClipData().getItemCount(); i++) uris.add(data.getClipData().getItemAt(i).getUri());
         } else if (data.getData() != null) uris.add(data.getData());
-        busy = true; update(); request = MonogramPacks.create(currentAccount, creatingName, creatingEmojis, uris, this::finished); creatingName = null;
+        busy = true; update(); request = MonogramPacks.create(currentAccount, creatingName, creatingEmojis, uris, error -> {
+            finished(error);
+            if(error==null && getParentActivity()!=null && !packs.isEmpty()) {
+                TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=packs.get(0).id;
+                showDialog(new StickersAlert(getContext(),this,input,MonogramPacks.find(currentAccount,input),null,false));
+            }
+        }); creatingName = null;
     }
     private void importPack(String link) {
         if(!MonogramPacks.configured(currentAccount)) {
@@ -177,9 +157,9 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
         catch(Exception invalid) { finished(invalid.getMessage()); }
     }
     private void input(String title, String value, boolean secret, java.util.function.Consumer<String> save) {
-        EditTextCell input = new EditTextCell(getContext(), title, false); input.editText.setSingleLine(true);
+        EditTextCell input = new EditTextCell(getContext(), title, false); input.editText.setSingleLine(!title.equals("Telegram pack links"));
         input.editText.setInputType(InputType.TYPE_CLASS_TEXT | (secret ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_FLAG_CAP_SENTENCES));
-        input.editText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(secret ? 256 : 512)}); input.editText.setText(value);
+        input.editText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(secret ? 256 : title.equals("Telegram pack links") ? 65536 : 512)}); input.editText.setText(value);
         if (android.os.Build.VERSION.SDK_INT >= 26 && secret) input.editText.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
         showDialog(new AlertDialog.Builder(getContext()).setTitle(title).setMessage(secret ? "Create a bot with @BotFather and paste its token. Telegram imports need this token; it stays encrypted on this phone." : null).setView(input).setPositiveButton(secret ? "Save" : "Continue", (dialog, which) -> {
                     String text=input.getText().toString();
@@ -190,7 +170,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
                 .setNegativeButton("Cancel", null).create());
     }
     private UItem row(int id, String title, String subtitle, Object object) { UItem item = UItem.asButton(id, title, subtitle); item.object = object; return item; }
-    private void update() { if (listView != null) { listView.adapter.update(true); if (pack != null && actionBar != null) actionBar.setTitle(pack.name); } }
+    private void update() { if (listView != null) { listView.adapter.update(true); } }
     private void finished(String error) {
         busy = false; lastError=error; update(); if (error != null) error(error);
     }
@@ -204,6 +184,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
         if (request != null) request.cancel();
         super.onFragmentDestroy();
     }
+    @Override protected void onDialogDismiss(android.app.Dialog dialog) { super.onDialogDismiss(dialog);update(); }
     @Override public void onPause() {
         watchingImport=false;MonogramPacks.removeImportObserver(currentAccount,importObserver);
         super.onPause();

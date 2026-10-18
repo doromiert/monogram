@@ -6655,6 +6655,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
             UserConfig.getInstance(currentAccount).saveConfig(false);
         }
+        if (StickersAlert.onLocalStickerFilesResult(requestCode, resultCode, data)) return;
         if (requestCode == 105) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (ApplicationLoader.canDrawOverlays = Settings.canDrawOverlays(this)) {

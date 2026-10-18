@@ -64,6 +64,18 @@ public class MonogramPackArchiveTest {
         assertTrue(MonogramPacks.telegramError(400,new JSONObject().put("error_code",400).put("description","Bad Request: STICKERSET_INVALID")).getMessage().contains("could not find"));
         assertTrue(MonogramPacks.telegramError(400,new JSONObject().put("error_code",400).put("description","Bad Request: file is too big")).getMessage().contains("size limit"));
     }
+    @Test public void portablePacksAllowMoreThanTwoHundredNamedStickers() throws Exception {
+        File directory=Files.createTempDirectory("many-stickers").toFile();
+        MonogramPacks.Pack pack=fixture(directory);
+        for(int i=1;i<260;i++) {
+            MonogramPacks.Item item=new MonogramPacks.Item();item.id=0x4d50000200000000L+i;
+            item.name="Sticker "+i;item.emoji="🙂";item.mime="image/png";item.file="opaque.png";item.width=item.height=1;
+            pack.items.add(item);
+        }
+        File archive=new File(directory,"many.xmsp");MonogramPackArchive.write(pack,directory,archive,CHECK);
+        File staging=new File(directory,"restored");assertTrue(staging.mkdir());
+        assertEquals(260,MonogramPackArchive.read(archive,staging,CHECK,PROGRESS).items.size());
+    }
     private static MonogramPacks.Pack fixture(File directory) throws Exception {
         Files.write(new File(directory,"opaque.png").toPath(),PNG);
         MonogramPacks.Pack pack=new MonogramPacks.Pack();pack.id=0x4d50000100000001L;pack.name="Friends";pack.source="https://t.me/addstickers/NotExported";

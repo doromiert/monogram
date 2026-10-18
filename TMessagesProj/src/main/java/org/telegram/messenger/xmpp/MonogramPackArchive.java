@@ -21,7 +21,7 @@ final class MonogramPackArchive {
     private MonogramPackArchive() {}
 
     static void write(MonogramPacks.Pack pack, File directory, File destination, Check check) throws Exception {
-        if (pack.items.isEmpty() || pack.items.size() > 200) throw new IOException("Packs must contain 1–200 items.");
+        if (pack.items.isEmpty()) throw new IOException("Packs must contain at least one item.");
         JSONObject manifest = new JSONObject().put("format", "xmsp").put("version", 1)
                 .put("name", MonogramPacks.name(pack.name)).put("kind", pack.emojis ? "emoji" : "stickers");
         JSONArray items = new JSONArray(); LinkedHashMap<String, File> files = new LinkedHashMap<>();
@@ -55,11 +55,13 @@ final class MonogramPackArchive {
     static MonogramPacks.Pack read(File archive, File staging, Check check, Progress progress) throws Exception {
         if (!archive.isFile() || archive.length() < 1 || archive.length() > MAX_ARCHIVE) throw new IOException("Invalid archive size.");
         try (ZipFile zip = new ZipFile(archive)) {
-            LinkedHashMap<String, ZipEntry> entries = new LinkedHashMap<>(); long total = 0;
+            LinkedHashMap<String, ZipEntry> entries = new LinkedHashMap<>(); long total = 0, metadataBytes=0;
             Enumeration<? extends ZipEntry> all = zip.entries();
             while (all.hasMoreElements()) {
                 check.check(); ZipEntry entry = all.nextElement(); String path = entry.getName();
-                if (entries.size() >= 201 || entry.isDirectory() || entry.getMethod() != ZipEntry.STORED
+                metadataBytes+=128L+2L*path.length();
+                if(metadataBytes>MAX_MANIFEST) throw new IOException("Archive directory exceeds the safe metadata byte-size limit.");
+                if (entry.isDirectory() || entry.getMethod() != ZipEntry.STORED
                         || entry.getSize() < 1 || entry.getCompressedSize() != entry.getSize()
                         || !(path.equals("manifest.json") || path.matches("assets/[0-9a-f]{64}\\.(png|webp|tgs|webm)"))
                         || entries.put(path, entry) != null) throw new IOException("Invalid or duplicate archive entry.");
@@ -82,7 +84,7 @@ final class MonogramPackArchive {
             MonogramPacks.Pack pack = new MonogramPacks.Pack(); pack.name = MonogramPacks.name(string(manifest, "name")); pack.emojis = kind.equals("emoji");
             Object array = manifest.get("items"); if (!(array instanceof JSONArray)) throw new IOException("Missing pack items.");
             JSONArray items = (JSONArray) array;
-            if (items.length() < 1 || items.length() > 200) throw new IOException("Packs must contain 1–200 items.");
+            if (items.length() < 1) throw new IOException("Packs must contain at least one item.");
             Set<String> ids = new HashSet<>(), used = new HashSet<>(); used.add("manifest.json");
             Map<String, JSONObject> metadata = new LinkedHashMap<>();
             // Validate the whole manifest before creating any artwork files.

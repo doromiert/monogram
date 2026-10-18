@@ -17,7 +17,7 @@ import org.telegram.tgnet.TLRPC;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
-        shadows={MonogramPacksTest.Account.class, MonogramPacksTest.App.class, MonogramPacksTest.Ui.class, MonogramPacksTest.PackUi.class, MonogramPacksTest.EmojiUi.class})
+        shadows={MonogramPacksTest.Account.class, MonogramPacksTest.App.class, MonogramPacksTest.Ui.class, MonogramPacksTest.PackUi.class, MonogramPacksTest.EmojiUi.class,MonogramPacksTest.Vault.class})
 public class MonogramPacksTest {
     static String jid;
     static MonogramController controller;
@@ -35,7 +35,33 @@ public class MonogramPacksTest {
         @Implementation public static void runOnUIThread(Runnable action, long delay) { action.run(); }
     }
     @Implements(value=MonogramPacks.class,isInAndroidSdk=false)
-    public static class PackUi { @Implementation public static void refresh(int account) {} }
+    public static class PackUi {
+        @Implementation public static void refresh(int account) {}
+        @Implementation protected static org.json.JSONObject request(String token,String method,String key,String value,MonogramPacks.Request operation) throws Exception {
+            if(method.equals("getStickerSet")) {
+                if(value.equals("Broken")) throw new java.io.IOException("fixture failure");
+                org.json.JSONArray items=new org.json.JSONArray();
+                for(int i=0;i<8;i++) items.put(new org.json.JSONObject().put("file_id",String.valueOf(i)).put("emoji","🙂"));
+                return new org.json.JSONObject().put("result",new org.json.JSONObject().put("name",value).put("title",value).put("sticker_type","regular").put("stickers",items));
+            }
+            int now=networkActive.incrementAndGet();networkPeak.accumulateAndGet(now,Math::max);
+            try {
+                parallelReady.countDown();
+                if(!parallelReady.await(5,java.util.concurrent.TimeUnit.SECONDS)) throw new java.io.IOException("Downloads were serialized");
+                return new org.json.JSONObject().put("result",new org.json.JSONObject().put("file_path",value+".png"));
+            } finally { networkActive.decrementAndGet(); }
+        }
+        @Implementation protected static byte[] download(String url,int limit,MonogramPacks.Request operation) {
+            return java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+        }
+    }
+    static java.util.concurrent.CountDownLatch parallelReady;
+    static java.util.concurrent.atomic.AtomicInteger networkActive=new java.util.concurrent.atomic.AtomicInteger(),networkPeak=new java.util.concurrent.atomic.AtomicInteger();
+    @Implements(value=AccountVault.class,isInAndroidSdk=false)
+    public static class Vault {
+        @Implementation protected String encrypt(String value) { return "fixture"; }
+        @Implementation protected String decrypt(String value) { return "fixture"; }
+    }
     @Implements(value=org.telegram.ui.Components.AnimatedEmojiDrawable.class,isInAndroidSdk=false)
     public static class EmojiUi { @Implementation public static void clearMonogramPacks(int account) {} }
     @Before public void setup() {
@@ -75,6 +101,85 @@ public class MonogramPacksTest {
         assertNotEquals(original.id,restored.id);assertNotEquals(item.id,restored.items.get(0).id);
         assertEquals(item.name,restored.items.get(0).name);assertTrue(restored.privatePack);assertFalse(restored.connected);
         assertTrue(restored.source.startsWith("xmsp:"));assertNotNull(MonogramPacks.document(0,restored.items.get(0).id));archive.get().delete();
+    }
+    @Test public void detachAndNativeEditsPersistWithoutStickerOrPackCountCaps() throws Exception {
+        jid="editor@example.org";
+        String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        ArrayList<MonogramPacks.Pack> packs=new ArrayList<>();
+        for(int p=0;p<105;p++) {
+            MonogramPacks.Pack pack=new MonogramPacks.Pack();pack.id=0x4d50001000000000L+p+1;
+            pack.name="Pack "+p;pack.source="https://t.me/addstickers/Pack_"+p;pack.connected=p==0;
+            for(int i=0;i<(p==0 ? 260 : 1);i++) {
+                MonogramPacks.Item item=new MonogramPacks.Item();item.id=0x4d50002000000000L+p*1000+i+1;
+                item.name="Sticker "+i;item.emoji="🙂";item.mime="image/png";item.file="artwork.png";item.width=item.height=1;pack.items.add(item);
+            }
+            packs.add(pack);
+        }
+        ReflectionHelpers.callStaticMethod(MonogramPacks.class,"write",ReflectionHelpers.ClassParameter.from(String.class,scope),ReflectionHelpers.ClassParameter.from(ArrayList.class,packs));
+        long id=packs.get(0).id,first=packs.get(0).items.get(0).id,last=packs.get(0).items.get(259).id;
+        try { MonogramPacks.rename(0,id,0,"Changed",false);fail("Connected pack was edited"); } catch(IllegalStateException expected) {}
+        MonogramPacks.detach(0,id);
+        MonogramPacks.Pack detached=MonogramPacks.pack(0,id);
+        assertFalse(detached.connected);assertFalse(MonogramPacks.telegramSource(detached));
+        assertEquals(260,detached.items.size());assertEquals(first,detached.items.get(0).id);
+        assertEquals("artwork.png",detached.items.get(0).file);
+        MonogramPacks.rename(0,id,0,"My pack",false);
+        MonogramPacks.rename(0,id,last,"My sticker",false);
+        MonogramPacks.rename(0,id,last,"👋",true);
+        MonogramPacks.moveItem(0,id,last,0);
+        MonogramPacks.removeItem(0,id,first);
+        java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+        detached=MonogramPacks.pack(0,id);
+        assertEquals(105,MonogramPacks.packs(0).size());assertEquals(259,detached.items.size());
+        assertEquals("My pack",detached.name);assertEquals(last,detached.items.get(0).id);
+        assertEquals("My sticker",detached.items.get(0).name);assertEquals("👋",detached.items.get(0).emoji);
+        TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=id;
+        assertTrue(MonogramPacks.find(0,input).set.creator);
+        jid="other@example.org";assertNull(MonogramPacks.pack(0,id));
+    }
+    @Test public void bulkQueueContinuesAfterFailureAndDownloadsFourAtATimeInOriginalOrder() throws Exception {
+        jid="bulk@example.org";parallelReady=new java.util.concurrent.CountDownLatch(4);networkActive.set(0);networkPeak.set(0);
+        MonogramPacks.saveToken(0,"123456:abcdefghijklmnopqrstuvwx");
+        java.util.concurrent.CountDownLatch finished=new java.util.concurrent.CountDownLatch(1);
+        MonogramPacks.ImportObserver observer=progress->{if(!progress.active) finished.countDown();};
+        MonogramPacks.addImportObserver(0,observer);
+        try {
+            MonogramPacks.startImport(0,"https://t.me/addstickers/First\nhttps://t.me/addstickers/Broken\nhttps://t.me/addstickers/Last");
+            assertTrue(finished.await(15,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(4,networkPeak.get());assertEquals(0,networkActive.get());
+            assertEquals(2,MonogramPacks.packs(0).size());
+            for(MonogramPacks.Pack pack:MonogramPacks.packs(0)) {
+                assertEquals(8,pack.items.size());
+                for(int i=0;i<8;i++) assertEquals("Item "+(i+1),pack.items.get(i).name);
+            }
+            assertTrue(MonogramPacks.importProgress(0).error.contains("2 / 3 packs imported"));
+        } finally { MonogramPacks.removeImportObserver(0,observer); }
+    }
+    private static class Connection extends javax.net.ssl.HttpsURLConnection {
+        boolean disconnected;
+        Connection() throws Exception { super(new java.net.URL("https://example.org")); }
+        public void disconnect() { disconnected=true; }
+        public boolean usingProxy() { return false; }
+        public void connect() {}
+        public String getCipherSuite() { return "fixture"; }
+        public java.security.cert.Certificate[] getLocalCertificates() { return null; }
+        public java.security.cert.Certificate[] getServerCertificates() { return null; }
+    }
+    @Test public void cancellationDisconnectsEveryParallelConnection() throws Exception {
+        MonogramPacks.Request root=ReflectionHelpers.callConstructor(MonogramPacks.Request.class,ReflectionHelpers.ClassParameter.from(int.class,0));
+        Connection[] connections=new Connection[4];
+        for(int i=0;i<4;i++) {
+            MonogramPacks.Request child=ReflectionHelpers.callConstructor(MonogramPacks.Request.class,ReflectionHelpers.ClassParameter.from(int.class,0));
+            ReflectionHelpers.setField(child,"parent",root);connections[i]=new Connection();
+            ReflectionHelpers.callInstanceMethod(child,"attach",ReflectionHelpers.ClassParameter.from(javax.net.ssl.HttpsURLConnection.class,connections[i]));
+        }
+        root.cancel();for(Connection connection:connections) assertTrue(connection.disconnected);
+    }
+    @Test public void bulkLinksValidateAllInputAndDeduplicateCanonicalPackNames() {
+        ArrayList<String> links=MonogramPacks.parseLinks("https://t.me/addstickers/Cats\nhttps://telegram.me/addemoji/Smiles, https://t.me/addstickers/cats");
+        assertEquals(2,links.size());assertEquals("https://t.me/addstickers/Cats",links.get(0));
+        assertEquals("https://t.me/addemoji/Smiles",links.get(1));
+        try { MonogramPacks.parseLinks("https://t.me/addstickers/Cats\nhttps://evil.example/pack");fail(); } catch(IllegalArgumentException expected) {}
     }
     @Test public void packLinksAreStrictAndNamesRemainSeparateFromEmojiTags() throws Exception {
         assertFalse(MonogramPacks.parseLink("https://t.me/addstickers/Cat_pack").emojis);

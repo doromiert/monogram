@@ -41,7 +41,7 @@ Use generated opaque destination names after validating exact archive names.
 
 Version 1 reader bounds:
 
-- 1–200 items; 1–200 unique assets, plus one manifest entry.
+- At least one item and one asset, plus one manifest entry; no fixed item-count limit. Byte-size and integrity limits below still apply.
 - Manifest at most 4 MiB; each asset 1–20 MiB; all asset bytes at most 100 MiB.
 - Entire container at most 105 MiB, including ZIP headers and central directory.
 - Asset dimensions 1–512 on each axis; media types below are the only supported

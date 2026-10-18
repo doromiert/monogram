@@ -28,6 +28,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import org.telegram.messenger.xmpp.MonogramPacks;
 import android.os.Parcelable;
 import android.text.Editable;
 import android.text.InputType;
@@ -162,6 +163,11 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     private int itemSize, itemHeight;
     public boolean probablyEmojis;
     private boolean isEditModeEnabled;
+    private boolean localOptionsAdded;
+    private String localPackOwner;
+    private static java.lang.ref.WeakReference<StickersAlert> addingLocalStickers;
+    private static final int LOCAL_STICKER_FILES = 7212;
+
 
     public TLRPC.TL_messages_stickerSet stickerSet;
     private TLRPC.Document selectedSticker;
@@ -235,6 +241,9 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
         @Override
         public void deleteSticker(TLRPC.Document document) {
+            if (localPack()!=null) {
+                editableLocalPack(() -> editLocalPack(() -> MonogramPacks.removeItem(currentAccount,stickerSet.set.id,document.id))); return;
+            }
             stickerSet.documents.remove(document);
             boolean empty = stickerSet.documents.isEmpty();
             if (empty)
@@ -266,6 +275,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
         @Override
         public void editSticker(TLRPC.Document document) {
+            if(localPack()!=null) { localItemMenu(document,gridView);return; }
             StickersAlert.editSticker(parentFragment, stickerSet, document);
         }
 
@@ -966,7 +976,12 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
             @Override
             public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
                 super.onSelectedChanged(viewHolder, actionState);
-                if (actionState == ItemTouchHelper.ACTION_STATE_IDLE && draggedDocument != null && movedPos > 0) {
+                if (actionState == ItemTouchHelper.ACTION_STATE_IDLE && draggedDocument != null && movedPos >= 0) {
+                    if(localPack()!=null) {
+                        long movedId=draggedDocument.id; int position=movedPos;
+                        movedPos=-1;draggedDocument=null;
+                        editLocalPack(() -> MonogramPacks.moveItem(currentAccount,stickerSet.set.id,movedId,position));return;
+                    }
                     TLRPC.TL_stickers_changeStickerPosition req = new TLRPC.TL_stickers_changeStickerPosition();
                     req.position = movedPos;
                     req.sticker = MediaDataController.getInputStickerSetItem(draggedDocument, "").document;
@@ -1012,6 +1027,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         });
         stickersOnItemClickListener = (view, position) -> {
             if (view instanceof AddStickerBtnView) {
+                if(localPack()!=null) { addLocalStickers();return; }
                 StickersDialogs.showAddStickerDialog(stickerSet, view, parentFragment, resourcesProvider);
                 return;
             }
@@ -1225,7 +1241,111 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         }
     }
 
+    private MonogramPacks.Pack localPack() {
+        if(stickerSet==null || stickerSet.set==null) return null;
+        if(localPackOwner!=null && !localPackOwner.equals(MonogramPacks.owner(currentAccount))) return null;
+        MonogramPacks.Pack pack=MonogramPacks.pack(currentAccount,stickerSet.set.id);
+        if(pack!=null && localPackOwner==null) localPackOwner=MonogramPacks.owner(currentAccount);
+        return pack;
+    }
+    private interface LocalPackChange { void run() throws Exception; }
+    private boolean editLocalPack(LocalPackChange change) {
+        if(localPack()==null) return false;
+        try { change.run(); reloadLocalPack();return true; }
+        catch(Exception failed) { localPackError(failed.getMessage());return false; }
+    }
+    private void localPackError(String text) {
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Sticker pack")
+                .setMessage(text==null ? "Could not update this pack." : text)
+                .setPositiveButton(LocaleController.getString(R.string.OK),null).show();
+    }
+    private void reloadLocalPack() {
+        MonogramPacks.Pack pack=localPack();
+        if(pack==null || !pack.installed) { dismiss();return; }
+        TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=pack.id;
+        stickerSet=MonogramPacks.find(currentAccount,input);
+        MediaDataController.getInstance(currentAccount).putStickerSet(stickerSet);
+        updateFields();adapter.notifyDataSetChanged();checkOptions();
+    }
+    private void editableLocalPack(Runnable action) {
+        MonogramPacks.Pack pack=localPack();if(pack==null) return;
+        if(pack.connected || MonogramPacks.telegramSource(pack)) detachLocalPack(action);else action.run();
+    }
+    private void detachLocalPack(Runnable after) {
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Detach from Telegram?")
+                .setMessage("Keep all stickers on this phone as an editable local pack. The Telegram source link is removed; this pack will not receive Telegram updates. Existing messages and favorites keep working.")
+                .setPositiveButton("Detach",(dialog,which) -> {
+                    if(editLocalPack(() -> MonogramPacks.detach(currentAccount,stickerSet.set.id)) && after!=null) after.run();
+                }).setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+    }
+    private void localItemMenu(TLRPC.Document document,View anchor) {
+        editableLocalPack(() -> {
+            MonogramPacks.Pack pack=localPack();if(pack==null) return;
+            for(MonogramPacks.Item item:pack.items) if(item.id==document.id) {
+                ItemOptions.makeOptions(containerView,resourcesProvider,anchor)
+                    .add(R.drawable.msg_edit,"Edit name",() -> localItemInput(item,false))
+                    .add(R.drawable.msg_emoji_stickers,"Change emoji tag",() -> localItemInput(item,true))
+                    .add(R.drawable.msg_delete,"Remove sticker",() -> new AlertDialog.Builder(getContext(),resourcesProvider)
+                        .setTitle("Remove sticker?").setPositiveButton("Remove",(dialog,which) -> editLocalPack(() -> MonogramPacks.removeItem(currentAccount,pack.id,item.id)))
+                        .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show())
+                    .show();return;
+            }
+        });
+    }
+    private void localItemInput(MonogramPacks.Item item,boolean emoji) {
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),emoji ? "Associated emoji" : "Sticker name",false);
+        input.editText.setSingleLine(true);input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
+        input.editText.setText(emoji ? item.emoji : item.name);
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle(emoji ? "Associated emoji" : "Sticker name").setView(input)
+                .setPositiveButton(LocaleController.getString(R.string.Save),(dialog,which) -> editLocalPack(() -> MonogramPacks.rename(currentAccount,stickerSet.set.id,item.id,input.getText().toString(),emoji)))
+                .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+    }
+    private void addLocalStickers() {
+        editableLocalPack(() -> {
+            try {
+                android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                        .setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        .putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE,true)
+                        .putExtra(android.content.Intent.EXTRA_MIME_TYPES,new String[]{"image/*","video/webm","application/gzip","application/x-tgsticker","application/octet-stream"});
+                addingLocalStickers=new java.lang.ref.WeakReference<>(this);
+                Activity activity=parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity();
+                if(activity==null) throw new IllegalStateException("Reopen the pack to select files.");
+                activity.startActivityForResult(intent,LOCAL_STICKER_FILES);
+            } catch(Exception failed) { addingLocalStickers=null;localPackError("Could not open the file picker."); }
+        });
+    }
+    public static boolean onLocalStickerFilesResult(int requestCode,int resultCode,android.content.Intent data) {
+        if(requestCode!=LOCAL_STICKER_FILES) return false;
+        StickersAlert sheet=addingLocalStickers==null ? null : addingLocalStickers.get();addingLocalStickers=null;
+        if(sheet==null || sheet.isDismissed() || sheet.localPack()==null || resultCode!=Activity.RESULT_OK || data==null) return true;
+        ArrayList<Uri> files=new ArrayList<>();
+        if(data.getClipData()!=null) for(int i=0;i<data.getClipData().getItemCount();i++) files.add(data.getClipData().getItemAt(i).getUri());
+        else if(data.getData()!=null) files.add(data.getData());
+        if(files.isEmpty()) return true;
+        sheet.pickerBottomLayout.setText("Adding stickers…",true);sheet.pickerBottomLayout.setEnabled(false);
+        MonogramPacks.addItems(sheet.currentAccount,sheet.stickerSet.set.id,files,error -> {
+            if(sheet.isDismissed() || sheet.localPack()==null) return;
+            sheet.pickerBottomLayout.setEnabled(true);sheet.reloadLocalPack();
+            if(error!=null) sheet.localPackError(error);
+        });
+        return true;
+    }
+
     private void checkOptions() {
+        MonogramPacks.Pack local=localPack();
+        if(local!=null) {
+            if(!localOptionsAdded) {
+                optionsButton.removeAllSubItems();
+                optionsButton.addSubItem(103,R.drawable.tabs_reorder,LocaleController.getString(R.string.StickersReorder));
+                optionsButton.addSubItem(104,R.drawable.msg_edit,LocaleController.getString(R.string.EditName));
+                optionsButton.addSubItem(106,R.drawable.menu_sticker_add,"Add stickers");
+                optionsButton.addSubItem(107,R.drawable.msg_link,"Detach from Telegram");
+                optionsButton.addSubItem(105,R.drawable.msg_delete,"Remove pack");
+                localOptionsAdded=true;
+            }
+            if(MonogramPacks.telegramSource(local) || local.connected) optionsButton.showSubItem(107);else optionsButton.hideSubItem(107);
+            return;
+        }
         final MediaDataController mediaDataController = MediaDataController.getInstance(currentAccount);
         boolean notInstalled = stickerSet == null || !mediaDataController.isStickerPackInstalled(stickerSet.set.id);
         if (stickerSet != null && stickerSet.set != null && stickerSet.set.creator && deleteItem == null && !DISABLE_STICKER_EDITOR) {
@@ -1326,6 +1446,20 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     }
 
     private void onSubItemClick(int id) {
+        if(localPack()!=null && id>=103 && id<=107) {
+            optionsButton.closeSubMenu();
+            if(id==103) { if(isEditModeEnabled) disableEditMode();else enableEditMode(); }
+            else if(id==104) editableLocalPack(() -> StickersDialogs.showNameEditorDialog(stickerSet.set,resourcesProvider,getContext(),(text,done) -> {
+                boolean success=editLocalPack(() -> MonogramPacks.rename(currentAccount,stickerSet.set.id,0,text.toString(),false));done.run(success);
+            }));
+            else if(id==105) new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Remove pack?")
+                    .setMessage("Existing messages and their artwork are kept.")
+                    .setPositiveButton("Remove",(dialog,which) -> editLocalPack(() -> MonogramPacks.remove(currentAccount,stickerSet.set.id)))
+                    .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+            else if(id==106) addLocalStickers();
+            else if(id==107) detachLocalPack(null);
+            return;
+        }
         if (stickerSet == null) {
             return;
         }
@@ -1429,6 +1563,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         if (titleTextView == null) {
             return;
         }
+        if(localPack()!=null) stickerSet.set.creator=true;
         if (stickerSet != null && stickerSet.documents != null && !stickerSet.documents.isEmpty()) {
             SpannableStringBuilder stringBuilder = null;
             CharSequence title = stickerSet.set.title;
@@ -2315,6 +2450,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                     if (stickerSet == null) return;
                     cell.setSticker(stickerSet.documents.get(position), null, stickerSet, null, showEmoji, isEditModeEnabled);
                     cell.editModeIcon.setOnClickListener(v -> {
+                        if(localPack()!=null) { localItemMenu(cell.getSticker(),cell);return; }
                         ContentPreviewViewer.getInstance().setDelegate(previewDelegate);
                         ContentPreviewViewer.getInstance().showMenuFor(cell);
                     });
@@ -2372,7 +2508,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 totalItems = importingStickersPaths.size();
             } else {
                 totalItems = stickerSet != null ? stickerSet.documents.size() : 0;
-                if (stickerSet != null && stickerSet.set.creator && stickerSet.documents.size() < STICKERS_MAX_COUNT && !DISABLE_STICKER_EDITOR && !stickerSet.set.masks && !stickerSet.set.emojis) {
+                if (stickerSet != null && stickerSet.set.creator && (localPack()!=null || stickerSet.documents.size() < STICKERS_MAX_COUNT) && !DISABLE_STICKER_EDITOR && !stickerSet.set.masks && (!stickerSet.set.emojis || localPack()!=null)) {
                     totalItems++;
                 }
             }
@@ -2407,6 +2543,8 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
     @SuppressLint("NotifyDataSetChanged")
     public void enableEditMode() {
+        MonogramPacks.Pack local=localPack();
+        if(local!=null && (local.connected || MonogramPacks.telegramSource(local))) { detachLocalPack(this::enableEditMode);return; }
         if (isEditModeEnabled) {
             return;
         }
