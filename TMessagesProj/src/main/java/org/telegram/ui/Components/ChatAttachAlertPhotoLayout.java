@@ -2453,7 +2453,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         }
         if (!parentAlert.destroyed && parentAlert.isShowing() && deviceHasGoodCamera && parentAlert.getBackDrawable().getAlpha() != 0 && !cameraOpened && cameraRequested) {
             showCamera();
-            openCamera(false);
+            openCamera(true);
         }
     }
 
@@ -2483,8 +2483,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         cameraPanel.setVisibility(View.VISIBLE);
         cameraPanel.setTag(null);
         animateCameraValues[0] = 0;
-        animateCameraValues[1] = itemSize;
-        animateCameraValues[2] = itemSize * 2 + dp(GAP);
+        animateCameraValues[1] = cameraButton != null ? dp(56) : itemSize;
+        animateCameraValues[2] = cameraButton != null ? dp(56) : itemSize * 2 + dp(GAP);
         additionCloseCameraY = 0;
         cameraExpanded = true;
         if (cameraView != null) {
@@ -2610,9 +2610,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     }
                     if (cameraAnimationInProgress) {
                         AndroidUtilities.rectTmp.set(animationClipLeft + cameraViewOffsetX * (1f - cameraOpenProgress), animationClipTop + cameraViewOffsetY * (1f - cameraOpenProgress), animationClipRight, animationClipBottom);
-                        outline.setRect((int) AndroidUtilities.rectTmp.left, (int) AndroidUtilities.rectTmp.top, (int) AndroidUtilities.rectTmp.right, Math.min(maxY, (int) AndroidUtilities.rectTmp.bottom));
+                        outline.setRoundRect((int) AndroidUtilities.rectTmp.left, (int) AndroidUtilities.rectTmp.top, (int) AndroidUtilities.rectTmp.right, Math.min(maxY, (int) AndroidUtilities.rectTmp.bottom), cameraButton != null ? dp(28) * (1f - cameraOpenProgress) : 0);
                     } else if (!cameraAnimationInProgress && !cameraOpened) {
-                        int rad = dp(RADIUS);
+                        int rad = cameraButton != null ? dp(28) : dp(RADIUS);
                         outline.setRoundRect((int) cameraViewOffsetX, (int) cameraViewOffsetY, view.getMeasuredWidth() + rad, Math.min(maxY, view.getMeasuredHeight()) + rad, rad);
                     } else {
                         outline.setRect(0, 0, view.getMeasuredWidth(), Math.min(maxY, view.getMeasuredHeight()));
@@ -2853,8 +2853,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         if (takingPhoto || cameraView == null) {
             return;
         }
-        animateCameraValues[1] = itemSize;
-        animateCameraValues[2] = itemSize * 2 + dp(GAP);
+        animateCameraValues[1] = cameraButton != null ? dp(56) : itemSize;
+        animateCameraValues[2] = cameraButton != null ? dp(56) : itemSize * 2 + dp(GAP);
         if (zoomControlHideRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(zoomControlHideRunnable);
             zoomControlHideRunnable = null;
@@ -3072,8 +3072,10 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         if (cameraButton != null) {
             int[] origin = new int[2];
             cameraButton.getLocationOnScreen(origin);
-            cameraViewLocation[0] = origin[0];
-            cameraViewLocation[1] = origin[1];
+            int[] containerOrigin = new int[2];
+            parentAlert.getContainer().getLocationOnScreen(containerOrigin);
+            cameraViewLocation[0] = origin[0] - containerOrigin[0];
+            cameraViewLocation[1] = origin[1] - containerOrigin[1];
             applyCameraViewPosition();
             return;
         }
@@ -3152,8 +3154,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 cameraView.setTranslationX(cameraViewLocation[0]);
                 // cameraView.setTranslationY(cameraViewLocation[1] + currentPanTranslationY);
             }
-            int finalWidth = itemSize;
-            int finalHeight = itemSize * 2 + dp(GAP);
+            int finalWidth = cameraButton != null ? dp(56) : itemSize;
+            int finalHeight = cameraButton != null ? dp(56) : itemSize * 2 + dp(GAP);
 
             LayoutParams layoutParams;
             if (!cameraOpened) {
