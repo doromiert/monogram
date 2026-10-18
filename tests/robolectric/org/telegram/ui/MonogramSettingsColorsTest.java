@@ -53,6 +53,35 @@ public class MonogramSettingsColorsTest {
         cell.setTag(key);
         binding.setColor(0xff268acc,false,false);assertEquals(0xff268acc,cell.valueTextView.getDrawable().getTextColor());
     }
+    public static class InputCell extends FrameLayout {
+        public final org.telegram.ui.Components.EditTextBoldCursor input;
+        public final android.widget.EditText plainInput;
+        public InputCell(Context context) {
+            super(context);
+            addView(input=new org.telegram.ui.Components.EditTextBoldCursor(context));
+            addView(plainInput=new android.widget.EditText(context));
+        }
+    }
+
+    @Test public void reflectedHintsKeepEnteredTextAndForegroundAcrossThemes() {
+        Context context=RuntimeEnvironment.getApplication();ApplicationLoader.applicationContext=context;
+        FrameLayout list=new FrameLayout(context);InputCell cell=new InputCell(context);list.addView(cell);
+        cell.input.setText("My saved reply");cell.plainInput.setText("Another reply");
+        int foreground=0xffeeeeee;
+        cell.input.setTextColor(foreground);cell.plainInput.setTextColor(foreground);
+        ThemeDescription nativeHint=new ThemeDescription(list,ThemeDescription.FLAG_HINTTEXTCOLOR,new Class[]{InputCell.class},new String[]{"input"},null,null,null,Theme.key_windowBackgroundWhiteHintText);
+        ThemeDescription plainHint=new ThemeDescription(list,ThemeDescription.FLAG_HINTTEXTCOLOR,new Class[]{InputCell.class},new String[]{"plainInput"},null,null,null,Theme.key_windowBackgroundWhiteHintText);
+        for(int color:new int[]{0xff999999,0xff657585,0xff999999}) {
+            nativeHint.setColor(color,false,false);plainHint.setColor(color,false,false);
+            assertEquals(color,(int)org.robolectric.util.ReflectionHelpers.getField(cell.input,"hintColor"));
+            assertEquals(color,cell.plainInput.getCurrentHintTextColor());
+            assertEquals(foreground,cell.input.getCurrentTextColor());
+            assertEquals(foreground,cell.plainInput.getCurrentTextColor());
+            assertEquals("My saved reply",cell.input.getText().toString());
+            assertEquals("Another reply",cell.plainInput.getText().toString());
+        }
+    }
+
     private static class ScrollFixture extends androidx.recyclerview.widget.RecyclerView {
         boolean scrolled;
         ScrollFixture(Context context) { super(context); }

@@ -753,7 +753,25 @@ public class ThemeDescription {
                 }
             }
         } else {
-            textView.setTextColor(color);
+            boolean hintColor = (changeFlags & FLAG_HINTTEXTCOLOR) != 0;
+            boolean cursorColor = (changeFlags & FLAG_CURSORCOLOR) != 0;
+            if (hintColor) {
+                if (textView instanceof EditTextBoldCursor) {
+                    if ((changeFlags & FLAG_PROGRESSBAR) != 0) {
+                        ((EditTextBoldCursor) textView).setHeaderHintColor(color);
+                    } else {
+                        ((EditTextBoldCursor) textView).setHintColor(color);
+                    }
+                } else {
+                    textView.setHintTextColor(color);
+                }
+            }
+            if (cursorColor && textView instanceof EditTextBoldCursor) {
+                ((EditTextBoldCursor) textView).setCursorColor(color);
+            }
+            if ((changeFlags & FLAG_TEXTCOLOR) != 0 || !hintColor && !cursorColor) {
+                textView.setTextColor(color);
+            }
         }
     }
 

@@ -4329,7 +4329,7 @@
     <string name="CallReportSent">Thank you for helping make Telegram calls better.</string>
     <string name="TranscriptionReportSent">Thank you for your feedback.</string>
     <string name="VoipQuickReplies">Respond with Text</string>
-    <string name="VoipQuickRepliesExplain">These quick responses will be available when you respond to an incoming call with a Telegram message. Change them to say anything you like.</string>
+    <string name="VoipQuickRepliesExplain">These quick responses will be available when you respond to an incoming call with a Monogram message. Change them to say anything you like.</string>
     <string name="QuickReplyDefault1">Can\'t talk now. What\'s up?</string>
     <string name="QuickReplyDefault2">I\'ll call you right back.</string>
     <string name="QuickReplyDefault3">I\'ll call you later.</string>
