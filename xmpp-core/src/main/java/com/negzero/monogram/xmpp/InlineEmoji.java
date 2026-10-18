@@ -61,7 +61,7 @@ public final class InlineEmoji {
         this.body=body;this.ranges=Collections.unmodifiableList(copy);
     }
     public static boolean supported(String mime) {
-        return "image/png".equals(mime) || "image/webp".equals(mime) || "application/x-tgsticker".equals(mime) || "video/webm".equals(mime);
+        return "image/gif".equals(mime) || "image/png".equals(mime) || "image/webp".equals(mime) || "application/x-tgsticker".equals(mime) || "video/webm".equals(mime);
     }
     public static void initialize() {
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("html",HTML,StandardExtensionElementProvider.INSTANCE);

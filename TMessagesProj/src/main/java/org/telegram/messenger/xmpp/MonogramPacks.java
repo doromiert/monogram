@@ -221,7 +221,7 @@ public final class MonogramPacks {
                     item.id = entry.getLong("id"); item.name = name(entry.getString("name")); item.emoji = tag(entry.optString("emoji", "🙂"));
                     item.mime = entry.getString("mime"); item.file = entry.getString("file");
                     item.width = dimension(entry.optInt("width", 512)); item.height = dimension(entry.optInt("height", 512));
-                    if (!localId(item.id) || !used.add(item.id) || !MonogramStickers.supported(item.mime) || !item.file.matches("[A-Za-z0-9_-]+\\.(webp|png|tgs|webm)")) throw new IOException();
+                    if (!localId(item.id) || !used.add(item.id) || !MonogramStickers.supported(item.mime) || !item.file.matches("[A-Za-z0-9_-]+\\.(webp|png|gif|tgs|webm)")) throw new IOException();
                     pack.items.add(item);
                 }
                 if (!localId(pack.id) || pack.items.isEmpty()) throw new IOException();
@@ -623,10 +623,10 @@ public final class MonogramPacks {
                         Request child=new Request(account);child.parent=group;
                         JSONObject remote=request(token,"getFile","file_id",sticker.getString("file_id"),child).getJSONObject("result");
                         String path=remote.getString("file_path");
-                        if(!path.matches("[A-Za-z0-9_/-]+\\.(webp|png|tgs|webm)") || path.contains("..")) throw new IOException();
+                        if(!path.matches("[A-Za-z0-9_/-]+\\.(webp|png|gif|tgs|webm)") || path.contains("..")) throw new IOException();
                         Item item=new Item();item.id=id(scope,pending);item.emoji=tag(sticker.optString("emoji","🙂"));item.name="Item "+(index+1);
                         String ext=path.substring(path.lastIndexOf('.'));item.file=UUID.randomUUID()+ext;
-                        item.mime=ext.equals(".tgs") ? "application/x-tgsticker" : ext.equals(".webm") ? "video/webm" : ext.equals(".png") ? "image/png" : "image/webp";
+                        item.mime=ext.equals(".gif") ? "image/gif" : ext.equals(".tgs") ? "application/x-tgsticker" : ext.equals(".webm") ? "video/webm" : ext.equals(".png") ? "image/png" : "image/webp";
                         item.width=dimension(sticker.optInt("width",512));item.height=dimension(sticker.optInt("height",512));
                         child.mediaDownload=true;
                         child.byteProgress=(bytes,length) -> {
@@ -707,7 +707,12 @@ public final class MonogramPacks {
                         if (input == null) throw new IOException(); data = bytes(input, MAX_FILE, operation);
                     }
                     String ext; Item item = new Item(); item.id = id(expectedScope, pending); item.name = stickerName == null ? "Item " + (pack.items.size() + 1) : name(stickerName); item.emoji = tag(emoji);
-                    if (data.length > 4 && (data[0] & 255) == 31 && (data[1] & 255) == 139) { ext = ".tgs"; item.mime = "application/x-tgsticker"; item.width = item.height = 512; }
+                    if (data.length >= 13 && data[0]=='G' && data[1]=='I' && data[2]=='F') {
+                        ext=".gif";item.mime="image/gif";
+                        item.width=(data[6]&255)|((data[7]&255)<<8);item.height=(data[8]&255)|((data[9]&255)<<8);
+                        double scale=Math.min(1.0,512.0/Math.max(item.width,item.height));
+                        item.width=Math.max(1,(int)Math.round(item.width*scale));item.height=Math.max(1,(int)Math.round(item.height*scale));
+                    } else if (data.length > 4 && (data[0] & 255) == 31 && (data[1] & 255) == 139) { ext = ".tgs"; item.mime = "application/x-tgsticker"; item.width = item.height = 512; }
                     else if (data.length > 4 && (data[0] & 255) == 26 && (data[1] & 255) == 69 && (data[2] & 255) == 223 && (data[3] & 255) == 163) {
                         ext = ".webm"; item.mime = "video/webm"; item.width = item.height = 512;
                     } else {
@@ -786,6 +791,11 @@ public final class MonogramPacks {
                 if (animation.optInt("w") != 512 || animation.optInt("h") != 512 || animation.optDouble("fr") <= 0 || animation.optDouble("fr") > 60
                         || animation.optDouble("op") - animation.optDouble("ip") > animation.optDouble("fr") * 3 || !animation.has("layers")) throw new IOException();
             }
+        } else if ("image/gif".equals(mime)) {
+            if(data.length<14 || data[0]!='G' || data[1]!='I' || data[2]!='F' || data[3]!='8'
+                    || (data[4]!='7' && data[4]!='9') || data[5]!='a') throw new IOException("Invalid GIF.");
+            int width=(data[6]&255)|((data[7]&255)<<8),height=(data[8]&255)|((data[9]&255)<<8);
+            if(width<1 || height<1 || width>12000 || height>12000 || (long)width*height>50000000) throw new IOException("GIF dimensions are too large.");
         } else if ("image/webp".equals(mime)) {
             if (data.length < 12 || data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F' || data[8] != 'W' || data[9] != 'E' || data[10] != 'B' || data[11] != 'P') throw new IOException();
         } else if ("image/png".equals(mime)) {

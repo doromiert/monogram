@@ -247,6 +247,7 @@ public class EmojiView extends FrameLayout implements
     private ScrollSlidingTabStrip gifTabs;
     private boolean firstGifAttach = true;
     private int gifRecentTabNum = -2;
+    private int gifFavoriteTabNum = -2;
     private int gifTrendingTabNum = -2;
     private int gifFirstEmojiTabNum = -2;
     private boolean shouldDrawBackground = true;
@@ -1599,6 +1600,7 @@ public class EmojiView extends FrameLayout implements
         gifIcons = new Drawable[]{
                 Theme.createEmojiIconSelectorDrawable(context, R.drawable.msg_emoji_recent, glassDesign ? getGlassIconColor(0.4f) : getThemedColor(Theme.key_chat_emojiPanelIcon), glassDesign ? getGlassIconColor(0.8f) : getThemedColor(Theme.key_chat_emojiPanelIconSelected)),
                 Theme.createEmojiIconSelectorDrawable(context, R.drawable.stickers_gifs_trending, glassDesign ? getGlassIconColor(0.4f) : getThemedColor(Theme.key_chat_emojiPanelIcon), glassDesign ? getGlassIconColor(0.8f) : getThemedColor(Theme.key_chat_emojiPanelIconSelected)),
+                Theme.createEmojiIconSelectorDrawable(context, R.drawable.msg_fave, glassDesign ? getGlassIconColor(0.4f) : getThemedColor(Theme.key_chat_emojiPanelIcon), glassDesign ? getGlassIconColor(0.8f) : getThemedColor(Theme.key_chat_emojiPanelIconSelected)),
         };
 
         emojiTitles = new String[]{
@@ -2142,34 +2144,13 @@ public class EmojiView extends FrameLayout implements
                 updateGifTabs();
 
                 gifTabs.setDelegate(page -> {
-                    if (page == gifTrendingTabNum && gifAdapter.results.isEmpty()) {
-                        return;
-                    }
                     gifGridView.stopScroll();
+                    gifSearchField.searchEditText.setText("");
+                    if (page == gifTrendingTabNum) gifAdapter.search("", "", true, true, true);
+                    else gifAdapter.showLibrary(page == gifFavoriteTabNum);
+                    gifGridView.setAdapter(gifAdapter);
+                    gifLayoutManager.scrollToPositionWithOffset(0, 0);
                     gifTabs.onPageScrolled(page, 0);
-                    if (page == gifRecentTabNum || page == gifTrendingTabNum) {
-                        gifSearchField.searchEditText.setText("");
-                        if (page == gifTrendingTabNum && gifAdapter.trendingSectionItem >= 1) {
-                            gifLayoutManager.scrollToPositionWithOffset(gifAdapter.trendingSectionItem, -AndroidUtilities.dp(4));
-                        } else {
-                            gifLayoutManager.scrollToPositionWithOffset(delegate != null && delegate.isExpanded() ? 0 : 1, 0);
-                        }
-                        if (page == gifTrendingTabNum) {
-                            final ArrayList<String> gifSearchEmojies = MessagesController.getInstance(currentAccount).gifSearchEmojies;
-                            if (!gifSearchEmojies.isEmpty()) {
-                                gifSearchPreloader.preload(gifSearchEmojies.get(0));
-                            }
-                        }
-                    } else {
-                        final ArrayList<String> gifSearchEmojies = MessagesController.getInstance(currentAccount).gifSearchEmojies;
-                        gifSearchAdapter.searchEmoji(gifSearchEmojies.get(page - gifFirstEmojiTabNum));
-                        if (page - gifFirstEmojiTabNum > 0) {
-                            gifSearchPreloader.preload(gifSearchEmojies.get(page - gifFirstEmojiTabNum - 1));
-                        }
-                        if (page - gifFirstEmojiTabNum < gifSearchEmojies.size() - 1) {
-                            gifSearchPreloader.preload(gifSearchEmojies.get(page - gifFirstEmojiTabNum + 1));
-                        }
-                    }
                     resetTabsY(Type.GIFS);
                 });
 
@@ -5821,8 +5802,10 @@ public class EmojiView extends FrameLayout implements
 
     private void updateGifTabs() {
         gifTabs.beginUpdate(false);
-        gifRecentTabNum=0; gifTrendingTabNum=-2; gifFirstEmojiTabNum=-2;
-        gifTabs.addIconTab(0,gifIcons[0]).setContentDescription(getString(R.string.GifsTab2));
+        gifRecentTabNum=0; gifFavoriteTabNum=1; gifTrendingTabNum=2; gifFirstEmojiTabNum=-2;
+        gifTabs.addIconTab(0,gifIcons[0]).setContentDescription("Recent GIFs");
+        gifTabs.addIconTab(1,gifIcons[2]).setContentDescription("Favorite GIFs");
+        gifTabs.addIconTab(2,gifIcons[1]).setContentDescription("Trending GIFs");
         gifTabs.commitUpdate(); gifTabs.updateTabStyles();
     }
 
@@ -6298,6 +6281,7 @@ public class EmojiView extends FrameLayout implements
     }
 
     private void updateRecentGifs() {
+        if (gifAdapter != null && gifAdapter.libraryMode >= 0) gifAdapter.showLibrary(gifAdapter.libraryMode == 1);
         final int prevSize = recentGifs.size();
         long prevHash = MediaDataController.calcDocumentsHash(recentGifs, Integer.MAX_VALUE);
         recentGifs = MediaDataController.getInstance(currentAccount).getRecentGifs();
@@ -8728,6 +8712,7 @@ public class EmojiView extends FrameLayout implements
 
         private int itemsCount;
         private int recentItemsCount;
+        private int libraryMode = -1;
         private int trendingSectionItem = -1;
         private int firstResultItem = -1;
 
@@ -8747,6 +8732,7 @@ public class EmojiView extends FrameLayout implements
             this.context = context;
             this.withRecent = withRecent;
             this.maxRecentRowsCount = maxRecentRowsCount;
+            libraryMode = withRecent ? 0 : -1;
             this.progressEmptyView = new GifProgressEmptyView(context);
             if (withRecent) this.progressEmptyView.textView.setText(getString(R.string.MonogramSavedGifsEmpty));
         }
@@ -8854,50 +8840,30 @@ public class EmojiView extends FrameLayout implements
         }
 
         private void updateRecentItemsCount() {
-            if (!withRecent || maxRecentRowsCount == 0) {
-                return;
-            }
-
-            if (maxRecentRowsCount == Integer.MAX_VALUE) {
-                recentItemsCount = recentGifs.size();
-                return;
-            }
-
-            if (gifGridView.getMeasuredWidth() == 0) {
-                return;
-            }
-
-            final int listWidth = gifGridView.getMeasuredWidth();
-            final int spanCount = gifLayoutManager.getSpanCount();
-            final int preferredRowSize = AndroidUtilities.dp(100);
-
-            int rowCount = 0;
-            int spanLeft = spanCount;
-            int currentItemsInRow = 0;
+            // Recent/Favorite collections are explicit result lists; do not prepend legacy recents to Trending.
             recentItemsCount = 0;
-
-            for (int i = 0, N = recentGifs.size(); i < N; i++) {
-                final Size size = gifLayoutManager.fixSize(gifLayoutManager.getSizeForItem(recentGifs.get(i)));
-                int requiredSpan = Math.min(spanCount, (int) Math.floor(spanCount * (size.width / size.height * preferredRowSize / listWidth)));
-                if (spanLeft < requiredSpan) { // move to a new row
-                    recentItemsCount += currentItemsInRow;
-                    if (++rowCount == maxRecentRowsCount) {
-                        break;
-                    }
-                    currentItemsInRow = 0;
-                    spanLeft = spanCount;
-                }
-                currentItemsInRow++;
-                spanLeft -= requiredSpan;
-            }
-
-            if (rowCount < maxRecentRowsCount) {
-                recentItemsCount += currentItemsInRow;
-            }
         }
 
         public void loadTrendingGifs() {
-            search("", "", true, true, true);
+            if (withRecent) showLibrary(false);else search("", "", true, true, true);
+        }
+
+        public void showLibrary(boolean favorites) {
+            cancelSearch();libraryMode = favorites ? 1 : 0;
+            results.clear();resultsMap.clear();recentItemsCount=0;
+            results.addAll(org.telegram.messenger.xmpp.MonogramGiphy.library(currentAccount, favorites));
+            for(TLRPC.BotInlineResult result:results) resultsMap.put(result.id,result);
+            if(!favorites) for(TLRPC.Document document:MediaDataController.getInstance(currentAccount).getRecentGifs()) {
+                String id="local-gif-"+document.id;
+                if(resultsMap.containsKey(id)) continue;
+                TLRPC.TL_botInlineMediaResult result=new TLRPC.TL_botInlineMediaResult();
+                result.id=id;result.type="gif";result.document=document;
+                results.add(result);resultsMap.put(id,result);
+            }
+            searchEndReached=true;nextSearchOffset="";lastSearchImageString="";
+            progressEmptyView.textView.setText(favorites ? "No favorite GIFs yet. Long-press a GIF to add it here." : "No recent GIFs yet.");
+            progressEmptyView.setLoadingState(false);gifSearchField.showProgress(false);
+            notifyDataSetChanged();
         }
 
         public void search(String text) {
@@ -8954,6 +8920,7 @@ public class EmojiView extends FrameLayout implements
         }
 
         protected void search(final String query, final String offset, boolean searchUser, boolean isEmoji, boolean cache) {
+            libraryMode=-1;
             cancelSearch();
             final int generation = searchGeneration;
             lastSearchImageString = query;
@@ -8973,8 +8940,7 @@ public class EmojiView extends FrameLayout implements
                         results.add(result); resultsMap.put(result.id, result);
                     }
                 }
-                progressEmptyView.textView.setText(withRecent ? getString(R.string.MonogramSavedGifsEmpty)
-                        : "Add a GIPHY key in Settings → GIF search");
+                progressEmptyView.textView.setText("Add a GIPHY key in Settings → GIF search");
                 progressEmptyView.setLoadingState(false);
                 gifSearchField.showProgress(false);
                 notifyDataSetChanged();

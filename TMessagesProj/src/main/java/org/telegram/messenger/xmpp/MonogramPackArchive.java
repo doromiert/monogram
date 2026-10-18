@@ -63,7 +63,7 @@ final class MonogramPackArchive {
                 if(metadataBytes>MAX_MANIFEST) throw new IOException("Archive directory exceeds the safe metadata byte-size limit.");
                 if (entry.isDirectory() || entry.getMethod() != ZipEntry.STORED
                         || entry.getSize() < 1 || entry.getCompressedSize() != entry.getSize()
-                        || !(path.equals("manifest.json") || path.matches("assets/[0-9a-f]{64}\\.(png|webp|tgs|webm)"))
+                        || !(path.equals("manifest.json") || path.matches("assets/[0-9a-f]{64}\\.(png|webp|gif|tgs|webm)"))
                         || entries.put(path, entry) != null) throw new IOException("Invalid or duplicate archive entry.");
                 long maximum = path.equals("manifest.json") ? MAX_MANIFEST : MAX_FILE;
                 if (entry.getSize() > maximum) throw new IOException("Archive entry exceeds the safe size limit.");
@@ -146,7 +146,7 @@ final class MonogramPackArchive {
         zip.putNextEntry(entry); zip.write(data); zip.closeEntry();
     }
     private static String extension(String mime) throws IOException {
-        if ("image/png".equals(mime)) return ".png"; if ("image/webp".equals(mime)) return ".webp";
+        if ("image/gif".equals(mime)) return ".gif"; if ("image/png".equals(mime)) return ".png"; if ("image/webp".equals(mime)) return ".webp";
         if ("application/x-tgsticker".equals(mime)) return ".tgs"; if ("video/webm".equals(mime)) return ".webm";
         throw new IOException("Unsupported sticker media type.");
     }

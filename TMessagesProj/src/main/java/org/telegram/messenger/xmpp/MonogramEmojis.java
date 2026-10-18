@@ -91,7 +91,7 @@ public final class MonogramEmojis {
     }
     private static long namespace(SQLiteDatabase db) { try(Cursor row=db.rawQuery("SELECT namespace FROM inline_emoji_state WHERE id=1",null)) { if(!row.moveToFirst()) throw new IllegalStateException("Missing emoji cache namespace");return row.getLong(0)&0xffffffffL; } }
     private static File directory(Context context,String database) { return new File(context.getFilesDir(),"monogram-inline-emoji/"+new File(database).getName()); }
-    private static String extension(String mime) { return "image/png".equals(mime)?"png":"image/webp".equals(mime)?"webp":"video/webm".equals(mime)?"webm":"tgs"; }
+    private static String extension(String mime) { return "image/gif".equals(mime)?"gif":"image/png".equals(mime)?"png":"image/webp".equals(mime)?"webp":"video/webm".equals(mime)?"webm":"tgs"; }
     private static File file(Context context,String database,String cid,String mime) {
         if(!cid.matches("sha-256\\+[0-9a-f]{64}@bob\\.xmpp\\.org") || !InlineEmoji.supported(mime)) throw new IllegalArgumentException("Invalid cached emoji");
         return new File(directory(context,database),cid.substring(8,72)+"."+extension(mime));

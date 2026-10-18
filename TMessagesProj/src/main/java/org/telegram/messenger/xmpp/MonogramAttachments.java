@@ -199,7 +199,7 @@ public final class MonogramAttachments {
         if(!isAnimatedMp4(name,document.mime_type) || isAnimatedMp4(document)) return;
         document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
     }
-    private static boolean isGif(File file) {
+    public static boolean isGif(File file) {
         if (!file.isFile()) return false;
         try (java.io.InputStream input = new java.io.FileInputStream(file)) {
             byte[] header = new byte[6];

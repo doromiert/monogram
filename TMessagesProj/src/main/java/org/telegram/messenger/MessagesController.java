@@ -10406,6 +10406,7 @@ public class MessagesController extends BaseController implements NotificationCe
     public void saveGif(Object parentObject, TLRPC.Document document) {
         if (!MessageObject.isGifDocument(document)) return;
         getMediaDataController().addRecentGif(document, (int) (System.currentTimeMillis() / 1000), false);
+        org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount,document,true);
         getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
     }
 

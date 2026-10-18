@@ -6911,7 +6911,7 @@ public class MessageObject {
     }
 
     public static boolean isGifDocument(TLRPC.Document document, boolean hasGroup) {
-        return document != null && document.mime_type != null && (document.mime_type.equals("image/gif") && !hasGroup || isNewGifDocument(document));
+        return document != null && document.mime_type != null && (document.mime_type.equals("image/gif") && !hasGroup && !isVideoStickerDocument(document) || isNewGifDocument(document));
     }
 
     public static boolean isDocumentHasThumb(TLRPC.Document document) {
@@ -10280,7 +10280,7 @@ public class MessageObject {
             for (int a = 0; a < document.attributes.size(); a++) {
                 TLRPC.DocumentAttribute attribute = document.attributes.get(a);
                 if (attribute instanceof TLRPC.TL_documentAttributeSticker) {
-                    return "image/webp".equals(document.mime_type) || "image/png".equals(document.mime_type) || "video/webm".equals(document.mime_type);
+                    return "image/webp".equals(document.mime_type) || "image/png".equals(document.mime_type) || "video/webm".equals(document.mime_type) || "image/gif".equals(document.mime_type);
                 }
             }
         }
@@ -10293,7 +10293,7 @@ public class MessageObject {
                 TLRPC.DocumentAttribute attribute = document.attributes.get(a);
                 if (attribute instanceof TLRPC.TL_documentAttributeSticker ||
                     attribute instanceof TLRPC.TL_documentAttributeCustomEmoji) {
-                    return "video/webm".equals(document.mime_type);
+                    return "video/webm".equals(document.mime_type) || "image/gif".equals(document.mime_type);
                 }
             }
         }

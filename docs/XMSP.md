@@ -92,10 +92,15 @@ These bounds match the existing native pack store.
 
 | MIME | Extension | Content |
 | --- | --- | --- |
+| `image/gif` | `.gif` | GIF animation (original frames retained) |
 | `image/png` | `.png` | PNG image |
 | `image/webp` | `.webp` | WebP image |
 | `application/x-tgsticker` | `.tgs` | Gzip-compressed Lottie sticker |
 | `video/webm` | `.webm` | WebM video sticker |
+
+For GIF assets, `width` and `height` describe the scaled display size (at most
+512 on either axis); the original animation bytes and source resolution are
+retained. GIF source dimensions are validated separately before decoding.
 
 TGS is the sole gzip payload: decompressed JSON is capped at 2 MiB and must
 satisfy the existing sticker animation validator (512×512 canvas, positive rate

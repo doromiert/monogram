@@ -12254,6 +12254,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     }
                     AlertsCreator.ensurePaidMessageConfirmation(currentAccount, dialog_id, 1, stars -> {
                         Runnable runnable = () -> {
+                            org.telegram.messenger.xmpp.MonogramGiphy.remember(currentAccount, selectedGif);
                             if (stickersExpanded) {
                                 if (searchingType != 0) {
                                     emojiView.hideSearchKeyboard();

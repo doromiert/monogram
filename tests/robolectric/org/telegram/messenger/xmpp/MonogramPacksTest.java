@@ -69,6 +69,48 @@ public class MonogramPacksTest {
         controller=Shadow.newInstanceOf(MonogramController.class); jid="alice@example.org";
     }
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void gifStickerRetainsBothFramesAndArchiveRoundTrips() throws Exception {
+        jid="gif-sticker@example.org";
+        byte[] gif=java.util.Base64.getDecoder().decode("R0lGODlhAgACAPAAAP8AAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAAACAoRRACH5BAAPAAAALAAAAAACAAIAgAAA/wAAAAIChFEAOw==");
+        android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/animated.gif");
+        org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,new java.io.ByteArrayInputStream(gif));
+        java.util.concurrent.CountDownLatch saved=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+        MonogramPacks.saveSticker(0,0,"Animations",uri,"Two frames","🙂",failure->{error.set(failure);saved.countDown();});
+        assertTrue(saved.await(10,java.util.concurrent.TimeUnit.SECONDS));assertNull(error.get());
+        java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+        MonogramPacks.Pack pack=MonogramPacks.packs(0).get(0);
+        assertEquals("image/gif",pack.items.get(0).mime);
+        TLRPC.Document document=MonogramPacks.document(0,pack.items.get(0).id);
+        assertArrayEquals(gif,java.nio.file.Files.readAllBytes(new File(document.localPath).toPath()));
+        assertTrue(MessageObject.isVideoStickerDocument(document));assertTrue(MessageObject.isStickerDocument(document));assertFalse(MessageObject.isGifDocument(document));
+        assertEquals(org.telegram.messenger.FileLoader.IMAGE_TYPE_ANIMATION,MonogramStickers.localThumbnail(document.thumbs.get(0),document).imageType);
+        File directory=new File(document.localPath).getParentFile(),archive=File.createTempFile("gif-test-",".xmsp");
+        File staging=java.nio.file.Files.createTempDirectory("gif-pack-").toFile();
+        MonogramPackArchive.write(pack,directory,archive,()->{});
+        MonogramPacks.Pack imported=MonogramPackArchive.read(archive,staging,()->{},(name,done,total)->{});
+        assertEquals("image/gif",imported.items.get(0).mime);
+        assertArrayEquals(gif,java.nio.file.Files.readAllBytes(new File(staging,imported.items.get(0).file).toPath()));
+    }
+    @Test public void recentAndFavoriteGifCollectionsPersistIndependentlyPerAccount() throws Exception {
+        jid="gif-library@example.org";
+        org.json.JSONObject image=new org.json.JSONObject().put("url","https://media0.giphy.com/media/example/giphy.gif").put("width","2").put("height","2");
+        org.json.JSONObject entry=new org.json.JSONObject().put("id","example").put("images",new org.json.JSONObject().put("original",image));
+        TLRPC.BotInlineResult gif=MonogramGiphy.parse(new org.json.JSONObject().put("data",new org.json.JSONArray().put(entry)),false).results.get(0);
+        assertTrue(MonogramGiphy.remember(0,gif));assertTrue(MonogramGiphy.setFavorite(0,gif,true));
+        assertEquals(1,MonogramGiphy.library(0,false).size());assertEquals(1,MonogramGiphy.library(0,true).size());
+        assertEquals(gif.content.url,MonogramGiphy.library(0,true).get(0).content.url);
+        assertTrue(MonogramGiphy.removeRecent(0,gif));assertTrue(MonogramGiphy.library(0,false).isEmpty());assertTrue(MonogramGiphy.isFavorite(0,gif));
+        assertTrue(MonogramGiphy.remember(0,gif));assertTrue(MonogramGiphy.setFavorite(0,gif,false));
+        assertEquals(1,MonogramGiphy.library(0,false).size());assertTrue(MonogramGiphy.library(0,true).isEmpty());
+        jid="other-gif-library@example.org";assertTrue(MonogramGiphy.library(0,false).isEmpty());
+        jid="gif-library@example.org";assertEquals(1,MonogramGiphy.library(0,false).size());
+        TLRPC.TL_document local=new TLRPC.TL_document();local.id=123;local.mime_type="image/gif";local.file_reference=new byte[0];
+        File file=File.createTempFile("gif-local-",".gif");local.localPath=file.getAbsolutePath();
+        assertTrue(MonogramGiphy.setFavorite(0,local,true));
+        assertEquals(local.localPath,MonogramGiphy.library(0,true).get(0).document.localPath);
+    }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test public void archiveImportUsesFreshNativeIdsAndFailurePreservesInstalledPack() throws Exception {
         jid="archive@example.org";
         MonogramPacks.Pack original=new MonogramPacks.Pack();original.id=0x4d50000300000001L;original.name="Friends";original.source="local:archive";

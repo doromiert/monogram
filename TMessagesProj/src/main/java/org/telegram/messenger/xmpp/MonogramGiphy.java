@@ -24,6 +24,81 @@ public final class MonogramGiphy {
         return ApplicationLoader.applicationContext.getSharedPreferences("monogram-giphy-" + account, Context.MODE_PRIVATE);
     }
     public static boolean configured(int account) { return preferences(account).contains("key"); }
+    private static String libraryKey(int account) {
+        return "library-"+java.util.UUID.nameUUIDFromBytes(MonogramController.get(account).accountJid().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    private static TLRPC.BotInlineResult libraryResult(Object value) {
+        if(value instanceof TLRPC.BotInlineResult) {
+            TLRPC.BotInlineResult result=(TLRPC.BotInlineResult)value;
+            return result.document!=null ? libraryResult(result.document) : isResult(result) ? result : null;
+        }
+        if(!(value instanceof TLRPC.Document) || !org.telegram.messenger.MessageObject.isGifDocument((TLRPC.Document)value)) return null;
+        TLRPC.TL_botInlineMediaResult result=new TLRPC.TL_botInlineMediaResult();
+        result.id="local-gif-"+((TLRPC.Document)value).id;result.type="gif";result.document=(TLRPC.Document)value;result.flags=2;
+        result.send_message=new TLRPC.TL_botInlineMessageMediaAuto();result.send_message.message="";
+        return result;
+    }
+    private static String libraryId(TLRPC.BotInlineResult result) {
+        return result.document!=null ? "document:"+result.document.id : "url:"+result.content.url;
+    }
+    private static TLRPC.BotInlineResult decodeEntry(JSONObject entry) throws Exception {
+        org.telegram.tgnet.SerializedData data=new org.telegram.tgnet.SerializedData(android.util.Base64.decode(entry.getString("data"),android.util.Base64.NO_WRAP));
+        try {
+            TLRPC.BotInlineResult result=TLRPC.BotInlineResult.TLdeserialize(data,data.readInt32(true),true);
+            if(libraryResult(result)==null) throw new java.io.IOException("Invalid saved GIF.");
+            if(result.document!=null) {
+                String path=entry.optString("path");
+                if(!path.isEmpty() && new java.io.File(path).isFile()) result.document.localPath=path;
+            }
+            return result;
+        } finally { data.cleanup(); }
+    }
+    public static synchronized ArrayList<TLRPC.BotInlineResult> library(int account,boolean favorites) {
+        ArrayList<TLRPC.BotInlineResult> result=new ArrayList<>();
+        try {
+            JSONArray entries=new JSONArray(preferences(account).getString(libraryKey(account),"[]"));
+            for(int i=0;i<entries.length();i++) {
+                JSONObject entry=entries.getJSONObject(i);
+                if(entry.optBoolean(favorites ? "favorite" : "recent")) result.add(decodeEntry(entry));
+            }
+        } catch(Exception failed) { org.telegram.messenger.FileLog.e(failed); }
+        return result;
+    }
+    public static synchronized boolean isFavorite(int account,Object value) {
+        TLRPC.BotInlineResult result=libraryResult(value);if(result==null) return false;
+        for(TLRPC.BotInlineResult saved:library(account,true)) if(libraryId(saved).equals(libraryId(result))) return true;
+        return false;
+    }
+    public static boolean remember(int account,Object value) { return updateLibrary(account,value,null,false); }
+    public static boolean setFavorite(int account,Object value,boolean favorite) { return updateLibrary(account,value,favorite,false); }
+    public static boolean removeRecent(int account,Object value) { return updateLibrary(account,value,null,true); }
+    private static synchronized boolean updateLibrary(int account,Object value,Boolean favorite,boolean removeRecent) {
+        TLRPC.BotInlineResult result=libraryResult(value);if(result==null) return false;
+        try {
+            String key=libraryKey(account),id=libraryId(result);
+            JSONArray old=new JSONArray(preferences(account).getString(key,"[]")),next=new JSONArray();
+            JSONObject selected=new JSONObject();
+            for(int i=0;i<old.length();i++) {
+                JSONObject entry=old.getJSONObject(i);
+                if(id.equals(entry.getString("id"))) selected=entry;
+            }
+            org.telegram.tgnet.SerializedData data=new org.telegram.tgnet.SerializedData();
+            try { result.serializeToStream(data);selected.put("data",android.util.Base64.encodeToString(data.toByteArray(),android.util.Base64.NO_WRAP)); }
+            finally { data.cleanup(); }
+            selected.put("id",id);
+            if(result.document!=null && result.document.localPath!=null) selected.put("path",result.document.localPath);
+            if(favorite!=null) selected.put("favorite",favorite);
+            else selected.put("recent",!removeRecent);
+            if(selected.optBoolean("favorite") || selected.optBoolean("recent")) next.put(selected);
+            for(int i=0;i<old.length();i++) {
+                JSONObject entry=old.getJSONObject(i);if(id.equals(entry.getString("id"))) continue;
+                if(entry.optBoolean("favorite") || entry.optBoolean("recent")) next.put(entry);
+            }
+            String encoded=next.toString();
+            if(encoded.length()>4*1024*1024) throw new java.io.IOException("GIF library metadata is too large.");
+            return preferences(account).edit().putString(key,encoded).commit();
+        } catch(Exception failed) { org.telegram.messenger.FileLog.e(failed);return false; }
+    }
     public static void saveKey(int account, String value) throws Exception {
         String key = value.trim();
         if (!key.isEmpty() && !key.matches("[A-Za-z0-9_-]{1,256}")) throw new IllegalArgumentException("Enter a valid GIPHY API key.");

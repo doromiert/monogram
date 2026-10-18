@@ -65,7 +65,7 @@ public final class MonogramStickerExport {
         }
         MonogramPacks.validateMedia(bytes,mime);
         boolean animated="application/x-tgsticker".equals(mime);
-        String extension=animated || "image/png".equals(mime) ? ".png" : "image/webp".equals(mime) ? ".webp" : ".webm";
+        String extension="image/gif".equals(mime) ? ".gif" : animated || "image/png".equals(mime) ? ".png" : "image/webp".equals(mime) ? ".webp" : ".webm";
         File result=File.createTempFile("sticker-export-",extension,cache);
         try(FileOutputStream output=new FileOutputStream(result)) {
             if(animated) {
@@ -81,8 +81,8 @@ public final class MonogramStickerExport {
         } catch(Exception | LinkageError failure) { result.delete();throw failure; }
     }
     static Uri publish(Context context,File source) throws IOException {
-        boolean video=source.getName().endsWith(".webm");String extension=video ? ".webm" : source.getName().endsWith(".webp") ? ".webp" : ".png";
-        String mime=video ? "video/webm" : extension.equals(".webp") ? "image/webp" : "image/png";
+        boolean video=source.getName().endsWith(".webm");String extension=source.getName().endsWith(".gif") ? ".gif" : video ? ".webm" : source.getName().endsWith(".webp") ? ".webp" : ".png";
+        String mime=extension.equals(".gif") ? "image/gif" : video ? "video/webm" : extension.equals(".webp") ? "image/webp" : "image/png";
         String name="Monogram_"+java.util.UUID.randomUUID()+extension;
         if(Build.VERSION.SDK_INT>=29) {
             ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,mime);

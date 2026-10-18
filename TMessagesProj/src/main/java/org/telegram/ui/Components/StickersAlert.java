@@ -1317,7 +1317,8 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                             Object selected = picker.getPhotoLayout().getSelectedPhotos().get(key);
                             if (!(selected instanceof MediaController.PhotoEntry)) continue;
                             MediaController.PhotoEntry photo = (MediaController.PhotoEntry) selected;
-                            String path = photo.imagePath != null ? photo.imagePath : photo.path;
+                            String path = photo.path != null && org.telegram.messenger.xmpp.MonogramAttachments.isGif(new java.io.File(photo.path))
+                                    ? photo.path : photo.imagePath != null ? photo.imagePath : photo.path;
                             if (path == null) throw new IllegalArgumentException("The selected image is unavailable.");
                             files.add(androidx.core.content.FileProvider.getUriForFile(getContext(),
                                     org.telegram.messenger.ApplicationLoader.getApplicationId() + ".provider", new java.io.File(path)));

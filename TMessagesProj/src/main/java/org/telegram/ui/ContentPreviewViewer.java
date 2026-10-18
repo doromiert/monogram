@@ -78,6 +78,7 @@ import org.telegram.messenger.WebFile;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -1073,7 +1074,14 @@ public class ContentPreviewViewer {
                     actions.add(11);
                 }
 
-                boolean canDelete;
+                boolean canDelete=false;
+                final Object libraryGif=currentDocument!=null ? currentDocument : inlineResult;
+                if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                    boolean favorite=org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount,libraryGif);
+                    items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
+                    icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);actions.add(12);
+                    items.add("Remove from recent GIFs");icons.add(R.drawable.msg_delete);actions.add(13);
+                } else {
                 if (currentDocument != null) {
                     if (canDelete = MediaDataController.getInstance(currentAccount).hasRecentGif(currentDocument)) {
                         items.add(LocaleController.formatString("Delete", R.string.Delete));
@@ -1086,6 +1094,7 @@ public class ContentPreviewViewer {
                     }
                 } else {
                     canDelete = false;
+                }
                 }
                 if (items.isEmpty()) {
                     return;
@@ -1103,7 +1112,18 @@ public class ContentPreviewViewer {
                         return;
                     }
                     int which = (int) v.getTag();
-                    if (actions.get(which) == 0) {
+                    if (actions.get(which) == 12 || actions.get(which) == 13) {
+                        boolean saved;
+                        if(actions.get(which)==12) saved=org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount,libraryGif,
+                                !org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount,libraryGif));
+                        else {
+                            saved=org.telegram.messenger.xmpp.MonogramGiphy.removeRecent(currentAccount,libraryGif);
+                            if(saved && currentDocument!=null) MediaDataController.getInstance(currentAccount).removeRecentGif(currentDocument);
+                        }
+                        if(!saved) new AlertDialog.Builder(parentActivity,resourcesProvider).setTitle("GIFs").setMessage("Could not save the GIF library. Check available storage.")
+                                .setPositiveButton(LocaleController.getString(R.string.OK),null).show();
+                        delegate.gifAddedOrDeleted();
+                    } else if (actions.get(which) == 0) {
                         delegate.sendGif(currentDocument != null ? currentDocument : inlineResult, parentObject, true, 0, 0);
                     } else if (actions.get(which) == 4) {
                         delegate.sendGif(currentDocument != null ? currentDocument : inlineResult, parentObject, false, 0, 0);

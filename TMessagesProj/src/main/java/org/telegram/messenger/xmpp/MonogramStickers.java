@@ -50,6 +50,7 @@ public final class MonogramStickers {
                 && header[4]==13 && header[5]==10 && header[6]==26 && header[7]==10) mime="image/png";
         else if(count>=12 && header[0]=='R' && header[1]=='I' && header[2]=='F' && header[3]=='F'
                 && header[8]=='W' && header[9]=='E' && header[10]=='B' && header[11]=='P') mime="image/webp";
+        else if(count>=6 && header[0]=='G' && header[1]=='I' && header[2]=='F' && header[3]=='8' && (header[4]=='7' || header[4]=='9') && header[5]=='a') mime="image/gif";
         else if(count>=4 && (header[0]&255)==26 && (header[1]&255)==69 && (header[2]&255)==223 && (header[3]&255)==163) mime="video/webm";
         TLRPC.Document previous=message.media==null ? null : message.media.document;
         if(mime==null && count>=2 && (header[0]&255)==31 && (header[1]&255)==139 && previous!=null
@@ -96,7 +97,7 @@ public final class MonogramStickers {
         if (!MonogramPacks.isThumb(volume) && !MonogramEmojis.isThumb(volume) && volume != MonogramAttachments.PHOTO_VOLUME) return null;
         org.telegram.messenger.ImageLocation local = org.telegram.messenger.ImageLocation.getForPath(document.localPath);
         if ("application/x-tgsticker".equals(document.mime_type)) local.imageType = org.telegram.messenger.FileLoader.IMAGE_TYPE_LOTTIE;
-        else if ("video/webm".equals(document.mime_type)) local.imageType = org.telegram.messenger.FileLoader.IMAGE_TYPE_ANIMATION;
+        else if ("video/webm".equals(document.mime_type) || "image/gif".equals(document.mime_type)) local.imageType = org.telegram.messenger.FileLoader.IMAGE_TYPE_ANIMATION;
         return local;
     }
     /** File probing may improve geometry without discarding a known private local sticker kind. */
@@ -125,6 +126,6 @@ public final class MonogramStickers {
         }
     }
     public static boolean supported(String mime) {
-        return "image/webp".equals(mime) || "image/png".equals(mime) || "application/x-tgsticker".equals(mime) || "video/webm".equals(mime);
+        return "image/gif".equals(mime) || "image/webp".equals(mime) || "image/png".equals(mime) || "application/x-tgsticker".equals(mime) || "video/webm".equals(mime);
     }
 }
