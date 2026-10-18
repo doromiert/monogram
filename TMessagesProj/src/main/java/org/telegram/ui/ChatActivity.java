@@ -137,6 +137,7 @@ import androidx.viewpager.widget.ViewPager;
 import com.google.zxing.common.detector.MathUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import org.telegram.messenger.xmpp.MonogramDoubleTap;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -1939,28 +1940,18 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public boolean hasDoubleTap(View view, int position) {
-            if (isQuickRepliesOrWelcomeMessagesMode()) return false;
+            if (isQuickRepliesOrWelcomeMessagesMode() || isSecretChat() || isInScheduleMode() || isInPreviewMode() || actionBar.isActionModeShowed()) return false;
+            MessageObject messageObject = view instanceof ChatMessageCell ? ((ChatMessageCell)view).getPrimaryMessageObject()
+                    : view instanceof ChatActionCell ? ((ChatActionCell)view).getMessageObject() : null;
+            if (messageObject == null || messageObject.isDateObject || messageObject.isSending() || messageObject.isEditing() || messageObject.isSponsored()) return false;
+            int action = MonogramDoubleTap.action(currentAccount,messageObject.isOutOwner());
+            if (action != MonogramDoubleTap.REACTION) return canDoubleTapMessageAction(messageObject,action);
             String reactionStringSetting = getMediaDataController().getDoubleTapReaction();
             TLRPC.TL_availableReaction reaction = getMediaDataController().getReactionsMap().get(reactionStringSetting);
-            if (reaction == null && (reactionStringSetting == null || !reactionStringSetting.startsWith("animated_"))) {
-                return false;
-            }
+            if (reaction == null && (reactionStringSetting == null || !reactionStringSetting.startsWith("animated_"))) return false;
             boolean available = dialog_id >= 0;
-            if (!available && chatInfo != null) {
-                available = ChatObject.reactionIsAvailable(chatInfo, reaction == null ? reactionStringSetting : reaction.reaction);
-            }
-            if (!available) {
-                return false;
-            }
-            MessageObject messageObject;
-            if (view instanceof ChatMessageCell) {
-                messageObject = ((ChatMessageCell) view).getPrimaryMessageObject();
-            } else if (view instanceof ChatActionCell) {
-                messageObject = ((ChatActionCell) view).getMessageObject();
-            } else {
-                return false;
-            }
-            return messageObject != null && !messageObject.isDateObject && !messageObject.isSending() && messageObject.canSetReaction() && !messageObject.isEditing() && !actionBar.isActionModeShowed() && !isSecretChat() && !isInScheduleMode() && !messageObject.isSponsored();
+            if (!available && chatInfo != null) available = ChatObject.reactionIsAvailable(chatInfo,reaction == null ? reactionStringSetting : reaction.reaction);
+            return available && messageObject.canSetReaction();
         }
 
         @Override
@@ -1977,6 +1968,12 @@ public class ChatActivity extends BaseFragment implements
                     return;
                 }
             } else {
+                return;
+            }
+            if (messageObject == null || messageObject.isSending() || messageObject.isEditing() || actionBar.isActionModeShowed()) return;
+            int action = MonogramDoubleTap.action(currentAccount,messageObject.isOutOwner());
+            if (action != MonogramDoubleTap.REACTION) {
+                performDoubleTapMessageAction(messageObject,action);
                 return;
             }
             if (messageObject.isSecret() || !messageObject.canSetReaction() || messageObject.isExpiredStory() || messageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
@@ -2013,6 +2010,62 @@ public class ChatActivity extends BaseFragment implements
             }
         }
     };
+
+    private ArrayList<Integer> doubleTapMessageOptions(MessageObject message) {
+        MessageObject old = selectedObject, oldCaption = selectedObjectToEditCaption;
+        MessageObject.GroupedMessages oldGroup = selectedObjectGroup;
+        try {
+            selectedObject = message;
+            selectedObjectGroup = getValidGroupedMessage(message);
+            selectedObjectToEditCaption = null;
+            ArrayList<Integer> options = new ArrayList<>();
+            fillMessageMenu(message,new ArrayList<>(),new ArrayList<>(),options);
+            return options;
+        } finally {
+            selectedObject = old; selectedObjectGroup = oldGroup; selectedObjectToEditCaption = oldCaption;
+        }
+    }
+
+    private int doubleTapMenuOption(int action) {
+        switch (action) {
+            case MonogramDoubleTap.REPLY: return OPTION_REPLY;
+            case MonogramDoubleTap.COPY: return OPTION_COPY;
+            case MonogramDoubleTap.FORWARD: return OPTION_FORWARD;
+            case MonogramDoubleTap.EDIT: return OPTION_EDIT;
+            case MonogramDoubleTap.DELETE: return OPTION_DELETE;
+            case MonogramDoubleTap.TRANSLATE: return OPTION_TRANSLATE;
+            default: return -1;
+        }
+    }
+
+    private boolean canDoubleTapMessageAction(MessageObject message,int action) {
+        if (message == null || message.messageOwner == null || message.isDateObject || message.isSending() || message.isEditing()
+                || message.isSponsored() || message.isSecretMedia() || message.isExpiredStory() || action == MonogramDoubleTap.DISABLED) return false;
+        ArrayList<Integer> options = doubleTapMessageOptions(message);
+        if (action == MonogramDoubleTap.SAVE) return message.getDialogId() != getUserConfig().getClientUserId() && options.contains(OPTION_FORWARD);
+        if (action == MonogramDoubleTap.REPEAT) return !UserObject.isUserSelf(currentUser) && !ChatObject.isChannelAndNotMegaGroup(currentChat)
+                && (currentChat == null || ChatObject.canSendMessages(currentChat)) && options.contains(OPTION_FORWARD);
+        return options.contains(doubleTapMenuOption(action));
+    }
+
+    private void performDoubleTapMessageAction(MessageObject message,int action) {
+        if (!canDoubleTapMessageAction(message,action)) return;
+        selectedObject = message;
+        selectedObjectGroup = getValidGroupedMessage(message);
+        selectedObjectToEditCaption = null;
+        // Native menu preparation also chooses the editable caption within an album.
+        fillMessageMenu(message,new ArrayList<>(),new ArrayList<>(),new ArrayList<>());
+        if (action == MonogramDoubleTap.SAVE || action == MonogramDoubleTap.REPEAT) {
+            ArrayList<MessageObject> messages = selectedObjectGroup == null ? new ArrayList<>() : new ArrayList<>(selectedObjectGroup.messages);
+            if (messages.isEmpty()) messages.add(message);
+            if (action == MonogramDoubleTap.SAVE) {
+                int result = getSendMessagesHelper().sendMessage(messages,getUserConfig().getClientUserId(),false,false,true,0,0);
+                AlertsCreator.showSendMediaAlert(result,this,themeDelegate);
+            } else {
+                AlertsCreator.ensurePaidMessageConfirmation(currentAccount,dialog_id,messages.size(),payStars -> forwardMessages(messages,true,false,true,0,payStars));
+            }
+        } else processSelectedOption(doubleTapMenuOption(action));
+    }
 
     private class ChatActivityEnterViewDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
 

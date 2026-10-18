@@ -11585,4 +11585,10 @@
     <string name="MonogramIntroGroups">Keep in touch in **direct conversations** and **group chats**.</string>
     <string name="MonogramIntroPrivate">Use **OMEMO encryption** with compatible clients and review your contacts’ fingerprints.</string>
     <string name="MonogramIntroHistory">Keep conversations cached on this device. Sync available history from your **Jabber server**.</string>
+    <string name="MonogramDoubleTapTitle">Double-tap actions</string>
+    <string name="MonogramDoubleTapIncoming">Incoming messages</string>
+    <string name="MonogramDoubleTapOutgoing">Your messages</string>
+    <string name="MonogramDoubleTapInfo">Choose what double-tapping each kind of message does. Actions are available only when the message supports them. Deleting still asks for confirmation.</string>
+    <string name="MonogramDoubleTapReactionInfo">Choose the emoji used when a double-tap action is set to Reactions.</string>
+    <string name="MonogramRepeatMessage">Repeat message</string>
 </resources>

@@ -390,7 +390,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
 
         if (currentType == TYPE_IMAGE) {
             reactionsDoubleTapRow = items.size();
-            items.add(UItem.asSettingsCell(ID_QUICK_REACTION, R.drawable.msg2_reactions2, getString(R.string.DoubleTapSetting)).onBind(this::setQuickReactionImage));
+            items.add(UItem.asSettingsCell(ID_QUICK_REACTION, R.drawable.msg2_reactions2, getString(R.string.MonogramDoubleTapTitle)).onBind(this::setQuickReactionImage));
             items.add(UItem.asShadow(monogram ? "Import a Telegram pack link or create a pack from local files in Manage sticker and emoji packs." : addStickersBotSpan(getString(currentType == TYPE_EMOJIPACKS ? R.string.EmojiBotInfo : R.string.StickersBotInfo))));
 
             items.add(UItem.asHeader(getString(R.string.StickersSettings)));
@@ -510,7 +510,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
                 presentFragment(new StickersActivity(TYPE_EMOJIPACKS, null));
                 break;
             case ID_QUICK_REACTION:
-                presentFragment(new ReactionsDoubleTapManageActivity());
+                presentFragment(new MonogramDoubleTapActivity(currentAccount));
                 break;
             case ID_DYNAMIC_PACK_ORDER:
                 SharedConfig.toggleUpdateStickersOrderOnSend();
