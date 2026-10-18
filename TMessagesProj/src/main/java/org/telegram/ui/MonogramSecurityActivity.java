@@ -136,9 +136,9 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     @Override protected CharSequence getTitle() { return "Conversation security"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
-        items.add(UItem.asHeader("Encryption"));
         String sendError=controller.lastSendError(peer);
         if(sendError!=null) items.add(UItem.asShadow("Last send failure: "+org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(sendError)));
+        items.add(UItem.asHeader("Encryption"));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Available devices need compatible trusted keys. OMEMO 2 rooms are not available yet."));
@@ -150,8 +150,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
         items.add(UItem.asButton(8,"Contact authorization").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
-        items.add(UItem.asShadow(null));
-        if (status != null) items.add(UItem.asShadow(status));
+        items.add(UItem.asShadow(status));
         if (ownFingerprint != null) {
             items.add(UItem.asHeader("Your device"));
             items.add(UItem.asButton(3,modern ? "Your OMEMO 2 fingerprint" : "Your legacy OMEMO fingerprint")); items.add(UItem.asShadow(ownFingerprint));
@@ -165,14 +164,13 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(peer<0 && !roomMembers.isEmpty()) {
             java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
             items.add(UItem.asHeader("Encrypted recipients"));
-            items.add(UItem.asShadow("Checked members receive keys for your new encrypted messages. Unchecked members cannot decrypt those messages. This only affects messages you send; it does not change room membership or fingerprint trust."));
             for(int i=0;i<roomMembers.size();i++) {
                 String address=roomMembers.get(i);
                 items.add(UItem.asCheck(100000+i,address).setChecked(!excluded.contains(address)).setEnabled(!saving && roomMembersChecked));
                 if(!excluded.contains(address) && identities.keySet().stream().noneMatch(device -> address.equals(device.getJid().toString())))
                     items.add(UItem.asShadow("No fingerprint loaded for this account. Unavailable keys are skipped only when automatic skipping is enabled; available fingerprints still need trust."));
             }
-            items.add(UItem.asShadow(null));
+            items.add(UItem.asShadow("Checked members receive keys for your new encrypted messages. Unchecked members cannot decrypt those messages. This only affects messages you send; it does not change room membership or fingerprint trust."));
         }
         if (!identities.isEmpty()) {
             items.add(UItem.asHeader("Devices"));

@@ -45,22 +45,23 @@ public final class MonogramContactActivity extends MonogramSettingsActivity impl
             if(requests.isEmpty()) items.add(UItem.asShadow("No pending contact requests."));
             for(int i=0;i<requests.size();i++) items.add(UItem.asButton(100+i,requests.get(i)));
         } else {
-            items.add(UItem.asHeader(address));
             items.add(UItem.asShadow("Some providers require an approved contact relationship before sharing OMEMO device lists. Contact authorization and fingerprint trust are separate: refresh fingerprints after access is granted."));
-            if(state==null) items.add(UItem.asShadow("Reconnect to view or change authorization. Saved incoming requests remain available."));
+            items.add(UItem.asHeader("Presence sharing"));
+            if(state==null) items.add(UItem.asSettingsCell(0,"Authorization", "Unavailable").setEnabled(false));
             else {
-                items.add(UItem.asShadow("Their presence shared with you: "+(state.seesTheirPresence ? "Allowed" : "Not allowed")+"\nYour presence shared with them: "+(state.sharesOwnPresence ? "Allowed" : "Not allowed")));
+                items.add(UItem.asSettingsCell(0,"Their presence",state.seesTheirPresence ? "Shared with you" : "Not shared").setEnabled(false));
+                items.add(UItem.asSettingsCell(0,"Your presence",state.sharesOwnPresence ? "Shared with them" : "Not shared").setEnabled(false));
                 if(state.outgoingPending) {
-                    items.add(UItem.asShadow("Request sent. Waiting for this contact to accept."));
                     items.add(UItem.asButton(4,"Cancel outgoing request").setEnabled(!busy));
                 } else if(!state.seesTheirPresence) items.add(UItem.asButton(1,"Request contact authorization").accent().setEnabled(!busy));
                 if(state.sharesOwnPresence) items.add(UItem.asButton(5,"Stop sharing your presence").setEnabled(!busy));
             }
+            items.add(UItem.asShadow(address+(state==null ? "\n\nReconnect to view or change authorization. Saved incoming requests remain available." : state.outgoingPending ? "\n\nRequest sent. Waiting for this contact to accept." : "")));
             if(requests.contains(address)) {
                 items.add(UItem.asHeader("Incoming request"));
-                items.add(UItem.asShadow("This contact wants to see your online status. Accepting also requests their presence if you do not already have access."));
                 items.add(UItem.asButton(2,"Accept and request back").accent().setEnabled(!busy && state!=null));
                 items.add(UItem.asButton(3,"Decline request").setEnabled(!busy && state!=null));
+                items.add(UItem.asShadow("This contact wants to see your online status. Accepting also requests their presence if you do not already have access."));
             }
             if(busy) items.add(UItem.asShadow("Updating contact authorization…"));
             if(status!=null) items.add(UItem.asShadow(status));
