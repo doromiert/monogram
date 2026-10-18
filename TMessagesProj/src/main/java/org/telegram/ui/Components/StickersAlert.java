@@ -1282,7 +1282,10 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         MonogramPacks.Pack pack=localPack();if(pack==null) return;
         for(MonogramPacks.Item item:pack.items) if(item.id==document.id) {
                 ItemOptions.makeOptions(containerView,resourcesProvider,anchor)
+                    .addText(item.name,14,AndroidUtilities.bold(),280)
                     .add(R.drawable.msg_gallery,org.telegram.messenger.xmpp.MonogramStickerExport.label(document),() -> org.telegram.messenger.xmpp.MonogramStickerExport.save(parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity(),currentAccount,document))
+                    .add(R.drawable.msg_edit,"Edit artwork",() -> editableLocalPack(() -> StickersAlert.editSticker(parentFragment,stickerSet,document)))
+                    .add(R.drawable.msg_gallery,"Replace artwork",() -> addLocalStickers(item.id))
                     .add(R.drawable.msg_edit,"Edit name",() -> editableLocalPack(() -> localItemInput(item,false)))
                     .add(R.drawable.msg_emoji_stickers,"Change emoji tag",() -> editableLocalPack(() -> localItemInput(item,true)))
                     .add(R.drawable.msg_delete,"Remove sticker",() -> new AlertDialog.Builder(getContext(),resourcesProvider)
@@ -1299,11 +1302,12 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 .setPositiveButton(LocaleController.getString(R.string.Save),(dialog,which) -> editLocalPack(() -> MonogramPacks.rename(currentAccount,stickerSet.set.id,item.id,input.getText().toString(),emoji)))
                 .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
     }
-    private void addLocalStickers() {
+    private void addLocalStickers() { addLocalStickers(0); }
+    private void addLocalStickers(long replacedItemId) {
         editableLocalPack(() -> {
             ChatAttachAlert picker = new ChatAttachAlert(getContext(), parentFragment, false, false, false, resourcesProvider);
             picker.setupPhotoPicker("Add stickers");
-            picker.setMaxSelectedPhotos(0, true);
+            picker.setMaxSelectedPhotos(replacedItemId == 0 ? 0 : 1, true);
             picker.setDelegate(new ChatAttachAlert.ChatAttachViewDelegate() {
                 @Override
                 public void didPressedButton(int button, boolean arg, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia, boolean forceDocument, long payStars) {
@@ -1320,7 +1324,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                         }
                         if (files.isEmpty()) return;
                         picker.dismiss();
-                        addLocalStickerUris(files);
+                        addLocalStickerUris(files,replacedItemId);
                     } catch (Exception failed) {
                         localPackError("Could not read the selected images. Try Import sticker files from the pack menu.");
                     }
@@ -1331,15 +1335,17 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
             picker.show();
         });
     }
-    private void addLocalStickerUris(ArrayList<Uri> files) {
+    private void addLocalStickerUris(ArrayList<Uri> files) { addLocalStickerUris(files,0); }
+    private void addLocalStickerUris(ArrayList<Uri> files,long replacedItemId) {
         if (files.isEmpty() || localPack() == null) return;
+        if (replacedItemId != 0 && files.size() != 1) { localPackError("Select one replacement image.");return; }
         // External pickers pause the fragment and dismiss its dialog; restore a fresh pack sheet.
         if (isDismissed()) {
             TLRPC.TL_inputStickerSetID input = new TLRPC.TL_inputStickerSetID();input.id = stickerSet.set.id;
             StickersAlert restored = new StickersAlert(getContext(), parentFragment, input,
                     MonogramPacks.find(currentAccount,input), delegate, resourcesProvider, false);
             if (parentFragment != null) parentFragment.showDialog(restored);else restored.show();
-            restored.addLocalStickerUris(files);
+            restored.addLocalStickerUris(files,replacedItemId);
             return;
         }
         MonogramPacks.Callback finished = error -> {
@@ -1351,12 +1357,17 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
             org.telegram.ui.Cells.EditTextCell name = new org.telegram.ui.Cells.EditTextCell(getContext(), "Sticker name", false);
             name.editText.setSingleLine(true);
             name.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
+            String previousEmoji="🙂";
+            for(MonogramPacks.Item item:localPack().items) if(item.id==replacedItemId) { name.editText.setText(item.name);previousEmoji=item.emoji; }
+            final String emoji=previousEmoji;
             new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(name)
                     .setPositiveButton(LocaleController.getString(R.string.Save), (dialog, which) -> {
                         if (localPack() == null) return;
                         pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
-                        MonogramPacks.saveSticker(currentAccount, stickerSet.set.id, stickerSet.set.title,
-                                files.get(0), name.getText().toString(), "🙂", finished);
+                        if(replacedItemId==0) MonogramPacks.saveSticker(currentAccount, stickerSet.set.id, stickerSet.set.title,
+                                files.get(0), name.getText().toString(), emoji, finished);
+                        else MonogramPacks.replaceSticker(currentAccount,stickerSet.set.id,replacedItemId,
+                                files.get(0),name.getText().toString(),emoji,finished);
                     }).setNegativeButton(LocaleController.getString(R.string.Cancel), null).show();
         } else {
             pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);

@@ -122,6 +122,41 @@ public class MonogramPacksTest {
             if(pass>0) assertEquals(id,packs.get(0).id);
         }
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void replaceKeepsPositionAndOldDocumentsAndFailurePreservesThePack() throws Exception {
+        jid="replace-sticker@example.org";
+        byte[] image=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+        long packId=0,oldId=0,neighborId=0,replacementId=0;File oldFile=null;byte[] oldBytes=null;
+        for(int pass=0;pass<5;pass++) {
+            android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/replace"+pass);
+            org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,
+                    new java.io.ByteArrayInputStream(pass==4 ? new byte[]{1,2,3} : image));
+            java.util.concurrent.CountDownLatch saved=new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+            MonogramPacks.Callback done=failure->{error.set(failure);saved.countDown();};
+            if(pass<2) MonogramPacks.saveSticker(0,packId,"Friends",uri,"Sticker "+pass,"🙂",done);
+            else MonogramPacks.replaceSticker(0,packId,pass==3 ? 123L : pass==4 ? replacementId : oldId,uri,"Edited","👋",done);
+            assertTrue(saved.await(10,java.util.concurrent.TimeUnit.SECONDS));
+            if(pass<3) assertNull(error.get());else assertNotNull(error.get());
+            java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+            if(pass==0) {
+                MonogramPacks.Pack pack=MonogramPacks.packs(0).get(0);packId=pack.id;oldId=pack.items.get(0).id;
+                oldFile=new File(MonogramPacks.document(0,oldId).localPath);oldBytes=java.nio.file.Files.readAllBytes(oldFile.toPath());
+            } else if(pass==1) neighborId=MonogramPacks.pack(0,packId).items.get(1).id;
+            else {
+                MonogramPacks.Pack pack=MonogramPacks.pack(0,packId);
+                assertEquals(2,pack.items.size());assertEquals(neighborId,pack.items.get(1).id);
+                assertNotEquals(oldId,pack.items.get(0).id);assertEquals("Edited",pack.items.get(0).name);assertEquals("👋",pack.items.get(0).emoji);
+                assertNotNull(MonogramPacks.document(0,oldId));assertEquals(oldFile,new File(MonogramPacks.document(0,oldId).localPath));
+                assertArrayEquals(oldBytes,java.nio.file.Files.readAllBytes(oldFile.toPath()));
+                assertEquals("Sticker 0",MonogramPacks.stickerName(0,oldId));
+                assertEquals("Edited",MonogramPacks.stickerName(0,pack.items.get(0).id));
+                assertEquals(1,MonogramPacks.sets(0,false).size());
+                if(pass==2) replacementId=pack.items.get(0).id;
+                else assertEquals(replacementId,pack.items.get(0).id);
+            }
+        }
+    }
     @Test public void packOrderSurvivesRestartWithoutMovingEmojiOrHiddenPacks() throws Exception {
         jid="order@example.org";
         String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));

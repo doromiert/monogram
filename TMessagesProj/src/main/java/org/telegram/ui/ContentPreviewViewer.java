@@ -32,6 +32,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.util.TypedValue;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -45,6 +46,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -711,6 +713,20 @@ public class ContentPreviewViewer {
                 menuVisible = true;
                 containerView.invalidate();
             } else if (currentContentType == CONTENT_TYPE_STICKER) {
+                String stickerName = currentDocument == null ? null
+                        : org.telegram.messenger.xmpp.MonogramPacks.stickerName(currentAccount, currentDocument.id);
+                if (!TextUtils.isEmpty(stickerName)) {
+                    TextView title = new TextView(parentActivity);
+                    title.setText(stickerName);
+                    title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                    title.setTypeface(AndroidUtilities.bold());
+                    title.setTextColor(getThemedColor(Theme.key_actionBarDefaultSubmenuItem));
+                    title.setMaxLines(2);
+                    title.setEllipsize(TextUtils.TruncateAt.END);
+                    title.setMaxWidth(dp(280));
+                    title.setPadding(dp(16), dp(10), dp(16), dp(8));
+                    previewMenu.addView(title);
+                }
                 if (MessageObject.isPremiumSticker(currentDocument) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
                     showUnlockPremiumView();
                     menuVisible = true;

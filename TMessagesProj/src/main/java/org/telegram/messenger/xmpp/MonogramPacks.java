@@ -289,6 +289,10 @@ public final class MonogramPacks {
         for (Pack pack : read(scope(account))) for (Item item : pack.items) if (item.id == id) return document(scope(account), pack, item);
         return null;
     }
+    public static synchronized String stickerName(int account, long id) {
+        for (Pack pack : read(scope(account))) for (Item item : pack.items) if (item.id == id) return item.name;
+        return null;
+    }
     private static TLRPC.Document document(String scope, Pack pack, Item item) {
         File file = new File(directory(scope), item.file);
         TLRPC.TL_document doc = new TLRPC.TL_document(); doc.id = item.id; doc.dc_id = Integer.MIN_VALUE;
@@ -669,13 +673,19 @@ public final class MonogramPacks {
         return create(account,pack.name,pack.emojis,sources,packId,callback);
     }
     private static Request create(int account,String title,boolean emojis,ArrayList<Uri> sources,long targetPackId,Callback callback) {
-        return create(account,title,emojis,sources,targetPackId,"🙂",null,callback);
+        return create(account,title,emojis,sources,targetPackId,"🙂",null,0,callback);
     }
     public static Request saveSticker(int account,long packId,String title,Uri source,String stickerName,String emoji,Callback callback) {
         ArrayList<Uri> sources=new ArrayList<>();sources.add(source);
-        return create(account,title,false,sources,packId,emoji,stickerName,callback);
+        return create(account,title,false,sources,packId,emoji,stickerName,0,callback);
     }
-    private static Request create(int account,String title,boolean emojis,ArrayList<Uri> sources,long targetPackId,String emoji,String stickerName,Callback callback) {
+    public static Request replaceSticker(int account,long packId,long itemId,Uri source,String stickerName,String emoji,Callback callback) {
+        Pack pack=pack(account,packId);
+        if(pack==null || itemId==0) { callback.done("Sticker not found.");return null; }
+        ArrayList<Uri> sources=new ArrayList<>();sources.add(source);
+        return create(account,pack.name,pack.emojis,sources,packId,emoji,stickerName,itemId,callback);
+    }
+    private static Request create(int account,String title,boolean emojis,ArrayList<Uri> sources,long targetPackId,String emoji,String stickerName,long replacedItemId,Callback callback) {
         final Request operation = new Request(account);
         final String expectedOwner = owner(account);
         final String expectedScope = scope(account);
@@ -736,10 +746,26 @@ public final class MonogramPacks {
                             for(Pack candidate:packs) if(candidate.id==targetPackId && candidate.installed) target=candidate;
                             if(target==null) throw new ImportFailure("Pack no longer available.");
                             requireEditable(target);
+                            int replacedIndex=-1;
+                            if(replacedItemId!=0) {
+                                for(int i=0;i<target.items.size();i++) if(target.items.get(i).id==replacedItemId) replacedIndex=i;
+                                if(replacedIndex<0 || pack.items.size()!=1) throw new ImportFailure("Sticker no longer available in this pack.");
+                            }
                             long combined=total;
-                            for(Item item:target.items) combined+=new File(dir,item.file).length();
+                            for(Item item:target.items) if(item.id!=replacedItemId) combined+=new File(dir,item.file).length();
                             if(combined>MAX_PACK) throw new ImportFailure("A pack may use up to 100 MB on this phone.");
-                            target.items.addAll(pack.items);
+                            if(replacedIndex<0) target.items.addAll(pack.items);
+                            else {
+                                // Keep old document IDs/artwork resolvable without changing stickers in earlier messages.
+                                String archiveSource="local:replaced:"+target.id;
+                                Pack archive=null;
+                                for(Pack candidate:packs) if(!candidate.installed && archiveSource.equals(candidate.source)) archive=candidate;
+                                if(archive==null) {
+                                    archive=new Pack();archive.id=pack.id;archive.name=target.name;archive.source=archiveSource;
+                                    archive.installed=false;archive.emojis=target.emojis;archive.privatePack=target.privatePack;packs.add(archive);
+                                }
+                                archive.items.add(target.items.set(replacedIndex,pack.items.get(0)));
+                            }
                         }
                         write(expectedScope, packs); temporary.clear();
                     }
