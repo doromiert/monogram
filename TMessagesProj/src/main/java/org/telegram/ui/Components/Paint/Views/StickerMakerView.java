@@ -1415,17 +1415,21 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
         Runnable nameSticker = () -> {
             org.telegram.ui.Cells.EditTextCell input = new org.telegram.ui.Cells.EditTextCell(getContext(), "Sticker name", false);
             input.editText.setSingleLine(true);
-            input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
+            input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(100)});
+            input.editText.setText("Sticker");
             if (upload.replacedSticker != null && upload.stickerSet != null) {
                 org.telegram.messenger.xmpp.MonogramPacks.Pack original = org.telegram.messenger.xmpp.MonogramPacks.pack(currentAccount, upload.stickerSet.id);
                 if (original != null) for (org.telegram.messenger.xmpp.MonogramPacks.Item item : original.items)
                     if (item.id == upload.replacedSticker.id) input.editText.setText(item.name);
             }
-            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(input)
+            AlertDialog nameDialog = new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(input)
                     .setPositiveButton(getString(R.string.Save), (dialog, which) -> {
-                        if (!owner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
+                        if (!owner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) { dialog.dismiss();return; }
+                        final String name;
+                        try { name=org.telegram.messenger.xmpp.MonogramPacks.name(input.getText().toString()); }
+                        catch(IllegalArgumentException invalid) { input.editText.setError(invalid.getMessage());return; }
+                        dialog.dismiss();
                         try {
-                            String name = org.telegram.messenger.xmpp.MonogramPacks.name(input.getText().toString());
                             android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(getContext(),
                                     org.telegram.messenger.ApplicationLoader.getApplicationId() + ".provider", new File(upload.finalPath));
                             long packId = upload.stickerSet == null ? 0 : upload.stickerSet.id;
@@ -1455,7 +1459,11 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
                         }
                     }).setNegativeButton(getString(R.string.Cancel), (dialog, which) -> {
                         if (upload.whenDone != null) { upload.whenDone.run(false);upload.whenDone = null; }
-                    }).show();
+                        dialog.dismiss();
+                    }).create();
+            nameDialog.setDismissDialogByButtons(false);
+            nameDialog.show();
+            input.editText.selectAll();
         };
         org.telegram.messenger.xmpp.MonogramPacks.Pack pack = upload.stickerSet == null ? null
                 : org.telegram.messenger.xmpp.MonogramPacks.pack(currentAccount, upload.stickerSet.id);

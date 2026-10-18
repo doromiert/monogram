@@ -34063,11 +34063,15 @@ public class ChatActivity extends BaseFragment implements
             }
             case OPTION_ADD_TO_GIFS: {
                 TLRPC.Document document = selectedObject.getDocument();
-                getMessagesController().saveGif(selectedObject, document);
-                if (!showGifHint() && getParentActivity() != null) {
-                    BulletinFactory.of(this).createDownloadBulletin(BulletinFactory.FileType.GIF, themeDelegate).show();
+                if (document != null && MessageObject.isGifDocument(document)) {
+                    if ((document.localPath == null || document.localPath.isEmpty()) && selectedObject.messageOwner.attachPath != null
+                            && new File(selectedObject.messageOwner.attachPath).isFile()) document.localPath = selectedObject.messageOwner.attachPath;
+                    boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, document);
+                    if (!org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount, document, !favorite)) {
+                        BulletinFactory.of(this).createErrorBulletin("Could not save the GIF library. Check available storage.").show();
+                    }
+                    getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
                 }
-                chatActivityEnterView.addRecentGif(document);
                 break;
             }
             case OPTION_SUGGESTION_EDIT_MESSAGE:
@@ -46375,10 +46379,11 @@ public class ChatActivity extends BaseFragment implements
                         }
                     }
                 } else if (type == 3 && !noforwardsOrPaidMedia) {
-                    if (selectedObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage && MessageObject.isNewGifDocument(selectedObject.messageOwner.media.webpage.document)) {
-                        items.add(LocaleController.getString(R.string.SaveToGIFs));
+                    if (selectedObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage && MessageObject.isGifDocument(selectedObject.messageOwner.media.webpage.document)) {
+                        boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, selectedObject.messageOwner.media.webpage.document);
+                        items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
                         options.add(OPTION_ADD_TO_GIFS);
-                        icons.add(R.drawable.msg_gif);
+                        icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);
                     }
                 } else if (type == 4) {
                     if (!noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia()) {
@@ -46399,10 +46404,11 @@ public class ChatActivity extends BaseFragment implements
                             options.add(OPTION_SHARE);
                             icons.add(R.drawable.msg_shareout);
                         } else if (selectedObject.getDocument() != null && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce()) {
-                            if (MessageObject.isNewGifDocument(selectedObject.getDocument())) {
-                                items.add(LocaleController.getString(R.string.SaveToGIFs));
+                            if (MessageObject.isGifDocument(selectedObject.getDocument())) {
+                                boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, selectedObject.getDocument());
+                                items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
                                 options.add(OPTION_ADD_TO_GIFS);
-                                icons.add(R.drawable.msg_gif);
+                                icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);
                             }
                             items.add(LocaleController.getString(R.string.SaveToDownloads));
                             options.add(OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC);

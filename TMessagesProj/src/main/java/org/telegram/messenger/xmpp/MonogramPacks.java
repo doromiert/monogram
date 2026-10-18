@@ -694,18 +694,20 @@ public final class MonogramPacks {
         catch (Exception invalid) { callback.done(invalid.getMessage()); return operation; }
         final ArrayList<Uri> selected = new ArrayList<>(sources);
         WORKER.execute(() -> {
-            ArrayList<File> temporary = new ArrayList<>(); String error = null;
+            ArrayList<File> temporary = new ArrayList<>(); String error = null; String stage="Preparing pack";
             try {
                 File dir = directory(expectedScope); if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException();
                 Set<Long> pending = new HashSet<>(); Pack pack = new Pack(); pack.id = id(expectedScope, pending); pack.name = packName; pack.source = "local:" + UUID.randomUUID(); pack.emojis = emojis;
                 long total = 0;
                 for (Uri source : selected) {
+                    stage="Reading selected file";
                     operation.check();
                     if (!"content".equals(source.getScheme())) throw new ImportFailure("Choose files using the file picker.");
                     byte[] data;
                     try (InputStream input = ApplicationLoader.applicationContext.getContentResolver().openInputStream(source)) {
                         if (input == null) throw new IOException(); data = bytes(input, MAX_FILE, operation);
                     }
+                    stage="Decoding selected media";
                     String ext; Item item = new Item(); item.id = id(expectedScope, pending); item.name = stickerName == null ? "Item " + (pack.items.size() + 1) : name(stickerName); item.emoji = tag(emoji);
                     if (data.length >= 13 && data[0]=='G' && data[1]=='I' && data[2]=='F') {
                         ext=".gif";item.mime="image/gif";
@@ -736,10 +738,12 @@ public final class MonogramPacks {
                     }
                     validateMedia(data, item.mime);
                     total += data.length; if (total > MAX_PACK) throw new ImportFailure("A pack may use up to 100 MB on this phone.");
+                    stage="Saving artwork";
                     item.file = UUID.randomUUID() + ext; File target = new File(dir, item.file); temporary.add(target);
                     try (FileOutputStream output = new FileOutputStream(target)) { output.write(data); output.getFD().sync(); }
                     pack.items.add(item);
                 }
+                stage="Saving pack metadata";
                 synchronized (MonogramPacks.class) {
                     if (!expectedOwner.equals(owner(account))) throw new ImportFailure("The account changed. Create the pack again on the intended account.");
                     ArrayList<Pack> packs = new ArrayList<>(read(expectedScope));
@@ -776,7 +780,10 @@ public final class MonogramPacks {
                     }
                 }
             } catch (ImportFailure failure) { error = failure.getMessage(); }
-            catch (Exception unavailable) { error = "Could not create the pack. Check the selected files and available storage."; }
+            catch (Exception unavailable) {
+                org.telegram.messenger.FileLog.e(unavailable);
+                error="Could not save the sticker: "+stage+" ("+unavailable.getClass().getSimpleName()+").";
+            }
             finally { for (File file : temporary) file.delete(); }
             final String failure = error;
             AndroidUtilities.runOnUIThread(() -> { if (!expectedOwner.equals(owner(account)) || operation.cancelled) return; if (failure == null) refresh(account); callback.done(failure); });

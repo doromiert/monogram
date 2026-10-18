@@ -1307,7 +1307,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         editableLocalPack(() -> {
             ChatAttachAlert picker = new ChatAttachAlert(getContext(), parentFragment, false, false, false, resourcesProvider);
             picker.setupPhotoPicker("Add stickers");
-            picker.setMaxSelectedPhotos(replacedItemId == 0 ? 0 : 1, true);
+            picker.setMaxSelectedPhotos(replacedItemId == 0 ? -1 : 1, true);
             picker.setDelegate(new ChatAttachAlert.ChatAttachViewDelegate() {
                 @Override
                 public void didPressedButton(int button, boolean arg, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia, boolean forceDocument, long payStars) {
@@ -1357,19 +1357,27 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         if (files.size() == 1) {
             org.telegram.ui.Cells.EditTextCell name = new org.telegram.ui.Cells.EditTextCell(getContext(), "Sticker name", false);
             name.editText.setSingleLine(true);
-            name.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
+            name.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(100)});
+            name.editText.setText("Sticker");
             String previousEmoji="🙂";
             for(MonogramPacks.Item item:localPack().items) if(item.id==replacedItemId) { name.editText.setText(item.name);previousEmoji=item.emoji; }
             final String emoji=previousEmoji;
-            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(name)
+            AlertDialog nameDialog = new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(name)
                     .setPositiveButton(LocaleController.getString(R.string.Save), (dialog, which) -> {
-                        if (localPack() == null) return;
+                        if (localPack() == null) { dialog.dismiss();return; }
+                        final String label;
+                        try { label=MonogramPacks.name(name.getText().toString()); }
+                        catch(IllegalArgumentException invalid) { name.editText.setError(invalid.getMessage());return; }
+                        dialog.dismiss();
                         pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
                         if(replacedItemId==0) MonogramPacks.saveSticker(currentAccount, stickerSet.set.id, stickerSet.set.title,
-                                files.get(0), name.getText().toString(), emoji, finished);
+                                files.get(0), label, emoji, finished);
                         else MonogramPacks.replaceSticker(currentAccount,stickerSet.set.id,replacedItemId,
-                                files.get(0),name.getText().toString(),emoji,finished);
-                    }).setNegativeButton(LocaleController.getString(R.string.Cancel), null).show();
+                                files.get(0),label,emoji,finished);
+                    }).setNegativeButton(LocaleController.getString(R.string.Cancel), (dialog,which)->dialog.dismiss()).create();
+            nameDialog.setDismissDialogByButtons(false);
+            nameDialog.show();
+            name.editText.selectAll();
         } else {
             pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
             MonogramPacks.addItems(currentAccount,stickerSet.set.id,files,finished);
