@@ -159,11 +159,11 @@ public final class Omemo2IncomingJournal {
         saved.fingerprint=fingerprint;saved.replenish=replenish;saved.accepted=content==null;
         if(acknowledgement!=null) {
             if(acknowledgement.getStanzaId()==null) acknowledgement.setStanzaId(UUID.randomUUID().toString());
-            saved.ackXml=acknowledgement.toXML().toString();if(saved.ackXml.getBytes(StandardCharsets.UTF_8).length>65536) throw new IOException("Incoming acknowledgement exceeds capacity");
+            saved.ackXml=XmppXml.string(acknowledgement);if(saved.ackXml.getBytes(StandardCharsets.UTF_8).length>65536) throw new IOException("Incoming acknowledgement exceeds capacity");
         }
         if(content!=null) {
             if(model==null) throw new GeneralSecurityException("Invalid authenticated incoming message");
-            saved.outerXml=outer.toXML().toString();saved.contentXml=content.toXML().toString();
+            saved.outerXml=XmppXml.string(outer);saved.contentXml=XmppXml.string(content);
             if(saved.outerXml.getBytes(StandardCharsets.UTF_8).length>1024*1024) throw new IOException("Incoming stanza exceeds journal capacity");
             saved.ids.putAll(model.ids);saved.timestamp=model.timestamp;saved.archived=model.archived;saved.markable=model.markableId;
         }

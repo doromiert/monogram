@@ -440,7 +440,7 @@ public final class MonogramController {
                         () -> modernStore.begin(details.jid.toString(),modernDevice)),
                 new XmppSession.Listener() {
                     @Override public void debugMessageXml(boolean outgoing,org.jivesoftware.smack.packet.Message stanza) {
-                        if(owner==accountEpoch && debugLog.enabled()) debugLog.record(outgoing ? "Sent XML" : "Received XML",stanza.toXML().toString());
+                        if(owner==accountEpoch && debugLog.enabled()) debugLog.record(outgoing ? "Sent XML" : "Received XML",com.negzero.monogram.xmpp.XmppXml.string(stanza));
                     }
                     @Override public void message(org.jxmpp.jid.EntityBareJid sender, String id, String body, boolean encrypted) {}
                     @Override public void message(XmppMessage message) { received(owner,details.jid.toString(),message,null); }

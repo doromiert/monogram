@@ -58,7 +58,7 @@ public final class LegacyIncomingJournal {
         }
         private static Message copy(Message outer) {
             try {
-                String xml=outer.toXML().toString();if(xml.length()>MAX_ENTRY_BYTES || xml.contains("<!")) throw new IOException("Invalid legacy incoming envelope");
+                String xml=XmppXml.string(outer);if(xml.length()>MAX_ENTRY_BYTES || xml.contains("<!")) throw new IOException("Invalid legacy incoming envelope");
                 return PacketParserUtils.parseStanza(xml);
             } catch(Exception invalid) { throw new IllegalArgumentException("Cannot snapshot legacy incoming envelope",invalid); }
         }
@@ -139,7 +139,7 @@ public final class LegacyIncomingJournal {
         string(out,saved.identity);string(out,saved.fingerprint);string(out,saved.author);out.writeInt(saved.senderDevice);
         out.writeBoolean(saved.accepted);out.writeBoolean(saved.replenish);string(out,saved.completionXml);
         if(!saved.accepted) {
-        string(out,c.outer.toXML().toString());string(out,saved.body);
+        string(out,XmppXml.string(c.outer));string(out,saved.body);
         string(out,c.room);string(out,c.nickname);string(out,c.realSender);string(out,c.occupantId);string(out,c.markable);
         out.writeBoolean(c.verified);out.writeBoolean(c.outgoing);out.writeBoolean(c.archived);out.writeLong(c.timestamp);
         if(c.ids.size()>16) throw new IOException("Too many legacy incoming aliases");out.writeInt(c.ids.size());
@@ -231,7 +231,7 @@ public final class LegacyIncomingJournal {
         int slot=1;while(used[slot]) slot++;
         Saved saved=new Saved();saved.context=context;saved.body=decrypted.getBody();saved.fingerprint=decrypted.getSendersFingerprint().toString();saved.identity=identity();saved.token=new Token(epoch,digest,slot);
         saved.author=decrypted.getSenderDevice().getJid().toString();saved.senderDevice=decrypted.getSenderDevice().getDeviceId();
-        saved.accepted=decrypted.isKeyTransportMessage();saved.completionXml=completion==null ? null : completion.toXML().toString();saved.replenish=replenish;
+        saved.accepted=decrypted.isKeyTransportMessage();saved.completionXml=completion==null ? null : XmppXml.string(completion);saved.replenish=replenish;
         Received result=received(saved,decrypted,context);byte[] bytes=encode(saved);
         if(total+bytes.length>MAX_BYTES) throw new FullException("Legacy incoming journal byte capacity exceeded");
         tx.save(LegacyOmemoRecords.INCOMING,"",slot,bytes);return result;
