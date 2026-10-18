@@ -2736,12 +2736,12 @@
     <string name="TapToChange">Tap to change</string>
     <string name="AlternativeOptions">Alternative options</string>
     <string name="AddAnotherAccount">Add another account</string>
-    <string name="AddAnotherAccountInfo">Connect other Telegram accounts and easily switch between them.</string>
+    <string name="AddAnotherAccountInfo">Connect other Jabber accounts and easily switch between them.</string>
     <string name="SetPasscode">Set a Passcode</string>
     <string name="SetPasscodeInfo">Lock the app with a passcode so that others can\'t open it.</string>
     <string name="ClearCache">Clear Cache</string>
     <string name="ClearSelectedCache">Clear Selected</string>
-    <string name="ClearCacheInfo">Free up disk space on your device; your media will stay in the cloud.</string>
+    <string name="ClearCacheInfo">Remove cached media from this device to free up disk space.</string>
     <string name="ClearingCache">Clearing cache…</string>
     <string name="ClearingCacheDescription">Please keep this window open while Telegram is clearing your cache.</string>
     <string name="ChangePhoneNumber">Change Phone Number</string>
@@ -2750,7 +2750,7 @@
     <string name="ContactSupport">Contact Support</string>
     <string name="ContactSupportInfo">Tell us about any issues; logging out doesn\'t usually help.</string>
     <string name="LogOutTitle">Log Out</string>
-    <string name="LogOutInfo">Logging out deactivates all Secret Chats.</string>
+    <string name="LogOutInfo">Logging out removes the saved login and local message data for this account.</string>
     <string name="SearchInSettings">Search Settings and FAQ</string>
     <string name="SettingsRecent">Recent searches</string>
     <string name="SettingsFaqSearchTitle">Frequently asked questions</string>
