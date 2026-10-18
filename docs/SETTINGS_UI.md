@@ -49,3 +49,26 @@ Still required before the full migration is complete:
 - Verify the import progress, installed-pack artwork and sticker long-press on the device. Never modify the user's real packs or trust decisions just to exercise a check.
 
 No phone navigation or setting changes were used as verification for this batch.
+
+## Interface review record
+
+Full review scope: settings home, all reachable stock settings and the ten custom XMPP forms. Android Views with Telegram's existing cells, theme keys, section renderer and adaptive navigation are the styling system. This record covers source inspection and compilation; it does not cover rendered acceptance.
+
+| Category | Evidence inspected | Result |
+| --- | --- | --- |
+| Typography | Native HeaderCell, TextCell, TextSettingsCell, TextCheckCell, EditTextCell and explanatory footers | Native text treatment retained; large-font/RTL wrapping not rendered |
+| Surfaces | ThemeActivity reference and UniversalRecyclerView section rendering | Shared native inset/radius renderer; orphaned security/authorization headers corrected |
+| Animations | ActionBar adaptive background attachment | Existing native scroll treatment reused; motion not observed |
+| Icons | Native back icon, existing reconnect/notification icons and theme bindings | Existing icon system retained; live theme appearance not rendered |
+| Performance | Shared section renderer and account-owned import observer lifecycle | No added blur/compositing framework; actual scroll performance not measured |
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| Medium | Ten custom screens listed above | Flat legacy list presentation | Native section renderer and adaptive action bar | Matches the reference surface and navigation |
+| Medium | Connection and security | Long mixed groups | Named cards, native status/value cells, explanatory footers | Keeps related controls together |
+| Medium | Contact authorization and security | Explanation split header from actions | Explanations outside groups, presence shown as values | Avoids isolated header cards |
+| Medium | Settings name search | Older standalone form | Native UserInfoActivity | Keeps settings navigation in the current editor |
+
+Considered and rejected: adding a custom blur/glass layer would duplicate the existing renderer; globally modifying UniversalFragment would change unrelated Telegram flows; replacing stock settings already using native sections would add churn without improving fidelity.
+
+Verification commands: Nix `:TMessagesProj_App:assembleAfatDebug`; focused `MonogramPacksTest` (six cases, zero failures/errors); source route and callback comparison; APK version/ABI/certificate checks. Rendered interactions and 10%-speed motion inspection were not run. Verdict: rendered acceptance pending; do not mark the full settings migration complete from these checks.
