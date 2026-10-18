@@ -2,6 +2,9 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
+- [o] Repair 0.2.99 local presets applying light settings in dark mode: pass the selected variant to native accent creation, choose settings matching the parent base in other native callers, and repair unchanged light accents cached on Night/Tinted bases when loaded or reused. Preserve customized backgrounds. Focused check and 0.2.100 packaging in progress.
+
+
 - [x] Build, publish and install [0.2.99](https://github.com/doromiert/monogram/releases/tag/v0.2.99) (72749, original signer, arm64), source `6f1c1d6321d65b58cd35f2b8e1298ae6f3ac4f79`. Adds bounded local XML debugging and message diagnostics, local native chat theme presets, the Night accent/profile-refresh fixes, and Exteragram Monet Light/Dark/Black. Nix packaging and focused capture/inspector/theme checks pass; public asset digest and exact source tag match. Installed on 192.168.1.128:35091; app process runs with no fatal exception in its current log. Preserves saved account credentials, original/active legacy identity and device, two modern identity/trust records and own device, all 980 earlier message identities, 665 earlier read IDs, nine read anchors, nine notification entries and 132 pack files. Schema stays 27. Actual XML UI interaction, theme appearance/palette changes and a fresh received-sticker trace remain unverified. APK SHA-256 `a72a65df4bbb93f4a1068b18624e70600798ce8a0f4e87a741e004ea9478ca7b`.
 
 

@@ -1925,7 +1925,22 @@ public class Theme {
         }
 
         public ThemeAccent createNewAccent(TLRPC.TL_theme info, int account) {
+            if(info!=null) for(int i=0;i<info.settings.size();i++)
+                if(getKey().equals(getBaseThemeKey(info.settings.get(i)))) return createNewAccent(info,account,false,i);
             return createNewAccent(info, account, false, 0);
+        }
+
+        /** Repair only the unchanged light preset accidentally cached on a dark base in 0.2.99. */
+        public void repairLocalDarkAccent(ThemeAccent accent) {
+            if(!isDark() || accent.info==null || accent.info.id < -7105 || accent.info.id > -7100
+                    || accent.info.slug==null || !accent.info.slug.startsWith("monogram_") || accent.info.settings.isEmpty()) return;
+            TLRPC.ThemeSettings light=accent.info.settings.get(0);
+            if(light.wallpaper==null || light.wallpaper.settings==null || light.message_colors.isEmpty()
+                    || accent.accentColor!=light.accent_color || accent.myMessagesAccentColor!=(light.message_colors.get(0)|0xff000000)
+                    || accent.backgroundOverrideColor!=getWallpaperColor(light.wallpaper.settings.background_color)) return;
+            for(TLRPC.ThemeSettings settings:accent.info.settings) if(getKey().equals(getBaseThemeKey(settings))) {
+                fillAccentValues(accent,settings);return;
+            }
         }
 
         public ThemeAccent createNewAccent(TLRPC.TL_theme info, int account, boolean ignoreThemeInfoId, int settingsIndex) {
@@ -1955,6 +1970,7 @@ public class Theme {
             } else {
                 ThemeAccent themeAccent = accentsByThemeId.get(themeId);
                 if (themeAccent != null) {
+                    repairLocalDarkAccent(themeAccent);
                     return themeAccent;
                 }
                 int id = ++lastAccentId;
@@ -4176,6 +4192,7 @@ public class Theme {
                                     }
                                     if (accent.info != null) {
                                         accent.isDefault = accent.info.isDefault;
+                                        info.repairLocalDarkAccent(accent);
                                     }
                                     info.themeAccentsMap.put(accent.id, accent);
                                     if (accent.info != null) {

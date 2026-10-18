@@ -16,7 +16,7 @@ import org.telegram.tgnet.*;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramThemesTest.Preferences.class,MonogramThemesTest.ThemeStartup.class})
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramThemesTest.Preferences.class,MonogramThemesTest.ThemeStartup.class,MonogramThemesTest.Device.class})
 public class MonogramThemesTest {
     @Implements(value=org.telegram.messenger.MessagesController.class,isInAndroidSdk=false)
     public static class Preferences {
@@ -26,6 +26,30 @@ public class MonogramThemesTest {
     }
     @Implements(value=Theme.class,isInAndroidSdk=false)
     public static class ThemeStartup { @Implementation public static void __staticInitializer__() {} }
+    @Implements(value=org.telegram.messenger.AndroidUtilities.class,isInAndroidSdk=false)
+    public static class Device {
+        @Implementation public static void __staticInitializer__() {}
+        @Implementation public static int getWallpaperRotation(int rotation,boolean inverse) { return rotation; }
+    }
+    @Test public void selectingAndRestoringEveryDarkPresetUsesItsDarkSettings() throws Exception {
+        for(TLRPC.TL_theme preset:MonogramThemes.catalog()) for(int mode=2;mode<4;mode++) {
+            Theme.ThemeInfo base=new Theme.ThemeInfo();base.name=mode==2 ? "Night" : "Dark Blue";
+            Method options=Theme.ThemeInfo.class.getDeclaredMethod("setAccentColorOptions",int[].class);options.setAccessible(true);
+            options.invoke(base,(Object)new int[]{0xff5b9eff});
+            Theme.ThemeAccent selected=base.createNewAccent(preset,0);
+            TLRPC.ThemeSettings dark=preset.settings.get(mode);
+            assertEquals(dark.accent_color,selected.accentColor);
+            assertEquals(dark.message_colors.get(0).intValue(),selected.myMessagesAccentColor);
+            assertEquals(dark.wallpaper.settings.background_color,selected.backgroundOverrideColor);
+            assertTrue(ColorUtils.calculateLuminance((int)selected.backgroundOverrideColor)<.1);
+            Theme.ThemeInfo.fillAccentValues(selected,preset.settings.get(0));
+            base.repairLocalDarkAccent(selected);
+            assertEquals(dark.accent_color,selected.accentColor);
+            assertEquals(dark.wallpaper.settings.background_color,selected.backgroundOverrideColor);
+            Theme.ThemeInfo.fillAccentValues(selected,preset.settings.get(0));selected.backgroundOverrideColor=0xff123456;
+            base.repairLocalDarkAccent(selected);assertEquals((long)0xff123456,selected.backgroundOverrideColor);
+        }
+    }
     @org.junit.Before public void setup() { ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication(); }
     @Test public void nightVariantsKeepTheirOwnColorInsteadOfInheritingTheHomeGradient() throws Exception {
         ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
