@@ -746,6 +746,10 @@ public class ContentPreviewViewer {
                         actions.add(5);
                     }
                 }
+                if(currentDocument!=null) {
+                    items.add(org.telegram.messenger.xmpp.MonogramStickerExport.label(currentDocument));
+                    icons.add(R.drawable.msg_gallery);actions.add(9);
+                }
                 if (!MessageObject.isMaskDocument(currentDocument) && (inFavs || MediaDataController.getInstance(currentAccount).canAddStickerToFavorites() && MessageObject.isStickerHasSet(currentDocument))) {
                     items.add(inFavs ? LocaleController.getString(R.string.DeleteFromFavorites) : LocaleController.getString(R.string.AddToFavorites));
                     icons.add(inFavs ? R.drawable.msg_unfave : R.drawable.msg_fave);
@@ -823,6 +827,8 @@ public class ContentPreviewViewer {
                             delegate.editSticker(currentDocument);
                         } else if (actions.get(which) == 8) {
                             delegate.deleteSticker(currentDocument);
+                        } else if(actions.get(which)==9) {
+                            org.telegram.messenger.xmpp.MonogramStickerExport.save(parentActivity,currentAccount,currentDocument);
                         }
                         dismissPopupWindow();
                     }

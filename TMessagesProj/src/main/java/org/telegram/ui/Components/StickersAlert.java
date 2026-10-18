@@ -1279,18 +1279,17 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 }).setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
     }
     private void localItemMenu(TLRPC.Document document,View anchor) {
-        editableLocalPack(() -> {
-            MonogramPacks.Pack pack=localPack();if(pack==null) return;
-            for(MonogramPacks.Item item:pack.items) if(item.id==document.id) {
+        MonogramPacks.Pack pack=localPack();if(pack==null) return;
+        for(MonogramPacks.Item item:pack.items) if(item.id==document.id) {
                 ItemOptions.makeOptions(containerView,resourcesProvider,anchor)
-                    .add(R.drawable.msg_edit,"Edit name",() -> localItemInput(item,false))
-                    .add(R.drawable.msg_emoji_stickers,"Change emoji tag",() -> localItemInput(item,true))
+                    .add(R.drawable.msg_gallery,org.telegram.messenger.xmpp.MonogramStickerExport.label(document),() -> org.telegram.messenger.xmpp.MonogramStickerExport.save(parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity(),currentAccount,document))
+                    .add(R.drawable.msg_edit,"Edit name",() -> editableLocalPack(() -> localItemInput(item,false)))
+                    .add(R.drawable.msg_emoji_stickers,"Change emoji tag",() -> editableLocalPack(() -> localItemInput(item,true)))
                     .add(R.drawable.msg_delete,"Remove sticker",() -> new AlertDialog.Builder(getContext(),resourcesProvider)
-                        .setTitle("Remove sticker?").setPositiveButton("Remove",(dialog,which) -> editLocalPack(() -> MonogramPacks.removeItem(currentAccount,pack.id,item.id)))
+                        .setTitle("Remove sticker?").setPositiveButton("Remove",(dialog,which) -> editableLocalPack(() -> editLocalPack(() -> MonogramPacks.removeItem(currentAccount,pack.id,item.id))))
                         .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show())
                     .show();return;
-            }
-        });
+        }
     }
     private void localItemInput(MonogramPacks.Item item,boolean emoji) {
         org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),emoji ? "Associated emoji" : "Sticker name",false);

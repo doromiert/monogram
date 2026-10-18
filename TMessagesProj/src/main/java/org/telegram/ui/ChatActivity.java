@@ -33652,6 +33652,9 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_SAVE_TO_GALLERY: {
+                if(selectedObject!=null && (selectedObject.isSticker() || selectedObject.isAnimatedSticker() || selectedObject.isVideoSticker())) {
+                    org.telegram.messenger.xmpp.MonogramStickerExport.save(getParentActivity(),currentAccount,selectedObject.getDocument());break;
+                }
                 if (Build.VERSION.SDK_INT >= 23 && (Build.VERSION.SDK_INT <= 28 || BuildVars.NO_SCOPED_STORAGE) && getParentActivity().checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                     getParentActivity().requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 4);
                     selectedObject = null;
@@ -46456,6 +46459,10 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
+                if(!noforwardsOrPaidMedia && !options.contains(OPTION_SAVE_TO_GALLERY) && (selectedObject.isSticker() || selectedObject.isAnimatedSticker() || selectedObject.isVideoSticker())) {
+                    items.add(org.telegram.messenger.xmpp.MonogramStickerExport.label(selectedObject.getDocument()));
+                    options.add(OPTION_SAVE_TO_GALLERY);icons.add(R.drawable.msg_gallery);
+                }
                 final boolean canForward = !selectedObject.isSponsored()
                     && !isQuickRepliesOrWelcomeMessagesMode()
                     && chatMode != MODE_SCHEDULED
