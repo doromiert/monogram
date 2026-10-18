@@ -3041,7 +3041,7 @@
     <string name="TerminateAllSessions">Terminate All Other Sessions</string>
     <string name="OtherWebSessions">Connected websites</string>
     <string name="WebSessionsTitle">Logged in with Telegram</string>
-    <string name="TerminateWebSessionInfo">Tap to disconnect from your Telegram account.</string>
+    <string name="TerminateWebSessionInfo">Tap to disconnect this session from your account.</string>
     <string name="TerminateWebSessionText">Are you sure you want to disconnect %1$s?</string>
     <string name="TerminateWebSessionTitle">Disconnect website</string>
     <string name="TerminateWebSessionsTitle">Disconnect websites</string>
@@ -5408,7 +5408,7 @@
     <string name="TerminateOldSessionHeader">Automatically terminate old sessions</string>
     <string name="IfInactiveFor">if inactive for</string>
     <string name="AuthAnotherClientInfo5">Go to *getdesktop.telegram.org* or *web.telegram.org* to get a QR code</string>
-    <string name="SessionsListInfo">The official Telegram app is available for Android, iPhone, iPad, Windows, macOS and Linux.</string>
+    <string name="SessionsListInfo">You can use your Jabber account with compatible XMPP clients on other devices.</string>
     <string name="MigrateOldFolder">Migrate old folder to Scoped Storage</string>
     <string name="SelectThisDay">Select this day</string>
     <string name="NoMessagesForThisDay">No messages for this day</string>
@@ -6199,7 +6199,7 @@
     <string name="DeleteAllProxies">Delete All Proxies</string>
     <string name="DeleteAllProxiesConfirm">Are you sure you want to delete all proxies?</string>
     <string name="AccDescrSendAs">Send as %1$s</string>
-    <string name="SessionsSettingsInfo">Review the list of devices where you are logged into your Telegram account.</string>
+    <string name="SessionsSettingsInfo">Review the list of devices connected to your Jabber account.</string>
     <string name="SendMediaPermissionPhotos">Photos</string>
     <string name="TapAndHoldToDeleteReaction">Tap and hold to delete reaction.</string>
     <string name="PollV2YouCanAddXCountriesOnly">You can add **%d** countries only</string>
