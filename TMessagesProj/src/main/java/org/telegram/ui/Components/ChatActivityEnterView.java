@@ -11971,14 +11971,14 @@ public class ChatActivityEnterView extends FrameLayout implements
             @Override
             public void onStickersSettingsClick() {
                 if (parentFragment != null) {
-                    parentFragment.presentFragment(new StickersActivity(MediaDataController.TYPE_IMAGE, null));
+                    parentFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount));
                 }
             }
 
             @Override
             public void onEmojiSettingsClick(ArrayList<TLRPC.TL_messages_stickerSet> frozenEmojiPacks) {
                 if (parentFragment != null) {
-                    parentFragment.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, frozenEmojiPacks));
+                    parentFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount));
                 }
             }
 

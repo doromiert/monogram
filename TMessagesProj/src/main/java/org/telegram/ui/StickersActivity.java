@@ -327,6 +327,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
     private static final int ID_DYNAMIC_PACK_ORDER = 7;
     private static final int ID_SHOW_MORE_FEATURED = 8;
     private static final int ID_SUGGEST_EMOJI = 9;
+    private static final int ID_MANAGE_PACKS = 10;
 
     private void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MediaDataController mediaDataController = MediaDataController.getInstance(currentAccount);
@@ -350,13 +351,19 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
             }
         }
 
+        final boolean monogram = !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+        if(monogram && (currentType == TYPE_IMAGE || currentType == TYPE_EMOJIPACKS)) {
+            items.add(UItem.asButton(ID_MANAGE_PACKS, R.drawable.msg2_sticker, "Manage sticker and emoji packs", "Import or create"));
+        }
         final int featuredCount = featured.size();
         final int archivedCount = mediaDataController.getArchivedStickersCount(currentType);
         final int emojiCount    = mediaDataController.getStickerSets(TYPE_EMOJIPACKS).size();
 
         if (currentType == TYPE_IMAGE) {
-            featuredRow = items.size();
-            items.add(UItem.asButton(ID_FEATURED, R.drawable.msg2_trending, getString(R.string.FeaturedStickers), featuredCount > 0 ? formatNumber(featuredCount, ',') : ""));
+            if(!monogram) {
+                featuredRow = items.size();
+                items.add(UItem.asButton(ID_FEATURED, R.drawable.msg2_trending, getString(R.string.FeaturedStickers), featuredCount > 0 ? formatNumber(featuredCount, ',') : ""));
+            }
             if (archivedCount > 0) {
                 archivedRow = items.size();
                 if (currentType == TYPE_IMAGE) {
@@ -384,7 +391,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
         if (currentType == TYPE_IMAGE) {
             reactionsDoubleTapRow = items.size();
             items.add(UItem.asSettingsCell(ID_QUICK_REACTION, R.drawable.msg2_reactions2, getString(R.string.DoubleTapSetting)).onBind(this::setQuickReactionImage));
-            items.add(UItem.asShadow(addStickersBotSpan(getString(currentType == TYPE_EMOJIPACKS ? R.string.EmojiBotInfo : R.string.StickersBotInfo))));
+            items.add(UItem.asShadow(monogram ? "Import a Telegram pack link or create a pack from local files in Manage sticker and emoji packs." : addStickersBotSpan(getString(currentType == TYPE_EMOJIPACKS ? R.string.EmojiBotInfo : R.string.StickersBotInfo))));
 
             items.add(UItem.asHeader(getString(R.string.StickersSettings)));
             suggestRow = items.size();
@@ -451,7 +458,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
         }
 
         if (currentType == TYPE_EMOJIPACKS) {
-            items.add(UItem.asShadow(addStickersBotSpan(getString(currentType == TYPE_EMOJIPACKS ? R.string.EmojiBotInfo : R.string.StickersBotInfo))));
+            items.add(UItem.asShadow(monogram ? "Import a Telegram pack link or create a pack from local files in Manage sticker and emoji packs." : addStickersBotSpan(getString(currentType == TYPE_EMOJIPACKS ? R.string.EmojiBotInfo : R.string.StickersBotInfo))));
         }
     }
 
@@ -493,6 +500,9 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
             return;
         }
         switch (item.id) {
+            case ID_MANAGE_PACKS:
+                presentFragment(new MonogramPacksActivity(currentAccount));
+                break;
             case ID_ARCHIVED:
                 presentFragment(new ArchivedStickersActivity(currentType));
                 break;
