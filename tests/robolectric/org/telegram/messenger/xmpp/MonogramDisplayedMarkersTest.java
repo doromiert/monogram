@@ -90,7 +90,7 @@ public class MonogramDisplayedMarkersTest {
     @Test public void schema21MigrationPreservesLocalReadDataAndDoesNotInventOldMarkerRequests() throws Exception {
         int original=save("keep",100000);read(original);
         for(String table:Arrays.asList("markable_messages","displayed_anchors","pending_displayed")) store.getWritableDatabase().execSQL("DROP TABLE "+table);
-        store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(21);reopen();assertEquals(25,store.getReadableDatabase().getVersion());
+        store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(21);reopen();assertEquals(26,store.getReadableDatabase().getVersion());
         assertTrue(store.reads.isRead(original));assertEquals("keep",store.getMessage(original,self).message);assertEquals(0,rows("markable_messages"));
         store.save(MessageFixture.markable("keep","origin-keep","mam-replay","keep",false,true,100000,"phone"));
         assertEquals(1,rows("markable_messages"));assertTrue(read(original).newlyRead.isEmpty());assertTrue(store.reads.pendingDisplayed().isEmpty());

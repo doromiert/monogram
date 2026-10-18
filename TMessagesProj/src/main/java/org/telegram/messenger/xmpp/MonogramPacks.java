@@ -42,9 +42,11 @@ public final class MonogramPacks {
         public long id;
         public String name, source;
         public boolean emojis, installed = true;
+        public boolean privatePack = true, connected = false;
         public final ArrayList<Item> items = new ArrayList<>();
     }
     public interface Callback { void done(String error); }
+    public interface ArchiveCallback { void done(File archive, String error); }
     public interface ImportObserver { void changed(ImportProgress progress); }
     public static final class ImportProgress {
         public final String stage, packName, error;
@@ -181,7 +183,7 @@ public final class MonogramPacks {
     private static ArrayList<Pack> copy(ArrayList<Pack> source) {
         ArrayList<Pack> result = new ArrayList<>();
         for (Pack old : source) {
-            Pack pack = new Pack(); pack.id = old.id; pack.name = old.name; pack.source = old.source; pack.emojis = old.emojis; pack.installed = old.installed;
+            Pack pack = new Pack(); pack.id = old.id; pack.name = old.name; pack.source = old.source; pack.emojis = old.emojis; pack.installed = old.installed; pack.privatePack = old.privatePack; pack.connected = old.connected;
             for (Item oldItem : old.items) {
                 Item item = new Item(); item.id = oldItem.id; item.name = oldItem.name; item.emoji = oldItem.emoji; item.mime = oldItem.mime;
                 item.file = oldItem.file; item.width = oldItem.width; item.height = oldItem.height; pack.items.add(item);
@@ -202,6 +204,8 @@ public final class MonogramPacks {
                 JSONObject object = array.getJSONObject(i); Pack pack = new Pack();
                 pack.id = object.getLong("id"); if (!localId(pack.id) || !used.add(pack.id)) throw new IOException(); pack.name = name(object.getString("name")); pack.source = object.optString("source");
                 pack.emojis = object.getBoolean("emojis"); pack.installed = object.optBoolean("installed", true);
+                pack.privatePack = object.optBoolean("privatePack", true); pack.connected = object.optBoolean("connected", false);
+                if (pack.connected) parseLink(pack.source);
                 JSONArray items = object.getJSONArray("items"); if (items.length() > 200) throw new IOException();
                 for (int j = 0; j < items.length(); j++) {
                     JSONObject entry = items.getJSONObject(j); Item item = new Item();
@@ -229,7 +233,7 @@ public final class MonogramPacks {
         JSONArray array = new JSONArray();
         for (Pack pack : packs) {
             JSONObject object = new JSONObject().put("id", pack.id).put("name", pack.name).put("source", pack.source)
-                    .put("emojis", pack.emojis).put("installed", pack.installed); JSONArray items = new JSONArray();
+                    .put("emojis", pack.emojis).put("installed", pack.installed).put("privatePack", pack.privatePack).put("connected", pack.connected); JSONArray items = new JSONArray();
             for (Item item : pack.items) items.put(new JSONObject().put("id", item.id).put("name", item.name).put("emoji", item.emoji)
                     .put("mime", item.mime).put("file", item.file).put("width", item.width).put("height", item.height));
             array.put(object.put("items", items));
@@ -351,16 +355,109 @@ public final class MonogramPacks {
         if (path.size() != 2 || !(path.get(0).equals("addstickers") || path.get(0).equals("addemoji")) || !path.get(1).matches("[A-Za-z0-9_]{1,64}")) throw new IllegalArgumentException("Invalid Telegram pack link.");
         return new Link(path.get(1), path.get(0).equals("addemoji"));
     }
+    private static ImportJob beginImport(int account) {
+        ImportJob job = new ImportJob(account), previous = IMPORTS.putIfAbsent(job.owner, job);
+        if (previous != null && (previous.progress.active || !IMPORTS.replace(job.owner, previous, job)))
+            throw new IllegalStateException("A pack is already being imported. Wait for it to finish or cancel it.");
+        return job;
+    }
+    /** Policy only: callers must enforce encrypted transport for private pack sharing. */
+    public static synchronized void privatePack(int account, long id, boolean value) throws Exception {
+        String scope = scope(account); ArrayList<Pack> packs = copy(read(scope));
+        for (Pack pack : packs) if (pack.id == id) { pack.privatePack = value; write(scope, packs); return; }
+        throw new IllegalArgumentException("Pack is no longer available.");
+    }
+    /** Returns an unencrypted app-private snapshot; the caller deletes it after saving/sharing. */
+    public static Request exportArchive(int account, long packId, ArchiveCallback callback) {
+        final Request request = new Request(account); final String expectedScope = scope(account);
+        WORKER.execute(() -> {
+            File output = null; String error = null;
+            try {
+                request.check(); Pack selected = null;
+                synchronized (MonogramPacks.class) {
+                    for (Pack pack : copy(read(expectedScope))) if (pack.id == packId) { selected = pack; break; }
+                }
+                if (selected == null) throw new ImportFailure("Pack is no longer available.");
+                File directory = new File(ApplicationLoader.applicationContext.getCacheDir(), "monogram-pack-exports/" + expectedScope);
+                if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException();
+                output = File.createTempFile("pack-", ".xmsp", directory);
+                MonogramPackArchive.write(selected, directory(expectedScope), output, request::check);
+                request.check();
+            } catch (ImportFailure failure) { error = failure.getMessage(); }
+            catch (Exception failure) { error = "Could not export the pack. Check its artwork and available storage."; }
+            if (error != null && output != null) { output.delete(); output = null; }
+            final File archive = output; final String failure = error;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (request.cancelled || !request.owner.equals(owner(account))) { if (archive != null) archive.delete(); return; }
+                callback.done(archive, failure);
+            });
+        });
+        return request;
+    }
+    /** Account-owned, token-free import of a plaintext snapshot selected through SAF. */
+    public static void startArchiveImport(int account, Uri source) {
+        if (source == null || !"content".equals(source.getScheme())) throw new IllegalArgumentException("Choose an .xmsp file using the file picker.");
+        final ImportJob job = beginImport(account); final Request operation = job.request;
+        final String expectedScope = scope(account); notifyImport(job);
+        WORKER.execute(() -> {
+            File staging = null; ArrayList<File> moved = new ArrayList<>(); String error = null;
+            try {
+                operation.check(); job.update("Reading archive", "", 0, 0, 0, -1);
+                staging = File.createTempFile("monogram-xmsp-", "", ApplicationLoader.applicationContext.getCacheDir());
+                if (!staging.delete() || !staging.mkdir()) throw new IOException();
+                File archive = new File(staging, "input.xmsp");
+                try (InputStream input = ApplicationLoader.applicationContext.getContentResolver().openInputStream(source);
+                     FileOutputStream output = new FileOutputStream(archive)) {
+                    if (input == null) throw new IOException();
+                    byte[] buffer = new byte[16384]; long total = 0; int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        operation.check(); total += count;
+                        if (total > MonogramPackArchive.MAX_ARCHIVE) throw new ImportFailure("Archive exceeds the 105 MB safe size limit.");
+                        output.write(buffer, 0, count); job.bytes(total, -1);
+                    }
+                    output.getFD().sync();
+                }
+                Pack pack = MonogramPackArchive.read(archive, staging, operation::check,
+                        (name, completed, total) -> job.update("Checking archive artwork", name, completed, total, 0, -1));
+                pack.source = "xmsp:" + UUID.randomUUID();
+                job.update("Saving pack", pack.name, pack.items.size(), pack.items.size(), 0, -1);
+                synchronized (MonogramPacks.class) {
+                    operation.check(); ArrayList<Pack> packs = copy(read(expectedScope)); Set<Long> pending = new HashSet<>();
+                    pack.id = id(expectedScope, pending);
+                    File targetDir = directory(expectedScope); if (!targetDir.isDirectory() && !targetDir.mkdirs()) throw new IOException();
+                    Set<String> files = new HashSet<>();
+                    synchronized (operation) {
+                        operation.check();
+                        for (Item item : pack.items) {
+                            item.id = id(expectedScope, pending);
+                            if (files.add(item.file)) {
+                                File target = new File(targetDir, item.file);
+                                if (target.exists() || !new File(staging, item.file).renameTo(target)) throw new IOException();
+                                moved.add(target);
+                            }
+                        }
+                        operation.check(); packs.add(0, pack); write(expectedScope, packs); operation.committed = true; moved.clear();
+                    }
+                }
+            } catch (Exception failure) {
+                error = failure instanceof ImportFailure ? failure.getMessage() : "Invalid or unsupported .xmsp archive, or insufficient storage. The existing packs were preserved.";
+            } finally {
+                for (File file : moved) file.delete();
+                if (staging != null) { File[] files = staging.listFiles(); if (files != null) for (File file : files) file.delete(); staging.delete(); }
+            }
+            final String failure = error;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!job.owner.equals(owner(account)) || IMPORTS.get(job.owner) != job) return;
+                try { if (operation.committed) refresh(account); } finally { job.finished(failure); }
+            });
+        });
+    }
     /** Account-owned import: leaving a screen only removes its observer, never cancels this job. */
     public static void startImport(int account, String link) {
         final Link parsed = parseLink(link);
         final String expectedScope = scope(account), encryptedToken = preferences(account).getString("token", null);
         if (encryptedToken == null) throw new IllegalStateException("Add your own Telegram bot token first. The import uses Telegram’s official Bot API.");
-        final ImportJob job = new ImportJob(account);
-        ImportJob previous = IMPORTS.putIfAbsent(job.owner, job);
-        if (previous != null) {
-            if (previous.progress.active || !IMPORTS.replace(job.owner, previous, job)) throw new IllegalStateException("A pack is already being imported. Wait for it to finish or cancel it.");
-        }
+        final ImportJob job = beginImport(account);
         final Request operation = job.request;
         final String expectedOwner = job.owner;
         notifyImport(job);
@@ -410,8 +507,7 @@ public final class MonogramPacks {
                         operation.check(); packs.add(0, pack); write(expectedScope, packs); operation.committed = true; temporary.clear();
                     }
                 }
-            } catch (ImportFailure failure) { error = failure.getMessage(); }
-            catch (Exception unavailable) { error = "Could not import the pack. Check the link, bot token and connection. Telegram permits bot file downloads up to 20 MB per item."; }
+            } catch (Exception failure) { error = importError(failure, job.progress); }
             finally { for (File file : temporary) file.delete(); }
             final String failure = error;
             AndroidUtilities.runOnUIThread(() -> {
@@ -502,16 +598,50 @@ public final class MonogramPacks {
         } else throw new IOException();
     }
     private static final class ImportFailure extends IOException { ImportFailure(String text) { super(text); } }
+    // Only fixed, redacted categories leave this boundary; API descriptions can contain secrets.
+    static IOException telegramError(int status, JSONObject response) {
+        int code = response == null ? status : response.optInt("error_code", status);
+        String description = response == null ? "" : response.optString("description", "").toLowerCase(Locale.ROOT);
+        String reason;
+        if (code == 401 || status == 401 || description.contains("unauthorized")) reason = "Bot token was rejected. Replace it in pack settings.";
+        else if (description.contains("stickerset_invalid") || description.contains("sticker set not found")) reason = "Telegram could not find that sticker pack. Check its link.";
+        else if (description.contains("file is too big") || code == 413 || status == 413) reason = "File exceeds Telegram's bot download size limit.";
+        else if (code == 429 || status == 429) reason = "Telegram is rate limiting this bot. Try again later.";
+        else if (code == 403 || status == 403) reason = "Telegram denied this bot access.";
+        else if (code == 404 || status == 404) reason = "Telegram API or file was not found. Check the bot token and retry.";
+        else if (code >= 500 || status >= 500) reason = "Telegram service is temporarily unavailable.";
+        else reason = "Telegram rejected the request.";
+        return new ImportFailure(reason + " (HTTP " + status + ", API " + code + ")");
+    }
+    static String importError(Exception failure, ImportProgress progress) {
+        String reason;
+        if (failure instanceof ImportFailure) reason = failure.getMessage();
+        else if (failure instanceof java.net.SocketTimeoutException) reason = "Connection timed out. Check the connection and retry.";
+        else if (failure instanceof java.net.UnknownHostException || failure instanceof java.net.ConnectException) reason = "Could not reach Telegram. Check the connection and retry.";
+        else if (failure instanceof javax.net.ssl.SSLException) reason = "A secure connection to Telegram could not be established.";
+        else if ("Checking file".equals(progress.stage)) reason = "Downloaded file is invalid or uses unsupported media.";
+        else if (failure instanceof org.json.JSONException) reason = "Telegram returned incomplete or unsupported pack data.";
+        else reason = "Import failed. Check the connection and available storage, then retry.";
+        return reason + " Stage: " + progress.stage + (progress.total > 0 ? " (item " + Math.min(progress.completed + 1, progress.total) + "/" + progress.total + ")." : ".");
+    }
     private static JSONObject request(String token, String method, String key, String value, Request operation) throws Exception {
         String url = "https://api.telegram.org/bot" + token + "/" + method + "?" + key + "=" + Uri.encode(value);
         JSONObject object = new JSONObject(new String(download(url, MAX_MANIFEST, operation), "UTF-8"));
-        if (!object.optBoolean("ok")) throw new IOException(); return object;
+        if (!object.optBoolean("ok")) throw telegramError(200, object); return object;
     }
     private static byte[] download(String value, int limit, Request operation) throws Exception {
         HttpsURLConnection connection = (HttpsURLConnection) new URL(value).openConnection();
         connection.setConnectTimeout(10000); connection.setReadTimeout(20000); connection.setInstanceFollowRedirects(false);
-        try { operation.attach(connection); if (connection.getResponseCode() != 200) throw new IOException();
-            if (connection.getContentLength() > limit) throw new IOException();
+        try { operation.attach(connection);
+            int status = connection.getResponseCode();
+            if (status != 200) {
+                JSONObject error = null;
+                try (InputStream input = connection.getErrorStream()) {
+                    if (input != null) error = new JSONObject(new String(bytes(input, 65536, operation), "UTF-8"));
+                } catch (Exception ignored) { operation.check(); }
+                throw telegramError(status, error);
+            }
+            if (connection.getContentLength() > limit) throw new ImportFailure(operation.mediaDownload ? "File exceeds the 20 MB Telegram download limit." : "Telegram response exceeds the safe size limit.");
             if (operation.importJob != null && operation.mediaDownload) {
                 operation.downloadLength = connection.getContentLength() >= 0 ? connection.getContentLength() : -1;
                 operation.importJob.bytes(0, operation.downloadLength);
@@ -522,7 +652,7 @@ public final class MonogramPacks {
     private static byte[] bytes(InputStream input, int limit) throws Exception { return bytes(input, limit, null); }
     private static byte[] bytes(InputStream input, int limit, Request operation) throws Exception {
         ByteArrayOutputStream body = new ByteArrayOutputStream(); byte[] buffer = new byte[16384]; int count;
-        while ((count = input.read(buffer)) != -1) { if (operation != null) operation.check(); if (body.size() + count > limit) throw new IOException(); body.write(buffer, 0, count);
+        while ((count = input.read(buffer)) != -1) { if (operation != null) operation.check(); if (body.size() + count > limit) throw new ImportFailure(operation != null && operation.mediaDownload ? "File exceeds the 20 MB Telegram download limit." : "Input exceeds the safe size limit."); body.write(buffer, 0, count);
             if (operation != null && operation.importJob != null && operation.mediaDownload) operation.importJob.bytes(body.size(), operation.downloadLength);
         }
         return body.toByteArray();

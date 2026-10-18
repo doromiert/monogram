@@ -113,7 +113,7 @@ public class MonogramHistoryNavigationTest {
             db.setVersion(24);
         }
         store=new MonogramStore(context,"history-navigation.db");
-        assertEquals(25,store.getReadableDatabase().getVersion());assertEquals(peer,store.knownPeer("bob@example.org"));assertEquals(dialog,store.knownRoom(room));
+        assertEquals(26,store.getReadableDatabase().getVersion());assertEquals(peer,store.knownPeer("bob@example.org"));assertEquals(dialog,store.knownRoom(room));
         assertEquals("keep",store.getMessage(original,self).message);assertTrue(store.reads.isRead(original));
         assertEquals("old",store.archiveCursor(peer,true));assertEquals("new",store.archiveCursor(peer,false));
         for(String table:Arrays.asList("inline_emoji_messages","inline_emoji_ranges","inline_emoji_assets")) {

@@ -49,11 +49,47 @@ public class MonogramProfileCacheTest {
             store.getWritableDatabase().execSQL("DROP TABLE profile_avatar_sources");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(19);
         }
         try(MonogramStore store=new MonogramStore(context,file)) {
-            assertEquals(25,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
+            assertEquals(26,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
             assertEquals(image,store.avatar(peer));assertEquals("Bobby",store.profile(peer).nickname);
             assertArrayEquals(Files.readAllBytes(image.toPath()),store.profileForRefresh(peer).avatar);
             store.profile(peer,new XmppProfile(store.profile(peer).xml(),"New nickname",source));
         }
         try(MonogramStore store=new MonogramStore(context,file)) { assertEquals("New nickname",store.profile(peer).nickname);assertArrayEquals(source,store.profileForRefresh(peer).avatar); }
+    }
+    @Test public void localNamesSurviveRemoteUpdatesAndReopenAndCanBeReset() throws Exception {
+        long peer,self;
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            self=store.peer("alice@example.org");peer=store.peer("bob@example.org");
+            store.rosterName(peer,"Roster name");store.localName(peer,"  My friend  ");
+            store.profile(peer,new XmppProfile("<vCard xmlns='vcard-temp'><FN>Remote name</FN></vCard>","Remote nickname",new byte[0]));
+            store.rosterName(peer,"Changed roster name");
+            assertEquals("My friend",store.user(peer,self).first_name);
+            assertEquals("My friend",store.fullUser(peer,self).user.first_name);
+            store.localName(self,"Not my public name");assertNotEquals("Not my public name",store.user(self,self).first_name);
+            for(String invalid:new String[]{"First\nSecond","Name\u2028Other","x".repeat(129)}) {
+                assertThrows(IllegalArgumentException.class,() -> store.localName(peer,invalid));
+                assertEquals("My friend",store.localName(peer));
+            }
+            assertThrows(IllegalArgumentException.class,() -> store.localName(Long.MAX_VALUE,"Unknown"));
+        }
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            assertEquals("My friend",store.user(peer,self).first_name);
+            store.localName(peer,"");assertEquals("",store.localName(peer));
+            assertEquals("Changed roster name",store.user(peer,self).first_name);
+            store.localName(peer,"Again");store.clear();assertEquals("",store.localName(peer));
+        }
+    }
+    @Test public void schemaTwentyFiveUpgradeAddsLocalNamesWithoutReplacingMessagesOrProfiles() throws Exception {
+        long peer,self;int message;
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            self=store.peer("alice@example.org");peer=store.peer("bob@example.org");store.rosterName(peer,"Bob");
+            message=store.save(MessageFixture.replyMessage("alias-migration",null,null,"Keep this",true,false,100000,"phone",false,null));
+            store.getWritableDatabase().execSQL("DROP TABLE local_contact_names");store.getWritableDatabase().setVersion(25);
+        }
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            assertEquals(26,store.getReadableDatabase().getVersion());
+            assertEquals("Keep this",store.getMessage(message,self).message);assertEquals("Bob",store.user(peer,self).first_name);
+            store.localName(peer,"Local Bob");assertEquals("Local Bob",store.user(peer,self).first_name);
+        }
     }
 }

@@ -82,7 +82,7 @@ public class MonogramChronologicalReadsTest {
         for(String table:Arrays.asList("local_read_anchors","local_read_messages","markable_messages","displayed_anchors","pending_displayed")) store.getWritableDatabase().execSQL("DROP TABLE "+table);
         store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(20);
         store.close();store=new MonogramStore(context,"chronological-reads.db");
-        assertEquals(25,store.getReadableDatabase().getVersion());assertEquals("keep",store.getMessage(original,self).message);
+        assertEquals(26,store.getReadableDatabase().getVersion());assertEquals("keep",store.getMessage(original,self).message);
         assertTrue(MonogramReceipts.isUnread(store.getMessage(original,self)));assertFalse(store.reads.isRead(original));
         assertEquals(Collections.singleton(original),store.reads.through(peer,Collections.singleton(original),false));
         assertFalse(MonogramReceipts.isUnread(store.getMessage(original,self)));

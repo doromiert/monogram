@@ -31,7 +31,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 25); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 26); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -42,6 +42,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramFormatting.create(db);
         MonogramEmojis.create(db);
         addCalls(db);
+        addLocalNames(db);
+    }
+    private static void addLocalNames(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS local_contact_names(peer INTEGER PRIMARY KEY,name TEXT NOT NULL)");
     }
     private static void addCalls(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE call_events(message INTEGER PRIMARY KEY,owner TEXT NOT NULL,peer INTEGER NOT NULL,sid TEXT NOT NULL,outgoing INTEGER NOT NULL,video INTEGER NOT NULL,duration INTEGER NOT NULL,reason TEXT NOT NULL,UNIQUE(owner,peer,sid,outgoing))");
@@ -96,7 +100,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 25 || oldVersion < 1 || oldVersion > 24) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 26 || oldVersion < 1 || oldVersion > 25) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -120,6 +124,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<23) MonogramFormatting.create(db);
         if(oldVersion<24) addCalls(db);
         if(oldVersion<25) MonogramEmojis.create(db);
+        if(oldVersion<26) addLocalNames(db);
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -214,7 +219,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -594,6 +599,24 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         return new com.negzero.monogram.xmpp.XmppProfile(cached.xml(),cached.nickname,bytes);
     }
+    synchronized String localName(long peer) {
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT name FROM local_contact_names WHERE peer=?",new String[]{Long.toString(peer)})) {
+            return row.moveToFirst() ? row.getString(0) : "";
+        }
+    }
+    synchronized void localName(long peer,String name) {
+        if(peer<=0) throw new IllegalArgumentException("Choose a contact to rename.");
+        jid(peer);
+        String value=name.trim();
+        if(value.codePointCount(0,value.length())>128 || value.codePoints().anyMatch(c -> Character.isISOControl(c) || c==0x2028 || c==0x2029))
+            throw new IllegalArgumentException("Use a name of up to 128 characters on one line.");
+        if(value.isEmpty()) getWritableDatabase().delete("local_contact_names","peer=?",new String[]{Long.toString(peer)});
+        else {
+            ContentValues row=new ContentValues();row.put("peer",peer);row.put("name",value);
+            if(getWritableDatabase().insertWithOnConflict("local_contact_names",null,row,SQLiteDatabase.CONFLICT_REPLACE)<0)
+                throw new IllegalStateException("Could not save the local name.");
+        }
+    }
     synchronized void rosterName(long peer, String name) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues empty = new ContentValues(); empty.put("peer", peer);
@@ -626,12 +649,13 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized TLRPC.User user(long id, long self) {
         TLRPC.TL_user user = new TLRPC.TL_user();
-        String jid = jid(id), roster = "";
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT roster_name FROM profiles WHERE peer=?", new String[]{Long.toString(id)})) {
-            if (c.moveToFirst()) roster = c.getString(0);
+        String jid = jid(id), roster = "", alias = "";
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT p.roster_name,a.name FROM peers x LEFT JOIN profiles p ON p.peer=x.id LEFT JOIN local_contact_names a ON a.peer=x.id WHERE x.id=?", new String[]{Long.toString(id)})) {
+            if (c.moveToFirst()) { roster=c.isNull(0) ? "" : c.getString(0);alias=c.isNull(1) ? "" : c.getString(1); }
         }
         com.negzero.monogram.xmpp.XmppProfile profile = profile(id);
         user.id = id; user.first_name = profile == null ? (id == self || roster.isEmpty() ? jid : roster) : profile.displayName(id == self ? "" : roster, jid);
+        if (id != self && !alias.isEmpty()) user.first_name=alias;
         if (id == self && user.first_name.equals(jid) && jid.indexOf('@') > 0) user.first_name = jid.substring(0, jid.indexOf('@'));
         user.last_name = ""; user.phone = "";
         user.self = id == self; user.contact = id != self; user.flags = 2;

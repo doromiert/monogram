@@ -42,14 +42,63 @@ public class MonogramPacksTest {
         ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
         controller=Shadow.newInstanceOf(MonogramController.class); jid="alice@example.org";
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void archiveImportUsesFreshNativeIdsAndFailurePreservesInstalledPack() throws Exception {
+        jid="archive@example.org";
+        MonogramPacks.Pack original=new MonogramPacks.Pack();original.id=0x4d50000300000001L;original.name="Friends";original.source="local:archive";
+        MonogramPacks.Item item=new MonogramPacks.Item();item.id=0x4d50000300000002L;item.name="Wave";item.emoji="👋";item.mime="image/png";item.file="original.png";item.width=item.height=1;original.items.add(item);
+        String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        File directory=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"directory",ReflectionHelpers.ClassParameter.from(String.class,scope));directory.mkdirs();
+        byte[] image=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+        java.nio.file.Files.write(new File(directory,item.file).toPath(),image);
+        ArrayList<MonogramPacks.Pack> packs=new ArrayList<>();packs.add(original);
+        ReflectionHelpers.callStaticMethod(MonogramPacks.class,"write",ReflectionHelpers.ClassParameter.from(String.class,scope),ReflectionHelpers.ClassParameter.from(ArrayList.class,packs));
+        java.util.concurrent.CountDownLatch exported=new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<File> archive=new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+        MonogramPacks.exportArchive(0,original.id,(file,failure)->{archive.set(file);error.set(failure);exported.countDown();});
+        assertTrue(exported.await(10,java.util.concurrent.TimeUnit.SECONDS));assertNull(error.get());assertNotNull(archive.get());
+        for(int pass=0;pass<2;pass++) {
+            android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/archive"+pass);
+            byte[] input=pass==0 ? java.nio.file.Files.readAllBytes(archive.get().toPath()) : new byte[]{1,2,3};
+            org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,new java.io.ByteArrayInputStream(input));
+            java.util.concurrent.CountDownLatch imported=new java.util.concurrent.CountDownLatch(1);
+            // Do not count the previous job's terminal snapshot as this import's completion.
+            java.util.concurrent.atomic.AtomicBoolean active=new java.util.concurrent.atomic.AtomicBoolean();
+            MonogramPacks.ImportObserver observer=progress->{if(progress.active)active.set(true);else if(active.get())imported.countDown();};
+            MonogramPacks.addImportObserver(0,observer);MonogramPacks.startArchiveImport(0,uri);
+            assertTrue(imported.await(10,java.util.concurrent.TimeUnit.SECONDS));MonogramPacks.removeImportObserver(0,observer);
+            assertEquals(2,MonogramPacks.packs(0).size());
+            assertEquals(pass==0,MonogramPacks.importProgress(0).complete);
+        }
+        MonogramPacks.Pack restored=MonogramPacks.packs(0).get(0);
+        assertNotEquals(original.id,restored.id);assertNotEquals(item.id,restored.items.get(0).id);
+        assertEquals(item.name,restored.items.get(0).name);assertTrue(restored.privatePack);assertFalse(restored.connected);
+        assertTrue(restored.source.startsWith("xmsp:"));assertNotNull(MonogramPacks.document(0,restored.items.get(0).id));archive.get().delete();
+    }
     @Test public void packLinksAreStrictAndNamesRemainSeparateFromEmojiTags() throws Exception {
         assertFalse(MonogramPacks.parseLink("https://t.me/addstickers/Cat_pack").emojis);
+        assertFalse(MonogramPacks.parseLink("https://t.me/addstickers/NeuAnaxKulupeNaklejei").emojis);
         assertTrue(MonogramPacks.parseLink("https://telegram.me/addemoji/Cat_pack").emojis);
         for(String link:new String[]{"http://t.me/addstickers/a","https://t.me.evil/addstickers/a","https://user@t.me/addstickers/a","https://t.me/addemoji/a?token=secret","https://t.me/addemoji/../a","https://t.me/addemoji/a/b"}) {
             try { MonogramPacks.parseLink(link); fail(link); } catch(IllegalArgumentException expected) { }
         }
         assertEquals("My friends",MonogramPacks.name(" My friends "));
         for(String invalid:new String[]{"","\n","bad\u0000name"}) try { MonogramPacks.name(invalid);fail(); } catch(IllegalArgumentException expected) { }
+    }
+    @Test public void importDiagnosticsDistinguishFailuresWithoutReturningApiSecrets() throws Exception {
+        String secret="123456789:secret-token-do-not-display";
+        String rejected=MonogramPacks.telegramError(401,new org.json.JSONObject().put("error_code",401).put("description",secret)).getMessage();
+        assertTrue(rejected.contains("Bot token was rejected"));assertTrue(rejected.contains("HTTP 401"));assertFalse(rejected.contains(secret));
+        String missing=MonogramPacks.telegramError(400,new org.json.JSONObject().put("error_code",400).put("description","STICKERSET_INVALID "+secret)).getMessage();
+        assertTrue(missing.contains("could not find"));assertFalse(missing.contains(secret));
+        assertTrue(MonogramPacks.telegramError(429,null).getMessage().contains("rate limiting"));
+        java.lang.reflect.Constructor<MonogramPacks.ImportProgress> constructor=MonogramPacks.ImportProgress.class.getDeclaredConstructor(String.class,String.class,String.class,int.class,int.class,long.class,long.class,boolean.class,boolean.class);
+        constructor.setAccessible(true);
+        MonogramPacks.ImportProgress progress=constructor.newInstance("Downloading sticker","Pack",null,4,120,0L,-1L,true,false);
+        String timedOut=MonogramPacks.importError(new java.net.SocketTimeoutException(secret),progress);
+        assertTrue(timedOut.contains("timed out"));assertTrue(timedOut.contains("item 5/120"));assertFalse(timedOut.contains(secret));
+        assertFalse(MonogramPacks.importError(new java.io.IOException(secret),progress).contains(secret));
     }
     @Test public void nativePacksRestoreLocalFilesAndDoNotCrossAccountBoundaries() throws Exception {
         MonogramPacks.Pack pack=new MonogramPacks.Pack(); pack.id=0x4d50000100000001L;pack.name="Friends";pack.source="local:fixture";

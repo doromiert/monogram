@@ -656,6 +656,26 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int phoneRow;
     private int noteRow;
     private int locationRow;
+    private void showLocalNameEditor() {
+        if(userId<=0 || userId==getUserConfig().getClientUserId() || getParentActivity()==null) return;
+        org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),"Local name",false);
+        input.editText.setSingleLine(true);
+        input.editText.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(256)});
+        String alias=controller.localName(userId);
+        TLRPC.User user=getMessagesController().getUser(userId);
+        input.editText.setText(alias.isEmpty() && user!=null ? UserObject.getUserName(user) : alias);
+        java.util.function.Consumer<String> save=value -> controller.localName(userId,value,error -> {
+            if(getParentActivity()!=null && error!=null) BulletinFactory.of(this).createErrorBulletin(error).show();
+        });
+        showDialog(new AlertDialog.Builder(getContext(),getResourceProvider()).setTitle("Rename locally")
+                .setMessage("Only you see this name on this device. Profile and roster updates will not replace it.")
+                .setView(input).setPositiveButton("Save",(dialog,which) -> save.accept(input.getText().toString()))
+                .setNeutralButton("Reset name",(dialog,which) -> save.accept(""))
+                .setNegativeButton("Cancel",null).create());
+    }
+
     private int monogramProfileStart = -1;
     private final ArrayList<java.util.Map.Entry<String, String>> monogramProfileDetails = new ArrayList<>();
     private boolean isMonogramProfileRow(int position) { return monogramProfileStart >= 0 && position >= monogramProfileStart && position < monogramProfileStart + monogramProfileDetails.size(); }
@@ -2573,9 +2593,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     fragment.setDelegate(ProfileActivity.this);
                     presentFragment(fragment);
                 } else if (id == edit_contact) {
-                    Bundle args = new Bundle();
-                    args.putLong("user_id", userId);
-                    presentFragment(new ContactAddActivity(args, resourcesProvider));
+                    showLocalNameEditor();
                 } else if (id == delete_contact) {
                     final TLRPC.User user = getMessagesController().getUser(userId);
                     if (user == null || getParentActivity() == null) {
@@ -12167,6 +12185,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             shareAction = true;
                         } else {
                             otherItem.addSubItem(add_contact, R.drawable.msg_addcontact, LocaleController.getString(R.string.AddContact));
+                            otherItem.addSubItem(edit_contact, R.drawable.msg_edit, "Rename locally");
                         }
                         if (!TextUtils.isEmpty(user.phone)) {
                             otherItem.addSubItem(share_contact, R.drawable.msg_share, LocaleController.getString(R.string.ShareContact));
@@ -12196,7 +12215,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         otherItem.addSubItem(share_contact, R.drawable.msg_share, LocaleController.getString(R.string.ShareContact));
                     }
                     otherItem.addSubItem(block_contact, !userBlocked ? R.drawable.msg_block : R.drawable.msg_block, !userBlocked ? LocaleController.getString(R.string.BlockContact) : LocaleController.getString(R.string.Unblock));
-                    otherItem.addSubItem(edit_contact, R.drawable.msg_edit, LocaleController.getString(R.string.EditContact));
+                    otherItem.addSubItem(edit_contact, R.drawable.msg_edit, "Rename locally");
                     otherItem.addSubItem(delete_contact, R.drawable.msg_delete, LocaleController.getString(R.string.DeleteContact));
                 }
                 if (!UserObject.isDeleted(user) && !isBot && currentEncryptedChat == null && !userBlocked && userId != 333000 && userId != 777000 && userId != 42777) {

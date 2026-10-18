@@ -54,7 +54,7 @@ public class MonogramRoomRosterTest {
             store.getWritableDatabase().execSQL("DROP TABLE room_affiliations");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(18);
         }
         try(MonogramStore store=new MonogramStore(context,file)) {
-            assertEquals(25,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
+            assertEquals(26,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
             assertEquals("Keep description",store.roomFull(room,self).full_chat.about);store.roomRoster(room,members());
         }
         try(MonogramStore store=new MonogramStore(context,file)) {

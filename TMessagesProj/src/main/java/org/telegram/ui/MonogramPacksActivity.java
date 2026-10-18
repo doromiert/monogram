@@ -52,8 +52,8 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
         if (packId == 0) {
             if(importState!=null) {
                 items.add(UItem.asHeader("Telegram import"));
-                String count=importState.total>0 ? importState.completed+" / "+importState.total : "Preparing…";
-                items.add(UItem.asSettingsCell(0,importState.complete ? "Pack imported" : importState.cancelled ? "Import cancelled" : importState.active ? "Stickers downloaded" : "Import failed",count));
+                String count=importState.total>0 ? importState.completed+" / "+importState.total : importState.active ? "Preparing…" : "";
+                items.add(UItem.asSettingsCell(0,importState.complete ? "Pack imported" : importState.cancelled ? "Import cancelled" : importState.active ? "Stickers downloaded" : "Import failed",count).setEnabled(false));
                 if(importState.active) {
                     if(importMeter==null) {
                         importMeter=new android.widget.FrameLayout(getContext());
@@ -68,6 +68,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
                     items.add(UItem.asCustom(importMeter));
                     items.add(UItem.asButton(20,"Cancel import").red());
                 }
+                if(importState.error!=null) items.add(UItem.asButton(21,"View import error"));
                 String detail=importState.stage;
                 if(importState.active && importState.currentBytes>0) detail+="\n"+org.telegram.messenger.AndroidUtilities.formatFileSize(importState.currentBytes)
                         +(importState.totalBytes>0 ? " / "+org.telegram.messenger.AndroidUtilities.formatFileSize(importState.totalBytes) : " downloaded");
@@ -105,6 +106,12 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
         }
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
+        if(item.id==21 && importState!=null && importState.error!=null) {
+            String detail=importState.error;
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Import error").setMessage(detail)
+                    .setPositiveButton("OK",null).setNeutralButton("Copy",(dialog,which) -> org.telegram.messenger.AndroidUtilities.addToClipboard(detail)).create());
+            return;
+        }
         if(item.id==20) { MonogramPacks.cancelImport(currentAccount);return; }
         if (busy || importState!=null && importState.active) return;
         if (item.object instanceof MonogramPacks.Pack) { presentFragment(new MonogramPacksActivity(currentAccount, ((MonogramPacks.Pack) item.object).id)); return; }

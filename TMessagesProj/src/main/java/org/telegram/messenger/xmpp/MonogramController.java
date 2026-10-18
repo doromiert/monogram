@@ -1386,6 +1386,24 @@ public final class MonogramController {
         catch (IllegalArgumentException unknown) { return java.util.Collections.emptyMap(); }
     }
     public com.negzero.monogram.xmpp.XmppProfile cachedProfile(long peer) { return store.profile(peer); }
+    public String localName(long peer) { return store.localName(peer); }
+    public void localName(long peer,String name,java.util.function.Consumer<String> completed) {
+        final long owner=accountEpoch;final String jid=accountJid();
+        worker.execute(() -> {
+            String error=null;
+            try {
+                if(!sameAccount(owner,jid) || peer<=0 || peer==self) throw new IllegalArgumentException("Choose another contact to rename.");
+                store.localName(peer,name);
+            } catch(IllegalArgumentException invalid) { error=invalid.getMessage(); }
+            catch(Exception failure) { error="Could not save the local name. Please try again."; }
+            final String result=error;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(!sameAccount(owner,jid)) return;
+                if(result==null) publishProfile(peer,sessionEpoch);
+                completed.accept(result);
+            });
+        });
+    }
     public void refreshProfile(long peer) { refreshProfile(peer,null); }
     public void refreshVisibleRoomMember(long room,long peer) { if(peer>0 && isRoom(room) && store.profile(peer)==null) refreshProfile(peer); }
     private void changedProfile(long peer) {

@@ -38,7 +38,7 @@ public abstract class MonogramSettingsActivity extends UniversalFragment {
         colors.add(new ThemeDescription(listView,ThemeDescription.FLAG_CELLBACKGROUNDCOLOR,new Class[]{HeaderCell.class,TextCell.class,TextCheckCell.class,TextSettingsCell.class,EditTextCell.class},null,null,null,Theme.key_windowBackgroundWhite));
         colors.add(new ThemeDescription(listView,0,new Class[]{View.class},Theme.dividerPaint,null,null,Theme.key_divider));
         colors.add(new ThemeDescription(listView,0,new Class[]{HeaderCell.class},new String[]{"textView"},null,null,null,Theme.key_windowBackgroundWhiteBlueHeader));
-        colors.add(new ThemeDescription(listView,0,new Class[]{TextCheckCell.class,TextSettingsCell.class},new String[]{"textView"},null,null,null,Theme.key_windowBackgroundWhiteBlackText));
+        colors.add(new ThemeDescription(listView,0,new Class[]{TextCheckCell.class,TextSettingsCell.class},new String[]{"textView","textView"},null,null,null,Theme.key_windowBackgroundWhiteBlackText));
         for(int key:new int[]{Theme.key_windowBackgroundWhiteBlackText,Theme.key_windowBackgroundWhiteBlueText4,Theme.key_text_RedRegular}) {
             colors.add(new ThemeDescription(listView,ThemeDescription.FLAG_CHECKTAG,new Class[]{TextCell.class},new String[]{"textView"},null,null,null,key));
         }

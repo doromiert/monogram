@@ -72,3 +72,23 @@ Full review scope: settings home, all reachable stock settings and the ten custo
 Considered and rejected: adding a custom blur/glass layer would duplicate the existing renderer; globally modifying UniversalFragment would change unrelated Telegram flows; replacing stock settings already using native sections would add churn without improving fidelity.
 
 Verification commands: Nix `:TMessagesProj_App:assembleAfatDebug`; focused `MonogramPacksTest` (six cases, zero failures/errors); source route and callback comparison; APK version/ABI/certificate checks. Rendered interactions and 10%-speed motion inspection were not run. Verdict: rendered acceptance pending; do not mark the full settings migration complete from these checks.
+
+## 0.2.94 rendered follow-up
+
+The user reviewed the generated settings screenshots and confirmed this is the requested visual direction. Offscreen Android native graphics rendering now covers all ten custom forms in 14 states (including DM/room security, fingerprint sections, empty requests and join/existing-room variants), plus the nested theme-link editor. Each is rendered at 360 dp phone width in light, dark, RTL and a 1.3 system-font configuration, before/after scrolling: 120 PNGs under `.state/settings-renders/`. The four rendering cases pass. Backend/account services, preference storage and unrelated native wallpaper operations are isolated with synthetic data; the actual views, section renderer, cells, theme palettes and action bars are rendered.
+
+The RTL harness initially omitted Android’s attached-window pre-draw, making horizontally scrolling TextViews appear blank. Attaching the root and dispatching pre-draw restores the labels; no production RTL workaround was added for this harness artifact.
+
+Rendered findings fixed: long connection-notice/recipient-policy/token labels; header-only empty pack/request/participant cards; room identity label disappearing once a nickname was filled. The source route inventory examines 54 literal nested settings routes. Three remaining native surfaces were updated: bot biometric settings, topic-notification exceptions and the theme-link form (native SectionsScrollView, keyboard-scrollable and without legacy divider shadows).
+
+Remaining acceptance boundaries: all stock/nested settings and dialogs have not been rendered individually, live theme-change transitions and real device navigation/scroll performance are not verified. Reconnect/trust/provider actions were not exercised on the real account. These limits remain part of the full goal; the custom-form render matrix alone does not prove all reachable settings states.
+
+## 0.2.95 follow-up
+
+Changing the theme on already-created custom screens exposed a shared binding error: ThemeDescription maps reflected field names by class index, and the TextSettingsCell entry had no corresponding second field name. The binding now updates both switch and value-row labels. Round-video settings also now declares native bindings for its background, navigation, section surfaces, labels, values, switches and footers. Its recorder choices and persisted values are unchanged.
+
+The pack-import failure card no longer displays Preparing after termination. The safe diagnostic is visible below the card and available through View import error with a Copy action in a native AlertDialog. The action remains in the import card instead of joining the next section. Detailed diagnostics were not in 0.2.94.
+
+Five offscreen rendering checks pass for 17 screen states: the preceding 15 plus round-video settings and a failed-import example. Four modes cover light/dark/RTL/1.3 system font, before and after scrolling. The fifth switches the same instances from light to dark and back, applies native theme descriptions and ActionBar.updateColors, checks actual attached value-label/background colors and renders each result. The harness supplies the native chat bubble drawables needed by the theme-link editor; it scrolls the round-video RecyclerView rather than its enclosing frame. These are synthetic-account Android renders, not actual device interaction or a measurement of theme-animation timing.
+
+The original custom/stock route review still applies. Full individual stock-screen/dialog rendering, real-device interactions and scroll performance remain outstanding; the settings goal is still in progress.
