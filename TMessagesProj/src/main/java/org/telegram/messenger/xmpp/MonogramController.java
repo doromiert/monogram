@@ -1946,7 +1946,7 @@ public final class MonogramController {
                 if(owner!=accountEpoch || !path.isFile()) return;
                 com.negzero.monogram.xmpp.FileShare sharing=store.sharing(message.id);
                 String filename=sharing==null ? com.negzero.monogram.xmpp.FileLink.parse(address).fileName() : sharing.name;
-                TLRPC.MessageMedia media=MonogramStickers.preserve(message.media,MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime));
+                TLRPC.MessageMedia media=MonogramStickers.inspectDisplayHint(MonogramStickers.preserve(message.media,MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime)),path,store.displayStickerHint(message.id,address));
                 MonogramAttachments.preserveMediaAttributes(message.media,media);
                 if(media.document==null || MonogramAttachments.needsMediaInfo(media.document)) return;
                 worker.execute(() -> {
@@ -2173,6 +2173,7 @@ public final class MonogramController {
         }
         XmppMessage.Encryption mode = encryption(request.message.dialog_id);
         boolean encrypted = mode != XmppMessage.Encryption.PLAIN, modern = mode == XmppMessage.Encryption.OMEMO2;
+        final boolean displayStickerHint = encrypted && !modern && request.message.media != null && MonogramStickers.isSticker(request.message.media.document);
         String peer = store.jid(request.message.dialog_id);
         final ReplyReference reply;
         final MessageMarkup captionMarkup;
@@ -2228,15 +2229,15 @@ public final class MonogramController {
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? null : captionMarkup);
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? null : captionMarkup,displayStickerHint);
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String fingerprint=expected.senderFingerprint(mode);
-                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
                             XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply)
                                     : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,captionMarkup.body,reply).withMarkup(captionMarkup);
-                            message=message.withSenderFingerprint(fingerprint);
+                            message=message.withSenderFingerprint(fingerprint).withDisplayStickerHint(displayStickerHint);
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
                         }
                         TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
@@ -2320,6 +2321,7 @@ public final class MonogramController {
                 job.check();
                 TLRPC.MessageMedia decoded=MonogramStickers.preserve(object.messageOwner.media,MonogramAttachments.decodedMedia(id,object.messageOwner.date,path,filename,
                         sharing==null && object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : sharing==null ? null : sharing.mime));
+                MonogramStickers.inspectDisplayHint(decoded,path,store.displayStickerHint(id,address));
                 MonogramAttachments.preserveMediaAttributes(object.messageOwner.media,decoded);
                 job.check();
                 worker.execute(() -> {

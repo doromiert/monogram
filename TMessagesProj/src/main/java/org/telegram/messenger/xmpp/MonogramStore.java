@@ -31,7 +31,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 26); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 27); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -43,6 +43,18 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramEmojis.create(db);
         addCalls(db);
         addLocalNames(db);
+        addStickerHints(db);
+    }
+    private boolean rememberStickerHint(SQLiteDatabase db,int id,String url,boolean hint) {
+        if(!hint) return false;
+        ContentValues value=new ContentValues(); value.put("display_sticker",1);
+        return db.update("attachments",value,"message=? AND url=? AND display_sticker=0",new String[]{Integer.toString(id),url})>0;
+    }
+    private static void addStickerHints(SQLiteDatabase db) {
+        try(Cursor cursor=db.rawQuery("PRAGMA table_info(attachments)",null)) {
+            while(cursor.moveToNext()) if("display_sticker".equals(cursor.getString(1))) return;
+        }
+        db.execSQL("ALTER TABLE attachments ADD COLUMN display_sticker INTEGER NOT NULL DEFAULT 0");
     }
     private static void addLocalNames(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS local_contact_names(peer INTEGER PRIMARY KEY,name TEXT NOT NULL)");
@@ -100,7 +112,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 26 || oldVersion < 1 || oldVersion > 25) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 27 || oldVersion < 1 || oldVersion > 26) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -125,6 +137,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<24) addCalls(db);
         if(oldVersion<25) MonogramEmojis.create(db);
         if(oldVersion<26) addLocalNames(db);
+        if(oldVersion<27) addStickerHints(db);
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -483,6 +496,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 ContentValues attachment=new ContentValues(); attachment.put("message",id); attachment.put("url",message.attachment.wireUrl); attachment.put("caption",message.caption);
                 if(message.sharing!=null) attachment.put("sharing",message.sharing.xml());
                 changed|=db.insertWithOnConflict("attachments",null,attachment,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
+                changed|=rememberStickerHint(db,id,message.attachment.wireUrl,message.displayStickerHint);
                 if(message.sharing!=null) {
                     attachment.remove("message"); attachment.remove("url");
                     changed|=db.update("attachments",attachment,"message=? AND url=? AND sharing IS NULL",new String[]{Integer.toString(id),message.attachment.wireUrl})>0;
@@ -772,6 +786,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 attachment.put("caption", message.caption);
                 if (message.sharing != null) attachment.put("sharing", message.sharing.xml());
                 db.insertWithOnConflict("attachments", null, attachment, SQLiteDatabase.CONFLICT_IGNORE);
+                changed |= rememberStickerHint(db,id,message.attachment.wireUrl,message.displayStickerHint);
                 if (message.sharing != null) {
                     attachment.remove("message"); attachment.remove("url");
                     changed |= db.update("attachments", attachment, "message=? AND url=? AND sharing IS NULL", new String[]{Integer.toString(id), message.attachment.wireUrl}) > 0;
@@ -1298,6 +1313,11 @@ final class MonogramStore extends SQLiteOpenHelper {
             if(!c.moveToFirst()) throw new IllegalArgumentException("Unknown message"); return c.getInt(0);
         }
     }
+    synchronized boolean displayStickerHint(int id,String url) {
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT display_sticker FROM attachments WHERE message=? AND url=? AND sharing IS NULL",new String[]{Integer.toString(id),url})) {
+            return cursor.moveToFirst() && cursor.getInt(0)!=0;
+        }
+    }
     synchronized com.negzero.monogram.xmpp.FileShare sharing(int id) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT url,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
             return c.moveToFirst() ? sharing(c.getString(0), c.getString(1)) : null;
@@ -1333,7 +1353,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private synchronized void decorate(TLRPC.Message message, int payload) {
         // Caption edits share the original transfer/cache; later downloads must remain visible through the edit.
-        try (Cursor c = getReadableDatabase().rawQuery("SELECT a.url,a.path,a.media,COALESCE(c.caption,a.caption),a.sharing FROM attachments a LEFT JOIN attachments c ON c.message=? WHERE a.message=?", new String[]{Integer.toString(payload),Integer.toString(message.id)})) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT a.url,a.path,a.media,COALESCE(c.caption,a.caption),a.sharing,a.display_sticker FROM attachments a LEFT JOIN attachments c ON c.message=? WHERE a.message=?", new String[]{Integer.toString(payload),Integer.toString(message.id)})) {
             if (c.moveToFirst()) {
                 com.negzero.monogram.xmpp.FileLink link = com.negzero.monogram.xmpp.FileLink.parse(c.getString(0));
                 com.negzero.monogram.xmpp.FileShare sharing = sharing(link.wireUrl, c.getString(4));
@@ -1352,6 +1372,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 }
                 MonogramAttachments.apply(message, link, file, media, c.getString(3), name);
                 MonogramStickers.apply(message, sharing);
+                if(sharing==null && link.encrypted() && c.getInt(5)!=0) MonogramStickers.applyDisplayHint(message,file);
             } else if (message.message != null && message.message.toLowerCase(java.util.Locale.ROOT).contains("aesgcm://")) {
                 message.message = "Encrypted file link in an unsupported format";
             }

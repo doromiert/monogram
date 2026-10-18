@@ -860,6 +860,10 @@ public final class XmppSession implements AutoCloseable {
         if (link.encrypted() != encrypted) throw new IllegalArgumentException("Attachment encryption mode mismatch");
         return send(jid, link.wireUrl, encrypted, !encrypted, reply);
     }
+    public String sendFile(String jid, FileLink link, boolean encrypted, ReplyReference reply, boolean displayStickerHint) throws Exception {
+        if (link.encrypted() != encrypted || displayStickerHint && !encrypted) throw new IllegalArgumentException("Attachment encryption mode mismatch");
+        return send(jid,link.wireUrl,encrypted,!encrypted,reply,null,null,null,null,null,displayStickerHint);
+    }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply) throws Exception {
         return send(jid, body, encrypted, attachment, reply, null);
     }
@@ -933,6 +937,9 @@ public final class XmppSession implements AutoCloseable {
         return send(jid,body,encrypted,attachment,reply,correction,sharing,retraction,markup,null);
     }
     private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        return send(jid,body,encrypted,attachment,reply,correction,sharing,retraction,markup,inline,false);
+    }
+    private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline,boolean displayStickerHint) throws Exception {
         if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
@@ -966,6 +973,7 @@ public final class XmppSession implements AutoCloseable {
             message = new Message(recipient, Message.Type.chat);
             message.setBody(body);
         }
+        if (displayStickerHint && encrypted) StickerHint.addTo(message);
         if (attachment) message.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("x", "jabber:x:oob")
                 .addElement("url", attachmentUrl).build());
         if (reply != null) reply.addTo(message);

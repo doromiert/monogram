@@ -590,10 +590,14 @@ public final class XmppRooms implements AutoCloseable {
         return send(jid,body,encrypted,null,reply,correction,excluded,automatic,markup,inline);
     }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        return sendFile(jid,link,sharing,caption,encrypted,reply,excluded,automatic,markup,false);
+    }
+    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup,boolean displayStickerHint) throws Exception {
+        if(displayStickerHint && !encrypted) throw new IllegalArgumentException("Legacy sticker hint requires encryption");
         if(link.encrypted()!=encrypted || encrypted && sharing!=null || sharing!=null && !sharing.link.wireUrl.equals(link.wireUrl)) throw new IllegalArgumentException("Attachment encryption mode mismatch");
         if(markup!=null && (sharing==null || !markup.body.equals(caption==null ? "" : caption))) throw new IllegalArgumentException("Markup belongs to another caption");
         String body=sharing==null ? link.wireUrl : sharing.body(caption);
-        return send(jid,body,encrypted,sharing,reply,null,excluded,automatic,markup==null ? null : markup.inBody(body,0));
+        return send(jid,body,encrypted,sharing,reply,null,excluded,automatic,markup==null ? null : markup.inBody(body,0),null,displayStickerHint);
     }
     public XmppRoomMessage correctFile(String jid,FileShare sharing,String caption,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
         if(sharing==null || sharing.link.encrypted() || correction==null) throw new IllegalArgumentException("Unsupported encrypted caption correction");
@@ -608,6 +612,9 @@ public final class XmppRooms implements AutoCloseable {
         return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,markup,null);
     }
     private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,markup,inline,false);
+    }
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline,boolean displayStickerHint) throws Exception {
         if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
@@ -621,10 +628,12 @@ public final class XmppRooms implements AutoCloseable {
         if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
         if(!encrypted && markup!=null) markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         if(sharing!=null) sharing.addTo(message,wireBody);
+        if(displayStickerHint && encrypted) StickerHint.addTo(message);
         if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
         if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
+        if(displayStickerHint) sent=sent.withDisplayStickerHint(true);
         if(markup!=null) sent=sent.withMarkup(markup);
         if(inline!=null) sent=sent.withInlineEmoji(inline);
         sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
