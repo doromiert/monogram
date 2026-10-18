@@ -44,6 +44,7 @@ public final class MonogramRoomMembersActivity extends MonogramSettingsActivity 
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         items.add(UItem.asHeader(MonogramController.get(currentAccount).jid(room)));
         if(state==null || !state.joined) {
+            items.add(UItem.asSettingsCell(0,"Participants","Unavailable").setEnabled(false));
             items.add(UItem.asShadow("Join the room to see its current participants and change room settings."));
         } else {
             items.add(UItem.asButton(1,"Invite someone").setEnabled(!busy));

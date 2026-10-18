@@ -42,7 +42,7 @@ public final class MonogramContactActivity extends MonogramSettingsActivity impl
             items.add(UItem.asHeader("Incoming contact requests"));
             int roomInvites=MonogramController.get(currentAccount).pendingRoomInvitations().size();
             if(roomInvites>0) items.add(UItem.asButton(11,"Room invitations ("+roomInvites+")"));
-            if(requests.isEmpty()) items.add(UItem.asShadow("No pending contact requests."));
+            if(requests.isEmpty()) items.add(UItem.asSettingsCell(0,"Pending requests","None").setEnabled(false));
             for(int i=0;i<requests.size();i++) items.add(UItem.asButton(100+i,requests.get(i)));
         } else {
             items.add(UItem.asShadow("Some providers require an approved contact relationship before sharing OMEMO device lists. Contact authorization and fingerprint trust are separate: refresh fingerprints after access is granted."));
@@ -66,6 +66,7 @@ public final class MonogramContactActivity extends MonogramSettingsActivity impl
             if(busy) items.add(UItem.asShadow("Updating contact authorization…"));
             if(status!=null) items.add(UItem.asShadow(status));
         }
+        if(address==null) items.add(UItem.asShadow(null));
         items.add(UItem.asButton(10,"XMPP connection"));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {

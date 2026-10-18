@@ -48,7 +48,7 @@ public final class MonogramRoomActivity extends MonogramSettingsActivity impleme
         nickname.editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
         String own=controller.accountJid(); int at=own.indexOf('@');
         nickname.editText.setText(dialog==0 ? (at>0 ? own.substring(0,at) : "Monogram") : controller.roomNickname(dialog));
-        password=new EditTextCell(context,"Room password (if required)",false);
+        password=new EditTextCell(context,"Room password",false);
         password.editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         if(dialog!=0) address.editText.setText(controller.jid(dialog));
         else if(invitedRoom!=null) {
@@ -69,6 +69,7 @@ public final class MonogramRoomActivity extends MonogramSettingsActivity impleme
             }
             items.add(UItem.asShadow("Enter a full room address such as friends@conference.example.org."));
         } else { items.add(UItem.asHeader(MonogramController.get(currentAccount).jid(dialog))); }
+        if(dialog==0) items.add(UItem.asHeader("Your room identity"));
         items.add(UItem.asCustom(nickname));
         if(!creating) items.add(UItem.asCustom(password));
         if(!creating) items.add(UItem.asShadow("Passwords entered here stay on this device. Saved room addresses, nicknames and autojoin choices sync privately with supported servers."));

@@ -35,8 +35,8 @@ public class BotBiometrySettings extends BaseFragment {
 
     @Override
     public View createView(Context context) {
-        actionBar.setBackButtonDrawable(new BackDrawable(false));
-        actionBar.setAllowOverlayTitle(true);
+        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        actionBar.setAllowOverlayTitle(false);
         actionBar.setTitle(getString(R.string.PrivacyBiometryBots));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -51,6 +51,8 @@ public class BotBiometrySettings extends BaseFragment {
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray, resourceProvider));
 
         listView = new UniversalRecyclerView(this, this::fillItems, this::onClick, this::onLongClick);
+        listView.setSections();
+        actionBar.setAdaptiveBackground(listView);
         contentView.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
         BotBiometry.getBots(getContext(), currentAccount, bots -> {

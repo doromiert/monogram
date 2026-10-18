@@ -914,7 +914,8 @@ public class MediaDataController extends BaseController {
         if (type == TYPE_PREMIUM_STICKERS) {
             return new ArrayList<>(recentStickers[type]);
         }
-        ArrayList<TLRPC.Document> result = new ArrayList<>(arrayList.subList(0, Math.min(arrayList.size(), 20)));
+        int count = type == TYPE_IMAGE || type == TYPE_FAVE ? arrayList.size() : Math.min(arrayList.size(), 20);
+        ArrayList<TLRPC.Document> result = new ArrayList<>(arrayList.subList(0, count));
         if (firstEmpty && !result.isEmpty() && !StickersAlert.DISABLE_STICKER_EDITOR) {
             result.add(0, new TLRPC.TL_documentEmpty());
         }
@@ -975,30 +976,15 @@ public class MediaDataController extends BaseController {
         if (!found && !remove) {
             recentStickers[type].add(0, document);
         }
+        final boolean unlimited = type == TYPE_IMAGE || type == TYPE_FAVE;
         int maxCount;
         if (type == TYPE_FAVE) {
             if (remove) {
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_REMOVED_FROM_FAVORITES);
             } else {
-                boolean replace = recentStickers[type].size() > getMessagesController().maxFaveStickersCount;
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, replace ? StickerSetBulletinLayout.TYPE_REPLACED_TO_FAVORITES : StickerSetBulletinLayout.TYPE_ADDED_TO_FAVORITES);
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_ADDED_TO_FAVORITES);
             }
-            TLRPC.TL_messages_faveSticker req = new TLRPC.TL_messages_faveSticker();
-            req.id = new TLRPC.TL_inputDocument();
-            req.id.id = document.id;
-            req.id.access_hash = document.access_hash;
-            req.id.file_reference = document.file_reference;
-            if (req.id.file_reference == null) {
-                req.id.file_reference = new byte[0];
-            }
-            req.unfave = remove;
-            getConnectionsManager().sendRequest(req, (response, error) -> {
-                if (error != null && FileRefController.isFileRefError(error.text) && parentObject != null) {
-                    getFileRefController().requestReference(parentObject, req);
-                } else {
-                    AndroidUtilities.runOnUIThread(() -> getMediaDataController().loadRecents(MediaDataController.TYPE_FAVE, false, false, true));
-                }
-            });
+            // XMPP favorites use the native local cache; Telegram cannot save these document IDs.
             maxCount = getMessagesController().maxFaveStickersCount;
         } else {
             if (type == TYPE_IMAGE && remove) {
@@ -1020,7 +1006,7 @@ public class MediaDataController extends BaseController {
             }
             maxCount = getMessagesController().maxRecentStickersCount;
         }
-        if (recentStickers[type].size() > maxCount || remove) {
+        if (remove || !unlimited && recentStickers[type].size() > maxCount) {
             TLRPC.Document old = remove ? document : recentStickers[type].remove(recentStickers[type].size() - 1);
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 int cacheType;
@@ -1748,7 +1734,7 @@ public class MediaDataController extends BaseController {
     }
 
     public boolean canAddStickerToFavorites() {
-        return !stickersLoaded[0] || stickerSets[0].size() >= 5 || !recentStickers[TYPE_FAVE].isEmpty();
+        return true;
     }
 
     public ArrayList<TLRPC.TL_messages_stickerSet> getStickerSets(int type) {
@@ -1911,8 +1897,9 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadRecents(int type, boolean gif, boolean cache, boolean force) {
-        if (gif && recentGifsLoaded) return;
-        if (gif) cache = true;
+        final boolean localStickers = !gif && (type == TYPE_IMAGE || type == TYPE_FAVE);
+        if (gif && recentGifsLoaded || localStickers && recentStickersLoaded[type] && !force) return;
+        if (gif || localStickers) cache = true;
         if (gif) {
             if (loadingRecentGifs) {
                 return;
@@ -1926,7 +1913,7 @@ public class MediaDataController extends BaseController {
                 return;
             }
             loadingRecentStickers[type] = true;
-            if (recentStickersLoaded[type]) {
+            if (recentStickersLoaded[type] && !localStickers) {
                 cache = false;
             }
         }
@@ -1961,7 +1948,10 @@ public class MediaDataController extends BaseController {
                                         String path = MessagesController.getEmojiSettings(currentAccount).getString("monogram-gif-path-" + document.id, null);
                                         if (path != null && new File(path).isFile()) document.localPath = path;
                                     }
-                                    arrayList.add(document);
+                                    if (!gif && org.telegram.messenger.xmpp.MonogramPacks.isLocalId(document.id)) {
+                                        document = org.telegram.messenger.xmpp.MonogramPacks.document(currentAccount, document.id);
+                                    }
+                                    if (document != null) arrayList.add(document);
                                 }
                                 data.reuse();
                             }
@@ -2092,6 +2082,7 @@ public class MediaDataController extends BaseController {
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 try {
                     SQLiteDatabase database = getMessagesStorage().getDatabase();
+                    final boolean unlimited = !gif && (type == TYPE_IMAGE || type == TYPE_FAVE);
                     int maxCount;
                     if (gif) {
                         maxCount = getMessagesController().maxRecentGifsCount;
@@ -2128,7 +2119,7 @@ public class MediaDataController extends BaseController {
                         database.executeFast("DELETE FROM web_recent_v3 WHERE type = " + cacheType).stepThis().dispose();
                     }
                     for (int a = 0; a < count; a++) {
-                        if (a == maxCount) {
+                        if (!unlimited && a == maxCount) {
                             break;
                         }
                         TLRPC.Document document = documents.get(a);
@@ -2150,7 +2141,7 @@ public class MediaDataController extends BaseController {
                     }
                     state.dispose();
                     database.commitTransaction();
-                    if (!replace && documents.size() >= maxCount) {
+                    if (!unlimited && !replace && documents.size() >= maxCount) {
                         database.beginTransaction();
                         for (int a = maxCount; a < documents.size(); a++) {
                             database.executeFast("DELETE FROM web_recent_v3 WHERE id = '" + documents.get(a).id + "' AND type = " + cacheType).stepThis().dispose();

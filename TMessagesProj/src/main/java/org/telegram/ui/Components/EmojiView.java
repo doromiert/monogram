@@ -7026,7 +7026,7 @@ public class EmojiView extends FrameLayout implements
                                 if (documents.isEmpty()) {
                                     cell.setHeight(AndroidUtilities.dp(8));
                                 } else {
-                                    int height = pager.getHeight() - (int) Math.ceil(documents.size() / (float) stickersPerRow) * AndroidUtilities.dp(82);
+                                    int height = pager.getHeight() - (int) Math.ceil(visibleCount(documents) / (float) stickersPerRow) * AndroidUtilities.dp(82);
                                     cell.setHeight(height > 0 ? height : 1);
                                 }
                             }
@@ -7063,8 +7063,10 @@ public class EmojiView extends FrameLayout implements
                             }
                         } else if (object == recentStickers) {
                             cell.setText(getString(R.string.RecentStickers), R.drawable.msg_close, getString(R.string.ClearRecentStickersAlertTitle));
+                            bindSectionToggle(cell, recentStickers);
                         } else if (object == favouriteStickers) {
                             cell.setText(getString(R.string.FavoriteStickers), 0);
+                            bindSectionToggle(cell, favouriteStickers);
                         } else if (object == premiumStickers) {
                             cell.setText(getString(R.string.PremiumStickers), 0);
                         }
@@ -7084,6 +7086,34 @@ public class EmojiView extends FrameLayout implements
             }
         }
 
+        private boolean sectionCollapsed(boolean favorites) {
+            return MessagesController.getEmojiSettings(currentAccount).getBoolean(
+                    favorites ? "monogram-favorite-stickers-collapsed" : "monogram-recent-stickers-collapsed", true);
+        }
+
+        private int visibleCount(ArrayList<TLRPC.Document> documents) {
+            if ((documents == recentStickers || documents == favouriteStickers) && sectionCollapsed(documents == favouriteStickers)) {
+                return Math.min(documents.size(), Math.max(1, stickersPerRow) * 2);
+            }
+            return documents.size();
+        }
+
+        private void bindSectionToggle(StickerSetNameCell cell, ArrayList<TLRPC.Document> documents) {
+            if (documents.size() <= Math.max(1, stickersPerRow) * 2) return;
+            final boolean favorites = documents == favouriteStickers;
+            View.OnClickListener toggle = v -> {
+                final int offset = cell.getTop() - stickersGridView.getPaddingTop();
+                MessagesController.getEmojiSettings(currentAccount).edit().putBoolean(
+                        favorites ? "monogram-favorite-stickers-collapsed" : "monogram-recent-stickers-collapsed",
+                        !sectionCollapsed(favorites)).apply();
+                notifyDataSetChanged();
+                int position = getPositionForPack(favorites ? "fav" : "recent");
+                if (position >= 0) stickersLayoutManager.scrollToPositionWithOffset(position, offset);
+            };
+            cell.setAction(getString(sectionCollapsed(favorites) ? R.string.PollExpand : R.string.PollCollapse), toggle);
+            cell.setHeaderOnClick(toggle);
+        }
+
         private void updateItems() {
             if (frozen) {
                 return;
@@ -7100,6 +7130,7 @@ public class EmojiView extends FrameLayout implements
             packStartPosition.clear();
             positionToRow.clear();
             cache.clear();
+            cacheParents.clear();
             totalItems = 0;
             ArrayList<TLRPC.TL_messages_stickerSet> packs = stickerSets;
             int startRow = 0;
@@ -7161,14 +7192,15 @@ public class EmojiView extends FrameLayout implements
                 if (documents.isEmpty()) {
                     continue;
                 }
-                int count = (int) Math.ceil(documents.size() / (float) stickersPerRow);
+                int visible = visibleCount(documents);
+                int count = (int) Math.ceil(visible / (float) stickersPerRow);
                 if (pack != null) {
                     cache.put(totalItems, pack);
                 } else {
                     cache.put(totalItems, documents);
                 }
                 positionToRow.put(totalItems, startRow);
-                for (int b = 0; b < documents.size(); b++) {
+                for (int b = 0; b < visible; b++) {
                     int num = 1 + b + totalItems;
                     cache.put(num, documents.get(b));
                     if (pack != null) {

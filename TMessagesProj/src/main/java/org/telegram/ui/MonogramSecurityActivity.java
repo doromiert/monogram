@@ -157,7 +157,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         }
         if(peer<0) {
             items.add(UItem.asHeader("Recipient policy"));
-            items.add(UItem.asCheck(9,"Skip unreachable devices automatically").setChecked(controller.automaticRoomRecipients(peer)));
+            items.add(UItem.asCheck(9,"Skip unreachable devices").setChecked(controller.automaticRoomRecipients(peer)));
             items.add(UItem.asShadow("Unavailable device lists or key bundles are skipped for this send. Skipped devices cannot read it. Offline devices with usable keys remain included; unknown or changed fingerprints still require approval. Turn this off to require every selected recipient."));
             String skipped=controller.skippedRoomRecipients(peer); if(skipped!=null) items.add(UItem.asShadow(skipped));
         }

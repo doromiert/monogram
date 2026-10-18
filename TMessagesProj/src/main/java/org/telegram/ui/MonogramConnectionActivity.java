@@ -47,8 +47,8 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
         if(android.os.Build.VERSION.SDK_INT>=26) {
             android.app.NotificationManager manager=(android.app.NotificationManager)getContext().getSystemService(android.content.Context.NOTIFICATION_SERVICE);
             android.app.NotificationChannel channel=manager==null ? null : manager.getNotificationChannel(NotificationsService.CONNECTION_CHANNEL);
-            String visibility=channel==null ? "System settings" : !manager.areNotificationsEnabled() || channel.getImportance()==android.app.NotificationManager.IMPORTANCE_NONE ? "Hidden" : "Shown";
-            items.add(UItem.asButton(5,R.drawable.msg_notifications,"Connection notification",visibility));
+            String visibility=channel==null ? "Default" : !manager.areNotificationsEnabled() || channel.getImportance()==android.app.NotificationManager.IMPORTANCE_NONE ? "Hidden" : "Shown";
+            items.add(UItem.asButton(5,R.drawable.msg_notifications,"Connection notice",visibility));
         }
         items.add(UItem.asShadow("Monogram keeps its XMPP connection in a foreground notification. Android battery optimization and additional phone-specific restrictions can still interrupt it; allow background activity in the system settings. To hide the ongoing notice, turn off only the Connection notification category in Android settings. Keep message notifications enabled."));
         items.add(UItem.asHeader("Contacts and rooms"));

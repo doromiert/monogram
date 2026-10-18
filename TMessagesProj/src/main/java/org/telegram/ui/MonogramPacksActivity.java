@@ -86,9 +86,10 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             items.add(UItem.asHeader("Your packs"));
             int index = 0;
             for (MonogramPacks.Pack entry : packs) if (entry.installed) items.add(row(100 + index++, entry.name, entry.items.size() + (entry.emojis ? " emoji" : " stickers"), entry));
+            if (index == 0) items.add(UItem.asSettingsCell(0,"Installed packs","None").setEnabled(false));
             if (index == 0) items.add(UItem.asShadow("Import a Telegram pack or create one from images, TGS animations or WebM files. Every item can have its own name and separate emoji tag."));
             items.add(UItem.asHeader("Telegram import"));
-            items.add(UItem.asButton(4, MonogramPacks.configured(currentAccount) ? "Replace bot token" : "Add bot token", MonogramPacks.configured(currentAccount) ? "Configured" : "Required for Telegram links"));
+            items.add(UItem.asButton(4, MonogramPacks.configured(currentAccount) ? "Replace bot token" : "Add bot token", MonogramPacks.configured(currentAccount) ? "Configured" : "Not configured"));
             if (MonogramPacks.configured(currentAccount)) items.add(UItem.asButton(5, "Remove bot token").red());
             items.add(UItem.asShadow("Import uses Telegram’s official Bot API and contacts api.telegram.org directly. Create a bot with @BotFather and paste its token here. The token is stored encrypted on this phone. It is never sent to your Jabber server. Imported artwork remains subject to its creator’s rights."));
         } else if (pack != null) {

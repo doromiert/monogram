@@ -59,6 +59,7 @@ import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.SectionsScrollView;
 
 import java.util.ArrayList;
 
@@ -186,11 +187,14 @@ public class ThemeSetUrlActivity extends BaseFragment implements NotificationCen
         ActionBarMenu menu = actionBar.createMenu();
         doneButton = menu.addItem(done_button, LocaleController.getString(R.string.Done).toUpperCase());
 
-        fragmentView = new LinearLayout(context);
-        fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
-        LinearLayout linearLayout = (LinearLayout) fragmentView;
+        LinearLayout linearLayout = new SectionsScrollView.SectionsLinearLayout(context);
         linearLayout.setOrientation(LinearLayout.VERTICAL);
-        fragmentView.setOnTouchListener((v, event) -> true);
+        SectionsScrollView scrollView = new SectionsScrollView(context, linearLayout, resourceProvider);
+        scrollView.addView(linearLayout);
+        scrollView.setVerticalScrollBarEnabled(false);
+        fragmentView = scrollView;
+        fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        actionBar.setAdaptiveBackground(scrollView);
 
         linearLayoutTypeContainer = new LinearLayout(context);
         linearLayoutTypeContainer.setOrientation(LinearLayout.VERTICAL);
@@ -323,7 +327,6 @@ public class ThemeSetUrlActivity extends BaseFragment implements NotificationCen
         }
 
         checkInfoCell = new TextInfoPrivacyCell(context);
-        checkInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(context, R.drawable.greydivider_bottom, Theme.key_windowBackgroundGrayShadow));
         checkInfoCell.setVisibility(View.GONE);
         checkInfoCell.setBottomPadding(0);
         linearLayout.addView(checkInfoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -339,7 +342,6 @@ public class ThemeSetUrlActivity extends BaseFragment implements NotificationCen
         linearLayout.addView(helpInfoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         if (creatingNewTheme) {
-            helpInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(context, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
             messagesCell = new ThemePreviewMessagesCell(context, parentLayout, 1);
             linearLayout.addView(messagesCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
@@ -387,10 +389,7 @@ public class ThemeSetUrlActivity extends BaseFragment implements NotificationCen
 
             createInfoCell = new TextInfoPrivacyCell(context);
             createInfoCell.setText(AndroidUtilities.replaceTags(LocaleController.getString(R.string.UseDifferentThemeInfo)));
-            createInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(context, R.drawable.greydivider_bottom, Theme.key_windowBackgroundGrayShadow));
             linearLayout.addView(createInfoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        } else {
-            helpInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(context, R.drawable.greydivider_bottom, Theme.key_windowBackgroundGrayShadow));
         }
 
         if (info != null) {
@@ -534,21 +533,11 @@ public class ThemeSetUrlActivity extends BaseFragment implements NotificationCen
     private void setCheckText(String text, int colorKey) {
         if (TextUtils.isEmpty(text)) {
             checkInfoCell.setVisibility(View.GONE);
-            if (creatingNewTheme) {
-                helpInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(getParentActivity(), R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
-            } else {
-                helpInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(getParentActivity(), R.drawable.greydivider_bottom, Theme.key_windowBackgroundGrayShadow));
-            }
         } else {
             checkInfoCell.setVisibility(View.VISIBLE);
             checkInfoCell.setText(text);
             checkInfoCell.setTag(colorKey);
             checkInfoCell.setTextColorByKey(colorKey);
-            if (creatingNewTheme) {
-                helpInfoCell.setBackgroundDrawable(Theme.getThemedDrawableByKey(getParentActivity(), R.drawable.greydivider_top, Theme.key_windowBackgroundGrayShadow));
-            } else {
-                helpInfoCell.setBackgroundDrawable(null);
-            }
         }
     }
 
@@ -653,13 +642,10 @@ public class ThemeSetUrlActivity extends BaseFragment implements NotificationCen
 
         themeDescriptions.add(new ThemeDescription(headerCell, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
 
-        themeDescriptions.add(new ThemeDescription(createInfoCell, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
         themeDescriptions.add(new ThemeDescription(createInfoCell, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
 
-        themeDescriptions.add(new ThemeDescription(helpInfoCell, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
         themeDescriptions.add(new ThemeDescription(helpInfoCell, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
 
-        themeDescriptions.add(new ThemeDescription(checkInfoCell, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
         themeDescriptions.add(new ThemeDescription(checkInfoCell, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_text_RedRegular));
         themeDescriptions.add(new ThemeDescription(checkInfoCell, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText8));
         themeDescriptions.add(new ThemeDescription(checkInfoCell, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGreenText));
