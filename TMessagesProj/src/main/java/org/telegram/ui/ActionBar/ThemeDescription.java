@@ -33,6 +33,7 @@ import androidx.viewpager.widget.ViewPager;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.ui.Components.AnimatedArrowDrawable;
+import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AudioPlayerAlert;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
@@ -365,6 +366,8 @@ public class ThemeDescription {
             if ((changeFlags & FLAG_CHECKTAG) == 0 || checkTag(currentKey, viewToInvalidate)) {
                 if (viewToInvalidate instanceof TextView) {
                     ((TextView) viewToInvalidate).setTextColor(color);
+                } else if (viewToInvalidate instanceof AnimatedTextView) {
+                    ((AnimatedTextView) viewToInvalidate).setTextColor(color);
                 } else if (viewToInvalidate instanceof NumberTextView) {
                     ((NumberTextView) viewToInvalidate).setTextColor(color);
                 } else if (viewToInvalidate instanceof SimpleTextView) {
@@ -609,6 +612,8 @@ public class ThemeDescription {
             }
         } else if (object instanceof TextView) {
             applyTextViewColor(object, color);
+        } else if (object instanceof AnimatedTextView) {
+            ((AnimatedTextView) object).setTextColor(color);
         } else if (object instanceof ImageView) {
             ImageView imageView = (ImageView) object;
             Drawable drawable = imageView.getDrawable();
