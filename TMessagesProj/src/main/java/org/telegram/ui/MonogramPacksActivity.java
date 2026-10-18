@@ -21,13 +21,26 @@ import org.telegram.ui.Components.UniversalFragment;
 /** Native Telegram settings, pack preview and pickers backed by account-local XMPP assets. */
 public final class MonogramPacksActivity extends UniversalFragment {
     private final long packId;
+    private int initialAction;
+    private String initialLink, lastError;
     private ArrayList<MonogramPacks.Pack> packs = new ArrayList<>();
     private MonogramPacks.Pack pack;
     private boolean busy, creatingEmojis;
     private String creatingName;
     private MonogramPacks.Request request;
     public MonogramPacksActivity(int account) { this(account, 0); }
+    public MonogramPacksActivity(int account, boolean importPack) { this(account); initialAction = importPack ? 1 : 2; }
+    public MonogramPacksActivity(int account, String link) { this(account); initialAction = 1; initialLink = link; }
     private MonogramPacksActivity(int account, long pack) { currentAccount = account; packId = pack; }
+    @Override public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
+        super.onTransitionAnimationEnd(isOpen, backward);
+        if(isOpen && !backward && initialAction!=0) {
+            int action=initialAction;initialAction=0;
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
+                if(getParentActivity()!=null) onClick(UItem.asButton(action,""),null,0,0,0);
+            },100);
+        }
+    }
     @Override protected CharSequence getTitle() { return packId == 0 ? "Stickers and custom emoji" : pack == null ? "Local pack" : pack.name; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         packs = MonogramPacks.packs(currentAccount); pack = null;
@@ -40,6 +53,7 @@ public final class MonogramPacksActivity extends UniversalFragment {
             items.add(UItem.asButton(3, "Create custom emoji pack"));
             items.add(UItem.asShadow("Packs stay on this phone for this Jabber account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Inline emoji in media captions are not supported yet."));
             if (busy) items.add(UItem.asShadow("Preparing pack… Keep this screen open until the import finishes."));
+            if (lastError != null) items.add(UItem.asShadow(lastError));
             items.add(UItem.asHeader("Your packs"));
             int index = 0;
             for (MonogramPacks.Pack entry : packs) if (entry.installed) items.add(row(100 + index++, entry.name, entry.items.size() + (entry.emojis ? " emoji" : " stickers"), entry));
@@ -72,7 +86,10 @@ public final class MonogramPacksActivity extends UniversalFragment {
                     })).create()); return;
         }
         if (packId == 0) {
-            if (item.id == 1) input("Telegram pack link", "", false, value -> { busy = true; update(); request = MonogramPacks.importTelegram(currentAccount, value, this::finished); });
+            if (item.id == 1) {
+                String link=initialLink;initialLink=null;
+                input("Telegram pack link", link==null ? "" : link, false, this::importPack);
+            }
             else if (item.id == 2 || item.id == 3) {
                 creatingEmojis = item.id == 3;
                 input("Pack name", "", false, value -> {
@@ -109,17 +126,33 @@ public final class MonogramPacksActivity extends UniversalFragment {
         } else if (data.getData() != null) uris.add(data.getData());
         busy = true; update(); request = MonogramPacks.create(currentAccount, creatingName, creatingEmojis, uris, this::finished); creatingName = null;
     }
+    private void importPack(String link) {
+        if(!MonogramPacks.configured(currentAccount)) {
+            input("Telegram bot token", "", true, token -> {
+                try { if(token.trim().isEmpty()) throw new IllegalArgumentException(); MonogramPacks.saveToken(currentAccount,token); importPack(link); }
+                catch(Exception failure) { finished("Could not save the token. Use the token supplied by @BotFather."); }
+            });
+            return;
+        }
+        lastError=null;busy=true;update();
+        request=MonogramPacks.importTelegram(currentAccount,link,this::finished);
+    }
     private void input(String title, String value, boolean secret, java.util.function.Consumer<String> save) {
         EditTextCell input = new EditTextCell(getContext(), title, false); input.editText.setSingleLine(true);
         input.editText.setInputType(InputType.TYPE_CLASS_TEXT | (secret ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_FLAG_CAP_SENTENCES));
         input.editText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(secret ? 256 : 512)}); input.editText.setText(value);
         if (android.os.Build.VERSION.SDK_INT >= 26 && secret) input.editText.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
-        showDialog(new AlertDialog.Builder(getContext()).setTitle(title).setView(input).setPositiveButton(secret ? "Save" : "Continue", (dialog, which) -> save.accept(input.getText().toString()))
+        showDialog(new AlertDialog.Builder(getContext()).setTitle(title).setMessage(secret ? "Create a bot with @BotFather and paste its token. Telegram imports need this token; it stays encrypted on this phone." : null).setView(input).setPositiveButton(secret ? "Save" : "Continue", (dialog, which) -> {
+                    String text=input.getText().toString();
+                    org.telegram.messenger.AndroidUtilities.runOnUIThread(() -> {
+                        if(getParentActivity()!=null) save.accept(text);
+                    },1);
+                })
                 .setNegativeButton("Cancel", null).create());
     }
     private UItem row(int id, String title, String subtitle, Object object) { UItem item = UItem.asButton(id, title, subtitle); item.object = object; return item; }
     private void update() { if (listView != null) { listView.adapter.update(true); if (pack != null && actionBar != null) actionBar.setTitle(pack.name); } }
-    private void finished(String error) { busy = false; update(); if (error != null) error(error); }
+    private void finished(String error) { busy = false; lastError=error; update(); if (error != null) error(error); }
     private void error(String text) { if (getParentActivity() != null) showDialog(new AlertDialog.Builder(getContext()).setTitle("Stickers and custom emoji").setMessage(text == null ? "Could not update the pack." : text).setPositiveButton("OK", null).create()); }
     @Override public void onFragmentDestroy() { if (request != null) request.cancel(); super.onFragmentDestroy(); }
     @Override public void onResume() { super.onResume(); update(); }

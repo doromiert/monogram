@@ -254,6 +254,7 @@ public class EmojiView extends FrameLayout implements
     public boolean shouldLightenBackground = true;
 
     private FrameLayout stickersContainer;
+    private LinearLayout stickersEmptyView;
     private StickersGridAdapter stickersGridAdapter;
     private StickersSearchGridAdapter stickersSearchGridAdapter;
     private RecyclerListView.OnItemClickListener stickersOnItemClickListener;
@@ -909,6 +910,7 @@ public class EmojiView extends FrameLayout implements
                 public void afterTextChanged(Editable s) {
                     updateButton();
                     final String query = searchEditText.getText().toString();
+                    updateStickersEmptyView();
                     search(query, true);
                     if (categoriesListView != null) {
                         categoriesListView.selectCategory(null);
@@ -2181,6 +2183,7 @@ public class EmojiView extends FrameLayout implements
                     super.onAttachedToWindow();
                     stickersContainerAttached = true;
                     updateStickerTabsPosition();
+                    updateStickersEmptyView();
                     if (chooseStickerActionTracker != null) {
                         chooseStickerActionTracker.checkVisibility();
                     }
@@ -2373,6 +2376,31 @@ public class EmojiView extends FrameLayout implements
             stickersGridView.setOnItemClickListener(stickersOnItemClickListener);
             stickersGridView.setGlowColor(getThemedColor(Theme.key_chat_emojiPanelBackground));
             stickersContainer.addView(stickersGridView);
+            stickersEmptyView = new LinearLayout(context);
+            stickersEmptyView.setOrientation(LinearLayout.VERTICAL);
+            stickersEmptyView.setGravity(Gravity.CENTER);
+            stickersEmptyView.setVisibility(GONE);
+            TextView emptyTitle = new TextView(context);
+            emptyTitle.setText("You have no sticker packs");
+            emptyTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            emptyTitle.setTypeface(AndroidUtilities.bold());
+            emptyTitle.setGravity(Gravity.CENTER);
+            emptyTitle.setTextColor(getThemedColor(Theme.key_chat_emojiPanelEmptyText));
+            stickersEmptyView.addView(emptyTitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            LinearLayout emptyActions = new LinearLayout(context);
+            org.telegram.ui.Stories.recorder.ButtonWithCounterView createPack = new org.telegram.ui.Stories.recorder.ButtonWithCounterView(context, resourcesProvider).setRound();
+            createPack.setText("Create pack");
+            createPack.setOnClickListener(v -> openEmptyPackAction(false));
+            emptyActions.addView(createPack, LayoutHelper.createLinear(0, 44, 1f, 0, 0, 4, 0));
+            org.telegram.ui.Stories.recorder.ButtonWithCounterView importPack = new org.telegram.ui.Stories.recorder.ButtonWithCounterView(context, resourcesProvider).setNeutral().setRound();
+            importPack.setText("Import pack");
+            importPack.setOnClickListener(v -> openEmptyPackAction(true));
+            emptyActions.addView(importPack, LayoutHelper.createLinear(0, 44, 1f, 4, 0, 0, 0));
+            stickersEmptyView.addView(emptyActions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, 0, 12, 0, 0));
+            FrameLayout.LayoutParams emptyLayout = new FrameLayout.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT);
+            emptyLayout.setMargins(dp(24), searchFieldHeight + dp(8), dp(24), dp(56));
+            stickersContainer.addView(stickersEmptyView, emptyLayout);
+            updateStickersEmptyView();
             stickersScrollHelper = new RecyclerAnimationScrollHelper(stickersGridView, stickersLayoutManager);
 
             stickersSearchField = new SearchField(context, 0) {
@@ -6016,6 +6044,19 @@ public class EmojiView extends FrameLayout implements
         updateStickerTabsPosition();
     }
 
+    private void openEmptyPackAction(boolean importPack) {
+        if(fragment!=null) fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, importPack));
+        else if(delegate!=null) delegate.onStickersSettingsClick();
+    }
+
+    private void updateStickersEmptyView() {
+        if(stickersEmptyView==null) return;
+        boolean visible = MediaDataController.getInstance(currentAccount).getStickerSets(MediaDataController.TYPE_IMAGE).isEmpty()
+                && recentStickers.isEmpty() && favouriteStickers.isEmpty() && !hasChatStickers
+                && (stickersSearchField==null || TextUtils.isEmpty(stickersSearchField.searchEditText.getText()));
+        stickersEmptyView.setVisibility(visible ? VISIBLE : GONE);
+    }
+
     private void reloadStickersAdapter() {
         if (stickersGridAdapter != null) {
             stickersGridAdapter.notifyDataSetChanged();
@@ -7163,6 +7204,7 @@ public class EmojiView extends FrameLayout implements
         public void notifyDataSetChanged() {
             updateItems();
             super.notifyDataSetChanged();
+            updateStickersEmptyView();
         }
     }
 

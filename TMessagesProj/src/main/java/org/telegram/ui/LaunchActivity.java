@@ -5072,6 +5072,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     });
                 }, ConnectionsManager.RequestFlagFailOnServerErrors);
             }
+        } else if ((sticker != null || emoji != null) && !org.telegram.messenger.xmpp.MonogramController.get(intentAccount).accountJid().isEmpty()) {
+            if(!mainFragmentsStack.isEmpty()) {
+                String link="https://t.me/"+(sticker!=null ? "addstickers/"+sticker : "addemoji/"+emoji);
+                mainFragmentsStack.get(mainFragmentsStack.size()-1).presentFragment(new MonogramPacksActivity(intentAccount,link));
+            }
+            return;
         } else if (sticker != null) {
             if (!mainFragmentsStack.isEmpty()) {
                 TLRPC.TL_inputStickerSetShortName stickerset = new TLRPC.TL_inputStickerSetShortName();
