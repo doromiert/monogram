@@ -36,7 +36,7 @@ import org.telegram.ui.Components.Premium.StarParticlesView;
 
 import java.util.Arrays;
 
-public class CacheChart extends View {
+public class CacheChart extends View implements Theme.Colorable {
 
     public static final int TYPE_CACHE = 0;
     public static final int TYPE_NETWORK = 1;
@@ -374,7 +374,6 @@ public class CacheChart extends View {
         this.sectors = new Sector[this.sectionsCount];
 
         loadingBackgroundPaint.setStyle(Paint.Style.STROKE);
-        loadingBackgroundPaint.setColor(Theme.getColor(Theme.key_listSelector));
 
         completePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
         completeGradient = new LinearGradient(0, 0, 0, AndroidUtilities.dp(200), new int[] { 0x006ED556, 0xFF6ED556, 0xFF41BA71, 0x0041BA71 }, new float[] { 0, .07f, .93f, 1 }, Shader.TileMode.CLAMP);
@@ -389,14 +388,12 @@ public class CacheChart extends View {
 
         topText.setAnimationProperties(.2f, 0, 450, CubicBezierInterpolator.EASE_OUT_QUINT);
         topText.setScaleProperty(.6f);
-        topText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         topText.setTypeface(AndroidUtilities.bold());
         topText.setTextSize(AndroidUtilities.dp(32));
         topText.setGravity(Gravity.CENTER);
 
         bottomText.setAnimationProperties(.6f, 0, 450, CubicBezierInterpolator.EASE_OUT_QUINT);
         bottomText.setScaleProperty(.6f);
-        bottomText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         bottomText.setTextSize(AndroidUtilities.dp(12));
         bottomText.setGravity(Gravity.CENTER);
 
@@ -416,13 +413,26 @@ public class CacheChart extends View {
 
         for (int i = 0; i < sectors.length; ++i) {
             Sector sector = sectors[i] = new Sector();
+            sector.gradientWidth = AndroidUtilities.dp(50);
+            sector.gradientMatrix = new Matrix();
+        }
+        updateColors();
+    }
+
+    @Override
+    public void updateColors() {
+        loadingBackgroundPaint.setColor(Theme.getColor(Theme.key_listSelector));
+        topText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        bottomText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        for (int i = 0; i < sectors.length; ++i) {
+            Sector sector = sectors[i];
             final int color2 = Theme.blendOver(Theme.getColor(colorKeys[i]), 0x03000000);
             final int color1 = Theme.blendOver(Theme.getColor(colorKeys[i]), 0x30ffffff);
-            sector.gradientWidth = AndroidUtilities.dp(50);
             sector.gradient = new RadialGradient(0, 0, dp(86), new int[]{ color1, color2 }, new float[] { .3f, 1 }, Shader.TileMode.CLAMP);
-            sector.gradient.setLocalMatrix(sector.gradientMatrix = new Matrix());
+            sector.gradient.setLocalMatrix(sector.gradientMatrix);
             sector.paint.setShader(sector.gradient);
         }
+        invalidate();
     }
 
     private boolean interceptTouch = true;
@@ -435,6 +445,7 @@ public class CacheChart extends View {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        updateColors();
         isAttached = true;
         for (int i = 0; i < sectors.length; ++i) {
             if (sectors[i].particle == null) {
