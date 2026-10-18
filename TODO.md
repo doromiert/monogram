@@ -2,8 +2,8 @@
 
 Legend: `[ ]` todo · `[o]` work in progress · `[x]` verified done.
 
-- [o] Add opt-in, bounded local message XML capture/view/copy/clear under XMPP connection, plus per-message sticker/storage/rendering diagnostics for the unreproduced 0.2.98 received-sticker bug.
-- [ ] Fix chat theme loading and empty theme previews; restore selected accent colors instead of blue in every color variant (user screenshots 9358/9359). After XML debugging, add Exteragram-style Monet dynamic-color themes using the local Exteragram artifact/source where appropriate.
+- [o] Add opt-in, bounded local message XML capture/view/copy/clear under XMPP connection, plus per-message sticker/storage/rendering diagnostics for the unreproduced 0.2.98 received-sticker bug. Implemented; Nix compile, bounded capture check and saved-message inspector check pass. Packaging/device verification pending; usage is documented in docs/XMPP_DEBUGGING.md.
+- [o] Fix chat theme loading and empty theme previews; restore selected accent colors instead of blue in every color variant (user screenshots 9358/9359). Implemented a local catalog for native pickers, retained local chat appearance during XMPP profile refresh, and restricted the Night home-gradient override to the home variant. Added the supplied Exteragram APK’s Monet Light/Dark/Black templates and Android 12+ system palette resolution; foreground palette refresh preserves wallpaper overrides. Three focused checks pass (Night variant colors, all shipped Monet tokens/modifiers, and stable local light/dark theme serialization). Packaging in progress; device appearance still unverified. Provenance: docs/MONET_THEMES.md.
 
 
 Execution constraint (2026-10-18): user resumed work and authorized one subagent for custom stickers/emojis and Telegram-link import, with root on usability. Keep parallelism limited; current blocking tasks are delivered in 0.2.90.

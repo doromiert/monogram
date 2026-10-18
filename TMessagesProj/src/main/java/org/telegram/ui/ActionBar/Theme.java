@@ -1773,7 +1773,7 @@ public class Theme {
                 }
 
                 //override default themes
-                if (isHome(themeAccent) && name.equals("Dark Blue") || name.equals("Night")) {
+                if (isHome(themeAccent) && (name.equals("Dark Blue") || name.equals("Night"))) {
                     themeAccent.myMessagesAccentColor = 0xff258DE5;
                     themeAccent.myMessagesGradientAccentColor1 = 0xff4272DF;
                     themeAccent.myMessagesGradientAccentColor2 = 0xff8146D7;
@@ -4018,6 +4018,17 @@ public class Theme {
 
         String themesString = themeConfig.getString("themes2", null);
 
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            String[] styles={"Light","Dark","Black"};
+            for(int i=0;i<styles.length;i++) {
+                ThemeInfo monet=new ThemeInfo();monet.name="Monet "+styles[i];monet.assetName="monet_"+styles[i].toLowerCase(java.util.Locale.ROOT)+".attheme";
+                monet.isDark=i==0 ? ThemeInfo.LIGHT : ThemeInfo.DARK;monet.sortIndex=6+i;
+                monet.setPreviewBackgroundColor(MonogramMonet.color(i==0 ? "n1_10" : i==1 ? "n1_900(l=80)" : "mBlack"));
+                monet.setPreviewInColor(MonogramMonet.color(i==0 ? "n1_10" : i==1 ? "n1_800(l=70)" : "n1_900"));
+                monet.setPreviewOutColor(MonogramMonet.color(i==0 ? "a1_600" : "a1_200"));
+                themes.add(monet);themesDict.put(monet.name,monet);
+            }
+        }
         int remoteVersion = themeConfig.getInt("remote_version", 0);
         int appRemoteThemesVersion = 1;
         if (remoteVersion == appRemoteThemesVersion) {
@@ -5614,6 +5625,10 @@ public class Theme {
 
     public static ThemeInfo getTheme(String key) {
         return themesDict.get(key);
+    }
+
+    public static void refreshMonetTheme() {
+        applyTheme(getActiveTheme(),false,false,!isCurrentThemeDay());
     }
 
     public static void applyTheme(ThemeInfo themeInfo) {
@@ -7591,7 +7606,10 @@ public class Theme {
                                 String key = line.substring(0, idx);
                                 String param = line.substring(idx + 1);
                                 int value;
-                                if (param.length() > 0 && param.charAt(0) == '#') {
+                                Integer monet=MonogramMonet.color(param);
+                                if(monet!=null) {
+                                    value=monet;
+                                } else if (param.length() > 0 && param.charAt(0) == '#') {
                                     try {
                                         value = Color.parseColor(param);
                                     } catch (Exception ignore) {

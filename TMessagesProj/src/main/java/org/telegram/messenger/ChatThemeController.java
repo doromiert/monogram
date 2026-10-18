@@ -75,7 +75,8 @@ public class ChatThemeController extends BaseController {
             FileLog.e(e);
         }
 
-        allChatThemes = getAllChatThemesFromPrefs();
+        allChatThemes = org.telegram.messenger.xmpp.MonogramThemes.chats(currentAccount);
+        giftsThemeList.completed=true;
         getMessagesStorage().loadGiftChatTheme(themes -> {
             if (themes != null) {
                 for (TLRPC.TL_chatThemeUniqueGift theme: themes) {
@@ -114,65 +115,11 @@ public class ChatThemeController extends BaseController {
     }
 
     public void requestAllChatThemes(final ResultCallback<List<EmojiThemes>> callback, boolean withDefault) {
-        if (themesHash == 0 || lastReloadTimeMs == 0) {
-            init();
-        }
-
-        boolean needReload = System.currentTimeMillis() - lastReloadTimeMs > reloadTimeoutMs;
-        if (allChatThemes == null || allChatThemes.isEmpty() || needReload) {
-            TL_account.getChatThemes request = new TL_account.getChatThemes();
-            request.hash = themesHash;
-            getConnectionsManager().sendRequestTyped(request, chatThemeQueue::postRunnable, (response, error) -> {
-                boolean isError = false;
-                final List<EmojiThemes> chatThemes;
-                if (response instanceof TL_account.TL_themes) {
-                    TL_account.TL_themes resp = (TL_account.TL_themes) response;
-                    themesHash = resp.hash;
-                    lastReloadTimeMs = System.currentTimeMillis();
-
-                    SharedPreferences.Editor editor = getSharedPreferences().edit();
-                    editor.clear();
-                    editor.putLong("hash", themesHash);
-                    editor.putLong("lastReload", lastReloadTimeMs);
-                    editor.putInt("count", resp.themes.size());
-                    chatThemes = new ArrayList<>(resp.themes.size());
-                    for (int i = 0; i < resp.themes.size(); ++i) {
-                        TLRPC.TL_theme tlChatTheme = resp.themes.get(i);
-                        Emoji.preloadEmoji(tlChatTheme.emoticon);
-                        SerializedData data = new SerializedData(tlChatTheme.getObjectSize());
-                        tlChatTheme.serializeToStream(data);
-                        editor.putString("theme_" + i, Utilities.bytesToHex(data.toByteArray()));
-                        EmojiThemes chatTheme = new EmojiThemes(currentAccount, tlChatTheme, false);
-                        chatTheme.preloadWallpaper();
-                        chatThemes.add(chatTheme);
-                    }
-                    editor.apply();
-                } else if (response instanceof TL_account.TL_themesNotModified) {
-                   // if (allChatThemes == null || allChatThemes.isEmpty()) {
-                        chatThemes = getAllChatThemesFromPrefs();
-//                    } else {
-//                   //     return;
-//                    }
-                } else {
-                    chatThemes = null;
-                    isError = true;
-                    AndroidUtilities.runOnUIThread(() -> callback.onError(error));
-                }
-                if (!isError) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        allChatThemes = new ArrayList<>(chatThemes);
-                        callback.onComplete(getEmojiThemes((withDefault ? THEME_LIST_WITH_DEFAULT : 0) | THEME_LIST_WITH_EMOJI));
-                    });
-                }
-            });
-        }
-        if (allChatThemes != null && !allChatThemes.isEmpty()) {
-            callback.onComplete(getEmojiThemes((withDefault ? THEME_LIST_WITH_DEFAULT : 0) | THEME_LIST_WITH_EMOJI));
-        }
+        callback.onComplete(getEmojiThemes((withDefault ? THEME_LIST_WITH_DEFAULT : 0) | THEME_LIST_WITH_EMOJI));
     }
 
     public void loadNextChatThemes(ResultCallback<Void> callback) {
-        requestNextChatThemes(callback);
+        callback.onComplete(null);
     }
 
     private SharedPreferences getSharedPreferences() {
@@ -314,16 +261,7 @@ public class ChatThemeController extends BaseController {
                 .putString("chatTheme_" + currentAccount + "_" + dialogId, themeKey != null ? themeKey.toSavedString() : null)
                 .apply();
 
-        if (sendRequest) {
-            TLRPC.TL_messages_setChatTheme request = new TLRPC.TL_messages_setChatTheme();
-            request.theme = ThemeKey.toInputTheme(themeKey);
-            request.peer = getMessagesController().getInputPeer(dialogId);
-            getConnectionsManager().sendRequestTyped(request, null, (updates, error) -> {
-                if (updates != null) {
-                    getMessagesController().processUpdates(updates, false);
-                }
-            });
-        }
+        // XMPP chat appearance is stored locally; there is no Telegram theme update to send.
     }
 
     public EmojiThemes getDialogTheme(long dialogId) {

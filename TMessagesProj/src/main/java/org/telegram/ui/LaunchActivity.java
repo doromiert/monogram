@@ -7008,6 +7008,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onResume() {
         super.onResume();
+        org.telegram.ui.ActionBar.MonogramMonet.refreshIfNeeded();
         isResumed = true;
         pipActivityHandler.onResume();
         if (onResumeStaticCallback != null) {

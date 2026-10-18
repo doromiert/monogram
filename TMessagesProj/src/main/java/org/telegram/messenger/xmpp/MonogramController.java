@@ -108,7 +108,7 @@ public final class MonogramController {
             String details;
             try {
                 if(owner!=accountEpoch) return;
-                details="Displayed media type: "+rendered+"\nDisplayed as sticker: "+object.isAnyKindOfSticker()+"\n\n"+store.debugMessage(id,self);
+                details="Monogram "+org.telegram.messenger.BuildVars.BUILD_VERSION_STRING+" · Android API "+android.os.Build.VERSION.SDK_INT+"\nDisplayed media type: "+rendered+"\nDisplayed as sticker: "+object.isAnyKindOfSticker()+"\n\n"+store.debugMessage(id,self);
             } catch(Exception unavailable) { details="Message diagnostics unavailable: "+unavailable.getClass().getSimpleName(); }
             final String result=details;
             AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch) callback.accept(result); });

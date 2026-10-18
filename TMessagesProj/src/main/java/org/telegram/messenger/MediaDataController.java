@@ -9489,38 +9489,7 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadEmojiThemes() {
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("emojithemes_config_" + currentAccount, Context.MODE_PRIVATE);
-        int count = preferences.getInt("count", 0);
-        ArrayList<ChatThemeBottomSheet.ChatThemeItem> previewItems = new ArrayList<>();
-        previewItems.add(new ChatThemeBottomSheet.ChatThemeItem(EmojiThemes.createHomePreviewTheme(currentAccount)));
-        for (int i = 0; i < count; ++i) {
-            String value = preferences.getString("theme_" + i, "");
-            SerializedData serializedData = new SerializedData(Utilities.hexToBytes(value));
-            try {
-                TLRPC.TL_theme theme = TLRPC.Theme.TLdeserialize(serializedData, serializedData.readInt32(true), true);
-                EmojiThemes fullTheme = EmojiThemes.createPreviewFullTheme(currentAccount, theme);
-                if (fullTheme.items.size() >= 4) {
-                    previewItems.add(new ChatThemeBottomSheet.ChatThemeItem(fullTheme));
-                }
-
-                ChatThemeController.chatThemeQueue.postRunnable(new Runnable() {
-                    @Override
-                    public void run() {
-                        for (int i = 0; i < previewItems.size(); i++) {
-                            if (previewItems.get(i) != null && previewItems.get(i).chatTheme != null) {
-                                previewItems.get(i).chatTheme.loadPreviewColors(0);
-                            }
-                        }
-                        AndroidUtilities.runOnUIThread(() -> {
-                            defaultEmojiThemes.clear();
-                            defaultEmojiThemes.addAll(previewItems);
-                        });
-                    }
-                });
-            } catch (Throwable e) {
-                FileLog.e(e);
-            }
-        }
+        generateEmojiPreviewThemes(org.telegram.messenger.xmpp.MonogramThemes.catalog(),currentAccount);
     }
 
     public void generateEmojiPreviewThemes(final ArrayList<TLRPC.TL_theme> emojiPreviewThemes, int currentAccount) {

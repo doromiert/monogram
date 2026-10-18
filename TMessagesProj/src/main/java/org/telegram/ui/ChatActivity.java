@@ -43580,7 +43580,8 @@ public class ChatActivity extends BaseFragment implements
 
     private void checkThemeEmoticonOrWallpaper() {
         getNotificationCenter().doOnIdle(() -> {
-            setChatThemeEmoticon(userInfo != null ? userInfo.theme : null);
+            EmojiThemes localTheme=ChatThemeController.getInstance(currentAccount).getDialogTheme(dialog_id);
+            setChatThemeEmoticon(localTheme==null ? null : localTheme.getChatTheme());
 //            if (emoticon == null && chatInfo != null) {
 //                emoticon = chatInfo.theme_emoticon;
 //            }
