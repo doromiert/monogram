@@ -28,6 +28,7 @@ public final class MonogramPacksActivity extends UniversalFragment {
     private boolean busy, creatingEmojis;
     private String creatingName;
     private MonogramPacks.Request request;
+    private AlertDialog importProgress;
     public MonogramPacksActivity(int account) { this(account, 0); }
     public MonogramPacksActivity(int account, boolean importPack) { this(account); initialAction = importPack ? 1 : 2; }
     public MonogramPacksActivity(int account, String link) { this(account); initialAction = 1; initialLink = link; }
@@ -135,6 +136,12 @@ public final class MonogramPacksActivity extends UniversalFragment {
             return;
         }
         lastError=null;busy=true;update();
+        importProgress=new AlertDialog(getContext(),AlertDialog.ALERT_TYPE_SPINNER);
+        importProgress.setOnCancelListener(dialog -> {
+            if(request!=null) request.cancel();
+            importProgress=null;busy=false;lastError="Pack import cancelled.";update();
+        });
+        showDialog(importProgress);
         request=MonogramPacks.importTelegram(currentAccount,link,this::finished);
     }
     private void input(String title, String value, boolean secret, java.util.function.Consumer<String> save) {
@@ -152,7 +159,10 @@ public final class MonogramPacksActivity extends UniversalFragment {
     }
     private UItem row(int id, String title, String subtitle, Object object) { UItem item = UItem.asButton(id, title, subtitle); item.object = object; return item; }
     private void update() { if (listView != null) { listView.adapter.update(true); if (pack != null && actionBar != null) actionBar.setTitle(pack.name); } }
-    private void finished(String error) { busy = false; lastError=error; update(); if (error != null) error(error); }
+    private void finished(String error) {
+        if(importProgress!=null) { importProgress.dismiss();importProgress=null; }
+        busy = false; lastError=error; update(); if (error != null) error(error);
+    }
     private void error(String text) { if (getParentActivity() != null) showDialog(new AlertDialog.Builder(getContext()).setTitle("Stickers and custom emoji").setMessage(text == null ? "Could not update the pack." : text).setPositiveButton("OK", null).create()); }
     @Override public void onFragmentDestroy() { if (request != null) request.cancel(); super.onFragmentDestroy(); }
     @Override public void onResume() { super.onResume(); update(); }
