@@ -33,6 +33,13 @@ class StickerHintTest {
         LegacyIncomingJournal.Context context=LegacyIncomingJournal.Context.direct(received,JidCreate.entityBareFrom("alice@example.org"),true,null,null);
         assertTrue(direct(context.outer,URL,true,true).displayStickerHint);
     }
+    @Test void incomingStreamNamespaceDeclarationsDoNotInvalidateTheMarker() throws Exception {
+        Message received=wire("<sticker xmlns='urn:xmpp:stickers:0' xmlns:stream='http://etherx.jabber.org/streams'/>");
+        assertTrue(direct(received,URL,true,true).displayStickerHint);
+        LegacyIncomingJournal.Context context=LegacyIncomingJournal.Context.direct(received,JidCreate.entityBareFrom("alice@example.org"),true,null,null);
+        assertTrue(direct(context.outer,URL,true,true).displayStickerHint);
+        assertFalse(direct(wire("<sticker xmlns='urn:xmpp:stickers:0' xmlns:stream='http://etherx.jabber.org/streams' pack='untrusted'/>"),URL,true,true).displayStickerHint);
+    }
     @Test void roomHintsDoNotCreateFileMetadataAndPlainModernBoundariesRemainSeparate() throws Exception {
         Message room=wire("");room.setType(Message.Type.groupchat);room.setFrom(JidCreate.entityFullFrom("room@conference.example.org/Bob"));StickerHint.addTo(room);
         XmppRoomMessage result=XmppRoomMessage.from(room,JidCreate.entityBareFrom("room@conference.example.org"),JidCreate.entityBareFrom("alice@example.org"),"Alice",URL,true,true);

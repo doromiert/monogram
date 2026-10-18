@@ -48,7 +48,7 @@ public class MonogramStickerHintTest {
         FileShare.initialize();
         FileLink link=link("received.png");
         org.jivesoftware.smack.packet.Message wire=org.jivesoftware.smack.util.PacketParserUtils.parseStanza(
-                "<message xmlns='jabber:client' from='"+PEER+"/phone' to='"+OWN+"/phone' type='chat' id='received-sticker'><sticker xmlns='urn:xmpp:stickers:0'/></message>");
+                "<message xmlns='jabber:client' from='"+PEER+"/phone' to='"+OWN+"/phone' type='chat' id='received-sticker'><sticker xmlns='urn:xmpp:stickers:0' xmlns:stream='http://etherx.jabber.org/streams'/></message>");
         java.lang.reflect.Method parse=XmppMessage.class.getDeclaredMethod("from",org.jivesoftware.smack.packet.Message.class,
                 org.jxmpp.jid.EntityBareJid.class,String.class,boolean.class,boolean.class,String.class,java.util.Date.class);
         parse.setAccessible(true);

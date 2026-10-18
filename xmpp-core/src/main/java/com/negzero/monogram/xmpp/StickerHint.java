@@ -15,7 +15,10 @@ public final class StickerHint {
         List<ExtensionElement> markers = wire.getExtensions("sticker", FileShare.STICKERS);
         if (markers.size() != 1 || !(markers.get(0) instanceof StandardExtensionElement)) return false;
         StandardExtensionElement marker = (StandardExtensionElement) markers.get(0);
-        return marker.getAttributes().isEmpty() && marker.getElements().isEmpty()
+        // Smack retains namespace declarations inherited from the incoming stream.
+        for (String name : marker.getAttributes().keySet())
+            if (!name.equals("xmlns") && !name.startsWith("xmlns:")) return false;
+        return marker.getElements().isEmpty()
                 && (marker.getText() == null || marker.getText().trim().isEmpty());
     }
 }
