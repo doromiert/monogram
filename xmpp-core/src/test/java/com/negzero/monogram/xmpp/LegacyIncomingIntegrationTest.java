@@ -67,6 +67,19 @@ class LegacyIncomingIntegrationTest {
         catch(OmemoSendException changed) { if(changed.reason!=OmemoSendException.Reason.ROOM_CHANGED || !(changed.getCause() instanceof ConcurrentModificationException) || attempt>=4) throw changed;Thread.sleep(50); }
         for(OmemoDevice device:devices) session.decide(device,session.fingerprint(device),true);
     }
+    @Test void encryptedStickerHintReachesLiveAndArchivedRecipient() throws Exception {
+        Inbox a=new Inbox(),b=new Inbox();
+        try(XmppSession alice=session(true,9791,a);XmppSession bob=session(false,9792,b)) {
+            alice.connect();bob.connect();trust(alice,BOB);trust(alice,ALICE);
+            FileLink link=FileLink.parse("aesgcm://example.org/sticker.webp#"+new String(new char[88]).replace('\0','a'));
+            String id=alice.sendFile(BOB,link,true,null,true);
+            XmppMessage received=b.next();assertEquals(id,received.ids.get("stanza"));assertTrue(received.readable);
+            assertTrue(received.displayStickerHint,"Live receiver lost sticker marker");
+            XmppSession.ArchivePage page=bob.archiveBefore(ALICE,null,50);
+            XmppMessage archived=page.messages.stream().filter(m -> id.equals(m.ids.get("stanza"))).findFirst().orElseThrow(AssertionError::new);
+            assertTrue(archived.displayStickerHint,"Archived receiver lost sticker marker");
+        }
+    }
     @Test void committedDirectPlaintextAndPendingMamRecoverOfflineWithOriginalIdsAndAcceptanceAfterClose() throws Exception {
         final int senderId=9781,receiverId=9782;Inbox a=new Inbox(),b=new Inbox(),recovered=new Inbox();
         try(XmppSession alice=session(true,senderId,a)) {
