@@ -14,6 +14,34 @@ public final class MonogramAttachments {
     public static final long PHOTO_VOLUME = Long.MIN_VALUE + 100;
     public static final String PARAM = "monogramAttachment";
     private MonogramAttachments() {}
+    /** Only downloaded media, never arbitrary private app files, may be explicitly exported. */
+    public static boolean isCachedFile(Context context,File file) {
+        if(context==null || file==null || !file.isFile()) return false;
+        try {
+            File root=new File(context.getFilesDir(),"monogram-attachments").getCanonicalFile();
+            File resolved=file.getCanonicalFile(),parent=resolved.getParentFile();
+            return resolved.getName().matches("[a-f0-9]{64}") && parent!=null && root.equals(parent.getParentFile());
+        } catch(java.io.IOException unavailable) { return false; }
+    }
+    /** Cache filenames are URL hashes; gallery MIME/extension must come from the media bytes. */
+    public static String mediaExtension(File file) throws java.io.IOException {
+        byte[] h=new byte[32];int n;
+        try(java.io.InputStream input=new java.io.FileInputStream(file)) { n=input.read(h); }
+        if(n>=8 && (h[0]&255)==137 && h[1]=='P' && h[2]=='N' && h[3]=='G') return "png";
+        if(n>=3 && (h[0]&255)==255 && (h[1]&255)==216 && (h[2]&255)==255) return "jpg";
+        if(n>=6 && h[0]=='G' && h[1]=='I' && h[2]=='F' && h[3]=='8') return "gif";
+        if(n>=12 && h[0]=='R' && h[1]=='I' && h[2]=='F' && h[3]=='F' && h[8]=='W' && h[9]=='E' && h[10]=='B' && h[11]=='P') return "webp";
+        if(n>=4 && (h[0]&255)==26 && h[1]==69 && (h[2]&255)==223 && (h[3]&255)==163) return "webm";
+        if(n>=12 && h[4]=='f' && h[5]=='t' && h[6]=='y' && h[7]=='p') {
+            String brand=new String(h,8,4,java.nio.charset.StandardCharsets.US_ASCII);
+            if(brand.equals("avif") || brand.equals("avis")) return "avif";
+            if(brand.matches("he(ic|ix|vc|vx)|m(if|sf)1")) return "heic";
+            if(brand.equals("qt  ")) return "mov";
+            if(brand.startsWith("3g")) return "3gp";
+            return "mp4";
+        }
+        throw new java.io.IOException("Unrecognized gallery media");
+    }
     public static boolean has(TLRPC.Message message) {
         return message != null && message.params != null && message.params.containsKey(PARAM);
     }

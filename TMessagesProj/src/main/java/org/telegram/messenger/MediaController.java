@@ -5467,7 +5467,8 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         File file = null;
         if (!TextUtils.isEmpty(fullPath)) {
             file = new File(fullPath);
-            if (!file.exists() || AndroidUtilities.isInternalUri(Uri.fromFile(file))) {
+            if (!file.exists() || (AndroidUtilities.isInternalUri(Uri.fromFile(file))
+                    && !org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,file))) {
                 file = null;
             }
         }
@@ -5514,11 +5515,14 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                         if (type == 0) {
                             destFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Telegram");
                             destFile.mkdirs();
-                            destFile = new File(destFile, AndroidUtilities.generateFileName(0, FileLoader.getFileExtension(sourceFile)));
+                            destFile = new File(destFile, AndroidUtilities.generateFileName(0, org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,sourceFile)
+                                    ? org.telegram.messenger.xmpp.MonogramAttachments.mediaExtension(sourceFile) : FileLoader.getFileExtension(sourceFile)));
                         } else if (type == 1) {
                             destFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Telegram");
                             destFile.mkdirs();
-                            destFile = new File(destFile, AndroidUtilities.generateFileName(1, FileLoader.getFileExtension(sourceFile)));
+                            destFile = new File(destFile, org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,sourceFile)
+                                    ? "Monogram_"+java.util.UUID.randomUUID()+"."+org.telegram.messenger.xmpp.MonogramAttachments.mediaExtension(sourceFile)
+                                    : AndroidUtilities.generateFileName(1, FileLoader.getFileExtension(sourceFile)));
                         } else {
                             File dir;
                             if (type == 2) {
@@ -5554,7 +5558,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                             try {
                                 @SuppressLint("DiscouragedPrivateApi") Method getInt = FileDescriptor.class.getDeclaredMethod("getInt$");
                                 int fdint = (Integer) getInt.invoke(inputStream.getFD());
-                                if (AndroidUtilities.isInternalUri(fdint)) {
+                                if (AndroidUtilities.isInternalUri(fdint) && !org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,sourceFile)) {
                                     if (finalProgress != null) {
                                         AndroidUtilities.runOnUIThread(() -> {
                                             try {
@@ -5806,6 +5810,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             int selectedType = type;
             ContentValues contentValues = new ContentValues();
             String extension = FileLoader.getFileExtension(sourceFile);
+            if((type==0 || type==1) && org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(ApplicationLoader.applicationContext,sourceFile)) {
+                extension=org.telegram.messenger.xmpp.MonogramAttachments.mediaExtension(sourceFile);
+                if(filename==null) filename="Monogram_"+java.util.UUID.randomUUID()+"."+extension;
+            }
             String mimeType = null;
             if (extension != null) {
                 mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
@@ -5855,13 +5863,23 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             }
 
             contentValues.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
             Uri dstUri = ApplicationLoader.applicationContext.getContentResolver().insert(uriToInsert, contentValues);
             if (dstUri != null) {
-                FileInputStream fileInputStream = new FileInputStream(sourceFile);
-                OutputStream outputStream = ApplicationLoader.applicationContext.getContentResolver().openOutputStream(dstUri);
-                AndroidUtilities.copyFile(fileInputStream, outputStream);
-                fileInputStream.close();
+                try {
+                    try(FileInputStream fileInputStream = new FileInputStream(sourceFile);
+                            OutputStream outputStream = ApplicationLoader.applicationContext.getContentResolver().openOutputStream(dstUri)) {
+                        if(outputStream==null) throw new IOException("Gallery unavailable");
+                        AndroidUtilities.copyFile(fileInputStream, outputStream);
+                    }
+                    ContentValues published=new ContentValues();published.put(MediaStore.MediaColumns.IS_PENDING,0);
+                    if(ApplicationLoader.applicationContext.getContentResolver().update(dstUri,published,null,null)!=1)
+                        throw new IOException("Could not publish gallery entry");
+                } catch(Exception failure) {
+                    try { ApplicationLoader.applicationContext.getContentResolver().delete(dstUri,null,null); } catch(Exception ignored) {}
+                    throw failure;
+                }
             }
             return dstUri;
         } catch (Exception e) {
