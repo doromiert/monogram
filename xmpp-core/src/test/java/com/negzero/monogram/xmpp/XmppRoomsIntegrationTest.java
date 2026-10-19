@@ -122,6 +122,33 @@ class XmppRoomsIntegrationTest {
         }
         public void close() { alice.close();bob.close(); }
     }
+    @Test void readOnlyDevicesCannotBlockAutomaticRoomSendsOrPermitOwnOnlyCiphertext() throws Exception {
+        try(RecoveryRoom fixture=new RecoveryRoom(3961,true,Collections.emptyMap());
+                XmppSession quiet=new XmppSession(new Account(fixture.alice.ownJid(),"127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Quiet-room-device"),
+                        "monogram-test",3963,new File(root,"quiet-room-trust"),recoveryListener(null))) {
+            quiet.connect();
+            org.jivesoftware.smackx.omemo.MonogramSignalStore records=org.jivesoftware.smackx.omemo.MonogramLegacyOmemoService.instance().records();
+            org.jivesoftware.smackx.omemo.internal.OmemoDevice own=new org.jivesoftware.smackx.omemo.internal.OmemoDevice(JidCreate.bareFrom(fixture.alice.ownJid()),3961);
+            org.jivesoftware.smackx.omemo.internal.OmemoDevice stale=new org.jivesoftware.smackx.omemo.internal.OmemoDevice(JidCreate.bareFrom(fixture.alice.ownJid()),3963);
+            for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:fixture.alice.devices(fixture.alice.ownJid()))
+                if(!device.equals(own)) fixture.alice.decide(device,fixture.alice.fingerprint(device),true);
+            int limit=org.jivesoftware.smackx.omemo.OmemoConfiguration.getMaxReadOnlyMessageCount();
+            records.storeOmemoMessageCounter(own,stale,limit);
+            XmppRoomMessage sent=fixture.alice.rooms.send(fixture.room,"Quiet own device must not block room",true,Collections.emptySet(),true);
+            assertTrue(sent.skippedRecipients.keySet().stream().anyMatch(key -> key.endsWith("device 3963")));
+            assertTrue(readable(fixture.messages,"Quiet own device must not block room").encrypted);
+            assertEquals(limit,records.loadOmemoMessageCounter(own,stale));
+            assertEquals(org.jivesoftware.smackx.omemo.trust.TrustState.trusted,fixture.alice.trustState(stale,fixture.alice.fingerprint(stale)));
+            assertEquals(OmemoSendException.Reason.DEVICE_FAILURE,assertThrows(OmemoSendException.class,
+                    () -> fixture.alice.rooms.send(fixture.room,"Strict must refuse inactive devices",true,Collections.emptySet(),false)).reason);
+            for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:fixture.alice.devices(fixture.bob.ownJid())) records.storeOmemoMessageCounter(own,device,limit);
+            java.util.concurrent.atomic.AtomicInteger transmitted=new java.util.concurrent.atomic.AtomicInteger();
+            fixture.alice.connection().addStanzaInterceptor(stanza -> transmitted.incrementAndGet(),stanza -> stanza instanceof Message && ((Message)stanza).getType()==Message.Type.groupchat);
+            assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,assertThrows(OmemoSendException.class,
+                    () -> fixture.alice.rooms.send(fixture.room,"Must not send only to ourselves",true,Collections.emptySet(),true)).reason);
+            assertEquals(0,transmitted.get());
+        }
+    }
     @Test void rememberedRecipientProbeIsPostSendCoalescedAndCannotBlockLaterMessages() throws Exception {
         CountDownLatch probing=new CountDownLatch(1),release=new CountDownLatch(1);
         ExecutorService sends=Executors.newSingleThreadExecutor();

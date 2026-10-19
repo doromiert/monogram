@@ -915,7 +915,18 @@ public final class XmppRooms implements AutoCloseable {
                     && available.stream().noneMatch(device -> !device.getJid().equals(connection.getUser().asBareJid())))
                 throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"No reachable trusted recipient remains; message was not sent.");
             OmemoMessage.Sent ciphertext=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.encrypt(omemo,available,body);
-            if(!ciphertext.getSkippedDevices().isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE);
+            for(OmemoDevice device:ciphertext.getSkippedDevices().keySet()) {
+                Throwable cause=ciphertext.getSkippedDevices().get(device);
+                // Automatic mode follows Smack's inactive-device cutoff; strict mode requires every device.
+                if(automatic && cause instanceof org.jivesoftware.smackx.omemo.exceptions.ReadOnlyDeviceException) {
+                    skipped.put(deviceKey(device),"Inactive OMEMO device (read-only cutoff)");continue;
+                }
+                throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,
+                        deviceKey(device)+": "+cause.getClass().getSimpleName());
+            }
+            if(ciphertext.getIntendedDevices().stream().noneMatch(device -> !device.getJid().equals(account.asBareJid())
+                    && !ciphertext.getSkippedDevices().containsKey(device)))
+                throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,"No reachable trusted recipient remains; message was not sent.");
             if(!automatic && !ciphertext.getIntendedDevices().containsAll(devices))
                 throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,"Encryption omitted a required room device; no message was sent.");
             return ciphertext;
