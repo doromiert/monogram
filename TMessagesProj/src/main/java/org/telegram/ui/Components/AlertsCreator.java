@@ -1984,7 +1984,8 @@ public class AlertsCreator {
         AlertDialog.Builder builder1 = new AlertDialog.Builder(fragment.getParentActivity(), resourcesProvider);
         builder1.setView(message);
         builder1.setTitle(LocaleController.getString(R.string.AskAQuestion));
-        builder1.setPositiveButton(LocaleController.getString(R.string.AskButton), (dialogInterface, i) -> performAskAQuestion(fragment));
+        builder1.setPositiveButton(LocaleController.getString(R.string.AskButton), (dialogInterface, i) ->
+                Browser.openUrl(fragment.getParentActivity(), "https://github.com/doromiert/monogram/issues"));
         builder1.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         return builder1.create();
     }

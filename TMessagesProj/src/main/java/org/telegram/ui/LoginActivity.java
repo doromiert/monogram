@@ -8,7 +8,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.AlertsCreator;
 
-/** Routes upstream account-entry points to Jabber; Telegram account actions are unavailable. */
+/** Routes upstream account-entry points to Jabber; This account action is unavailable. */
 public class LoginActivity extends MonogramLoginActivity {
     public static final boolean ENABLE_PASTED_TEXT_PROCESSING = false;
     public static final int AUTH_TYPE_MESSAGE = 1, AUTH_TYPE_MISSED_CALL = 11;
@@ -29,7 +29,7 @@ public class LoginActivity extends MonogramLoginActivity {
 
     private static void showUnavailable(BaseFragment fragment) {
         if (fragment != null && fragment.getParentActivity() != null) {
-            AlertsCreator.showSimpleAlert(fragment, "Monogram", "Manage your Jabber account with your XMPP provider. Telegram account actions are unavailable.");
+            AlertsCreator.showSimpleAlert(fragment, "Monogram", "Manage your Jabber account with your XMPP provider. This account action is unavailable.");
         }
     }
     @Override public boolean onFragmentCreate() {
