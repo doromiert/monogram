@@ -10,6 +10,8 @@ public final class MonogramChatBehavior {
     public static boolean commaAfterMention(int account) { return get(account,"comma-after-mention"); }
     public static boolean showSaveButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-save",false); }
     public static boolean showRepeatButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-repeat",false); }
+    public static boolean groupMessageMenu(int account) { return get(account,"group-message-menu"); }
+    public static void groupMessageMenu(int account,boolean enabled) { save(account,"group-message-menu",enabled); }
     public static boolean showCopyPhotoButton(int account) { return get(account,"show-copy-photo"); }
     public static boolean showDetailsButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-details",false); }
     public static void showCopyPhotoButton(int account,boolean enabled) { save(account,"show-copy-photo",enabled); }

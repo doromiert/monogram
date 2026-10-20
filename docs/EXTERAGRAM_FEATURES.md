@@ -39,8 +39,7 @@ and native lifecycle entrypoints are retained; see EXTERA_MEDIA_PLAYBACK.md.
 
 The native self color picker now offers free device-local name/reply and profile
 swatches with durable account/JID ownership, without purchase or color-update
-RPCs. This is not peer-synchronized appearance or a complete background-emoji
-port; see PROFILE_COLORS.md.
+RPCs. 0.2.124 source extends this with native reply/profile background emoji from installed local custom-emoji packs. These choices remain device-local; see PROFILE_COLORS.md.
 
 ## Remaining scope
 
@@ -79,3 +78,5 @@ reconstruction; its native arc/fill/ring drawing is expressed using the existing
 Telegram renderer and the recoverable selector parameters. This is not a runtime
 comparison or a claim of pixel-exact APK parity. Three focused preference/threshold/loop
 fixtures pass at the 0.2.122 release gate. Native visual/accessibility/gesture checks remain.
+
+The 0.2.124 message-menu source ports the shipped compact ActionRow with its native panel, action order and animation. Authoritative DEX branches establish default-on compaction for more than five eligible actions; disabling retains text rows. Details remains a swipe-back row. See EXTERA_MESSAGE_GROUPS.md for evidence and verification limits.

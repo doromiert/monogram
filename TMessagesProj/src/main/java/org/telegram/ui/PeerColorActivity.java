@@ -172,6 +172,10 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     private final long localColorGeneration;
     private final boolean localColorPicker;
     private boolean localColors() { return localColorPicker; }
+    private boolean localColorsCurrent() {
+        return !localColors() || !localColorOwner.isEmpty() && localColorGeneration == org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountGeneration()
+                && localColorOwner.equals(org.telegram.messenger.xmpp.MonogramUserColors.owner(currentAccount));
+    }
 
     private final StarsController.GiftsList gifts;
     private final StarsController.GiftsList giftsWithPeerColor;
@@ -301,7 +305,8 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                 selectedEmoji = 0;
             }
             if(localColors()) {
-                selectedEmoji=0;selectedEmojiCollectible=null;selectedPeerCollectible=null;
+                if(!org.telegram.messenger.xmpp.MonogramUserColors.validEmoji(currentAccount,selectedEmoji)) selectedEmoji=0;
+                selectedEmojiCollectible=null;selectedPeerCollectible=null;
                 if(type==PAGE_NAME && (selectedColor<0 || selectedColor>6)) selectedColor=(int)(getUserConfig().getClientUserId()%7);
                 if(type==PAGE_PROFILE && selectedColor>7) selectedColor=-1;
             }
@@ -1067,8 +1072,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
         private SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow selectAnimatedEmojiDialog;
         public void showSelectStatusDialog(SetReplyIconCell cell) {
-            if(localColors()) return;
-            if (selectAnimatedEmojiDialog != null || cell == null) {
+            if (selectAnimatedEmojiDialog != null || cell == null || !localColorsCurrent()) {
                 return;
             }
             final SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow[] popup = new SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow[1];
@@ -1093,9 +1097,16 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                     xoff = AndroidUtilities.rectTmp2.centerX() - (AndroidUtilities.displaySize.x - popupWidth) + dp(12);
                 }
             }
-            SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(PeerColorActivity.this, getContext(), true, xoff, type == PAGE_NAME ? SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON : SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON_BOTTOM, true, getResourceProvider(), type == PAGE_NAME ? 24 : 16, cell.getColor()) {
+            SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(PeerColorActivity.this, getContext(), true, xoff, type == PAGE_NAME ? SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON : SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON_BOTTOM, true, getResourceProvider(), type == PAGE_NAME ? 24 : 16, cell.getColor(), currentAccount, localColors()) {
                 @Override
                 protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
+                    if (localColors() && (!localColorsCurrent() || popup[0] == null || selectAnimatedEmojiDialog != popup[0]
+                            || gift != null || documentId != null && !org.telegram.messenger.xmpp.MonogramUserColors.validEmoji(currentAccount, documentId))) {
+                        if (popup[0] != null) {
+                            popup[0].dismiss();
+                        }
+                        return;
+                    }
                     if (gift != null) {
                         if (type == PAGE_PROFILE) {
                             if (!(gift.peer_color instanceof TLRPC.TL_peerColorCollectible)) return;
@@ -1196,9 +1207,9 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
             rowCount = 0;
             colorPickerRow = rowCount++;
-            iconRow = localColors() ? -1 : rowCount++;
+            iconRow = rowCount++;
             infoRow = rowCount++;
-            if ((type == PAGE_PROFILE) && (selectedColor >= 0 || selectedEmojiCollectible != null || selectedPeerCollectible != null)) {
+            if ((type == PAGE_PROFILE) && (selectedColor >= 0 || selectedEmoji != 0 || selectedEmojiCollectible != null || selectedPeerCollectible != null)) {
                 clearRow = rowCount++;
                 shadowRow = rowCount++;
             }
@@ -2016,7 +2027,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     private void applyLocalColors() {
         if(applying) return;
         TLRPC.User me=getUserConfig().getCurrentUser();
-        if(isChannel || me==null || localColorGeneration!=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountGeneration() || !org.telegram.messenger.xmpp.MonogramUserColors.save(currentAccount,localColorOwner,me,namePage.selectedColor,profilePage.selectedColor)) {
+        if(isChannel || me==null || !localColorsCurrent() || !org.telegram.messenger.xmpp.MonogramUserColors.save(currentAccount,localColorOwner,me,namePage.selectedColor,profilePage.selectedColor,namePage.selectedEmoji,profilePage.selectedEmoji)) {
             BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramProfileColorsSaveError)).show();return;
         }
         applying=true;applyingName=true;applyingProfile=true;

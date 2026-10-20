@@ -22,13 +22,36 @@ public final class MonogramUserColors {
     }
     public static String owner(int account) { return ApplicationLoader.applicationContext.getSharedPreferences("monogram-"+account,Context.MODE_PRIVATE).getString("jid",""); }
     public static boolean save(int account,String expectedOwner,TLRPC.User user,int name,int profile) {
-        if(user==null || !user.self || expectedOwner.isEmpty() || !expectedOwner.equals(owner(account)) || name<0 || name>6 || profile< -1 || profile>7) return false;
+        long nameEmoji=user!=null && user.color!=null && (user.color.flags & 2)!=0 ? user.color.background_emoji_id : 0;
+        long profileEmoji=user!=null && user.profile_color!=null && (user.profile_color.flags & 2)!=0 ? user.profile_color.background_emoji_id : 0;
+        return save(account,expectedOwner,user,name,profile,nameEmoji,profileEmoji);
+    }
+    public static boolean save(int account,String expectedOwner,TLRPC.User user,int name,int profile,long nameEmoji,long profileEmoji) {
+        if(user==null || !user.self || expectedOwner==null || expectedOwner.isEmpty() || !expectedOwner.equals(owner(account)) || name<0 || name>6 || profile< -1 || profile>7) return false;
         try {
-            String peer=MonogramController.get(account).jid(user.id);if(!expectedOwner.equals(peer)) return false;
-            JSONObject value=new JSONObject().put("name",name).put("profile",profile);
+            MonogramController controller=MonogramController.get(account);long generation=controller.accountGeneration();
+            String peer=controller.jid(user.id);if(!expectedOwner.equals(peer)) return false;
+            if(!validEmoji(account,nameEmoji) || !validEmoji(account,profileEmoji)) return false;
+            JSONObject value=new JSONObject().put("name",name).put("profile",profile).put("nameEmoji",nameEmoji).put("profileEmoji",profileEmoji);
+            if(generation!=controller.accountGeneration() || !expectedOwner.equals(owner(account))) return false;
             if(!preferences().edit().putString(key("monogram-"+account+".db",expectedOwner,peer),value.toString()).commit()) return false;
             project("monogram-"+account+".db",expectedOwner,peer,user);return true;
         } catch(Exception failed) { FileLog.e("Could not save local profile colors");return false; }
+    }
+    /** A self background may reference existing local custom emoji only, never a remote Telegram ID. */
+    public static boolean validEmoji(int account,long id) {
+        if(id==0) return true;
+        if(!MonogramPacks.localId(id)) return false;
+        TLRPC.Document document=MonogramPacks.document(account,id);
+        return document!=null && document.id==id && validEmojiDocument(document);
+    }
+    /** For already owner-scoped pack snapshots: validate without rescanning the entire library per row. */
+    public static boolean validEmojiDocument(TLRPC.Document document) {
+        if(document==null || !MonogramPacks.localId(document.id) || document.dc_id!=Integer.MIN_VALUE || document.localPath==null) return false;
+        boolean emoji=false;
+        for(TLRPC.DocumentAttribute attribute:document.attributes) if(attribute instanceof TLRPC.TL_documentAttributeCustomEmoji) { emoji=true;break; }
+        java.io.File file=new java.io.File(document.localPath);
+        return emoji && file.isFile() && file.length()>0;
     }
     /** Store projection must never construct a Controller or read another account's user cache. */
     public static void project(String database,String owner,String peer,TLRPC.User user) {
@@ -37,9 +60,15 @@ public final class MonogramUserColors {
             String raw=preferences().getString(key(database,owner,peer),null);if(raw==null) return;
             JSONObject value=new JSONObject(raw);int name=value.getInt("name"),profile=value.getInt("profile");
             if(name<0 || name>6 || profile< -1 || profile>7) return;
+            long nameEmoji=value.optLong("nameEmoji",0),profileEmoji=value.optLong("profileEmoji",0);
+            // Projection is pure and must not initialize a Controller/pack cache while the store is opening.
+            if(nameEmoji!=0 && !MonogramPacks.localId(nameEmoji)) nameEmoji=0;
+            if(profileEmoji!=0 && !MonogramPacks.localId(profileEmoji)) profileEmoji=0;
             user.color=new TLRPC.TL_peerColor();user.color.flags=1;user.color.color=name;user.flags2|=256;
+            if(nameEmoji!=0) { user.color.flags|=2;user.color.background_emoji_id=nameEmoji; }
             user.profile_color=new TLRPC.TL_peerColor();user.flags2|=512;
             if(profile>=0) { user.profile_color.flags=1;user.profile_color.color=profile; }
+            if(profileEmoji!=0) { user.profile_color.flags|=2;user.profile_color.background_emoji_id=profileEmoji; }
         } catch(Exception invalid) { FileLog.e("Could not restore local profile colors"); }
     }
     private static MessagesController.PeerColors names,profiles;

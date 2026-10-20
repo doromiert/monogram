@@ -11629,8 +11629,11 @@
     <string name="MonogramSwipePreviewDisabled">Enable an action to try the gesture</string>
     <string name="MonogramApplyWallpaperLocally">Apply on this device</string>
     <string name="MonogramWallpaperSaveError">Could not save the chat wallpaper. Keep the preview open and try again.</string>
-    <string name="MonogramLocalProfileColors">Name, reply and profile colors apply on this device only. They are not shared with your contacts.</string>
+    <string name="MonogramLocalProfileColors">Name, reply and profile colors and background icons apply on this device only. They are not shared with your contacts.</string>
     <string name="MonogramProfileColorsSaveError">Could not save these colors. Check the account is still signed in and try again.</string>
+    <string name="MonogramProfileIconsEmptyTitle">No custom emoji packs</string>
+    <string name="MonogramProfileIconsEmptyText">Add or import a custom emoji pack to use an icon here.</string>
+    <string name="MonogramProfileIconsOpenPacks">Open emoji packs</string>
     <string name="MonogramMediaPlaybackTitle">Media playback</string>
     <string name="MonogramMediaPauseHeader">Pause when minimizing</string>
     <string name="MonogramMediaPauseVideo">Videos in the media viewer</string>
@@ -11661,4 +11664,6 @@
     <string name="MonogramDetailsDuration">Duration</string>
     <string name="MonogramDetailsFilePath">File path</string>
     <string name="MonogramMediaPlaybackSubtitle">Background playback and volume-button actions</string>
+    <string name="MonogramGroupedMenu">Group message menu</string>
+    <string name="MonogramGroupedMenuInfo">Grouping moves the main actions to the bottom of the message menu.</string>
 </resources>

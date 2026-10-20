@@ -406,7 +406,11 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         }
     }
 
-    private final int currentAccount = UserConfig.selectedAccount;
+    private final int currentAccount;
+    private final boolean localProfileIcons;
+    private final String localProfileOwner;
+    private final long localProfileGeneration;
+    private boolean localProfileDetached;
     private int type;
 
     public FrameLayout contentView;
@@ -420,6 +424,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     public EmojiListView emojiSearchGridView;
     public FrameLayout emojiSearchEmptyView;
     public FrameLayout emojiGridViewContainer;
+    private LinearLayout localProfileEmptyView;
     private BackupImageView emojiSearchEmptyViewImageView;
     private View bubble1View;
     private View bubble2View;
@@ -493,7 +498,20 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     }
 
     public SelectAnimatedEmojiDialog(BaseFragment baseFragment, Context context, boolean includeEmpty, Integer emojiX, int type, boolean shouldDrawBackground, Theme.ResourcesProvider resourcesProvider, int topPaddingDp, int accentColor) {
+        this(baseFragment, context, includeEmpty, emojiX, type, shouldDrawBackground, resourcesProvider, topPaddingDp, accentColor, UserConfig.selectedAccount, false);
+    }
+
+    public SelectAnimatedEmojiDialog(BaseFragment baseFragment, Context context, boolean includeEmpty, Integer emojiX, int type, boolean shouldDrawBackground, Theme.ResourcesProvider resourcesProvider, int topPaddingDp, int accentColor, int account, boolean localProfileIcons) {
         super(context);
+        currentAccount = account;
+        this.localProfileIcons = localProfileIcons && (type == TYPE_SET_REPLY_ICON || type == TYPE_SET_REPLY_ICON_BOTTOM);
+        if (this.localProfileIcons) {
+            localProfileOwner = org.telegram.messenger.xmpp.MonogramUserColors.owner(account);
+            localProfileGeneration = org.telegram.messenger.xmpp.MonogramController.get(account).accountGeneration();
+        } else {
+            localProfileOwner = null;
+            localProfileGeneration = -1;
+        }
         this.resourcesProvider = resourcesProvider;
         this.type = type;
         this.includeEmpty = includeEmpty;
@@ -878,6 +896,56 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         };
 
         emojiGridViewContainer.addView(emojiGridView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL, 0, 0, 0, 0));
+        if (this.localProfileIcons) {
+            localProfileEmptyView = new LinearLayout(context);
+            localProfileEmptyView.setOrientation(LinearLayout.VERTICAL);
+            localProfileEmptyView.setGravity(Gravity.CENTER);
+            localProfileEmptyView.setPadding(dp(24), dp(8), dp(24), dp(8));
+            localProfileEmptyView.setVisibility(View.GONE);
+
+            ImageView emptyIcon = new ImageView(context);
+            emptyIcon.setImageResource(R.drawable.msg_emoji_stickers);
+            emptyIcon.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlueIcon, resourcesProvider), PorterDuff.Mode.SRC_IN));
+            emptyIcon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            localProfileEmptyView.addView(emptyIcon, LayoutHelper.createLinear(44, 44, Gravity.CENTER_HORIZONTAL));
+
+            TextView emptyTitle = new TextView(context);
+            emptyTitle.setText(LocaleController.getString(R.string.MonogramProfileIconsEmptyTitle));
+            emptyTitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            emptyTitle.setTypeface(AndroidUtilities.bold());
+            emptyTitle.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+            emptyTitle.setGravity(Gravity.CENTER);
+            localProfileEmptyView.addView(emptyTitle, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 8, 0, 0));
+
+            TextView emptySubtitle = new TextView(context);
+            emptySubtitle.setText(LocaleController.getString(R.string.MonogramProfileIconsEmptyText));
+            emptySubtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            emptySubtitle.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+            emptySubtitle.setGravity(Gravity.CENTER);
+            localProfileEmptyView.addView(emptySubtitle, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
+
+            TextView openPacks = new TextView(context);
+            openPacks.setText(LocaleController.getString(R.string.MonogramProfileIconsOpenPacks));
+            openPacks.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            openPacks.setTypeface(AndroidUtilities.bold());
+            openPacks.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText, resourcesProvider));
+            openPacks.setGravity(Gravity.CENTER);
+            openPacks.setMinHeight(dp(44));
+            openPacks.setPadding(dp(20), 0, dp(20), 0);
+            openPacks.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(22), Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider), Theme.getColor(Theme.key_featuredStickers_addButtonPressed, resourcesProvider)));
+            openPacks.setOnClickListener(view -> {
+                if (!localProfileIconsCurrent() || baseFragment == null) {
+                    return;
+                }
+                baseFragment.presentFragment(new MonogramPacksActivity(currentAccount));
+                if (dismiss != null) {
+                    dismiss.run();
+                }
+            });
+            localProfileEmptyView.addView(openPacks, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, Gravity.CENTER_HORIZONTAL, 0, 12, 0, 0));
+            // Keep the native clear cell in the first row reachable even when there are no packs.
+            emojiGridViewContainer.addView(localProfileEmptyView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL, 0, 52, 0, 0));
+        }
         gridViewContainer.addView(emojiGridViewContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL, 0, 0, 0, 0));
 
         emojiSearchGridView = new EmojiListView(context) {
@@ -1174,7 +1242,9 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         contentViewForeground.setBackgroundColor(0xff000000);
         contentView.addView(contentViewForeground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        preload(type, currentAccount);
+        if (!this.localProfileIcons) {
+            preload(type, currentAccount);
+        }
 
         bigReactionImageReceiver.setLayerNum(7);
 
@@ -1729,6 +1799,17 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         if (searchRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(searchRunnable);
             searchRunnable = null;
+        }
+        if (localProfileIcons) {
+            searching = false;
+            searched = false;
+            lastQuery = null;
+            switchGrids(false, liftUp);
+            if (searchBox != null) {
+                searchBox.showProgress(false);
+                searchBox.toggleClear(false);
+            }
+            return;
         }
         if (TextUtils.isEmpty(query)) {
             searching = false;
@@ -3672,6 +3753,12 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
 
     private static boolean[] preloaded = new boolean[UserConfig.MAX_ACCOUNT_COUNT];
 
+    private boolean localProfileIconsCurrent() {
+        return !localProfileIcons || !localProfileDetached && localProfileOwner != null && !localProfileOwner.isEmpty()
+                && localProfileGeneration == org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountGeneration()
+                && Objects.equals(localProfileOwner, org.telegram.messenger.xmpp.MonogramUserColors.owner(currentAccount));
+    }
+
     public static void preload(int account) {
         if (preloaded[account] || MediaDataController.getInstance(account) == null) {
             return;
@@ -3693,6 +3780,9 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     }
 
     private void updateRows(boolean updateEmojipacks, boolean animated, boolean diff) {
+        if (!localProfileIconsCurrent()) {
+            return;
+        }
         if (!animationsEnabled) {
             animated = false;
         }
@@ -3702,10 +3792,14 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         }
 
         if (updateEmojipacks || frozenEmojiPacks == null) {
-            frozenEmojiPacks = new ArrayList<>(mediaDataController.getStickerSets(showStickers ? MediaDataController.TYPE_IMAGE : MediaDataController.TYPE_EMOJIPACKS));
+            frozenEmojiPacks = localProfileIcons
+                    ? org.telegram.messenger.xmpp.MonogramPacks.sets(currentAccount, true)
+                    : new ArrayList<>(mediaDataController.getStickerSets(showStickers ? MediaDataController.TYPE_IMAGE : MediaDataController.TYPE_EMOJIPACKS));
         }
         ArrayList<TLRPC.TL_messages_stickerSet> installedEmojipacks = frozenEmojiPacks;
-        ArrayList<TLRPC.StickerSetCovered> featuredEmojiPacks = new ArrayList<>(mediaDataController.getFeaturedEmojiSets());
+        ArrayList<TLRPC.StickerSetCovered> featuredEmojiPacks = localProfileIcons
+                ? new ArrayList<>()
+                : new ArrayList<>(mediaDataController.getFeaturedEmojiSets());
 
         ArrayList<Long> prevRowHashCodes = new ArrayList<>(rowHashCodes);
         totalCount = 0;
@@ -3751,7 +3845,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 totalCount++;
                 rowHashCodes.add(2L);
             }
-            TLRPC.TL_emojiList emojiList = MediaDataController.getInstance(currentAccount).replyIconsDefault;
+            TLRPC.TL_emojiList emojiList = localProfileIcons ? null : MediaDataController.getInstance(currentAccount).replyIconsDefault;
             if (emojiList != null && emojiList.document_id != null && !emojiList.document_id.isEmpty()) {
                 for (int i = 0; i < emojiList.document_id.size(); ++i) {
                     recent.add(new AnimatedEmojiSpan(emojiList.document_id.get(i), null));
@@ -4073,13 +4167,26 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 if (set == null || set.set == null) {
                     continue;
                 }
-                if ((type == TYPE_SET_REPLY_ICON || type == TYPE_SET_REPLY_ICON_BOTTOM) && !MessageObject.isTextColorSet(set)) {
+                if (!localProfileIcons && (type == TYPE_SET_REPLY_ICON || type == TYPE_SET_REPLY_ICON_BOTTOM) && !MessageObject.isTextColorSet(set)) {
                     continue;
                 }
                 if ((type == TYPE_EMOJI_STATUS_CHANNEL_TOP || type == TYPE_EMOJI_STATUS_CHANNEL) && !set.set.channel_emoji_status) {
                     continue;
                 }
                 if ((set.set.emojis || showStickers) && !installedEmojiSets.contains(set.set.id)) {
+                    ArrayList<TLRPC.Document> documents = filter(set.documents, restricted);
+                    if (localProfileIcons) {
+                        ArrayList<TLRPC.Document> available = new ArrayList<>();
+                        for (TLRPC.Document document : documents) {
+                            if (org.telegram.messenger.xmpp.MonogramUserColors.validEmojiDocument(document)) {
+                                available.add(document);
+                            }
+                        }
+                        documents = available;
+                        if (documents.isEmpty()) {
+                            continue;
+                        }
+                    }
                     positionToSection.put(totalCount, packs.size());
                     sectionToPosition.put(packs.size(), totalCount);
                     totalCount++;
@@ -4089,13 +4196,15 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     pack.installed = true;
                     pack.featured = false;
                     pack.expanded = true;
-                    if (type == TYPE_AVATAR_CONSTRUCTOR) {
+                    if (localProfileIcons) {
+                        pack.free = true;
+                    } else if (type == TYPE_AVATAR_CONSTRUCTOR) {
                         pack.free = false;
                     } else {
                         pack.free = !MessageObject.isPremiumEmojiPack(set);
                     }
                     pack.set = set.set;
-                    pack.documents = filter(set.documents, restricted);
+                    pack.documents = documents;
                     pack.index = packs.size();
                     packs.add(pack);
                     totalCount += pack.documents.size();
@@ -4106,7 +4215,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 }
             }
         }
-        if (featuredEmojiPacks != null && !showStickers && type != TYPE_EXPANDABLE_REACTIONS && type != TYPE_STICKER_SET_EMOJI && type != TYPE_EFFECTS) {
+        if (!localProfileIcons && featuredEmojiPacks != null && !showStickers && type != TYPE_EXPANDABLE_REACTIONS && type != TYPE_STICKER_SET_EMOJI && type != TYPE_EFFECTS) {
             final int maxlen = SPAN_COUNT_FOR_EMOJI * EXPAND_MAX_LINES;
             for (int i = 0; i < featuredEmojiPacks.size(); ++i) {
                 TLRPC.StickerSetCovered set1 = featuredEmojiPacks.get(i);
@@ -4196,6 +4305,9 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
 
         if (type != TYPE_EFFECTS && type != TYPE_EXPANDABLE_REACTIONS && type != TYPE_STICKER_SET_EMOJI) {
             emojiTabs.updateEmojiPacks(packs);
+        }
+        if (localProfileEmptyView != null) {
+            localProfileEmptyView.setVisibility(packs.isEmpty() ? View.VISIBLE : View.GONE);
         }
 
         if (animated) {
@@ -5055,6 +5167,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        localProfileDetached = localProfileIcons;
         setBigReactionAnimatedEmoji(null);
         isAttached = false;
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.featuredEmojiDidLoad);

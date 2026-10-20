@@ -31302,6 +31302,7 @@ public class ChatActivity extends BaseFragment implements
             shadowDrawable.getPadding(backgroundPaddings);
             popupLayout.setBackgroundColor(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground));
             MessageSeenView messageSeenView = null;
+            MonogramMessageActionRow compactActionRow = null;
 
             updateScrimSourceBitmap();
 
@@ -32051,14 +32052,52 @@ public class ChatActivity extends BaseFragment implements
                         popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
                     }
                 }
-                scrimPopupWindowItems = new ActionBarMenuSubItem[items.size()];
-                for (int a = 0, N = items.size(); a < N; a++) {
-                    final Integer option = options.get(a);
+                if (org.telegram.messenger.xmpp.MonogramChatBehavior.groupMessageMenu(currentAccount) && items.size() > 5 && selectedObject != null) {
+                    final boolean canReply = options.contains(OPTION_REPLY);
+                    final boolean canDelete = options.contains(OPTION_DELETE) && !showWelcomeMessageRevertOption(selectedObject);
+                    final boolean canCopy = options.contains(OPTION_COPY);
+                    final boolean canCopyPhoto = options.contains(OPTION_MONOGRAM_COPY_PHOTO);
+                    final boolean canCopyPhone = options.contains(OPTION_COPY_PHONE_NUMBER);
+                    final boolean canEdit = options.contains(OPTION_EDIT);
+                    final boolean canCopyLink = options.contains(OPTION_COPY_LINK);
+                    final boolean canForward = options.contains(OPTION_FORWARD);
+                    final int copyOption = canCopyPhone ? OPTION_COPY_PHONE_NUMBER : canCopy ? OPTION_COPY : canCopyPhoto ? OPTION_MONOGRAM_COPY_PHOTO : OPTION_COPY;
+                    final CharSequence copyLabel = canCopyPhoto && !canCopy && !canCopyPhone
+                            ? LocaleController.getString(R.string.MonogramCopyPhoto)
+                            : LocaleController.getString(R.string.Copy);
+                    ArrayList<MonogramMessageActionRow.Item> compactItems = new ArrayList<>();
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_REPLY, R.drawable.menu_reply,
+                            LocaleController.getString(R.string.Reply), canReply, view -> processSelectedOption(OPTION_REPLY)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_DELETE, R.drawable.msg_delete,
+                            LocaleController.getString(R.string.Delete), canDelete, view -> processSelectedOption(OPTION_DELETE)));
+                    compactItems.add(new MonogramMessageActionRow.Item(copyOption, R.drawable.msg_copy, copyLabel,
+                            canCopy || canCopyPhoto || canCopyPhone, view -> processSelectedOption(copyOption)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_EDIT, R.drawable.msg_edit,
+                            LocaleController.getString(R.string.Edit), canEdit, view -> processSelectedOption(OPTION_EDIT)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_COPY_LINK, R.drawable.msg_link,
+                            LocaleController.getString(R.string.CopyLink), canCopyLink, view -> processSelectedOption(OPTION_COPY_LINK)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_FORWARD, R.drawable.msg_forward,
+                            LocaleController.getString(R.string.Forward), canForward, view -> processSelectedOption(OPTION_FORWARD)));
+                    compactActionRow = new MonogramMessageActionRow(getContext(), themeDelegate, compactItems);
+                }
+
+                ArrayList<Integer> visibleOptionIndices = new ArrayList<>(items.size());
+                for (int a = 0; a < items.size(); a++) {
+                    final int option = options.get(a);
+                    if (compactActionRow != null && compactActionRow.containsOption(option)) {
+                        continue;
+                    }
                     if (option == OPTION_DELETE && showWelcomeMessageRevertOption(selectedObject)) {
                         continue;
                     }
+                    visibleOptionIndices.add(a);
+                }
+                scrimPopupWindowItems = new ActionBarMenuSubItem[visibleOptionIndices.size()];
+                for (int visiblePosition = 0, N = visibleOptionIndices.size(); visiblePosition < N; visiblePosition++) {
+                    final int a = visibleOptionIndices.get(visiblePosition);
+                    final Integer option = options.get(a);
 
-                    ActionBarMenuSubItem cell = new ActionBarMenuSubItem(getParentActivity(), a == 0, a == N - 1, themeDelegate);
+                    ActionBarMenuSubItem cell = new ActionBarMenuSubItem(getParentActivity(), visiblePosition == 0, visiblePosition == N - 1, themeDelegate);
                     cell.setMinimumWidth(AndroidUtilities.dp(200));
                     cell.setTextAndIcon(items.get(a), icons.get(a));
 
@@ -32088,7 +32127,7 @@ public class ChatActivity extends BaseFragment implements
                             cell.setSubtextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText6));
                         }
                     }
-                    scrimPopupWindowItems[a] = cell;
+                    scrimPopupWindowItems[visiblePosition] = cell;
                     if (option == OPTION_REMOVE_ADS) {
                         popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
                     }
@@ -32446,6 +32485,17 @@ public class ChatActivity extends BaseFragment implements
                 boolean showNoForwards = (isPeerNoForwards() || message.messageOwner.noforwards && currentUser != null && currentUser.bot) && message.messageOwner.action == null && message.isSent() && !message.isEditing() && chatMode != MODE_SCHEDULED && chatMode != MODE_SAVED && getDialogId() != UserObject.VERIFY;
                 scrimPopupContainerLayout.addView(popupLayout, LayoutHelper.createLinearRelatively(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, 0, isReactionsAvailable ? 36 : 0, 0));
                 scrimPopupContainerLayout.setPopupWindowLayout(popupLayout);
+                if (compactActionRow != null) {
+                    popupLayout.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    Drawable compactBackground = ContextCompat.getDrawable(contentView.getContext(), R.drawable.popup_fixed_alert4).mutate();
+                    compactBackground.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground), PorterDuff.Mode.MULTIPLY));
+                    FrameLayout compactPanel = new FrameLayout(contentView.getContext());
+                    compactPanel.setBackground(compactBackground);
+                    compactPanel.setTag(R.id.fit_width_tag, 1);
+                    compactPanel.addView(compactActionRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56));
+                    scrimPopupContainerLayout.addView(compactPanel, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, -8, isReactionsAvailable ? 36 : 0, 0));
+                    scrimPopupContainerLayout.applyViewBottom(compactPanel);
+                }
                 if (showNoForwards) {
                     popupLayout.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
                     boolean isChannel = ChatObject.isChannel(currentChat) && !currentChat.megagroup;

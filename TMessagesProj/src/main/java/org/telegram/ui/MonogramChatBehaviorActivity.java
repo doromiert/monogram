@@ -23,6 +23,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asCheck(5,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramCopyPhoto)).setChecked(MonogramChatBehavior.showCopyPhotoButton(currentAccount)));
         items.add(UItem.asCheck(6,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramMessageDetails)).setChecked(MonogramChatBehavior.showDetailsButton(currentAccount)));
         items.add(UItem.asShadow("Save copies a message to Saved Messages. Repeat sends a copy to the current conversation. Available only for messages you can forward."));
+        items.add(UItem.asCheck(7,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramGroupedMenu)).setChecked(MonogramChatBehavior.groupMessageMenu(currentAccount)));
+        items.add(UItem.asShadow(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramGroupedMenuInfo)));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
@@ -31,6 +33,7 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         else if(item.id==4) MonogramChatBehavior.showRepeatButton(currentAccount,!MonogramChatBehavior.showRepeatButton(currentAccount));
         else if(item.id==5) MonogramChatBehavior.showCopyPhotoButton(currentAccount,!MonogramChatBehavior.showCopyPhotoButton(currentAccount));
         else if(item.id==6) MonogramChatBehavior.showDetailsButton(currentAccount,!MonogramChatBehavior.showDetailsButton(currentAccount));
+        else if(item.id==7) MonogramChatBehavior.groupMessageMenu(currentAccount,!MonogramChatBehavior.groupMessageMenu(currentAccount));
         else return;
         listView.adapter.update(true);
     }
