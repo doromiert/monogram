@@ -74,7 +74,7 @@ public final class MonogramLegacyBackup {
                         }
                     }
                     // All merged values now live in the isolated snapshot. Never consult destination-phone bootstrap files.
-                    transaction.save(PURGED,"",0,new byte[]{1});return null;
+                    if(transaction.load(PURGED,"",0)==null) transaction.save(PURGED,"",0,new byte[]{1});return null;
                 });
                 transaction.commit();
             }

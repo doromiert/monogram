@@ -23,8 +23,8 @@ public final class Omemo2Restore {
         try(Omemo2Records tx=device.records.begin()) {
             byte[] identity=tx.load(IDENTITY,"",0),pub=tx.load(IDENTITY,"",1),meta=tx.load(META,"",0);
             try {
-                if(identity==null || pub==null || pub.length!=32 || meta==null || meta.length!=24 || marker(tx.load(META,"",1)))
-                    throw new GeneralSecurityException("Incomplete or already prepared migration identity");
+                if(identity==null || pub==null || pub.length!=32 || meta==null || meta.length!=24)
+                    throw new GeneralSecurityException("Incomplete migration identity");
                 ByteBuffer input=ByteBuffer.wrap(meta);
                 if(input.getInt()!=1) throw new GeneralSecurityException("Unknown migration key metadata");
                 long nextPre=input.getLong(),nextSigned=input.getLong();int previousSigned=input.getInt();

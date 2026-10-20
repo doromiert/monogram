@@ -27,7 +27,8 @@ class MonogramLegacyRestoreTest {
         assertEquals(100,store.loadOmemoPreKeys(own).size());assertTrue(store.loadOmemoPreKeys(own).firstKey()>119);
         assertEquals(8,store.loadCurrentOmemoSignedPreKeyId(own));assertNull(store.loadOmemoSignedPreKey(own,7));
         try(LegacyOmemoRecords tx=database.begin(own.getJid().toString(),101)) { assertTrue(MonogramLegacyRestore.marker(tx.load(PURGED,"",0)));assertNotNull(tx.load(INCOMING,"",0)); }
-        assertThrows(java.security.GeneralSecurityException.class,() -> MonogramLegacyRestore.freshKeys(store,own,1234568));
+        MonogramLegacyRestore.freshKeys(store,own,1234568);
+        assertArrayEquals(identity.serialize(),store.loadOmemoIdentityKeyPair(own).serialize());assertEquals(9,store.loadCurrentOmemoSignedPreKeyId(own));assertTrue(store.loadOmemoPreKeys(own).firstKey()>219);
     }
     @Test void archiveRecordGuardRejectsCrossAccountSendingKeysAndPublicationButAllowsReceiveTombstone() throws Exception {
         LegacyOmemoTestDatabase database=new LegacyOmemoTestDatabase();LegacyOmemoRecords.Factory guarded=MonogramLegacyReceiveOnly.guard(database,own);

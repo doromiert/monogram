@@ -22,7 +22,7 @@ public final class MonogramLegacyRestore {
         try(LegacyOmemoRecords tx=store.begin(own)) {
             store.withTransaction(own,tx,() -> {
                 byte[] purged=tx.load(PURGED,"",0);
-                if(purged==null || marker(purged)) throw new GeneralSecurityException("Materialized, unmigrated legacy stage required");
+                if(purged==null) throw new GeneralSecurityException("Materialized legacy stage required");
                 IdentityKeyPair identity=store.loadOmemoIdentityKeyPair(own);
                 if(identity==null) throw new GeneralSecurityException("Legacy identity is unavailable");
                 int nextPre=1,nextSigned=1;

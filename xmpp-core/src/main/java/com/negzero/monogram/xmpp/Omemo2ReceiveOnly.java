@@ -14,6 +14,16 @@ public final class Omemo2ReceiveOnly {
 
     /** Factories must refer to physically independent databases, not aliases of the active store. */
     public Omemo2ReceiveOnly(Omemo2Device active,Omemo2Records.Factory archived) throws Exception {
+        this(active,active.id,archived);
+    }
+    /** A historical own device stays receive-only and is never registered or published again. */
+    public Omemo2ReceiveOnly(Omemo2Device active,int archivedDevice,Omemo2Records.Factory archived) throws Exception {
+        this(active,archivedDevice,null,archived);
+    }
+    /** Manifest-pinned historical identity, including an earlier identity that reused the same own-device ID. */
+    public Omemo2ReceiveOnly(Omemo2Device active,int archivedDevice,String fingerprint,Omemo2Records.Factory archived) throws Exception {
+        if(fingerprint!=null && !fingerprint.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid historical identity pin");
+        if(archivedDevice<=0) throw new IllegalArgumentException("Invalid historical own device");
         if(archived==null || archived==active.records) throw new IllegalArgumentException("Independent recovery store required");
         this.active=active;
         try(Omemo2Records live=active.records.begin();Omemo2Records old=archived.begin()) {
@@ -22,11 +32,11 @@ public final class Omemo2ReceiveOnly {
             for(int id=0;id<=1;id++) {
                 byte[] a=live.load(IDENTITY,"",id),b=old.load(IDENTITY,"",id);
                 try {
-                    if(a==null || b==null || !MessageDigest.isEqual(a,b)) throw new GeneralSecurityException("Recovery identity does not match active device");
+                    if(a==null || b==null || fingerprint==null && archivedDevice==active.id && !MessageDigest.isEqual(a,b) || id==1 && (b.length!=32 || fingerprint!=null && !fingerprint.equals(XmppSession.hex(b)))) throw new GeneralSecurityException("Recovery identity does not match active device");
                 } finally { if(a!=null) Arrays.fill(a,(byte)0);if(b!=null) Arrays.fill(b,(byte)0); }
             }
         }
-        device=new Omemo2Device(active.jid,active.id,guard(active.records,archived));
+        device=new Omemo2Device(active.jid,archivedDevice,guard(active.records,archived));
         journal=new Omemo2IncomingJournal(device,true);
     }
     void requireActive(Omemo2Device candidate) {

@@ -546,6 +546,9 @@ public final class MonogramController {
         AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
         XmppSession.initializeOmemo(new File(ApplicationLoader.getFilesDirFixed(), "monogram-omemo"),legacyStore);
         int device = preferences.getInt("device", 0);
+        // Existing accounts have no manifest and follow the unchanged path. Restored state
+        // must bind before any missing device ID can be allocated or connection constructed.
+        final com.negzero.monogram.xmpp.XmppRecovery recovery=MonogramRecoveryStore.load(account,details.jid.toString(),device,modernStore,legacyStore);
         if (device == 0) {
             device = org.jivesoftware.smackx.omemo.OmemoManager.randomDeviceId();
             if (!preferences.edit().putInt("device", device).commit()) throw new java.io.IOException("Cannot save device identity");
@@ -557,7 +560,7 @@ public final class MonogramController {
         XmppSession connecting = new XmppSession(details, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
                 new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
-                        () -> modernStore.begin(details.jid.toString(),modernDevice)),
+                        () -> modernStore.begin(details.jid.toString(),modernDevice)),recovery,
                 new XmppSession.Listener() {
                     @Override public void debugMessageXml(boolean outgoing,org.jivesoftware.smack.packet.Message stanza) {
                         if(owner==accountEpoch && debugLog.enabled()) debugLog.record(outgoing ? "Sent XML" : "Received XML",com.negzero.monogram.xmpp.XmppXml.string(stanza));

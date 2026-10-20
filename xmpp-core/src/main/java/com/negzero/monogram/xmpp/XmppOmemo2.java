@@ -32,7 +32,7 @@ public final class XmppOmemo2 implements AutoCloseable {
     private final XMPPConnection connection;
     public final Omemo2Device device;
     private final Omemo2IncomingJournal incoming;
-    private final Omemo2ReceiveOnly recovery;
+    private final List<Omemo2ReceiveOnly> recovery;
     private final SecureRandom random = new SecureRandom();
     // Use Map's keySet signature: Android desugaring lacks ConcurrentHashMap's covariant overload.
     private final Map<String,Omemo2Bundle> bundles = new ConcurrentHashMap<>();
@@ -46,12 +46,18 @@ public final class XmppOmemo2 implements AutoCloseable {
     private volatile boolean ready, closed;
     private volatile Exception lastError;
     public XmppOmemo2(XMPPConnection connection, Omemo2Device device, Consumer<String> changed) throws Exception {
-        this(connection,device,changed,null);
+        this(connection,device,changed,java.util.Collections.<Omemo2ReceiveOnly>emptyList());
     }
     /** Explicit migration only. Recovery never supplies outgoing sessions or publishes bundles. */
     public XmppOmemo2(XMPPConnection connection, Omemo2Device device, Consumer<String> changed, Omemo2ReceiveOnly recovery) throws Exception {
-        if(recovery!=null) recovery.requireActive(device);
-        this.connection = connection; this.device = device; this.changed = changed; this.recovery=recovery;
+        this(connection,device,changed,recovery==null?java.util.Collections.<Omemo2ReceiveOnly>emptyList():java.util.Collections.singletonList(recovery));
+    }
+    public static XmppOmemo2 restored(XMPPConnection connection,Omemo2Device device,Consumer<String> changed,List<Omemo2ReceiveOnly> recovery) throws Exception {
+        return new XmppOmemo2(connection,device,changed,recovery);
+    }
+    private XmppOmemo2(XMPPConnection connection,Omemo2Device device,Consumer<String> changed,List<Omemo2ReceiveOnly> recovery) throws Exception {
+        for(Omemo2ReceiveOnly archive:recovery) archive.requireActive(device);
+        this.connection=connection;this.device=device;this.changed=changed;this.recovery=java.util.Collections.unmodifiableList(new java.util.ArrayList<>(recovery));
         incoming=new Omemo2IncomingJournal(device);
         FileShare.initialize(); MessageCorrection.initialize();
         ProviderManager.addExtensionProvider("encrypted",NS,StandardExtensionElementProvider.INSTANCE);
@@ -245,11 +251,12 @@ public final class XmppOmemo2 implements AutoCloseable {
     }
     public List<Received> pendingIncoming() throws Exception {
         List<Received> pending=new java.util.ArrayList<>(incoming.pending());
-        if(recovery!=null) pending.addAll(recovery.journal.pending());
+        for(Omemo2ReceiveOnly archive:recovery) pending.addAll(archive.journal.pending());
         return java.util.Collections.unmodifiableList(pending);
     }
     private Omemo2IncomingJournal journal(Received received) {
-        if(received.journal==incoming || recovery!=null && received.journal==recovery.journal) return received.journal;
+        if(received.journal==incoming) return incoming;
+        for(Omemo2ReceiveOnly archive:recovery) if(received.journal==archive.journal) return archive.journal;
         if(received.token==null) return incoming;
         throw new IllegalArgumentException("Incoming frame belongs to a different journal");
     }
@@ -268,6 +275,7 @@ public final class XmppOmemo2 implements AutoCloseable {
         if (root.toXML().length() > 1024*1024) throw Omemo2Bundle.invalid();
         StandardExtensionElement header = Omemo2Bundle.single(root,"header",NS); int sender = Omemo2Bundle.positive(header.getAttributeValue("sid"));
         String peer = outer.getFrom().asBareJid().toString();
+        Map<Integer,StandardExtensionElement> ownKeys=new LinkedHashMap<>();
         StandardExtensionElement selected = null; Set<String> groups = new HashSet<>(); int count = 0;
         for (StandardExtensionElement group : header.getElements()) {
             if (!"keys".equals(group.getElementName()) || !NS.equals(group.getNamespace())) throw Omemo2Bundle.invalid();
@@ -275,9 +283,11 @@ public final class XmppOmemo2 implements AutoCloseable {
             for (StandardExtensionElement key : group.getElements()) {
                 if (!"key".equals(key.getElementName()) || !NS.equals(key.getNamespace()) || ++count > 1000) throw Omemo2Bundle.invalid();
                 int id = Omemo2Bundle.positive(key.getAttributeValue("rid")); if (!ids.add(id)) throw Omemo2Bundle.invalid();
+                if(jid.equals(device.jid)) ownKeys.put(id,key);
                 if (jid.equals(device.jid) && id == device.id) selected = key;
             }
         }
+        if(!recovery.isEmpty()) return receiveRecovered(outer,archiveTime,archiveId,envelope,peer,sender,ownKeys);
         if (selected == null) throw new java.security.GeneralSecurityException("OMEMO2 message is not addressed to this device");
         String flag = selected.getAttributeValue("kex"); boolean preKey = "true".equals(flag) || "1".equals(flag);
         if (flag != null && !preKey && !flag.equals("false") && !flag.equals("0")) throw Omemo2Bundle.invalid();
@@ -286,27 +296,39 @@ public final class XmppOmemo2 implements AutoCloseable {
             try(Omemo2Records tx=device.records.begin()) {
                 Received cached=incoming.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
             }
-            if(recovery!=null) {
-                try(Omemo2Records tx=recovery.device.records.begin()) {
-                    Received cached=recovery.journal.find(tx,envelope.digest,archiveTime,archiveId);
-                    if(cached!=null) return cached;
-                }
-                // Old prekey packets may reference expired server bundles. Historical receive keys
-                // are sufficient: never require a network refresh before trying the isolated archive.
-                if(preKey) try {
-                    return decryptIncoming(recovery.device,recovery.journal,true,outer,archiveTime,archiveId,envelope,peer,sender,key,true);
-                } catch(Omemo2Native.Failure absent) {
-                    if(!Omemo2ReceiveOnly.recoverable(absent.code)) throw absent;
-                }
-            }
             if (preKey) bundle(peer,sender,true);
             return decryptIncoming(device,incoming,false,outer,archiveTime,archiveId,envelope,peer,sender,key,preKey);
-        } catch(Omemo2Native.Failure failure) {
-            // Only a ratchet/key mismatch may consult historical receive state. Never mask trust,
-            // malformed input, duplicate-message, storage or journal failures with an archive retry.
-            if(recovery==null || !Omemo2ReceiveOnly.recoverable(failure.code)) throw failure;
-            return decryptIncoming(recovery.device,recovery.journal,true,outer,archiveTime,archiveId,envelope,peer,sender,key,preKey);
         } finally { Arrays.fill(key,(byte)0); }
+    }
+    private Received receiveRecovered(Message outer,java.util.Date archiveTime,String archiveId,
+            Omemo2IncomingJournal.Envelope envelope,String peer,int sender,Map<Integer,StandardExtensionElement> ownKeys) throws Exception {
+        StandardExtensionElement activeKey=ownKeys.get(device.id);
+        boolean archiveFirst=activeKey==null || prekey(activeKey);
+        List<Omemo2Device> devices=new java.util.ArrayList<>();
+        List<Omemo2IncomingJournal> journals=new java.util.ArrayList<>();
+        for(Omemo2ReceiveOnly archive:recovery) { devices.add(archive.device);journals.add(archive.journal); }
+        int activeAt=archiveFirst?devices.size():0;devices.add(activeAt,device);journals.add(activeAt,incoming);
+        Omemo2Native.Failure last=null;
+        for(int index=0;index<devices.size();index++) {
+            Omemo2Device source=devices.get(index);StandardExtensionElement selected=ownKeys.get(source.id);if(selected==null) continue;
+            Omemo2IncomingJournal journal=journals.get(index);
+            try(Omemo2Records tx=source.records.begin()) {
+                Received cached=journal.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
+            }
+            boolean preKey=prekey(selected);byte[] key=decode(selected.getText(),16384);
+            try {
+                if(source==device && preKey) bundle(peer,sender,true);
+                return decryptIncoming(source,journal,source!=device,outer,archiveTime,archiveId,envelope,peer,sender,key,preKey);
+            } catch(Omemo2Native.Failure mismatch) {
+                if(!Omemo2ReceiveOnly.recoverable(mismatch.code)) throw mismatch;last=mismatch;
+            } finally { Arrays.fill(key,(byte)0); }
+        }
+        if(last!=null) throw last;
+        throw new java.security.GeneralSecurityException("OMEMO2 message is not addressed to an active or recovery device");
+    }
+    private static boolean prekey(StandardExtensionElement selected) throws Exception {
+        String flag=selected.getAttributeValue("kex");boolean prekey="true".equals(flag) || "1".equals(flag);
+        if(flag!=null && !prekey && !flag.equals("false") && !flag.equals("0")) throw Omemo2Bundle.invalid();return prekey;
     }
     private Received decryptIncoming(Omemo2Device source,Omemo2IncomingJournal journal,boolean receiveOnly,
             Message outer,java.util.Date archiveTime,String archiveId,Omemo2IncomingJournal.Envelope envelope,

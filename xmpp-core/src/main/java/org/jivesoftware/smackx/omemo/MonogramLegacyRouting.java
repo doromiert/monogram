@@ -21,6 +21,13 @@ final class MonogramLegacyRouting {
             return second.run();
         }
     }
+    static <T> T receive(java.util.List<Attempt<T>> attempts) throws Exception {
+        Exception last=null;
+        for(Attempt<T> attempt:attempts) try { return attempt.run(); }
+        catch(Exception failure) { if(!recoverable(failure)) throw failure;last=failure; }
+        if(last!=null) throw last;
+        throw new IllegalArgumentException("No receive archive candidates");
+    }
     static boolean recoverable(Throwable failure) {
         return recoverable(failure,Collections.newSetFromMap(new IdentityHashMap<>()),0);
     }

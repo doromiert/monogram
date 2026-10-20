@@ -46,6 +46,17 @@ class Omemo2ReceiveOnlyTest {
         // No obsolete identity/session is promoted back into the active outgoing store.
         try(Omemo2Records tx=live.begin()) { assertNull(tx.load(SESSION,fixture.peer,101)); }
     }
+    @Test void manifestPinnedHistoricalOwnDeviceNeverChangesActiveIdentityOrDevice() throws Exception {
+        Omemo2TestDatabase live=new Omemo2TestDatabase(),historical=new Omemo2TestDatabase();
+        byte[] previous=new byte[32];Arrays.fill(previous,(byte)1);
+        try(Omemo2Records tx=live.begin()) { tx.save(IDENTITY,"",0,new byte[]{1});tx.save(IDENTITY,"",1,new byte[32]);tx.save(META,"",1,ByteBuffer.allocate(20).putInt(0x4d523031).array());tx.commit(); }
+        try(Omemo2Records tx=historical.begin()) { tx.save(IDENTITY,"",0,new byte[]{2});tx.save(IDENTITY,"",1,previous);tx.commit(); }
+        Omemo2Device active=new Omemo2Device("alice@example.org",101,live);
+        Omemo2ReceiveOnly archive=new Omemo2ReceiveOnly(active,303,XmppSession.hex(previous),historical);
+        assertEquals(303,archive.device.id);assertEquals(101,active.id);assertTrue(archive.journal.pending().isEmpty());
+        try(Omemo2Records tx=live.begin()) { assertArrayEquals(new byte[]{1},tx.load(IDENTITY,"",0)); }
+        assertThrows(GeneralSecurityException.class,() -> new Omemo2ReceiveOnly(active,303,String.join("",java.util.Collections.nCopies(64,"f")),historical));
+    }
     @Test void retryAllowlistNeverMasksTrustDuplicatesOrStorageErrors() {
         assertTrue(Omemo2ReceiveOnly.recoverable(-1008));assertTrue(Omemo2ReceiveOnly.recoverable(-1003));
         assertFalse(Omemo2ReceiveOnly.recoverable(-1001));assertFalse(Omemo2ReceiveOnly.recoverable(-1010));

@@ -183,6 +183,9 @@ public final class XmppSession implements AutoCloseable {
         this(account,password,deviceId,trustFile,null,listener);
     }
     public XmppSession(Account account, String password, int deviceId, File trustFile, Omemo2Device modernDevice, Listener listener) throws Exception {
+        this(account,password,deviceId,trustFile,modernDevice,null,listener);
+    }
+    public XmppSession(Account account,String password,int deviceId,File trustFile,Omemo2Device modernDevice,XmppRecovery recovery,Listener listener) throws Exception {
         if (keyRoot == null) throw new IllegalStateException("Initialize the private OMEMO store first");
         if (deviceId < 1) throw new IllegalArgumentException("OMEMO device ID must be positive and persistent");
         XMPPTCPConnectionConfiguration.Builder config = XMPPTCPConnectionConfiguration.builder()
@@ -199,7 +202,7 @@ public final class XmppSession implements AutoCloseable {
         modernCapacityKey=modernDevice==null ? null : "modern\n"+modernDevice.jid+"\n"+modernDevice.id;
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("encrypted",XmppOmemo2.NS,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
-        modern = modernDevice == null ? null : new XmppOmemo2(connection,modernDevice,jid -> {});
+        modern = modernDevice == null ? null : recovery==null ? new XmppOmemo2(connection,modernDevice,jid -> {}) : XmppOmemo2.restored(connection,modernDevice,jid -> {},recovery.modern(modernDevice));
         ReplyReference.initialize();
         MessageCorrection.initialize();
         MessageReactions.initialize();
@@ -291,6 +294,8 @@ public final class XmppSession implements AutoCloseable {
             public void blocked(LegacyIncomingJournal.Context context,long revision) { queueLegacy(context,revision); }
             public void failed(Exception error) { legacyFailure=error; }
         });
+        if(recovery!=null) MonogramLegacyOmemoService.instance().configureRecoveries(omemo,recovery.legacy(
+                MonogramLegacyOmemoService.instance().records(),legacyIncoming.own,trust));
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
                 receipt(carbon);

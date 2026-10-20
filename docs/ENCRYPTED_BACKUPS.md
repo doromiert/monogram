@@ -171,88 +171,122 @@ separately bound account trust file. Fixtures prepare two-owner/two-device
 coverage, prekey zero/tombstones, byte-identical source preservation, restoration
 against empty bootstrap and corrupt-record rejection.
 
-## Modern receive-only restore source checkpoint
+## Receive-only recovery, repeated migrations and startup binding
 
-`MonogramBackupModernStore.prepare` builds two physically independent databases
-under a newly created private work directory using the exact trusted app schema.
-Both retain the same owner, device ID, identity and trust. The receive-only copy
-retains the backed-up ratchets, incoming journal and prekeys. The active copy
-removes **all** session/session-identity rows; `Omemo2Restore` replaces signed and
-one-time prekeys with fresh randomness and increasing IDs, rotates its incoming
-journal and writes a distinct migration marker. Nothing initializes an XMPP
-connection, publishes bundles or sends an outbox item. Uninitialized, inconsistent,
-exhausted or already migration-marked active key snapshots fail closed. Repeated
-migration/archive-chain manifests still need design before enabling restoration.
+`MonogramBackupModernStore` and `MonogramBackupLegacyRestore` create independent
+active and receive-only copies using the exact trusted app schema. The active
+copies retain the selected identity/device and trust, remove **all** old session
+lineage, regenerate signed and one-time prekeys with fresh randomness and IDs
+above captured keys (including legacy consumed-key tombstones), rotate their
+incoming journals and receive new migration markers. A migration-marked source
+can be migrated again; an old outbound chain is never reactivated. Exhausted IDs,
+missing identities and inconsistent key metadata still fail closed.
 
-The new optional `XmppOmemo2` constructor accepts `Omemo2ReceiveOnly`; ordinary
-constructors and normal traffic use no archive. Recovery records expose no public
-sending/publishing API. Transactions lock active trust before archive state and
-permit only receive-session updates, consumed-prekey deletion and incoming-journal
-updates. Current active trust is used instead of archived trust, including when
-replaying saved plaintext. Archive frames carry their journal provenance and
-suppress both stored and newly generated ACKs and bundle replenishment. Historical
-prekey messages can consult the archive without fetching a now-expired server
-bundle. Only native key/ratchet mismatch failures allow fallback; identity distrust,
-duplicate-message, format and storage failures remain failures. Successful archive
-decryption never copies or promotes its state into the active sending store.
+`RecoveryManifest` binds canonical account, generation, active device IDs, public
+identity pins and migration markers to ordered UUID-named archive files. An archive
+ID identifies a particular mutable receive state, so multiple archives for the same
+device ID are retained. Each archive also pins its protocol, own-device ID and
+identity; explicitly pinned historical identities may differ from today's local
+identity, including after reuse of an old device ID. No historical identity is
+allocated a replacement ID or published again.
 
-This opt-in path is **not wired to account startup** and has not been built or
-executed. Prepared fixtures cover write restrictions, current-trust revocation,
-recovered-journal ACK suppression/provenance, fresh prekey IDs with unchanged
-identity and independent native receive/outgoing sessions. The legacy opt-in source path below follows the same isolation policy; the
-global capture barrier and recoverable cold commit remain missing. Backup/restore remains unavailable in settings.
+`MonogramRecoveryStage` is an offline staging adapter. It appends the just-retired
+active snapshot and every materialized historical legacy own device, and logically
+copies every earlier archive under its **original archive ID**, preserving receive
+ratchets, prekeys, journals and pending plaintext. It verifies that a previous
+manifest's active identity/epoch matches the active snapshot captured alongside it.
+The legacy materializer preserves existing migration markers instead of replacing
+them with a one-byte bootstrap marker. Each legacy own device currently receives
+an independent full owner-filtered DB copy; this deliberately favors isolation over
+storage deduplication. The staged manifest is fsynced but no live file is replaced.
+Callers must quiesce all active and archived receive writers before capture; this
+adapter does not implement that global barrier.
 
-Composition media drafts have a separate owner-generation/peer-key manifest under
-`files/monogram-media-drafts`. Pending native media paths into that directory are
-already enumerated/remapped by the native adapter, but restoring the editable
-composition drafts additionally requires portable ownership generations and peer
-keys. Never blindly copy a directory under a stale generation; until the manifest
-adapter exists the scope summary must explicitly exclude editable compositions.
-Notification-action generations remain excluded and must be invalidated at commit.
+The controller now calls `MonogramRecoveryStore.load` **before allocating any
+missing device ID or constructing a session**. An absent recovery directory is the
+unchanged ordinary-account path. A partial directory, changed owner/device/identity
+or epoch, unsupported SQLite schema, redirected/missing/unlisted archive, foreign
+owner rows or unconfirmed migration blocks startup. Archive sqlite_master is
+compared with in-memory trusted app schema before archive table queries. Public
+identity pins are rechecked against the actual records. The private installed path
+is `no_backup/monogram-recovery-<slot>/`, containing `manifest.bin`,
+`archives/<uuid>.db` and an empty bootstrap directory. The loader never creates or
+installs that directory on an existing account.
 
-## Legacy receive-only restore source checkpoint
+`XmppRecovery` factories are bound through an optional `XmppSession` constructor.
+They never authenticate, initialize a registered device, publish, send an outbox
+or activate a slot. The manifest's `reconnectApproved` flag must represent explicit
+migration/reconnect confirmation in the future cold transaction; false blocks
+connection. Merely restoring files must never silently grant that confirmation.
+An installed manifest cannot change in-process: open archive stores remain alive
+until process exit because session close does not yet await every crypto callback.
+Manifest changes require a cold restart. Logout/account-slot reuse is also an
+unfinished cold-transaction responsibility: current logout does not retire the
+installed recovery root or the process-wide OPEN-slot cache. Before a different
+account can reuse a restored slot, a future transaction must stop old callbacks,
+await archive writers, retire/close those handles and atomically detach the old
+account's manifest/cache binding. It must preserve old keys and receive archives
+until explicit retention/deletion handling, invalidate slot ownership generations
+and recover correctly after interruption. Silently deleting live archives or
+allowing a new account to inherit them is not an acceptable shortcut. Until that
+path exists the loader intentionally blocks a different owner, so restore UI must
+remain unavailable; a permanently blocked slot after logout is not final behavior.
+The loader currently rejects WAL/SHM/hot
+journal sidecars; safe recovery after a crash during an archive receive transaction
+is a remaining cold-start concern before enabling this feature.
 
-`MonogramBackupLegacyRestore` makes independent trusted-schema copies of a
-materialized owner snapshot. Only the selected own device is retained in the
-active copy; historical own devices remain in the recovery file and need an
-explicit manifest/routing policy before they can be used. The active copy loses
-all per-peer session rows. `MonogramLegacyRestore` preserves its identity/device,
-replaces signed and one-time prekeys using fresh randomness and identifiers above
-all captured rows (including consumed-key tombstones), resets the incoming epoch
-and records a unique bootstrap-suppression migration marker. Key-ID exhaustion,
-missing identity/materialization and repeat-marked stages fail closed. No source
-bootstrap, live singleton backend or real account is changed.
+Modern OMEMO selects the encrypted recipient key using each archive's historical
+own-device ID, not only today's ID. Active and archive journals retain explicit
+source provenance. Recovery records consult current active trust and permit only
+receive-session updates, consumed-prekey deletion and incoming-journal updates.
+Saved and fresh archive frames suppress ACK encryption and bundle replenishment.
+Only native key/ratchet mismatch codes try another archive; trust, duplicate,
+format, journal and storage failures remain failures. Normal constructors retain
+no recovery state.
 
-The explicit `XmppSession.configureLegacyRecovery` opt-in is allowed only before
-connecting. `MonogramLegacyOmemoService` keeps its active store and cached ratchets
-unchanged; a dedicated archive `MonogramSignalRatchet` uses the installed Smack
-4.4.8 message-key/body decoding helpers. No archive completion message, bundle
-replenishment, publication or session-repair helper is invoked. Archive writes
-are restricted to receive sessions/contact identities, consumed-prekey tombstones,
-receive counters/dates and the incoming journal. Sender fingerprints must pass
-**current** `IdentityTrust` before archive ratchet changes commit and before saved
-plaintext is replayed. `MonogramLegacyRouting` permits only typed Signal missing-key/session/ratchet
-mismatches, including the installed Smack wrapper chain
-`MultipleCryptoFailedException -> CryptoFailedException -> NoRawSessionException`.
-Every aggregate member must qualify; storage, journal, trust, duplicate, unsupported
-version and untyped crypto failures never retry. Migration envelopes require
-exactly one local recipient key so the installed ratchet's ignored-identity
-branch cannot be hidden by another key's recoverable error. Each store is tried
-at most once: archive then active for prekey packets, active then archive for
-existing-session packets. Prepared real Java Signal fixtures cover new active
-prekeys absent from the old archive and reciprocal old-session MAC mismatches,
-with unchanged active session bytes after archive recovery.
+Legacy recovery does not create additional OmemoManagers or replace the singleton
+backend. `MonogramLegacyArchiveCipher` runs the installed Java Signal receive
+algorithm in detached records bound to the **historical** own identity/device,
+loading only the target session and referenced prekey/signed-prekey. Successful
+receive changes are copied to the archive's outer journal transaction; payload or
+journal failures roll everything back. Existing Smack payload decoding remains in
+use. Current `IdentityTrust` must approve the sender before archive changes commit
+and before stored plaintext is replayed. No archive completion, receipt,
+replenishment, bundle publication or repair helper runs.
 
-Incoming frames retain their source journal. Acceptance uses that exact journal,
-drops historical completion/replenishment obligations and cannot authorize an
-identical token from another journal object. Local replay uses the saved MUC
-route/identity tags, including `room-displayed`, without consulting today's
-nickname mapping. Prepared fixtures cover current trust revocation, journal
-provenance, obsolete protocol-obligation removal, room-tag persistence, record
-write restrictions and fresh key IDs with byte-identical identity. These sources
-have not been built or executed. Both protocol helpers still require startup
-manifest/slot binding, archive-chain support and the cold transaction below;
-settings must remain disabled until those integration gaps are closed.
+`MonogramLegacyRouting` recognizes only typed Signal missing-key/session/ratchet
+mismatches, including installed Smack's `MultipleCryptoFailedException ->
+CryptoFailedException -> NoRawSessionException` wrapping. Every aggregate member
+must qualify; trust, IO, duplicate, unsupported-version and untyped crypto failures
+never retry. There must be one encrypted key per targeted local own-device ID,
+preventing the installed ratchet's ignored-identity branch from being hidden by
+another key's error. Historical recipient IDs are routed without registering them.
+Legacy journal source provenance determines acceptance and protocol cleanup; saved
+MUC route/identity tags, including `room-displayed`, survive replay without resolving
+today's nickname mapping.
+
+A remaining legacy routing edge also blocks enabling restore UI: if a contact
+rotates its identity after migration and the user trusts the new fingerprint,
+archive-first prekey routing can stop at the old archive's peer identity mismatch
+before reaching active state. The mismatch is deliberately terminal today.
+Candidate selection must distinguish an archive that cannot own that packet from
+an untrusted sender, without rewriting historical receive lineage or weakening
+current trust checks. This is not covered by the prepared acceptance fixtures.
+
+Prepared fixtures cover manifest round-trip and repeated archive generations,
+partial/foreign/unconfirmed startup, pinned historical own devices, fresh native
+and Java Signal keys, old/new session routing, trust revocation, journal provenance,
+ACK/completion suppression, MUC tag persistence and record write restrictions.
+None of this checkpoint has been built or executed. Global capture quiescence,
+recoverable cold commit, hot-journal recovery and settings UI remain incomplete;
+backup/restore remains unavailable in settings.
+
+Composition media drafts use a separate owner-generation/peer-key manifest under
+`files/monogram-media-drafts`. Native pending media paths into that directory are
+already enumerated/remapped, but restoring editable composition drafts additionally
+requires portable ownership generations and peer keys. Do not blindly copy a
+stale generation. Notification-action generations remain excluded and must be
+invalidated at cold commit.
 
 ## Required integration before enabling settings
 
@@ -272,8 +306,9 @@ settings must remain disabled until those integration gaps are closed.
    ratchet/send-chain state: it could reuse message keys/counters even after
    disconnecting the source phone. Preserve identity/trust but design fresh
    outbound session establishment or a receive-only restored-session strategy
-   before reconnection. The modern and legacy opt-in source paths above implement isolated receive-only sessions;
-   archive-chain migration and cold activation remain unimplemented.
+   before reconnection. The source paths above implement isolated receive-only sessions and archive-chain
+   staging/startup binding; capture quiescence, crash recovery, handle/slot retirement
+   and cold activation remain unimplemented.
    Explain migration and keep the source client disconnected.
 4. Stage target vault encryption, slot/path remapping and native DB allocation.
    Record a recoverable commit journal; replace databases/files/preferences as
@@ -282,7 +317,9 @@ settings must remain disabled until those integration gaps are closed.
    `monogram-notification-actions-N` preferences in an export. Invalidate the
    target slot's `MonogramNotificationActions` generation during cold commit
    before restored native IDs/reconnection can be used; old notification action
-   tokens must stay invalid even if restoration rolls back. Interrupted restore must
+   tokens must stay invalid even if restoration rolls back. Retire mutable recovery
+   handles only after a real writer barrier, and implement logout/slot reuse ownership
+   cleanup without deleting old keys as a side effect. Interrupted restore must
    either roll back or resume before messaging restarts.
 5. Add native settings UI: SAF create/open document, passphrase confirmation,
    progress/cancel, owner/scope summary, explicit replace/migration confirmation

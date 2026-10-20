@@ -23,23 +23,37 @@ public final class MonogramLegacyReceiveOnly {
 
     public MonogramLegacyReceiveOnly(MonogramSignalStore active,OmemoDevice own,
             SignalFileBasedOmemoStore emptyBootstrap,LegacyOmemoRecords.Factory archived,IdentityTrust trust) throws Exception {
+        this(active,own,own,emptyBootstrap,archived,trust);
+    }
+    public MonogramLegacyReceiveOnly(MonogramSignalStore active,OmemoDevice activeOwn,OmemoDevice archivedOwn,
+            SignalFileBasedOmemoStore emptyBootstrap,LegacyOmemoRecords.Factory archived,IdentityTrust trust) throws Exception {
+        this(active,activeOwn,archivedOwn,null,emptyBootstrap,archived,trust);
+    }
+    public MonogramLegacyReceiveOnly(MonogramSignalStore active,OmemoDevice activeOwn,OmemoDevice archivedOwn,String fingerprint,
+            SignalFileBasedOmemoStore emptyBootstrap,LegacyOmemoRecords.Factory archived,IdentityTrust trust) throws Exception {
+        if(fingerprint!=null && !fingerprint.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid historical identity pin");
+        if(!activeOwn.getJid().equals(archivedOwn.getJid())) throw new GeneralSecurityException("Historical account differs from active account");
+        OmemoDevice own=archivedOwn;
         this.active=active;this.own=own;this.trust=java.util.Objects.requireNonNull(trust);
-        try(LegacyOmemoRecords live=active.begin(own);LegacyOmemoRecords old=archived.begin(own.getJid().toString(),own.getDeviceId())) {
+        try(LegacyOmemoRecords live=active.begin(activeOwn);LegacyOmemoRecords old=archived.begin(own.getJid().toString(),own.getDeviceId())) {
             byte[] marker=live.load(PURGED,"",0);
             if(!MonogramLegacyRestore.marker(marker) || Arrays.equals(marker,old.load(PURGED,"",0)) || old.load(PURGED,"",0)==null)
                 throw new GeneralSecurityException("Independent materialized migration archive required");
             byte[] current=live.load(IDENTITY_PAIR,"",0),previous=old.load(IDENTITY_PAIR,"",0);
             try {
-                if(current==null || previous==null || !java.security.MessageDigest.isEqual(current,previous))
+                if(current==null || previous==null || fingerprint==null && activeOwn.equals(own) && !java.security.MessageDigest.isEqual(current,previous))
                     throw new GeneralSecurityException("Legacy migration identity changed");
             } finally { if(current!=null) Arrays.fill(current,(byte)0);if(previous!=null) Arrays.fill(previous,(byte)0); }
         }
         archive=new MonogramSignalStore(emptyBootstrap,guard(archived,own));
+        if(fingerprint!=null && !fingerprint.equals(archive.getFingerprint(own).toString())) throw new GeneralSecurityException("Historical identity pin changed");
         journal=new LegacyIncomingJournal(archive,own,trust);
     }
     public LegacyIncomingJournal journal() { return journal; }
+    boolean addressed(OmemoElement element) { for(OmemoKeyElement key:element.getHeader().getKeys()) if(key.getId()==own.getDeviceId()) return true;return false; }
+    int deviceId() { return own.getDeviceId(); }
     void requireActive(MonogramSignalStore store,LegacyIncomingJournal journal) {
-        if(store!=active || !own.equals(journal.own)) throw new IllegalArgumentException("Legacy archive belongs to another account/device");
+        if(store!=active || !own.getJid().equals(journal.own.getJid())) throw new IllegalArgumentException("Legacy archive belongs to another account/device");
     }
     LegacyIncomingJournal.Received cached(LegacyIncomingJournal.Context context) throws Exception {
         try(LegacyOmemoRecords tx=archive.begin(own)) {
@@ -49,7 +63,7 @@ public final class MonogramLegacyReceiveOnly {
         }
     }
     LegacyIncomingJournal.Received receive(OmemoManager manager,LegacyIncomingJournal.Context context) throws Exception {
-        if(!own.equals(manager.getOwnDevice())) throw new GeneralSecurityException("Recovery account changed");
+        if(!own.getJid().equals(manager.getOwnDevice().getJid())) throw new GeneralSecurityException("Recovery account changed");
         // Match pending-journal lock order: archive storage first, then current trust.
         try(LegacyOmemoRecords tx=archive.begin(own)) {
             synchronized(trust) {
@@ -58,15 +72,17 @@ public final class MonogramLegacyReceiveOnly {
                     LegacyIncomingJournal.Received existing=journal.find(tx,context,digest);if(existing!=null) return existing;
                     OmemoElement element=context.outer.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
                     OmemoDevice sender=new OmemoDevice(JidCreate.bareFrom(context.author),element.getHeader().getSid());
-                    // Type as base class: these package-private helpers belong to the installed
-                    // Smack package, not the Signal implementation's different subpackage.
-                    OmemoRatchet<org.whispersystems.libsignal.IdentityKeyPair,org.whispersystems.libsignal.IdentityKey,
-                            org.whispersystems.libsignal.state.PreKeyRecord,org.whispersystems.libsignal.state.SignedPreKeyRecord,
-                            org.whispersystems.libsignal.state.SessionRecord,org.whispersystems.libsignal.SignalProtocolAddress,
-                            org.whispersystems.libsignal.ecc.ECPublicKey,org.whispersystems.libsignal.state.PreKeyBundle,
-                            org.whispersystems.libsignal.SessionCipher> ratchet=new MonogramSignalRatchet(manager,archive);
-                    CipherAndAuthTag material=ratchet.retrieveMessageKeyAndAuthTag(sender,element);
-                    if(material==null) throw new GeneralSecurityException("Duplicate recovery message");
+                    OmemoKeyElement selected=null;
+                    for(OmemoKeyElement key:element.getHeader().getKeys()) if(key.getId()==own.getDeviceId()) {
+                        if(selected!=null) throw new GeneralSecurityException("Ambiguous historical recipient keys");selected=key;
+                    }
+                    if(selected==null) throw new org.whispersystems.libsignal.NoSessionException("Not addressed to historical device");
+                    byte[] transported=MonogramLegacyArchiveCipher.decrypt(archive,own,sender,selected);
+                    CipherAndAuthTag material;
+                    if(transported.length==32) material=new CipherAndAuthTag(Arrays.copyOf(transported,16),element.getHeader().getIv(),Arrays.copyOfRange(transported,16,32),selected.isPreKey());
+                    else if(transported.length==16 && element.isKeyTransportElement()) material=new CipherAndAuthTag(transported.clone(),element.getHeader().getIv(),null,selected.isPreKey());
+                    else { Arrays.fill(transported,(byte)0);throw new GeneralSecurityException("Invalid historical transported key length"); }
+                    Arrays.fill(transported,(byte)0);
                     try {
                         OmemoFingerprint fingerprint=archive.getFingerprint(own,sender);
                         if(!trust.isTrusted(sender,fingerprint)) throw new GeneralSecurityException("Recovery sender is no longer trusted");
