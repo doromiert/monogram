@@ -89,6 +89,7 @@
     <uses-sdk tools:overrideLibrary="com.google.mlkit.vision.segmentation.subject"/>
 
     <queries>
+        <package android:name="com.google.android.gms"/>
         <package android:name="com.google.android.apps.maps"/>
         <intent tools:node="remove">
             <action android:name="com.android.vending.billing.InAppBillingService.BIND"/>
@@ -116,6 +117,7 @@
         android:enableOnBackInvokedCallback="true"
     >
         <!-- Billing API types still compile in stock classes; no payment components are registered. -->
+        <meta-data android:name="com.google.android.geo.API_KEY" android:value="@string/monogram_google_maps_api_key"/>
         <activity android:name="com.android.billingclient.api.ProxyBillingActivity" tools:node="remove"/>
         <activity android:name="com.android.billingclient.api.ProxyBillingActivityV2" tools:node="remove"/>
         <meta-data android:name="com.google.android.play.billingclient.version" tools:node="remove"/>

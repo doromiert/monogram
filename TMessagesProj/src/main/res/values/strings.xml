@@ -11680,4 +11680,9 @@
     <string name="MonogramReplyAppearanceEmoji">Background emoji</string>
     <string name="MonogramReplyAppearanceBackground">Tinted background</string>
     <string name="MonogramReplyAppearanceInfo">Control the color, emoji pattern, and background tint shown behind replies.</string>
+    <string name="MonogramMapsTitle">Maps</string>
+    <string name="MonogramMapsOsmInfo">OpenStreetMap works without Google Play services. This choice applies to all accounts and takes effect the next time you open a map.</string>
+    <string name="MonogramMapsNoKey">Google Maps is not configured in this build. Maps will use OpenStreetMap. Your Google preference is saved for builds with a configured key.</string>
+    <string name="MonogramMapsNoServices">Google Play services are unavailable or need updating. Maps will use OpenStreetMap. You can keep this preference; Google Maps will be checked again after an app restart.</string>
+    <string name="MonogramMapsGoogleInfo">Use Google Maps when available, with OpenStreetMap as a fallback. This choice applies to all accounts and takes effect the next time you open a map. Place search uses Photon; device location uses Android.</string>
 </resources>

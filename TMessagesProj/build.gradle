@@ -133,6 +133,10 @@ android {
     }
 
     defaultConfig {
+        // Use Monogram's own project. Never inherit Telegram's Google Maps credentials.
+        resValue "string", "monogram_google_maps_api_key", providers.gradleProperty("monogramGoogleMapsApiKey")
+                .orElse(providers.environmentVariable("MONOGRAM_GOOGLE_MAPS_API_KEY"))
+                .getOrElse(getProps("monogram.googleMapsApiKey") ?: "")
         if (findProperty("monogramAbi")) {
             ndk { abiFilters(*findProperty("monogramAbi").split(",")) }
         }

@@ -93,15 +93,19 @@ public class ApplicationLoader extends Application {
         return new AndroidLocationProvider();
     }
 
-    public static IMapsProvider getMapsProvider() {
+    public static synchronized IMapsProvider getMapsProvider() {
         if (mapsProvider == null) {
             mapsProvider = applicationLoaderInstance.onCreateMapsProvider();
         }
         return mapsProvider;
     }
 
+    public static synchronized void resetMapsProvider() {
+        mapsProvider = null;
+    }
+
     protected IMapsProvider onCreateMapsProvider() {
-        return new OpenStreetMapProvider();
+        return MonogramMaps.create(applicationContext);
     }
 
     public static PushListenerController.IPushListenerServiceProvider getPushProvider() {

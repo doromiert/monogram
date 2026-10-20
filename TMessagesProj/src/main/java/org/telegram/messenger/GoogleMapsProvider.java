@@ -39,7 +39,10 @@ public class GoogleMapsProvider implements IMapsProvider {
 
     @Override
     public void initializeMaps(Context context) {
-        MapsInitializer.initialize(context);
+        int result = MapsInitializer.initialize(context);
+        if (result != com.google.android.gms.common.ConnectionResult.SUCCESS) {
+            throw new IllegalStateException("Google Maps is unavailable");
+        }
     }
 
     @Override
