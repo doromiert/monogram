@@ -3460,7 +3460,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         }
 
-        searchItem.setSearchFieldHint(getString(R.string.Search));
+        searchItem.setSearchFieldHint(getString(monogramCachedGlobalSearch() ? R.string.MonogramGlobalSearchHint : R.string.Search));
         searchItem.setContentDescription(getString(R.string.Search));
         if (onlySelect) {
             actionBar.setBackButtonImage(R.drawable.ic_ab_back);
@@ -14077,9 +14077,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         fragmentSearchField.setBlurredBackgroundVisibility(animatorSearchVisible.getFloatValue());
     }
 
+    private boolean monogramCachedGlobalSearch() {
+        return !onlySelect && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+    }
     private void checkUi_searchFieldHint() {
         final boolean topics = getRightSlidingProgress() > 0.5f;
-        final String hint = getString(topics ? R.string.SearchTopics : R.string.SearchChats);
+        final String hint = getString(topics ? R.string.SearchTopics : monogramCachedGlobalSearch() ? R.string.MonogramGlobalSearchHint : R.string.SearchChats);
 
         fragmentSearchField.editText.setContentDescription(hint);
         fragmentSearchField.editText.setHint(hint);

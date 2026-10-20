@@ -63,7 +63,9 @@ exactly one extra page with preserved unread state, end/offline rejection withou
 fetching, and reconnect cancellation without stale callback reuse. Existing
 controller fixture cleanup now closes the private read-sync executor too.
 
-Global search still needs an equally explicit local-cache scope and deliberate
-history expansion. Native search result/date-window navigation and phone layout
-acceptance remain open. No tests, build, server operation or phone action ran for
+Global home search also labels **Chats and downloaded messages**, preserving the
+chat-only hint in recipient selection and the topic-specific hint in topic views.
+Older history is expanded deliberately within a chosen chat; global search does
+not silently download every conversation. Native search result/date-window
+navigation and phone layout acceptance remain open. No tests, build, server operation or phone action ran for
 this checkpoint.
