@@ -21,3 +21,21 @@ The old tile-preview fade does not compete with the FAB expansion. Devices witho
 flash modes still reach the open callback. Delayed camera disposal retains the
 exact old view, so reopening cannot have its new preview removed by old cleanup.
 No phone visual verification or camera activation has been performed for this fix.
+
+## 0.2.120 regression: first-frame stall and camera-to-map crash
+
+Phone crash logs captured on 2026-10-20 show `CameraViewInternal.dispatchDraw`
+dereferencing the cleared outer `cameraView` during the delayed removal of its
+old preview. The crash occurs after switching to location because photo layout
+hiding releases that preview; the map is not the failing component.
+
+The old preview is now hidden immediately and rejects drawing after ownership
+changes. Outline/draw coordinates use the actual drawing view. Queued size updates
+also retain their original view instead of resizing a new camera on rapid reopen.
+
+The FAB first-frame wait also exposed a tile-only drawing assumption: collapsed
+previews skip normal dispatch because the gallery tile used to draw them in its
+decoration. A FAB has no such tile. Collapsed FAB previews now draw their texture
+inside the full circular outline, allowing CameraView's first-frame callback to
+start the existing expansion. The invisible caption field no longer clips this
+preview/transition. These changes have not been visually tested on the phone.

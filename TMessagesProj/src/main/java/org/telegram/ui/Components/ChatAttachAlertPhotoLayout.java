@@ -2637,8 +2637,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             cameraView.setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
-                    int maxY = (int) Math.min(parentAlert.getCommentTextViewTop() - (parentAlert.mentionContainer != null ? parentAlert.mentionContainer.clipBottom() + dp(RADIUS) : 0) + currentPanTranslationY + parentAlert.getContainerView().getTranslationY() - cameraView.getTranslationY(), view.getMeasuredHeight());
-                    if (cameraOpened) {
+                    int maxY = (int) Math.min(parentAlert.getCommentTextViewTop() - (parentAlert.mentionContainer != null ? parentAlert.mentionContainer.clipBottom() + dp(RADIUS) : 0) + currentPanTranslationY + parentAlert.getContainerView().getTranslationY() - view.getTranslationY(), view.getMeasuredHeight());
+                    if (cameraOpened || cameraButton != null) {
                         maxY = view.getMeasuredHeight();
                     } else if (cameraAnimationInProgress) {
                         maxY = AndroidUtilities.lerp(maxY, view.getMeasuredHeight(), cameraOpenProgress);
@@ -2752,6 +2752,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             cameraInitAnimation = null;
         }
         cameraView = null;
+        // The old TextureView may remain attached while its camera closes asynchronously.
+        // Stop it drawing (or intercepting touches) as soon as this layout relinquishes it.
+        releasedView.setVisibility(GONE);
         AndroidUtilities.runOnUIThread(() -> parentAlert.getContainer().removeView(releasedView), 300);
         canSaveCameraPreview = false;
     }
@@ -3208,9 +3211,10 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     layoutParams.height = finalHeight;
                     cameraView.setLayoutParams(layoutParams);
                     final LayoutParams layoutParamsFinal = layoutParams;
+                    final CameraViewInternal resizedView = cameraView;
                     AndroidUtilities.runOnUIThread(() -> {
-                        if (cameraView != null) {
-                            cameraView.setLayoutParams(layoutParamsFinal);
+                        if (cameraView == resizedView) {
+                            resizedView.setLayoutParams(layoutParamsFinal);
                         }
                     });
                 }
@@ -4963,7 +4967,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
         @Override
         protected void dispatchDraw(Canvas canvas) {
-            if (AndroidUtilities.makingGlobalBlurBitmap) {
+            if (AndroidUtilities.makingGlobalBlurBitmap || cameraView != this) {
                 return;
             }
 
@@ -4972,7 +4976,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 return;
             }
 
-            int maxY = (int) Math.min(parentAlert.getCommentTextViewTop() + currentPanTranslationY + parentAlert.getContainerView().getTranslationY() - cameraView.getTranslationY() - (parentAlert.mentionContainer != null ? parentAlert.mentionContainer.clipBottom() + dp(8) : 0), getMeasuredHeight());
+            int maxY = (int) Math.min(parentAlert.getCommentTextViewTop() + currentPanTranslationY + parentAlert.getContainerView().getTranslationY() - getTranslationY() - (parentAlert.mentionContainer != null ? parentAlert.mentionContainer.clipBottom() + dp(8) : 0), getMeasuredHeight());
+            if (cameraButton != null) maxY = getMeasuredHeight();
             if (cameraAnimationInProgress) {
                 AndroidUtilities.rectTmp.set(
                     animationClipLeft + cameraViewOffsetX * (1f - cameraOpenProgress),
@@ -4981,8 +4986,10 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     lerp(Math.min(maxY, animationClipBottom), getMeasuredHeight(), cameraOpenProgress)
                 );
             } else if (!cameraAnimationInProgress && !cameraOpened) {
-                AndroidUtilities.rectTmp.set(cameraViewOffsetX, cameraViewOffsetY, getMeasuredWidth(), Math.min(maxY, getMeasuredHeight()));
-                return;
+                AndroidUtilities.rectTmp.set(cameraViewOffsetX, cameraViewOffsetY, getMeasuredWidth(), cameraButton != null ? getMeasuredHeight() : Math.min(maxY, getMeasuredHeight()));
+                // A FAB camera must render its collapsed TextureView to receive the first
+                // frame callback that starts expansion. Tile previews draw in decoration.
+                if (cameraButton == null) return;
             } else {
                 AndroidUtilities.rectTmp.set(0 , 0, getMeasuredWidth(), Math.min(maxY, getMeasuredHeight()));
             }
