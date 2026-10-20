@@ -11666,4 +11666,13 @@
     <string name="MonogramMediaPlaybackSubtitle">Background playback and volume-button actions</string>
     <string name="MonogramGroupedMenu">Group message menu</string>
     <string name="MonogramGroupedMenuInfo">Grouping moves the main actions to the bottom of the message menu.</string>
+    <string name="MonogramMediaSeekHeader">Double-tap seek</string>
+    <string name="MonogramMediaSeek5">5 seconds</string>
+    <string name="MonogramMediaSeek10">10 seconds</string>
+    <string name="MonogramMediaSeek15">15 seconds</string>
+    <string name="MonogramMediaSeek30">30 seconds</string>
+    <string name="MonogramMediaSeekInfo">Choose how far videos skip when you double-tap the left or right side.</string>
+    <string name="MonogramMediaSwipeHeader">Picture in picture</string>
+    <string name="MonogramMediaSwipeToPip">Swipe up to picture in picture</string>
+    <string name="MonogramMediaSwipeToPipInfo">Swipe a playing video upward to continue watching it in a floating window.</string>
 </resources>

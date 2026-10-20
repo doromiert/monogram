@@ -36,10 +36,12 @@ sticker handling, account isolation, pack import/sync, encrypted pack sharing,
 private metadata and trust settings are unchanged.
 
 This is not a completed removal of every stock Telegram business/payment class.
-The billing, Wallet and Stripe Gradle libraries remain because compiled native
-payment classes directly reference those types. Removing those entire classes,
-all deep-link routing and dependencies needs a separate deletion pass; removing
-only dependency declarations would break compilation. Server-only effects,
+Google Wallet SDK usage and its Gradle dependency/manifest opt-in have now been
+removed; PaymentFormActivity centrally refuses XMPP checkout before observer/UI
+startup. Billing and Stripe Gradle libraries still have compiled native type users,
+and TON/Wallet Java/JNI source remains. See MONETIZATION_REMOVAL.md for the exact
+removed backend and remaining boundaries; deleting those remaining dependencies
+requires removing their type users together. Server-only effects,
 boosts, status gifts, Telegram Business/Quick Replies and the separate unported
 rich-message editor are not unlocked by pretending the account is Premium.
 Additional native purchase/feature entrypoints may remain outside this bounded
@@ -83,9 +85,11 @@ Four pure synthetic URI regression fixtures in
 `MonogramPurchaseLinksTest` passed in the 0.2.121 release gate. They check the monetary
 aliases, preserved ordinary links, settings route boundaries and encoded/malformed
 query handling. No URI is opened and no account/server/network action occurs.
-The stock compiled payment implementations and their Gradle dependencies still
-remain; these guards remove the reviewed reachable routes, rather than claiming
-those unused classes have already been deleted.
+The Google Wallet SDK/backend has since been removed and direct XMPP
+PaymentFormActivity creation is blocked. Other stock payment implementations,
+Billing/Stripe dependencies and TON/Wallet Java/JNI sources remain; the reviewed
+route guards do not imply those whole class families have been deleted. See
+MONETIZATION_REMOVAL.md.
 
 ## Local per-chat appearance
 
@@ -97,3 +101,5 @@ group appearance is local and does not require room admin rights. Four focused
 persistence/ownership/failure/lifecycle cases pass; phone UI acceptance remains.
 See [CHAT_APPEARANCE.md](CHAT_APPEARANCE.md) for static-pattern/snapshot limits
 and the remaining profile/name/shared-appearance scope.
+
+0.2.125 also prevents BillingController construction of a Google Play client when the build marks billing unavailable. Query/listener requests report unavailability; late setup/purchase/disconnect callbacks cannot assign purchases or schedule reconnection. This is runtime retirement, not removal of billing8 API types from stock source. Two focused host cases, Nix arm64 packaging and the no-Wallet runtime dependency check pass.

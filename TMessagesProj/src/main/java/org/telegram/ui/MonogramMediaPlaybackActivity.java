@@ -21,12 +21,24 @@ public final class MonogramMediaPlaybackActivity extends MonogramSettingsActivit
         items.add(UItem.asHeader(LocaleController.getString(R.string.MonogramMediaVolumeHeader)));
         items.add(UItem.asCheck(4,LocaleController.getString(R.string.MonogramMediaVolumeUnmute)).setChecked(MonogramMediaPlayback.unmuteWithVolumeButtons(currentAccount)));
         items.add(UItem.asShadow(LocaleController.getString(R.string.MonogramMediaVolumeInfo)));
+        items.add(UItem.asHeader(LocaleController.getString(R.string.MonogramMediaSeekHeader)));
+        int seekDuration=MonogramMediaPlayback.doubleTapSeekDuration(currentAccount);
+        items.add(UItem.asRadio(5,LocaleController.getString(R.string.MonogramMediaSeek5)).setChecked(seekDuration==0));
+        items.add(UItem.asRadio(6,LocaleController.getString(R.string.MonogramMediaSeek10)).setChecked(seekDuration==1));
+        items.add(UItem.asRadio(7,LocaleController.getString(R.string.MonogramMediaSeek15)).setChecked(seekDuration==2));
+        items.add(UItem.asRadio(8,LocaleController.getString(R.string.MonogramMediaSeek30)).setChecked(seekDuration==3));
+        items.add(UItem.asShadow(LocaleController.getString(R.string.MonogramMediaSeekInfo)));
+        items.add(UItem.asHeader(LocaleController.getString(R.string.MonogramMediaSwipeHeader)));
+        items.add(UItem.asCheck(9,LocaleController.getString(R.string.MonogramMediaSwipeToPip)).setChecked(MonogramMediaPlayback.swipeToPip(currentAccount)));
+        items.add(UItem.asShadow(LocaleController.getString(R.string.MonogramMediaSwipeToPipInfo)));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(item.id==1) MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount,!MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount));
         else if(item.id==2) MonogramMediaPlayback.pauseVoiceOnMinimize(currentAccount,!MonogramMediaPlayback.pauseVoiceOnMinimize(currentAccount));
         else if(item.id==3) MonogramMediaPlayback.pauseRoundOnMinimize(currentAccount,!MonogramMediaPlayback.pauseRoundOnMinimize(currentAccount));
         else if(item.id==4) MonogramMediaPlayback.unmuteWithVolumeButtons(currentAccount,!MonogramMediaPlayback.unmuteWithVolumeButtons(currentAccount));
+        else if(item.id>=5 && item.id<=8) MonogramMediaPlayback.doubleTapSeekDuration(currentAccount,item.id-5);
+        else if(item.id==9) MonogramMediaPlayback.swipeToPip(currentAccount,!MonogramMediaPlayback.swipeToPip(currentAccount));
         else return;
         listView.adapter.update(true);
     }

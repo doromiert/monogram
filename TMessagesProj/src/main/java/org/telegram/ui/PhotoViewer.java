@@ -19349,7 +19349,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 zooming = false;
                 moving = false;
             } else if (draggingDown) {
-                if (Math.abs(dragY - ev.getY()) > getContainerViewHeight() / 6.0f) {
+                if (velocityTracker == null) {
+                    velocityTracker = VelocityTracker.obtain();
+                }
+                velocityTracker.computeCurrentVelocity(1000);
+                float yVelocity = velocityTracker.getYVelocity();
+                float dragDistance = Math.abs(dragY - ev.getY());
+                int swipeVelocity = AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y ? 1250 : 850;
+                if (dragDistance > getContainerViewHeight() / 6.0f || dragDistance > AndroidUtilities.getPixelsInCM(0.4f, false) && Math.abs(yVelocity) >= swipeVelocity) {
                     if (enableSwipeToPiP() && (dragY - ev.getY() > 0)) {
                         switchToPip(true);
                     } else {
@@ -21028,7 +21035,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         boolean forward = x >= width / 3 * 2;
         long current = getCurrentVideoPosition();
         long total = getVideoDuration();
-        return current != C.TIME_UNSET && total > 15 * 1000 && (!forward || total - current > 10000);
+        long seekDuration = org.telegram.messenger.xmpp.MonogramMediaPlayback.doubleTapSeekDurationMillis(currentAccount);
+        long minimumDuration = org.telegram.messenger.xmpp.MonogramMediaPlayback.doubleTapSeekDuration(currentAccount) == 0 ? 10_000L : 15_000L;
+        return current != C.TIME_UNSET && total > minimumDuration && (!forward || total - current > seekDuration);
     }
 
     long totalRewinding;
@@ -21042,31 +21051,22 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             int width = getContainerViewWidth();
             boolean forward = x >= width / 3 * 2;
             if (canDoubleTapSeekVideo(e)) {
+                long seekDuration = org.telegram.messenger.xmpp.MonogramMediaPlayback.doubleTapSeekDurationMillis(currentAccount);
                 long old = current;
                 if (x >= width / 3 * 2) {
-                    current += 10000;
+                    current += seekDuration;
                 } else if (x < width / 3) {
-                    current -= 10000;
+                    current -= seekDuration;
                 }
                 if (old != current) {
-                    boolean apply = true;
-                    if (current > total) {
-                        current = total;
-                    } else if (current < 0) {
-                        if (current < -9000) {
-                            apply = false;
-                        }
-                        current = 0;
-                    }
-                    if (apply) {
-                        videoForwardDrawable.setOneShootAnimation(true);
-                        videoForwardDrawable.setLeftSide(x < width / 3);
-                        videoForwardDrawable.addTime(10000);
-                        seekVideoOrWebTo(current);
-                        containerView.invalidate();
-                        videoPlayerSeekbar.setProgress(current / (float) total, true);
-                        videoPlayerSeekbarView.invalidate();
-                    }
+                    current = Utilities.clamp(current, total, 0);
+                    videoForwardDrawable.setOneShootAnimation(true);
+                    videoForwardDrawable.setLeftSide(x < width / 3);
+                    videoForwardDrawable.addTime(seekDuration);
+                    seekVideoOrWebTo(current);
+                    containerView.invalidate();
+                    videoPlayerSeekbar.setProgress(current / (float) total, true);
+                    videoPlayerSeekbarView.invalidate();
                     return true;
                 }
             }
@@ -21104,7 +21104,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private boolean enableSwipeToPiP() {
-        return false;
+        return (pipItem.getVisibility() == View.VISIBLE || menuItem.getVisibility() == View.VISIBLE && menuItem.isSubItemVisible(gallery_menu_pip))
+                && org.telegram.messenger.xmpp.MonogramMediaPlayback.swipeToPip(currentAccount)
+                && pipAvailable
+                && textureUploaded
+                && videoPlayer != null
+                && videoPlayer.getRepeatCount() == 0
+                && checkInlinePermissions()
+                && !changingTextureView
+                && !switchingInlineMode
+                && !isInline;
     }
 
     @Override
