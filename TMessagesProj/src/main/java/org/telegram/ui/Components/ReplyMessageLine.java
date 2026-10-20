@@ -189,17 +189,26 @@ public class ReplyMessageLine {
         }
 
         reversedOut = false;
-        color1 = p.colors.get(0) | 0xFF000000;
-        if (hasColor2 = colors.size() >= 2) {
-            color2 = p.colors.get(1) | 0xFF000000;
+        final boolean replyColors = org.telegram.messenger.xmpp.MonogramChatBehavior.replyColors(messageObject.currentAccount);
+        if (replyColors) {
+            color1 = colors.get(0) | 0xFF000000;
+            if (hasColor2 = colors.size() >= 2) {
+                color2 = colors.get(1) | 0xFF000000;
+            }
+            if (hasColor3 = colors.size() >= 3) {
+                color3 = colors.get(2) | 0xFF000000;
+            }
+            nameColor = accent_color | 0xFF000000;
+        } else {
+            hasColor2 = hasColor3 = false;
+            color1 = color2 = color3 = Theme.getColor(Theme.key_chat_inReplyLine, resourcesProvider);
+            nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
         }
-        if (hasColor3 = colors.size() >= 3) {
-            color3 = p.colors.get(2) | 0xFF000000;
-        }
-        nameColor = accent_color | 0xFF000000;
-        backgroundColor = Theme.multAlpha(nameColor, 0.10f);
-        emojiDocumentId = p.background_emoji_id;
-        stickerDocumentId = p.gift_emoji_id;
+        backgroundColor = org.telegram.messenger.xmpp.MonogramChatBehavior.replyBackground(messageObject.currentAccount)
+                ? Theme.multAlpha(replyColors ? nameColor : color1, 0.10f) : Color.TRANSPARENT;
+        final boolean replyEmoji = org.telegram.messenger.xmpp.MonogramChatBehavior.replyEmoji(messageObject.currentAccount);
+        emojiDocumentId = replyEmoji ? p.background_emoji_id : 0;
+        stickerDocumentId = replyEmoji ? p.gift_emoji_id : 0;
         if (emojiDocumentId != 0 && emoji == null && parentView != null) {
             emoji = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(parentView, false, dp(20), AnimatedEmojiDrawable.CACHE_TYPE_ALERT_PREVIEW_STATIC);
             if (parentView instanceof ChatMessageCell ? ((ChatMessageCell) parentView).isCellAttachedToWindow() : parentView.isAttachedToWindow()) {
@@ -250,7 +259,11 @@ public class ReplyMessageLine {
             backgroundColor = Theme.multAlpha(color1, dark ? 0.12f : 0.10f);
             emojiColor = getColor();
             return nameColorAnimated.set(nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider));
-        } else if (type == TYPE_CONTACT
+        }
+        final boolean replyColors = org.telegram.messenger.xmpp.MonogramChatBehavior.replyColors(messageObject.currentAccount);
+        final boolean replyBackground = org.telegram.messenger.xmpp.MonogramChatBehavior.replyBackground(messageObject.currentAccount);
+        final boolean replyEmoji = org.telegram.messenger.xmpp.MonogramChatBehavior.replyEmoji(messageObject.currentAccount);
+        if (type == TYPE_CONTACT
                 && messageObject.messageOwner != null
                 && MessageObject.getMedia(messageObject.messageOwner) != null
                 && MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaContact
@@ -359,9 +372,15 @@ public class ReplyMessageLine {
             } else {
                 colorId = 0;
             }
-            resolveColor(messageObject, colorId, resourcesProvider);
-            backgroundColor = Theme.multAlpha(color1, 0.10f);
-            nameColor = color1;
+            if (replyColors) {
+                resolveColor(messageObject, colorId, resourcesProvider);
+                nameColor = color1;
+            } else {
+                hasColor2 = hasColor3 = false;
+                color1 = color2 = color3 = Theme.getColor(Theme.key_chat_inReplyLine, resourcesProvider);
+                nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
+            }
+            backgroundColor = replyBackground ? Theme.multAlpha(color1, 0.10f) : Color.TRANSPARENT;
         } else if (type == TYPE_REPLY && (
             messageObject.overrideLinkColor >= 0 ||
             messageObject.messageOwner != null &&
@@ -409,14 +428,20 @@ public class ReplyMessageLine {
             } else {
                 colorId = 0;
             }
-            resolveColor(messageObject.replyMessageObject, colorId, resourcesProvider);
-            backgroundColor = Theme.multAlpha(color1, 0.10f);
-            nameColor = color1;
+            if (replyColors) {
+                resolveColor(messageObject.replyMessageObject, colorId, resourcesProvider);
+                nameColor = color1;
+            } else {
+                hasColor2 = hasColor3 = false;
+                color1 = color2 = color3 = Theme.getColor(Theme.key_chat_inReplyLine, resourcesProvider);
+                nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
+            }
+            backgroundColor = replyBackground ? Theme.multAlpha(color1, 0.10f) : Color.TRANSPARENT;
         } else {
             hasColor2 = false;
             hasColor3 = false;
             color1 = color2 = color3 = Theme.getColor(Theme.key_chat_inReplyLine, resourcesProvider);
-            backgroundColor = Theme.multAlpha(color1, 0.10f);
+            backgroundColor = !replyBackground && type != TYPE_QUOTE ? Color.TRANSPARENT : Theme.multAlpha(color1, 0.10f);
             nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
         }
         if (messageObject.shouldDrawWithoutBackground()) {
@@ -439,11 +464,15 @@ public class ReplyMessageLine {
                 reversedOut = true;
                 color1 = Theme.multAlpha(color1, .35f);
             }
-            backgroundColor = Theme.multAlpha(color3, dark ? 0.12f : 0.10f);
+            backgroundColor = !replyBackground && type == TYPE_REPLY ? Color.TRANSPARENT : Theme.multAlpha(color3, dark ? 0.12f : 0.10f);
             nameColor = Theme.getColor(Theme.key_chat_outReplyNameText, resourcesProvider);
         }
         if ((type == TYPE_REPLY || type == TYPE_LINK || type == TYPE_CONTACT) && messageObject != null && messageObject.overrideLinkEmoji != -1) {
             emojiDocumentId = messageObject.overrideLinkEmoji;
+        }
+        if (!replyEmoji) {
+            emojiDocumentId = 0;
+            stickerDocumentId = 0;
         }
         if (emojiDocumentId != 0 && emoji == null && parentView != null) {
             emoji = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(parentView, false, dp(20), AnimatedEmojiDrawable.CACHE_TYPE_ALERT_PREVIEW_STATIC);

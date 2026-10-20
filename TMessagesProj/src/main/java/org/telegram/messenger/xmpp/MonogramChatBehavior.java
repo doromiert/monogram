@@ -20,6 +20,12 @@ public final class MonogramChatBehavior {
     public static boolean swipeReversed(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-swipe-reversed",false); }
     public static void swipeLoop(int account,boolean enabled) { save(account,"swipe-loop",enabled); }
     public static void swipeReversed(int account,boolean enabled) { save(account,"swipe-reversed",enabled); }
+    public static boolean replyColors(int account) { return get(account,"reply-colors"); }
+    public static boolean replyEmoji(int account) { return get(account,"reply-emoji"); }
+    public static boolean replyBackground(int account) { return get(account,"reply-background"); }
+    public static void replyColors(int account,boolean enabled) { save(account,"reply-colors",enabled); }
+    public static void replyEmoji(int account,boolean enabled) { save(account,"reply-emoji",enabled); }
+    public static void replyBackground(int account,boolean enabled) { save(account,"reply-background",enabled); }
     private static boolean get(int account,String key) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-"+key,true); }
     public static void hideKeyboardOnScroll(int account,boolean enabled) { save(account,"hide-keyboard-on-scroll",enabled); }
     public static void commaAfterMention(int account,boolean enabled) { save(account,"comma-after-mention",enabled); }

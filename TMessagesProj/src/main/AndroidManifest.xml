@@ -81,7 +81,7 @@
     <uses-permission android:name="com.oppo.launcher.permission.WRITE_SETTINGS"/>
     <uses-permission android:name="me.everything.badger.permission.BADGE_COUNT_READ"/>
     <uses-permission android:name="me.everything.badger.permission.BADGE_COUNT_WRITE"/>
-    <uses-permission android:name="com.android.vending.BILLING"/>
+    <uses-permission android:name="com.android.vending.BILLING" tools:node="remove"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="replace" />
 
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
@@ -90,9 +90,11 @@
 
     <queries>
         <package android:name="com.google.android.apps.maps"/>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="ton"/>
+        <intent tools:node="remove">
+            <action android:name="com.android.vending.billing.InAppBillingService.BIND"/>
+        </intent>
+        <intent tools:node="remove">
+            <action android:name="com.google.android.apps.play.billingtestcompanion.BillingOverrideService.BIND"/>
         </intent>
     </queries>
 
@@ -113,6 +115,10 @@
         android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
     >
+        <!-- Billing API types still compile in stock classes; no payment components are registered. -->
+        <activity android:name="com.android.billingclient.api.ProxyBillingActivity" tools:node="remove"/>
+        <activity android:name="com.android.billingclient.api.ProxyBillingActivityV2" tools:node="remove"/>
+        <meta-data android:name="com.google.android.play.billingclient.version" tools:node="remove"/>
         <!-- usesCleartextTraffic for browser supporting opening http:// links -->
 
         <activity-alias

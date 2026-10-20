@@ -38,8 +38,9 @@ private metadata and trust settings are unchanged.
 This is not a completed removal of every stock Telegram business/payment class.
 Google Wallet SDK usage and its Gradle dependency/manifest opt-in have now been
 removed; PaymentFormActivity centrally refuses XMPP checkout before observer/UI
-startup. Billing and Stripe Gradle libraries still have compiled native type users,
-and TON/Wallet Java/JNI source remains. See MONETIZATION_REMOVAL.md for the exact
+startup. Stripe Android and its shared native card-tokenization backend have also been
+removed. Billing still has compiled native type users, and TON/Wallet Java/JNI
+source remains. See MONETIZATION_REMOVAL.md for the exact
 removed backend and remaining boundaries; deleting those remaining dependencies
 requires removing their type users together. Server-only effects,
 boosts, status gifts, Telegram Business/Quick Replies and the separate unported
@@ -87,7 +88,7 @@ aliases, preserved ordinary links, settings route boundaries and encoded/malform
 query handling. No URI is opened and no account/server/network action occurs.
 The Google Wallet SDK/backend has since been removed and direct XMPP
 PaymentFormActivity creation is blocked. Other stock payment implementations,
-Billing/Stripe dependencies and TON/Wallet Java/JNI sources remain; the reviewed
+Billing dependencies and TON/Wallet Java/JNI sources remain; the reviewed
 route guards do not imply those whole class families have been deleted. See
 MONETIZATION_REMOVAL.md.
 

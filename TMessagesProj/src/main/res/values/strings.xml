@@ -11675,4 +11675,9 @@
     <string name="MonogramMediaSwipeHeader">Picture in picture</string>
     <string name="MonogramMediaSwipeToPip">Swipe up to picture in picture</string>
     <string name="MonogramMediaSwipeToPipInfo">Swipe a playing video upward to continue watching it in a floating window.</string>
+    <string name="MonogramReplyAppearanceHeader">Reply appearance</string>
+    <string name="MonogramReplyAppearanceColors">Peer colors</string>
+    <string name="MonogramReplyAppearanceEmoji">Background emoji</string>
+    <string name="MonogramReplyAppearanceBackground">Tinted background</string>
+    <string name="MonogramReplyAppearanceInfo">Control the color, emoji pattern, and background tint shown behind replies.</string>
 </resources>

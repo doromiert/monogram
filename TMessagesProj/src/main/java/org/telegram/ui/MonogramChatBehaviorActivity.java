@@ -25,6 +25,11 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asShadow("Save copies a message to Saved Messages. Repeat sends a copy to the current conversation. Available only for messages you can forward."));
         items.add(UItem.asCheck(7,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramGroupedMenu)).setChecked(MonogramChatBehavior.groupMessageMenu(currentAccount)));
         items.add(UItem.asShadow(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramGroupedMenuInfo)));
+        items.add(UItem.asHeader(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceHeader)));
+        items.add(UItem.asCheck(8,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceColors)).setChecked(MonogramChatBehavior.replyColors(currentAccount)));
+        items.add(UItem.asCheck(9,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceEmoji)).setChecked(MonogramChatBehavior.replyEmoji(currentAccount)));
+        items.add(UItem.asCheck(10,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceBackground)).setChecked(MonogramChatBehavior.replyBackground(currentAccount)));
+        items.add(UItem.asShadow(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceInfo)));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
@@ -34,6 +39,9 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         else if(item.id==5) MonogramChatBehavior.showCopyPhotoButton(currentAccount,!MonogramChatBehavior.showCopyPhotoButton(currentAccount));
         else if(item.id==6) MonogramChatBehavior.showDetailsButton(currentAccount,!MonogramChatBehavior.showDetailsButton(currentAccount));
         else if(item.id==7) MonogramChatBehavior.groupMessageMenu(currentAccount,!MonogramChatBehavior.groupMessageMenu(currentAccount));
+        else if(item.id==8) MonogramChatBehavior.replyColors(currentAccount,!MonogramChatBehavior.replyColors(currentAccount));
+        else if(item.id==9) MonogramChatBehavior.replyEmoji(currentAccount,!MonogramChatBehavior.replyEmoji(currentAccount));
+        else if(item.id==10) MonogramChatBehavior.replyBackground(currentAccount,!MonogramChatBehavior.replyBackground(currentAccount));
         else return;
         listView.adapter.update(true);
     }
