@@ -207,6 +207,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         public String genre;
         public int duration;
         public String path;
+        public Uri uri;
+        public String mimeType;
+        public String displayName;
+        public long size;
         public MessageObject messageObject;
     }
 
@@ -1501,6 +1505,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 NotificationCenter.getInstance(a).addObserver(MediaController.this, NotificationCenter.musicListLoaded);
                 NotificationCenter.getGlobalInstance().addObserver(MediaController.this, NotificationCenter.playerDidStartPlaying);
             }
+            NotificationCenter.getGlobalInstance().addObserver(MediaController.this, NotificationCenter.stopAllHeavyOperations);
         });
 
         mediaProjections = new String[]{
@@ -1964,7 +1969,11 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     wasPlayingAudioBeforePause = true;
                 }
                 pauseMessage(message);
+            } else if (!LaunchActivity.isResumed) {
+                pauseInBackgroundIfNeeded();
             }
+        } else if (id == NotificationCenter.stopAllHeavyOperations) {
+            if ((Integer) args[0] == 4096 && !LaunchActivity.isResumed) pauseInBackgroundIfNeeded();
         } else if (id == NotificationCenter.musicListLoaded) {
             if (currentSavedMusicList != null && args[0] == currentSavedMusicList) {
                 int addedCount = currentSavedMusicList.list.size() - playlist.size();
@@ -3117,6 +3126,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         }
 
         MessageObject nextAudio = currentPlayList.get(nextIndex);
+        if (org.telegram.messenger.xmpp.MonogramAudioSources.isAudioSource(nextAudio.messageOwner.attachPath)) {
+            return;
+        }
         File file = null;
         if (!TextUtils.isEmpty(nextAudio.messageOwner.attachPath)) {
             file = new File(nextAudio.messageOwner.attachPath);
@@ -3654,9 +3666,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         lastSaveTime = 0;
         playMusicAgain = false;
         seekToProgressPending = 0;
+        final Uri contentSource = messageObject.isMusic() ? org.telegram.messenger.xmpp.MonogramAudioSources.contentUri(messageObject.messageOwner.attachPath) : null;
         File file = null;
-        boolean exists = false;
-        if (messageObject.messageOwner.attachPath != null && messageObject.messageOwner.attachPath.length() > 0) {
+        boolean exists = contentSource != null;
+        if (contentSource == null && messageObject.messageOwner.attachPath != null && messageObject.messageOwner.attachPath.length() > 0) {
             file = new File(messageObject.messageOwner.attachPath);
             exists = file.exists();
             if (!exists) {
@@ -3665,7 +3678,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         }
         final File cacheFile = file != null ? file : FileLoader.getInstance(messageObject.currentAccount).getPathToMessage(messageObject.messageOwner);
         boolean canStream = SharedConfig.streamMedia && (messageObject.isMusic() || messageObject.isRoundVideo() || messageObject.isVideo() && messageObject.canStreamVideo()) && !messageObject.shouldEncryptPhotoOrVideo() && !DialogObject.isEncryptedDialog(messageObject.getDialogId());
-        if (cacheFile != file && !(exists = cacheFile.exists()) && !canStream) {
+        if (contentSource == null && cacheFile != file && !(exists = cacheFile.exists()) && !canStream) {
             FileLoader.getInstance(messageObject.currentAccount).loadFile(messageObject.getDocument(), messageObject, FileLoader.PRIORITY_LOW, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
             downloadingCurrentMessage = true;
             isPaused = false;
@@ -3919,10 +3932,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     }
                 });
                 if (exists) {
-                    if (!messageObject.mediaExists && cacheFile != file) {
+                    if (contentSource == null && !messageObject.mediaExists && cacheFile != file) {
                         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(NotificationCenter.fileLoaded, FileLoader.getAttachFileName(messageObject.getDocument()), cacheFile));
                     }
-                    audioPlayer.preparePlayer(Uri.fromFile(cacheFile), "other");
+                    audioPlayer.preparePlayer(contentSource != null ? contentSource : Uri.fromFile(cacheFile), "other");
                     isStreamingCurrentAudio = false;
                 } else {
                     int reference = FileLoader.getInstance(messageObject.currentAccount).getFileReference(messageObject);
@@ -3959,7 +3972,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     }
                 } else {
                     try {
-                        audioInfo = AudioInfo.getAudioInfo(cacheFile);
+                        audioInfo = contentSource == null ? AudioInfo.getAudioInfo(cacheFile) : null;
                     } catch (Exception e) {
                         FileLog.e(e);
                     }
@@ -4295,6 +4308,16 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             playMessage(message);
         }
         wasPlayingAudioBeforePause = false;
+    }
+
+    private void pauseInBackgroundIfNeeded() {
+        MessageObject message=getPlayingMessageObject();
+        if(message==null || !isPlayingMessage(message) || isMessagePaused()) return;
+        if(message.isVoice() && org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVoiceOnMinimize(message.currentAccount)
+                || message.isRoundVideo() && org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseRoundOnMinimize(message.currentAccount)) {
+            wasPlayingAudioBeforePause=false;
+            pauseMessage(message);
+        }
     }
 
     public boolean pauseMessage(MessageObject messageObject) {
@@ -5262,7 +5285,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             if (Build.VERSION.SDK_INT >= 29) {
                 final ContentValues cv = new ContentValues();
                 final Uri uriToInsert = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-                final File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, "Telegram");
+                final File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, "Monogram");
                 cv.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 cv.put(MediaStore.Downloads.DISPLAY_NAME, filename);
                 cv.put(MediaStore.MediaColumns.MIME_TYPE, outputMime);
@@ -5284,7 +5307,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     }
                 }
             } else {
-                final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Telegram");
+                final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Monogram");
                 destDir.mkdirs();
                 File destFile = new File(destDir, filename);
                 if (!destFile.exists()) {
@@ -5459,7 +5482,8 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         File file = null;
         if (!TextUtils.isEmpty(fullPath)) {
             file = new File(fullPath);
-            if (!file.exists() || AndroidUtilities.isInternalUri(Uri.fromFile(file))) {
+            if (!file.exists() || (AndroidUtilities.isInternalUri(Uri.fromFile(file))
+                    && !org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,file))) {
                 file = null;
             }
         }
@@ -5504,13 +5528,16 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     } else {
                         File destFile;
                         if (type == 0) {
-                            destFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Telegram");
+                            destFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Monogram");
                             destFile.mkdirs();
-                            destFile = new File(destFile, AndroidUtilities.generateFileName(0, FileLoader.getFileExtension(sourceFile)));
+                            destFile = new File(destFile, AndroidUtilities.generateFileName(0, org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,sourceFile)
+                                    ? org.telegram.messenger.xmpp.MonogramAttachments.mediaExtension(sourceFile) : FileLoader.getFileExtension(sourceFile)));
                         } else if (type == 1) {
-                            destFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Telegram");
+                            destFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Monogram");
                             destFile.mkdirs();
-                            destFile = new File(destFile, AndroidUtilities.generateFileName(1, FileLoader.getFileExtension(sourceFile)));
+                            destFile = new File(destFile, org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,sourceFile)
+                                    ? "Monogram_"+java.util.UUID.randomUUID()+"."+org.telegram.messenger.xmpp.MonogramAttachments.mediaExtension(sourceFile)
+                                    : AndroidUtilities.generateFileName(1, FileLoader.getFileExtension(sourceFile)));
                         } else {
                             File dir;
                             if (type == 2) {
@@ -5518,7 +5545,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                             } else {
                                 dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
                             }
-                            dir = new File(dir, "Telegram");
+                            dir = new File(dir, "Monogram");
                             dir.mkdirs();
                             destFile = new File(dir, name);
                             if (destFile.exists()) {
@@ -5546,7 +5573,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                             try {
                                 @SuppressLint("DiscouragedPrivateApi") Method getInt = FileDescriptor.class.getDeclaredMethod("getInt$");
                                 int fdint = (Integer) getInt.invoke(inputStream.getFD());
-                                if (AndroidUtilities.isInternalUri(fdint)) {
+                                if (AndroidUtilities.isInternalUri(fdint) && !org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(context,sourceFile)) {
                                     if (finalProgress != null) {
                                         AndroidUtilities.runOnUIThread(() -> {
                                             try {
@@ -5663,7 +5690,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     final String filename = AndroidUtilities.generateFileName(0, "jpg");
                     final ContentValues cv = new ContentValues();
                     final Uri uriToInsert = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-                    final File dirDest = new File(Environment.DIRECTORY_PICTURES, "Telegram");
+                    final File dirDest = new File(Environment.DIRECTORY_PICTURES, "Monogram");
                     cv.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                     cv.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
                     cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
@@ -5685,7 +5712,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                         }
                     }
                 } else {
-                    final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Telegram");
+                    final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Monogram");
                     destDir.mkdirs();
                     File destFile = new File(destDir, AndroidUtilities.generateFileName(0, "jpg"));
                     if (!destFile.exists()) {
@@ -5798,6 +5825,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             int selectedType = type;
             ContentValues contentValues = new ContentValues();
             String extension = FileLoader.getFileExtension(sourceFile);
+            if((type==0 || type==1) && org.telegram.messenger.xmpp.MonogramAttachments.isCachedFile(ApplicationLoader.applicationContext,sourceFile)) {
+                extension=org.telegram.messenger.xmpp.MonogramAttachments.mediaExtension(sourceFile);
+                if(filename==null) filename="Monogram_"+java.util.UUID.randomUUID()+"."+extension;
+            }
             String mimeType = null;
             if (extension != null) {
                 mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
@@ -5816,7 +5847,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     filename = AndroidUtilities.generateFileName(0, extension);
                 }
                 uriToInsert = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-                File dirDest = new File(Environment.DIRECTORY_PICTURES, "Telegram");
+                File dirDest = new File(Environment.DIRECTORY_PICTURES, "Monogram");
                 contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 contentValues.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
                 contentValues.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
@@ -5824,7 +5855,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 if (filename == null) {
                     filename = AndroidUtilities.generateFileName(1, extension);
                 }
-                File dirDest = new File(Environment.DIRECTORY_MOVIES, "Telegram");
+                File dirDest = new File(Environment.DIRECTORY_MOVIES, "Monogram");
                 contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 uriToInsert = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 contentValues.put(MediaStore.Video.Media.DISPLAY_NAME, filename);
@@ -5832,7 +5863,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 if (filename == null) {
                     filename = sourceFile.getName();
                 }
-                File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, "Telegram");
+                File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, "Monogram");
                 contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 uriToInsert = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 contentValues.put(MediaStore.Downloads.DISPLAY_NAME, filename);
@@ -5840,20 +5871,30 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 if (filename == null) {
                     filename = sourceFile.getName();
                 }
-                File dirDest = new File(Environment.DIRECTORY_MUSIC, "Telegram");
+                File dirDest = new File(Environment.DIRECTORY_MUSIC, "Monogram");
                 contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 uriToInsert = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 contentValues.put(MediaStore.Audio.Media.DISPLAY_NAME, filename);
             }
 
             contentValues.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
             Uri dstUri = ApplicationLoader.applicationContext.getContentResolver().insert(uriToInsert, contentValues);
             if (dstUri != null) {
-                FileInputStream fileInputStream = new FileInputStream(sourceFile);
-                OutputStream outputStream = ApplicationLoader.applicationContext.getContentResolver().openOutputStream(dstUri);
-                AndroidUtilities.copyFile(fileInputStream, outputStream);
-                fileInputStream.close();
+                try {
+                    try(FileInputStream fileInputStream = new FileInputStream(sourceFile);
+                            OutputStream outputStream = ApplicationLoader.applicationContext.getContentResolver().openOutputStream(dstUri)) {
+                        if(outputStream==null) throw new IOException("Gallery unavailable");
+                        AndroidUtilities.copyFile(fileInputStream, outputStream);
+                    }
+                    ContentValues published=new ContentValues();published.put(MediaStore.MediaColumns.IS_PENDING,0);
+                    if(ApplicationLoader.applicationContext.getContentResolver().update(dstUri,published,null,null)!=1)
+                        throw new IOException("Could not publish gallery entry");
+                } catch(Exception failure) {
+                    try { ApplicationLoader.applicationContext.getContentResolver().delete(dstUri,null,null); } catch(Exception ignored) {}
+                    throw failure;
+                }
             }
             return dstUri;
         } catch (Exception e) {

@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
@@ -36,13 +37,13 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.StatsController;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
@@ -78,16 +79,18 @@ public class DataUsage2Activity extends BaseFragment {
     private ViewPagerFixed pager;
     private ViewPagerFixed.Adapter pageAdapter;
     private ViewPagerFixed.TabsView tabsView;
+    private final ArrayList<ListView> pageViews = new ArrayList<>();
 
     @Override
     public View createView(Context context) {
+        pageViews.clear();
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setTitle(LocaleController.getString(R.string.NetworkUsage));
-        actionBar.setBackgroundColor(getThemedColor(Theme.key_actionBarActionModeDefault));
-        actionBar.setTitleColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
-        actionBar.setItemsColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), false);
-        actionBar.setItemsBackgroundColor(getThemedColor(Theme.key_listSelector), false);
-        actionBar.setCastShadows(false);
+        actionBar.setBackgroundColor(getThemedColor(Theme.key_actionBarDefault));
+        actionBar.setTitleColor(getThemedColor(Theme.key_actionBarDefaultTitle));
+        actionBar.setItemsColor(getThemedColor(Theme.key_actionBarDefaultIcon), false);
+        actionBar.setItemsBackgroundColor(getThemedColor(Theme.key_actionBarDefaultSelector), false);
+        actionBar.setExtraHeight(AndroidUtilities.dp(48));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -102,26 +105,32 @@ public class DataUsage2Activity extends BaseFragment {
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                 super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(heightMeasureSpec), MeasureSpec.EXACTLY));
             }
-
-            @Override
-            protected void dispatchDraw(Canvas canvas) {
-                super.dispatchDraw(canvas);
-                if (getParentLayout() != null && tabsView != null) {
-                    float y = tabsView.getMeasuredHeight();
-                    canvas.drawLine(0, y, getWidth(), y, Theme.dividerPaint);
-                }
-            }
         };
         frameLayout.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
-        pager = new ViewPagerFixed(context);
+        pager = new ViewPagerFixed(context, resourcesProvider) {
+            @Override
+            protected void onItemSelected(View currentPage, View oldPage, int position, int oldPosition) {
+                if (currentPage instanceof ListView) {
+                    actionBar.setAdaptiveBackground((ListView) currentPage);
+                }
+            }
+        };
         pager.setAdapter(pageAdapter = new PageAdapter());
 
         tabsView = pager.createTabsView(true, 8);
-        tabsView.setBackgroundColor(getThemedColor(Theme.key_actionBarActionModeDefault));
-        frameLayout.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP | Gravity.FILL_HORIZONTAL));
+        tabsView.setColors(
+                Theme.key_actionBarTabLine,
+                Theme.key_actionBarTabActiveText,
+                Theme.key_actionBarTabUnactiveText,
+                Theme.key_actionBarTabSelector,
+                Theme.key_actionBarDefault
+        );
+        tabsView.setBackgroundColor(Color.TRANSPARENT);
+        actionBar.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.LEFT | Gravity.BOTTOM));
 
-        frameLayout.addView(pager, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL, 0, 48, 0, 0));
+        frameLayout.addView(pager, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
+        bindAdaptiveHeader();
 
         return fragmentView = frameLayout;
     }
@@ -135,6 +144,16 @@ public class DataUsage2Activity extends BaseFragment {
         final View view = pager.getCurrentView();
         if (!(view instanceof ListView)) return;
         ((ListView) view).scrollTo(VIEW_TYPE_RESET_BUTTON);
+    }
+
+    private void bindAdaptiveHeader() {
+        if (actionBar == null || pager == null) {
+            return;
+        }
+        View currentView = pager.getCurrentView();
+        if (currentView instanceof ListView) {
+            actionBar.setAdaptiveBackground((ListView) currentView);
+        }
     }
 
     @Override
@@ -151,7 +170,9 @@ public class DataUsage2Activity extends BaseFragment {
 
         @Override
         public View createView(int viewType) {
-            return new ListView(getContext());
+            ListView listView = new ListView(getContext());
+            pageViews.add(listView);
+            return listView;
         }
 
         @Override
@@ -274,7 +295,7 @@ public class DataUsage2Activity extends BaseFragment {
                     showDialog(dialog);
                     TextView button = (TextView) dialog.getButton(DialogInterface.BUTTON_POSITIVE);
                     if (button != null) {
-                        button.setTextColor(Theme.getColor(Theme.key_text_RedBold));
+                        button.setTextColor(getThemedColor(Theme.key_text_RedBold));
                     }
                 }
             });
@@ -616,21 +637,24 @@ public class DataUsage2Activity extends BaseFragment {
                         view.setTag(RecyclerListView.TAG_NOT_SECTION);
                         break;
                     case VIEW_TYPE_SEPARATOR:
-                        view = new TextInfoPrivacyCell(getContext());
+                        view = new TextInfoPrivacyCell(getContext(), resourcesProvider);
                         break;
                     case VIEW_TYPE_HEADER:
-                        view = new HeaderCell(getContext());
+                        view = new HeaderCell(getContext(), resourcesProvider);
                         view.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
                         break;
                     case VIEW_TYPE_RESET_BUTTON:
-                        TextCell textCell = new TextCell(getContext());
+                        TextCell textCell = new TextCell(getContext(), resourcesProvider);
                         textCell.setTextColor(getThemedColor(Theme.key_text_RedRegular));
                         textCell.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
                         view = textCell;
                         break;
                     case VIEW_TYPE_END:
                         view = new View(getContext()) {
-                            { setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite)); }
+                            {
+                                setTag(Theme.key_windowBackgroundWhite);
+                                setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                            }
                             @Override
                             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                                 super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(4), MeasureSpec.EXACTLY));
@@ -638,7 +662,7 @@ public class DataUsage2Activity extends BaseFragment {
                         };
                         break;
                     case VIEW_TYPE_ROUNDING:
-                        view = new RoundingCell(getContext());
+                        view = new RoundingCell(getContext(), resourcesProvider);
                         break;
                     case VIEW_TYPE_SECTION:
                     default:
@@ -930,10 +954,10 @@ public class DataUsage2Activity extends BaseFragment {
         Path path = new Path();
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        public RoundingCell(Context context) {
+        public RoundingCell(Context context, Theme.ResourcesProvider resourcesProvider) {
             super(context);
             paint.setShadowLayer(dp(1), 0, dp(-0.66f), 0x0f000000);
-            paint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            paint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
         }
 
         private boolean top = true;
@@ -1113,23 +1137,52 @@ public class DataUsage2Activity extends BaseFragment {
         }
     }
 
-    private boolean changeStatusBar;
-
     @Override
-    public void onTransitionAnimationProgress(boolean isOpen, float progress) {
-        if (progress > .5f && !changeStatusBar) {
-            changeStatusBar = true;
-            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors);
-        }
-        super.onTransitionAnimationProgress(isOpen, progress);
-    }
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> descriptions = new ArrayList<>();
+        ThemeDescription.ThemeDescriptionDelegate tabsDelegate = () -> {
+            if (tabsView != null) {
+                tabsView.updateColors();
+            }
+            for (ListView pageView : pageViews) {
+                pageView.invalidateViews();
+            }
+            bindAdaptiveHeader();
+            if (fragmentView != null) {
+                fragmentView.invalidate();
+            }
+        };
 
-    @Override
-    public boolean isLightStatusBar() {
-        if (!changeStatusBar) {
-            return super.isLightStatusBar();
+        descriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, tabsDelegate, Theme.key_windowBackgroundGray));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_actionBarDefaultSelector));
+
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, tabsDelegate, Theme.key_actionBarDefault));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, tabsDelegate, Theme.key_actionBarTabLine));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, tabsDelegate, Theme.key_actionBarTabActiveText));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, tabsDelegate, Theme.key_actionBarTabUnactiveText));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, tabsDelegate, Theme.key_actionBarTabSelector));
+        descriptions.add(new ThemeDescription(fragmentView, 0, null, Theme.dividerPaint, null, null, Theme.key_divider));
+
+        for (ListView listView : pageViews) {
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_SELECTOR, null, null, null, null, Theme.key_listSelector));
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{Cell.class, HeaderCell.class, TextCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUND | ThemeDescription.FLAG_CHECKTAG, new Class[]{View.class}, null, null, null, Theme.key_windowBackgroundWhite));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{SubtitleCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{Cell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{Cell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueText2));
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{Cell.class}, new String[]{"arrowView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{RoundingCell.class}, new String[]{"paint"}, null, null, null, Theme.key_windowBackgroundWhite));
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
+            descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_text_RedRegular));
         }
-        return AndroidUtilities.computePerceivedBrightness(Theme.getColor(Theme.key_actionBarActionModeDefault)) > 0.721f;
+
+        return descriptions;
     }
 
     @Override

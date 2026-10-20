@@ -143,9 +143,10 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
     private File currentDir;
     private boolean receiverRegistered = false;
     private DocumentSelectActivityDelegate delegate;
+    private Object mediaDraftOwner;
     private HashMap<String, ListItem> selectedFiles = new HashMap<>();
     public ArrayList<String> selectedFilesOrder = new ArrayList<>();
-    private HashMap<FilteredSearchView.MessageHashId, MessageObject> selectedMessages = new HashMap<>();
+    private HashMap<FilteredSearchView.MessageHashId, MessageObject> selectedMessages = new java.util.LinkedHashMap<>();
     private boolean scrolling;
     private int maxSelectedFiles = -1;
     private boolean canSelectOnlyImageFiles;
@@ -166,6 +167,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
         public String ext = "";
         public String thumb;
         public File file;
+        public MessageObject message;
     }
 
     private static class HistoryEntry {
@@ -418,6 +420,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
             } else {
                 object = searchAdapter.getItem(position);
             }
+            if(object instanceof ListItem && ((ListItem)object).message!=null) object=((ListItem)object).message;
             if (object instanceof ListItem) {
                 ListItem item = (ListItem) object;
                 File file = item.file;
@@ -746,6 +749,24 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
         return selectedFiles.size() + selectedMessages.size();
     }
 
+    public ArrayList<MessageObject> getDraftMessages() { return new ArrayList<>(selectedMessages.values()); }
+    public void restoreDraftMessages(ArrayList<MessageObject> messages) {
+        for(MessageObject message:messages) {
+            FilteredSearchView.MessageHashId key=new FilteredSearchView.MessageHashId(message.getId(),message.getDialogId());
+            if(!selectedMessages.containsKey(key)) { selectedMessages.put(key,message);ListItem item=new ListItem();item.message=message;listAdapter.items.add(0,item); }
+        }
+        listAdapter.notifyDataSetChanged();parentAlert.updateCountButton(0);
+    }
+    public ArrayList<String> getDraftFiles() { return new ArrayList<>(selectedFilesOrder); }
+    public void restoreDraftFiles(ArrayList<String> paths) {
+        for(String path:paths) if(!selectedFiles.containsKey(path)) {
+            File file=new File(path);ListItem item=new ListItem();item.file=file;item.title=file.getName();item.subtitle=AndroidUtilities.formatFileSize(file.length());
+            int dot=item.title.lastIndexOf('.');item.ext=dot<0 ? "" : item.title.substring(dot+1).toUpperCase();
+            selectedFiles.put(path,item);selectedFilesOrder.add(path);listAdapter.items.add(0,item);
+        }
+        listAdapter.notifyDataSetChanged();parentAlert.updateCountButton(0);
+    }
+
     @Override
     public boolean sendSelectedItems(boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia) {
         if (selectedFiles.size() == 0 && selectedMessages.size() == 0 || delegate == null || sendPressed) {
@@ -765,12 +786,15 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
 
         return AlertsCreator.ensurePaidMessageConfirmation(parentAlert.currentAccount, parentAlert.getDialogId(), (!TextUtils.isEmpty(caption) ? 1 : 0) + files.size() + parentAlert.getAdditionalMessagesCount(), payStars -> {
             sendPressed = true;
-            delegate.didSelectFiles(files, caption, captionEntities, fmessages, notify, scheduleDate, 0, effectId, invertMedia, payStars);
+            parentAlert.saveMediaDraftNow(true);
+            try { delegate.didSelectFiles(files, caption, captionEntities, fmessages, notify, scheduleDate, 0, effectId, invertMedia, payStars); }
+            finally { org.telegram.messenger.xmpp.MonogramMediaDrafts.finishReferenceHandoff(); }
             parentAlert.dismiss(true);
         });
     }
 
     private boolean onItemClick(View view, Object object) {
+        if(object instanceof ListItem && ((ListItem)object).message!=null) object=((ListItem)object).message;
         boolean add;
         if (object instanceof ListItem) {
             ListItem item = (ListItem) object;
@@ -791,10 +815,8 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
                     showErrorBox(LocaleController.formatString("PassportUploadNotImage", R.string.PassportUploadNotImage));
                     return false;
                 }
-                if ((item.file.length() > FileLoader.DEFAULT_MAX_FILE_SIZE && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) || item.file.length() > FileLoader.DEFAULT_MAX_FILE_SIZE_PREMIUM) {
-                    LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(parentAlert.baseFragment, parentAlert.getContainer().getContext(), LimitReachedBottomSheet.TYPE_LARGE_FILE, UserConfig.selectedAccount, null);
-                    limitReachedBottomSheet.setVeryLargeFile(true);
-                    limitReachedBottomSheet.show();
+                if (!FileLoader.checkUploadFileSize(UserConfig.selectedAccount,item.file.length())) {
+                    showErrorBox(LocaleController.formatString(R.string.MonogramFileSizeLimit,AndroidUtilities.formatFileSize(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES)));
                     return false;
                 }
                 if (maxSelectedFiles >= 0 && selectedFiles.size() >= maxSelectedFiles) {
@@ -977,7 +999,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
         if (files != null) {
             for (int a = 0; a < files.length; a++) {
                 File file = files[a];
-                if (file.isDirectory() && file.getName().equals("Telegram")) {
+                if (file.isDirectory() && (file.getName().equals("Telegram") || file.getName().equals("Monogram"))) {
                     checkDirectory(file);
                     continue;
                 }
@@ -1063,10 +1085,10 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
 
     @Override
     public void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
-        selectedFiles.clear();
-        selectedMessages.clear();
+        Object owner=parentAlert.mediaDraftOwner();
+        if(owner==null || owner!=mediaDraftOwner) { selectedFiles.clear();selectedFilesOrder.clear();selectedMessages.clear(); }
+        mediaDraftOwner=owner;
         searchAdapter.currentSearchFilters.clear();
-        selectedFilesOrder.clear();
         listAdapter.history.clear();
         listRoots();
         updateSearchButton();
@@ -1351,10 +1373,10 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
 
         ListItem fs;
         try {
-            File telegramPath = new File(ApplicationLoader.applicationContext.getExternalFilesDir(null), "Telegram");
+            File telegramPath = org.telegram.messenger.xmpp.MonogramBranding.mediaDirectory(ApplicationLoader.applicationContext.getExternalFilesDir(null), "Telegram");
             if (telegramPath.exists()) {
                 fs = new ListItem();
-                fs.title = "Telegram";
+                fs.title = "Monogram";
                 fs.subtitle = LocaleController.getString(R.string.AppFolderInfo);
                 fs.icon = R.drawable.files_folder;
                 fs.file = telegramPath;
@@ -1381,6 +1403,8 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
             fs.file = null;
             listAdapter.items.add(fs);
         }
+        for(String path:selectedFilesOrder) listAdapter.items.add(0,selectedFiles.get(path));
+        for(MessageObject message:selectedMessages.values()) { ListItem item=new ListItem();item.message=message;listAdapter.items.add(0,item); }
         if (!listAdapter.recentItems.isEmpty()) {
             hasFiles = true;
         }
@@ -1500,6 +1524,9 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
                 case 1:
                     ListItem item = getItem(position);
                     SharedDocumentCell documentCell = (SharedDocumentCell) holder.itemView;
+                    if(item.message!=null) {
+                        documentCell.setDocument(item.message,false);documentCell.setChecked(selectedMessages.containsKey(new FilteredSearchView.MessageHashId(item.message.getId(),item.message.getDialogId())),!scrolling);break;
+                    }
                     if (item.icon != 0) {
                         documentCell.setTextAndValueAndTypeAndThumb(item.title, item.subtitle, null, null, item.icon, position != items.size() - 1);
                     } else {

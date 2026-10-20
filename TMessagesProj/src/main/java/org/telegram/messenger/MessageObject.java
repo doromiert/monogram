@@ -1868,6 +1868,7 @@ public class MessageObject {
         localUserName = userName;
         messageText = formattedMessage;
         messageOwner = message;
+        if (messageOwner != null) messageOwner.unread = org.telegram.messenger.xmpp.MonogramReceipts.isUnread(messageOwner);
         localChannel = isChannel;
         localSupergroup = supergroup;
         localEdit = edit;
@@ -1923,6 +1924,7 @@ public class MessageObject {
 
         currentAccount = accountNum;
         messageOwner = message;
+        if (messageOwner != null) messageOwner.unread = org.telegram.messenger.xmpp.MonogramReceipts.isUnread(messageOwner);
         replyMessageObject = replyToMessage;
         eventId = eid;
         wasUnread = !messageOwner.out && messageOwner.unread;
@@ -6909,7 +6911,7 @@ public class MessageObject {
     }
 
     public static boolean isGifDocument(TLRPC.Document document, boolean hasGroup) {
-        return document != null && document.mime_type != null && (document.mime_type.equals("image/gif") && !hasGroup || isNewGifDocument(document));
+        return document != null && document.mime_type != null && (document.mime_type.equals("image/gif") && !hasGroup && !isVideoStickerDocument(document) || isNewGifDocument(document));
     }
 
     public static boolean isDocumentHasThumb(TLRPC.Document document) {
@@ -7637,7 +7639,7 @@ public class MessageObject {
         }
         String text = messageOwner.message;
         ArrayList<TLRPC.MessageEntity> entities = messageOwner.entities;
-        boolean forceManualEntities = false;
+        boolean forceManualEntities = !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
         if (type == TYPE_STORY) {
             if (messageOwner.media != null && messageOwner.media.storyItem != null) {
                 text = messageOwner.media.storyItem.caption;
@@ -7693,7 +7695,7 @@ public class MessageObject {
             );
 
             if (useManualParse) {
-                if (containsUrls(caption)) {
+                if (containsUrls(caption) || containsPhoneNumber(caption)) {
                     try {
                         AndroidUtilities.addLinksSafe((Spannable) caption, Linkify.WEB_URLS | Linkify.PHONE_NUMBERS, false, true);
                     } catch (Exception e) {
@@ -7711,6 +7713,7 @@ public class MessageObject {
                 addUrlsByPattern(isOutOwner(), caption, true, 4, (int) getDuration(), false);
             }
             applyTimestampsHighlightForReplyMsg(caption);
+            org.telegram.messenger.xmpp.MonogramAttachments.suppressEncryptedLinks(caption);
         }
     }
 
@@ -7911,15 +7914,19 @@ public class MessageObject {
     }
 
     public static void addLinks(boolean isOut, CharSequence messageText, boolean botCommands, boolean check, boolean internalOnly) {
-        if (messageText instanceof Spannable && containsUrls(messageText)) {
+        if (messageText instanceof Spannable && (containsUrls(messageText) || containsPhoneNumber(messageText))) {
             try {
-                AndroidUtilities.addLinksSafe((Spannable) messageText, Linkify.WEB_URLS, internalOnly, false);
+                AndroidUtilities.addLinksSafe((Spannable) messageText, Linkify.WEB_URLS | Linkify.PHONE_NUMBERS, internalOnly, false);
             } catch (Exception e) {
                 FileLog.e(e);
             }
             addPhoneLinks(messageText);
             addUrlsByPattern(isOut, messageText, botCommands, 0, 0, check);
         }
+    }
+
+    private static boolean containsPhoneNumber(CharSequence text) {
+        return text != null && text.length() <= 20 * 1024 && android.util.Patterns.PHONE.matcher(text).find();
     }
 
     public static void addPhoneLinks(CharSequence messageText) {
@@ -8592,7 +8599,7 @@ public class MessageObject {
             hasEntities = !getEntities().isEmpty();
         }
 
-        boolean useManualParse = !hasEntities && (
+        boolean useManualParse = !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty() || !hasEntities && (
             eventId != 0 ||
             messageOwner instanceof TLRPC.TL_message_old ||
             messageOwner instanceof TLRPC.TL_message_old2 ||
@@ -9884,7 +9891,7 @@ public class MessageObject {
     }
 
     public boolean isUnread() {
-        return messageOwner != null && messageOwner.unread;
+        return messageOwner != null && isUnread(messageOwner);
     }
 
     public boolean isEdited() {
@@ -9896,12 +9903,12 @@ public class MessageObject {
     }
 
     public void setIsRead() {
-        messageOwner.unread = false;
+        org.telegram.messenger.xmpp.MonogramReceipts.markRead(messageOwner);
     }
 
     public static int getUnreadFlags(TLRPC.Message message) {
         int flags = 0;
-        if (!message.unread) {
+        if (!isUnread(message)) {
             flags |= 1;
         }
         if (!message.media_unread) {
@@ -10065,7 +10072,7 @@ public class MessageObject {
     }
 
     public static boolean isUnread(TLRPC.Message message) {
-        return message.unread;
+        return org.telegram.messenger.xmpp.MonogramReceipts.isUnread(message);
     }
 
     public static boolean isContentUnread(TLRPC.Message message) {
@@ -10273,7 +10280,7 @@ public class MessageObject {
             for (int a = 0; a < document.attributes.size(); a++) {
                 TLRPC.DocumentAttribute attribute = document.attributes.get(a);
                 if (attribute instanceof TLRPC.TL_documentAttributeSticker) {
-                    return "image/webp".equals(document.mime_type) || "video/webm".equals(document.mime_type);
+                    return "image/webp".equals(document.mime_type) || "image/png".equals(document.mime_type) || "video/webm".equals(document.mime_type) || "image/gif".equals(document.mime_type);
                 }
             }
         }
@@ -10286,7 +10293,7 @@ public class MessageObject {
                 TLRPC.DocumentAttribute attribute = document.attributes.get(a);
                 if (attribute instanceof TLRPC.TL_documentAttributeSticker ||
                     attribute instanceof TLRPC.TL_documentAttributeCustomEmoji) {
-                    return "video/webm".equals(document.mime_type);
+                    return "video/webm".equals(document.mime_type) || "image/gif".equals(document.mime_type);
                 }
             }
         }
@@ -11665,6 +11672,9 @@ public class MessageObject {
     }
 
     public static boolean canEditMessageAnytime(int currentAccount, TLRPC.Message message, TLRPC.Chat chat) {
+        if (message != null && message.peer_id != null && (message.peer_id.user_id != 0 || message.peer_id.chat_id != 0)) {
+            return canEditMessage(currentAccount, message, chat, false);
+        }
         if (message == null || message.peer_id == null || getMedia(message) != null && (isRoundVideoDocument(getMedia(message).document) || isStickerDocument(getMedia(message).document) || isAnimatedStickerDocument(getMedia(message).document, true)) || message.action != null && !(message.action instanceof TLRPC.TL_messageActionEmpty) || isForwardedMessage(message) || message.via_bot_id != 0 || message.id < 0) {
             return false;
         }
@@ -11715,6 +11725,11 @@ public class MessageObject {
             return false;
         }
         final TLRPC.MessageMedia media = getMedia(message);
+        if (message.peer_id.chat_id != 0 || message.peer_id.user_id != 0 && chat == null) {
+            return !scheduled && message.id > 0 && message.out && message.rich_message == null
+                    && (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage
+                    || org.telegram.messenger.xmpp.MonogramAttachments.has(message));
+        }
         if (media != null && message.rich_message == null && (isRoundVideoDocument(media.document) || isStickerDocument(media.document) || isAnimatedStickerDocument(media.document, true) || isLocationMessage(message))) {
             return false;
         }

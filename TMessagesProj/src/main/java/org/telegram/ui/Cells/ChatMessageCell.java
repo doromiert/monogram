@@ -4339,7 +4339,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 if (currentMessageObject.isSendError()) {
                     imagePressed = false;
                     result = false;
-                } else if (currentMessageObject.type == MessageObject.TYPE_GIF && buttonState == -1 && SharedConfig.isAutoplayGifs() && !currentMessageObject.isRepostPreview && photoImage.getAnimation() == null) {
+                } else if (currentMessageObject.type == MessageObject.TYPE_GIF && buttonState == -1 && SharedConfig.isAutoplayGifs() && !currentMessageObject.isRepostPreview && photoImage.getAnimation() == null
+                        && !org.telegram.messenger.xmpp.MonogramAttachments.has(currentMessageObject.messageOwner)) {
                     imagePressed = false;
                     result = false;
                 }
@@ -9587,10 +9588,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         SvgHelper.SvgDrawable drawable = (SvgHelper.SvgDrawable) ((ClipRoundedDrawable) locationLoadingThumb).getDrawable();
                         drawable.setColorKey(messageObject.isOutOwner() ? Theme.key_chat_outLocationIcon : Theme.key_chat_inLocationIcon, resourcesProvider);
                     }
+                    // A received encrypted point must not be disclosed to a tile server merely by opening its chat.
+                    boolean privateXmppMap=!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+                    if(privateXmppMap) currentMapProvider=-1;
                     photoImage.setCrossfadeDuration(2 * ImageReceiver.DEFAULT_CROSSFADE_DURATION);
                     photoImage.setCrossfadeByScale(.05f);
                     if (currentMapProvider == -1) {
-                        photoImage.setImage(null, null, null, null, messageObject, 0);
+                        photoImage.setImage(null, null, privateXmppMap?locationLoadingThumb:null, null, messageObject, 0);
                     } else if (currentMapProvider == 2) {
                         if (currentWebFile != null) {
                             ImageLocation lastLocation;
@@ -10414,7 +10418,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         int localFile = 0;
                         if (messageObject.attachPathExists) {
                             DownloadController.getInstance(currentAccount).removeLoadingFileObserver(this);
-                            localFile = 1;
+                            // Private XMPP cache names have no extension; use the typed document decoder.
+                            localFile = org.telegram.messenger.xmpp.MonogramAttachments.has(messageObject.messageOwner) ? 2 : 1;
                         } else if (messageObject.mediaExists) {
                             localFile = 2;
                         }

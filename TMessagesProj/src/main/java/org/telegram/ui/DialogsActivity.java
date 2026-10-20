@@ -505,6 +505,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private boolean downloadsItemVisible;
     public ActionBarMenuItem searchItem;
     private ActionBarMenuItem optionsItem;
+    private ActionBarMenuItem monogramReconnectItem;
+    private ActionBarMenuItem monogramContactRequestsItem;
     private ActionBarMenuItem speedItem;
     public static boolean switchingTheme;
     private ActionBarMenuItem doneItem;
@@ -3217,6 +3219,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         topPanelLayout = null;
 
         ActionBarMenu menu = actionBar.createMenu();
+        monogramReconnectItem = null;
+        monogramContactRequestsItem = null;
         menu.setTranslationX(-dp(5));
         searchItem = menu.addItem(0, R.drawable.outline_header_search).setIsSearchField(true, false);
         searchItem.setOnClickListener(v -> {
@@ -3251,6 +3255,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         searchItem.setVisibility(View.GONE);
 
         if (!onlySelect && searchString == null && folderId == 0 && communityId == 0) {
+            monogramReconnectItem = menu.addItem(91002, R.drawable.msg_retry);
+            monogramReconnectItem.setContentDescription(getString(R.string.MonogramReconnect));
+            monogramContactRequestsItem=menu.addItem(91003,R.drawable.msg_addcontact);
+            monogramContactRequestsItem.setContentDescription("Contact requests and room invitations");
+            checkUi_monogramReconnectVisibility();
             doneItem = new ActionBarMenuItem(context, null, getThemedColor(Theme.key_actionBarDefaultSelector), getThemedColor(Theme.key_actionBarDefaultIcon), true);
             doneItem.setText(LocaleController.getString(R.string.Done).toUpperCase());
             actionBar.addView(doneItem, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT, 0, 0, 10, 0));
@@ -3289,7 +3298,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         fragmentSearchField.setPadding(dp(4), dp(4), dp(4), dp(4));
         fragmentSearchField.setPivotX(0);
         fragmentSearchField.setPivotY(0);
-        if (initialDialogsType == DIALOGS_TYPE_DEFAULT) {
+        if (initialDialogsType == DIALOGS_TYPE_DEFAULT && !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
             speedItem = menu.addItem(-47, R.drawable.avd_speed);
             AndroidUtilities.removeFromParent(speedItem);
             speedItem.setOnClickListener(v -> showDialog(new PremiumFeatureBottomSheet(DialogsActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED, true)));
@@ -3451,7 +3460,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
         }
 
-        searchItem.setSearchFieldHint(getString(R.string.Search));
+        searchItem.setSearchFieldHint(getString(monogramCachedGlobalSearch() ? R.string.MonogramGlobalSearchHint : R.string.Search));
         searchItem.setContentDescription(getString(R.string.Search));
         if (onlySelect) {
             actionBar.setBackButtonImage(R.drawable.ic_ab_back);
@@ -3864,6 +3873,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
+                if (id == 91002) {
+                    presentFragment(new MonogramConnectionActivity(currentAccount));
+                    return;
+                }
+                if(id==91003) { presentFragment(new MonogramContactActivity(currentAccount,null)); return; }
                 if ((id == SearchViewPager.forwardItemId || id == SearchViewPager.gotoItemId || id == SearchViewPager.deleteItemId || id == SearchViewPager.speedItemId) && searchViewPager != null) {
                     searchViewPager.onActionBarItemClick(id);
                     return;
@@ -3923,7 +3937,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 currentCount = 0;
                             }
                             int totalCount = currentCount + alwaysShow.size();
-                            if ((totalCount > getMessagesController().dialogFiltersChatsLimitDefault && !getUserConfig().isPremium()) || totalCount > getMessagesController().dialogFiltersChatsLimitPremium) {
+                            if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)
+                                    && ((totalCount > getMessagesController().dialogFiltersChatsLimitDefault && !getUserConfig().isPremium())
+                                    || totalCount > getMessagesController().dialogFiltersChatsLimitPremium)) {
                                 showDialog(new LimitReachedBottomSheet(DialogsActivity.this, fragmentView.getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
                                 return;
                             }
@@ -5758,6 +5774,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isStarsSubscriptionHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (folderId != 0 || communityId != 0) {
             return false;
         }
@@ -5801,6 +5818,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isPremiumRestoreHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && folderId == 0 && communityId == 0) {
             return MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_RESTORE") && !getUserConfig().isPremium() && MediaDataController.getInstance(currentAccount).getPremiumHintAnnualDiscount(false) != null;
         }
@@ -5808,6 +5826,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isPremiumChristmasHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && folderId == 0 && communityId == 0) {
             return MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_CHRISTMAS");
         }
@@ -5815,6 +5834,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isPremiumHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && folderId == 0 && communityId == 0) {
             if (MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_UPGRADE") && getUserConfig().isPremium() || MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_ANNUAL") && !getUserConfig().isPremium()) {
                 if (UserConfig.getInstance(currentAccount).isPremium() ? !BuildVars.useInvoiceBilling() && MediaDataController.getInstance(currentAccount).getPremiumHintAnnualDiscount(true) != null : MediaDataController.getInstance(currentAccount).getPremiumHintAnnualDiscount(false) != null) {
@@ -5960,7 +5980,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             username = UserObject.getUserName(MessagesController.getInstance(currentAccount).getUser(dialogId));
         }
         Bulletin bulletin;
-        if (getMessagesController().premiumFeaturesBlocked()) {
+        if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || getMessagesController().premiumFeaturesBlocked()) {
             bulletin = BulletinFactory.of(this).createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBlockedNonPremium, username)));
         } else {
             bulletin = BulletinFactory.of(this)
@@ -6365,7 +6385,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return;
         }
 
-        final boolean isVisible = !isInPreviewMode()
+        final boolean isVisible = !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && !isInPreviewMode()
             && folderId == 0 && communityId == 0 && initialDialogsType == DIALOGS_TYPE_DEFAULT
             && getGiftAuctionsController().hasActiveAuctions()
             && (rightSlidingDialogContainer == null || !rightSlidingDialogContainer.hasFragment())
@@ -6704,7 +6724,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 break;
             }
         }
-        boolean visible = !getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && visibleByDownload && visibleByPosition;
+        boolean visible = !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && !getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && visibleByDownload && visibleByPosition;
         animatorSpeedButtonVisible.setValue(visible, true);
     }
 
@@ -10607,6 +10627,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (id == NotificationCenter.encryptedChatUpdated) {
             updateVisibleRows(0);
         } else if (id == NotificationCenter.contactsDidLoad) {
+            checkUi_monogramReconnectVisibility();
             if (viewPages == null || dialogsListFrozen) {
                 return;
             }
@@ -10674,6 +10695,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
         } else if (id == NotificationCenter.didUpdateConnectionState) {
             int state = AccountInstance.getInstance(account).getConnectionsManager().getConnectionState();
+            checkUi_monogramReconnectVisibility();
             if (currentConnectionState != state) {
                 currentConnectionState = state;
                 updateProxyButton(true, false);
@@ -13731,11 +13753,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (ApplicationLoader.applicationLoaderInstance != null) {
             ApplicationLoader.applicationLoaderInstance.addItemOptions(io);
         }
-        if (getMessagesController().config.walletAvailable.get()) {
+        if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && getMessagesController().config.walletAvailable.get()) {
             io.add(R.drawable.ic_gram, LocaleController.getString(R.string.WalletAttachMoney), () -> {
                 presentFragment(new WalletActivity());
             });
-        } else {
+        } else if(!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
             TLRPC.TL_attachMenuBots menuBots = MediaDataController.getInstance(UserConfig.selectedAccount).getAttachMenuBots();
             if (launchActivity != null && menuBots != null && menuBots.bots != null && !menuBots.bots.isEmpty()) {
                 for (TLRPC.TL_attachMenuBot attachMenuBot : menuBots.bots) {
@@ -14059,15 +14081,19 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         fragmentSearchField.setBlurredBackgroundVisibility(animatorSearchVisible.getFloatValue());
     }
 
+    private boolean monogramCachedGlobalSearch() {
+        return !onlySelect && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+    }
     private void checkUi_searchFieldHint() {
         final boolean topics = getRightSlidingProgress() > 0.5f;
-        final String hint = getString(topics ? R.string.SearchTopics : R.string.SearchChats);
+        final String hint = getString(topics ? R.string.SearchTopics : monogramCachedGlobalSearch() ? R.string.MonogramGlobalSearchHint : R.string.SearchChats);
 
         fragmentSearchField.editText.setContentDescription(hint);
         fragmentSearchField.editText.setHint(hint);
     }
 
     private void checkUi_menuItems() {
+        checkUi_monogramReconnectVisibility();
         checkUi_itemBackButtonVisibility();
         checkUi_itemOptionsVisibility();
         checkUi_itemDownloadsVisibility();
@@ -14094,6 +14120,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         final float factor3 = 1f - animatorDoneButtonVisible.getFloatValue();
         final float factor = factor1 * factor2 * factor3;
         FragmentFloatingButton.setAnimatedVisibility(optionsItem, factor);
+    }
+
+    private void checkUi_monogramReconnectVisibility() {
+        final boolean connected = getConnectionsManager().getConnectionState() == ConnectionsManager.ConnectionStateConnected;
+        final float factor = (1f - animatorSearchVisible.getFloatValue())
+                * (1f - getRightSlidingProgress()) * (1f - animatorDoneButtonVisible.getFloatValue())
+                * (1f - Math.max(progressToActionMode, animatorActionModeVisible.getFloatValue()));
+        FragmentFloatingButton.setAnimatedVisibility(monogramReconnectItem, connected ? 0 : factor);
+        if(monogramContactRequestsItem!=null) FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).pendingContactRequests().isEmpty() && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).hasRoomInvitations() ? 0 : factor);
     }
 
     private void checkUi_itemPasscodeVisibility() {

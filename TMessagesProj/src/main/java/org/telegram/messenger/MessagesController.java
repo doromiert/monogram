@@ -270,6 +270,17 @@ public class MessagesController extends BaseController implements NotificationCe
     public LongSparseIntArray blockePeers = new LongSparseIntArray();
     public int totalBlockedCount = -1;
     public boolean blockedEndReached;
+    private long blockedPeersGeneration;
+    private long blockedPeersListRequest;
+    private boolean blockedPeersNeedReset;
+    private java.util.function.LongPredicate monogramEffectiveBlocked;
+    private final LongSparseArray<BlockedPeerRequest> blockedPeerRequests = new LongSparseArray<>();
+
+    private static class BlockedPeerRequest {
+        final boolean blocked;
+        final ArrayList<Runnable> callbacks = new ArrayList<>();
+        BlockedPeerRequest(boolean blocked) { this.blocked = blocked; }
+    }
 
     private LongSparseArray<ArrayList<Integer>> channelViewsToSend = new LongSparseArray<>();
     private LongSparseArray<SparseArray<MessageObject>> pollsToCheck = new LongSparseArray<>();
@@ -532,7 +543,7 @@ public class MessagesController extends BaseController implements NotificationCe
     public String mapKey;
     public int maxMessageLength;
     public int getMaxMessageLength() {
-        return getUserConfig().isPremium() ? config.messageLengthLimitPremium.get() : config.messageLengthLimitDefault.get();
+        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(config.messageLengthLimitPremium.get(),config.messageLengthLimitDefault.get()) : config.messageLengthLimitDefault.get();
     }
     public int maxCaptionLength;
     public int roundVideoSize;
@@ -738,13 +749,13 @@ public class MessagesController extends BaseController implements NotificationCe
     public boolean starsLocked;
 
     public boolean starsPurchaseAvailable() {
-        return !starsLocked;
+        return !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !starsLocked;
     }
     public boolean premiumFeaturesBlocked() {
         return premiumLocked && !getUserConfig().isPremium();
     }
     public boolean premiumPurchaseBlocked() {
-        return premiumLocked;
+        return org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || premiumLocked;
     }
 
     public List<String> directPaymentsCurrency = new ArrayList<>();
@@ -763,10 +774,10 @@ public class MessagesController extends BaseController implements NotificationCe
     public boolean giftTextFieldIcon;
 
     public boolean isTranslationsManualEnabled() {
-        return !"disabled".equals(translationsManualEnabled);
+        return true;
     }
     public boolean isTranslationsAutoEnabled() {
-        return !"disabled".equals(translationsAutoEnabled);
+        return true;
     }
 
     public final AppGlobalConfig config = new AppGlobalConfig();
@@ -854,7 +865,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (dialogFilters.isEmpty()) {
             return;
         }
-        if (!premium) {
+        if (!premium && !org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
             if (!dialogFilters.get(0).isDefault()) {
                 for (int i = 1; i < dialogFilters.size(); i++) {
                     if (dialogFilters.get(i).isDefault()) {
@@ -877,6 +888,15 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void lockFiltersInternal() {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            boolean changed = false;
+            for (DialogFilter filter : dialogFilters) {
+                changed |= filter.locked;
+                filter.locked = false;
+            }
+            if (changed) getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
+            return;
+        }
         boolean changed = false;
         if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
             int n = dialogFilters.size() - 1 - dialogFiltersLimitDefault;
@@ -902,27 +922,23 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int getCaptionMaxLengthLimit() {
-        return getUserConfig().isPremium() ? captionLengthLimitPremium : captionLengthLimitDefault;
+        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(captionLengthLimitPremium,captionLengthLimitDefault) : captionLengthLimitDefault;
     }
 
     public int getAboutLimit() {
-        return getUserConfig().isPremium() ? aboutLengthLimitPremium : aboutLengthLimitDefault;
+        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(aboutLengthLimitPremium,aboutLengthLimitDefault) : aboutLengthLimitDefault;
     }
 
     public int getMaxUserReactionsCount() {
-        return getUserConfig().isPremium() ? reactionsUserMaxPremium : reactionsUserMaxDefault;
+        return 32;
     }
 
     public int getChatReactionsCount() {
-        return getUserConfig().isPremium() ? reactionsInChatMax : 1;
+        return org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? getMaxUserReactionsCount() : getUserConfig().isPremium() ? reactionsInChatMax : 1;
     }
 
     public int getChatMaxUniqReactions(long dialogId) {
-        TLRPC.ChatFull chatFull = MessagesController.getInstance(currentAccount).getChatFull(-dialogId);
-        if (chatFull != null && (chatFull instanceof TLRPC.TL_chatFull ? (chatFull.flags & 1048576) != 0 : (chatFull.flags2 & 8192) != 0)) {
-            return chatFull.reactions_limit;
-        }
-        return reactionsUniqMax;
+        return Integer.MAX_VALUE;
     }
 
     public boolean isPremiumUser(TLRPC.User currentUser) {
@@ -1606,8 +1622,8 @@ public class MessagesController extends BaseController implements NotificationCe
         canRevokePmInbox = mainPreferences.getBoolean("canRevokePmInbox", canRevokePmInbox);
         preloadFeaturedStickers = mainPreferences.getBoolean("preloadFeaturedStickers", false);
         youtubePipType = mainPreferences.getString("youtubePipType", "disabled");
-        keepAliveService = mainPreferences.getBoolean("keepAliveService", false);
-        backgroundConnection = mainPreferences.getBoolean("backgroundConnection", false);
+        keepAliveService = mainPreferences.getBoolean("keepAliveService", true);
+        backgroundConnection = mainPreferences.getBoolean("backgroundConnection", true);
         promoDialogId = mainPreferences.getLong("proxy_dialog", 0);
         nextPromoInfoCheckTime = mainPreferences.getInt("nextPromoInfoCheckTime", 0);
         promoDialogType = mainPreferences.getInt("promo_dialog_type", 0);
@@ -1755,6 +1771,7 @@ public class MessagesController extends BaseController implements NotificationCe
         giveawayGiftsPurchaseAvailable = mainPreferences.getBoolean("giveawayGiftsPurchaseAvailable", false);
         peerColors = PeerColors.fromString(PeerColors.TYPE_NAME, mainPreferences.getString("peerColors", ""));
         profilePeerColors = PeerColors.fromString(PeerColors.TYPE_PROFILE, mainPreferences.getString("profilePeerColors", ""));
+        org.telegram.messenger.xmpp.MonogramUserColors.ensurePalette(this,currentAccount);
         transcribeAudioTrialWeeklyNumber = mainPreferences.getInt("transcribeAudioTrialWeeklyNumber", BuildVars.DEBUG_PRIVATE_VERSION ? 2 : 0);
         transcribeAudioTrialCurrentNumber = mainPreferences.getInt("transcribeAudioTrialCurrentNumber", transcribeAudioTrialWeeklyNumber);
         transcribeAudioTrialDurationMax = mainPreferences.getInt("transcribeAudioTrialDurationMax", 300);
@@ -2434,6 +2451,14 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void loadRemoteFilters(boolean force, Utilities.Callback<Boolean> whenDone) {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            // Native SQLite loading is authoritative; an empty remote list would erase local folders.
+            loadingRemoteFilters = false;
+            getUserConfig().filtersLoaded = true;
+            getUserConfig().saveConfig(false);
+            if (whenDone != null) AndroidUtilities.runOnUIThread(() -> whenDone.run(true));
+            return;
+        }
         if (whenDone != null) {
             onLoadedRemoteFilters = whenDone;
         }
@@ -5812,7 +5837,7 @@ public class MessagesController extends BaseController implements NotificationCe
         TLRPC.TL_userForeign_old2 user = new TLRPC.TL_userForeign_old2();
         user.phone = "333";
         user.id = 333000;
-        user.first_name = "Telegram";
+        user.first_name = "Monogram";
         user.last_name = "";
         user.status = null;
         user.photo = new TLRPC.TL_userProfilePhotoEmpty();
@@ -5822,7 +5847,7 @@ public class MessagesController extends BaseController implements NotificationCe
         user.phone = "42777";
         user.id = 777000;
         user.verified = true;
-        user.first_name = "Telegram";
+        user.first_name = "Monogram";
         user.last_name = "Notifications";
         user.status = null;
         user.photo = new TLRPC.TL_userProfilePhotoEmpty();
@@ -6438,6 +6463,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void cleanup() {
+        resetBlockedPeersState();
         getContactsController().cleanup();
         MediaController.getInstance().cleanup();
         getNotificationsController().cleanup();
@@ -6607,7 +6633,6 @@ public class MessagesController extends BaseController implements NotificationCe
         createdDialogMainThreadIds.clear();
         visibleDialogMainThreadIds.clear();
         visibleScheduledDialogMainThreadIds.clear();
-        blockePeers.clear();
         for (int a = 0; a < sendingTypings.length; a++) {
             if (sendingTypings[a] == null) {
                 continue;
@@ -6638,9 +6663,6 @@ public class MessagesController extends BaseController implements NotificationCe
         currentDeletingTaskMids = null;
         currentDeletingTaskMediaMids = null;
         gettingNewDeleteTask = false;
-        loadingBlockedPeers = false;
-        totalBlockedCount = -1;
-        blockedEndReached = false;
         firstGettingTask = false;
         updatingState = false;
         resetingDialogs = false;
@@ -6843,6 +6865,8 @@ public class MessagesController extends BaseController implements NotificationCe
         if (user == null) {
             return false;
         }
+        org.telegram.messenger.xmpp.MonogramPresence.apply(user,
+                org.telegram.messenger.xmpp.MonogramController.cachedPresence(currentAccount,user.id),System.currentTimeMillis()/1000);
         fromCache = fromCache && user.id / 1000 != 333 && user.id != 777000;
         TLRPC.User oldUser = users.get(user.id);
         if (oldUser == user && !force) {
@@ -8684,43 +8708,120 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void blockPeer(long id) {
-        TLRPC.User user = null;
-        TLRPC.Chat chat = null;
-        if (id > 0) {
-            user = getUser(id);
-            if (user == null) {
-                return;
-            }
+        changeBlockedPeer(id, true, null);
+    }
+
+    private void resetBlockedPeersState() {
+        blockedPeersGeneration++;
+        invalidateBlockedPeersList();
+        blockedPeerRequests.clear();
+        monogramEffectiveBlocked = null;
+        blockePeers.clear();
+        totalBlockedCount = -1;
+        blockedEndReached = false;
+    }
+
+    private void invalidateBlockedPeersList() {
+        blockedPeersListRequest++;
+        loadingBlockedPeers = false;
+        blockedPeersNeedReset = true;
+    }
+
+    private void setBlockedPeerState(long id, boolean blocked) {
+        boolean wasBlocked = blockePeers.indexOfKey(id) >= 0;
+        if (blocked) {
+            blockePeers.put(id, 1);
         } else {
-            chat = getChat(-id);
-            if (chat == null) {
-                return;
-            }
+            blockePeers.delete(id);
         }
-        if (blockePeers.indexOfKey(id) >= 0) {
+        if (wasBlocked != blocked && totalBlockedCount >= 0) {
+            totalBlockedCount = Math.max(0, totalBlockedCount + (blocked ? 1 : -1));
+        }
+        if (id > 0) {
+            TLRPC.UserFull full = fullUsers.get(id);
+            if (full != null) full.blocked = monogramEffectiveBlocked != null ? monogramEffectiveBlocked.test(id) : blocked;
+        } else {
+            TLRPC.ChatFull full = fullChats.get(-id);
+            if (full != null) full.blocked = blocked;
+        }
+    }
+
+    private void showBlockedPeersError(TLRPC.TL_error error, String action) {
+        String text;
+        if (error != null && "MONOGRAM_FEATURE_UNAVAILABLE".equals(error.text)) {
+            text = "Contact blocking is not supported by this XMPP server.";
+        } else if (error != null && "MONOGRAM_XMPP_DISCONNECTED".equals(error.text)) {
+            text = "Your XMPP account is disconnected. Reconnect and try again.";
+        } else {
+            text = "The XMPP server couldn't " + action + ". Try again.";
+        }
+        AlertsCreator.showSimpleAlert(null, LocaleController.getString(R.string.AppName), text);
+    }
+
+    public void applyMonogramBlockedPeers(ArrayList<TLRPC.User> users, java.util.Set<Long> blocked) {
+        applyMonogramBlockedPeers(users, blocked, blocked::contains);
+    }
+
+    public void applyMonogramBlockedPeers(ArrayList<TLRPC.User> users, java.util.Set<Long> blocked,
+                                         java.util.function.LongPredicate effectiveBlocked) {
+        invalidateBlockedPeersList();
+        monogramEffectiveBlocked = effectiveBlocked;
+        putUsers(users, false);
+        for (int i = 0; i < fullUsers.size(); i++) {
+            fullUsers.valueAt(i).blocked = effectiveBlocked.test(fullUsers.keyAt(i));
+        }
+        for (int i = 0; i < fullChats.size(); i++) {
+            fullChats.valueAt(i).blocked = blocked.contains(-fullChats.keyAt(i));
+        }
+        blockePeers.clear();
+        for (Long id : blocked) blockePeers.put(id, 1);
+        totalBlockedCount = blockePeers.size();
+        blockedEndReached = true;
+        blockedPeersNeedReset = false;
+        getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
+    }
+
+    private void changeBlockedPeer(long id, boolean blocked, Runnable callback) {
+        BlockedPeerRequest pending = blockedPeerRequests.get(id);
+        if (pending != null) {
+            if (pending.blocked == blocked && callback != null) pending.callbacks.add(callback);
             return;
         }
-        blockePeers.put(id, 1);
-        if (user != null) {
-            if (user.bot) {
-                getMediaDataController().removeInline(id);
-            } else {
-                getMediaDataController().removePeer(id);
-            }
-        }
-        if (totalBlockedCount >= 0) {
-            totalBlockedCount++;
-        }
-        getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
-        TLRPC.TL_contacts_block req = new TLRPC.TL_contacts_block();
-        if (user != null) {
-            req.id = getInputPeer(user);
+        TLRPC.User user = id > 0 ? getUser(id) : null;
+        TLRPC.Chat chat = id < 0 ? getChat(-id) : null;
+        if (user == null && chat == null) return;
+        if (blocked && blockePeers.indexOfKey(id) >= 0) return;
+        BlockedPeerRequest request = new BlockedPeerRequest(blocked);
+        if (callback != null) request.callbacks.add(callback);
+        blockedPeerRequests.put(id, request);
+        invalidateBlockedPeersList();
+        long generation = blockedPeersGeneration;
+        TLObject req;
+        if (blocked) {
+            TLRPC.TL_contacts_block block = new TLRPC.TL_contacts_block();
+            block.id = user != null ? getInputPeer(user) : getInputPeer(chat);
+            req = block;
         } else {
-            req.id = getInputPeer(chat);
+            TLRPC.TL_contacts_unblock unblock = new TLRPC.TL_contacts_unblock();
+            unblock.id = user != null ? getInputPeer(user) : getInputPeer(chat);
+            req = unblock;
         }
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-
-        });
+        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (generation != blockedPeersGeneration || blockedPeerRequests.get(id) != request) return;
+            blockedPeerRequests.remove(id);
+            if (error != null || !(response instanceof TLRPC.TL_boolTrue)) {
+                showBlockedPeersError(error, blocked ? "block this contact" : "unblock this contact");
+                return;
+            }
+            invalidateBlockedPeersList();
+            setBlockedPeerState(id, blocked);
+            if (blocked && user != null) {
+                if (user.bot) getMediaDataController().removeInline(id);
+                else getMediaDataController().removePeer(id);
+            }
+            getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
+            for (Runnable done : request.callbacks) done.run();
+        }));
     }
 
     public void setParticipantBannedRole(long chatId, TLRPC.User user, TLRPC.Chat chat, TLRPC.TL_chatBannedRights rights, boolean isChannel, BaseFragment parentFragment) {
@@ -8879,65 +8980,48 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void unblockPeer(long id, Runnable callback) {
-        TLRPC.TL_contacts_unblock req = new TLRPC.TL_contacts_unblock();
-        TLRPC.User user = null;
-        TLRPC.Chat chat = null;
-        if (id > 0) {
-            user = getUser(id);
-            if (user == null) {
-                return;
-            }
-        } else {
-            chat = getChat(-id);
-            if (chat == null) {
-                return;
-            }
-        }
-        totalBlockedCount--;
-        blockePeers.delete(id);
-        if (user != null) {
-            req.id = getInputPeer(user);
-        } else {
-            req.id = getInputPeer(chat);
-        }
-        getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
-        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (callback != null) {
-                callback.run();
-            }
-        }));
+        changeBlockedPeer(id, false, callback);
     }
 
     public void getBlockedPeers(boolean reset) {
-        if (!getUserConfig().isClientActivated() || loadingBlockedPeers) {
-            return;
-        }
+        if (!getUserConfig().isClientActivated() || (!reset && loadingBlockedPeers) || blockedPeerRequests.size() != 0) return;
+        final boolean replace = reset || blockedPeersNeedReset;
         loadingBlockedPeers = true;
+        long generation = blockedPeersGeneration;
+        long listRequest = ++blockedPeersListRequest;
         TLRPC.TL_contacts_getBlocked req = new TLRPC.TL_contacts_getBlocked();
-        req.offset = reset ? 0 : blockePeers.size();
-        req.limit = reset ? 20 : 100;
+        req.offset = replace ? 0 : blockePeers.size();
+        req.limit = replace ? 20 : 100;
         getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (response != null) {
-                TLRPC.contacts_Blocked res = (TLRPC.contacts_Blocked) response;
-                putUsers(res.users, false);
-                putChats(res.chats, false);
-                getMessagesStorage().putUsersAndChats(res.users, res.chats, true, true);
-                if (reset) {
-                    blockePeers.clear();
-                }
-                totalBlockedCount = Math.max(res.count, res.blocked.size());
-                blockedEndReached = res.blocked.size() < req.limit;
-                for (int a = 0, N = res.blocked.size(); a < N; a++) {
-                    TLRPC.TL_peerBlocked blocked = res.blocked.get(a);
-                    blockePeers.put(MessageObject.getPeerId(blocked.peer_id), 1);
-                }
-                loadingBlockedPeers = false;
+            if (generation != blockedPeersGeneration || listRequest != blockedPeersListRequest) return;
+            loadingBlockedPeers = false;
+            if (error != null || !(response instanceof TLRPC.contacts_Blocked)) {
                 getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
+                showBlockedPeersError(error, "load your blocked users");
+                return;
             }
+            TLRPC.contacts_Blocked res = (TLRPC.contacts_Blocked) response;
+            putUsers(res.users, false);
+            putChats(res.chats, false);
+            getMessagesStorage().putUsersAndChats(res.users, res.chats, true, true);
+            if (replace) blockePeers.clear();
+            for (int a = 0, N = res.blocked.size(); a < N; a++) {
+                TLRPC.TL_peerBlocked blocked = res.blocked.get(a);
+                setBlockedPeerState(MessageObject.getPeerId(blocked.peer_id), true);
+            }
+            totalBlockedCount = Math.max(res.count, blockePeers.size());
+            blockedEndReached = res.blocked.size() < req.limit;
+            blockedPeersNeedReset = false;
+            getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad);
         }));
     }
 
     public void deleteUserPhoto(TLRPC.InputPhoto photo) {
+        if (photo != null) {
+            TLRPC.User own = getUserConfig().getCurrentUser();
+            if (own != null && own.photo != null && own.photo.photo_id == photo.id) deleteUserPhoto(null);
+            return;
+        }
         long dialogId = getUserConfig().getClientUserId();
         if (photo == null) {
 
@@ -9008,13 +9092,8 @@ public class MessagesController extends BaseController implements NotificationCe
                         getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_AVATAR);
                         getUserConfig().saveConfig(true);
                     });
-                }
+                } else AndroidUtilities.runOnUIThread(() -> org.telegram.ui.Components.BulletinFactory.showError(error));
             });
-        } else {
-            TLRPC.TL_photos_deletePhotos req = new TLRPC.TL_photos_deletePhotos();
-            req.id.add(photo);
-            getDialogPhotos(dialogId).removePhoto(photo.id);
-            getConnectionsManager().sendRequest(req, null);
         }
     }
 
@@ -9540,10 +9619,25 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
+    private boolean explainUnavailableMessagePins() {
+        if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return false;
+        AndroidUtilities.runOnUIThread(() -> {
+            BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+            if (fragment != null && fragment.getParentActivity() != null) {
+                fragment.showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getParentActivity())
+                        .setTitle("Message pins")
+                        .setMessage("Shared message pins aren't available for this XMPP conversation yet.")
+                        .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
+            }
+        });
+        return true;
+    }
+
     public void unpinAllMessages(TLRPC.Chat chat, TLRPC.User user) {
         if (chat == null && user == null) {
             return;
         }
+        if (explainUnavailableMessagePins()) return;
         TLRPC.TL_messages_unpinAllMessages req = new TLRPC.TL_messages_unpinAllMessages();
         req.peer = getInputPeer(chat != null ? -chat.id : user.id);
         getConnectionsManager().sendRequest(req, (response, error) -> {
@@ -9564,6 +9658,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (chat == null && user == null) {
             return;
         }
+        if (explainUnavailableMessagePins()) return;
         TLRPC.TL_messages_updatePinnedMessage req = new TLRPC.TL_messages_updatePinnedMessage();
         req.peer = getInputPeer(chat != null ? -chat.id : user.id);
         req.id = id;
@@ -10343,23 +10438,10 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void saveGif(Object parentObject, TLRPC.Document document) {
-        if (parentObject == null || !MessageObject.isGifDocument(document)) {
-            return;
-        }
-        TLRPC.TL_messages_saveGif req = new TLRPC.TL_messages_saveGif();
-        req.id = new TLRPC.TL_inputDocument();
-        req.id.id = document.id;
-        req.id.access_hash = document.access_hash;
-        req.id.file_reference = document.file_reference;
-        if (req.id.file_reference == null) {
-            req.id.file_reference = new byte[0];
-        }
-        req.unsave = false;
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (error != null && FileRefController.isFileRefError(error.text)) {
-                getFileRefController().requestReference(parentObject, req);
-            }
-        });
+        if (!MessageObject.isGifDocument(document)) return;
+        getMediaDataController().addRecentGif(document, (int) (System.currentTimeMillis() / 1000), false);
+        org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount,document,true);
+        getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
     }
 
     public void saveRecentSticker(Object parentObject, TLRPC.Document document, boolean asMask) {
@@ -10770,7 +10852,8 @@ public class MessagesController extends BaseController implements NotificationCe
                                 if (user.action instanceof TLRPC.TL_sendMessageGamePlayAction) {
                                     timeToRemove = 30000;
                                 } else {
-                                    timeToRemove = 5900;
+                                    timeToRemove = user.action instanceof TLRPC.TL_sendMessageTypingAction
+                                            ? com.negzero.monogram.xmpp.XmppChatStates.TYPING_TIMEOUT_MILLIS : 5900;
                                 }
                                 if (user.lastTime + timeToRemove < currentTime) {
                                     updated = true;
@@ -11367,6 +11450,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean sendTyping(long dialogId, long threadMsgId, int action, String emojicon, int classGuid) {
+        if (dialogId > 0) {
+            if (threadMsgId != 0 || action != 0 && action != 2 || dialogId == getUserConfig().getClientUserId()) return false;
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingInput(dialogId, action == 0);
+            return true;
+        }
         if (action < 0 || action >= sendingTypings.length || dialogId == 0) {
             return false;
         }
@@ -11508,10 +11596,19 @@ public class MessagesController extends BaseController implements NotificationCe
         if (BuildVars.LOGS_ENABLED && loaderLogger == null && mode == 0) {
             loaderLogger = new Timer("MessageLoaderLogger dialogId=" + dialogId + " index=" + loadIndex + " count=" + count);
         }
-        if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && dialogId > 0) {
-            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadHistory(dialogId, max_id, count, load_type, (result, archiveEnd) ->
-                    processLoadedMessages(result, result.messages.size(), dialogId, mergeDialogId, count, max_id, offset_date,
-                            false, classGuid, 0, 0, 0, 0, load_type, archiveEnd, mode, 0, loadIndex, false, 0, processMessages, false, null));
+        if (mode == ChatActivity.MODE_DEFAULT && threadMessageId == 0 && (dialogId > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialogId))) {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadHistory(dialogId, max_id, count, load_type, offset_date, (result, archiveEnd) -> {
+                int anchor=max_id;
+                if(load_type==LOAD_AROUND_DATE && offset_date>0 && !result.messages.isEmpty()) {
+                    anchor=result.messages.get(result.messages.size()-1).id;
+                    for(int i=result.messages.size()-1;i>=0;i--) if(result.messages.get(i).date>=offset_date) {
+                        anchor=result.messages.get(i).id;break;
+                    }
+                    if(result.messages.get(0).date<offset_date) anchor=result.messages.get(0).id;
+                }
+                processLoadedMessages(result, result.messages.size(), dialogId, mergeDialogId, count, anchor, offset_date,
+                        false, classGuid, 0, 0, 0, 0, load_type, archiveEnd, mode, 0, loadIndex, false, 0, processMessages, false, null);
+            });
             return;
         }
         if ((threadMessageId == 0 || isTopic || mode == ChatActivity.MODE_SUGGESTIONS || mode == ChatActivity.MODE_SAVED || mode == ChatActivity.MODE_QUICK_REPLIES || mode == ChatActivity.MODE_WELCOME_MESSAGES) && mode != ChatActivity.MODE_PINNED && (fromCache || DialogObject.isEncryptedDialog(dialogId))) {
@@ -12398,12 +12495,13 @@ public class MessagesController extends BaseController implements NotificationCe
                     dialog.pinned = false;
                     dialog.pinnedNum = 0;
                 }
+                org.telegram.messenger.xmpp.MonogramDialogState.save(currentAccount, dialog);
                 if (folderCreated == null) {
                     folderCreated = new boolean[1];
                     hasArchivedChats = true;
                     ensureFolderDialogExists(folderId, folderCreated);
                 }
-                if (DialogObject.isEncryptedDialog(dialogId)) {
+                if (DialogObject.isEncryptedDialog(dialogId) || org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
                     getMessagesStorage().setDialogsFolderId(null, null, dialogId, folderId);
                 } else {
                     TLRPC.TL_inputFolderPeer folderPeer = new TLRPC.TL_inputFolderPeer();
@@ -12550,6 +12648,11 @@ public class MessagesController extends BaseController implements NotificationCe
                     if (onEmptyCallback != null && dialogsRes.dialogs.isEmpty()) {
                         AndroidUtilities.runOnUIThread(onEmptyCallback);
                     }
+                } else {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        loadingDialogs.put(folderId, false);
+                        getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
+                    });
                 }
             });
         }
@@ -14664,7 +14767,40 @@ public class MessagesController extends BaseController implements NotificationCe
         getConnectionsManager().sendRequest(req, null);
     }
 
+    public void markMonogramMessagesAsRead(long dialogId,java.util.Collection<Integer> anchors,java.util.function.Consumer<java.util.Set<Integer>> callback) {
+        markMonogramMessagesAsRead(dialogId,anchors,true,callback);
+    }
+    public void applyMonogramSyncedRead(long dialogId,int anchor) {
+        markMonogramMessagesAsRead(dialogId,java.util.Collections.singleton(anchor),false,null);
+    }
+    private void markMonogramMessagesAsRead(long dialogId,java.util.Collection<Integer> anchors,boolean publish,java.util.function.Consumer<java.util.Set<Integer>> callback) {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).markLocalRead(dialogId,anchors,anchors.contains(Integer.MAX_VALUE),publish,(read,remaining) -> {
+            if(read==null) { if(callback!=null) callback.accept(null);return; }
+            dialogs_read_inbox_max.put(dialogId,0);
+            TLRPC.Dialog dialog=dialogs_dict.get(dialogId);
+            if(dialog!=null) {
+                int previous=dialog.unread_count;boolean marked=dialog.unread_mark;
+                dialog.unread_count=remaining;dialog.unread_mark=false;
+                if((previous!=0 || marked) && remaining==0) {
+                    if(!isDialogMuted(dialogId,0)) unreadUnmutedDialogs=Math.max(0,unreadUnmutedDialogs-1);
+                    for(int b=0;b<selectedDialogFilter.length;b++)
+                        if(selectedDialogFilter[b]!=null && (selectedDialogFilter[b].flags&DIALOG_FILTER_FLAG_EXCLUDE_READ)!=0) {
+                            sortDialogs(null);getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);break;
+                        }
+                }
+                getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces,UPDATE_MASK_READ_DIALOG_MESSAGE);
+            }
+            getNotificationsController().processMonogramReadMessages(dialogId,read,remaining);
+            if(callback!=null) callback.accept(read);
+        });
+    }
+
     public void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
+        if(threadId==0 && !DialogObject.isEncryptedDialog(dialogId)
+                && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            if(maxPositiveId>0) markMonogramMessagesAsRead(dialogId,java.util.Collections.singleton(maxPositiveId),null);
+            return;
+        }
         boolean createReadTask;
 
         if (threadId != 0) {
@@ -17228,6 +17364,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 dids.add(dialog.id);
                 pinned.add(dialog.pinnedNum);
+                org.telegram.messenger.xmpp.MonogramDialogState.save(currentAccount, dialog);
                 if (!DialogObject.isEncryptedDialog(dialog.id)) {
                     TLRPC.InputPeer inputPeer = getInputPeer(dialog.id);
                     TLRPC.Chat chat = getMessagesController().getChat(-dialog.id);
@@ -17245,6 +17382,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             }
             getMessagesStorage().setDialogsPinned(dids, pinned);
+            if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return;
 
             NativeByteBuffer data = null;
             try {
@@ -17303,7 +17441,7 @@ public class MessagesController extends BaseController implements NotificationCe
             dialogs.remove(dialogs.size() - 1);
         }
         getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
-        if (!DialogObject.isEncryptedDialog(dialogId)) {
+        if (!DialogObject.isEncryptedDialog(dialogId) && !org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
             if (taskId != -1) {
                 TLRPC.TL_messages_toggleDialogPin req = new TLRPC.TL_messages_toggleDialogPin();
                 req.pinned = pin;
@@ -17342,6 +17480,7 @@ public class MessagesController extends BaseController implements NotificationCe
             }
         }
         getMessagesStorage().setDialogPinned(dialogId, dialog.pinnedNum);
+        org.telegram.messenger.xmpp.MonogramDialogState.save(currentAccount, dialog);
         return true;
     }
 
@@ -17889,7 +18028,9 @@ public class MessagesController extends BaseController implements NotificationCe
         boolean needGetDiff = false;
         boolean needReceivedQueue = false;
         boolean updateStatus = false;
-        if (updates instanceof TLRPC.TL_updateShort) {
+        if (updates instanceof org.telegram.messenger.xmpp.MonogramController.Updates) {
+            processUpdateArray(updates.updates, updates.users, updates.chats, false, updates.date);
+        } else if (updates instanceof TLRPC.TL_updateShort) {
             ArrayList<TLRPC.Update> arr = new ArrayList<>();
             arr.add(updates.update);
             processUpdateArray(arr, null, null, false, updates.date);
@@ -17975,10 +18116,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         }
                     }
                 }
-            }
-            if (!updates.out && user != null && user.status != null && user.status.expires <= 0 && Math.abs(getConnectionsManager().getCurrentTime() - updates.date) < 30) {
-                onlinePrivacy.put(user.id, updates.date);
-                updateStatus = true;
             }
 
             if (missingData) {
@@ -18595,10 +18732,6 @@ public class MessagesController extends BaseController implements NotificationCe
                                 }
                                 return false;
                             }
-                            if (!message.out && a == 1 && user.status != null && user.status.expires <= 0 && Math.abs(getConnectionsManager().getCurrentTime() - message.date) < 30) {
-                                onlinePrivacy.put(userId, message.date);
-                                interfaceUpdateMask |= UPDATE_MASK_STATUS;
-                            }
                         }
                     }
                 }
@@ -18832,11 +18965,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 } else {
                     markAsReadMessagesOutbox.put(update.peer.user_id, update.max_id);
                     dialogId = update.peer.user_id;
-                    TLRPC.User user = getUser(update.peer.user_id);
-                    if (user != null && user.status != null && user.status.expires <= 0 && Math.abs(getConnectionsManager().getCurrentTime() - date) < 30) {
-                        onlinePrivacy.put(update.peer.user_id, date);
-                        interfaceUpdateMask |= UPDATE_MASK_STATUS;
-                    }
                 }
                 Integer value = dialogs_read_outbox_max.get(dialogId);
                 if (value == null) {
@@ -19019,9 +19147,6 @@ public class MessagesController extends BaseController implements NotificationCe
                             }
                         }
                     }
-                    if (Math.abs(getConnectionsManager().getCurrentTime() - date) < 30) {
-                        onlinePrivacy.put(userId, date);
-                    }
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateChatParticipants) {
                 TL_update.TL_updateChatParticipants update = (TL_update.TL_updateChatParticipants) baseUpdate;
@@ -19181,9 +19306,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         newUser.action = new TLRPC.TL_sendMessageTypingAction();
                         arr.add(newUser);
                         printChanged = true;
-                    }
-                    if (Math.abs(getConnectionsManager().getCurrentTime() - date) < 30) {
-                        onlinePrivacy.put(encryptedChat.user_id, date);
                     }
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateEncryptedMessagesRead) {
@@ -21613,6 +21735,10 @@ public class MessagesController extends BaseController implements NotificationCe
             topicsController.markAllReactionsAsRead(-dialogId, topicId);
         }
         getMessagesStorage().updateUnreadReactionsCount(dialogId, topicId, 0);
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_REACTIONS_READ);
+            return;
+        }
         TLRPC.TL_messages_readReactions req = new TLRPC.TL_messages_readReactions();
         req.peer = getInputPeer(dialogId);
 
@@ -24208,6 +24334,7 @@ public class MessagesController extends BaseController implements NotificationCe
 
     private boolean loadingPeerColors, loadingProfilePeerColors;
     public void checkPeerColors(boolean force) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { org.telegram.messenger.xmpp.MonogramUserColors.ensurePalette(this,currentAccount);return; }
         if (getUserConfig().getCurrentUser() == null) {
             return;
         }
@@ -24262,6 +24389,9 @@ public class MessagesController extends BaseController implements NotificationCe
 
     public void setFolderTags(boolean value) {
         mainPreferences.edit().putBoolean("folderTags", folderTags = value).apply();
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated));
+        }
     }
 
     public boolean isStoryQualityFullOnAccount() {

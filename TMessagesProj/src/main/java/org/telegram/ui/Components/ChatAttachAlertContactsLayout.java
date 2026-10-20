@@ -67,6 +67,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
     private final FillLastLinearLayoutManager layoutManager;
     private final HashMap<ListItemID, Object> selectedContacts = new HashMap<>();
     private final ArrayList<ListItemID> selectedContactsOrder = new ArrayList<>();
+    private final ArrayList<Object> recoveredContacts=new ArrayList<>();private Object mediaDraftOwner;
     private boolean sendPressed = false;
     private final ShareAdapter listAdapter;
     private final ShareSearchAdapter searchAdapter;
@@ -531,6 +532,9 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
 
         boolean checked;
         ListItemID id = ListItemID.of(object);
+        if(object instanceof ContactsController.Contact && !selectedContacts.containsKey(id)) for(ListItemID selected:selectedContactsOrder) {
+            Object existing=selectedContacts.get(selected);if(existing instanceof ContactsController.Contact && sameDraftContact((ContactsController.Contact)existing,(ContactsController.Contact)object)) { id=selected;break; }
+        }
         if (selectedContacts.containsKey(id)) {
             selectedContacts.remove(id);
             selectedContactsOrder.remove(id);
@@ -542,6 +546,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
         }
         cell.setChecked(checked, true);
         parentAlert.updateCountButton(checked ? 1 : 2);
+        if(!recoveredContacts.isEmpty()) listAdapter.notifyDataSetChanged();
     }
 
     public void setupBlurredSearchField(BlurredBackgroundDrawableViewFactory factory) {
@@ -594,11 +599,14 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
         if (contact.key != null) {
             Uri uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_VCARD_URI, contact.key);
             result = AndroidUtilities.loadVCardFromStream(uri, parentAlert.currentAccount, true, items, name);
-        } else {
+        } else if(contact.user!=null) {
             AndroidUtilities.VcardItem item = new AndroidUtilities.VcardItem();
             item.type = 0;
             item.vcardData.add(item.fullData = "TEL;MOBILE:+" + contact.user.phone);
             phones.add(item);
+        }
+        if(result==null && phones.isEmpty()) for(String number:contact.phones) {
+            AndroidUtilities.VcardItem item=new AndroidUtilities.VcardItem();item.type=0;item.vcardData.add(item.fullData="TEL;MOBILE:"+number);phones.add(item);
         }
         TLRPC.User user = contact.user;
         if (result != null) {
@@ -703,11 +711,32 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
             users.add(prepareContact(object));
         }
         return AlertsCreator.ensurePaidMessageConfirmation(parentAlert.currentAccount, parentAlert.getDialogId(), users.size() + parentAlert.getAdditionalMessagesCount(), payStars -> {
-            delegate.didSelectContacts(users, parentAlert.getCommentView().getText().toString(), notify, scheduleDate, effectId, invertMedia, payStars);
-            parentAlert.dismiss();
+            parentAlert.saveMediaDraftNow(true);
+            try { delegate.didSelectContacts(users, parentAlert.getCommentView().getText().toString(), notify, scheduleDate, effectId, invertMedia, payStars); }
+            finally { org.telegram.messenger.xmpp.MonogramMediaDrafts.finishReferenceHandoff(); }
+            parentAlert.dismiss(true);
         });
     }
 
+    private static boolean sameDraftContact(ContactsController.Contact a,ContactsController.Contact b) {
+        return a.key!=null && a.key.equals(b.key) || a.phones.equals(b.phones) && java.util.Objects.equals(a.first_name,b.first_name) && java.util.Objects.equals(a.last_name,b.last_name);
+    }
+    public ArrayList<Object> getDraftContacts() {
+        ArrayList<Object> result=new ArrayList<>();for(ListItemID id:selectedContactsOrder) result.add(selectedContacts.get(id));return result;
+    }
+    public void restoreDraftContacts(ArrayList<Object> contacts) {
+        for(Object contact:contacts) {
+            if(contact instanceof ContactsController.Contact) {
+                ContactsController.Contact restored=(ContactsController.Contact)contact;boolean exists=false;
+                for(Object selected:selectedContacts.values()) if(selected instanceof ContactsController.Contact) { ContactsController.Contact existing=(ContactsController.Contact)selected;if(sameDraftContact(existing,restored)) { exists=true;break; } }
+                if(exists) continue;
+                // Phonebook contact_id is allocated per load; never match a different contact after a restart.
+                int id=Integer.MIN_VALUE;while(selectedContacts.containsKey(new ListItemID(ListItemID.Type.CONTACT,id))) id++;restored.contact_id=id;
+            }
+            ListItemID key=ListItemID.of(contact);if(key!=null && !selectedContacts.containsKey(key)) { selectedContacts.put(key,contact);selectedContactsOrder.add(key);recoveredContacts.add(contact); }
+        }
+        listAdapter.notifyDataSetChanged();parentAlert.updateCountButton(0);
+    }
     public ArrayList<TLRPC.User> getSelected() {
         ArrayList<TLRPC.User> users = new ArrayList<>(selectedContacts.size());
         for (ListItemID id : selectedContactsOrder) {
@@ -806,6 +835,8 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
 
     @Override
     public void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
+        Object owner=parentAlert.mediaDraftOwner();if(owner==null || owner!=mediaDraftOwner) { selectedContacts.clear();selectedContactsOrder.clear();recoveredContacts.clear(); }mediaDraftOwner=owner;
+        listAdapter.notifyDataSetChanged();
         layoutManager.scrollToPositionWithOffset(0, 0);
     }
 
@@ -834,7 +865,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
 
     public class ShareAdapter extends RecyclerListView.SectionsAdapter {
 
-        private int currentAccount = UserConfig.selectedAccount;
+        private int currentAccount = parentAlert.currentAccount;
         private Context mContext;
 
         public ShareAdapter(Context context) {
@@ -846,6 +877,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
                 return null;
             }
             section--;
+            if(!recoveredContacts.isEmpty()) { if(section==0) return recoveredContacts.get(position);section--; }
             HashMap<String, ArrayList<Object>> usersSectionsDict = ContactsController.getInstance(currentAccount).phoneBookSectionsDict;
             ArrayList<String> sortedUsersSectionsArray = ContactsController.getInstance(currentAccount).phoneBookSectionsArray;
             if (section < sortedUsersSectionsArray.size()) {
@@ -863,6 +895,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
                 return false;
             }
             section--;
+            if(!recoveredContacts.isEmpty()) { if(section==0) return row<recoveredContacts.size();section--; }
             HashMap<String, ArrayList<Object>> usersSectionsDict = ContactsController.getInstance(currentAccount).phoneBookSectionsDict;
             ArrayList<String> sortedUsersSectionsArray = ContactsController.getInstance(currentAccount).phoneBookSectionsArray;
             return row < usersSectionsDict.get(sortedUsersSectionsArray.get(section)).size();
@@ -871,7 +904,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
         @Override
         public int getSectionCount() {
             ArrayList<String> sortedUsersSectionsArray = ContactsController.getInstance(currentAccount).phoneBookSectionsArray;
-            return sortedUsersSectionsArray.size() + 2;
+            return sortedUsersSectionsArray.size() + 2 + (recoveredContacts.isEmpty() ? 0 : 1);
         }
 
         @Override
@@ -880,6 +913,7 @@ public class ChatAttachAlertContactsLayout extends ChatAttachAlert.AttachAlertLa
                 return 1;
             }
             section--;
+            if(!recoveredContacts.isEmpty()) { if(section==0) return recoveredContacts.size();section--; }
             HashMap<String, ArrayList<Object>> usersSectionsDict = ContactsController.getInstance(currentAccount).phoneBookSectionsDict;
             ArrayList<String> sortedUsersSectionsArray = ContactsController.getInstance(currentAccount).phoneBookSectionsArray;
             if (section < sortedUsersSectionsArray.size()) {

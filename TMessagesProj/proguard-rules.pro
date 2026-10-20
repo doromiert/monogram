@@ -24,6 +24,11 @@
 -keep class org.telegram.tgnet.NativeByteBuffer { *; }
 -keep class org.telegram.tgnet.RequestTimeDelegate { *; }
 -keep class org.telegram.tgnet.RequestDelegate { *; }
+-keep class com.negzero.monogram.xmpp.Omemo2Native** { *; }
+-keepclassmembers class * implements com.negzero.monogram.xmpp.Omemo2Records {
+    public byte[] load(int, java.lang.String, int);
+    public void save(int, java.lang.String, int, byte[]);
+}
 -keep class org.telegram.ui.Stories.recorder.FfmpegAudioWaveformLoader { *; }
 -keep class androidx.mediarouter.app.MediaRouteButton { *; }
 -keepclassmembers class ** {

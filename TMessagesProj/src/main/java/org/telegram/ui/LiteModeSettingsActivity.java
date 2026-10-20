@@ -50,6 +50,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
@@ -434,7 +435,17 @@ public class LiteModeSettingsActivity extends BaseFragment {
         }
     }
 
-    private class SwitchCell extends FrameLayout {
+    private class SwitchCell extends FrameLayout implements Theme.Colorable {
+
+        @Override
+        public void updateColors() {
+            imageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            countTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            arrowView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.MULTIPLY));
+            switchView.invalidate();
+            checkBoxView.invalidate();
+        }
 
         private ImageView imageView;
         private LinearLayout textViewLayout;
@@ -679,7 +690,18 @@ public class LiteModeSettingsActivity extends BaseFragment {
         }
     }
 
-    private class PowerSaverSlider extends FrameLayout {
+    private class PowerSaverSlider extends FrameLayout implements Theme.Colorable {
+
+        @Override
+        public void updateColors() {
+            headerTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader));
+            headerOnView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader));
+            middleTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+            leftTextView.setTextColor(ColorUtils.blendARGB(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), Theme.getColor(Theme.key_windowBackgroundWhiteBlueText), offActiveT));
+            rightTextView.setTextColor(ColorUtils.blendARGB(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), Theme.getColor(Theme.key_windowBackgroundWhiteBlueText), onActiveT));
+            seekBarView.setOuterColor(Theme.getColor(Theme.key_player_progress));
+            seekBarView.invalidate();
+        }
 
         BatteryDrawable batteryIcon;
         SpannableStringBuilder batteryText;
@@ -1053,6 +1075,24 @@ public class LiteModeSettingsActivity extends BaseFragment {
             }
             return true;
         }
+    }
+
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> colors = new ArrayList<>();
+        colors.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
+        colors.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
+        colors.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
+        colors.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_actionBarDefaultSelector));
+        colors.add(new ThemeDescription(listView, ThemeDescription.FLAG_SELECTOR, null, null, null, null, Theme.key_settings_listSelector));
+        colors.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{HeaderCell.class, SwitchCell.class, PowerSaverSlider.class, TextCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        colors.add(new ThemeDescription(listView, 0, new Class[]{View.class}, Theme.dividerPaint, null, null, Theme.key_divider));
+        colors.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
+        colors.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        colors.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        colors.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrack));
+        colors.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
+        return colors;
     }
 
     @Override

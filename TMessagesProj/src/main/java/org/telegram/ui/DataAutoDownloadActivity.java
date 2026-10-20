@@ -162,7 +162,7 @@ public class DataAutoDownloadActivity extends BaseFragment {
         listAdapter = new ListAdapter(context);
 
         fragmentView = new FrameLayout(context);
-        fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        fragmentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         FrameLayout frameLayout = (FrameLayout) fragmentView;
 
         listView = new RecyclerListView(context);
@@ -194,7 +194,7 @@ public class DataAutoDownloadActivity extends BaseFragment {
                     typePreset.enabled = !typePreset.enabled;
                 }
                 view.setTag(typePreset.enabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked);
-                cell.setBackgroundColorAnimated(!checked, Theme.getColor(typePreset.enabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
+                cell.setBackgroundColorAnimated(!checked, getThemedColor(typePreset.enabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
                 updateRows();
                 if (typePreset.enabled) {
                     listAdapter.notifyItemRangeInserted(autoDownloadSectionRow + 1, 9);
@@ -381,6 +381,11 @@ public class DataAutoDownloadActivity extends BaseFragment {
                         linearLayout.addView(cells[a], LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50));
                     }
 
+                    if (position == photosRow) {
+                        sizeCell[0] = new MaxFileSizeCell(getParentActivity());
+                        sizeCell[0].setSize(currentPreset.sizes[index]);
+                        linearLayout.addView(sizeCell[0], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50));
+                    }
                     if (position != photosRow) {
                         TextInfoPrivacyCell infoCell = new TextInfoPrivacyCell(getParentActivity());
 
@@ -671,7 +676,7 @@ public class DataAutoDownloadActivity extends BaseFragment {
                         view.setDrawCheckRipple(true);
                         view.setTextAndCheck(LocaleController.getString(R.string.AutoDownloadMedia), typePreset.enabled, false);
                         view.setTag(typePreset.enabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked);
-                        view.setBackgroundColor(Theme.getColor(typePreset.enabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
+                        view.setBackgroundColor(getThemedColor(typePreset.enabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
                     }
                     break;
                 }
@@ -816,7 +821,7 @@ public class DataAutoDownloadActivity extends BaseFragment {
             View view;
             switch (viewType) {
                 case 0: {
-                    TextCheckCell cell = new TextCheckCell(mContext);
+                    TextCheckCell cell = new TextCheckCell(mContext, getResourceProvider());
                     cell.setColors(Theme.key_windowBackgroundCheckText, Theme.key_switchTrackBlue, Theme.key_switchTrackBlueChecked, Theme.key_switchTrackBlueThumb, Theme.key_switchTrackBlueThumbChecked);
                     cell.setTypeface(AndroidUtilities.bold());
                     cell.setHeight(56);
@@ -824,15 +829,15 @@ public class DataAutoDownloadActivity extends BaseFragment {
                     break;
                 }
                 case 1: {
-                    view = new ShadowSectionCell(mContext);
+                    view = new ShadowSectionCell(mContext, getResourceProvider());
                     break;
                 }
                 case 2: {
-                    view = new HeaderCell(mContext);
+                    view = new HeaderCell(mContext, getResourceProvider());
                     break;
                 }
                 case 3: {
-                    SlideChooseView slideChooseView = new SlideChooseView(mContext);
+                    SlideChooseView slideChooseView = new SlideChooseView(mContext, getResourceProvider());
                     view = slideChooseView;
                     slideChooseView.setCallback(index -> {
                         DownloadController.Preset preset = presets.get(index);
@@ -867,12 +872,12 @@ public class DataAutoDownloadActivity extends BaseFragment {
                     break;
                 }
                 case 4: {
-                    view = new NotificationsCheckCell(mContext);
+                    view = new NotificationsCheckCell(mContext, getResourceProvider());
                     break;
                 }
                 case 5:
                 default: {
-                    view = new TextInfoPrivacyCell(mContext);
+                    view = new TextInfoPrivacyCell(mContext, getResourceProvider());
                 }
             }
             view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
@@ -949,6 +954,7 @@ public class DataAutoDownloadActivity extends BaseFragment {
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{SlideChooseView.class}, null, null, null, Theme.key_switchTrack));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{SlideChooseView.class}, null, null, null, Theme.key_switchTrackChecked));

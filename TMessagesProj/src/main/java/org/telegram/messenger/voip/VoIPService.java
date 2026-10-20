@@ -167,7 +167,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @SuppressLint("NewApi")
-public class VoIPService extends Service implements SensorEventListener, AudioManager.OnAudioFocusChangeListener, NotificationCenter.NotificationCenterDelegate, VoIPServiceState {
+public class VoIPService extends Service implements SensorEventListener, AudioManager.OnAudioFocusChangeListener, NotificationCenter.NotificationCenterDelegate, VoIPServiceState, VoIPCallController {
 
 	public static final int CALL_MIN_LAYER = 65;
 
@@ -236,7 +236,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	private boolean isProximityNear;
 	private boolean isHeadsetPlugged;
 	private int previousAudioOutput = -1;
-	private ArrayList<StateListener> stateListeners = new ArrayList<>();
+	private ArrayList<VoIPCallController.Listener> stateListeners = new ArrayList<>();
 	private MediaPlayer ringtonePlayer;
 	private Vibrator vibrator;
 	private SoundPool soundPool;
@@ -314,7 +314,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		if (privateCall != null) {
 			return privateCall.video;
 		}
-		return false;
+		return videoCall;
 	}
 
 	@Override
@@ -513,7 +513,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 						vam.setBluetoothOn(true);
 					}
 				}
-				for (VoIPService.StateListener l : stateListeners) {
+				for (VoIPCallController.Listener l : stateListeners) {
 					l.onAudioSettingsChanged();
 				}
 			} else if (TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) {
@@ -574,9 +574,14 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		} else if (tgVoip[CAPTURE_DEVICE_CAMERA] != null) {
 			tgVoip[CAPTURE_DEVICE_CAMERA].setMuteMicrophone(mute);
 		}
-		for (StateListener l : stateListeners) {
+		for (VoIPCallController.Listener l : stateListeners) {
 			l.onAudioSettingsChanged();
 		}
+	}
+
+	@Override
+	public void setMicMute(boolean mute) {
+		setMicMute(mute, false, true);
 	}
 
 	public String getTitle() {
@@ -845,6 +850,11 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			}
 		}
 
+		if (user != null && !VoIPCallControllers.register(this)) {
+			stopSelf();
+			return START_NOT_STICKY;
+		}
+
 		if (videoCall) {
 			if (Build.VERSION.SDK_INT < 23 || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
 				captureDevice[CAPTURE_DEVICE_CAMERA] = NativeInstance.createVideoCapturer(localSink[CAPTURE_DEVICE_CAMERA], isFrontFaceCamera ? 1 : 0);
@@ -1017,6 +1027,73 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		} else {
 			return 0;
 		}
+	}
+
+	@Override
+	public long getPeerId() {
+		return getCallerId();
+	}
+
+	@Override
+	public int getCapabilities() {
+		if (user == null) {
+			return 0;
+		}
+		int capabilities = CAP_PIP | CAP_RETRY | CAP_TELEGRAM_EMOJI | CAP_SCREENCAST | CAP_PREANSWER_VIDEO;
+		if (isVideoAvailable() || isCallingVideo()) {
+			capabilities |= CAP_VIDEO | CAP_VIDEO_UPGRADE;
+		}
+		if (hasRate()) {
+			capabilities |= CAP_RATING;
+		}
+		if (privateCall != null && privateCall.conference_supported) {
+			capabilities |= CAP_CONFERENCE;
+		}
+		return capabilities;
+	}
+
+	@Override
+	public int getSecurityPresentation() {
+		return SECURITY_TELEGRAM_EMOJI;
+	}
+
+	@Override
+	public void retry() {
+		if (user == null) {
+			return;
+		}
+		Intent intent = new Intent(this, VoIPService.class);
+		intent.putExtra("user_id", user.id);
+		intent.putExtra("is_outgoing", true);
+		intent.putExtra("start_incall_activity", false);
+		intent.putExtra("video_call", isCallingVideo());
+		intent.putExtra("can_video_call", isVideoAvailable());
+		intent.putExtra("account", currentAccount);
+		try {
+			startService(intent);
+		} catch (Throwable e) {
+			FileLog.e(e);
+		}
+	}
+
+	@Override
+	public boolean isTapToVideoTooltipShown() {
+		return sharedUIParams.tapToVideoTooltipWasShowed;
+	}
+
+	@Override
+	public void setTapToVideoTooltipShown(boolean shown) {
+		sharedUIParams.tapToVideoTooltipWasShowed = shown;
+	}
+
+	@Override
+	public byte[] getTelegramEncryptionKey() {
+		return getEncryptionKey();
+	}
+
+	@Override
+	public byte[] getTelegramGA() {
+		return getGA();
 	}
 
 	public void hangUp(int discard, Runnable onDone) {
@@ -1252,6 +1329,11 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		isPrivateScreencast = screencast;
 	}
 
+	@Override
+	public void requestVideoCall() {
+		requestVideoCall(false);
+	}
+
 	public void switchCamera() {
 		if (tgVoip[CAPTURE_DEVICE_CAMERA] == null || !tgVoip[CAPTURE_DEVICE_CAMERA].hasVideoCapturer() || switchingCamera) {
 			if (captureDevice[CAPTURE_DEVICE_CAMERA] != 0 && !switchingCamera) {
@@ -1322,6 +1404,11 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		}
 	}
 
+	@Override
+	public void createCaptureDevice() {
+		createCaptureDevice(false);
+	}
+
 	public void setupCaptureDevice(boolean screencast, boolean micEnabled) {
 		if (!screencast) {
 			int index = screencast ? CAPTURE_DEVICE_SCREEN : CAPTURE_DEVICE_CAMERA;
@@ -1377,6 +1464,11 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		}
 	}
 
+	@Override
+	public void setVideoState(int state) {
+		setVideoState(false, state);
+	}
+
 	public void stopScreenCapture() {
 		if (groupCall == null || videoState[CAPTURE_DEVICE_SCREEN] != Instance.VIDEO_STATE_ACTIVE) {
 			return;
@@ -1403,6 +1495,16 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 	public int getVideoState(boolean screencast) {
 		return videoState[screencast ? CAPTURE_DEVICE_SCREEN : CAPTURE_DEVICE_CAMERA];
+	}
+
+	@Override
+	public int getVideoState() {
+		return getVideoState(false);
+	}
+
+	@Override
+	public org.webrtc.EglBase.Context getEglContext() {
+		return VideoCapturerDevice.getEglBase().getEglBaseContext();
 	}
 
 	public void setSinks(VideoSink local, VideoSink remote) {
@@ -1552,7 +1654,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			groupCall.processParticipantsUpdate(update, false);
 			conference.updateParticipants(groupCall.sortedParticipants, true);
 			for (int a = 0; a < stateListeners.size(); a++) {
-				StateListener l = stateListeners.get(a);
+				VoIPCallController.Listener l = stateListeners.get(a);
 				l.onStateChanged(getCallState());
 			}
 			groupCall.shadyLeftParticipants.addAll(conference.getShadyLeftParticipants(groupCall.sortedParticipants));
@@ -2654,7 +2756,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		Instance.destroyInstance();
 		convertingVoip = null;
 		for (int a = 0; a < stateListeners.size(); a++) {
-			StateListener l = stateListeners.get(a);
+			VoIPCallController.Listener l = stateListeners.get(a);
 			l.onStateChanged(getCallState());
 		}
 		if (tgVoip[CAPTURE_DEVICE_CAMERA] != null) {
@@ -3486,7 +3588,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 				checkIsNear();
 
 				for (int a = 0; a < stateListeners.size(); a++) {
-					StateListener l = stateListeners.get(a);
+					VoIPCallController.Listener l = stateListeners.get(a);
 					l.onMediaStateUpdated(audioState, videoState);
 				}
 			}));
@@ -3495,7 +3597,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			if (newAvailable != isVideoAvailable) {
 				isVideoAvailable = newAvailable;
 				for (int a = 0; a < stateListeners.size(); a++) {
-					StateListener l = stateListeners.get(a);
+					VoIPCallController.Listener l = stateListeners.get(a);
 					l.onVideoAvailableChange(isVideoAvailable);
 				}
 			}
@@ -3654,7 +3756,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		if (!switching) {
 			isFrontFaceCamera = isFrontFace;
 			for (int a = 0; a < stateListeners.size(); a++) {
-				StateListener l = stateListeners.get(a);
+				VoIPCallController.Listener l = stateListeners.get(a);
 				l.onCameraSwitch(isFrontFaceCamera);
 			}
 		}
@@ -3662,12 +3764,17 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 	protected void onCameraFirstFrameAvailable() {
 		for (int a = 0; a < stateListeners.size(); a++) {
-			StateListener l = stateListeners.get(a);
+			VoIPCallController.Listener l = stateListeners.get(a);
 			l.onCameraFirstFrameAvailable();
 		}
 	}
 
 	public void registerStateListener(StateListener l) {
+		addListener(l);
+	}
+
+	@Override
+	public void addListener(VoIPCallController.Listener l) {
 		if (stateListeners.contains(l)) {
 			return;
 		}
@@ -3681,6 +3788,11 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	}
 
 	public void unregisterStateListener(StateListener l) {
+		removeListener(l);
+	}
+
+	@Override
+	public void removeListener(VoIPCallController.Listener l) {
 		stateListeners.remove(l);
 	}
 
@@ -3758,7 +3870,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			vam.setSpeakerphoneOn(true);
 			vam.isBluetoothAndSpeakerOnAsync((isBluetoothOn, isSpeakerOn) -> {
 				updateOutputGainControlState();
-				for (StateListener l : stateListeners) {
+				for (VoIPCallController.Listener l : stateListeners) {
 					l.onAudioSettingsChanged();
 				}
 			});
@@ -3819,7 +3931,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			}
 			vam.isBluetoothAndSpeakerOnAsync((isBluetoothOn, isSpeakerOn) -> {
 				updateOutputGainControlState();
-				for (StateListener l : stateListeners) {
+				for (VoIPCallController.Listener l : stateListeners) {
 					l.onAudioSettingsChanged();
 				}
 			});
@@ -3827,7 +3939,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		} else {
 			speakerphoneStateToSet = !speakerphoneStateToSet;
 		}
-		for (StateListener l : stateListeners) {
+		for (VoIPCallController.Listener l : stateListeners) {
 			l.onAudioSettingsChanged();
 		}
 	}
@@ -3905,7 +4017,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 					break;
 			}
 		}
-		for (StateListener l : stateListeners) {
+		for (VoIPCallController.Listener l : stateListeners) {
 			l.onAudioSettingsChanged();
 		}
 	}
@@ -3947,6 +4059,24 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			}
 		}
 		return audioRouteToSet;
+	}
+
+	@Override
+	public int getAudioOutput() {
+		switch (getCurrentAudioRoute()) {
+			case AUDIO_ROUTE_SPEAKER:
+				return AUDIO_OUTPUT_SPEAKER;
+			case AUDIO_ROUTE_BLUETOOTH:
+				return AUDIO_OUTPUT_BLUETOOTH;
+			case AUDIO_ROUTE_EARPIECE:
+			default:
+				return AUDIO_OUTPUT_EARPIECE;
+		}
+	}
+
+	@Override
+	public String getBluetoothDeviceName() {
+		return currentBluetoothDeviceName;
 	}
 
 	public String getDebugString() {
@@ -4161,6 +4291,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			conference.destroy();
 		}
 		super.onDestroy();
+		VoIPCallControllers.unregister(this);
 		sharedInstance = null;
 		FileLog.e("(5) set sharedInstance = null");
 		Arrays.fill(mySource, 0);
@@ -4688,7 +4819,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 						needSwitchToBluetoothAfterScoActivates = false;
 						currentBluetoothDeviceName = device.getProductName().toString();
 					}
-					for (StateListener l : stateListeners) {
+					for (VoIPCallController.Listener l : stateListeners) {
 						l.onAudioSettingsChanged();
 					}
 				};
@@ -4747,13 +4878,13 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 						currentBluetoothDeviceName = device.getProductName().toString();
 					}
 					updateBluetoothHeadsetState(device != null);
-					for (StateListener l : stateListeners) {
+					for (VoIPCallController.Listener l : stateListeners) {
 						l.onAudioSettingsChanged();
 					}
 				} else if (Build.VERSION.SDK_INT < 24) {
 					int headsetState = btAdapter.getProfileConnectionState(BluetoothProfile.HEADSET);
 					updateBluetoothHeadsetState(headsetState == BluetoothProfile.STATE_CONNECTED);
-					for (StateListener l : stateListeners) {
+					for (VoIPCallController.Listener l : stateListeners) {
 						l.onAudioSettingsChanged();
 					}
 				} else {
@@ -4761,7 +4892,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 					if (PermissionRequest.hasPermission(Manifest.permission.BLUETOOTH_CONNECT) && ri.getDeviceType() == MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH) {
 						int headsetState = btAdapter.getProfileConnectionState(BluetoothProfile.HEADSET);
 						updateBluetoothHeadsetState(headsetState == BluetoothProfile.STATE_CONNECTED);
-						for (StateListener l : stateListeners) {
+						for (VoIPCallController.Listener l : stateListeners) {
 							l.onAudioSettingsChanged();
 						}
 					} else {
@@ -4805,7 +4936,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			systemCallConnection.setActive();
 		}
 		for (int a = 0; a < stateListeners.size(); a++) {
-			StateListener l = stateListeners.get(a);
+			VoIPCallController.Listener l = stateListeners.get(a);
 			l.onStateChanged(state);
 		}
 	}
@@ -5045,7 +5176,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 			vam.setBluetoothOn(false);
 		}
-		for (StateListener l : stateListeners) {
+		for (VoIPCallController.Listener l : stateListeners) {
 			l.onAudioSettingsChanged();
 		}
 	}
@@ -5508,7 +5639,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 		AndroidUtilities.runOnUIThread(() -> {
 			signalBarCount = newCount;
 			for (int a = 0; a < stateListeners.size(); a++) {
-				StateListener l = stateListeners.get(a);
+				VoIPCallController.Listener l = stateListeners.get(a);
 				l.onSignalBarsCountChanged(newCount);
 			}
 		});
@@ -5667,8 +5798,9 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	}
 
 	public static boolean isAnyKindOfCallActive() {
-		if (VoIPService.getSharedInstance() != null) {
-			return VoIPService.getSharedInstance().getCallState() != VoIPService.STATE_WAITING_INCOMING;
+		VoIPCallController controller = VoIPCallControllers.get();
+		if (controller != null) {
+			return controller.getCallState() != VoIPService.STATE_WAITING_INCOMING;
 		}
 		return false;
 	}
@@ -5717,7 +5849,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 				|| MessagesController.getGlobalMainSettings().getBoolean("dbg_force_connection_service", false);*/
 	}
 
-	public interface StateListener {
+	public interface StateListener extends VoIPCallController.Listener {
 		default void onStateChanged(int state) {
 
 		}
@@ -5762,7 +5894,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 			if (BuildVars.LOGS_ENABLED) {
 				FileLog.d("ConnectionService call audio state changed: " + state);
 			}
-			for (StateListener l : stateListeners) {
+			for (VoIPCallController.Listener l : stateListeners) {
 				l.onAudioSettingsChanged();
 			}
 		}

@@ -1370,15 +1370,16 @@ public class AndroidUtilities {
             }
         }
         final ArrayList<LinkSpec> links = new ArrayList<>();
+        boolean phoneLinks = false;
         if (!internalOnly && (mask & Linkify.PHONE_NUMBERS) != 0) {
-            Linkify.addLinks(text, Linkify.PHONE_NUMBERS);
+            phoneLinks = Linkify.addLinks(text, Linkify.PHONE_NUMBERS);
         }
         if ((mask & Linkify.WEB_URLS) != 0) {
             gatherLinks(links, text, LinkifyPort.WEB_URL, new String[]{"http://", "https://", "tg://", "tonsite://"}, sUrlMatchFilter, internalOnly);
         }
         pruneOverlaps(links);
         if (links.size() == 0) {
-            return false;
+            return phoneLinks;
         }
         for (int a = 0, N = links.size(); a < N; a++) {
             LinkSpec link = links.get(a);
@@ -1797,6 +1798,7 @@ public class AndroidUtilities {
 
     public static boolean isMapsInstalled(BaseFragment fragment) {
         String pkg = ApplicationLoader.getMapsProvider().getMapsAppPackageName();
+        if (pkg == null) return true; // Built-in map provider does not require an external app.
         try {
             ApplicationLoader.applicationContext.getPackageManager().getApplicationInfo(pkg, 0);
             return true;
@@ -3663,7 +3665,7 @@ public class AndroidUtilities {
         }
         File storageDir = null;
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Telegram");
+            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Monogram");
             if (!storageDir.mkdirs()) {
                 if (!storageDir.exists()) {
                     if (BuildVars.LOGS_ENABLED) {

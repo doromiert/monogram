@@ -136,6 +136,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static final int MEDIA_TYPE_RICH = 13;
     private final HashMap<String, ArrayList<DelayedMessage>> delayedMessages = new HashMap<>();
     private final SparseArray<MessageObject> unsentMessages = new SparseArray<>();
+    private final HashMap<MessageObject, Runnable> monogramVideoConversions = new HashMap<>();
     private final SparseArray<TLRPC.Message> sendingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> editingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> uploadMessages = new SparseArray<>();
@@ -979,6 +980,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void cleanup() {
+        for (MessageObject message : monogramVideoConversions.keySet()) MediaController.getInstance().cancelVideoConvert(message);
+        monogramVideoConversions.clear();
         delayedMessages.clear();
         unsentMessages.clear();
         sendingMessages.clear();
@@ -1254,6 +1257,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
         } else if (id == NotificationCenter.filePreparingStarted) {
             MessageObject messageObject = (MessageObject) args[0];
+            if (monogramVideoConversions.containsKey(messageObject)) return;
             if (messageObject.getId() == 0) {
                 return;
             }
@@ -1293,6 +1297,24 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             long availableSize = (Long) args[2];
             long finalSize = (Long) args[3];
             Float progress = (Float) args[4];
+            if (monogramVideoConversions.containsKey(messageObject)) {
+                if (finalSize > 0) {
+                    Runnable ready = monogramVideoConversions.remove(messageObject);
+                    removeFromUploadingMessages(messageObject.getId(), false);
+                    if(!TextUtils.isEmpty(messageObject.messageOwner.attachPath) && !messageObject.messageOwner.attachPath.equals(finalPath))
+                        ImageLoader.getInstance().setFileProgress(messageObject.messageOwner.attachPath,-1,0);
+                    messageObject.messageOwner.attachPath = finalPath;
+                    messageObject.videoEditedInfo = null;
+                    messageObject.shouldRemoveVideoEditedInfo = true;
+                    if (messageObject.messageOwner.params != null) messageObject.messageOwner.params.remove("ve");
+                    TLRPC.Document document = messageObject.getDocument();
+                    if (document != null) document.size = finalSize;
+                    ArrayList<TLRPC.Message> converted = new ArrayList<>(); converted.add(messageObject.messageOwner);
+                    getMessagesStorage().putMessages(converted, false, true, false, 0, 0, 0);
+                    ready.run();
+                }
+                return;
+            }
             boolean isEncrypted = DialogObject.isEncryptedDialog(messageObject.getDialogId());
             getFileLoader().checkUploadNewDataAvailable(finalPath, isEncrypted, availableSize, finalSize, progress);
             if (finalSize != 0) {
@@ -1356,6 +1378,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
         } else if (id == NotificationCenter.filePreparingFailed) {
             MessageObject messageObject = (MessageObject) args[0];
+            if (monogramVideoConversions.remove(messageObject) != null) {
+                monogramVideoFailed(messageObject); return;
+            }
             if (messageObject.getId() == 0) {
                 return;
             }
@@ -1538,6 +1563,16 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         getNotificationCenter().postNotificationName(NotificationCenter.replaceMessagesObjects, object.getDialogId(), arrayList);
     }
 
+    private void monogramVideoFailed(MessageObject message) {
+        if(!TextUtils.isEmpty(message.messageOwner.attachPath)) ImageLoader.getInstance().setFileProgress(message.messageOwner.attachPath,-1,0);
+        getMessagesStorage().markMessageAsSendError(message.messageOwner, 0);
+        message.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
+        getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, message.getId());
+        processSentMessage(message.getId());
+        removeFromSendingMessages(message.getId(), false);
+        removeFromUploadingMessages(message.getId(), false);
+    }
+
     public void cancelSendingMessage(MessageObject object) {
         ArrayList<MessageObject> arrayList = new ArrayList<>();
         arrayList.add(object);
@@ -1579,6 +1614,15 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         int topicId = 0;
         for (int c = 0; c < objects.size(); c++) {
             MessageObject object = objects.get(c);
+            java.util.Iterator<MessageObject> conversions = monogramVideoConversions.keySet().iterator();
+            while (conversions.hasNext()) {
+                MessageObject converting = conversions.next();
+                if (converting.getId() == object.getId()) {
+                    conversions.remove();MediaController.getInstance().cancelVideoConvert(converting);
+                    if(!TextUtils.isEmpty(converting.messageOwner.attachPath)) ImageLoader.getInstance().setFileProgress(converting.messageOwner.attachPath,-1,0);
+                }
+            }
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelFile(object.getId());
             if (object.scheduled) {
                 scheduled = true;
             }
@@ -1705,6 +1749,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public boolean retrySendMessage(MessageObject messageObject, boolean unsent, long payStars) {
+        if(!unsent && messageObject.messageOwner.params!=null) messageObject.messageOwner.params.remove("monogram-encryption");
         if (messageObject.getId() >= 0) {
             if (messageObject.isEditing()) {
                 editMessage(messageObject, null, null, null, null, null, null, true, messageObject.hasMediaSpoilers(), messageObject);
@@ -1781,6 +1826,12 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
     public void processForwardFromMyName(MessageObject messageObject, long did, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
         if (messageObject == null) {
+            return;
+        }
+        if (did > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(did)) {
+            ArrayList<MessageObject> messages = new ArrayList<>();
+            messages.add(messageObject);
+            sendMessage(messages, did, true, false, true, 0, 0);
             return;
         }
         if (messageObject.messageOwner.media != null && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaEmpty) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaGame) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaInvoice)) {
@@ -2202,6 +2253,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 params = null;
             }
             SendMessageParams sendMessageParams = SendMessageParams.of((TLRPC.TL_document) finalDocument, null, null, peer, replyToMsg, replyToTopMsg, null, null, null, params, notify, scheduleDate, scheduleRepeatPeriod, 0, parentObject, sendAnimationData, updateStickersOrder);
+            sendMessageParams.caption = caption == null ? null : caption.toString();
             sendMessageParams.replyToStoryItem = storyItem;
             sendMessageParams.replyQuote = quote;
             sendMessageParams.sendMessageChatArguments = sendMessageChatArguments;
@@ -2236,6 +2288,26 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         MessageSuggestionParams suggestionParams
     ) {
         if (messages == null || messages.isEmpty()) {
+            return 0;
+        }
+        if (peer > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(peer)) {
+            ArrayList<SendMessageParams> copies = new ArrayList<>();
+            try {
+                for (MessageObject source : messages) {
+                    SendMessageParams copy = org.telegram.messenger.xmpp.MonogramForwarding.copy(source.messageOwner, peer, hideCaption);
+                    if(scheduleDate==0) org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(copy.params,org.telegram.messenger.xmpp.MonogramMediaDrafts.captureForward(currentAccount,peer,source));
+                    copy.notify = notify;
+                    copy.scheduleDate = scheduleDate;
+                    copy.scheduleRepeatPeriod = scheduleRepeatPeriod;
+                    copy.replyToTopMsg = replyToTopMsg;
+                    copies.add(copy);
+                }
+            } catch (IllegalArgumentException unsupported) {
+                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if (fragment != null) AlertsCreator.showSimpleAlert(fragment, LocaleController.getString(R.string.AppName), unsupported.getMessage());
+                return 0;
+            }
+            for (SendMessageParams copy : copies) sendMessage(copy);
             return 0;
         }
         int sendResult = 0;
@@ -4016,6 +4088,15 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (callback != null) {
                     AndroidUtilities.runOnUIThread(callback);
                 }
+            } else if(error!=null) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).reloadReactions(messageObject.getId(),messageObject.getDialogId());
+                AndroidUtilities.runOnUIThread(() -> {
+                    messageObject.messageOwner.reactions=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cachedReactions(messageObject.getId());
+                    org.telegram.ui.Components.BulletinFactory.of(parentFragment).createErrorBulletin(
+                        error.text!=null && error.text.startsWith("MONOGRAM_REACTION_UNAVAILABLE:") ? error.text.substring("MONOGRAM_REACTION_UNAVAILABLE: ".length())
+                        : "Could not send the reaction. Check the connection and conversation security settings.").show();
+                    if(callback!=null) callback.run();
+                });
             }
         });
     }
@@ -4415,6 +4496,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void sendMessage(SendMessageParams sendMessageParams) {
+        if (sendMessageParams.retryMessageObject != null
+                && (sendMessageParams.peer > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(sendMessageParams.peer))) {
+            TLRPC.Message pending = sendMessageParams.retryMessageObject.messageOwner;
+            if (pending.fwd_from != null || pending.params != null && pending.params.containsKey("fwd_id")) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).retryForward(pending);
+                sendMessageParams.params = pending.params;
+            }
+        }
         final SendMessageChatArguments sendMessageChatArguments = sendMessageParams.sendMessageChatArguments != null ?
                 sendMessageParams.sendMessageChatArguments : SendMessageChatArguments.EMPTY;
         String message = sendMessageParams.message;
@@ -5238,6 +5327,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 // newMsg.out = false;
                 newMsg.from_id = newMsg.peer_id;
             }
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).prepareOutgoingMessage(newMsg);
             newMsg.send_state = MessageObject.MESSAGE_SEND_STATE_SENDING;
             newMsg.errorAllowedPriceStars = 0;
             newMsg.errorNewPriceStars = 0;
@@ -5258,6 +5348,37 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 isFinalGroupMedia = params.get("final") != null;
             }
 
+            boolean monogramFile = (peer>0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(peer)) && (photo != null || document != null);
+            if(monogramFile && groupId!=0) {
+                groupId=0; newMsg.grouped_id=0; newMsg.flags&=~131072;
+                if(params!=null) { params.remove("groupId"); params.remove("final"); }
+            }
+            String monogramCaption = caption;
+            File monogramSource = null;
+            if (monogramFile) {
+                boolean audioSource = org.telegram.messenger.xmpp.MonogramAudioSources.isAudioSource(newMsg.attachPath);
+                if (photo != null) {
+                    TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 10000);
+                    monogramSource = size == null ? null : getFileLoader().getPathToAttach(size, true);
+                    if (monogramSource != null && !monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(size);
+                } else if (!TextUtils.isEmpty(newMsg.attachPath)) monogramSource = new File(newMsg.attachPath);
+                String gifSource = params == null ? null : params.get("monogram-gif-source");
+                if (gifSource != null) monogramSource = org.telegram.messenger.xmpp.MonogramGiphy.sourceFile(gifSource);
+                if (!audioSource && gifSource == null && document != null && (videoEditedInfo == null || !videoEditedInfo.needConvert()) && (monogramSource == null || !monogramSource.isFile())) {
+                    monogramSource = getFileLoader().getPathToAttach(document);
+                    if (!monogramSource.isFile()) monogramSource = getFileLoader().getPathToAttach(document, true);
+                }
+                if (params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramForwarding.SOURCE)) {
+                    monogramSource = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).forwardSource(params);
+                }
+                if (!audioSource && monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
+                groupId = 0; newMsg.grouped_id = 0; newMsg.flags &= ~131072;
+                if (newMsg.params == null) newMsg.params = new HashMap<>();
+                if (newMsg.params.containsKey("monogramCaption")) monogramCaption = newMsg.params.get("monogramCaption");
+                else if (caption != null && !caption.isEmpty()) newMsg.params.put("monogramCaption", caption);
+                newMsg.message = ""; newMsg.entities.clear(); newMsg.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+                org.telegram.messenger.xmpp.MonogramFileRequest.prepareProgress(newMsg,monogramSource);
+            }
             if (stars > 0) {
                 TLRPC.MessageMedia media = newMsg.media;
                 TLRPC.TL_messageMediaPaidMedia paidMedia = new TLRPC.TL_messageMediaPaidMedia();
@@ -5328,9 +5449,57 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     mode = 0;
                 }
                 MessagesStorage.getInstance(currentAccount).putMessages(arr, false, true, false, 0, mode, threadMessageId);
+                if (sendMessageParams.onLocalMessageStored != null) {
+                    final java.util.function.Consumer<Boolean> callback = sendMessageParams.onLocalMessageStored;
+                    final long storedDialog = peer;
+                    final int storedId = newMsg.id;
+                    final long storedRandomId = newMsg.random_id;
+                    final MessagesStorage nativeStorage = getMessagesStorage();
+                    nativeStorage.getStorageQueue().postRunnable(() -> {
+                        boolean stored = false;
+                        org.telegram.SQLite.SQLiteCursor cursor = null;
+                        try {
+                            cursor = nativeStorage.getDatabase().queryFinalized(
+                                    "SELECT 1 FROM messages_v2 m INNER JOIN randoms_v2 r ON r.uid=m.uid AND r.mid=m.mid WHERE m.uid=? AND m.mid=? AND r.random_id=?",
+                                    storedDialog, storedId, storedRandomId);
+                            stored = cursor.next();
+                        } catch (Exception unavailable) {
+                            if (BuildVars.LOGS_ENABLED) FileLog.e("Notification outbox confirmation: " + unavailable.getClass().getSimpleName());
+                        } finally { if (cursor != null) cursor.dispose(); }
+                        final boolean committed = stored;
+                        AndroidUtilities.runOnUIThread(() -> callback.accept(committed));
+                    });
+                }
+                if(scheduleDate==0) org.telegram.messenger.xmpp.MonogramMediaDrafts.accepted(currentAccount,newMsg);
                 MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objArr, mode);
                 if (scheduleDate == 0) {
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
+                }
+                if (monogramFile) {
+                    String mime = photo != null ? "image/jpeg" : document.mime_type;
+                    boolean supported = scheduleDate == 0 && ttl == 0 && stars == 0 && pollSendParams == null
+                            && quick_reply_shortcut == null && quick_reply_shortcut_id == 0;
+                    final MessageObject outgoing = newMsgObj;
+                    final String contentType = mime == null ? "application/octet-stream" : mime, outgoingCaption = monogramCaption;
+                    final HashMap<String, String> outgoingParams = params;
+                    final File source = monogramSource;
+                    final boolean convert = supported && videoEditedInfo != null && videoEditedInfo.needConvert();
+                    Runnable sendFile = () -> {
+                        org.telegram.messenger.xmpp.MonogramFileRequest request = new org.telegram.messenger.xmpp.MonogramFileRequest(
+                                outgoing.messageOwner, convert ? new File(outgoing.messageOwner.attachPath) : source, contentType, outgoingCaption, supported);
+                        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).reserveFile(request);
+                        performSendMessageRequest(request, outgoing, outgoing.messageOwner.attachPath, null, null, outgoingParams, false);
+                    };
+                    if (convert) {
+                        outgoing.videoEditedInfo = videoEditedInfo;
+                        monogramVideoConversions.put(outgoing, sendFile);
+                        putToSendingMessages(outgoing.messageOwner, false);
+                        putToUploadingMessages(outgoing);
+                        if (!MediaController.getInstance().scheduleVideoConvert(outgoing, false, true, false)) {
+                            monogramVideoConversions.remove(outgoing); monogramVideoFailed(outgoing);
+                        }
+                    } else sendFile.run();
+                    return;
                 }
             } else {
                 String key = "group_" + groupId;
@@ -8025,6 +8194,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     protected void performSendMessageRequest(final TLObject req, final MessageObject msgObj, final String originalPath, DelayedMessage parentMessage, boolean check, DelayedMessage delayedMessage, Object parentObject, HashMap<String, String> params, boolean scheduled) {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).prepareOutgoingRequest(req,msgObj.messageOwner);
         if (req instanceof TLRPC.TL_messages_addPollAnswer) {
             TLRPC.TL_messages_addPollAnswer r = (TLRPC.TL_messages_addPollAnswer) req;
             if (r.answer.input_media instanceof TLRPC.TL_inputMediaUploadedDocument || r.answer.input_media instanceof TLRPC.TL_inputMediaUploadedPhoto) {
@@ -8293,6 +8463,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             }
                             if (!newMsgObj.entities.isEmpty()) {
                                 newMsgObj.flags |= TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+                            }
+                            if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty() && res.message != null) {
+                                newMsgObj.message = res.message;
+                                if (newMsgObj.entities.isEmpty()) newMsgObj.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+                                msgObj.updateMessageText();
+                                msgObj.resetLayout();
+                                msgObj.caption = null;
+                                msgObj.generateCaption();
                             }
                             currentSchedule = false;
                             if (!currentSchedule) {
@@ -9129,7 +9307,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         messageObject.messageOwner.params.put("final", "1");
                     }
                 }
-                retrySendMessage(messageObject, true, 0);
+                if(!isSendingMessage(messageObject.getId())) retrySendMessage(messageObject, true, 0);
             }
             if (scheduledMessages != null) {
                 for (int a = 0; a < scheduledMessages.size(); a++) {
@@ -9389,6 +9567,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     private final static int ERROR_TYPE_FILE_TOO_LARGE = 2;
 
     private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex) {
+        return prepareSendingDocumentInternal(accountInstance, path, originalPath, uri, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, entities, editingMessageObject, groupId, isGroupFinal, caption, notify, scheduleDate, scheduleRepeatPeriod, docType, forceDocument, sendMessageChatArguments, effectId, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollIndex, null);
+    }
+
+    private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex, HashMap<String,String> mediaDraftParams) {
         final long forcedPollGroupId = pollSendParams != null ? pollSendParams.groupId : 0;
 
         if ((path == null || path.length() == 0) && uri == null) {
@@ -9645,6 +9827,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         final String pathFinal = path;
         final String parentFinal = parentObject;
         final HashMap<String, String> params = new HashMap<>();
+        org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,mediaDraftParams);
         if (originalPath != null) {
             params.put("originalPath", originalPath);
         }
@@ -9940,6 +10123,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
     @UiThread
     public static void prepareSendingAudioDocuments(AccountInstance accountInstance, ArrayList<MessageObject> messageObjects, CharSequence caption, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, boolean notify, int scheduleDate, int scheduledRepeatPeriod, MessageObject editingMessageObject, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, PollSendParams pollSendParams, ArrayList<Integer> pollSendIndexes, boolean forcedPollDoNotSendFinal, Runnable afterCommandsDone) {
+        final ArrayList<String> draftPaths=new ArrayList<>();for(MessageObject message:messageObjects) draftPaths.add(message.messageOwner.attachPath);
+        final java.util.Map<String,HashMap<String,String>> draftHandoff=editingMessageObject==null && scheduleDate==0 ? org.telegram.messenger.xmpp.MonogramMediaDrafts.captureFileHandoff(accountInstance.getCurrentAccount(),dialogId,draftPaths) : java.util.Collections.emptyMap();
         new Thread(() -> {
             final long forcedPollGroupId = pollSendParams != null ? pollSendParams.groupId : 0;
             final boolean forceDisableCheckSentMedia = pollSendParams != null;
@@ -9950,6 +10135,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             for (int a = 0; a < count; a++) {
                 final MessageObject messageObject = messageObjects.get(a);
                 String originalPath = messageObject.messageOwner.attachPath;
+                final boolean contentSource = org.telegram.messenger.xmpp.MonogramAudioSources.isAudioSource(originalPath);
                 final File f = new File(originalPath);
 
                 boolean isEncrypted = DialogObject.isEncryptedDialog(dialogId);
@@ -9958,13 +10144,13 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     mediaCount = 0;
                 }
 
-                if (originalPath != null && originalPath.length() > 0) {
+                if (!contentSource && originalPath != null && originalPath.length() > 0) {
                     originalPath += "audio" + f.length();
                 }
 
                 TLRPC.TL_document document = null;
                 String parentObject = null;
-                if (!isEncrypted && !TextUtils.isEmpty(originalPath) && !forceDisableCheckSentMedia) {
+                if (!contentSource && !isEncrypted && !TextUtils.isEmpty(originalPath) && !forceDisableCheckSentMedia) {
                     Object[] sentData = accountInstance.getMessagesStorage().getSentFile(originalPath, !isEncrypted ? MessagesStorage.SENT_FILE_TYPE_AUDIO : MessagesStorage.SENT_FILE_TYPE_AUDIO_ENCRYPTED);
                     if (sentData != null && sentData[0] instanceof TLRPC.TL_document) {
                         document = (TLRPC.TL_document) sentData[0];
@@ -9976,7 +10162,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     document = (TLRPC.TL_document) messageObject.messageOwner.media.document;
                 }
 
-                if (document != null && document.thumbs.isEmpty()) {
+                if (!contentSource && document != null && document.thumbs.isEmpty()) {
                     Bitmap cover = null;
                     final AudioInfo audioInfo = AudioInfo.getAudioInfo(f);
                     if (audioInfo != null) {
@@ -10006,6 +10192,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 final ArrayList<TLRPC.MessageEntity> entities = a == 0 ? accountInstance.getMediaDataController().getEntities(text, true) : null;
                 final String captionFinal = a == 0 ? text[0].toString() : null;
                 final HashMap<String, String> params = new HashMap<>();
+                org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,draftHandoff.get(messageObject.messageOwner.attachPath));
                 if (originalPath != null) {
                     params.put("originalPath", originalPath);
                 }
@@ -10092,6 +10279,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (paths == null && originalPaths == null && uris == null || paths != null && originalPaths != null && paths.size() != originalPaths.size()) {
             return;
         }
+        final java.util.Map<String,HashMap<String,String>> draftHandoff=editingMessageObject==null && scheduleDate==0 ? org.telegram.messenger.xmpp.MonogramMediaDrafts.captureFileHandoff(accountInstance.getCurrentAccount(),dialogId,paths) : java.util.Collections.emptyMap();
         Utilities.globalQueue.postRunnable(() -> {
             int error = 0;
             long[] groupId = new long[1];
@@ -10113,7 +10301,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                     mediaCount++;
                     long prevGroupId = groupId[0];
-                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1);
+                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1, draftHandoff.get(paths.get(a)));
                     first = false;
                     if (prevGroupId != groupId[0] || groupId[0] == -1) {
                         mediaCount = 1;
@@ -10136,7 +10324,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                     mediaCount++;
                     long prevGroupId = groupId[0];
-                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1);
+                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1, draftHandoff.get(uris.get(a).toString()));
                     first = false;
                     if (prevGroupId != groupId[0] || groupId[0] == -1) {
                         mediaCount = 1;
@@ -10158,7 +10346,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     if (finalError == ERROR_TYPE_UNSUPPORTED) {
                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.UnsupportedAttachment));
                     } else if (finalError == ERROR_TYPE_FILE_TOO_LARGE) {
-                        NotificationCenter.getInstance(accountInstance.getCurrentAccount()).postNotificationName(NotificationCenter.currentUserShowLimitReachedDialog, LimitReachedBottomSheet.TYPE_LARGE_FILE);
+                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.formatString(R.string.MonogramFileSizeLimit,AndroidUtilities.formatFileSize(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES)));
                     }
                 } catch (Exception e) {
                     FileLog.e(e);
@@ -10206,6 +10394,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static void prepareSendingBotContextResult(BaseFragment fragment, AccountInstance accountInstance, TLRPC.BotInlineResult result, HashMap<String, String> params, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, boolean notify, int scheduleDate, int scheduleRepeatPeriod, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId) {
         if (result == null) {
             return;
+        }
+        if (org.telegram.messenger.xmpp.MonogramGiphy.isResult(result)) {
+            params.remove("id"); params.remove("query_id");
+            params.put("monogram-gif-source", result.content.url);
         }
         if (result.send_message instanceof TLRPC.TL_botInlineMessageMediaAuto) {
             new Thread(() -> {
@@ -10273,6 +10465,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             switch (result.type) {
                                 case "gif": {
                                     fileName.file_name = "animation.gif";
+                                    if (org.telegram.messenger.xmpp.MonogramGiphy.isResult(result)) {
+                                        int[] dimensions = MessageObject.getInlineResultWidthAndHeight(result);
+                                        TLRPC.TL_documentAttributeImageSize imageSize = new TLRPC.TL_documentAttributeImageSize();
+                                        imageSize.w = dimensions[0]; imageSize.h = dimensions[1];
+                                        document.attributes.add(imageSize);
+                                        document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
+                                        document.size = result.content.size;
+                                    }
                                     if (finalPath.endsWith("mp4")) {
                                         document.mime_type = "video/mp4";
                                         document.attributes.add(new TLRPC.TL_documentAttributeAnimated());
@@ -10984,6 +11184,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (info.searchImage != null && info.videoEditedInfo == null) {
                     if (info.searchImage.type == 1) {
                         final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                         TLRPC.TL_document document = null;
                         String parentObject = null;
                         File cacheFile;
@@ -11142,6 +11343,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             final String parentFinal = parentObject;
                             final boolean needDownloadHttpFinal = needDownloadHttp;
                             final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                             if (info.searchImage.imageUrl != null) {
                                 params.put("originalPath", info.searchImage.imageUrl);
                             }
@@ -11393,6 +11595,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             final String originalPathFinal = originalPath;
                             final String finalPath = path;
                             final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                             final Bitmap thumbFinal = thumb;
                             final String thumbKeyFinal = thumbKey;
                             final TLRPC.PhotoSize coverFinal = cover;
@@ -11599,6 +11802,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 final TLRPC.TL_photo photoFinal = photo;
                                 final String parentFinal = parentObject;
                                 final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                                 final Bitmap[] bitmapFinal = new Bitmap[1];
                                 final String[] keyFinal = new String[1];
                                 if (photo.has_stickers = info.masks != null && !info.masks.isEmpty()) {
@@ -12245,6 +12449,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public static class SendMessageParams {
+        /** Ordinary immediate sends only; true after the native outbox row is confirmed on its storage queue. */
+        public java.util.function.Consumer<Boolean> onLocalMessageStored;
         public String message;
         public String caption;
         public TLRPC.MessageMedia location;

@@ -1303,6 +1303,7 @@ public class MentionsAdapter extends RecyclerListView.SelectionAdapter implement
                 chat = currentChat;
                 threadId = 0;
             }
+            java.util.Map<Long,String> roomNames=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mentionNames(dialog_id);
             TLRPC.User me = UserConfig.getInstance(currentAccount).getCurrentUser();
             if (chat != null && info != null && info.participants != null && (!ChatObject.isChannel(chat) || chat.megagroup)) {
                 for (int a = -2; a < info.participants.participants.size(); a++) {
@@ -1354,7 +1355,8 @@ public class MentionsAdapter extends RecyclerListView.SelectionAdapter implement
                         object = user;
                         id = user.id;
                     }
-                    if (!TextUtils.isEmpty(username) && username.toLowerCase().startsWith(usernameString) ||
+                    if (roomNames.containsKey(id) && roomNames.get(id).toLowerCase(java.util.Locale.ROOT).startsWith(usernameString) ||
+                            !TextUtils.isEmpty(username) && username.toLowerCase().startsWith(usernameString) ||
                             !TextUtils.isEmpty(firstName) && firstName.toLowerCase().startsWith(usernameString) ||
                             !TextUtils.isEmpty(lastName) && lastName.toLowerCase().startsWith(usernameString) ||
                             hasSpace && ContactsController.formatName(firstName, lastName).toLowerCase().startsWith(usernameString)) {

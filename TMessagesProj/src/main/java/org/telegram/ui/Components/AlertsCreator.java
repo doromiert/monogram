@@ -285,33 +285,87 @@ public class AlertsCreator {
                 .create();
     }
 
+    public static String monogramSendErrorText(String code) {
+        int separator=code.indexOf('|'); String detail=separator<0 ? null : code.substring(separator+1);
+        if(separator>=0) code=code.substring(0,separator);
+        String text;
+        switch (code) {
+            case "MONOGRAM_OMEMO_TRUST_REQUIRED":
+                text = "Review the OMEMO fingerprints for this contact and your other devices before sending. Your message is still unsent; retry it after reviewing the devices."; break;
+            case "MONOGRAM_OMEMO_NO_DEVICES":
+                text = "This contact has not published a compatible OMEMO device. Check their encryption support and try again. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_NO_TRUSTED_DEVICES":
+                text = "No trusted recipient device is available. Review this contact's device fingerprints before retrying your message."; break;
+            case "MONOGRAM_OMEMO_DEVICE_FAILURE":
+                text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_ROOM_UNSUPPORTED":
+                text = "This room cannot currently use OMEMO. It must be members-only, reveal participant addresses and allow the full member list to be checked. Your message was not sent. Review Conversation security before retrying."; break;
+            case "MONOGRAM_OMEMO_LOOKUP_TIMEOUT":
+                text="A server did not answer an encryption preparation request. Your message remains unsent; retry after reconnecting."; break;
+            case "MONOGRAM_OMEMO_CONTACT_AUTHORIZATION_REQUIRED":
+                text="That account's server requires contact authorization before allowing its OMEMO device list to be read. Open Conversation security → Contact authorization, request access, then refresh fingerprints after they accept. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_ROOM_CHANGED":
+                text = "Room membership changed while encrypting. Review the room members and their fingerprints, then retry. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":
+                text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
+            case "MONOGRAM_SENDING_MODE_CHANGED":
+                text="Encryption settings changed while this message was waiting. Review the conversation security settings, then retry to send using the current settings."; break;
+            case "MONOGRAM_XMPP_DISCONNECTED":
+                text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
+            case "MONOGRAM_XMPP_FAILED":
+                text = "The XMPP request failed. Your message was not sent."; break;
+            case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":
+                text = "Your Jabber provider does not offer HTTP File Upload. This file was not sent."; break;
+            case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":
+                text = "This file exceeds the upload service's size limit. Choose a smaller file and retry."; break;
+            case "MONOGRAM_FILE_FILE_SIZE":
+                text = LocaleController.formatString(R.string.MonogramFileSizeLimit, AndroidUtilities.formatFileSize(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES)); break;
+            case "MONOGRAM_FILE_AUTHENTICATION":
+                text = "The encrypted file could not be verified. It has not been opened. You can retry the download."; break;
+            case "MONOGRAM_FILE_INTEGRITY":
+                text = "The downloaded file does not match its advertised size or hash. It has not replaced the cached file or been opened."; break;
+            case "MONOGRAM_FILE_TRANSFER_FAILED":
+                text = "The file transfer failed. Check your connection and retry."; break;
+            case "MONOGRAM_REPLY_UNAVAILABLE":
+                text = "The original message or selected quote is unavailable in this conversation. Load its history and try again.";
+                break;
+            case "MONOGRAM_EDIT_UNAVAILABLE":
+                text = "This message cannot be edited because its original content or unique XMPP message ID is unavailable. Your correction was not sent."; break;
+            case "MONOGRAM_EDIT_LEGACY_CAPTION_UNSUPPORTED":
+                text = "Editing attachment captions sent with legacy OMEMO is not supported yet. Send the updated caption as a new encrypted message."; break;
+            case "MONOGRAM_EDIT_ROOM_CAPTION_UNSUPPORTED":
+                text = "Editing encrypted attachment captions in groups is not supported yet. Send the updated caption as a new encrypted message."; break;
+            case "MONOGRAM_EDIT_ATTACHMENT_METADATA_UNAVAILABLE":
+                text = "The original attachment information is unavailable. Load its history and try again. Your correction was not sent."; break;
+            case "MONOGRAM_EDIT_ROOM_AUTHOR_UNVERIFIED":
+                text = "Monogram cannot verify that this group message belongs to you. Refresh the room history and try again. Your correction was not sent."; break;
+            case "MONOGRAM_EDIT_CAPTION_ENCRYPTION_REQUIRED":
+                text = "The original attachment was sent without encryption, while this conversation now requires encryption. Send the updated caption as a new encrypted message."; break;
+            case "MONOGRAM_FEATURE_UNAVAILABLE":
+                text = "This action is not supported by Monogram yet. Your message was not sent."; break;
+            default:
+                text = code.startsWith("MONOGRAM_FILE_") ? "The file transfer failed. You can retry.\n" + code.substring("MONOGRAM_FILE_".length())
+                    : "The XMPP request failed. Your message was not sent.\n" + code.substring("MONOGRAM_".length());
+        }
+        return detail==null ? text : text+"\n\n"+detail;
+    }
+
     public static Dialog processError(int currentAccount, TLRPC.TL_error error, BaseFragment fragment, TLObject request, Object... args) {
         if (error == null || error.code == 406 || error.text == null) {
             return null;
         }
-        if (request instanceof TLRPC.TL_messages_sendMessage && error.text.startsWith("MONOGRAM_")) {
-            BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragment();
-            if (target == null || target.getParentActivity() == null) return null;
-            String text;
-            switch (error.text) {
-                case "MONOGRAM_OMEMO_TRUST_REQUIRED":
-                    text = "Review the OMEMO fingerprints for this contact and your other devices before sending. Your message is still unsent; retry it after reviewing the devices."; break;
-                case "MONOGRAM_OMEMO_NO_DEVICES":
-                    text = "This contact has not published a compatible OMEMO device. Check their encryption support and try again. Your message was not sent."; break;
-                case "MONOGRAM_OMEMO_NO_TRUSTED_DEVICES":
-                    text = "No trusted recipient device is available. Review this contact's device fingerprints before retrying your message."; break;
-                case "MONOGRAM_OMEMO_DEVICE_FAILURE":
-                    text = "Encryption failed for a device. Check its fingerprint and connection before retrying. Your message was not sent."; break;
-                case "MONOGRAM_XMPP_DISCONNECTED":
-                    text = "Your XMPP account is disconnected. Reconnect, then retry the message."; break;
-                case "MONOGRAM_FEATURE_UNAVAILABLE":
-                    text = "This action is not supported by Monogram yet. Your message was not sent."; break;
-                default:
-                    text = "The XMPP request failed. Your message was not sent.\n" + error.text.substring("MONOGRAM_".length());
+        if ((request instanceof TLRPC.TL_messages_sendMessage || request instanceof TLRPC.TL_messages_editMessage || (request instanceof TLRPC.TL_messages_sendMedia) || request instanceof org.telegram.messenger.xmpp.MonogramFileRequest) && error.text.startsWith("MONOGRAM_")) {
+            BaseFragment target = fragment != null ? fragment : LaunchActivity.getLastFragmentIncludeMainTabs();
+            String text=monogramSendErrorText(error.text);
+            if (target == null || target.getParentActivity() == null) {
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, org.telegram.ui.Components.Bulletin.TYPE_ERROR, text);
+                return null;
             }
-            AlertDialog.Builder builder = new AlertDialog.Builder(target.getParentActivity()).setTitle("Message not sent").setMessage(text);
+            AlertDialog.Builder builder = new AlertDialog.Builder(target.getParentActivity()).setTitle(request instanceof org.telegram.messenger.xmpp.MonogramFileRequest ? "File transfer failed" : "Message not sent").setMessage(text);
             if (error.text.startsWith("MONOGRAM_OMEMO_")) {
-                long peer = ((TLRPC.TL_messages_sendMessage) request).peer.user_id;
+                long peer = request instanceof org.telegram.messenger.xmpp.MonogramFileRequest
+                        ? ((org.telegram.messenger.xmpp.MonogramFileRequest) request).message.dialog_id
+                        : org.telegram.messenger.xmpp.MonogramController.sendingPeer(request);
                 builder.setPositiveButton("Review devices", (dialog, which) -> target.presentFragment(new org.telegram.ui.MonogramSecurityActivity(currentAccount, peer)));
                 builder.setNegativeButton("Close", null);
             } else builder.setPositiveButton("OK", null);
@@ -1940,7 +1994,8 @@ public class AlertsCreator {
         AlertDialog.Builder builder1 = new AlertDialog.Builder(fragment.getParentActivity(), resourcesProvider);
         builder1.setView(message);
         builder1.setTitle(LocaleController.getString(R.string.AskAQuestion));
-        builder1.setPositiveButton(LocaleController.getString(R.string.AskButton), (dialogInterface, i) -> performAskAQuestion(fragment));
+        builder1.setPositiveButton(LocaleController.getString(R.string.AskButton), (dialogInterface, i) ->
+                Browser.openUrl(fragment.getParentActivity(), "https://github.com/doromiert/monogram/issues"));
         builder1.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         return builder1.create();
     }
@@ -3673,6 +3728,16 @@ public class AlertsCreator {
     }
 
     public static void checkRestrictedInviteUsers(int currentAccount, TLRPC.Chat currentChat, TLRPC.TL_messages_invitedUsers invitedUsers) {
+        if(invitedUsers instanceof org.telegram.messenger.xmpp.MonogramInvitedUsers
+                && ((org.telegram.messenger.xmpp.MonogramInvitedUsers)invitedUsers).failure!=null) {
+            String failure=((org.telegram.messenger.xmpp.MonogramInvitedUsers)invitedUsers).failure;
+            AndroidUtilities.runOnUIThread(() -> {
+                BaseFragment fragment=LaunchActivity.getSafeLastFragment();
+                if(fragment!=null && fragment.getCurrentAccount()==currentAccount && fragment.getParentActivity()!=null)
+                    showSimpleAlert(fragment,getString(R.string.AppName),failure);
+            },200);
+            return;
+        }
         if (invitedUsers == null || invitedUsers.missing_invitees.isEmpty() || currentChat == null) {
             return;
         }
@@ -7937,6 +8002,7 @@ public class AlertsCreator {
 
         final boolean[] deleteForAll = new boolean[1];
         boolean canRevokeInbox = user != null && MessagesController.getInstance(currentAccount).canRevokePmInbox;
+        final boolean localXmppDeletion=!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
         int revokeTimeLimit;
         if (user != null) {
             revokeTimeLimit = MessagesController.getInstance(currentAccount).revokeTimePmLimit;
@@ -7947,7 +8013,7 @@ public class AlertsCreator {
         boolean hasNotOut = false;
         int myMessagesCount = 0;
         boolean canDeleteInbox = encryptedChat == null && user != null && canRevokeInbox && revokeTimeLimit == 0x7fffffff;
-        if (chat != null && chat.megagroup && !scheduled && !isSavedMessages) {
+        if (!localXmppDeletion && chat != null && chat.megagroup && !scheduled && !isSavedMessages) {
             ArrayList<MessageObject> messages = new ArrayList<>();
             if (selectedMessage != null) {
                 if (selectedMessage.messageOwner.action == null || selectedMessage.messageOwner.action instanceof TLRPC.TL_messageActionEmpty ||
@@ -8124,7 +8190,7 @@ public class AlertsCreator {
                     }
                 }
             }
-            if (myMessagesCount > 0 && hasNonDiceMessages && (user == null || !UserObject.isDeleted(user))) {
+            if (!localXmppDeletion && myMessagesCount > 0 && hasNonDiceMessages && (user == null || !UserObject.isDeleted(user))) {
                 hasDeleteForAllCheck = true;
                 FrameLayout frameLayout = new FrameLayout(activity);
                 CheckBoxCell cell = new CheckBoxCell(activity, 1, resourcesProvider);
@@ -8148,6 +8214,28 @@ public class AlertsCreator {
             }
         }
 
+        ArrayList<MessageObject> retractionSelection=new ArrayList<>();
+        if(selectedGroup!=null) retractionSelection.addAll(selectedGroup.messages);
+        else if(selectedMessage!=null) retractionSelection.add(selectedMessage);
+        else if(selectedMessages!=null) for(SparseArray<MessageObject> group:selectedMessages)
+            if(group!=null) for(int i=0;i<group.size();i++) retractionSelection.add(group.valueAt(i));
+        boolean retractable=localXmppDeletion && !scheduled && !quickReplies && !isSavedMessages && !retractionSelection.isEmpty();
+        if(retractable) for(MessageObject message:retractionSelection)
+            if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).canRetract(message.getId(),message.getDialogId())) { retractable=false; break; }
+        final boolean canRequestRetraction=retractable;
+        if(canRequestRetraction) {
+            CheckBoxCell cell=new CheckBoxCell(activity,1,resourcesProvider);
+            cell.setText(LocaleController.getString(R.string.MonogramRequestRetraction),"",false,false);
+            cell.setBackgroundDrawable(Theme.getSelectorDrawable(false));
+            cell.setPadding(LocaleController.isRTL ? dp(16) : dp(8),0,LocaleController.isRTL ? dp(8) : dp(16),0);
+            cell.setOnClickListener(v -> { deleteForAll[0]=!deleteForAll[0]; cell.setChecked(deleteForAll[0],true); });
+            builder.setView(cell); builder.setCustomViewOffset(9);
+        }
+        java.util.function.Consumer<String> retractionFinished=error -> {
+            if(error!=null && fragment.getParentActivity()!=null) fragment.showDialog(new AlertDialog.Builder(fragment.getParentActivity(),resourcesProvider)
+                    .setTitle(LocaleController.getString(R.string.AppName)).setMessage(error)
+                    .setPositiveButton(LocaleController.getString(R.string.OK),null).create());
+        };
         AlertDialog.OnButtonClickListener deleteAction = (dialogInterface, i) -> {
             ArrayList<Integer> ids = null;
             long thisDialogId = dialogId;
@@ -8189,7 +8277,8 @@ public class AlertsCreator {
                     thisDialogId = mergeDialogId;
                 }
                 if (!ids.isEmpty()) {
-                    MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, thisDialogId, topicId, deleteForAll[0], mode);
+                    if(canRequestRetraction && deleteForAll[0]) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).retractMessages(ids,thisDialogId,retractionFinished);
+                    else MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, thisDialogId, topicId, deleteForAll[0], mode);
                 }
                 for (MessageObject msg: ephemeralMessages) {
                     MessagesController.getInstance(currentAccount).deleteEphemeralMessage(thisDialogId, topicId, msg);
@@ -8210,7 +8299,9 @@ public class AlertsCreator {
                             }
                         }
                     }
-                    MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, (a == 1 && mergeDialogId != 0) ? mergeDialogId : thisDialogId, topicId, deleteForAll[0], mode);
+                    long deleteDialog=(a == 1 && mergeDialogId != 0) ? mergeDialogId : thisDialogId;
+                    if(canRequestRetraction && deleteForAll[0]) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).retractMessages(ids,deleteDialog,retractionFinished);
+                    else MessagesController.getInstance(currentAccount).deleteMessages(ids, random_ids, encryptedChat, deleteDialog, topicId, deleteForAll[0], mode);
                     selectedMessages[a].clear();
                 }
             }
@@ -8233,7 +8324,9 @@ public class AlertsCreator {
             }
         }
 
-        if (isSavedMessages) {
+        if(localXmppDeletion) {
+            builder.setMessage(LocaleController.getString(canRequestRetraction ? R.string.MonogramDeleteMessagesRetraction : R.string.MonogramDeleteMessagesLocal));
+        } else if (isSavedMessages) {
             if (count == 1) {
                 builder.setMessage(LocaleController.getString(R.string.AreYouSureUnsaveSingleMessage));
             } else {

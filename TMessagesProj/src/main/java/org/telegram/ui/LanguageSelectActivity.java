@@ -44,7 +44,6 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Cells.HeaderCell;
-import org.telegram.ui.Cells.LanguageCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
@@ -53,7 +52,6 @@ import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.TranslateAlert2;
 
@@ -220,8 +218,8 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.updateSearchSettings);
                     } else if (position == autoTranslationPosition) {
                         boolean value = !getChatValue();
-                        if (value && !getUserConfig().isPremium()) {
-                            showDialog(new PremiumFeatureBottomSheet(LanguageSelectActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_TRANSLATIONS, false));
+                        if (value && !org.telegram.messenger.xmpp.MonogramTranslation.isConfigured(currentAccount)) {
+                            presentFragment(new MonogramTranslationSettingsActivity(currentAccount));
                             return;
                         }
                         getMessagesController().getTranslateController().setChatTranslateEnabled(value);
@@ -297,7 +295,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                 }
                 boolean search = listView.getAdapter() == searchListViewAdapter;
                 if (!search) {
-                    position -= languagesStartsPosition; // (7 - (!(getChatValue() || getContextValue()) ? 1 : 0) - (getMessagesController().premiumFeaturesBlocked() ? 1 : 0));
+                    position -= languagesStartsPosition;
                 }
                 LocaleController.LocaleInfo localeInfo;
                 if (search) {
@@ -334,18 +332,6 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                         });
                     }
 
-                    String langCode = localeInfo.pluralLangCode,
-                            prevLangCode = prevLocale.pluralLangCode;
-                    HashSet<String> selectedLanguages = RestrictedLanguagesSelectActivity.getRestrictedLanguages();
-                    HashSet<String> newSelectedLanguages = new HashSet<String>(selectedLanguages);
-
-                    if (selectedLanguages.contains(prevLangCode) && !selectedLanguages.contains(langCode)) {
-                        newSelectedLanguages.removeIf(s -> s != null && s.equals(prevLangCode));
-                    }
-                    if (langCode != null && !"null".equals(langCode)) {
-                        newSelectedLanguages.add(langCode);
-                    }
-                    RestrictedLanguagesSelectActivity.updateRestrictedLanguages(newSelectedLanguages, false);
                     MessagesController.getInstance(currentAccount).getTranslateController().checkRestrictedLanguagesUpdate();
                     MessagesController.getInstance(currentAccount).getTranslateController().cleanup();
 
@@ -363,7 +349,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                 }
                 boolean search = listView.getAdapter() == searchListViewAdapter;
                 if (!search) {
-                    position -= languagesStartsPosition; // (7 - (!(getChatValue() || getContextValue()) ? 1 : 0) - (getMessagesController().premiumFeaturesBlocked() ? 1 : 0));
+                    position -= languagesStartsPosition;
                 }
                 LocaleController.LocaleInfo localeInfo;
                 if (search) {
@@ -612,7 +598,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                     if (getMessagesController().isTranslationsManualEnabled()) {
                         count++;
                     }
-                    if (getMessagesController().isTranslationsAutoEnabled() && !getMessagesController().premiumFeaturesBlocked()) {
+                    if (getMessagesController().isTranslationsAutoEnabled()) {
                         count++;
                     }
                     if (getChatValue() || getContextValue()) {
@@ -678,7 +664,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
             switch (holder.getItemViewType()) {
                 case VIEW_TYPE_LANGUAGE: {
                     if (!search) {
-                        position -= languagesStartsPosition; // (7 - (!(getChatValue() || getContextValue()) ? 1 : 0) - (getMessagesController().premiumFeaturesBlocked() ? 1 : 0));
+                        position -= languagesStartsPosition;
                     }
                     TextRadioCell textSettingsCell = (TextRadioCell) holder.itemView;
                     textSettingsCell.updateRTL();
@@ -781,7 +767,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                         cell.setCheckBoxIcon(0);
                     } else if (position == autoTranslationPosition) {
                         cell.setTextAndCheck(LocaleController.getString(R.string.ShowTranslateChatButton), getChatValue(), getContextValue() || getChatValue());
-                        cell.setCheckBoxIcon(!getUserConfig().isPremium() ? R.drawable.permission_locked : 0);
+                        cell.setCheckBoxIcon(0);
                     }
                     break;
                 }
@@ -823,7 +809,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                     } else {
                         manualTranslationPosition = -1;
                     }
-                    if (getMessagesController().isTranslationsAutoEnabled() && !getMessagesController().premiumFeaturesBlocked()) {
+                    if (getMessagesController().isTranslationsAutoEnabled()) {
                         if (i-- == 0) {
                             autoTranslationPosition = position;
                             return VIEW_TYPE_SWITCH;
@@ -869,7 +855,9 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
     public ArrayList<ThemeDescription> getThemeDescriptions() {
         ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{LanguageCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR,
+                new Class[]{HeaderCell.class, TextCheckCell.class, TextRadioCell.class, TextSettingsCell.class},
+                null, null, null, Theme.key_windowBackgroundWhite));
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
@@ -888,9 +876,23 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
 
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
 
-        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{LanguageCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
-        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{LanguageCell.class}, new String[]{"textView2"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText3));
-        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{LanguageCell.class}, new String[]{"checkImage"}, null, null, null, Theme.key_featuredStickers_addedIcon));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextRadioCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextRadioCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKBOX, new Class[]{TextRadioCell.class}, new String[]{"radioButton"}, null, null, null, Theme.key_radioBackground));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKBOXCHECK, new Class[]{TextRadioCell.class}, new String[]{"radioButton"}, null, null, null, Theme.key_radioBackgroundChecked));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrack));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
 
         return themeDescriptions;
     }

@@ -78,7 +78,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     private BillingController(Context ctx) {
-        billingClient = BillingClient.newBuilder(ctx)
+        billingClient = BuildVars.IS_BILLING_UNAVAILABLE ? null : BillingClient.newBuilder(ctx)
                 .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
                 .setListener(this)
                 .build();
@@ -142,6 +142,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     public void startConnection() {
+        if(BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) return;
         if (isReady()) {
             return;
         }
@@ -172,14 +173,22 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     public boolean isReady() {
-        return billingClient.isReady();
+        return !BuildVars.IS_BILLING_UNAVAILABLE && billingClient != null && billingClient.isReady();
     }
 
     public interface ProductDetailsResponseListenerLegacy {
         void onProductDetailsResponse(BillingResult billingResult, List<ProductDetails> list);
     }
 
+    private static BillingResult unavailableResult() {
+        return BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.BILLING_UNAVAILABLE).setDebugMessage("Purchases are unavailable in Monogram").build();
+    }
+
     public void queryProductDetails(List<QueryProductDetailsParams.Product> products, ProductDetailsResponseListenerLegacy responseListener) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) {
+            if (responseListener != null) responseListener.onProductDetailsResponse(unavailableResult(), Collections.emptyList());
+            return;
+        }
         if (!isReady()) {
             throw new IllegalStateException("Billing: Controller should be ready for this call!");
         }
@@ -191,10 +200,15 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
      * {@link BillingClient#queryPurchasesAsync} returns only active subscriptions and not consumed purchases.
      */
     public void queryPurchases(String productType, PurchasesResponseListener responseListener) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) {
+            if (responseListener != null) responseListener.onQueryPurchasesResponse(unavailableResult(), Collections.emptyList());
+            return;
+        }
         billingClient.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(productType).build(), responseListener);
     }
 
     public boolean startManageSubscription(Context ctx, String productId) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) return false;
         try {
             ctx.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(String.format("https://play.google.com/store/account/subscriptions?sku=%s&package=%s", productId, ctx.getPackageName()))));
             return true;
@@ -204,6 +218,10 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     public void addResultListener(String productId, Consumer<BillingResult> listener) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) {
+            if (listener != null) listener.accept(unavailableResult());
+            return;
+        }
         resultListeners.put(productId, listener);
     }
 
@@ -304,6 +322,10 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     public void onPurchasesUpdatedInternal(@NonNull BillingResult billing, @Nullable List<Purchase> list, @Nullable Runnable onDone) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) {
+            if (onDone != null) onDone.run();
+            return;
+        }
         FileLog.d("Billing: Purchases updated: " + billing + ", " + list);
         if (billing.getResponseCode() != BillingClient.BillingResponseCode.OK) {
             if (billing.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
@@ -448,6 +470,10 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
      * Without confirmation the user will not be able to buy the product again.
      */
     public void consumeGiftPurchase(Purchase purchase, TLRPC.InputStorePaymentPurpose purpose, Runnable onDone) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) {
+            if (onDone != null) onDone.run();
+            return;
+        }
         if (purpose instanceof TLRPC.TL_inputStorePaymentGiftPremium ||
             purpose instanceof TLRPC.TL_inputStorePaymentPremiumGiftCode ||
             purpose instanceof TLRPC.TL_inputStorePaymentStarsTopup ||
@@ -478,6 +504,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     @SuppressWarnings("Convert2MethodRef")
     @Override
     public void onBillingServiceDisconnected() {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) return;
         FileLog.d("Billing: Service disconnected");
         int delay = isDisconnected ? 15000 : 5000;
         isDisconnected = true;
@@ -486,6 +513,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
 
     private ArrayList<Runnable> setupListeners = new ArrayList<>();
     public void whenSetuped(Runnable listener) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) return;
         setupListeners.add(listener);
     }
 
@@ -493,6 +521,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
 
     @Override
     public void onBillingSetupFinished(@NonNull BillingResult setupBillingResult) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) return;
         FileLog.d("Billing: Setup finished with result " + setupBillingResult);
         if (setupBillingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             isDisconnected = false;
@@ -518,6 +547,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     private void onQueriedPremiumProductDetails(BillingResult billingResult, List<ProductDetails> list) {
+        if (BuildVars.IS_BILLING_UNAVAILABLE || billingClient == null) return;
         FileLog.d("Billing: Query product details finished " + billingResult + ", " + list);
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             for (ProductDetails details : list) {

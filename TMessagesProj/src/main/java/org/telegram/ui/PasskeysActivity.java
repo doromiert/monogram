@@ -34,6 +34,9 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
+import org.telegram.ui.Cells.TextCell;
+import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.Bulletin;
@@ -77,7 +80,7 @@ public class PasskeysActivity extends BaseFragment {
         });
 
         FrameLayout contentView = new FrameLayout(context);
-        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
         listView = new UniversalRecyclerView(this, this::fillItems, this::onItemClick, null);
         listView.setSections();
@@ -188,7 +191,7 @@ public class PasskeysActivity extends BaseFragment {
             .show(true);
     }
 
-    public static class PasskeyCell extends FrameLayout {
+    public static class PasskeyCell extends FrameLayout implements Theme.Colorable {
 
         private final int currentAccount;
         private final Theme.ResourcesProvider resourcesProvider;
@@ -207,29 +210,30 @@ public class PasskeysActivity extends BaseFragment {
             this.resourcesProvider = resourcesProvider;
 
             imageBackgroundView = new FrameLayout(context);
-            addView(imageBackgroundView, LayoutHelper.createFrame(36, 36, Gravity.CENTER_VERTICAL | Gravity.LEFT, 18.5f, 0, 0, 0));
+            addView(imageBackgroundView, LayoutHelper.createFrameRelatively(36, 36, Gravity.CENTER_VERTICAL | Gravity.START, 18.5f, 0, 0, 0));
 
             imageView = new BackupImageView(context);
             imageView.setImageResource(R.drawable.msg2_permissions);
             imageView.setColorFilter(new PorterDuffColorFilter(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), 0.3f), PorterDuff.Mode.SRC_IN));
             imageBackgroundView.addView(imageView, LayoutHelper.createFrame(36, 36, Gravity.CENTER));
 
-            titleView = TextHelper.makeTextView(context, 15, Theme.key_windowBackgroundWhiteBlackText, true);
+            titleView = TextHelper.makeTextView(context, 15, Theme.key_windowBackgroundWhiteBlackText, true, resourcesProvider);
             titleView.setSingleLine();
             titleView.setEllipsize(TextUtils.TruncateAt.END);
-            addView(titleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 72, 8, 46, 0));
+            titleView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(titleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 72, 8, 46, 0));
 
-            subtitleView = TextHelper.makeTextView(context, 13, Theme.key_windowBackgroundWhiteGrayText, false);
+            subtitleView = TextHelper.makeTextView(context, 13, Theme.key_windowBackgroundWhiteGrayText, false, resourcesProvider);
             subtitleView.setSingleLine();
             subtitleView.setEllipsize(TextUtils.TruncateAt.END);
-            addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 72, 31, 46, 0));
+            subtitleView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(subtitleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 72, 31, 46, 0));
 
             optionsView = new ImageView(context);
             optionsView.setScaleType(ImageView.ScaleType.CENTER);
             optionsView.setImageResource(R.drawable.ic_ab_other);
-            optionsView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), PorterDuff.Mode.SRC_IN));
-            optionsView.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider)));
-            addView(optionsView, LayoutHelper.createFrame(32, 32, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, 13, 0));
+            addView(optionsView, LayoutHelper.createFrameRelatively(32, 32, Gravity.CENTER_VERTICAL | Gravity.END, 0, 0, 13, 0));
+            updateColors();
         }
 
         public String id;
@@ -261,6 +265,19 @@ public class PasskeysActivity extends BaseFragment {
             }
             optionsView.setOnClickListener(onOptions);
             setWillNotDraw(!(needDivider = divider));
+        }
+
+        @Override
+        public void updateColors() {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+            optionsView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider), PorterDuff.Mode.SRC_IN));
+            optionsView.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider)));
+            if (imageBackgroundView.getBackground() != null) {
+                imageBackgroundView.setBackground(Theme.createRoundRectDrawable(dp(4), Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), 0.04f)));
+                imageView.setColorFilter(new PorterDuffColorFilter(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), 0.3f), PorterDuff.Mode.SRC_IN));
+            }
+            invalidate();
         }
 
         @Override
@@ -300,6 +317,24 @@ public class PasskeysActivity extends BaseFragment {
                 return item;
             }
         }
+    }
+
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> descriptions = new ArrayList<>();
+        descriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_actionBarDefaultSelector));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_SELECTOR, null, null, null, null, Theme.key_listSelector));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{View.class}, Theme.dividerPaint, null, null, Theme.key_divider));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueText4));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR | ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueText4));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGray));
+        return descriptions;
     }
 
     public static void showLearnSheet(Context context, int currentAccount, Theme.ResourcesProvider resourcesProvider, boolean withCreateButton) {

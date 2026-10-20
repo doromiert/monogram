@@ -23,6 +23,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
@@ -34,6 +35,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
@@ -79,7 +81,7 @@
     <uses-permission android:name="com.oppo.launcher.permission.WRITE_SETTINGS"/>
     <uses-permission android:name="me.everything.badger.permission.BADGE_COUNT_READ"/>
     <uses-permission android:name="me.everything.badger.permission.BADGE_COUNT_WRITE"/>
-    <uses-permission android:name="com.android.vending.BILLING"/>
+    <uses-permission android:name="com.android.vending.BILLING" tools:node="remove"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="replace" />
 
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
@@ -88,9 +90,11 @@
 
     <queries>
         <package android:name="com.google.android.apps.maps"/>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="ton"/>
+        <intent tools:node="remove">
+            <action android:name="com.android.vending.billing.InAppBillingService.BIND"/>
+        </intent>
+        <intent tools:node="remove">
+            <action android:name="com.google.android.apps.play.billingtestcompanion.BillingOverrideService.BIND"/>
         </intent>
     </queries>
 
@@ -111,6 +115,10 @@
         android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
     >
+        <!-- Billing API types still compile in stock classes; no payment components are registered. -->
+        <activity android:name="com.android.billingclient.api.ProxyBillingActivity" tools:node="remove"/>
+        <activity android:name="com.android.billingclient.api.ProxyBillingActivityV2" tools:node="remove"/>
+        <meta-data android:name="com.google.android.play.billingclient.version" tools:node="remove"/>
         <!-- usesCleartextTraffic for browser supporting opening http:// links -->
 
         <activity-alias
@@ -276,6 +284,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="tg" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="xmpp" />
             </intent-filter>
             <intent-filter android:icon="@drawable/monogram_icon" android:roundIcon="@drawable/monogram_icon" android:priority="1">
                 <action android:name="android.intent.action.VIEW" />
@@ -478,9 +492,11 @@
         <service
             android:name=".NotificationsService"
             android:enabled="true"
-            android:exported="true"
-            android:foregroundServiceType="dataSync"
-        />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent XMPP connection for real-time messaging on user-selected Jabber servers without a push gateway" />
+        </service>
         <service
             android:name=".NotificationRepeat"
             android:exported="false"
@@ -559,10 +575,15 @@
             </intent-filter>
         </receiver>
 
+        <service android:name=".xmpp.MonogramCallService" android:exported="false" android:foregroundServiceType="microphone|camera" />
+        <receiver android:name=".xmpp.MonogramCallActionReceiver" android:exported="false" />
+        <activity android:name=".xmpp.MonogramCallPermissionActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver android:name=".AppStartReceiver" android:enabled="true" android:exported="false">
             <intent-filter>
                 <action android:name="org.telegram.start" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
@@ -573,15 +594,6 @@
         </receiver>
 
         <receiver android:name=".WearReplyReceiver" android:enabled="true"/>
-
-        <service
-            android:name=".WearAuthListenerService"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:scheme="wear" android:host="*" android:pathPrefix="/tg-wear-auth/" />
-            </intent-filter>
-        </service>
 
         <receiver android:name=".StopLiveLocationReceiver" android:enabled="true"/>
 
@@ -674,7 +686,6 @@
         <meta-data android:name="com.sec.android.multiwindow.MINIMUM_SIZE_W" android:value="632dp" />
         <meta-data android:name="com.sec.android.multiwindow.MINIMUM_SIZE_H" android:value="598dp" />
 
-        <meta-data android:name="com.google.android.gms.wallet.api.enabled" android:value="true" />
 
         <!--
         <meta-data android:name="com.google.android.gms.car.notification.SmallIcon" android:resource="@drawable/ic_player" />

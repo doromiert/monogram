@@ -6045,7 +6045,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 }
                 checkBotMenu();
 
-                if (editingCaption && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
+                if (editingCaption && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
                     captionLimitBulletinShown = true;
                     if (heightShouldBeChanged) {
                         AndroidUtilities.runOnUIThread(() -> showCaptionLimitBulletin(), 300);
@@ -7539,7 +7539,10 @@ public class ChatActivityEnterView extends FrameLayout implements
                             }
                         }
 
-                        if (emoji == null || !MessageObject.isFreeEmoji(emoji)) {
+                        if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.emoji(currentAccount,documentId) && (emoji == null || !MessageObject.isFreeEmoji(emoji))) {
+                            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                                BulletinFactory.of(parentFragment).createErrorBulletin(getString(R.string.MonogramImportEmojiFirst)).show();return true;
+                            }
                             BulletinFactory.of(parentFragment)
                                 .createEmojiBulletin(
                                     emoji,
@@ -11971,14 +11974,14 @@ public class ChatActivityEnterView extends FrameLayout implements
             @Override
             public void onStickersSettingsClick() {
                 if (parentFragment != null) {
-                    parentFragment.presentFragment(new StickersActivity(MediaDataController.TYPE_IMAGE, null));
+                    parentFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount));
                 }
             }
 
             @Override
             public void onEmojiSettingsClick(ArrayList<TLRPC.TL_messages_stickerSet> frozenEmojiPacks) {
                 if (parentFragment != null) {
-                    parentFragment.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, frozenEmojiPacks));
+                    parentFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount));
                 }
             }
 
@@ -12236,7 +12239,9 @@ public class ChatActivityEnterView extends FrameLayout implements
                 onGifSelected(view, gif, query, parent, notify, scheduleDate, scheduleRepeatPeriod, null, false);
             }
 
-            public void onGifSelected(View view, Object gif, String query, Object parent, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MediaController.PhotoEntry entry, boolean invertMedia) {
+            public void onGifSelected(View view, Object selectedGif, String query, Object parent, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MediaController.PhotoEntry entry, boolean invertMedia) {
+                final Object gif = selectedGif instanceof TLRPC.BotInlineResult && ((TLRPC.BotInlineResult) selectedGif).document != null
+                        ? ((TLRPC.BotInlineResult) selectedGif).document : selectedGif;
                 if (replyingQuote != null && parentFragment != null && replyingQuote.outdated) {
                     parentFragment.showQuoteMessageUpdate();
                     return;
@@ -12252,6 +12257,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     }
                     AlertsCreator.ensurePaidMessageConfirmation(currentAccount, dialog_id, 1, stars -> {
                         Runnable runnable = () -> {
+                            org.telegram.messenger.xmpp.MonogramGiphy.remember(currentAccount, selectedGif);
                             if (stickersExpanded) {
                                 if (searchingType != 0) {
                                     emojiView.hideSearchKeyboard();
@@ -12323,8 +12329,10 @@ public class ChatActivityEnterView extends FrameLayout implements
                                 TLRPC.User bot = (TLRPC.User) parent;
 
                                 HashMap<String, String> params = new HashMap<>();
-                                params.put("id", result.id);
-                                params.put("query_id", "" + result.query_id);
+                                if (!org.telegram.messenger.xmpp.MonogramGiphy.isResult(result)) {
+                                    params.put("id", result.id);
+                                    params.put("query_id", "" + result.query_id);
+                                }
                                 params.put("force_gif", "1");
 
                                 if (storyItem == null) {

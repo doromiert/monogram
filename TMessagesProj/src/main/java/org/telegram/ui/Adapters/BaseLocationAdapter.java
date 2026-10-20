@@ -65,8 +65,38 @@ public abstract class BaseLocationAdapter extends AdapterWithDiffUtils {
     private long dialogId;
     private boolean searchingUser;
     protected boolean searchInProgress;
+    private org.telegram.messenger.xmpp.MonogramPlaceSearch.Job placeJob;
+    private volatile long placeRevision;
+    private String placeError,placeOwner;
+    private long placeOwnerGeneration;
+    private int placeAccount;
+    private volatile boolean destroyed;
+    public void setSearchAccount(int account) { cancelPlaceSearch();currentAccount=account; }
+    public boolean isXmppSearch() { return !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty(); }
+    public boolean currentPlaceResults() {
+        if(destroyed || placeOwner==null || placeAccount!=currentAccount) return false;
+        org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        return placeOwnerGeneration==controller.accountGeneration() && placeOwner.equals(controller.accountJid());
+    }
+    public String placeSearchStatus() { return placeError!=null?placeError:LocaleController.getString(R.string.MonogramPlaceSearchHint); }
+    public void cancelPlaceSearch() {
+        placeRevision++;if(placeJob!=null) placeJob.cancel();placeJob=null;searchInProgress=false;searching=false;searchingLocations=false;
+        if(searchRunnable!=null) Utilities.searchQueue.cancelRunnable(searchRunnable);searchRunnable=null;
+    }
+    public void submitPlaceSearch(String query) {
+        if(destroyed || !isXmppSearch()) return;
+        cancelPlaceSearch();final long revision=placeRevision;final int account=currentAccount;
+        final org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(account);
+        final String jid=controller.accountJid();final long generation=controller.accountGeneration();
+        placeOwner=jid;placeOwnerGeneration=generation;placeAccount=account;
+        lastFoundQuery=query;placeError=null;places.clear();locations.clear();searchInProgress=true;update(true);
+        placeJob=org.telegram.messenger.xmpp.MonogramPlaceSearch.search(ApplicationLoader.applicationContext,account,jid,query,
+                () -> !destroyed && placeRevision==revision && currentAccount==account && controller.accountGeneration()==generation && jid.equals(controller.accountJid()),
+                (found,error) -> { placeJob=null;searchInProgress=false;searched=true;placeError=error!=null?error:found.isEmpty()?LocaleController.getString(R.string.MonogramPlaceSearchEmpty):null;places.clear();places.addAll(found);update(true);if(delegate!=null) delegate.didLoadSearchResult(places); });
+    }
 
     public void destroy() {
+        destroyed=true;cancelPlaceSearch();
         if (currentRequestNum != 0) {
             ConnectionsManager.getInstance(currentAccount).cancelRequest(currentRequestNum, true);
             currentRequestNum = 0;
@@ -79,6 +109,7 @@ public abstract class BaseLocationAdapter extends AdapterWithDiffUtils {
     }
 
     public void searchDelayed(final String query, final Location coordinate) {
+        if(isXmppSearch()) { cancelPlaceSearch();lastFoundQuery=query;placeError=null;places.clear();locations.clear();update(true);if(delegate!=null) delegate.didLoadSearchResult(places);return; }
         if (query == null || query.length() == 0) {
             places.clear();
             locations.clear();
@@ -153,6 +184,10 @@ public abstract class BaseLocationAdapter extends AdapterWithDiffUtils {
     }
 
     public void searchPlacesWithQuery(final String query, final Location coordinate, boolean searchUser, boolean animated) {
+        if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            searching=false;searchingLocations=false;searchInProgress=false;searched=true;
+            places.clear();locations.clear();notifyDataSetChanged();if(delegate!=null) delegate.didLoadSearchResult(new ArrayList<>());return;
+        }
         if (coordinate == null && !stories || lastSearchLocation != null && coordinate != null && coordinate.distanceTo(lastSearchLocation) < 200) {
             return;
         }

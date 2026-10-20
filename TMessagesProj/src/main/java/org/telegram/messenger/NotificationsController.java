@@ -212,6 +212,9 @@ public class NotificationsController extends BaseController implements Notificat
 
         notificationManager = NotificationManagerCompat.from(ApplicationLoader.applicationContext);
         systemNotificationManager = (NotificationManager) ApplicationLoader.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
+            try { notificationManager.cancel("wallet_tonconnect",currentAccount); } catch(Exception ignored) {}
+        }
 
         try {
             audioManager = (AudioManager) ApplicationLoader.applicationContext.getSystemService(Context.AUDIO_SERVICE);
@@ -371,8 +374,9 @@ public class NotificationsController extends BaseController implements Notificat
 
     // Wallet requests are local notifications, never synthetic chat messages or stored FCM messages.
     public void showTonConnectNotification(String dapp, long time) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return;
         notificationsQueue.postRunnable(() -> {
-            if (!getUserConfig().isClientActivated()
+            if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || !getUserConfig().isClientActivated()
                     || !SharedConfig.showNotificationsForAllAccounts && currentAccount != UserConfig.selectedAccount) {
                 return;
             }
@@ -888,6 +892,14 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void processReadMessages(LongSparseIntArray inbox, long dialogId, int maxDate, int maxId, boolean isPopup) {
+        processReadMessages(inbox,dialogId,maxDate,maxId,isPopup,null);
+    }
+    public void processMonogramReadMessages(long dialogId,java.util.Set<Integer> ids,int remaining) {
+        processReadMessages(null,dialogId,0,0,false,new java.util.HashSet<>(ids));
+        LongSparseIntArray changed=new LongSparseIntArray(1);changed.put(dialogId,remaining);
+        processDialogsUpdateRead(changed,true);
+    }
+    private void processReadMessages(LongSparseIntArray inbox,long dialogId,int maxDate,int maxId,boolean isPopup,java.util.Set<Integer> exactIds) {
         ArrayList<MessageObject> popupArrayRemove = new ArrayList<>(0);
         notificationsQueue.postRunnable(() -> {
             if (inbox != null) {
@@ -923,12 +935,14 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                 }
             }
-            if (dialogId != 0 && (maxId != 0 || maxDate != 0)) {
+            if (dialogId != 0 && (maxId != 0 || maxDate != 0 || exactIds!=null)) {
                 for (int a = 0; a < pushMessages.size(); a++) {
                     MessageObject messageObject = pushMessages.get(a);
                     if (messageObject.getDialogId() == dialogId && !messageObject.isStoryReactionPush) {
                         boolean remove = false;
-                        if (maxDate != 0) {
+                        if(exactIds!=null) {
+                            remove=exactIds.contains(messageObject.getId());
+                        } else if (maxDate != 0) {
                             if (messageObject.messageOwner.date <= maxDate) {
                                 remove = true;
                             }
@@ -1030,6 +1044,7 @@ public class NotificationsController extends BaseController implements Notificat
         }
 
         ArrayList<MessageObject> popupArrayAdd = new ArrayList<>(0);
+        ArrayList<MessageObject> popupArrayRemove = new ArrayList<>(0);
         notificationsQueue.postRunnable(() -> {
             boolean updated = false;
             for (int a = 0, N = editedMessages.size(); a < N; a++) {
@@ -1055,6 +1070,8 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                     if (oldMessage != null) {
                         updated = true;
+                        popupArrayRemove.add(oldMessage);
+                        popupArrayAdd.add(messageObject);
                         sparseArray.put(messageObject.getId(), messageObject);
                         int idx = pushMessages.indexOf(oldMessage);
                         if (idx >= 0) {
@@ -1068,6 +1085,26 @@ public class NotificationsController extends BaseController implements Notificat
                 }
             }
             if (updated) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    boolean popupUpdated = false;
+                    for (int i = 0; i < popupArrayRemove.size(); i++) {
+                        MessageObject oldMessage = popupArrayRemove.get(i);
+                        MessageObject messageObject = popupArrayAdd.get(i);
+                        int idx = popupMessages.indexOf(oldMessage);
+                        if (idx >= 0) {
+                            popupMessages.set(idx, messageObject);
+                            popupUpdated = true;
+                        }
+                        idx = popupReplyMessages.indexOf(oldMessage);
+                        if (idx >= 0) {
+                            popupReplyMessages.set(idx, messageObject);
+                            popupUpdated = true;
+                        }
+                    }
+                    if (popupUpdated) {
+                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.pushMessagesUpdated);
+                    }
+                });
                 showOrUpdateNotification(false);
             }
         });
@@ -1436,6 +1473,15 @@ public class NotificationsController extends BaseController implements Notificat
     }
 
     public void processDialogsUpdateRead(LongSparseIntArray dialogsToUpdate) {
+        processDialogsUpdateRead(dialogsToUpdate,false);
+    }
+    private static int monogramUnreadFloor(long dialogId,int reported,Iterable<MessageObject> messages) {
+        int pending=0;
+        for(MessageObject message:messages)
+            if(message.getDialogId()==dialogId && !message.messageOwner.from_scheduled && !message.isStoryReactionPush) pending++;
+        return Math.max(reported,pending);
+    }
+    private void processDialogsUpdateRead(LongSparseIntArray dialogsToUpdate,boolean preserveUnmatched) {
         ArrayList<MessageObject> popupArrayToRemove = new ArrayList<>();
         notificationsQueue.postRunnable(() -> {
             int old_unread_count = total_unread_count;
@@ -1476,6 +1522,8 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                 }
 
+                // A new push can arrive after the storage read snapshot; never clear it with a stale zero.
+                if(preserveUnmatched) newCount=monogramUnreadFloor(dialogId,newCount,pushMessages);
                 if (newCount == 0) {
                     smartNotificationsDialogs.remove(dialogId);
                 }
@@ -5198,6 +5246,7 @@ public class NotificationsController extends BaseController implements Notificat
                 replyIntent.putExtra("max_id", maxId);
                 replyIntent.putExtra("topic_id", topicId);
                 replyIntent.putExtra("currentAccount", currentAccount);
+                org.telegram.messenger.xmpp.MonogramNotificationActions.bind(replyIntent, currentAccount);
                 if (messageObjects != null && !messageObjects.isEmpty()) {
                     ArrayList<Integer> voiceIdsList = new ArrayList<>();
                     for (int vi = 0; vi < messageObjects.size(); vi++) {
@@ -5602,7 +5651,8 @@ public class NotificationsController extends BaseController implements Notificat
             msgHeardIntent.putExtra("dialog_id", dialogId);
             msgHeardIntent.putExtra("max_id", maxId);
             msgHeardIntent.putExtra("currentAccount", currentAccount);
-            PendingIntent readPendingIntent = PendingIntent.getBroadcast(ApplicationLoader.applicationContext, internalId, msgHeardIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            org.telegram.messenger.xmpp.MonogramNotificationActions.bind(msgHeardIntent, currentAccount);
+            PendingIntent readPendingIntent = PendingIntent.getBroadcast(ApplicationLoader.applicationContext, internalId, msgHeardIntent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             NotificationCompat.Action readAction = new NotificationCompat.Action.Builder(R.drawable.msg_markread, LocaleController.getString(R.string.MarkAsRead), readPendingIntent)
                     .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
                     .setShowsUserInterface(false)
@@ -6044,7 +6094,7 @@ public class NotificationsController extends BaseController implements Notificat
     public void setDialogNotificationsSettings(long dialog_id, long topicId, int setting) {
         SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
         SharedPreferences.Editor editor = preferences.edit();
-        TLRPC.Dialog dialog = MessagesController.getInstance(UserConfig.selectedAccount).dialogs_dict.get(dialog_id);
+        TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(dialog_id);
         if (setting == SETTING_MUTE_UNMUTE) {
             boolean defaultEnabled = isGlobalNotificationsEnabled(dialog_id, false, false);
             if (defaultEnabled) {
@@ -6058,7 +6108,7 @@ public class NotificationsController extends BaseController implements Notificat
                 dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
             }
         } else {
-            int untilTime = ConnectionsManager.getInstance(UserConfig.selectedAccount).getCurrentTime();
+            int untilTime = getConnectionsManager().getCurrentTime();
             if (setting == SETTING_MUTE_HOUR) {
                 untilTime += 60 * 60;
             } else if (setting == SETTING_MUTE_8_HOURS) {
@@ -6077,8 +6127,8 @@ public class NotificationsController extends BaseController implements Notificat
                 editor.putInt("notifyuntil_" + NotificationsController.getSharedPrefKey(dialog_id, topicId), untilTime);
                 flags = ((long) untilTime << 32) | 1;
             }
-            NotificationsController.getInstance(UserConfig.selectedAccount).removeNotificationsForDialog(dialog_id);
-            MessagesStorage.getInstance(UserConfig.selectedAccount).setDialogFlags(dialog_id, flags);
+            removeNotificationsForDialog(dialog_id);
+            getMessagesStorage().setDialogFlags(dialog_id, flags);
             if (dialog != null) {
                 dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
                 dialog.notify_settings.mute_until = untilTime;

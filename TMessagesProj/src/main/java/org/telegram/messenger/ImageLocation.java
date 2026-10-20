@@ -125,6 +125,8 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForPhoto(TLRPC.PhotoSize photoSize, TLRPC.Photo photo) {
+        ImageLocation preview=org.telegram.messenger.xmpp.MonogramLinkPreviews.thumbnail(photoSize,photo);
+        if(preview!=null) return preview;
         if (photoSize instanceof TLRPC.TL_photoStrippedSize || photoSize instanceof TLRPC.TL_photoPathSize) {
             ImageLocation imageLocation = new ImageLocation();
             imageLocation.photoSize = photoSize;
@@ -211,6 +213,11 @@ public class ImageLocation {
             imageLocation.photoSize.bytes = user.photo.stripped_thumb;
             return imageLocation;
         }
+        // dc_id survives native user-cache serialization; the synthetic file locations do not.
+        if (user.photo.dc_id == Integer.MIN_VALUE) {
+            return org.telegram.messenger.xmpp.MonogramProfiles.imageLocation(user,
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(user.id));
+        }
         TLRPC.FileLocation fileLocation = type == TYPE_BIG ? user.photo.photo_big : user.photo.photo_small;
         if (fileLocation == null) {
             return null;
@@ -259,6 +266,10 @@ public class ImageLocation {
             imageLocation.photoSize.type = "s";
             imageLocation.photoSize.bytes = chat.photo.stripped_thumb;
             return imageLocation;
+        }
+        if(chat.photo.dc_id==Integer.MIN_VALUE) {
+            return org.telegram.messenger.xmpp.MonogramProfiles.imageLocation(chat,
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(-chat.id));
         }
         TLRPC.FileLocation fileLocation = type == TYPE_BIG ? chat.photo.photo_big : chat.photo.photo_small;
         if (fileLocation == null) {
@@ -335,6 +346,8 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForDocument(TLRPC.PhotoSize photoSize, TLRPC.Document document) {
+        ImageLocation localSticker = org.telegram.messenger.xmpp.MonogramStickers.localThumbnail(photoSize, document);
+        if (localSticker != null) return localSticker;
         if (photoSize instanceof TLRPC.TL_photoStrippedSize || photoSize instanceof TLRPC.TL_photoPathSize) {
             ImageLocation imageLocation = new ImageLocation();
             imageLocation.photoSize = photoSize;
@@ -471,6 +484,7 @@ public class ImageLocation {
         } else if (instantFile != null) {
             return Utilities.MD5(instantFile.url);
         } else if (document != null) {
+            if (!android.text.TextUtils.isEmpty(document.localPath)) return Utilities.MD5(document.localPath);
             if (!url && document instanceof DocumentObject.ThemeDocument) {
                 DocumentObject.ThemeDocument themeDocument = (DocumentObject.ThemeDocument) document;
                 return document.dc_id + "_" + document.id + "_" + Theme.getBaseThemeKey(themeDocument.themeSettings) + "_" + themeDocument.themeSettings.accent_color + "_" +

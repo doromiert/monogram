@@ -170,6 +170,11 @@ public class AnimatedEmojiDrawable extends Drawable {
 
     private static HashMap<Integer, EmojiDocumentFetcher> fetchers;
 
+    public static void clearMonogramPacks(int account) {
+        if (fetchers != null) fetchers.remove(account);
+        dropGlobalEmojiCache();
+    }
+
     public static EmojiDocumentFetcher getDocumentFetcher(int account) {
         if (fetchers == null) {
             fetchers = new HashMap<>();
@@ -199,6 +204,16 @@ public class AnimatedEmojiDrawable extends Drawable {
 
         public void fetchDocument(long id, ReceivedDocument onDone) {
             if (id == 0) return;
+            if (org.telegram.messenger.xmpp.MonogramEmojis.isLocalId(id)) {
+                TLRPC.Document local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).customEmoji(id);
+                if (onDone != null) onDone.run(local);
+                return;
+            }
+            if (org.telegram.messenger.xmpp.MonogramPacks.isLocalId(id)) {
+                TLRPC.Document local = org.telegram.messenger.xmpp.MonogramPacks.document(currentAccount, id);
+                if (onDone != null) onDone.run(local);
+                return;
+            }
             synchronized (this) {
                 if (emojiDocumentsCache != null) {
                     TLRPC.Document cacheDocument = emojiDocumentsCache.get(id);
@@ -314,6 +329,24 @@ public class AnimatedEmojiDrawable extends Drawable {
         }
 
         private void loadFromServer(ArrayList<Long> loadFromServerIds) {
+            ArrayList<Object> local = new ArrayList<>();
+            java.util.Iterator<Long> ids = loadFromServerIds.iterator();
+            while (ids.hasNext()) {
+                long id = ids.next();
+                boolean own = org.telegram.messenger.xmpp.MonogramPacks.isLocalId(id) || org.telegram.messenger.xmpp.MonogramEmojis.isLocalId(id);
+                if (!own) continue;
+                TLRPC.Document document = org.telegram.messenger.xmpp.MonogramPacks.isLocalId(id)
+                        ? org.telegram.messenger.xmpp.MonogramPacks.document(currentAccount, id)
+                        : org.telegram.messenger.xmpp.MonogramController.get(currentAccount).customEmoji(id);
+                ids.remove();
+                if (document != null) local.add(document);
+                else if (loadingDocuments != null) {
+                    ArrayList<ReceivedDocument> callbacks = loadingDocuments.remove(id);
+                    if (callbacks != null) for (ReceivedDocument callback : callbacks) if (callback != null) callback.run(null);
+                }
+            }
+            if (!local.isEmpty()) processDocuments(local);
+            if (loadFromServerIds.isEmpty()) return;
             final TLRPC.TL_messages_getCustomEmojiDocuments req = new TLRPC.TL_messages_getCustomEmojiDocuments();
             req.document_id = loadFromServerIds;
             ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> NotificationCenter.getInstance(currentAccount).doOnIdle(() -> AndroidUtilities.runOnUIThread(() -> {

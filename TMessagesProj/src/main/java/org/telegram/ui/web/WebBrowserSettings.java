@@ -43,9 +43,12 @@ import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
+import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.RadioColorCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.CombinedDrawable;
@@ -184,6 +187,7 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
 
             }
         };
+        updateAddIconColors();
 
         fragmentView = super.createView(context);
 
@@ -333,7 +337,7 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
             final boolean inAppBrowserEnabled = getMessagesController().isWebBrowserInAppEnabled();
 
             ((TextCheckCell) view).setChecked(inAppBrowserEnabled);
-            ((TextCheckCell) view).setBackgroundColorAnimated(inAppBrowserEnabled, Theme.getColor(inAppBrowserEnabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
+            ((TextCheckCell) view).setBackgroundColorAnimated(inAppBrowserEnabled, getThemedColor(inAppBrowserEnabled ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
             listView.adapter.update(true);
         } else if (item.id == BUTTON_CUSTOMTABS_ON) {
             getMessagesController().toggleWebBrowserUseCustomTabs(true);
@@ -505,48 +509,137 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
         return false;
     }
 
-    public static class WebsiteView extends FrameLayout {
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> descriptions = new ArrayList<>();
+        ThemeDescription.ThemeDescriptionDelegate colorDelegate = this::updateVisibleColors;
+
+        descriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, colorDelegate, Theme.key_windowBackgroundGray));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
+        descriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_actionBarDefaultSelector));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_SELECTOR, null, null, null, null, Theme.key_settings_listSelector));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{HeaderCell.class, TextCell.class, TextCheckCell.class, WebsiteView.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{View.class}, Theme.dividerPaint, null, null, Theme.key_divider));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrack));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackBlue));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackBlueChecked));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackBlueThumb));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackBlueThumbChecked));
+        for (int key : new int[]{Theme.key_windowBackgroundWhiteBlackText, Theme.key_windowBackgroundWhiteBlueText4, Theme.key_text_RedRegular}) {
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, key));
+        }
+        for (int key : new int[]{Theme.key_windowBackgroundWhiteGrayIcon, Theme.key_windowBackgroundWhiteBlueText4, Theme.key_text_RedBold}) {
+            descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"imageView"}, null, null, null, key));
+        }
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{WebsiteView.class}, new String[]{"titleView"}, null, null, colorDelegate, Theme.key_windowBackgroundWhiteBlackText));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{WebsiteView.class}, new String[]{"subtitleView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{WebsiteView.class}, new String[]{"optionsView"}, null, null, colorDelegate, Theme.key_windowBackgroundWhiteGrayText3));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, colorDelegate, Theme.key_windowBackgroundChecked));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, colorDelegate, Theme.key_windowBackgroundUnchecked));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, colorDelegate, Theme.key_windowBackgroundCheckText));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, colorDelegate, Theme.key_switchTrackChecked));
+        descriptions.add(new ThemeDescription(null, 0, null, null, null, colorDelegate, Theme.key_checkboxCheck));
+
+        return descriptions;
+    }
+
+    private void updateVisibleColors() {
+        updateAddIconColors();
+        if (listView == null) {
+            return;
+        }
+        listView.forAllChild(this::updateBrowserRowColors);
+        for (int i = 0; i < listView.getCachedChildCount(); i++) {
+            updateBrowserRowColors(listView.getCachedChildAt(i));
+        }
+        listView.invalidate();
+    }
+
+    private void updateBrowserRowColors(View child) {
+        if (child instanceof TextCell) {
+            ((TextCell) child).updateColors();
+        } else if (child instanceof TextCheckCell && ((TextCheckCell) child).itemId == BUTTON_TOGGLE) {
+            TextCheckCell checkCell = (TextCheckCell) child;
+            checkCell.setColors(
+                    Theme.key_windowBackgroundCheckText,
+                    Theme.key_switchTrackBlue,
+                    Theme.key_switchTrackBlueChecked,
+                    Theme.key_switchTrackBlueThumb,
+                    Theme.key_switchTrackBlueThumbChecked
+            );
+            checkCell.setBackgroundColor(getThemedColor(checkCell.isChecked() ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
+            checkCell.invalidate();
+        } else if (child instanceof WebsiteView) {
+            ((WebsiteView) child).updateColors();
+        }
+    }
+
+    private void updateAddIconColors() {
+        if (!(addIcon instanceof CombinedDrawable)) {
+            return;
+        }
+        CombinedDrawable icon = (CombinedDrawable) addIcon;
+        icon.getBackground().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_switchTrackChecked), PorterDuff.Mode.MULTIPLY));
+        icon.getIcon().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_checkboxCheck), PorterDuff.Mode.MULTIPLY));
+    }
+
+    public static class WebsiteView extends FrameLayout implements Theme.Colorable {
         public final ImageView imageView;
         public final TextView titleView;
         public final TextView subtitleView;
         public final ImageView optionsView;
+        private final Theme.ResourcesProvider resourcesProvider;
 
-        public WebsiteView(Context context) {
+        public WebsiteView(Context context, Theme.ResourcesProvider resourcesProvider) {
             super(context);
+            this.resourcesProvider = resourcesProvider;
 
             imageView = new ImageView(context);
-            addView(imageView, LayoutHelper.createFrame(32, 32, Gravity.CENTER_VERTICAL | Gravity.LEFT, 16, 0, 0, 0));
+            addView(imageView, LayoutHelper.createFrameRelatively(32, 32, Gravity.CENTER_VERTICAL | Gravity.START, 16, 0, 0, 0));
 
             titleView = new TextView(context);
-            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
             titleView.setMaxLines(1);
             titleView.setEllipsize(TextUtils.TruncateAt.END);
-            addView(titleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 64 + 4, 7, 54, 0));
+            titleView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(titleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 64 + 4, 7, 54, 0));
 
             subtitleView = new TextView(context) {
                 @Override
                 protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                     super.onMeasure(widthMeasureSpec, heightMeasureSpec);
                     subtitleView.setPivotY(getMeasuredHeight() / 2f);
+                    subtitleView.setPivotX(LocaleController.isRTL ? getMeasuredWidth() : 0);
                 }
             };
-            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
             subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
             subtitleView.setMaxLines(1);
             subtitleView.setEllipsize(TextUtils.TruncateAt.END);
-            subtitleView.setPivotX(0);
-            addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 64 + 4, 30, 54, 0));
+            subtitleView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(subtitleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 64 + 4, 30, 54, 0));
 
             optionsView = new ImageView(context);
             optionsView.setScaleType(ImageView.ScaleType.CENTER);
             optionsView.setImageResource(R.drawable.ic_ab_other);
-            optionsView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), PorterDuff.Mode.SRC_IN));
-            addView(optionsView, LayoutHelper.createFrame(32, 32, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, 18, 0));
+            optionsView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, resourcesProvider), PorterDuff.Mode.SRC_IN));
+            addView(optionsView, LayoutHelper.createFrameRelatively(32, 32, Gravity.CENTER_VERTICAL | Gravity.END, 0, 0, 18, 0));
         }
 
         private AnimatedEmojiDrawable animatedEmojiDrawable;
         private String domain;
+        private String fallbackText = "";
         private boolean needDivider;
         public void set(
             CharSequence title,
@@ -566,7 +659,7 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                 subtitleView.setScaleY(1f);
             }
             this.domain = domain;
-            String s = (TextUtils.isEmpty(title) ? domain.isEmpty() || TextUtils.isEmpty(domain) ? "" : domain : title).toString();
+            fallbackText = (TextUtils.isEmpty(title) ? domain.isEmpty() || TextUtils.isEmpty(domain) ? "" : domain : title).toString();
 
             if (animatedEmojiDrawable != null) {
                 animatedEmojiDrawable.removeView(imageView);
@@ -578,13 +671,20 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                 animatedEmojiDrawable.addView(imageView);
                 imageView.setImageDrawable(animatedEmojiDrawable);
             } else {
-                CombinedDrawable drawable = new CombinedDrawable(
-                    Theme.createRoundRectDrawable(dp(6), Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), .1f)),
+                setFallbackIcon();
+            }
+            needDivider = divider;
+            invalidate();
+        }
+
+        private void setFallbackIcon() {
+            CombinedDrawable drawable = new CombinedDrawable(
+                    Theme.createRoundRectDrawable(dp(6), Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), .1f)),
                     new Drawable() {
-                        private final Text text = new Text(s.substring(0, !s.isEmpty() ? 1 : 0), 14, AndroidUtilities.bold());
+                        private final Text text = new Text(fallbackText.substring(0, !fallbackText.isEmpty() ? 1 : 0), 14, AndroidUtilities.bold());
                         @Override
                         public void draw(@NonNull Canvas canvas) {
-                            text.draw(canvas, getBounds().centerX() - text.getCurrentWidth() / 2f, getBounds().centerY(), Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), 1f);
+                            text.draw(canvas, getBounds().centerX() - text.getCurrentWidth() / 2f, getBounds().centerY(), Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), 1f);
                         }
                         @Override
                         public void setAlpha(int alpha) {}
@@ -596,10 +696,18 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                         }
                     }
                 );
-                drawable.setCustomSize(dp(28), dp(28));
-                imageView.setImageDrawable(drawable);
+            drawable.setCustomSize(dp(28), dp(28));
+            imageView.setImageDrawable(drawable);
+        }
+
+        @Override
+        public void updateColors() {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+            optionsView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, resourcesProvider), PorterDuff.Mode.SRC_IN));
+            if (animatedEmojiDrawable == null) {
+                setFallbackIcon();
             }
-            needDivider = divider;
             invalidate();
         }
 
@@ -607,7 +715,7 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
         protected void dispatchDraw(@NonNull Canvas canvas) {
             super.dispatchDraw(canvas);
             if (needDivider) {
-                canvas.drawRect(dp(64), getHeight() - 1, getWidth(), getHeight(), Theme.dividerPaint);
+                canvas.drawRect(LocaleController.isRTL ? 0 : dp(64), getHeight() - 1, LocaleController.isRTL ? getWidth() - dp(64) : getWidth(), getHeight(), Theme.dividerPaint);
             }
         }
 
@@ -623,7 +731,7 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
             static { setup(new Factory()); }
             @Override
             public WebsiteView createView(Context context, RecyclerListView listView, int currentAccount, int classGuid, Theme.ResourcesProvider resourcesProvider) {
-                return new WebsiteView(context);
+                return new WebsiteView(context, resourcesProvider);
             }
 
             @Override

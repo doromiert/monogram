@@ -196,9 +196,13 @@ public class StickerSetNameCell extends FrameLayout {
     }
 
     public void setEdit(View.OnClickListener whenClickedEdit) {
+        setAction(LocaleController.getString(R.string.EditPack), whenClickedEdit);
+    }
+
+    public void setAction(CharSequence label, View.OnClickListener listener) {
         editView.setVisibility(View.VISIBLE);
-        editView.setText(LocaleController.getString(R.string.EditPack));
-        editView.setOnClickListener(whenClickedEdit);
+        editView.setText(label);
+        editView.setOnClickListener(listener);
     }
 
     public void setHeaderOnClick(View.OnClickListener listener) {

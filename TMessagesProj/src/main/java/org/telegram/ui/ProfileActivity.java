@@ -656,6 +656,29 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int phoneRow;
     private int noteRow;
     private int locationRow;
+    private void showLocalNameEditor() {
+        if(userId<=0 || userId==getUserConfig().getClientUserId() || getParentActivity()==null) return;
+        org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),"Local name",false);
+        input.editText.setSingleLine(true);
+        input.editText.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(256)});
+        String alias=controller.localName(userId);
+        TLRPC.User user=getMessagesController().getUser(userId);
+        input.editText.setText(alias.isEmpty() && user!=null ? UserObject.getUserName(user) : alias);
+        java.util.function.Consumer<String> save=value -> controller.localName(userId,value,error -> {
+            if(getParentActivity()!=null && error!=null) BulletinFactory.of(this).createErrorBulletin(error).show();
+        });
+        showDialog(new AlertDialog.Builder(getContext(),getResourceProvider()).setTitle("Rename locally")
+                .setMessage("Only you see this name on this device. Profile and roster updates will not replace it.")
+                .setView(input).setPositiveButton("Save",(dialog,which) -> save.accept(input.getText().toString()))
+                .setNeutralButton("Reset name",(dialog,which) -> save.accept(""))
+                .setNegativeButton("Cancel",null).create());
+    }
+
+    private int monogramProfileStart = -1;
+    private final ArrayList<java.util.Map.Entry<String, String>> monogramProfileDetails = new ArrayList<>();
+    private boolean isMonogramProfileRow(int position) { return monogramProfileStart >= 0 && position >= monogramProfileStart && position < monogramProfileStart + monogramProfileDetails.size(); }
     private int userInfoRow;
     private int channelInfoRow;
     private int usernameRow;
@@ -2145,12 +2168,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 isBot = true;
                 getMediaDataController().loadBotInfo(user.id, user.id, true, classGuid);
             }
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshProfile(userId);
             userInfo = getMessagesController().getUserFull(userId);
             getMessagesController().loadFullUser(getMessagesController().getUser(userId), classGuid, true);
             participantsMap = null;
 
             if (UserObject.isUserSelf(user)) {
-                imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
+                imageUpdater = new ImageUpdater(false, ImageUpdater.FOR_TYPE_USER, false);
                 imageUpdater.setOpenWithFrontfaceCamera(true);
                 imageUpdater.parentFragment = this;
                 imageUpdater.setDelegate(this);
@@ -2569,9 +2593,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     fragment.setDelegate(ProfileActivity.this);
                     presentFragment(fragment);
                 } else if (id == edit_contact) {
-                    Bundle args = new Bundle();
-                    args.putLong("user_id", userId);
-                    presentFragment(new ContactAddActivity(args, resourcesProvider));
+                    showLocalNameEditor();
                 } else if (id == delete_contact) {
                     final TLRPC.User user = getMessagesController().getUser(userId);
                     if (user == null || getParentActivity() == null) {
@@ -2818,7 +2840,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 //                        showDialog(new PremiumFeatureBottomSheet(ProfileActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_NAME_COLOR, true));
 //                        return;
 //                    }
-                    presentFragment(new PeerColorActivity(0).startOnProfile().setOnApplied(ProfileActivity.this));
+                    presentFragment(new PeerColorActivity(currentAccount,0).startOnProfile().setOnApplied(ProfileActivity.this));
                 } else if (id == copy_link_profile) {
                     TLRPC.User user = getMessagesController().getUser(userId);
                     AndroidUtilities.addToClipboard(getMessagesController().linkPrefix + "/" + UserObject.getPublicUsername(user));
@@ -4330,6 +4352,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 return;
             }
             listView.stopScroll();
+            if (isMonogramProfileRow(position)) {
+                AndroidUtilities.addToClipboard(monogramProfileDetails.get(position - monogramProfileStart).getValue());
+                BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
+                return;
+            }
             if (position == affiliateRow) {
                 TLRPC.User user = getMessagesController().getUser(userId);
                 if (userInfo != null && userInfo.starref_program != null) {
@@ -4584,7 +4611,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else if (position == bioRow) {
                 presentFragment(new UserInfoActivity());
             } else if (position == numberRow) {
-                presentFragment(new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER));
+                AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
+                BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
             } else if (position == setAvatarRow) {
                 onWriteButtonClick();
             } else if (position == premiumRow) {
@@ -7293,6 +7321,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private boolean processOnClickOrPress(final int position, final View view, final float x, final float y) {
+        if (position == numberRow) {
+            AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
+            BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
+            return true;
+        }
         if (position == usernameRow || position == setUsernameRow) {
             final String username;
             final TLRPC.TL_username usernameObj;
@@ -9554,6 +9587,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        if(chatId>0) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshRoomRoster(-chatId,false);
         if (sharedMediaLayout != null) {
             sharedMediaLayout.onResume();
         }
@@ -10453,6 +10487,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         int prevRowsCount = rowCount;
         rowCount = 0;
+        monogramProfileStart = -1;
+        monogramProfileDetails.clear();
+        if (userId > 0) monogramProfileDetails.addAll(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).profileDetails(userId).entrySet());
 
         setAvatarRow = -1;
         setAvatarSectionRow = -1;
@@ -10654,24 +10691,26 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 devicesRow = rowCount++;
                 languageRow = rowCount++;
                 devicesSectionRow = rowCount++;
-                if (!getMessagesController().premiumFeaturesBlocked()) {
-                    premiumRow = rowCount++;
-                }
-                if (getMessagesController().starsPurchaseAvailable()) {
-                    starsRow = rowCount++;
-                }
-                StarsController.getInstance(currentAccount, true).getBalance();
-                if (ApplicationLoader.isBetaBuild() || ApplicationLoader.isStandaloneBuild() || ApplicationLoader.isHuaweiStoreBuild() || (StarsController.getInstance(currentAccount, true).balanceAvailable() && (StarsController.getInstance(currentAccount, true).hasTransactions() || StarsController.getInstance(currentAccount, true).getBalance().positive()))) {
-                    tonRow = rowCount++;
-                }
-                if (!getMessagesController().premiumFeaturesBlocked()) {
-                    businessRow = rowCount++;
-                }
-                if (!getMessagesController().premiumPurchaseBlocked()) {
-                    premiumGiftingRow = rowCount++;
-                }
-                if (premiumRow >= 0 || starsRow >= 0 || tonRow >= 0 || businessRow >= 0 || premiumGiftingRow >= 0) {
-                    premiumSectionsRow = rowCount++;
+                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                    if (!getMessagesController().premiumFeaturesBlocked()) {
+                        premiumRow = rowCount++;
+                    }
+                    if (getMessagesController().starsPurchaseAvailable()) {
+                        starsRow = rowCount++;
+                    }
+                    StarsController.getInstance(currentAccount, true).getBalance();
+                    if (ApplicationLoader.isBetaBuild() || ApplicationLoader.isStandaloneBuild() || ApplicationLoader.isHuaweiStoreBuild() || (StarsController.getInstance(currentAccount, true).balanceAvailable() && (StarsController.getInstance(currentAccount, true).hasTransactions() || StarsController.getInstance(currentAccount, true).getBalance().positive()))) {
+                        tonRow = rowCount++;
+                    }
+                    if (!getMessagesController().premiumFeaturesBlocked()) {
+                        businessRow = rowCount++;
+                    }
+                    if (!getMessagesController().premiumPurchaseBlocked()) {
+                        premiumGiftingRow = rowCount++;
+                    }
+                    if (premiumRow >= 0 || starsRow >= 0 || tonRow >= 0 || businessRow >= 0 || premiumGiftingRow >= 0) {
+                        premiumSectionsRow = rowCount++;
+                    }
                 }
                 helpHeaderRow = rowCount++;
                 questionRow = rowCount++;
@@ -10708,7 +10747,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
                 infoStartRow = rowCount;
-                if (!isBot && (hasPhone || !hasInfo)) {
+                monogramProfileStart = rowCount; rowCount += monogramProfileDetails.size();
+                if (!isBot && hasPhone) {
                     phoneRow = rowCount++;
                 }
                 if (userInfo != null && !TextUtils.isEmpty(userInfo.about)) {
@@ -12147,6 +12187,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             shareAction = true;
                         } else {
                             otherItem.addSubItem(add_contact, R.drawable.msg_addcontact, LocaleController.getString(R.string.AddContact));
+                            otherItem.addSubItem(edit_contact, R.drawable.msg_edit, "Rename locally");
                         }
                         if (!TextUtils.isEmpty(user.phone)) {
                             otherItem.addSubItem(share_contact, R.drawable.msg_share, LocaleController.getString(R.string.ShareContact));
@@ -12176,7 +12217,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         otherItem.addSubItem(share_contact, R.drawable.msg_share, LocaleController.getString(R.string.ShareContact));
                     }
                     otherItem.addSubItem(block_contact, !userBlocked ? R.drawable.msg_block : R.drawable.msg_block, !userBlocked ? LocaleController.getString(R.string.BlockContact) : LocaleController.getString(R.string.Unblock));
-                    otherItem.addSubItem(edit_contact, R.drawable.msg_edit, LocaleController.getString(R.string.EditContact));
+                    otherItem.addSubItem(edit_contact, R.drawable.msg_edit, "Rename locally");
                     otherItem.addSubItem(delete_contact, R.drawable.msg_delete, LocaleController.getString(R.string.DeleteContact));
                 }
                 if (!UserObject.isDeleted(user) && !isBot && currentEncryptedChat == null && !userBlocked && userId != 333000 && userId != 777000 && userId != 42777) {
@@ -12185,7 +12226,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         otherItem.addSubItem(gift_premium, R.drawable.msg_gift_premium, LocaleController.getString(R.string.ProfileSendAGift));
                         giftAction = true;
                     }
-                    if (getMessagesController().config.walletAvailable.get() && !MessagesController.isSupportUser(user) && !UserObject.isService(user.id)) {
+                    if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && getMessagesController().config.walletAvailable.get() && !MessagesController.isSupportUser(user) && !UserObject.isService(user.id)) {
                         otherItem.addSubItem(send_money, R.drawable.ic_gram, LocaleController.getString(R.string.WalletSendMoney));
                     }
                     otherItem.addSubItem(start_secret_chat, R.drawable.msg_secret, LocaleController.getString(R.string.StartEncryptedChat));
@@ -12795,6 +12836,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     int avatarUploadingRequest;
 
+    @Override public boolean isMonogramAccountAvatar() { return userId == getUserConfig().getClientUserId(); }
+
     @Override
     public void didUploadPhoto(final TLRPC.InputFile photo, final TLRPC.InputFile video, double videoStartTimestamp, String videoPath, TLRPC.PhotoSize bigSize, final TLRPC.PhotoSize smallSize, boolean isVideo, TLRPC.VideoSize emojiMarkup) {
         AndroidUtilities.runOnUIThread(() -> {
@@ -12844,7 +12887,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             user.photo.photo_big = big.location;
                         }
 
-                        if (small != null && avatar != null) {
+                        if (small != null && avatar != null && !(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile)) {
                             File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(small, true);
                             File src = FileLoader.getInstance(currentAccount).getPathToAttach(avatar, true);
                             src.renameTo(destFile);
@@ -12857,7 +12900,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(videoSize, "mp4", true);
                             File src = new File(videoPath);
                             src.renameTo(destFile);
-                        } else if (big != null && avatarBig != null) {
+                        } else if (big != null && avatarBig != null && !(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile)) {
                             File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(big, true);
                             File src = FileLoader.getInstance(currentAccount).getPathToAttach(avatarBig, true);
                             src.renameTo(destFile);
@@ -12873,6 +12916,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         }
                     }
 
+                    if (error != null) org.telegram.ui.Components.BulletinFactory.showError(error);
                     allowPullingDown = !AndroidUtilities.isTablet() && !isInLandscapeMode && avatarImage.getImageReceiver().hasNotThumb() && !AndroidUtilities.isAccessibilityScreenReaderEnabled();
                     avatar = null;
                     avatarBig = null;
@@ -13463,7 +13507,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     TextDetailCell detailCell = (TextDetailCell) holder.itemView;
                     boolean containsQr = false;
                     boolean containsGift = false;
-                    if (position == birthdayRow) {
+                    if (isMonogramProfileRow(position)) {
+                        java.util.Map.Entry<String, String> field = monogramProfileDetails.get(position - monogramProfileStart);
+                        detailCell.setTextAndValue(field.getValue(), field.getKey(), false);
+                    } else if (position == birthdayRow) {
                         TLRPC.UserFull userFull = getMessagesController().getUserFull(userId);
                         if (userFull != null && userFull.birthday != null) {
                             final boolean today = BirthdayController.isToday(userFull);
@@ -13589,14 +13636,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             detailCell.setTextAndValue(location.address, LocaleController.getString(R.string.AttachLocation), false);
                         }
                     } else if (position == numberRow) {
-                        TLRPC.User user = UserConfig.getInstance(currentAccount).getCurrentUser();
-                        String value;
-                        if (user != null && user.phone != null && user.phone.length() != 0) {
-                            value = PhoneFormat.getInstance().format("+" + user.phone);
-                        } else {
-                            value = LocaleController.getString(R.string.NumberUnknown);
-                        }
-                        detailCell.setTextAndValue(value, LocaleController.getString(R.string.TapToChangePhone), true);
+                        detailCell.setTextAndValue(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid(),
+                                getString(R.string.MonogramJabberId), true);
                         detailCell.setContentDescriptionValueFirst(false);
                     } else if (position == setUsernameRow) {
                         TLRPC.User user = UserConfig.getInstance(currentAccount).getCurrentUser();
@@ -13634,7 +13675,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (containsGift) {
                         Drawable drawable = ContextCompat.getDrawable(detailCell.getContext(), R.drawable.msg_input_gift);
                         drawable.setColorFilter(new PorterDuffColorFilter(dontApplyPeerColor(getThemedColor(Theme.key_switch2TrackChecked), false), PorterDuff.Mode.MULTIPLY));
-                        if (UserObject.areGiftsDisabled(userInfo)) {
+                        if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || UserObject.areGiftsDisabled(userInfo)) {
                             detailCell.setImage(null);
                             detailCell.setImageClickListener(null);
                         } else {
@@ -14126,6 +14167,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             TagEditCell.showInfoSheet(getContext(), currentAccount, getDialogId(), user, finalRole, isAdmin, isOwner, canEditAdmin, resourceProvider);
                         });
                         userCell.setData(user, null, null, 0, position != membersEndRow - 1);
+                        if(chatId>0 && user!=null) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshVisibleRoomMember(-chatId,user.id);
                     }
                     break;
                 case VIEW_TYPE_BOTTOM_PADDING:
@@ -14321,7 +14363,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (position == infoHeaderRow || position == membersHeaderRow || position == settingsSectionRow2 ||
                     position == numberSectionRow || position == helpHeaderRow || position == debugHeaderRow || position == botPermissionsHeader) {
                 return VIEW_TYPE_HEADER;
-            } else if (position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
+            } else if (isMonogramProfileRow(position) || position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
                 return VIEW_TYPE_TEXT_DETAIL;
             } else if (position == usernameRow || position == setUsernameRow) {
                 return VIEW_TYPE_TEXT_DETAIL_MULTILINE;
@@ -14548,18 +14590,15 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             final int currentAccount = f.getCurrentAccount();
             final Theme.ResourcesProvider resourcesProvider = f.getResourceProvider();
             return new SearchResult[]{
-                    new SearchResult(500, getString(R.string.EditName), 0, () -> f.presentFragment(new ChangeNameActivity(resourcesProvider))),
-                    new SearchResult(501, getString(R.string.ChangePhoneNumber), 0, () -> f.presentFragment(new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER))).withLink("tg://settings/edit/change-number"),
+                    new SearchResult(500, getString(R.string.EditName), 0, () -> f.presentFragment(new UserInfoActivity())),
+                    new SearchResult(501, getString(R.string.MonogramJabberId), 0, () -> {
+                        AndroidUtilities.addToClipboard(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
+                        BulletinFactory.of(f).createCopyBulletin(getString(R.string.TextCopied)).show();
+                    }),
                     new SearchResult(502, getString(R.string.AddAnotherAccount), 0, () -> {
-                        int freeAccount = -1;
-                        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-                            if (!UserConfig.getInstance(a).isClientActivated()) {
-                                freeAccount = a;
-                                break;
-                            }
-                        }
+                        int freeAccount = UserConfig.getFreeAccount();
                         if (freeAccount >= 0) {
-                            f.presentFragment(new LoginActivity(freeAccount));
+                            f.presentFragment(new MonogramLoginActivity(freeAccount));
                         }
                     }).withLink("tg://settings/edit/add-account"),
                     // TODO:
@@ -14680,25 +14719,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     new SearchResult(608, getString(R.string.Emoji), null, getString(R.string.StickersName), R.drawable.input_smile, () -> f.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, null))).withLink("tg://settings/appearance/stickers-and-emoji/emoji"),
                     new SearchResult(609, getString(R.string.SuggestAnimatedEmoji), "suggestAnimatedEmojiRow", getString(R.string.StickersName), getString(R.string.Emoji), R.drawable.input_smile, () -> f.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, null))).withLink("tg://settings/appearance/stickers-and-emoji/emoji/suggest"),
                     new SearchResult(610, getString(R.string.FeaturedEmojiPacks), "featuredStickersHeaderRow", getString(R.string.StickersName), getString(R.string.Emoji), R.drawable.input_smile, () -> f.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, null))),
-                    new SearchResult(611, getString(R.string.DoubleTapSetting), null, getString(R.string.StickersName), R.drawable.msg2_sticker, () -> f.presentFragment(new ReactionsDoubleTapManageActivity())).withLink("tg://settings/appearance/stickers-and-emoji/emoji/quick-reaction"),
+                    new SearchResult(611, getString(R.string.MonogramDoubleTapTitle), null, getString(R.string.ChatSettings), R.drawable.msg2_reactions2, () -> f.presentFragment(new MonogramDoubleTapActivity(f.getCurrentAccount()))).withLink("tg://settings/appearance/stickers-and-emoji/emoji/quick-reaction"),
+                    new SearchResult(612, "Chat behavior", null, getString(R.string.ChatSettings), R.drawable.msg_settings, () -> f.presentFragment(new MonogramChatBehaviorActivity(f.getCurrentAccount()))),
 
                     new SearchResult(700, getString(R.string.Filters), null, R.drawable.msg2_folder, () -> f.presentFragment(new FiltersSetupActivity())).withLink("tg://settings/folders"),
                     new SearchResult(701, getString(R.string.CreateNewFilter), "createFilterRow", getString(R.string.Filters), R.drawable.msg2_folder, () -> f.presentFragment(new FiltersSetupActivity())).withLink("tg://settings/folders/create"),
-
-                    isPremiumFeatureAvailable(currentAccount, -1) ? new SearchResult(800, getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.presentFragment(new PremiumPreviewFragment("settings"))) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_LIMITS) ? new SearchResult(801, getString(R.string.PremiumPreviewLimits), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_LIMITS, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI) ? new SearchResult(802, getString(R.string.PremiumPreviewEmoji), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_UPLOAD_LIMIT) ? new SearchResult(803, getString(R.string.PremiumPreviewUploads), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_UPLOAD_LIMIT, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED) ? new SearchResult(804, getString(R.string.PremiumPreviewDownloadSpeed), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_VOICE_TO_TEXT) ? new SearchResult(805, getString(R.string.PremiumPreviewVoiceToText), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_VOICE_TO_TEXT, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_ADS) ? new SearchResult(806, getString(R.string.PremiumPreviewNoAds), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_REACTIONS) ? new SearchResult(807, getString(R.string.PremiumPreviewReactions), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_REACTIONS, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_STICKERS) ? new SearchResult(808, getString(R.string.PremiumPreviewStickers), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_STICKERS, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_ADVANCED_CHAT_MANAGEMENT) ? new SearchResult(809, getString(R.string.PremiumPreviewAdvancedChatManagement), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_ADVANCED_CHAT_MANAGEMENT, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_PROFILE_BADGE) ? new SearchResult(810, getString(R.string.PremiumPreviewProfileBadge), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_PROFILE_BADGE, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_AVATARS) ? new SearchResult(811, getString(R.string.PremiumPreviewAnimatedProfiles), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_AVATARS, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_APPLICATION_ICONS) ? new SearchResult(812, getString(R.string.PremiumPreviewAppIcon), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_APPLICATION_ICONS, false).setForceAbout())) : null,
-                    isPremiumFeatureAvailable(currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_EMOJI_STATUS) ? new SearchResult(813, getString(R.string.PremiumPreviewEmojiStatus), getString(R.string.TelegramPremium), R.drawable.msg_settings_premium, () -> f.showDialog(new PremiumFeatureBottomSheet(f, PremiumPreviewFragment.PREMIUM_FEATURE_EMOJI_STATUS, false).setForceAbout())) : null,
 
                     new SearchResult(900, getString(R.string.PowerUsage), null, R.drawable.msg2_battery, () -> f.presentFragment(new LiteModeSettingsActivity())).withLink("tg://settings/power-saving"),
                     new SearchResult(901, getString(R.string.LiteOptionsStickers), getString(R.string.PowerUsage), R.drawable.msg2_battery, () -> {
@@ -14805,14 +14830,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     new SearchResult(403, getString(R.string.TelegramFAQ), getString(R.string.SettingsHelp), R.drawable.msg2_help, () -> Browser.openUrl(f.getParentActivity(), getString(R.string.TelegramFaqUrl))).withLink("tg://settings/faq"),
                     new SearchResult(404, getString(R.string.PrivacyPolicy), getString(R.string.SettingsHelp), R.drawable.msg2_help, () -> Browser.openUrl(f.getParentActivity(), getString(R.string.PrivacyPolicyUrl))).withLink("tg://settings/privacy-policy"),
             };
-        }
-
-        private static boolean isPremiumFeatureAvailable(int currentAccount, int feature) {
-            if (MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium())
-                return false;
-            if (feature == -1)
-                return true;
-            return MessagesController.getInstance(currentAccount).premiumFeaturesTypesToPosition.get(feature, -1) != -1;
         }
 
         public void loadFaqWebPage() {
@@ -15528,6 +15545,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             args.putLong("user_id", userId);
             presentFragment(new QrActivity(args));
         } else if (parent.getTag() != null && ((int) parent.getTag()) == birthdayRow) {
+            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return;
             if (userId == getUserConfig().getClientUserId()) {
                 presentFragment(new PremiumPreviewFragment("my_profile_gift"));
                 return;

@@ -62,7 +62,11 @@ public class Emoji {
         EmojiData.data[7].length
     };
     private static Bitmap[][] emojiBmp = new Bitmap[8][];
-    private static boolean[][] loadingEmoji = new boolean[8][];
+    public static final int LOAD_PREFETCH=0, LOAD_VISIBLE=1, LOAD_QUICK_REACTION=2;
+    private static class Decoder {
+        static final DispatchQueue thread=new DispatchQueue("emojiDecode");
+        static final EmojiLoadQueue requests=new EmojiLoadQueue(thread::postRunnable);
+    }
 
     public final static HashMap<String, Integer> emojiUseHistory = new HashMap<>();
     public final static ArrayList<String> recentEmoji = new ArrayList<>();
@@ -88,7 +92,6 @@ public class Emoji {
         bigImgSize = AndroidUtilities.dp(AndroidUtilities.isTablet() ? 40 : 34);
         for (int a = 0; a < emojiBmp.length; a++) {
             emojiBmp[a] = new Bitmap[emojiCounts[a]];
-            loadingEmoji[a] = new boolean[emojiCounts[a]];
         }
 
         for (int j = 0; j < EmojiData.data.length; j++) {
@@ -102,21 +105,34 @@ public class Emoji {
     }
 
     public static void preloadEmoji(CharSequence code) {
+        preloadEmoji(code,LOAD_PREFETCH);
+    }
+    public static void preloadEmoji(CharSequence code,int priority) {
         final DrawableInfo info = getDrawableInfo(code);
         if (info != null) {
-            loadEmoji(info.page, info.page2);
+            loadEmoji(info.page, info.page2,priority);
         }
+    }
+    public static void preloadVisibleEmojis(java.util.List<String> codes) {
+        java.util.ArrayList<Integer> keys=new java.util.ArrayList<>();
+        for(String code:codes) {
+            DrawableInfo info=getDrawableInfo(code);
+            if(info==null) continue;
+            keys.add(info.page*4096+info.page2);
+            loadEmoji(info.page,info.page2,LOAD_VISIBLE);
+        }
+        Decoder.requests.visibleWindow(keys);
     }
 
     private static int memoryUsage;
 
     private static void loadEmoji(final byte page, final short page2) {
+        loadEmoji(page,page2,LOAD_VISIBLE);
+    }
+    private static void loadEmoji(final byte page, final short page2,int priority) {
         if (emojiBmp[page][page2] == null) {
-            if (loadingEmoji[page][page2]) {
-                return;
-            }
-            loadingEmoji[page][page2] = true;
-            Utilities.globalQueue.postRunnable(() -> {
+            Decoder.requests.submit(page*4096+page2,priority,() -> {
+                if(emojiBmp[page][page2]!=null) return;
                 Bitmap bitmap = null;
                 try {
                     final EmojiPack emojiPack = EmojiPack.getInstance();
@@ -129,7 +145,6 @@ public class Emoji {
                     AndroidUtilities.cancelRunOnUIThread(invalidateUiRunnable);
                     AndroidUtilities.runOnUIThread(invalidateUiRunnable);
                 }
-                loadingEmoji[page][page2] = false;
             });
         }
     }
@@ -233,6 +248,7 @@ public class Emoji {
             code = code.subSequence(0, code.length() - 2);
         }
         DrawableInfo info = rects.get(code);
+        if (info == null && code != null) info = rects.get(code.toString().replace("\ufe0f", ""));
         if (info == null) {
             CharSequence newCode = EmojiData.emojiAliasMap.get(code);
             if (newCode != null) {
@@ -367,7 +383,7 @@ public class Emoji {
         @Override
         public void preload() {
             if (!isLoaded()) {
-                loadEmoji(info.page, info.page2);
+                loadEmoji(info.page, info.page2,LOAD_PREFETCH);
             }
         }
     }
@@ -888,6 +904,38 @@ public class Emoji {
             EmojiSpan emojiSpan = (EmojiSpan) o;
             return Float.compare(scale, emojiSpan.scale) == 0 && size == emojiSpan.size && Objects.equals(emoji, emojiSpan.emoji);
         }
+    }
+
+    public static ArrayList<String> getFavoriteEmoji() {
+        ArrayList<String> result = new ArrayList<>();
+        String saved = MessagesController.getGlobalEmojiSettings().getString("monogram_favorite_emoji", "");
+        for (String code : saved.split("\n")) {
+            code = fixEmoji(code.replace("\ufe0f", ""));
+            if ((isValidEmoji(code) || isValidEmoji(code.replace("\ufe0f", ""))) && !result.contains(code)) result.add(code);
+        }
+        return result;
+    }
+
+    public static void setFavoriteEmoji(String code, boolean favorite) {
+        if (code == null || !isValidEmoji(code) && !isValidEmoji(code.replace("\ufe0f", ""))) return;
+        code = fixEmoji(code.replace("\ufe0f", ""));
+        ArrayList<String> favorites = getFavoriteEmoji();
+        if (favorite && !favorites.contains(code)) favorites.add(code);
+        else if (!favorite) favorites.remove(code);
+        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji", TextUtils.join("\n", favorites)).apply();
+    }
+
+    public static ArrayList<String> getRecentEmojiWithFavorites(boolean animated) {
+        ArrayList<String> result = getFavoriteEmoji();
+        for (String code : recentEmoji) {
+            if (!code.startsWith("animated_")) code = fixEmoji(code.replace("\ufe0f", ""));
+            if ((animated || !code.startsWith("animated_")) && !result.contains(code)) result.add(code);
+        }
+        return result;
+    }
+
+    public static boolean isFavoriteEmoji(String code) {
+        return code != null && getFavoriteEmoji().contains(fixEmoji(code.replace("\ufe0f", "")));
     }
 
     public static void addRecentEmoji(String code) {

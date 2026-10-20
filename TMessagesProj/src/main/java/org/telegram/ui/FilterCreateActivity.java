@@ -179,6 +179,10 @@ public class FilterCreateActivity extends BaseFragment {
         }
     }
 
+    private boolean canCustomizeFolders() {
+        return org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || getUserConfig().isPremium();
+    }
+
     public FilterCreateActivity() {
         this(null, null);
     }
@@ -227,6 +231,7 @@ public class FilterCreateActivity extends BaseFragment {
 
     private boolean loadingInvites;
     public void loadInvites() {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return;
         if (loadingInvites) {
             return;
         }
@@ -357,13 +362,15 @@ public class FilterCreateActivity extends BaseFragment {
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FilterExcludeInfo)));
         }
 
-        if (getMessagesController().folderTags || !getUserConfig().isPremium()) {
+        if (getMessagesController().folderTags || !canCustomizeFolders()) {
             items.add(new ItemInner(VIEW_TYPE_HEADER_COLOR_PREVIEW, false));
             items.add(new ItemInner(VIEW_TYPE_COLOR, false));
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FolderTagColorInfo)));
         }
 
-        if (invites.isEmpty()) {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            items.add(ItemInner.asShadow("Folders, colors and tags are saved on this device. Telegram folder invitation links cannot be shared with XMPP contacts."));
+        } else if (invites.isEmpty()) {
             items.add(ItemInner.asHeader(LocaleController.getString(R.string.FilterShareFolder), true));
             items.add(ItemInner.asButton(R.drawable.msg2_link2, LocaleController.getString(R.string.FilterShareFolderButton), false));
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FilterInviteLinksHintNew)));
@@ -640,6 +647,10 @@ public class FilterCreateActivity extends BaseFragment {
     }
 
     private void onClickCreateLink(View view) {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            BulletinFactory.of(this).createErrorBulletin("Folder invitation links aren't available for XMPP accounts.").show();
+            return;
+        }
         if (creatingNew && doneItem.getAlpha() > 0) {
             AndroidUtilities.shakeViewSpring(view, shiftDp = -shiftDp);
             BotWebViewVibrationEffect.APP_ERROR.vibrate();
@@ -679,7 +690,7 @@ public class FilterCreateActivity extends BaseFragment {
                 }
             }
 
-            final int maxCount = getUserConfig().isPremium() ? getMessagesController().dialogFiltersChatsLimitPremium : getMessagesController().dialogFiltersChatsLimitDefault;
+            final int maxCount = canCustomizeFolders() ? getMessagesController().dialogFiltersChatsLimitPremium : getMessagesController().dialogFiltersChatsLimitDefault;
             if (peers.size() > maxCount) {
                 showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
                 return;
@@ -805,6 +816,12 @@ public class FilterCreateActivity extends BaseFragment {
             builder.setMessage(LocaleController.getString(R.string.FilterDeleteAlert));
             builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
             builder.setPositiveButton(LocaleController.getString(R.string.Delete), (dialog, which) -> {
+                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                    getMessagesController().removeFilter(filter);
+                    getMessagesStorage().deleteDialogFilter(filter);
+                    finishFragment();
+                    return;
+                }
                 AlertDialog progressDialog = null;
                 if (getParentActivity() != null) {
                     progressDialog = new AlertDialog(getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER);
@@ -1114,6 +1131,13 @@ public class FilterCreateActivity extends BaseFragment {
 
     public static void saveFilterToServer(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, boolean progress, BaseFragment fragment, Runnable onFinish) {
         if (fragment == null || fragment.getParentActivity() == null) {
+            return;
+        }
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(fragment.getCurrentAccount())) {
+            filter.pinnedDialogs = newPinned.clone();
+            processAddFilter(filter, newFilterFlags, newFilterName, newFilterNameEntities, newFilterNoanimate,
+                    newFilterColor, newAlwaysShow, newNeverShow, creatingNew, atBegin, hasUserChanged,
+                    resetUnreadCounter, fragment, onFinish);
             return;
         }
         AlertDialog progressDialog;
@@ -1685,22 +1709,22 @@ public class FilterCreateActivity extends BaseFragment {
                 case VIEW_TYPE_HEADER_COLOR_PREVIEW: {
                     folderTagsHeader = (HeaderCellColorPreview) holder.itemView;
                     folderTagsHeader.setPreviewText(AnimatedEmojiSpan.cloneSpans(newFilterName, -1, folderTagsHeader.getPreviewTextPaint().getFontMetricsInt(), .5f), false);
-                    folderTagsHeader.setPreviewColor(!getUserConfig().isPremium() ? -1 : newFilterColor, false);
+                    folderTagsHeader.setPreviewColor(!canCustomizeFolders() ? -1 : newFilterColor, false);
                     folderTagsHeader.setText(LocaleController.getString(R.string.FolderTagColor));
                     break;
                 }
                 case VIEW_TYPE_COLOR: {
                     PeerColorActivity.PeerColorGrid cell = (PeerColorActivity.PeerColorGrid) holder.itemView;
-                    cell.setCloseAsLock(!getUserConfig().isPremium());
-                    cell.setSelected(!getUserConfig().isPremium() ? -1 : newFilterColor, false);
+                    cell.setCloseAsLock(!canCustomizeFolders());
+                    cell.setSelected(!canCustomizeFolders() ? -1 : newFilterColor, false);
                     cell.setOnColorClick(color -> {
-                        if (!getUserConfig().isPremium()) {
+                        if (!canCustomizeFolders()) {
                             showDialog(new PremiumFeatureBottomSheet(FilterCreateActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_FOLDER_TAGS, true));
                             return;
                         }
                         cell.setSelected(newFilterColor = color, true);
                         if (folderTagsHeader != null) {
-                            folderTagsHeader.setPreviewColor(!getUserConfig().isPremium() ? -1 : newFilterColor, true);
+                            folderTagsHeader.setPreviewColor(!canCustomizeFolders() ? -1 : newFilterColor, true);
                         }
                         checkDoneButton(true);
                     });
@@ -2808,7 +2832,7 @@ public class FilterCreateActivity extends BaseFragment {
             noTag = new TextView(getContext());
             noTag.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             noTag.setTextColor(FilterCreateActivity.this.getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
-            noTag.setText(LocaleController.getString(getUserConfig().isPremium() ? R.string.FolderTagNoColor : R.string.FolderTagNoColorPremium));
+            noTag.setText(LocaleController.getString(canCustomizeFolders() ? R.string.FolderTagNoColor : R.string.FolderTagNoColorPremium));
             noTag.setGravity(Gravity.RIGHT);
             addView(noTag, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, padding, 16.66f, padding, bottomMargin));
             noTag.setAlpha(0f);
@@ -2835,7 +2859,7 @@ public class FilterCreateActivity extends BaseFragment {
 
         private boolean noTagShown;
         public void setPreviewColor(int colorId, boolean animated) {
-            noTag.setText(LocaleController.getString(getUserConfig().isPremium() ? R.string.FolderTagNoColor : R.string.FolderTagNoColorPremium));
+            noTag.setText(LocaleController.getString(canCustomizeFolders() ? R.string.FolderTagNoColor : R.string.FolderTagNoColorPremium));
 
             final boolean noTag = colorId < 0;
             currentColor = noTag ? 0 : FilterCreateActivity.this.getThemedColor(Theme.keys_avatar_nameInMessage[colorId % Theme.keys_avatar_nameInMessage.length]);

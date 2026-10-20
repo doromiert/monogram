@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package org.telegram.messenger.xmpp;
+
+import java.io.File;
+import org.telegram.tgnet.TLObject;
+import org.telegram.tgnet.TLRPC;
+
+/** Local request consumed by the XMPP adapter; never serialized onto Telegram's network. */
+public final class MonogramFileRequest extends TLObject {
+    public final TLRPC.Message message;
+    public final File file;
+    public final String mime, caption;
+    public final int localId;
+    public final boolean supported;
+    public final com.negzero.monogram.xmpp.FileTransfer.Job job = new com.negzero.monogram.xmpp.FileTransfer.Job();
+    /** Native sending cells otherwise interpret missing progress as an already completed upload. */
+    public static long prepareProgress(TLRPC.Message message, File source) {
+        if(message.attachPath==null || message.attachPath.isEmpty()) return 0;
+        long size=source==null ? 0 : source.length();
+        if(size<=0 && message.media!=null && message.media.document!=null) size=message.media.document.size;
+        size=Math.max(size,1);
+        org.telegram.messenger.ImageLoader.getInstance().setFileProgress(message.attachPath,0,size);
+        return size;
+    }
+    public String uploadName() {
+        boolean generated=message.media!=null && message.media.photo!=null;
+        String name=file.getName();
+        String nativeName=null;
+        boolean animated=false;
+        if(message.media!=null && message.media.document!=null)
+            for(TLRPC.DocumentAttribute attribute:message.media.document.attributes)
+                if(attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.round_message)
+                    return "round_video_"+java.util.UUID.randomUUID()+".mp4";
+                else if(attribute instanceof TLRPC.TL_documentAttributeAudio && attribute.voice) generated=true;
+                else if(attribute instanceof TLRPC.TL_documentAttributeFilename
+                        && attribute.file_name!=null && !attribute.file_name.isEmpty()) nativeName=attribute.file_name;
+                else if(attribute instanceof TLRPC.TL_documentAttributeAnimated) animated=true;
+        if(animated && "video/mp4".equals(mime)) name="animation.gif";
+        else if(!generated && nativeName!=null) name=nativeName;
+        return com.negzero.monogram.xmpp.FileTransfer.uploadName(name,mime,generated);
+    }
+    public MonogramFileRequest(TLRPC.Message message, File file, String mime, String caption) {
+        this(message, file, mime, caption, true);
+    }
+    public MonogramFileRequest(TLRPC.Message message, File file, String mime, String caption, boolean supported) {
+        this.supported = supported;
+        this.message = message; this.file = file; this.mime = mime; this.caption = caption; localId = message.id;
+    }
+}

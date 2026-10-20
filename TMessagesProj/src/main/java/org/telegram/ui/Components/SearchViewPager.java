@@ -1548,8 +1548,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             if (expandedPublicPosts) {
                 items.add(new Item(PUBLIC_POSTS_TYPE));
             }
-            items.add(new Item(CHANNELS_TYPE));
-            items.add(new Item(BOTS_TYPE));
             items.add(new Item(POSTS_TYPE));
             if (!showOnlyDialogsAdapter) {
                 Item item = new Item(FILTER_TYPE);
@@ -1668,7 +1666,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             if (items.get(position).type == POSTS_TYPE) {
                 return 6;
             }
-            return items.get(position).type + position;
+            return 7 + items.get(position).filterIndex;
         }
 
         @Override

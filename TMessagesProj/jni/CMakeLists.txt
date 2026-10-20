@@ -75,6 +75,8 @@ set_target_properties(crypto PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY
 add_library(ssl STATIC IMPORTED)
 set_target_properties(ssl PROPERTIES IMPORTED_LOCATION ${CMAKE_HOME_DIRECTORY}/prebuild/lib/${ANDROID_ABI}/libssl.a)
 
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../xmpp-core/src/main/c" "${CMAKE_CURRENT_BINARY_DIR}/monogram-omemo2")
+
 
 #aesige
 #add_library(aesige STATIC openssl/aes_ige.c)

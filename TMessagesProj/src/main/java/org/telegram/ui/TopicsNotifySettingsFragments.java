@@ -69,6 +69,8 @@ public class TopicsNotifySettingsFragments extends BaseFragment {
         });
         actionBar.setTitle(LocaleController.getString(R.string.NotificationsExceptions));
         recyclerListView = new RecyclerListView(context);
+        recyclerListView.setSections();
+        actionBar.setAdaptiveBackground(recyclerListView);
         DefaultItemAnimator defaultItemAnimator = new DefaultItemAnimator();
         defaultItemAnimator.setDelayAnimations(false);
         defaultItemAnimator.setSupportsChangeAnimations(false);

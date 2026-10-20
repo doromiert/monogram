@@ -1,0 +1,224 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package com.negzero.monogram.xmpp;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.function.Consumer;
+import org.jivesoftware.smack.XMPPConnection;
+import org.jivesoftware.smack.XMPPException.XMPPErrorException;
+import org.jivesoftware.smack.packet.*;
+import org.jivesoftware.smack.provider.IQProvider;
+import org.jivesoftware.smack.provider.ProviderManager;
+import org.jivesoftware.smack.parsing.StandardExtensionElementProvider;
+import org.jivesoftware.smack.util.stringencoder.Base64;
+import org.jivesoftware.smackx.disco.ServiceDiscoveryManager;
+import org.jivesoftware.smackx.pep.PepManager;
+import org.jivesoftware.smackx.pubsub.*;
+import org.jxmpp.jid.EntityBareJid;
+import org.jxmpp.jid.impl.JidCreate;
+
+/** Standard public profiles. Avatar data is inline PEP/vCard only, never a remote URL. */
+public final class XmppProfiles {
+    public static final String NICK = "http://jabber.org/protocol/nick";
+    public static final String META = "urn:xmpp:avatar:metadata", DATA = "urn:xmpp:avatar:data";
+    private final XMPPConnection connection;
+    private volatile String ownAvatarHash;
+    private final java.util.Map<String,String> presenceAvatars=new java.util.concurrent.ConcurrentHashMap<>();
+    private static final class CardIq extends IQ {
+        final StandardExtensionElement card;
+        CardIq(StandardExtensionElement card) { super("vCard", XmppProfile.VCARD); this.card = card; }
+        @Override protected IQChildElementXmlStringBuilder getIQChildElementBuilder(IQChildElementXmlStringBuilder xml) {
+            for (java.util.Map.Entry<String, String> attr : card.getAttributes().entrySet()) xml.attribute(attr.getKey(), attr.getValue());
+            xml.rightAngleBracket();
+            for (StandardExtensionElement child : card.getElements()) xml.append(child.toXML(XmppProfile.VCARD));
+            return xml;
+        }
+    }
+    public XmppProfiles(XMPPConnection connection, Consumer<org.jxmpp.jid.Jid> changed) {
+        this.connection = connection;
+        // Smack's VCard provider drops unknown and repeated fields on save.
+        ProviderManager.addIQProvider("vCard", XmppProfile.VCARD, new IQProvider<CardIq>() {
+            @Override public CardIq parse(org.jivesoftware.smack.xml.XmlPullParser parser, int depth, XmlEnvironment env)
+                    throws java.io.IOException, org.jivesoftware.smack.xml.XmlPullParserException {
+                return new CardIq(StandardExtensionElementProvider.INSTANCE.parse(parser, depth, env));
+            }
+        });
+        ServiceDiscoveryManager disco = ServiceDiscoveryManager.getInstanceFor(connection);
+        disco.addFeature(XmppProfile.VCARD); disco.addFeature(NICK + "+notify"); disco.addFeature(META + "+notify");
+        PepManager.getInstanceFor(connection).addPepListener((from, event, message) -> {
+            String node = event.getEvent().getNode();
+            if (NICK.equals(node) || META.equals(node)) changed.accept(from);
+        });
+        connection.addStanzaInterceptor(stanza -> {
+            if (stanza instanceof Presence && ((Presence) stanza).getType() == Presence.Type.available && ownAvatarHash != null) {
+                stanza.overrideExtension(StandardExtensionElement.builder("x", "vcard-temp:x:update").addElement("photo", ownAvatarHash).build());
+            }
+        }, stanza -> stanza instanceof Presence);
+        connection.addAsyncStanzaListener(stanza -> {
+            if(stanza.getFrom()==null || stanza.getFrom().asEntityBareJidIfPossible()==null) return;
+            try {
+                StandardExtensionElement update=StandardExtensionElementProvider.INSTANCE.parse(org.jivesoftware.smack.util.PacketParserUtils.getParserFor(stanza.getExtension("x","vcard-temp:x:update").toXML().toString()));
+                StandardExtensionElement photo=update.getFirstElement("photo","vcard-temp:x:update");
+                if(photo==null) return;
+                String hash=photo.getText()==null ? "" : photo.getText().trim().toLowerCase(java.util.Locale.ROOT);
+                if(!hash.isEmpty() && !hash.matches("[0-9a-f]{40}")) return;
+                if(!hash.equals(presenceAvatars.put(stanza.getFrom().toString(),hash))) changed.accept(stanza.getFrom());
+            } catch(Exception malformed) { /* A malformed avatar hint cannot trigger repeated fetches. */ }
+        }, stanza -> stanza instanceof Presence && stanza.hasExtension("x", "vcard-temp:x:update"));
+    }
+    private XmppProfile card(org.jxmpp.jid.Jid jid, boolean editing) throws Exception {
+        CardIq request = new CardIq(StandardExtensionElement.builder("vCard", XmppProfile.VCARD).build());
+        request.setType(IQ.Type.get);
+        if (!jid.equals(connection.getUser().asEntityBareJid())) request.setTo(jid);
+        try {
+            CardIq result = connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
+            return new XmppProfile(result.card, null, null);
+        } catch (XMPPErrorException absent) {
+            if (!optional(absent) || editing && absent.getStanzaError().getCondition() != StanzaError.Condition.item_not_found) throw absent;
+            return new XmppProfile(request.card, null, null);
+        }
+    }
+    private static boolean optional(XMPPErrorException error) {
+        StanzaError.Condition c = error.getStanzaError().getCondition();
+        return c == StanzaError.Condition.item_not_found || c == StanzaError.Condition.service_unavailable
+                || c == StanzaError.Condition.feature_not_implemented || c == StanzaError.Condition.forbidden;
+    }
+    private StandardExtensionElement item(EntityBareJid jid,String node,String id) throws Exception { return item(jid,node,id,false); }
+    private StandardExtensionElement item(EntityBareJid jid,String node,String id,boolean preserveCached) throws Exception {
+        try {
+            LeafNode leaf = PubSubManager.getInstanceFor(connection, jid).getLeafNode(node);
+            List<PayloadItem<ExtensionElement>> items = id == null ? leaf.getItems(1) : leaf.getItems(Collections.singletonList(id));
+            if (items.isEmpty()) return null;
+            ExtensionElement payload = items.get(0).getPayload();
+            if (payload == null) return null;
+            return StandardExtensionElementProvider.INSTANCE.parse(org.jivesoftware.smack.util.PacketParserUtils.getParserFor(payload.toXML().toString()));
+        } catch (XMPPErrorException absent) { if(optional(absent) && (!preserveCached || absent.getStanzaError().getCondition()==StanzaError.Condition.item_not_found)) return null;throw absent; }
+    }
+    public XmppProfile load(String address) throws Exception { return load(address,null); }
+    public XmppProfile load(String address,XmppProfile cached) throws Exception {
+        org.jxmpp.jid.EntityJid addressJid=JidCreate.entityFrom(address);
+        // Anonymous room occupants expose vCards through the full room/nickname address.
+        if(addressJid.hasResource()) return card(addressJid,cached!=null);
+        EntityBareJid jid=addressJid.asEntityBareJid();
+        XmppProfile card=null;String nickname=null;byte[] avatar=null;
+        try { card=card(jid,cached!=null); }
+        catch(Exception failed) { if(cached==null || failed instanceof InterruptedException) throw failed; }
+        try {
+            StandardExtensionElement nick=item(jid,NICK,null,cached!=null);
+            if(nick==null) nickname=card==null ? null : card.nickname;
+            else if(NICK.equals(nick.getNamespace()) && "nick".equals(nick.getElementName())) nickname=nick.getText()==null ? "" : nick.getText();
+        } catch(Exception failed) { if(cached==null || failed instanceof InterruptedException) throw failed; }
+        try {
+            StandardExtensionElement meta=item(jid,META,null,cached!=null);
+            if(meta==null) avatar=cardAvatarUpdate(card);
+            else if(META.equals(meta.getNamespace()) && "metadata".equals(meta.getElementName())) {
+                if(meta.getElements().isEmpty()) avatar=new byte[0];
+                for(StandardExtensionElement info:meta.getElements()) {
+                    String id=info.getAttributeValue("id");
+                    if(!"info".equals(info.getElementName()) || !META.equals(info.getNamespace()) || id==null || !id.matches("[0-9a-fA-F]{40}")) continue;
+                    long size;
+                    try { size=Long.parseLong(info.getAttributeValue("bytes")); } catch(RuntimeException bad) { continue; }
+                    if(size<=0 || size>XmppProfile.MAX_AVATAR_BYTES) continue;
+                    if(cached!=null && cached.avatar.length==size && sha1(cached.avatar).equalsIgnoreCase(id)) { avatar=cached.avatar;break; }
+                    try {
+                        StandardExtensionElement data=item(jid,DATA,id,cached!=null);
+                        if(data==null || !DATA.equals(data.getNamespace()) || !"data".equals(data.getElementName()) || data.getText()==null
+                                || data.getText().length()>XmppProfile.MAX_AVATAR_BYTES*4/3+4096) continue;
+                        byte[] bytes=Base64.decode(data.getText().replaceAll("\\s", ""));
+                        if(bytes!=null && bytes.length==size && sha1(bytes).equalsIgnoreCase(id)) { avatar=bytes;break; }
+                    } catch(org.jivesoftware.smack.SmackException.NotConnectedException | org.jivesoftware.smack.SmackException.NoResponseException disconnected) { throw disconnected; }
+                    catch(InterruptedException interrupted) { throw interrupted; }
+                    catch(Exception unavailable) { /* Another advertised representation may still be available. */ }
+                }
+            }
+        } catch(Exception failed) { if(cached==null || failed instanceof InterruptedException) throw failed; }
+        return mergeCached(cached,card,nickname,avatar);
+    }
+    private static byte[] cardAvatarUpdate(XmppProfile card) {
+        if(card==null) return null;
+        // Malformed inline data or an unsupported remote URL does not mean the avatar was removed.
+        if(card.avatar.length==0 && (!card.field("PHOTO","BINVAL").trim().isEmpty() || !card.field("PHOTO","EXTVAL").trim().isEmpty())) return null;
+        return card.avatar;
+    }
+    static XmppProfile mergeCached(XmppProfile cached,XmppProfile card,String nickname,byte[] avatar) {
+        if(card==null) card=cached;
+        if(card==null) throw new IllegalArgumentException("No profile data available");
+        if(cached!=null) {
+            if(nickname==null) nickname=cached.nickname;
+            if(avatar==null) avatar=cached.avatar;
+            if(card.xml().equals(cached.xml()) && java.util.Objects.equals(nickname,cached.nickname) && java.util.Arrays.equals(avatar,cached.avatar)) return cached;
+        }
+        return new XmppProfile(card.card,nickname,avatar);
+    }
+    /** Room avatars use the room vCard, rather than a person's PEP nodes. */
+    public XmppProfile loadRoom(String room) throws Exception { return card(JidCreate.entityBareFrom(room),false); }
+    /** Reuse advertised cached bytes; a denied or inconsistent refresh must not erase them. */
+    public XmppProfile loadRoom(String room,XmppProfile cached,org.jivesoftware.smackx.muc.RoomInfo information) throws Exception {
+        java.util.Set<String> hashes=roomAvatarHashes(information==null ? null : information.getForm());
+        if(cached!=null && hashes.contains(sha1OrEmpty(cached.avatar))) return cached;
+        XmppProfile profile=card(JidCreate.entityBareFrom(room),cached!=null);
+        if(!hashes.isEmpty() && !hashes.contains(sha1OrEmpty(profile.avatar))) throw new java.io.IOException("Room avatar does not match its advertised hash");
+        return profile;
+    }
+    static java.util.Set<String> roomAvatarHashes(org.jivesoftware.smackx.xdata.packet.DataForm form) throws java.io.IOException {
+        java.util.Set<String> hashes=new java.util.HashSet<>();
+        if(form==null) return hashes;
+        org.jivesoftware.smackx.xdata.FormField type=form.getField("FORM_TYPE"),field=form.getField("muc#roominfo_avatarhash");
+        if(type==null || type.getValues().size()!=1 || !"http://jabber.org/protocol/muc#roominfo".contentEquals(type.getValues().get(0)) || field==null) return hashes;
+        for(CharSequence value:field.getValues()) {
+            String hash=value.toString().trim().toLowerCase(java.util.Locale.ROOT);
+            if(!hash.matches("[0-9a-f]{40}")) throw new java.io.IOException("Invalid advertised room avatar hash");
+            hashes.add(hash);
+        }
+        return hashes;
+    }
+    public XmppProfile roomAvatar(String room,byte[] png) throws Exception {
+        XmppProfile.checkedAvatar(png);
+        EntityBareJid address=JidCreate.entityBareFrom(room);
+        XmppProfile changed=card(address,true).avatar(png,"image/png");
+        CardIq request=new CardIq(changed.card); request.setType(IQ.Type.set); request.setTo(address);
+        connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
+        return loadRoom(room);
+    }
+    public void useOwnProfile(XmppProfile profile) throws Exception {
+        String hash = sha1OrEmpty(profile.cardAvatar());
+        if (hash.equals(ownAvatarHash)) return;
+        ownAvatarHash = hash;
+        connection.sendStanza(new Presence(Presence.Type.available));
+    }
+    private void saveCard(XmppProfile profile) throws Exception {
+        CardIq request = new CardIq(profile.card); request.setType(IQ.Type.set);
+        connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
+    }
+    public XmppProfile edit(String first, String last, String about) throws Exception {
+        // Always retrieve immediately before writing; cached cards may be stale or incomplete.
+        XmppProfile changed = card(connection.getUser().asEntityBareJid(), true).edit(first, last, about);
+        saveCard(changed);
+        if ((first != null || last != null) && PepManager.getInstanceFor(connection).isSupported()) PepManager.getInstanceFor(connection).publish(NICK,
+                new PayloadItem<>(StandardExtensionElement.builder("nick", NICK).setText(changed.nickname).build()));
+        return load(connection.getUser().asEntityBareJid().toString());
+    }
+    public XmppProfile avatar(byte[] png) throws Exception {
+        XmppProfile.checkedAvatar(png);
+        XmppProfile changed = card(connection.getUser().asEntityBareJid(), true).avatar(png, "image/png");
+        saveCard(changed);
+        if (PepManager.getInstanceFor(connection).isSupported()) {
+            PepManager pep = PepManager.getInstanceFor(connection);
+            String hash = sha1OrEmpty(png);
+            if (png.length > 0) pep.publish(DATA, new PayloadItem<>(hash, StandardExtensionElement.builder("data", DATA).setText(Base64.encodeToString(png)).build()));
+            StandardExtensionElement.Builder meta = StandardExtensionElement.builder("metadata", META);
+            if (png.length > 0) meta.addElement(StandardExtensionElement.builder("info", META)
+                    .addAttribute("id", hash).addAttribute("bytes", Integer.toString(png.length)).addAttribute("type", "image/png").build());
+            pep.publish(META, new PayloadItem<>(hash.isEmpty() ? "current" : hash, meta.build()));
+        }
+        ownAvatarHash = sha1OrEmpty(png);
+        connection.sendStanza(new Presence(Presence.Type.available));
+        return load(connection.getUser().asEntityBareJid().toString());
+    }
+    private static String sha1OrEmpty(byte[] data) throws Exception { return data.length == 0 ? "" : sha1(data); }
+    public static String sha1(byte[] data) throws Exception {
+        StringBuilder hex = new StringBuilder();
+        for (byte b : java.security.MessageDigest.getInstance("SHA-1").digest(data)) hex.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+        return hex.toString();
+    }
+}

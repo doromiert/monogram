@@ -1,0 +1,110 @@
+package org.telegram.messenger.xmpp;
+
+import static org.junit.Assert.*;
+import android.app.Application;
+import android.content.Context;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
+import org.robolectric.shadow.api.Shadow;
+import org.telegram.messenger.*;
+
+@RunWith(RobolectricTestRunner.class)
+@Config(manifest=Config.NONE, sdk=36, application=Application.class,
+        shadows={MonogramBackgroundServiceTest.Loader.class, MonogramBackgroundServiceTest.Settings.class,
+                MonogramBackgroundServiceTest.Strings.class, MonogramBackgroundServiceTest.Accounts.class,
+                MonogramBackgroundServiceTest.Configuration.class})
+public class MonogramBackgroundServiceTest {
+    @Implements(value=ApplicationLoader.class,isInAndroidSdk=false)
+    public static class Loader {
+        static int starts;
+        @Implementation public static void postInitApplication() {}
+        @Implementation public static void startPushService() { starts++; }
+    }
+    @Implements(value=SharedConfig.class,isInAndroidSdk=false)
+    public static class Configuration {
+        static int saves;
+        @Implementation public static void loadConfig() {}
+        @Implementation public static void saveConfig() { saves++; }
+    }
+    @Implements(value=MessagesController.class,isInAndroidSdk=false)
+    public static class Settings {
+        @Implementation public static android.content.SharedPreferences getNotificationsSettings(int account) {
+            return RuntimeEnvironment.getApplication().getSharedPreferences("Notifications"+account,0);
+        }
+    }
+    @Implements(value=LocaleController.class,isInAndroidSdk=false)
+    public static class Strings { @Implementation public static String getString(int id) { return "Monogram connection"; } }
+    @Implements(value=MonogramController.class,isInAndroidSdk=false)
+    public static class Accounts {
+        static int networkEvents;
+        @Implementation public static MonogramController get(int account) { return Shadow.newInstanceOf(MonogramController.class); }
+        @Implementation public void restore() {}
+        @Implementation public void networkChanged() { networkEvents++; }
+    }
+    @Test public void activeAccountGetsForegroundServiceAndNetworkListener() {
+        Context context=RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("monogram-0",0).edit().putString("jid","alice@example.org").commit();
+        assertTrue(NotificationsService.enabled(context));
+        org.robolectric.android.controller.ServiceController<NotificationsService> service=Robolectric.buildService(NotificationsService.class).create();
+        try {
+            assertEquals(android.app.Service.START_STICKY, service.get().onStartCommand(null,0,1));
+            assertEquals(1028, org.robolectric.Shadows.shadowOf(service.get()).getLastForegroundNotificationId());
+            assertTrue((org.robolectric.Shadows.shadowOf(service.get()).getLastForegroundNotification().flags & android.app.Notification.FLAG_ONGOING_EVENT)!=0);
+            android.net.ConnectivityManager connectivity = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            Accounts.networkEvents = 0;
+            for (android.net.ConnectivityManager.NetworkCallback callback : org.robolectric.Shadows.shadowOf(connectivity).getNetworkCallbacks()) {
+                callback.onAvailable(Shadow.newInstanceOf(android.net.Network.class));
+                callback.onLost(Shadow.newInstanceOf(android.net.Network.class));
+            }
+            assertEquals(2 * UserConfig.MAX_ACCOUNT_COUNT, Accounts.networkEvents);
+        } finally { service.destroy(); }
+    }
+    @Test public void existingSettingsAndLogoutControlServiceAcrossAccounts() {
+        Context context=RuntimeEnvironment.getApplication();
+        assertFalse(NotificationsService.enabled(context));
+        context.getSharedPreferences("monogram-1",0).edit().putString("jid","alice@example.org").commit();
+        assertTrue(NotificationsService.enabled(context));
+        Settings.getNotificationsSettings(1).edit().putBoolean("pushService",false).commit();
+        assertFalse(NotificationsService.enabled(context));
+        Settings.getNotificationsSettings(1).edit().putBoolean("pushService",true).putBoolean("pushConnection",false).commit();
+        assertFalse(NotificationsService.enabled(context));
+        Settings.getNotificationsSettings(1).edit().putBoolean("pushConnection",true).commit();
+        assertTrue(NotificationsService.enabled(context));
+        context.getSharedPreferences("monogram-1",0).edit().remove("jid").commit();
+        assertFalse(NotificationsService.enabled(context));
+    }
+    @Test public void packageUpdateAndBootStartSynchronouslyAndKeepPasscodeProtection() {
+        Context context=RuntimeEnvironment.getApplication();
+        AppStartReceiver receiver=new AppStartReceiver();
+        ApplicationLoader.applicationHandler=null;
+        SharedConfig.passcodeHash="test-hash"; SharedConfig.appLocked=false;
+        Loader.starts=0; Configuration.saves=0;
+        receiver.onReceive(context,new android.content.Intent(android.content.Intent.ACTION_MY_PACKAGE_REPLACED));
+        assertEquals(1,Loader.starts); assertTrue(SharedConfig.appLocked); assertEquals(1,Configuration.saves);
+        SharedConfig.passcodeHash=""; SharedConfig.appLocked=false;
+        receiver.onReceive(context,new android.content.Intent(android.content.Intent.ACTION_BOOT_COMPLETED));
+        assertEquals(2,Loader.starts); assertFalse(SharedConfig.appLocked); assertEquals(1,Configuration.saves);
+        receiver.onReceive(context,new android.content.Intent("org.telegram.start")); receiver.onReceive(context,null);
+        assertEquals(2,Loader.starts);
+    }
+    @Test public void hiddenConnectionCategoryKeepsServiceEnabledAndSettingsTargetOnlyThatChannel() {
+        Context context=RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("monogram-0",0).edit().putString("jid","alice@example.org").commit();
+        android.app.NotificationManager manager=(android.app.NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.createNotificationChannel(new android.app.NotificationChannel(NotificationsService.CONNECTION_CHANNEL,"Connection",android.app.NotificationManager.IMPORTANCE_NONE));
+        android.content.Intent settings=NotificationsService.notificationSettings(context);
+        assertEquals(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS,settings.getAction());
+        assertEquals(context.getPackageName(),settings.getStringExtra(android.provider.Settings.EXTRA_APP_PACKAGE));
+        assertEquals(NotificationsService.CONNECTION_CHANNEL,settings.getStringExtra(android.provider.Settings.EXTRA_CHANNEL_ID));
+        assertTrue(NotificationsService.enabled(context));
+        manager.deleteNotificationChannel(NotificationsService.CONNECTION_CHANNEL);
+        assertEquals(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS,NotificationsService.notificationSettings(context).getAction());
+    }
+
+}

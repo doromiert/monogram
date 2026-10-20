@@ -76,7 +76,6 @@ public class DownloadController extends BaseController implements NotificationCe
     private ArrayList<FileDownloadProgressListener> deleteLaterArray = new ArrayList<>();
     private int lastTag = 0;
 
-    private boolean loadingAutoDownloadConfig;
 
     private LongSparseArray<Long> typingTimes = new LongSparseArray<>();
 
@@ -116,10 +115,10 @@ public class DownloadController extends BaseController implements NotificationCe
                 mask[1] = Utilities.parseInt(args[1]);
                 mask[2] = Utilities.parseInt(args[2]);
                 mask[3] = Utilities.parseInt(args[3]);
-                sizes[PRESET_SIZE_NUM_PHOTO] = Utilities.parseInt(args[4]);
-                sizes[PRESET_SIZE_NUM_VIDEO] = Utilities.parseInt(args[5]);
-                sizes[PRESET_SIZE_NUM_DOCUMENT] = Utilities.parseInt(args[6]);
-                sizes[PRESET_SIZE_NUM_AUDIO] = Utilities.parseInt(args[7]);
+                sizes[PRESET_SIZE_NUM_PHOTO] = Utilities.parseLong(args[4]);
+                sizes[PRESET_SIZE_NUM_VIDEO] = Utilities.parseLong(args[5]);
+                sizes[PRESET_SIZE_NUM_DOCUMENT] = Utilities.parseLong(args[6]);
+                sizes[PRESET_SIZE_NUM_AUDIO] = Utilities.parseLong(args[7]);
                 preloadVideo = Utilities.parseInt(args[8]) == 1;
                 preloadMusic = Utilities.parseInt(args[9]) == 1;
                 enabled = Utilities.parseInt(args[10]) == 1;
@@ -349,54 +348,8 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public void loadAutoDownloadConfig(boolean force) {
-        if (loadingAutoDownloadConfig || !force && Math.abs(System.currentTimeMillis() - getUserConfig().autoDownloadConfigLoadTime) < 24 * 60 * 60 * 1000) {
-            return;
-        }
-        loadingAutoDownloadConfig = true;
-        TL_account.getAutoDownloadSettings req = new TL_account.getAutoDownloadSettings();
-        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            loadingAutoDownloadConfig = false;
-            getUserConfig().autoDownloadConfigLoadTime = System.currentTimeMillis();
-            getUserConfig().saveConfig(false);
-            if (response != null) {
-                TL_account.autoDownloadSettings res = (TL_account.autoDownloadSettings) response;
-                lowPreset.set(res.low);
-                lowPreset.preloadStories = false;
-                mediumPreset.set(res.medium);
-                highPreset.set(res.high);
-                for (int a = 0; a < 3; a++) {
-                    Preset preset;
-                    if (a == 0) {
-                        preset = mobilePreset;
-                    } else if (a == 1) {
-                        preset = wifiPreset;
-                    } else {
-                        preset = roamingPreset;
-                    }
-                    if (preset.equals(lowPreset)) {
-                        preset.set(res.low);
-                        preset.preloadStories = false;
-                    } else if (preset.equals(mediumPreset)) {
-                        preset.set(res.medium);
-                    } else if (preset.equals(highPreset)) {
-                        preset.set(res.high);
-                    }
-                }
-
-                SharedPreferences.Editor editor = MessagesController.getMainSettings(currentAccount).edit();
-                editor.putString("mobilePreset", mobilePreset.toString());
-                editor.putString("wifiPreset", wifiPreset.toString());
-                editor.putString("roamingPreset", roamingPreset.toString());
-                editor.putString("preset0", lowPreset.toString());
-                editor.putString("preset1", mediumPreset.toString());
-                editor.putString("preset2", highPreset.toString());
-                editor.commit();
-                String str1 = lowPreset.toString();
-                String str2 = mediumPreset.toString();
-                String str3 = highPreset.toString();
-                checkAutodownloadSettings();
-            }
-        }));
+        // XMPP uses the existing locally saved presets.
+        checkAutodownloadSettings();
     }
 
     public Preset getCurrentMobilePreset() {
@@ -468,6 +421,23 @@ public class DownloadController extends BaseController implements NotificationCe
             return getCurrentMobilePreset().maxVideoBitrate;
         }
     }
+    /** HTTP attachment metadata is evaluated by the same presets as Telegram media. */
+    public long getMonogramDownloadLimit(TLRPC.Message message, TLRPC.MessageMedia media, long size) {
+        TLRPC.TL_message routing = new TLRPC.TL_message();
+        routing.peer_id = message.peer_id; routing.from_id = message.from_id;
+        if (message.dialog_id > 0) { routing.peer_id = new TLRPC.TL_peerUser(); routing.peer_id.user_id = message.dialog_id; }
+        if (canDownloadMedia(routing, media) != 1) return 0;
+        int type = media.photo != null ? AUTODOWNLOAD_TYPE_PHOTO
+                : MessageObject.isVideoDocument(media.document) || MessageObject.isGifDocument(media.document) || MessageObject.isRoundVideoDocument(media.document)
+                ? AUTODOWNLOAD_TYPE_VIDEO : MessageObject.isVoiceDocument(media.document) ? AUTODOWNLOAD_TYPE_AUDIO : AUTODOWNLOAD_TYPE_DOCUMENT;
+        int network = ApplicationLoader.getAutodownloadNetworkType();
+        Preset preset = network == StatsController.TYPE_WIFI ? getCurrentWiFiPreset()
+                : network == StatsController.TYPE_ROAMING ? getCurrentRoamingPreset() : getCurrentMobilePreset();
+        long configured = preset.sizes[typeToIndex(type)];
+        if(type == AUTODOWNLOAD_TYPE_AUDIO) configured = Math.max(512 * 1024, configured);
+        long limit = Math.min(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES, configured);
+        return size > 0 && size <= limit ? limit : 0;
+    }
 
     public int getAutodownloadMask() {
         int result = 0;
@@ -530,7 +500,15 @@ public class DownloadController extends BaseController implements NotificationCe
         return mask;
     }
 
+    private String lastMonogramDownloadPolicy;
     public void checkAutodownloadSettings() {
+        int network = ApplicationLoader.getAutodownloadNetworkType();
+        Preset preset = network == StatsController.TYPE_WIFI ? getCurrentWiFiPreset()
+                : network == StatsController.TYPE_ROAMING ? getCurrentRoamingPreset() : getCurrentMobilePreset();
+        String policy = network + ":" + getCurrentDownloadMask() + ":" + preset.toString();
+        boolean changed = !policy.equals(lastMonogramDownloadPolicy);
+        lastMonogramDownloadPolicy = policy;
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).autoDownloadSettingsChanged(changed);
         int currentMask = getCurrentDownloadMask();
         if (currentMask == lastCheckMask) {
             return;
@@ -607,6 +585,8 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public boolean canDownloadMedia(MessageObject messageObject) {
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(messageObject.messageOwner))
+            return !messageObject.isHiddenSensitive() && getFileLoader().getPathToMessage(messageObject.messageOwner).isFile();
         if (messageObject.type == MessageObject.TYPE_STORY) {
             if (!SharedConfig.isAutoplayVideo()) return false;
             TLRPC.TL_messageMediaStory mediaStory = (TLRPC.TL_messageMediaStory) MessageObject.getMedia(messageObject);
@@ -687,6 +667,8 @@ public class DownloadController extends BaseController implements NotificationCe
 
     private int canDownloadMediaInternal(MessageObject message) {
         if (message == null || message.messageOwner == null) return 0;
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner))
+            return getFileLoader().getPathToMessage(message.messageOwner).isFile() ? 1 : 0;
         if (message.messageOwner.media instanceof TLRPC.TL_messageMediaStory) {
             return canPreloadStories() ? 2 : 0;
         }
@@ -777,6 +759,8 @@ public class DownloadController extends BaseController implements NotificationCe
 
     private int canDownloadMediaInternal(MessageObject message, long overrideSize) {
         if (message == null || message.messageOwner == null) return 0;
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner))
+            return getFileLoader().getPathToMessage(message.messageOwner).isFile() ? 1 : 0;
         if (message.messageOwner.media instanceof TLRPC.TL_messageMediaStory) {
             return canPreloadStories() ? 2 : 0;
         }
@@ -859,6 +843,7 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public int canDownloadMedia(TLRPC.Message message) {
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message)) return getFileLoader().getPathToMessage(message).isFile() ? 1 : 0;
         if (message == null || message.media instanceof TLRPC.TL_messageMediaStory) {
             return canPreloadStories() ? 2 : 0;
         }
@@ -945,7 +930,7 @@ public class DownloadController extends BaseController implements NotificationCe
         }
         int type;
         boolean isVideo = false;
-        if (MessageObject.isVideoDocument(media.document)) {
+        if (MessageObject.isVideoDocument(media.document) || MessageObject.isGifDocument(media.document) || MessageObject.isRoundVideoDocument(media.document)) {
             isVideo = true;
             type = AUTODOWNLOAD_TYPE_VIDEO;
         } else if (MessageObject.isVoiceDocument(media.document)) {
@@ -1065,48 +1050,7 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public void savePresetToServer(int type) {
-        TL_account.saveAutoDownloadSettings req = new TL_account.saveAutoDownloadSettings();
-        Preset preset;
-        boolean enabled;
-        if (type == 0) {
-            preset = getCurrentMobilePreset();
-            enabled = mobilePreset.enabled;
-        } else if (type == 1) {
-            preset = getCurrentWiFiPreset();
-            enabled = wifiPreset.enabled;
-        } else {
-            preset = getCurrentRoamingPreset();
-            enabled = roamingPreset.enabled;
-        }
-        req.settings = new TLRPC.TL_autoDownloadSettings();
-        req.settings.audio_preload_next = preset.preloadMusic;
-        req.settings.video_preload_large = preset.preloadVideo;
-        req.settings.phonecalls_less_data = preset.lessCallData;
-        req.settings.video_upload_maxbitrate = preset.maxVideoBitrate;
-        req.settings.disabled = !enabled;
-        boolean photo = false;
-        boolean video = false;
-        boolean document = false;
-        for (int a = 0; a < preset.mask.length; a++) {
-            if ((preset.mask[a] & AUTODOWNLOAD_TYPE_PHOTO) != 0) {
-                photo = true;
-            }
-            if ((preset.mask[a] & AUTODOWNLOAD_TYPE_VIDEO) != 0) {
-                video = true;
-            }
-            if ((preset.mask[a] & AUTODOWNLOAD_TYPE_DOCUMENT) != 0) {
-                document = true;
-            }
-            if (photo && video && document) {
-                break;
-            }
-        }
-        req.settings.photo_size_max = photo ? (int) preset.sizes[PRESET_SIZE_NUM_PHOTO] : 0;
-        req.settings.video_size_max = video ? preset.sizes[PRESET_SIZE_NUM_VIDEO] : 0;
-        req.settings.file_size_max = document ? preset.sizes[PRESET_SIZE_NUM_DOCUMENT] : 0;
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-
-        });
+        checkAutodownloadSettings();
     }
 
     protected void cancelDownloading(ArrayList<Pair<Long, Integer>> arrayList) {

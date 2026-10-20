@@ -678,7 +678,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                                 AccountFrozenAlert.show(currentAccount);
                                 return;
                             }
-                            presentFragment(new InviteContactsActivity());
+                            presentFragment(new MonogramAccountInviteActivity(currentAccount));
                         } else if (row == 1) {
                             presentFragment(new CallLogActivity());
                         }

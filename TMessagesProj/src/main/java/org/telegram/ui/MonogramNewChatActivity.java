@@ -5,51 +5,44 @@ import android.content.Context;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
-import android.view.Gravity;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import org.telegram.messenger.*;
+import java.util.ArrayList;
 import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.ui.ActionBar.*;
-import org.telegram.ui.Components.EditTextBoldCursor;
-import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Cells.EditTextCell;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
 
-public final class MonogramNewChatActivity extends BaseFragment {
+public final class MonogramNewChatActivity extends MonogramSettingsActivity {
+    private EditTextCell address;
+    private boolean opening;
+    private String status;
     public MonogramNewChatActivity(int account) { currentAccount = account; }
+    @Override protected CharSequence getTitle() { return "New conversation"; }
     @Override public View createView(Context context) {
-        actionBar.setTitle("New conversation"); actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override public void onItemClick(int id) { if (id == -1) finishFragment(); }
-        });
-        LinearLayout body = new LinearLayout(context); body.setOrientation(LinearLayout.VERTICAL);
-        int padding = AndroidUtilities.dp(24); body.setPadding(padding, padding, padding, padding);
-        body.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        EditTextBoldCursor address = new EditTextBoldCursor(context); address.setHint("Contact's Jabber address");
-        address.setTextSize(18); address.setSingleLine(true);
-        address.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        address.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
-        address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        body.addView(address, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
-        TextView status = new TextView(context); status.setTextSize(15);
-        status.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        body.addView(status, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 16, 0, 16));
-        TextView open = new TextView(context); open.setText("Start conversation"); open.setTextSize(18); open.setGravity(Gravity.CENTER);
-        open.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-        open.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(12), Theme.getColor(Theme.key_featuredStickers_addButton), Theme.getColor(Theme.key_featuredStickers_addButtonPressed)));
-        body.addView(open, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 52));
-        open.setOnClickListener(v -> {
-            open.setEnabled(false); status.setText("Opening…");
-            MonogramController.get(currentAccount).openPeer(address.getText().toString().trim(), (user, error) -> {
-                open.setEnabled(true);
-                if (getParentActivity() == null) return;
-                if (error != null) { status.setText("Could not open this address. Check the address and your connection."); return; }
-                Bundle args = new Bundle(); args.putLong("user_id", ((TLRPC.User) user).id);
-                ChatActivity chat = new ChatActivity(args); chat.setCurrentAccount(currentAccount);
-                presentFragment(chat, true);
-            });
-        });
-        fragmentView = body; return body;
+        address = new EditTextCell(context, "Contact's Jabber address", false);
+        address.editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        address.whenHitEnter(this::open);
+        return super.createView(context);
     }
+    @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        items.add(UItem.asHeader("Jabber address")); items.add(UItem.asCustom(address));
+        items.add(UItem.asShadow("Use the contact's full address, such as friend@example.org."));
+        items.add(UItem.asButton(1, opening ? "Opening…" : "Start conversation").accent().setEnabled(!opening));
+        items.add(UItem.asShadow(status));
+        items.add(UItem.asButton(2, "Join an XMPP room"));
+        items.add(UItem.asButton(3, "Invite someone to your server"));
+    }
+    private void open() {
+        if (opening) return;
+        opening = true; status = null; listView.adapter.update(true);
+        MonogramController.get(currentAccount).openPeer(address.getText().toString().trim(), (user, error) -> {
+            opening = false;
+            if (getParentActivity() == null) return;
+            if (error != null) { status = "Could not open this address. Check the address and your connection."; listView.adapter.update(true); return; }
+            Bundle args = new Bundle(); args.putLong("user_id", ((TLRPC.User) user).id);
+            ChatActivity chat = new ChatActivity(args); chat.setCurrentAccount(currentAccount); presentFragment(chat, true);
+        });
+    }
+    @Override protected void onClick(UItem item, View view, int position, float x, float y) { if (item.id == 1) open(); else if (item.id==2) presentFragment(new MonogramRoomActivity(currentAccount,0)); else if(item.id==3) presentFragment(new MonogramAccountInviteActivity(currentAccount)); }
+    @Override protected boolean onLongClick(UItem item, View view, int position, float x, float y) { return false; }
 }

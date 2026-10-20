@@ -280,7 +280,7 @@ public class DataSettingsActivity extends BaseFragment {
         listAdapter = new ListAdapter(context);
 
         fragmentView = new FrameLayout(context);
-        fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        fragmentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         FrameLayout frameLayout = (FrameLayout) fragmentView;
 
         listView = new RecyclerListView(context) {
@@ -691,7 +691,8 @@ public class DataSettingsActivity extends BaseFragment {
                 case 1: {
                     TextSettingsCell textCell = (TextSettingsCell) holder.itemView;
                     textCell.setCanDisable(false);
-                    textCell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                    textCell.getTextView().setTag(Theme.key_windowBackgroundWhiteBlackText);
+                    textCell.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
                     if (position == useLessDataForCallsRow) {
                         textCell.setIcon(0);
                         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
@@ -718,7 +719,8 @@ public class DataSettingsActivity extends BaseFragment {
                     } else if (position == resetDownloadRow) {
                         textCell.setIcon(0);
                         textCell.setCanDisable(true);
-                        textCell.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
+                        textCell.getTextView().setTag(Theme.key_text_RedRegular);
+                        textCell.setTextColor(getThemedColor(Theme.key_text_RedRegular));
                         textCell.setText(LocaleController.getString(R.string.ResetAutomaticMediaDownload), false);
                     } else if (position == quickRepliesRow){
                         textCell.setIcon(0);
@@ -898,26 +900,26 @@ public class DataSettingsActivity extends BaseFragment {
             View view;
             switch (viewType) {
                 case 0:
-                    view = new ShadowSectionCell(mContext);
+                    view = new ShadowSectionCell(mContext, resourceProvider);
                     break;
                 case 1:
-                    view = new TextSettingsCell(mContext);
+                    view = new TextSettingsCell(mContext, resourceProvider);
                     break;
                 case 2:
-                    view = new HeaderCell(mContext, 22);
+                    view = new HeaderCell(mContext, 22, resourceProvider);
                     break;
                 case 3:
-                    view = new TextCheckCell(mContext);
+                    view = new TextCheckCell(mContext, resourceProvider);
                     break;
                 case 4:
-                    view = new TextInfoPrivacyCell(mContext);
+                    view = new TextInfoPrivacyCell(mContext, resourceProvider);
                     break;
                 case 5:
-                    view = new NotificationsCheckCell(mContext);
+                    view = new NotificationsCheckCell(mContext, resourceProvider);
                     break;
                 case 6:
                 default:
-                    view = new TextCell(mContext);
+                    view = new TextCell(mContext, resourceProvider);
                     break;
             }
             view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
@@ -948,7 +950,7 @@ public class DataSettingsActivity extends BaseFragment {
     public ArrayList<ThemeDescription> getThemeDescriptions() {
         ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, TextCheckCell.class, HeaderCell.class, NotificationsCheckCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, TextCheckCell.class, HeaderCell.class, NotificationsCheckCell.class, TextCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
@@ -959,6 +961,7 @@ public class DataSettingsActivity extends BaseFragment {
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"multilineValueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrack));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
 
@@ -966,8 +969,12 @@ public class DataSettingsActivity extends BaseFragment {
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{View.class}, Theme.dividerPaint, null, null, Theme.key_divider));
 
-        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_text_RedRegular));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
 
@@ -977,6 +984,8 @@ public class DataSettingsActivity extends BaseFragment {
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextInfoPrivacyCell.class, ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGray));
 
         return themeDescriptions;
     }

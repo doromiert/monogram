@@ -3,5 +3,7 @@
     <external-path name="media" path="."/>
     <files-path name="logs" path="/logs/"/>
     <files-path name="cache" path="/cache/"/>
+    <cache-path name="edited_media" path="."/>
+    <files-path name="monogram_attachments" path="monogram-attachments/"/>
     <root-path name="external_files" path="/storage/" />
 </paths>

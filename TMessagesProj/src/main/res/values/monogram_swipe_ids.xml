@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="monogram_swipe_move_up" />
+    <item type="id" name="monogram_swipe_move_down" />
+</resources>

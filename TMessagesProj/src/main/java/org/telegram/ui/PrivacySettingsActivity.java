@@ -89,6 +89,10 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     public ArrayList<TL_account.Passkey> currentPasskeys;
 
     private int privacySectionRow;
+    private int monogramTypingRow;
+    private int monogramReadReceiptsRow;
+    private int monogramGroupReadReceiptsRow;
+    private int monogramReadSyncRow;
     @Keep
     private int blockedRow;
     @Keep
@@ -296,7 +300,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
 
         fragmentView = new FrameLayout(context);
         FrameLayout frameLayout = (FrameLayout) fragmentView;
-        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        frameLayout.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
         listView = new RecyclerListView(context);
         listView.setSections();
@@ -316,7 +320,27 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
             if (!view.isEnabled()) {
                 return;
             }
-            if (position == autoDeleteMesages) {
+            if (position == monogramTypingRow) {
+                org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                boolean enabled = !controller.typingEnabled();
+                if (controller.setTypingEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
+                else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramTypingSaveFailed)).show();
+            } else if (position == monogramReadReceiptsRow) {
+                org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                boolean enabled = !controller.readReceiptsEnabled();
+                if (controller.setReadReceiptsEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
+                else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramReadReceiptsSaveFailed)).show();
+            } else if (position == monogramReadSyncRow) {
+                org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                boolean enabled = !controller.readSyncEnabled();
+                if (controller.setReadSyncEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
+                else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramReadReceiptsSaveFailed)).show();
+            } else if (position == monogramGroupReadReceiptsRow) {
+                org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                boolean enabled = !controller.groupReadReceiptsEnabled();
+                if (controller.setGroupReadReceiptsEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
+                else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramReadReceiptsSaveFailed)).show();
+            } else if (position == autoDeleteMesages) {
                 if (getUserConfig().getGlobalTTl() >= 0) {
                     presentFragment(new AutoDeleteMessagesActivity());
                 }
@@ -735,6 +759,10 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         privacySectionRow = rowCount++;
         phoneNumberRow = rowCount++;
         lastSeenRow = rowCount++;
+        monogramTypingRow = rowCount++;
+        monogramReadReceiptsRow = rowCount++;
+        monogramGroupReadReceiptsRow = rowCount++;
+        monogramReadSyncRow = rowCount++;
         profilePhotoRow = rowCount++;
         forwardsRow = rowCount++;
         callsRow = rowCount++;
@@ -1020,7 +1048,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
+            return position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == monogramReadSyncRow || position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
                     position == groupsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_INVITE) ||
                     position == lastSeenRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_LASTSEEN) ||
                     position == callsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_CALLS) ||
@@ -1050,23 +1078,23 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
             View view;
             switch (viewType) {
                 case 0:
-                    view = new TextSettingsCell(mContext);
+                    view = new TextSettingsCell(mContext, resourceProvider);
                     break;
                 case 1:
-                    view = new TextInfoPrivacyCell(mContext);
+                    view = new TextInfoPrivacyCell(mContext, resourceProvider);
                     break;
                 case 2:
-                    view = new HeaderCell(mContext);
+                    view = new HeaderCell(mContext, resourceProvider);
                     break;
                 case 4:
-                    view = new ShadowSectionCell(mContext);
+                    view = new ShadowSectionCell(mContext, resourceProvider);
                     break;
                 case 5:
-                    view = new TextCell(mContext);
+                    view = new TextCell(mContext, resourceProvider);
                     break;
                 case 3:
                 default:
-                    view = new TextCheckCell(mContext);
+                    view = new TextCheckCell(mContext, resourceProvider);
                     break;
             }
             return new RecyclerListView.Holder(view);
@@ -1176,7 +1204,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                         }
                         textCell.setTextAndValue(addPremiumStar(getString(R.string.PrivacyVoiceMessages)), value, noncontactsRow != -1);
                         ImageView imageView = textCell.getValueImageView();
-                        imageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+                        imageView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
                     } else if (position == noncontactsRow) {
                         value = getString(feeValue ? R.string.ContactsAndFee : noncontactsValue ? R.string.ContactsAndPremium : R.string.P2PEverybody);
                         textCell.setTextAndValue(getMessagesController().newNoncontactPeersRequirePremiumWithoutOwnpremium && !getMessagesController().starsPaidMessagesAvailable ? getString(R.string.PrivacyMessages) : addPremiumStar(getString(R.string.PrivacyMessages)), value, musicRow != -1);
@@ -1276,7 +1304,19 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                     break;
                 case 3:
                     TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
-                    if (position == secretWebpageRow) {
+                    if (position == monogramTypingRow) {
+                        textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramTypingIndicators), getString(R.string.MonogramTypingIndicatorsInfo),
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingEnabled(), true, true);
+                    } else if (position == monogramReadReceiptsRow) {
+                        textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramReadReceipts), getString(R.string.MonogramReadReceiptsInfo),
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).readReceiptsEnabled(), true, true);
+                    } else if (position == monogramReadSyncRow) {
+                        textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramReadSync), getString(R.string.MonogramReadSyncInfo),
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).readSyncEnabled(), true, true);
+                    } else if (position == monogramGroupReadReceiptsRow) {
+                        textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramGroupReadReceipts), getString(R.string.MonogramGroupReadReceiptsInfo),
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).groupReadReceiptsEnabled(), true, true);
+                    } else if (position == secretWebpageRow) {
                         textCheckCell.setTextAndCheck(getString("SecretWebPage", R.string.SecretWebPage), getMessagesController().secretWebpagePreview == 1, false);
                     } else if (position == contactsSyncRow) {
                         textCheckCell.setTextAndCheck(getString("SyncContacts", R.string.SyncContacts), newSync, true);
@@ -1397,7 +1437,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 return 1;
             } else if (position == securitySectionRow || position == advancedSectionRow || position == privacySectionRow || position == secretSectionRow || position == botsSectionRow || position == contactsSectionRow || position == newChatsHeaderRow) {
                 return 2;
-            } else if (position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
+            } else if (position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == monogramReadSyncRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
                 return 3;
             } else if (position == botsAndWebsitesShadowRow) {
                 return 4;
@@ -1426,7 +1466,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     public ArrayList<ThemeDescription> getThemeDescriptions() {
         ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, HeaderCell.class, TextCheckCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextSettingsCell.class, HeaderCell.class, TextCheckCell.class, TextCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
@@ -1441,11 +1481,18 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextSettingsCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextSettingsCell.class}, new String[]{"valueImageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayIcon));
+
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCell.class}, new String[]{"valueSpoilersTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayIcon));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextInfoPrivacyCell.class, ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGray));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextCheckCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));

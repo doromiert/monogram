@@ -20,6 +20,7 @@ public interface IMapsProvider {
         MAP_TYPE_SATELLITE = 1,
         MAP_TYPE_HYBRID = 2;
 
+    default boolean supportsMapTypes() { return true; }
     void initializeMaps(Context context);
     IMapView onCreateMapView(Context context);
     IMarkerOptions onCreateMarkerOptions();

@@ -914,7 +914,8 @@ public class MediaDataController extends BaseController {
         if (type == TYPE_PREMIUM_STICKERS) {
             return new ArrayList<>(recentStickers[type]);
         }
-        ArrayList<TLRPC.Document> result = new ArrayList<>(arrayList.subList(0, Math.min(arrayList.size(), 20)));
+        int count = type == TYPE_IMAGE || type == TYPE_FAVE ? arrayList.size() : Math.min(arrayList.size(), 20);
+        ArrayList<TLRPC.Document> result = new ArrayList<>(arrayList.subList(0, count));
         if (firstEmpty && !result.isEmpty() && !StickersAlert.DISABLE_STICKER_EDITOR) {
             result.add(0, new TLRPC.TL_documentEmpty());
         }
@@ -975,30 +976,15 @@ public class MediaDataController extends BaseController {
         if (!found && !remove) {
             recentStickers[type].add(0, document);
         }
+        final boolean unlimited = type == TYPE_IMAGE || type == TYPE_FAVE;
         int maxCount;
         if (type == TYPE_FAVE) {
             if (remove) {
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_REMOVED_FROM_FAVORITES);
             } else {
-                boolean replace = recentStickers[type].size() > getMessagesController().maxFaveStickersCount;
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, replace ? StickerSetBulletinLayout.TYPE_REPLACED_TO_FAVORITES : StickerSetBulletinLayout.TYPE_ADDED_TO_FAVORITES);
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_ADDED_TO_FAVORITES);
             }
-            TLRPC.TL_messages_faveSticker req = new TLRPC.TL_messages_faveSticker();
-            req.id = new TLRPC.TL_inputDocument();
-            req.id.id = document.id;
-            req.id.access_hash = document.access_hash;
-            req.id.file_reference = document.file_reference;
-            if (req.id.file_reference == null) {
-                req.id.file_reference = new byte[0];
-            }
-            req.unfave = remove;
-            getConnectionsManager().sendRequest(req, (response, error) -> {
-                if (error != null && FileRefController.isFileRefError(error.text) && parentObject != null) {
-                    getFileRefController().requestReference(parentObject, req);
-                } else {
-                    AndroidUtilities.runOnUIThread(() -> getMediaDataController().loadRecents(MediaDataController.TYPE_FAVE, false, false, true));
-                }
-            });
+            // XMPP favorites use the native local cache; Telegram cannot save these document IDs.
             maxCount = getMessagesController().maxFaveStickersCount;
         } else {
             if (type == TYPE_IMAGE && remove) {
@@ -1020,7 +1006,7 @@ public class MediaDataController extends BaseController {
             }
             maxCount = getMessagesController().maxRecentStickersCount;
         }
-        if (recentStickers[type].size() > maxCount || remove) {
+        if (remove || !unlimited && recentStickers[type].size() > maxCount) {
             TLRPC.Document old = remove ? document : recentStickers[type].remove(recentStickers[type].size() - 1);
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 int cacheType;
@@ -1061,20 +1047,8 @@ public class MediaDataController extends BaseController {
                 break;
             }
         }
-        TLRPC.TL_messages_saveGif req = new TLRPC.TL_messages_saveGif();
-        req.id = new TLRPC.TL_inputDocument();
-        req.id.id = document.id;
-        req.id.access_hash = document.access_hash;
-        req.id.file_reference = document.file_reference;
-        if (req.id.file_reference == null) {
-            req.id.file_reference = new byte[0];
-        }
-        req.unsave = true;
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (error != null && FileRefController.isFileRefError(error.text)) {
-                getFileRefController().requestReference("gif", req);
-            }
-        });
+        MessagesController.getEmojiSettings(currentAccount).edit().remove("monogram-gif-path-" + document.id).apply();
+        getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
             try {
                 getMessagesStorage().getDatabase().executeFast("DELETE FROM web_recent_v3 WHERE id = '" + document.id + "' AND type = 2").stepThis().dispose();
@@ -1100,6 +1074,11 @@ public class MediaDataController extends BaseController {
         if (document == null) {
             return;
         }
+        File local = FileLoader.getInstance(currentAccount).getPathToAttach(document);
+        if (local.isFile()) {
+            document.localPath = local.getAbsolutePath();
+            MessagesController.getEmojiSettings(currentAccount).edit().putString("monogram-gif-path-" + document.id, document.localPath).apply();
+        }
         boolean found = false;
         for (int a = 0; a < recentGifs.size(); a++) {
             TLRPC.Document image = recentGifs.get(a);
@@ -1113,7 +1092,7 @@ public class MediaDataController extends BaseController {
         if (!found) {
             recentGifs.add(0, document);
         }
-        if ((recentGifs.size() > getMessagesController().savedGifsLimitDefault && !UserConfig.getInstance(currentAccount).isPremium()) || recentGifs.size() > getMessagesController().savedGifsLimitPremium) {
+        if (recentGifs.size() > Math.max(getMessagesController().savedGifsLimitDefault, getMessagesController().savedGifsLimitPremium)) {
             TLRPC.Document old = recentGifs.remove(recentGifs.size() - 1);
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 try {
@@ -1359,6 +1338,15 @@ public class MediaDataController extends BaseController {
     }
 
     public TLRPC.TL_messages_stickerSet getStickerSet(TLRPC.InputStickerSet inputStickerSet, Integer hash, boolean cacheOnly, boolean runWhenRemote, Utilities.Callback<TLRPC.TL_messages_stickerSet> onResponse) {
+        TLRPC.TL_messages_stickerSet localPack = org.telegram.messenger.xmpp.MonogramPacks.find(currentAccount, inputStickerSet);
+        if (localPack != null) {
+            if (onResponse != null) onResponse.run(localPack);
+            return localPack;
+        }
+        if (inputStickerSet != null && org.telegram.messenger.xmpp.MonogramPacks.isLocalId(inputStickerSet.id)) {
+            if (onResponse != null) onResponse.run(null);
+            return null;
+        }
         if (inputStickerSet == null) {
             return null;
         }
@@ -1746,7 +1734,7 @@ public class MediaDataController extends BaseController {
     }
 
     public boolean canAddStickerToFavorites() {
-        return !stickersLoaded[0] || stickerSets[0].size() >= 5 || !recentStickers[TYPE_FAVE].isEmpty();
+        return true;
     }
 
     public ArrayList<TLRPC.TL_messages_stickerSet> getStickerSets(int type) {
@@ -1909,6 +1897,9 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadRecents(int type, boolean gif, boolean cache, boolean force) {
+        final boolean localStickers = !gif && (type == TYPE_IMAGE || type == TYPE_FAVE);
+        if (gif && recentGifsLoaded || localStickers && recentStickersLoaded[type] && !force) return;
+        if (gif || localStickers) cache = true;
         if (gif) {
             if (loadingRecentGifs) {
                 return;
@@ -1922,7 +1913,7 @@ public class MediaDataController extends BaseController {
                 return;
             }
             loadingRecentStickers[type] = true;
-            if (recentStickersLoaded[type]) {
+            if (recentStickersLoaded[type] && !localStickers) {
                 cache = false;
             }
         }
@@ -1953,7 +1944,14 @@ public class MediaDataController extends BaseController {
                             if (data != null) {
                                 TLRPC.Document document = TLRPC.Document.TLdeserialize(data, data.readInt32(false), false);
                                 if (document != null) {
-                                    arrayList.add(document);
+                                    if (gif) {
+                                        String path = MessagesController.getEmojiSettings(currentAccount).getString("monogram-gif-path-" + document.id, null);
+                                        if (path != null && new File(path).isFile()) document.localPath = path;
+                                    }
+                                    if (!gif && org.telegram.messenger.xmpp.MonogramPacks.isLocalId(document.id)) {
+                                        document = org.telegram.messenger.xmpp.MonogramPacks.document(currentAccount, document.id);
+                                    }
+                                    if (document != null) arrayList.add(document);
                                 }
                                 data.reuse();
                             }
@@ -2084,6 +2082,7 @@ public class MediaDataController extends BaseController {
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 try {
                     SQLiteDatabase database = getMessagesStorage().getDatabase();
+                    final boolean unlimited = !gif && (type == TYPE_IMAGE || type == TYPE_FAVE);
                     int maxCount;
                     if (gif) {
                         maxCount = getMessagesController().maxRecentGifsCount;
@@ -2120,7 +2119,7 @@ public class MediaDataController extends BaseController {
                         database.executeFast("DELETE FROM web_recent_v3 WHERE type = " + cacheType).stepThis().dispose();
                     }
                     for (int a = 0; a < count; a++) {
-                        if (a == maxCount) {
+                        if (!unlimited && a == maxCount) {
                             break;
                         }
                         TLRPC.Document document = documents.get(a);
@@ -2142,7 +2141,7 @@ public class MediaDataController extends BaseController {
                     }
                     state.dispose();
                     database.commitTransaction();
-                    if (!replace && documents.size() >= maxCount) {
+                    if (!unlimited && !replace && documents.size() >= maxCount) {
                         database.beginTransaction();
                         for (int a = maxCount; a < documents.size(); a++) {
                             database.executeFast("DELETE FROM web_recent_v3 WHERE id = '" + documents.get(a).id + "' AND type = " + cacheType).stepThis().dispose();
@@ -2214,6 +2213,15 @@ public class MediaDataController extends BaseController {
 
     public void calcNewHash(int type) {
         loadHash[type] = calcStickersHash(stickerSets[type]);
+        if ((type == TYPE_IMAGE || type == TYPE_EMOJIPACKS) && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            ArrayList<Long> order = new ArrayList<>();
+            for (TLRPC.TL_messages_stickerSet set : stickerSets[type]) order.add(set.set.id);
+            try {
+                org.telegram.messenger.xmpp.MonogramPacks.reorder(currentAccount, type == TYPE_EMOJIPACKS, order);
+            } catch (Exception error) {
+                FileLog.e(error);
+            }
+        }
     }
 
     public void storeTempStickerSet(TLRPC.TL_messages_stickerSet set) {
@@ -2940,6 +2948,16 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadStickers(int type, boolean cache, boolean force, boolean scheduleIfLoading, Utilities.Callback<ArrayList<TLRPC.TL_messages_stickerSet>> onFinish) {
+        if ((type == TYPE_IMAGE || type == TYPE_EMOJIPACKS) && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            final String owner = org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount);
+            getMessagesStorage().getStorageQueue().postRunnable(() -> {
+                if (!owner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
+                ArrayList<TLRPC.TL_messages_stickerSet> local = org.telegram.messenger.xmpp.MonogramPacks.sets(currentAccount, type == TYPE_EMOJIPACKS);
+                processLoadedStickers(type, local, false, (int) (System.currentTimeMillis() / 1000), calcStickersHash(local),
+                        () -> { if (onFinish != null) onFinish.run(local); }, owner, true);
+            });
+            return;
+        }
         if (loadingStickers[type]) {
             if (scheduleIfLoading) {
                 scheduledLoadStickers[type] = () -> loadStickers(type, false, force, false, onFinish);
@@ -3170,7 +3188,12 @@ public class MediaDataController extends BaseController {
     }
 
     private void processLoadedStickers(int type, ArrayList<TLRPC.TL_messages_stickerSet> res, boolean cache, int date, long hash, Runnable onFinish) {
+        processLoadedStickers(type, res, cache, date, hash, onFinish, org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount), false);
+    }
+
+    private void processLoadedStickers(int type, ArrayList<TLRPC.TL_messages_stickerSet> res, boolean cache, int date, long hash, Runnable onFinish, String monogramOwner, boolean localPacks) {
         AndroidUtilities.runOnUIThread(() -> {
+            if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
             loadingStickers[type] = false;
             stickersLoaded[type] = true;
             if (scheduledLoadStickers[type] != null) {
@@ -3179,8 +3202,10 @@ public class MediaDataController extends BaseController {
             }
         });
         Utilities.stageQueue.postRunnable(() -> {
+            if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
             if (cache && (res == null || BuildVars.DEBUG_PRIVATE_VERSION || Math.abs(System.currentTimeMillis() / 1000 - date) >= 60 * 60) || !cache && res == null && hash == 0) {
                 AndroidUtilities.runOnUIThread(() -> {
+                    if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
                     if (res != null && hash != 0) {
                         loadHash[type] = hash;
                     }
@@ -3244,10 +3269,11 @@ public class MediaDataController extends BaseController {
                         }
                     }
 
-                    if (!cache) {
+                    if (!cache && !localPacks) {
                         putStickersToCache(type, stickerSetsNew, date, hash);
                     }
                     AndroidUtilities.runOnUIThread(() -> {
+                        if (!monogramOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
                         for (int a = 0; a < stickerSets[type].size(); a++) {
                             TLRPC.StickerSet set = stickerSets[type].get(a).set;
                             stickerSetsById.remove(set.id);
@@ -3284,7 +3310,7 @@ public class MediaDataController extends BaseController {
                         onFinish.run();
                     }
                 }
-            } else if (!cache) {
+            } else if (!cache && !localPacks) {
                 AndroidUtilities.runOnUIThread(() -> loadDate[type] = date);
                 putStickersToCache(type, null, date, 0);
 
@@ -3382,6 +3408,11 @@ public class MediaDataController extends BaseController {
             throw new IllegalArgumentException("Invalid type of the given stickerSetObject: " + stickerSetObject.getClass());
         }
 
+        if (org.telegram.messenger.xmpp.MonogramPacks.find(currentAccount, getInputStickerSet(stickerSet)) != null) {
+            try { org.telegram.messenger.xmpp.MonogramPacks.installed(currentAccount, stickerSet.id, toggle == 2); }
+            catch (Exception failure) { org.telegram.ui.Components.BulletinFactory.of(baseFragment).createErrorBulletin("Could not update this local pack.").show(); }
+            return;
+        }
         int type1 = TYPE_IMAGE;
         if (stickerSet.masks) {
             type1 = TYPE_MASK;
@@ -7805,6 +7836,8 @@ public class MediaDataController extends BaseController {
     private boolean loadingDrafts;
 
     public void loadDraftsIfNeed() {
+        // XMPP drafts are local; account-scoped preferences were loaded by the constructor.
+        if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) return;
         if (getUserConfig().draftsLoaded || loadingDrafts) {
             return;
         }
@@ -7945,6 +7978,7 @@ public class MediaDataController extends BaseController {
             boolean sameDraft;
             if (currentDraft != null) {
                 sameDraft = (currentDraft.message.equals(draftMessage.message)
+                    && draftEntitiesEqual(currentDraft.entities, draftMessage.entities)
                     && replyToEquals(currentDraft.reply_to, draftMessage.reply_to)
                     && suggestedPostEquals(currentDraft.suggested_post, draftMessage.suggested_post)
                     && richMessageEquals(currentDraft.rich_message, draftMessage.rich_message)
@@ -7965,7 +7999,8 @@ public class MediaDataController extends BaseController {
         saveDraft(dialogId, threadId, draftMessage, replyToMessage, false);
 
         if (threadId == 0 || ChatObject.isForum(chat) || ChatObject.isMonoForum(chat)) {
-            if (!DialogObject.isEncryptedDialog(dialogId)) {
+            if (!DialogObject.isEncryptedDialog(dialogId)
+                    && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
                 TLRPC.TL_messages_saveDraft req = new TLRPC.TL_messages_saveDraft();
                 req.peer = getMessagesController().getInputPeer(dialogId);
                 if (req.peer == null) {
@@ -8061,10 +8096,32 @@ public class MediaDataController extends BaseController {
         return input;
     }
 
-    private static boolean replyToEquals(TLRPC.InputReplyTo a, TLRPC.InputReplyTo b) {
+    static boolean draftEntitiesEqual(ArrayList<TLRPC.MessageEntity> a, ArrayList<TLRPC.MessageEntity> b) {
+        int size = a == null ? 0 : a.size();
+        if (size != (b == null ? 0 : b.size())) return false;
+        for (int i = 0; i < size; i++) {
+            SerializedData left = new SerializedData();
+            SerializedData right = new SerializedData();
+            try {
+                a.get(i).serializeToStream(left);
+                b.get(i).serializeToStream(right);
+                if (!Arrays.equals(left.toByteArray(), right.toByteArray())) return false;
+            } catch (Exception invalidEntity) {
+                FileLog.e(invalidEntity);
+                return false;
+            } finally {
+                left.cleanup();
+                right.cleanup();
+            }
+        }
+        return true;
+    }
+
+    static boolean replyToEquals(TLRPC.InputReplyTo a, TLRPC.InputReplyTo b) {
         if (a == b) {
             return true;
         }
+        if (a == null || b == null || a.getClass() != b.getClass()) return false;
         if (a instanceof TLRPC.TL_inputReplyToMessage != b instanceof TLRPC.TL_inputReplyToMessage) {
             return false;
         }
@@ -8075,7 +8132,9 @@ public class MediaDataController extends BaseController {
             if (!TextUtils.equals(a.quote_text, b.quote_text)) {
                 return false;
             }
-            return a.reply_to_msg_id == b.reply_to_msg_id;
+            return a.reply_to_msg_id == b.reply_to_msg_id
+                && a.quote_offset == b.quote_offset
+                && draftEntitiesEqual(a.quote_entities, b.quote_entities);
         }
         if (a instanceof TLRPC.TL_inputReplyToStory) {
             return MessageObject.peersEqual(a.peer, b.peer) && a.story_id == b.story_id;
@@ -8659,18 +8718,8 @@ public class MediaDataController extends BaseController {
     }
 
     public String getDoubleTapReaction() {
-        if (doubleTapReaction != null) {
-            return doubleTapReaction;
-        }
-        if (!getReactionsList().isEmpty()) {
-            String savedReaction = MessagesController.getEmojiSettings(currentAccount).getString("reaction_on_double_tap", null);
-            if (savedReaction != null && (getReactionsMap().get(savedReaction) != null || savedReaction.startsWith("animated_"))) {
-                doubleTapReaction = savedReaction;
-                return doubleTapReaction;
-            }
-            return getReactionsList().get(0).reaction;
-        }
-        return null;
+        if (doubleTapReaction == null) doubleTapReaction = MessagesController.getEmojiSettings(currentAccount).getString("reaction_on_double_tap", "👍");
+        return TextUtils.isEmpty(doubleTapReaction) || doubleTapReaction.startsWith("animated_") ? "👍" : doubleTapReaction;
     }
 
     public void setDoubleTapReaction(String reaction) {
@@ -9477,38 +9526,7 @@ public class MediaDataController extends BaseController {
     }
 
     public void loadEmojiThemes() {
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("emojithemes_config_" + currentAccount, Context.MODE_PRIVATE);
-        int count = preferences.getInt("count", 0);
-        ArrayList<ChatThemeBottomSheet.ChatThemeItem> previewItems = new ArrayList<>();
-        previewItems.add(new ChatThemeBottomSheet.ChatThemeItem(EmojiThemes.createHomePreviewTheme(currentAccount)));
-        for (int i = 0; i < count; ++i) {
-            String value = preferences.getString("theme_" + i, "");
-            SerializedData serializedData = new SerializedData(Utilities.hexToBytes(value));
-            try {
-                TLRPC.TL_theme theme = TLRPC.Theme.TLdeserialize(serializedData, serializedData.readInt32(true), true);
-                EmojiThemes fullTheme = EmojiThemes.createPreviewFullTheme(currentAccount, theme);
-                if (fullTheme.items.size() >= 4) {
-                    previewItems.add(new ChatThemeBottomSheet.ChatThemeItem(fullTheme));
-                }
-
-                ChatThemeController.chatThemeQueue.postRunnable(new Runnable() {
-                    @Override
-                    public void run() {
-                        for (int i = 0; i < previewItems.size(); i++) {
-                            if (previewItems.get(i) != null && previewItems.get(i).chatTheme != null) {
-                                previewItems.get(i).chatTheme.loadPreviewColors(0);
-                            }
-                        }
-                        AndroidUtilities.runOnUIThread(() -> {
-                            defaultEmojiThemes.clear();
-                            defaultEmojiThemes.addAll(previewItems);
-                        });
-                    }
-                });
-            } catch (Throwable e) {
-                FileLog.e(e);
-            }
-        }
+        generateEmojiPreviewThemes(org.telegram.messenger.xmpp.MonogramThemes.catalog(),currentAccount);
     }
 
     public void generateEmojiPreviewThemes(final ArrayList<TLRPC.TL_theme> emojiPreviewThemes, int currentAccount) {

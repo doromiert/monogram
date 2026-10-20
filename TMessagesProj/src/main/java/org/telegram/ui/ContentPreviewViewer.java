@@ -32,6 +32,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.util.TypedValue;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -45,6 +46,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -76,6 +78,7 @@ import org.telegram.messenger.WebFile;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -711,7 +714,21 @@ public class ContentPreviewViewer {
                 menuVisible = true;
                 containerView.invalidate();
             } else if (currentContentType == CONTENT_TYPE_STICKER) {
-                if (MessageObject.isPremiumSticker(currentDocument) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
+                String stickerName = currentDocument == null ? null
+                        : org.telegram.messenger.xmpp.MonogramPacks.stickerName(currentAccount, currentDocument.id);
+                if (!TextUtils.isEmpty(stickerName)) {
+                    TextView title = new TextView(parentActivity);
+                    title.setText(stickerName);
+                    title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                    title.setTypeface(AndroidUtilities.bold());
+                    title.setTextColor(getThemedColor(Theme.key_actionBarDefaultSubmenuItem));
+                    title.setMaxLines(2);
+                    title.setEllipsize(TextUtils.TruncateAt.END);
+                    title.setMaxWidth(dp(280));
+                    title.setPadding(dp(16), dp(10), dp(16), dp(8));
+                    previewMenu.addView(title);
+                }
+                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,currentDocument) && MessageObject.isPremiumSticker(currentDocument) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
                     showUnlockPremiumView();
                     menuVisible = true;
                     containerView.invalidate();
@@ -745,6 +762,10 @@ public class ContentPreviewViewer {
                         icons.add(R.drawable.msg_delete);
                         actions.add(5);
                     }
+                }
+                if(currentDocument!=null) {
+                    items.add(org.telegram.messenger.xmpp.MonogramStickerExport.label(currentDocument));
+                    icons.add(R.drawable.msg_gallery);actions.add(9);
                 }
                 if (!MessageObject.isMaskDocument(currentDocument) && (inFavs || MediaDataController.getInstance(currentAccount).canAddStickerToFavorites() && MessageObject.isStickerHasSet(currentDocument))) {
                     items.add(inFavs ? LocaleController.getString(R.string.DeleteFromFavorites) : LocaleController.getString(R.string.AddToFavorites));
@@ -823,6 +844,8 @@ public class ContentPreviewViewer {
                             delegate.editSticker(currentDocument);
                         } else if (actions.get(which) == 8) {
                             delegate.deleteSticker(currentDocument);
+                        } else if(actions.get(which)==9) {
+                            org.telegram.messenger.xmpp.MonogramStickerExport.save(parentActivity,currentAccount,currentDocument);
                         }
                         dismissPopupWindow();
                     }
@@ -1051,7 +1074,14 @@ public class ContentPreviewViewer {
                     actions.add(11);
                 }
 
-                boolean canDelete;
+                boolean canDelete=false;
+                final Object libraryGif=currentDocument!=null ? currentDocument : inlineResult;
+                if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                    boolean favorite=org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount,libraryGif);
+                    items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
+                    icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);actions.add(12);
+                    items.add("Remove from recent GIFs");icons.add(R.drawable.msg_delete);actions.add(13);
+                } else {
                 if (currentDocument != null) {
                     if (canDelete = MediaDataController.getInstance(currentAccount).hasRecentGif(currentDocument)) {
                         items.add(LocaleController.formatString("Delete", R.string.Delete));
@@ -1064,6 +1094,7 @@ public class ContentPreviewViewer {
                     }
                 } else {
                     canDelete = false;
+                }
                 }
                 if (items.isEmpty()) {
                     return;
@@ -1081,7 +1112,18 @@ public class ContentPreviewViewer {
                         return;
                     }
                     int which = (int) v.getTag();
-                    if (actions.get(which) == 0) {
+                    if (actions.get(which) == 12 || actions.get(which) == 13) {
+                        boolean saved;
+                        if(actions.get(which)==12) saved=org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount,libraryGif,
+                                !org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount,libraryGif));
+                        else {
+                            saved=org.telegram.messenger.xmpp.MonogramGiphy.removeRecent(currentAccount,libraryGif);
+                            if(saved && currentDocument!=null) MediaDataController.getInstance(currentAccount).removeRecentGif(currentDocument);
+                        }
+                        if(!saved) new AlertDialog.Builder(parentActivity,resourcesProvider).setTitle("GIFs").setMessage("Could not save the GIF library. Check available storage.")
+                                .setPositiveButton(LocaleController.getString(R.string.OK),null).show();
+                        delegate.gifAddedOrDeleted();
+                    } else if (actions.get(which) == 0) {
                         delegate.sendGif(currentDocument != null ? currentDocument : inlineResult, parentObject, true, 0, 0);
                     } else if (actions.get(which) == 4) {
                         delegate.sendGif(currentDocument != null ? currentDocument : inlineResult, parentObject, false, 0, 0);
@@ -2306,7 +2348,16 @@ public class ContentPreviewViewer {
 
         final TLRPC.TL_messages_getMyStickers request = new TLRPC.TL_messages_getMyStickers();
         request.limit = 100;
-        getMyStickersRemote(request, stickerSetCoveredList);
+        if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            for (TLRPC.TL_messages_stickerSet pack : org.telegram.messenger.xmpp.MonogramPacks.sets(currentAccount, false)) {
+                TLRPC.TL_stickerSetCovered cover = new TLRPC.TL_stickerSetCovered();
+                cover.set = pack.set;
+                if (!pack.documents.isEmpty()) cover.cover = pack.documents.get(0);
+                stickerSetCoveredList.add(cover);
+            }
+        } else {
+            getMyStickersRemote(request, stickerSetCoveredList);
+        }
 
         RecyclerListView listView = new RecyclerListView(parentActivity) {
             @Override

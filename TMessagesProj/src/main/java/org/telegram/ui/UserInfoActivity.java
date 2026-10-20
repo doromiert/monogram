@@ -3,11 +3,9 @@ package org.telegram.ui;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.replaceArrows;
 import static org.telegram.messenger.AndroidUtilities.replaceSingleLink;
-import static org.telegram.messenger.AndroidUtilities.replaceSingleTag;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.Cells.TextCell.applyNewSpan;
-import static org.telegram.ui.Components.Premium.LimitReachedBottomSheet.TYPE_ACCOUNTS;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -59,7 +57,6 @@ import org.telegram.ui.Components.CircularProgressDrawable;
 import org.telegram.ui.Components.CrossfadeDrawable;
 import org.telegram.ui.Components.IconBackgroundColors;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -100,8 +97,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         getNotificationCenter().addObserver(this, NotificationCenter.privacyRulesUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
         getNotificationCenter().addObserver(this, NotificationCenter.updatedChatbot);
-        getContactsController().loadPrivacySettings();
-        BusinessChatbotController.getInstance(currentAccount).load(null);
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshProfile(getUserConfig().getClientUserId());
         return super.onFragmentCreate();
     }
 
@@ -122,105 +118,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
     }
 
     private void updateBioInfo() {
-        final int oldBioInfoHash = bioInfoHash;
-        final boolean hasBio = bioEdit != null && !TextUtils.isEmpty(bioEdit.getText());
-        if (!hasBio) {
-            bioInfo = getString(R.string.EditProfileBioInfo2);
-            bioInfoHash = Objects.hash(0);
-        } else {
-            final ArrayList<TLRPC.PrivacyRule> bioRules = getContactsController().getPrivacyRules(ContactsController.PRIVACY_RULES_TYPE_BIO);
-            if (bioRules == null) {
-                bioInfo = getString(R.string.Loading);
-                bioInfoHash = Objects.hash(1);
-            } else {
-                int type = -1, currentType = -1;
-                Boolean premium = null, miniapps = null;
-                boolean hadAllowContacts = false;
-                int currentPlus = 0, currentMinus = 0;
-                for (int a = 0; a < bioRules.size(); a++) {
-                    final TLRPC.PrivacyRule rule = bioRules.get(a);
-                    if (rule instanceof TLRPC.TL_privacyValueAllowChatParticipants) {
-                        final TLRPC.TL_privacyValueAllowChatParticipants privacyValueAllowChatParticipants = (TLRPC.TL_privacyValueAllowChatParticipants) rule;
-                        for (int b = 0, N = privacyValueAllowChatParticipants.chats.size(); b < N; b++) {
-                            final TLRPC.Chat chat = getMessagesController().getChat(privacyValueAllowChatParticipants.chats.get(b));
-                            if (chat != null) {
-                                currentPlus += Math.max(0, chat.participants_count - 1);
-                            }
-                        }
-                    } else if (rule instanceof TLRPC.TL_privacyValueDisallowChatParticipants) {
-                        final TLRPC.TL_privacyValueDisallowChatParticipants privacyValueDisallowChatParticipants = (TLRPC.TL_privacyValueDisallowChatParticipants) rule;
-                        for (int b = 0, N = privacyValueDisallowChatParticipants.chats.size(); b < N; b++) {
-                            final TLRPC.Chat chat = getMessagesController().getChat(privacyValueDisallowChatParticipants.chats.get(b));
-                            if (chat != null) {
-                                currentMinus += Math.max(0, chat.participants_count - 1);
-                            }
-                        }
-                    } else if (rule instanceof TLRPC.TL_privacyValueAllowUsers) {
-                        final TLRPC.TL_privacyValueAllowUsers privacyValueAllowUsers = (TLRPC.TL_privacyValueAllowUsers) rule;
-                        currentPlus += privacyValueAllowUsers.users.size();
-                    } else if (rule instanceof TLRPC.TL_privacyValueDisallowUsers) {
-                        final TLRPC.TL_privacyValueDisallowUsers privacyValueDisallowUsers = (TLRPC.TL_privacyValueDisallowUsers) rule;
-                        currentMinus += privacyValueDisallowUsers.users.size();
-                    } else if (rule instanceof TLRPC.TL_privacyValueAllowAll) {
-                        type = 0;
-                    } else if (rule instanceof TLRPC.TL_privacyValueDisallowAll && !hadAllowContacts) {
-                        type = 1;
-                    } else if (rule instanceof TLRPC.TL_privacyValueAllowContacts) {
-                        hadAllowContacts = true;
-                        type = 2;
-                    } else if (type == -1) {
-                        if (rule instanceof TLRPC.TL_privacyValueAllowAll) {
-                            type = 0;
-                        } else if (rule instanceof TLRPC.TL_privacyValueDisallowAll && !hadAllowContacts) {
-                            type = 1;
-                        } else {
-                            type = 2;
-                        }
-                    }
-                }
-                if (type == PrivacyControlActivity.TYPE_EVERYBODY || type == -1 && (currentMinus > 0 || miniapps != null && !miniapps)) {
-                    currentType = PrivacyControlActivity.TYPE_EVERYBODY;
-                } else if (type == PrivacyControlActivity.TYPE_CONTACTS || type == -1 && currentMinus > 0 && currentPlus > 0) {
-                    currentType = PrivacyControlActivity.TYPE_CONTACTS;
-                } else if (type == PrivacyControlActivity.TYPE_NOBODY || type == -1 && (currentPlus > 0 || miniapps != null && miniapps)) {
-                    currentType = PrivacyControlActivity.TYPE_NOBODY;
-                }
-
-                if (currentType == PrivacyControlActivity.TYPE_EVERYBODY) {
-                    if (currentMinus <= 0) {
-                        bioInfo = replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.EditProfileBioInfoEveryone), this::openBioSettings), true);
-                    } else {
-                        bioInfo = replaceArrows(AndroidUtilities.replaceSingleTag(formatString(R.string.EditProfileBioInfoEveryoneExcept, currentMinus), this::openBioSettings), true);
-                    }
-                } else if (currentType == PrivacyControlActivity.TYPE_CONTACTS) {
-                    if (currentMinus <= 0 && currentPlus <= 0) {
-                        bioInfo = replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.EditProfileBioInfoContacts), this::openBioSettings), true);
-                    } else {
-                        String extra = "";
-                        if (currentPlus > 0) {
-                            extra += "+" + currentPlus;
-                        }
-                        if (currentMinus > 0) {
-                            if (extra.length() > 0) extra += ", ";
-                            extra += "-" + currentMinus;
-                        }
-                        bioInfo = replaceArrows(AndroidUtilities.replaceSingleTag(formatString(R.string.EditProfileBioInfoContactsExtra, extra), this::openBioSettings), true);
-                    }
-                } else if (currentType == PrivacyControlActivity.TYPE_EVERYBODY) {
-                    if (currentPlus <= 0) {
-                        bioInfo = replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.EditProfileBioInfoNobody), this::openBioSettings), true);
-                    } else {
-                        bioInfo = replaceArrows(AndroidUtilities.replaceSingleTag(formatString(R.string.EditProfileBioInfoNobodyExcept, currentPlus), this::openBioSettings), true);
-                    }
-                } else {
-                    bioInfo = AndroidUtilities.replaceSingleTag(getString(R.string.EditProfileBioInfoUnknown), this::openBioSettings);
-                }
-                bioInfoHash = Objects.hash(10 + currentType, currentPlus, currentMinus);
-            }
-        }
-        if (oldBioInfoHash != bioInfoHash && listView != null) {
-            listView.adapter.update(true);
-        }
+        bioInfo = getString(R.string.MonogramProfilePublished);
     }
 
     @Override
@@ -242,7 +140,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             }
         };
         lastNameEdit.hideKeyboardOnEnter();
-        bioEdit = new EditTextCell(context, getString(R.string.EditProfileBioHint2), true, false, getMessagesController().getAboutLimit(), resourceProvider) {
+        bioEdit = new EditTextCell(context, getString(R.string.EditProfileBioHint2), true, false, 4096, resourceProvider) {
             @Override
             protected void onTextChanged(CharSequence newText) {
                 super.onTextChanged(newText);
@@ -252,7 +150,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         };
         bioEdit.setShowLimitWhenEmpty(true);
         updateBioInfo();
-        bioInfo = AndroidUtilities.replaceSingleTag(getString(R.string.EditProfileBioInfo2), this::openBioSettings);
+        bioInfo = getString(R.string.MonogramProfilePublished);
 
         super.createView(context);
         this.listView = super.listView;
@@ -353,72 +251,11 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         items.add(UItem.asCustom(bioEdit));
         items.add(UItem.asShadow(bioInfo));
 
-        final TLRPC.User user = getUserConfig().getCurrentUser();
-        items.add(UItem.asHeader(getString(R.string.EditAccountInfoHeader)));
-        if (user != null) {
-            numberRow = items.size();
-            items.add(SettingsActivity.SettingCell.Factory.of(INFO_PHONE, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_calls, PhoneFormat.getInstance().format("+" + user.phone), getString(R.string.TapToChangePhone)));
-        }
-        usernameRow = items.size();
-        if (UserObject.getPublicUsername(user) != null) {
-            items.add(SettingsActivity.SettingCell.Factory.of(INFO_USERNAME, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.filled_chatlist_mention, "@" + UserObject.getPublicUsername(user), getString(R.string.Username)));
-        } else {
-            items.add(SettingsActivity.SettingCell.Factory.of(INFO_USERNAME, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.filled_chatlist_mention, getString(R.string.AddUsername), null));
-        }
-        birthdayRow = items.size();
-        if (birthday != null) {
-            items.add(SettingsActivity.SettingCell.Factory.of(INFO_BIRTHDAY, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.filled_birthday, birthdayString(birthday), getString(R.string.ContactBirthday)));
-        } else {
-            items.add(SettingsActivity.SettingCell.Factory.of(INFO_BIRTHDAY, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.filled_birthday, getString(R.string.AddBirthday), null));
-        }
-        if (!getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_BIRTHDAY)) {
-            ArrayList<TLRPC.PrivacyRule> rules = getContactsController().getPrivacyRules(ContactsController.PRIVACY_RULES_TYPE_BIRTHDAY);
-            if (rules != null && birthdayInfo == null) {
-                String string = getString(R.string.EditProfileBirthdayInfoContacts);
-                if (!rules.isEmpty()) {
-                    for (int i = 0; i < rules.size(); ++i) {
-                        if (rules.get(i) instanceof TLRPC.TL_privacyValueAllowContacts) {
-                            string = getString(R.string.EditProfileBirthdayInfoContacts);
-                            break;
-                        }
-                        if (rules.get(i) instanceof TLRPC.TL_privacyValueAllowAll || rules.get(i) instanceof TLRPC.TL_privacyValueDisallowAll) {
-                            string = getString(R.string.EditProfileBirthdayInfo);
-                        }
-                    }
-                }
-                birthdayInfo = AndroidUtilities.replaceArrows(AndroidUtilities.replaceSingleTag(string, () -> {
-                    presentFragment(new PrivacyControlActivity(PrivacyControlActivity.PRIVACY_RULES_TYPE_BIRTHDAY));
-                }), true);
-            }
-        }
-        items.add(UItem.asShadow(birthdayInfo));
-
-        channelRow = items.size();
-        if (channel == null) {
-            items.add(SettingsActivity.SettingCell.Factory.of(BUTTON_CHANNEL, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.msg_filled_menu_channels, getString(R.string.EditProfileChannelTitle), null, getString(R.string.EditProfileChannelAdd)));
-        } else {
-            items.add(SettingsActivity.SettingCell.Factory.of(BUTTON_CHANNEL, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.msg_filled_menu_channels, getString(R.string.EditProfileChannelTitle), channel.title));
-        }
-        if (hadHours) {
-            items.add(SettingsActivity.SettingCell.Factory.of(BUTTON_HOURS, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.filled_premium_hours, getString(R.string.EditProfileHours)));
-        }
-        if (hadLocation) {
-            items.add(SettingsActivity.SettingCell.Factory.of(BUTTON_LOCATION, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.filled_location, getString(R.string.EditProfileLocation)));
-        }
-        if (bots != null && !bots.isEmpty()) {
-            final StringBuilder value = new StringBuilder();
-            for (final TL_account.TL_connectedBot bot : bots) {
-                final TLRPC.User botUser = MessagesController.getInstance(currentAccount).getUser(bot.bot_id);
-                if (botUser != null) {
-                    if (value.length() > 0) value.append(", ");
-                    value.append(UserObject.getUserName(botUser));
-                }
-            }
-            items.add(SettingsActivity.SettingCell.Factory.of(BUTTON_AI, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.premium_ai_editor, getString(R.string.EditProfileChatAutomation), value));
-        } else {
-            items.add(SettingsActivity.SettingCell.Factory.of(BUTTON_AI, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.premium_ai_editor, applyNewSpan(getString(R.string.EditProfileChatAutomation))));
-        }
-        items.add(UItem.asShadow(-3, getString(R.string.EditProfileChatAutomationInfo)));
+        items.add(UItem.asHeader(getString(R.string.MonogramJabberAddress)));
+        for (java.util.Map.Entry<String, String> field : org.telegram.messenger.xmpp.MonogramController.get(currentAccount)
+                .profileDetails(getUserConfig().getClientUserId()).entrySet())
+            items.add(org.telegram.ui.Cells.TextDetailCell.Factory.of(0, field.getValue(), field.getKey()));
+        items.add(UItem.asShadow(getString(R.string.MonogramProfilePublished)));
         final boolean hasAddAccount = UserConfig.getActivatedAccountsCount() < UserConfig.MAX_ACCOUNT_COUNT;
         if (hasAddAccount) {
             addAccountRow = items.size();
@@ -431,19 +268,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             for (int i = 0; i < accountNumbers.size(); ++i) {
                 items.add(SettingsActivity.AccountCell.Factory.of(i, accountNumbers.get(i)));
             }
-            if (!UserConfig.hasPremiumOnAccounts()) {
-                final int moreAccounts = Math.max(0, UserConfig.getMaxAccountCount() - UserConfig.getActivatedAccountsCount());
-                items.add(UItem.asShadow(
-                    TextUtils.concat(
-                        moreAccounts > 0 ? LocaleController.formatPluralStringComma("AddAccountInfo1", moreAccounts) + " " : "",
-                        replaceSingleTag(LocaleController.formatPluralStringComma("AddAccountInfo2", UserConfig.getMaxAccountCount()), () -> {
-                            presentFragment(new PremiumPreviewFragment("add_account"));
-                        })
-                    )
-                ));
-            } else {
-                items.add(UItem.asShadow(null));
-            }
+            items.add(UItem.asShadow(null));
         }
         logoutRow = items.size();
         items.add(InfoCell.Factory.of(BUTTON_LOGOUT, R.drawable.msg_leave, getString(R.string.LogOut), null, 0).red());
@@ -471,23 +296,9 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.id == BUTTON_ADD_ACCOUNT) {
-            int freeAccounts = 0;
-            Integer availableAccount = null;
-            for (int a = UserConfig.MAX_ACCOUNT_COUNT - 1; a >= 0; a--) {
-                if (!UserConfig.getInstance(a).isClientActivated()) {
-                    freeAccounts++;
-                    if (availableAccount == null) {
-                        availableAccount = a;
-                    }
-                }
-            }
-            if (!UserConfig.hasPremiumOnAccounts()) {
-                freeAccounts -= (UserConfig.MAX_ACCOUNT_COUNT - UserConfig.MAX_ACCOUNT_DEFAULT_COUNT);
-            }
-            if (freeAccounts > 0 && availableAccount != null) {
-                presentFragment(new LoginActivity(availableAccount));
-            } else if (!UserConfig.hasPremiumOnAccounts()) {
-                showDialog(new LimitReachedBottomSheet(this, getContext(), TYPE_ACCOUNTS, currentAccount, null));
+            int availableAccount = UserConfig.getFreeAccount();
+            if (availableAccount >= 0) {
+                presentFragment(new MonogramLoginActivity(availableAccount));
             }
         } else if (item.instanceOf(SettingsActivity.AccountCell.Factory.class)) {
             final int account = item.intValue;
@@ -562,6 +373,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.userInfoDidLoad) {
+            if (firstNameEdit != null && valueSet && !hasChanges()) valueSet = false;
             setValue();
         } else if (id == NotificationCenter.updateInterfaces) {
             if (listView != null) {
@@ -612,7 +424,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
 
     private boolean valueSet;
     private void setValue() {
-        if (valueSet) return;
+        if (valueSet || firstNameEdit == null) return;
 
         final long selfId = getUserConfig().getClientUserId();
         TLRPC.UserFull userFull = getMessagesController().getUserFull(selfId);
@@ -630,8 +442,10 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             return;
         }
 
-        firstNameEdit.setText(currentFirstName = user.first_name);
-        lastNameEdit.setText(currentLastName = user.last_name);
+        com.negzero.monogram.xmpp.XmppProfile profile = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cachedProfile(selfId);
+        boolean structured = profile != null && (!profile.field("N", "GIVEN").isEmpty() || !profile.field("N", "FAMILY").isEmpty());
+        firstNameEdit.setText(currentFirstName = structured ? profile.field("N", "GIVEN") : user.first_name);
+        lastNameEdit.setText(currentLastName = structured ? profile.field("N", "FAMILY") : user.last_name);
         bioEdit.setText(currentBio = userFull.about);
         birthday = currentBirthday = userFull.birthday;
         if ((userFull.flags2 & 64) != 0) {
@@ -706,15 +520,15 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         ) {
             TL_account.updateProfile req1 = new TL_account.updateProfile();
 
-            req1.flags |= 1;
-            req1.first_name = user.first_name = firstNameEdit.getText().toString();
-
-            req1.flags |= 2;
-            req1.last_name = user.last_name = lastNameEdit.getText().toString();
-
-            req1.flags |= 4;
-            req1.about = userFull.about = bioEdit.getText().toString();
-            userFull.flags = TextUtils.isEmpty(userFull.about) ? (userFull.flags & ~2) : (userFull.flags | 2);
+            if (!TextUtils.equals(currentFirstName, firstNameEdit.getText().toString())) {
+                req1.flags |= 1; req1.first_name = firstNameEdit.getText().toString();
+            }
+            if (!TextUtils.equals(currentLastName, lastNameEdit.getText().toString())) {
+                req1.flags |= 2; req1.last_name = lastNameEdit.getText().toString();
+            }
+            if (!TextUtils.equals(currentBio, bioEdit.getText().toString())) {
+                req1.flags |= 4; req1.about = bioEdit.getText().toString();
+            }
 
             requests.add(req1);
         }

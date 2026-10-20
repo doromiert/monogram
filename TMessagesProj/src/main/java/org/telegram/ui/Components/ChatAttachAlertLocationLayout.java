@@ -378,7 +378,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
             locationType = LOCATION_TYPE_STORY;
         } else if (parentAlert.isBizLocationPicker) {
             locationType = LOCATION_TYPE_BIZ;
-        } else if (allowLiveLocation && chatActivity != null && chatActivity.getCurrentEncryptedChat() == null && !chatActivity.isInScheduleMode() && !UserObject.isUserSelf(chatActivity.getCurrentUser())) {
+        } else if (allowLiveLocation && org.telegram.messenger.xmpp.MonogramController.get(parentAlert.currentAccount).accountJid().isEmpty() && chatActivity != null && chatActivity.getCurrentEncryptedChat() == null && !chatActivity.isInScheduleMode() && !UserObject.isUserSelf(chatActivity.getCurrentUser())) {
             locationType = LOCATION_TYPE_SEND_WITH_LIVE;
         } else {
             locationType = LOCATION_TYPE_SEND;
@@ -426,6 +426,11 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
             }
 
             @Override
+            public void onSearchPressed(EditText editText) {
+                if(searchAdapter!=null) { searchAdapter.submitPlaceSearch(editText.getText().toString());AndroidUtilities.hideKeyboard(editText); }
+            }
+
+            @Override
             public void onTextChanged(EditText editText) {
                 if (searchAdapter == null) {
                     return;
@@ -459,10 +464,16 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 searchAdapter.searchDelayed(text, userLocation);
             }
         });
-        searchItem.setVisibility(locationDenied && !parentAlert.isStoryLocationPicker || parentAlert.isBizLocationPicker ? View.GONE : View.VISIBLE);
-        searchItem.setSearchFieldHint(LocaleController.getString(R.string.Search));
+        searchItem.setVisibility(View.VISIBLE);
+        searchItem.setSearchFieldHint(LocaleController.getString(R.string.MonogramPlaceSearchFieldHint));
         searchItem.setContentDescription(LocaleController.getString(R.string.Search));
         EditTextBoldCursor editText = searchItem.getSearchField();
+        editText.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        editText.setOnEditorActionListener((view,action,event) -> {
+            if(action==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH || event!=null && event.getAction()==android.view.KeyEvent.ACTION_DOWN && event.getKeyCode()==android.view.KeyEvent.KEYCODE_ENTER) {
+                if(searchAdapter!=null) searchAdapter.submitPlaceSearch(editText.getText().toString());AndroidUtilities.hideKeyboard(editText);return true;
+            }return false;
+        });
         editText.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
         editText.setCursorColor(getThemedColor(Theme.key_dialogTextBlack));
         editText.setHintTextColor(getThemedColor(Theme.key_chat_messagePanelHint));
@@ -539,6 +550,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
 
         mapTypeButton = new ActionBarMenuItem(context, null, 0, getThemedColor(Theme.key_location_actionIcon), resourcesProvider);
         mapTypeButton.setClickable(true);
+        if(!ApplicationLoader.getMapsProvider().supportsMapTypes()) mapTypeButton.setVisibility(GONE);
         mapTypeButton.setSubMenuOpenSide(2);
         mapTypeButton.setAdditionalXOffset(AndroidUtilities.dp(10));
         mapTypeButton.setAdditionalYOffset(-AndroidUtilities.dp(10));
@@ -778,6 +790,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 map.animateCamera(ApplicationLoader.getMapsProvider().newCameraUpdateLatLngZoom(new IMapsProvider.LatLng(liveLocation.marker.getPosition().latitude, liveLocation.marker.getPosition().longitude), map.getMaxZoomLevel() - 4));
             }
         });
+        adapter.setSearchAccount(parentAlert.currentAccount);
         adapter.setDelegate(dialogId, this::updatePlacesMarkers);
         adapter.setOverScrollHeight(overScrollHeight + dp(16));
 
@@ -889,6 +902,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 super.notifyDataSetChanged();
             }
         };
+        searchAdapter.setSearchAccount(parentAlert.currentAccount);
         searchAdapter.setMyLocationDenied(locationDenied);
         searchAdapter.setDelegate(0, places -> {
             searchInProgress = false;
@@ -929,6 +943,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
 
     @Override
     public void onPause() {
+        if(searchAdapter!=null) { searchAdapter.cancelPlaceSearch();searchAdapter.notifyDataSetChanged(); }
         if (mapView != null && mapsInitialized) {
             try {
                 mapView.onPause();
@@ -985,6 +1000,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
 
     @Override
     public void onHide() {
+        if(searchAdapter!=null) { searchAdapter.cancelPlaceSearch();searchAdapter.notifyDataSetChanged(); }
         searchItem.setVisibility(GONE);
     }
 
@@ -1096,6 +1112,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
     }
 
     private void showSearchPlacesButton(boolean show) {
+        if(!org.telegram.messenger.xmpp.MonogramController.get(parentAlert.currentAccount).accountJid().isEmpty()) { if(searchAreaButton!=null) searchAreaButton.setVisibility(GONE);return; }
         if (locationDenied) {
             show = false;
         }
@@ -1678,7 +1695,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
             }
         }
         fixLayoutInternal(true);
-        searchItem.setVisibility(locationDenied && !parentAlert.isStoryLocationPicker || parentAlert.isBizLocationPicker ? View.GONE : View.VISIBLE);
+        searchItem.setVisibility(View.VISIBLE);
     }
 
     @Override

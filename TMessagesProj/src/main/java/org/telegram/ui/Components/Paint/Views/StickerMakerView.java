@@ -1315,7 +1315,7 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
         } else if (id == NotificationCenter.filePreparingStarted) {
             if (stickerUploader == null) return;
             if (args[0] == stickerUploader.messageObject) {
-                FileLoader.getInstance(UserConfig.selectedAccount).uploadFile(stickerUploader.finalPath, false, true, ConnectionsManager.FileTypeFile);
+                if (!isLocalPackUpload()) FileLoader.getInstance(UserConfig.selectedAccount).uploadFile(stickerUploader.finalPath, false, true, ConnectionsManager.FileTypeFile);
             }
         } else if (id == NotificationCenter.fileNewChunkAvailable) {
             if (stickerUploader == null) return;
@@ -1324,6 +1324,12 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
                 long availableSize = (Long) args[2];
                 long finalSize = (Long) args[3];
                 float convertingProgress = (float) args[4];
+
+                if (isLocalPackUpload()) {
+                    if (loadingToast != null) loadingToast.setProgress(convertingProgress);
+                    if (finalSize > 0) saveLocalSticker();
+                    return;
+                }
 
                 stickerUploader.messageObject.videoEditedInfo.needUpdateProgress = true;
                 FileLoader.getInstance(currentAccount).checkUploadNewDataAvailable(finalPath, false, Math.max(1, availableSize), finalSize, convertingProgress);
@@ -1362,10 +1368,16 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
             stickerUploader.thumbPath = thumbPath;
             stickerUploader.whenDone = whenDone;
             stickerUploader.customHandler = customStickerHandler;
+            if ((stickerSet != null || stickerPackName != null)
+                    && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                stickerUploader.localOwner = org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount);
+            }
             stickerUploader.setupFiles();
             if (!newStickerUploader) {
                 afterUploadingMedia();
-            } else if (uploadedSticker != null) {
+            } else if (isLocalPackUpload() && videoEditedInfo == null) {
+                saveLocalSticker();
+            } else if (uploadedSticker != null && !isLocalPackUpload()) {
                 stickerUploader.tlInputStickerSetItem = MediaDataController.getInputStickerSetItem(uploadedSticker, stickerUploader.emoji);
                 stickerUploader.mediaDocument = new TLRPC.TL_messageMediaDocument();
                 stickerUploader.mediaDocument.flags |= 1;
@@ -1381,10 +1393,93 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
             } else {
                 FileLoader.getInstance(currentAccount).uploadFile(path, false, true, ConnectionsManager.FileTypeFile);
             }
-            if (whenDone == null) {
+            if (whenDone == null && !stickerUploader.localSaveStarted) {
                 showLoadingDialog();
             }
         }, 300);
+    }
+
+    private boolean isLocalPackUpload() {
+        return stickerUploader != null && stickerUploader.localOwner != null;
+    }
+
+    private void saveLocalSticker() {
+        final StickerUploader upload = stickerUploader;
+        if (upload == null || upload.localSaveStarted) return;
+        if (!upload.localOwner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) {
+            hideLoadingDialog();return;
+        }
+        upload.localSaveStarted = true;
+        hideLoadingDialog();
+        final String owner = upload.localOwner;
+        Runnable nameSticker = () -> {
+            org.telegram.ui.Cells.EditTextCell input = new org.telegram.ui.Cells.EditTextCell(getContext(), "Sticker name", false);
+            input.editText.setSingleLine(true);
+            input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(100)});
+            input.editText.setText("Sticker");
+            if (upload.replacedSticker != null && upload.stickerSet != null) {
+                org.telegram.messenger.xmpp.MonogramPacks.Pack original = org.telegram.messenger.xmpp.MonogramPacks.pack(currentAccount, upload.stickerSet.id);
+                if (original != null) for (org.telegram.messenger.xmpp.MonogramPacks.Item item : original.items)
+                    if (item.id == upload.replacedSticker.id) input.editText.setText(item.name);
+            }
+            AlertDialog nameDialog = new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(input)
+                    .setPositiveButton(getString(R.string.Save), (dialog, which) -> {
+                        if (!owner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) { dialog.dismiss();return; }
+                        final String name;
+                        try { name=org.telegram.messenger.xmpp.MonogramPacks.name(input.getText().toString()); }
+                        catch(IllegalArgumentException invalid) { input.editText.setError(invalid.getMessage());return; }
+                        dialog.dismiss();
+                        try {
+                            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(getContext(),
+                                    org.telegram.messenger.ApplicationLoader.getApplicationId() + ".provider", new File(upload.finalPath));
+                            long packId = upload.stickerSet == null ? 0 : upload.stickerSet.id;
+                            String title = upload.stickerSet == null ? upload.stickerPackName.toString() : upload.stickerSet.title;
+                            showLoadingDialog();
+                            org.telegram.messenger.xmpp.MonogramPacks.Callback finished = error -> {
+                                if (stickerUploader != upload) return;
+                                hideLoadingDialog();
+                                if (upload.whenDone != null) { upload.whenDone.run(error == null);upload.whenDone = null; }
+                                if (error != null) {
+                                    new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker pack").setMessage(error)
+                                            .setPositiveButton(getString(R.string.OK), null).show();
+                                } else {
+                                    TLRPC.TL_inputStickerSetID inputSet = new TLRPC.TL_inputStickerSetID();inputSet.id = packId;
+                                    TLRPC.TL_messages_stickerSet updated = org.telegram.messenger.xmpp.MonogramPacks.find(currentAccount, inputSet);
+                                    if (updated != null) MediaDataController.getInstance(currentAccount).putStickerSet(updated);
+                                    NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.customStickerCreated, false, updated);
+                                }
+                            };
+                            upload.localRequest = upload.replacedSticker == null
+                                    ? org.telegram.messenger.xmpp.MonogramPacks.saveSticker(currentAccount, packId, title, uri, name, upload.emoji, finished)
+                                    : org.telegram.messenger.xmpp.MonogramPacks.replaceSticker(currentAccount, packId, upload.replacedSticker.id, uri, name, upload.emoji, finished);
+                        } catch (Exception failed) {
+                            if (upload.whenDone != null) { upload.whenDone.run(false);upload.whenDone = null; }
+                            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker pack").setMessage(failed.getMessage())
+                                    .setPositiveButton(getString(R.string.OK), null).show();
+                        }
+                    }).setNegativeButton(getString(R.string.Cancel), (dialog, which) -> {
+                        if (upload.whenDone != null) { upload.whenDone.run(false);upload.whenDone = null; }
+                        dialog.dismiss();
+                    }).create();
+            nameDialog.setDismissDialogByButtons(false);
+            nameDialog.show();
+            input.editText.selectAll();
+        };
+        org.telegram.messenger.xmpp.MonogramPacks.Pack pack = upload.stickerSet == null ? null
+                : org.telegram.messenger.xmpp.MonogramPacks.pack(currentAccount, upload.stickerSet.id);
+        if (pack != null && (pack.connected || org.telegram.messenger.xmpp.MonogramPacks.telegramSource(pack))) {
+            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Detach from Telegram?")
+                    .setMessage("Adding your own stickers requires detaching this pack. Its existing stickers will be kept.")
+                    .setPositiveButton("Detach", (dialog, which) -> {
+                        if (!owner.equals(org.telegram.messenger.xmpp.MonogramPacks.owner(currentAccount))) return;
+                        try { org.telegram.messenger.xmpp.MonogramPacks.detach(currentAccount, pack.id);nameSticker.run(); }
+                        catch (Exception failed) {
+                            if (upload.whenDone != null) { upload.whenDone.run(false);upload.whenDone = null; }
+                            new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker pack").setMessage(failed.getMessage())
+                                    .setPositiveButton(getString(R.string.OK), null).show();
+                        }
+                    }).setNegativeButton(getString(R.string.Cancel), null).show();
+        } else nameSticker.run();
     }
 
     private void showLoadingDialog() {
@@ -1393,6 +1488,7 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
         }
         loadingToast.setOnCancelListener(() -> {
             if (stickerUploader != null) {
+                if (stickerUploader.localRequest != null) stickerUploader.localRequest.cancel();
                 if (stickerUploader.messageObject != null) {
                     MediaController.getInstance().cancelVideoConvert(stickerUploader.messageObject);
                     FileLoader.getInstance(currentAccount).cancelFileUpload(stickerUploader.finalPath, false);
@@ -1590,6 +1686,9 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
     }
 
     public static class StickerUploader {
+        public String localOwner;
+        public boolean localSaveStarted;
+        public org.telegram.messenger.xmpp.MonogramPacks.Request localRequest;
         public String path;
         public String finalPath;
         public String emoji;
@@ -1636,6 +1735,7 @@ public class StickerMakerView extends FrameLayout implements NotificationCenter.
         }
 
         public void destroy(boolean all) {
+            if (localRequest != null) localRequest.cancel();
             if (all) {
                 for (File file : finalFiles) {
                     try {

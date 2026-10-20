@@ -209,6 +209,9 @@ public class CustomEmojiReactionsWindow {
 
             @Override
             protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
+                if(baseFragment!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.local(baseFragment.getCurrentAccount()) && reactionsContainerLayout.getWindowType()!=SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
+                    BulletinFactory.of(windowView,null).createErrorBulletin(LocaleController.getString(org.telegram.messenger.R.string.MonogramCustomReactionsUnavailable)).show();return;
+                }
                 if (baseFragment != null && !reactionsContainerLayout.channelReactions && reactionsContainerLayout.getWindowType() != SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI && !UserConfig.getInstance(baseFragment.getCurrentAccount()).isPremium()) {
                     try {
                         windowView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
@@ -255,6 +258,7 @@ public class CustomEmojiReactionsWindow {
             selectAnimatedEmojiDialog.setPaused(reactionsContainerLayout.paused, reactionsContainerLayout.pausedExceptSelected);
         }
         
+        selectAnimatedEmojiDialog.reactionScrollEffect = true;
         selectAnimatedEmojiDialog.setOnLongPressedListener(new SelectAnimatedEmojiDialog.onLongPressedListener() {
             @Override
             public void onLongPressed(SelectAnimatedEmojiDialog.ImageViewEmoji view) {
@@ -825,7 +829,7 @@ public class CustomEmojiReactionsWindow {
                 }
             }
             int height = size;
-            if (type == TYPE_STICKER_SET_EMOJI) {
+            if (reactionsContainerLayout.getWindowType() == SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
                 height = dp(36) * 8 - dp(8);
             } else if (reactionsContainerLayout.showExpandableReactions()) {
                 int rows = (int) Math.ceil(reactions.size() / 8f);
@@ -981,7 +985,14 @@ public class CustomEmojiReactionsWindow {
                             float toX = toImageView.getX() + selectAnimatedEmojiDialog.getX() + selectAnimatedEmojiDialog.emojiGridView.getX() - holderView.loopImageView.getX() - dp(1);
                             float toY = toImageView.getY() + selectAnimatedEmojiDialog.getY() + selectAnimatedEmojiDialog.gridViewContainer.getY() + selectAnimatedEmojiDialog.emojiGridView.getY() - holderView.loopImageView.getY();
                             float toImageViewSize = toImageView.getMeasuredWidth();
-                            if (toImageView.selected || type == TYPE_STICKER_SET_EMOJI) {
+                            if (reactionsContainerLayout.getWindowType() == SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
+                                // Match the Unicode grid's glyph padding and scale, keeping upstream draw ownership.
+                                float glyphSize = toImageViewSize - toImageView.getPaddingLeft() - toImageView.getPaddingRight();
+                                float sizeAfterScale = glyphSize * .87f * (toImageView.selected ? .86f : 1f);
+                                toX += toImageView.getPaddingLeft() + (glyphSize - sizeAfterScale) / 2f;
+                                toY += toImageView.getPaddingTop() + (glyphSize - sizeAfterScale) / 2f;
+                                toImageViewSize = sizeAfterScale;
+                            } else if (toImageView.selected || type == TYPE_STICKER_SET_EMOJI) {
                                 float sizeAfterScale = toImageViewSize;
                                 if (type == TYPE_STICKER_SET_EMOJI) {
                                     sizeAfterScale *= .87f;

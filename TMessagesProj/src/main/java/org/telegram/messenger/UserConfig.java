@@ -122,7 +122,14 @@ public class UserConfig extends BaseController {
     }
 
     public static int getMaxAccountCount() {
-        return hasPremiumOnAccounts() ? 5 : 3;
+        return MAX_ACCOUNT_COUNT;
+    }
+
+    public static int getFreeAccount() {
+        for (int account = MAX_ACCOUNT_COUNT - 1; account >= 0; account--) {
+            if (!getInstance(account).isClientActivated()) return account;
+        }
+        return -1;
     }
 
     public int getNewMessageId() {

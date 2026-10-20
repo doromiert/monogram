@@ -75,7 +75,8 @@ public class ChatThemeController extends BaseController {
             FileLog.e(e);
         }
 
-        allChatThemes = getAllChatThemesFromPrefs();
+        allChatThemes = org.telegram.messenger.xmpp.MonogramThemes.chats(currentAccount);
+        giftsThemeList.completed=true;
         getMessagesStorage().loadGiftChatTheme(themes -> {
             if (themes != null) {
                 for (TLRPC.TL_chatThemeUniqueGift theme: themes) {
@@ -114,65 +115,11 @@ public class ChatThemeController extends BaseController {
     }
 
     public void requestAllChatThemes(final ResultCallback<List<EmojiThemes>> callback, boolean withDefault) {
-        if (themesHash == 0 || lastReloadTimeMs == 0) {
-            init();
-        }
-
-        boolean needReload = System.currentTimeMillis() - lastReloadTimeMs > reloadTimeoutMs;
-        if (allChatThemes == null || allChatThemes.isEmpty() || needReload) {
-            TL_account.getChatThemes request = new TL_account.getChatThemes();
-            request.hash = themesHash;
-            getConnectionsManager().sendRequestTyped(request, chatThemeQueue::postRunnable, (response, error) -> {
-                boolean isError = false;
-                final List<EmojiThemes> chatThemes;
-                if (response instanceof TL_account.TL_themes) {
-                    TL_account.TL_themes resp = (TL_account.TL_themes) response;
-                    themesHash = resp.hash;
-                    lastReloadTimeMs = System.currentTimeMillis();
-
-                    SharedPreferences.Editor editor = getSharedPreferences().edit();
-                    editor.clear();
-                    editor.putLong("hash", themesHash);
-                    editor.putLong("lastReload", lastReloadTimeMs);
-                    editor.putInt("count", resp.themes.size());
-                    chatThemes = new ArrayList<>(resp.themes.size());
-                    for (int i = 0; i < resp.themes.size(); ++i) {
-                        TLRPC.TL_theme tlChatTheme = resp.themes.get(i);
-                        Emoji.preloadEmoji(tlChatTheme.emoticon);
-                        SerializedData data = new SerializedData(tlChatTheme.getObjectSize());
-                        tlChatTheme.serializeToStream(data);
-                        editor.putString("theme_" + i, Utilities.bytesToHex(data.toByteArray()));
-                        EmojiThemes chatTheme = new EmojiThemes(currentAccount, tlChatTheme, false);
-                        chatTheme.preloadWallpaper();
-                        chatThemes.add(chatTheme);
-                    }
-                    editor.apply();
-                } else if (response instanceof TL_account.TL_themesNotModified) {
-                   // if (allChatThemes == null || allChatThemes.isEmpty()) {
-                        chatThemes = getAllChatThemesFromPrefs();
-//                    } else {
-//                   //     return;
-//                    }
-                } else {
-                    chatThemes = null;
-                    isError = true;
-                    AndroidUtilities.runOnUIThread(() -> callback.onError(error));
-                }
-                if (!isError) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        allChatThemes = new ArrayList<>(chatThemes);
-                        callback.onComplete(getEmojiThemes((withDefault ? THEME_LIST_WITH_DEFAULT : 0) | THEME_LIST_WITH_EMOJI));
-                    });
-                }
-            });
-        }
-        if (allChatThemes != null && !allChatThemes.isEmpty()) {
-            callback.onComplete(getEmojiThemes((withDefault ? THEME_LIST_WITH_DEFAULT : 0) | THEME_LIST_WITH_EMOJI));
-        }
+        callback.onComplete(getEmojiThemes((withDefault ? THEME_LIST_WITH_DEFAULT : 0) | THEME_LIST_WITH_EMOJI));
     }
 
     public void loadNextChatThemes(ResultCallback<Void> callback) {
-        requestNextChatThemes(callback);
+        callback.onComplete(null);
     }
 
     private SharedPreferences getSharedPreferences() {
@@ -280,11 +227,26 @@ public class ChatThemeController extends BaseController {
         setDialogTheme(dialogId, themeKey, null, true);
     }
 
+    public boolean setLocalDialogTheme(long dialogId,TLRPC.ChatTheme theme) {
+        ThemeKey key=ThemeKey.of(theme);
+        if(!org.telegram.messenger.xmpp.MonogramChatAppearance.theme(currentAccount,dialogId,key==null ? null : key.toSavedString(),true)) return false;
+        applyLocalWallpaper(dialogId,null,false);
+        setDialogTheme(dialogId,key,theme,false,true);return true;
+    }
+    public boolean resetLocalWallpaper(long dialogId,boolean notify) {
+        if(!org.telegram.messenger.xmpp.MonogramChatAppearance.clearWallpaper(currentAccount,dialogId)) return false;
+        applyLocalWallpaper(dialogId,null,notify);return true;
+    }
     private void setDialogTheme(final long dialogId, final @Nullable ThemeKey themeKey, final @Nullable TLRPC.ChatTheme theme, final boolean sendRequest) {
-        ThemeKey oldKey = dialogEmoticonsMap.get(dialogId);
+        setDialogTheme(dialogId,themeKey,theme,sendRequest,false);
+    }
+    private void setDialogTheme(final long dialogId, final @Nullable ThemeKey themeKey, final @Nullable TLRPC.ChatTheme theme, final boolean sendRequest,boolean persisted) {
+        final boolean local=org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount);
+        ThemeKey oldKey = local && !persisted ? ThemeKey.fromSavedString(org.telegram.messenger.xmpp.MonogramChatAppearance.theme(currentAccount,dialogId)) : dialogEmoticonsMap.get(dialogId);
         if (ThemeKey.equals(oldKey, themeKey)) {
             return;
         }
+        if(local && !persisted && !org.telegram.messenger.xmpp.MonogramChatAppearance.theme(currentAccount,dialogId,themeKey==null ? null : themeKey.toSavedString())) return;
 
         if (themeKey == null) {
             dialogEmoticonsMap.delete(dialogId);
@@ -314,19 +276,11 @@ public class ChatThemeController extends BaseController {
                 .putString("chatTheme_" + currentAccount + "_" + dialogId, themeKey != null ? themeKey.toSavedString() : null)
                 .apply();
 
-        if (sendRequest) {
-            TLRPC.TL_messages_setChatTheme request = new TLRPC.TL_messages_setChatTheme();
-            request.theme = ThemeKey.toInputTheme(themeKey);
-            request.peer = getMessagesController().getInputPeer(dialogId);
-            getConnectionsManager().sendRequestTyped(request, null, (updates, error) -> {
-                if (updates != null) {
-                    getMessagesController().processUpdates(updates, false);
-                }
-            });
-        }
+        // XMPP chat appearance is stored locally; there is no Telegram theme update to send.
     }
 
     public EmojiThemes getDialogTheme(long dialogId) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) return getTheme(ThemeKey.fromSavedString(org.telegram.messenger.xmpp.MonogramChatAppearance.theme(currentAccount,dialogId)));
         ThemeKey themeKey = dialogEmoticonsMap.get(dialogId);
         if (themeKey == null) {
             themeKey = ThemeKey.fromSavedString(getEmojiSharedPreferences().getString("chatTheme_" + currentAccount + "_" + dialogId, null));
@@ -350,6 +304,7 @@ public class ChatThemeController extends BaseController {
     }
 
     public void saveChatWallpaper(long dialogId, TLRPC.WallPaper wallPaper) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) return; // Local appearance has its own owner-scoped durable record.
         if (wallPaper != null) {
             if (wallPaper.document == null) {
                 return;
@@ -369,6 +324,7 @@ public class ChatThemeController extends BaseController {
     }
 
     public TLRPC.WallPaper getDialogWallpaper(long dialogId) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) return org.telegram.messenger.xmpp.MonogramChatAppearance.wallpaper(currentAccount,dialogId);
         if (dialogId >= 0) {
             TLRPC.UserFull userFull = getMessagesController().getUserFull(dialogId);
             if (userFull != null) {
@@ -673,6 +629,9 @@ public class ChatThemeController extends BaseController {
     }
 
     public void clearWallpaper(long dialogId, boolean notify, boolean onlyRevert) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+            if(org.telegram.messenger.xmpp.MonogramChatAppearance.clearWallpaper(currentAccount,dialogId)) applyLocalWallpaper(dialogId,null,notify);return;
+        }
         TLRPC.TL_messages_setChatWallPaper req = new TLRPC.TL_messages_setChatWallPaper();
         if (dialogId >= 0) {
             TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
@@ -710,7 +669,30 @@ public class ChatThemeController extends BaseController {
         });
     }
 
+    public void setLocalWallpaper(long dialogId,TLRPC.WallPaperSettings settings,Bitmap bitmap,String source,org.telegram.messenger.Utilities.Callback<TLRPC.WallPaper> ready,Runnable failed) {
+        org.telegram.messenger.xmpp.MonogramChatAppearance.wallpaper(currentAccount,dialogId,settings,bitmap,source,wallpaper -> {
+            applyLocalWallpaper(dialogId,wallpaper,true);if(ready!=null) ready.run(wallpaper);
+        },failed);
+    }
+    private void applyLocalWallpaper(long dialogId,TLRPC.WallPaper wallpaper,boolean notify) {
+        if(dialogId>=0) {
+            TLRPC.UserFull full=getMessagesController().getUserFull(dialogId);
+            if(full!=null) { full.wallpaper=wallpaper;if(wallpaper==null) full.flags&=~16777216;else full.flags|=16777216;getMessagesStorage().updateUserInfo(full,false); }
+            if(notify && full!=null) getNotificationCenter().postNotificationName(NotificationCenter.userInfoDidLoad,dialogId,full);
+        } else {
+            TLRPC.ChatFull full=getMessagesController().getChatFull(-dialogId);
+            if(full!=null) { full.wallpaper=wallpaper;if(wallpaper==null) full.flags2&=~128;else full.flags2|=128;getMessagesStorage().updateChatInfo(full,false); }
+            if(notify && full!=null) getNotificationCenter().postNotificationName(NotificationCenter.chatInfoDidLoad,full,0,false,false);
+        }
+        if(notify) getNotificationCenter().postNotificationName(NotificationCenter.wallpaperSettedToUser);
+    }
+
     public int setWallpaperToPeer(long dialogId, String wallpaperLocalPath, Theme.OverrideWallpaperInfo wallpaperInfo, MessageObject serverWallpaper, Runnable callback) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+            wallpaperInfo.forBoth=false;
+            if(wallpaperLocalPath==null && wallpaperInfo.color==0 && wallpaperInfo.gradientColor1==0) { FileLog.e("Local wallpaper image unavailable; preview must finish loading before applying");return 0; }
+            setLocalWallpaper(dialogId,MessagesController.getWallpaperSetting(wallpaperInfo),null,wallpaperLocalPath,wallpaper -> { if(callback!=null) callback.run(); },() -> FileLog.e("Could not apply local chat wallpaper"));return 0;
+        }
         TLRPC.TL_messages_setChatWallPaper req = new TLRPC.TL_messages_setChatWallPaper();
         if (dialogId >= 0) {
             TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);

@@ -2,7 +2,7 @@
 
 An XMPP/Jabber port of the current official Telegram Android client, branded Monogram. GPL-2.0-or-later upstream; new Monogram code is GPL-3.0-or-later (compatible with the OMEMO Signal backend).
 
-**Experimental, migration in progress.** The prototype on Telegram-FOSS 10.14.3 was installed and tested on Android. The current branch ports that work to official Telegram 13.0.2 (`f32ffeec763f0bdbf4bec25b52d654f77bff733d`); its Android build, FOSS dependency replacements and runtime behavior still require verification. See [TODO.md](TODO.md) for current status.
+**Experimental Android client.** Monogram uses official Telegram 13.0.2 (`f32ffeec763f0bdbf4bec25b52d654f77bff733d`); signed arm64 builds are available in [Releases](https://github.com/doromiert/monogram/releases). The Telegram-FOSS prototype is retained on a separate branch. Runtime bugs, independent-client interoperability and removal of remaining proprietary SDKs are still in progress. See [TODO.md](TODO.md) for implementation and verification status.
 
 telegram x monocles = holy chatting
 ![shitpost.png](shitpost.png)

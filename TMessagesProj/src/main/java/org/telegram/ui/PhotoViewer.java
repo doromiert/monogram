@@ -1083,6 +1083,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private boolean playerWasPlaying;
     private boolean playerAutoStarted;
     private boolean playerLooping;
+    private VideoPlayer pausedOnMinimizePlayer;
     private float seekToProgressPending;
     private String shouldSavePositionForCurrentVideo;
     private String shouldSavePositionForCurrentVideoShortTerm;
@@ -7058,6 +7059,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             captionEdit.setTimer(seconds);
         });
         topCaptionEdit.setAccount(currentAccount);
+        android.text.TextWatcher mediaDraftWatcher = new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (parentAlert != null && parentAlert.hasMediaDraftSession()) {
+                    AndroidUtilities.cancelRunOnUIThread(saveMediaDraftCaption);
+                    AndroidUtilities.runOnUIThread(saveMediaDraftCaption, 750);
+                }
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        };
+        captionEdit.editText.getEditText().addTextChangedListener(mediaDraftWatcher);
+        topCaptionEdit.editText.getEditText().addTextChangedListener(mediaDraftWatcher);
         topCaptionEdit.setOnHeightUpdate(height -> {
             if (topCaptionEdit.mentionContainer != null) {
                 topCaptionEdit.mentionContainer.setTranslationY(height);
@@ -7689,6 +7702,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (imageMoveAnimation != null) {
                 return;
             }
+            clearMediaEditor();
             Runnable onEnd = () -> {
                 cropTransform.setViewTransform(previousHasTransform, previousCropPx, previousCropPy, previousCropRotation, previousCropOrientation, previousCropScale, scale1(), scale1(), previousCropPw, previousCropPh, 0, 0, previousCropMirrored);
 //                if (previousHasTransform) {
@@ -7721,7 +7735,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (currentEditMode == EDIT_MODE_CROP && !photoCropView.isReady()) {
                 return;
             }
-            applyCurrentEditMode();
+            if(!applyMediaEditWithDraftRecovery()) return;
             switchToEditMode(EDIT_MODE_NONE);
         });
 
@@ -7762,6 +7776,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     containerView.requestLayout();
                 }
                 detectFaces();
+                AndroidUtilities.runOnUIThread(this::resumePendingMediaEditor,350);
             }
             if (imageReceiver == centerImage && set && placeProvider != null && placeProvider.scaleToFill() && !ignoreDidSetImage && sendPhotoType != SELECT_TYPE_AVATAR && sendPhotoType != SELECT_TYPE_STICKER) {
                 if (!wasLayout) {
@@ -8076,7 +8091,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                     return;
                 }
-                applyCurrentEditMode();
+                if(!applyMediaEditWithDraftRecovery()) return;
             }
             if (!replace && parentChatActivity != null) {
                 TLRPC.Chat chat = parentChatActivity.getCurrentChat();
@@ -8106,11 +8121,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             doneButtonPressed = true;
             if (videoEditedInfo != null) {
                 long sizeToCheck = (long) (videoEditedInfo.estimatedSize * 0.9f);
-                if ((sizeToCheck > FileLoader.DEFAULT_MAX_FILE_SIZE && !UserConfig.getInstance(currentAccount).isPremium()) || sizeToCheck > FileLoader.DEFAULT_MAX_FILE_SIZE_PREMIUM) {
-                    if (parentAlert != null) {
-                        LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(parentAlert.getBaseFragment(), parentAlert.getContainer().getContext(), LimitReachedBottomSheet.TYPE_LARGE_FILE, UserConfig.selectedAccount, null);
-                        limitReachedBottomSheet.show();
-                    }
+                if (!FileLoader.checkUploadFileSize(currentAccount,sizeToCheck)) {
+                    BulletinFactory.of(containerView,resourcesProvider).createErrorBulletin(LocaleController.formatString(R.string.MonogramFileSizeLimit,AndroidUtilities.formatFileSize(com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES))).show();
                     return;
                 }
             }
@@ -9532,6 +9544,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         } else {
             pipVideoOverlayAnimateFlag = false;
 
+            if(org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount)) return;
             switchToPip(false);
         }
     }
@@ -10577,6 +10590,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
                 @Override
                 public void onRenderedFirstFrame() {
+                    AndroidUtilities.runOnUIThread(PhotoViewer.this::resumePendingMediaEditor,350);
                     if (!textureUploaded) {
                         textureUploaded = true;
                         containerView.invalidate();
@@ -10947,6 +10961,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void releasePlayer(boolean onClose) {
+        pausedOnMinimizePlayer=null;
         usedSurfaceView = false;
         if (pipSource != null) {
             pipSource.destroy();
@@ -11369,7 +11384,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
     }
 
+    private boolean applyMediaEditWithDraftRecovery() {
+        MediaController.PhotoEntry photo=currentEditMode==EDIT_MODE_CROP || currentEditMode==EDIT_MODE_PAINT ? mediaEditorPhoto() : null;
+        applyCurrentEditMode();if(photo==null || mediaDraftEditApplied) return true;
+        mediaEditorToken=org.telegram.messenger.xmpp.MonogramEditorDrafts.begin(photo,currentAccount,parentAlert.getDialogId(),currentEditMode==EDIT_MODE_CROP ? "crop" : "paint");
+        changedMediaEditor();
+        new AlertDialog.Builder(parentActivity,resourcesProvider).setTitle("Media draft").setMessage("Could not apply this edit. The editor is still open; try again or cancel the edit.").setPositiveButton(getString(R.string.OK),null).show();
+        return false;
+    }
+
+    private boolean mediaDraftEditApplied;
     private void applyCurrentEditMode() {
+        mediaDraftEditApplied=false;
         if (currentIndex < 0 || currentIndex >= imagesArrLocals.size()) {
             return;
         }
@@ -11377,6 +11403,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (!(object instanceof MediaController.MediaEditState)) {
             return;
         }
+        MediaController.CropState previousAppliedCrop=((MediaController.MediaEditState)object).cropState;
+        if(previousAppliedCrop!=null && mediaEditorPhoto()!=null) previousAppliedCrop=previousAppliedCrop.clone();
+        AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);org.telegram.messenger.xmpp.MonogramEditorDrafts.invalidate(mediaEditorToken);mediaEditorToken=null;
         Bitmap bitmap = null;
         Bitmap[] paintThumbBitmap = new Bitmap[1];
         List<TLRPC.InputDocument> stickers = null;
@@ -11419,7 +11448,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             bitmap = photoPaintView.getBitmap(entities, paintThumbBitmap);
             stickers = photoPaintView.getMasks();
 
-            photoPaintView.onCleanupEntities();
+            if(mediaEditorPhoto()==null) photoPaintView.onCleanupEntities();
         } else if (currentEditMode == EDIT_MODE_STICKER_MASK) {
             hasChanged = true;
             bitmap = maskPaintView.getBitmap();
@@ -11450,6 +11479,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             return;
         }
         if (bitmap == null) {
+            if(mediaEditorPhoto()!=null) { entry.cropState=previousAppliedCrop;editState.cropState=previousAppliedCrop; }
             return;
         }
 
@@ -11736,6 +11766,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         ignoreDidSetImage = false;
         centerImage.setParentView(containerView);
+        if(currentEditMode==EDIT_MODE_PAINT && mediaEditorPhoto()!=null) photoPaintView.onCleanupEntities();
+        mediaDraftEditApplied=true;clearMediaEditor();if(parentAlert!=null) parentAlert.saveMediaDraftNow(false);
     }
 
     private void setPhotoChecked() {
@@ -11798,11 +11830,13 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             @Override
             public void onChange(boolean reset) {
                 updateResetButtonVisibility(!reset);
+                if(currentEditMode==EDIT_MODE_CROP) changedMediaEditor();
             }
 
             @Override
             public void onUpdate() {
                 containerView.invalidate();
+                if(currentEditMode==EDIT_MODE_CROP) changedMediaEditor();
             }
 
             @Override
@@ -11921,6 +11955,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     public void switchToEditMode(final int mode) {
         if (currentEditMode == mode || (isCurrentVideo && photoProgressViews[0].backgroundState != 3) && !isCurrentVideo && (centerImage.getBitmap() == null || photoProgressViews[0].backgroundState != -1) || changeModeAnimation != null || imageMoveAnimation != null || isCaptionOpen()) {
             return;
+        }
+        if(currentEditMode==EDIT_MODE_NONE && mode!=EDIT_MODE_NONE) {
+            org.telegram.messenger.xmpp.MonogramEditorDrafts.Pending pending=pendingMediaEditor();
+            if(pending!=null && mode!=(pending.mode().equals("crop") ? EDIT_MODE_CROP : EDIT_MODE_PAINT)) { resumePendingMediaEditor();return; }
+        }
+        if(mode==EDIT_MODE_CROP || mode==EDIT_MODE_PAINT) {
+            MediaController.PhotoEntry photo=mediaEditorPhoto();
+            mediaEditorToken=photo==null ? null : org.telegram.messenger.xmpp.MonogramEditorDrafts.begin(photo,currentAccount,parentAlert.getDialogId(),mode==EDIT_MODE_CROP ? "crop" : "paint");
+        } else if(currentEditMode==EDIT_MODE_CROP || currentEditMode==EDIT_MODE_PAINT) {
+            AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);saveMediaEditor.run();
         }
         if (placeProvider != null && (currentEditMode == EDIT_MODE_NONE || mode == EDIT_MODE_NONE)) {
             placeProvider.onEditModeChanged(mode != EDIT_MODE_NONE);
@@ -12373,7 +12417,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
                     final Bitmap bitmap = centerImage.getBitmap();
                     if (bitmap != null || isCurrentVideo) {
-                        photoCropView.setBitmap(bitmap, centerImage.getOrientation(), sendPhotoType != SELECT_TYPE_AVATAR, false, paintingOverlay, cropTransform, isCurrentVideo ? (VideoEditTextureView) videoTextureView : null, editState.cropState);
+                        photoCropView.setBitmap(bitmap, centerImage.getOrientation(), sendPhotoType != SELECT_TYPE_AVATAR, false, paintingOverlay, cropTransform, isCurrentVideo ? (VideoEditTextureView) videoTextureView : null, pendingMediaEditor()!=null && pendingMediaEditor().mode().equals("crop") ? pendingMediaEditor().crop() : editState.cropState);
                         photoCropView.onDisappear();
                         int bitmapWidth = centerImage.getBitmapWidth();
                         int bitmapHeight = centerImage.getBitmapHeight();
@@ -12875,7 +12919,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 w = centerImage.getBitmapWidth();
                 h = centerImage.getBitmapHeight();
             }
-            Bitmap bitmap = paintingOverlay.getBitmap();
+            org.telegram.messenger.xmpp.MonogramEditorDrafts.Pending pendingPaint=pendingMediaEditor();
+            if(pendingPaint!=null && !pendingPaint.mode().equals("paint")) pendingPaint=null;
+            Bitmap bitmap = pendingPaint==null ? paintingOverlay.getBitmap() : android.graphics.BitmapFactory.decodeFile(pendingPaint.paintPath());
             if (bitmap == null) {
                 bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             }
@@ -12916,7 +12962,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 photoPaintView.updatePlusEmojiKeyboardButton();
             }).useInsets().useMinusNavbar();
             paintKeyboardNotifier.ignore(currentEditMode != EDIT_MODE_PAINT);
-            photoPaintView = new LPhotoPaintView(parentActivity, parentActivity, currentAccount, bitmap, isCurrentVideo ? null : centerImage.getBitmap(), centerImage.getOrientation(), editState.mediaEntities, state, () -> paintingOverlay.hideBitmap(), resourcesProvider) {
+            photoPaintView = new LPhotoPaintView(parentActivity, parentActivity, currentAccount, bitmap, isCurrentVideo ? null : centerImage.getBitmap(), centerImage.getOrientation(), pendingPaint==null ? editState.mediaEntities : pendingPaint.entities(), state, () -> paintingOverlay.hideBitmap(), resourcesProvider) {
                 @Override
                 protected void onOpenCloseStickersAlert(boolean open) {
                     if (videoPlayer == null) {
@@ -12968,13 +13014,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                 }
             };
+            photoPaintView.setDraftChangedListener(this::changedMediaEditor,pendingPaint!=null);
             photoPaintView.setBlurredBackgroundDrawableForTools(iBlur3FactoryFrostedLiquidGlass.create(photoPaintView.bottomLayout)
                 .setColorProvider(BlurredBackgroundProviderImpl.photoViewer(resourcesProvider)));
 
             containerView.addView(photoPaintView.getView(), LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
             photoPaintView.setOnDoneButtonClickedListener(() -> {
                 savedState = null;
-                applyCurrentEditMode();
+                if(!applyMediaEditWithDraftRecovery()) return;
                 switchToEditMode(EDIT_MODE_NONE);
             });
             photoPaintView.getCancelView().setOnClickListener(v -> closePaintMode());
@@ -13010,7 +13057,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void closePaintMode() {
-        photoPaintView.maybeShowDismissalAlert(PhotoViewer.this, parentActivity, () -> switchToEditMode(EDIT_MODE_NONE));
+        photoPaintView.maybeShowDismissalAlert(PhotoViewer.this, parentActivity, () -> { clearMediaEditor();switchToEditMode(EDIT_MODE_NONE); });
     }
 
     private void switchToPaintMode() {
@@ -18077,6 +18124,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
         }
         if (!fromEditMode && currentEditMode != EDIT_MODE_NONE) {
+            if(currentEditMode==EDIT_MODE_CROP) { AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);saveMediaEditor.run();mediaEditorToken=null; }
             if (currentEditMode == EDIT_MODE_PAINT && photoPaintView != null) {
                 closePaintMode();
                 return;
@@ -18688,6 +18736,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             currentThumb.release();
             currentThumb = null;
         }
+        AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);mediaEditorToken=null;
         parentAlert = null;
         if (parentAlertWindowVisibilityController != null) {
             parentAlertWindowVisibilityController.destroy();
@@ -18728,6 +18777,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 FileLog.e(e);
             }
         });
+        AndroidUtilities.cancelRunOnUIThread(saveMediaDraftCaption);
         if (placeProvider != null) {
             placeProvider.willHidePhotoViewer();
         }
@@ -18774,11 +18824,62 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (photoPaintView != null) {
             photoPaintView.onResume();
         }
+        VideoPlayer pausedPlayer=pausedOnMinimizePlayer;
+        pausedOnMinimizePlayer=null;
+        if(pausedPlayer!=null && pausedPlayer==videoPlayer && isVisible()
+                && org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount) && !pausedPlayer.isPlaying()) {
+            pausedPlayer.play();
+        }
     }
 
     public void onConfigurationChanged(Configuration newConfig) {}
 
+    private org.telegram.messenger.xmpp.MonogramEditorDrafts.Token mediaEditorToken;
+    private MediaController.PhotoEntry mediaEditorPhoto() {
+        if(parentAlert==null || !parentAlert.hasMediaDraftSession() || currentIndex<0 || currentIndex>=imagesArrLocals.size()) return null;
+        Object photo=imagesArrLocals.get(currentIndex);return photo instanceof MediaController.PhotoEntry ? (MediaController.PhotoEntry)photo : null;
+    }
+    private org.telegram.messenger.xmpp.MonogramEditorDrafts.Pending pendingMediaEditor() {
+        MediaController.PhotoEntry photo=mediaEditorPhoto();return photo==null ? null : org.telegram.messenger.xmpp.MonogramEditorDrafts.get(photo,currentAccount,parentAlert.getDialogId());
+    }
+    private void clearMediaEditor() {
+        AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);MediaController.PhotoEntry photo=mediaEditorPhoto();
+        if(photo!=null) org.telegram.messenger.xmpp.MonogramEditorDrafts.clear(photo,currentAccount,parentAlert.getDialogId());mediaEditorToken=null;
+    }
+    private final Runnable saveMediaEditor=() -> {
+        final org.telegram.messenger.xmpp.MonogramEditorDrafts.Token token=mediaEditorToken;if(token==null) return;
+        final long version=token.revision();
+        if(currentEditMode==EDIT_MODE_CROP && photoCropView!=null) {
+            MediaController.CropState state=new MediaController.CropState();photoCropView.cropView.applyToCropState(state);
+            org.telegram.messenger.xmpp.MonogramEditorDrafts.crop(token,version,state);
+        } else if(currentEditMode==EDIT_MODE_PAINT && photoPaintView!=null) {
+            final MediaController.PhotoEntry selection=mediaEditorPhoto();
+            photoPaintView.snapshotDraft((bitmap,entities) -> { if(selection!=null) org.telegram.messenger.xmpp.MonogramEditorDrafts.paint(token,version,bitmap,entities);else if(bitmap!=null) bitmap.recycle(); });
+        }
+    };
+    private void changedMediaEditor() {
+        if(mediaEditorToken==null) return;mediaEditorToken.changed();AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);AndroidUtilities.runOnUIThread(saveMediaEditor,750);
+    }
+    public void resumePendingMediaEditor(MediaController.PhotoEntry photo) {
+        if(currentEditMode!=EDIT_MODE_NONE) return;
+        int index=imagesArrLocals.indexOf(photo);if(index<0) return;
+        if(index!=currentIndex) setImageIndex(index);
+        AndroidUtilities.runOnUIThread(this::resumePendingMediaEditor,350);
+    }
+    public void resumePendingMediaEditor() {
+        if(currentEditMode!=EDIT_MODE_NONE || changeModeAnimation!=null || imageMoveAnimation!=null || !isVisible()) return;
+        org.telegram.messenger.xmpp.MonogramEditorDrafts.Pending pending=pendingMediaEditor();
+        if(pending!=null && (centerImage.getBitmap()!=null || isCurrentVideo && textureUploaded)) switchToEditMode(pending.mode().equals("crop") ? EDIT_MODE_CROP : EDIT_MODE_PAINT);
+    }
+    private final Runnable saveMediaDraftCaption=() -> {
+        if(parentAlert==null || !parentAlert.hasMediaDraftSession() || !isVisible() || currentIndex<0 || currentIndex>=imagesArrLocals.size() || !(imagesArrLocals.get(currentIndex) instanceof MediaController.PhotoEntry)) return;
+        applyCaption();Object current=imagesArrLocals.get(currentIndex);
+        if(current instanceof MediaController.PhotoEntry && ((MediaController.PhotoEntry)current).isVideo) ((MediaController.PhotoEntry)current).editedInfo=getCurrentVideoEditedInfo();
+        parentAlert.saveMediaDraftNow(false);
+    };
     public void onPause() {
+        AndroidUtilities.cancelRunOnUIThread(saveMediaDraftCaption);saveMediaDraftCaption.run();
+        AndroidUtilities.cancelRunOnUIThread(saveMediaEditor);saveMediaEditor.run();
         if (currentAnimation != null) {
             closePhoto(false, false);
             return;
@@ -18788,6 +18889,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         if (videoPlayer != null && playerLooping) {
             videoPlayer.setLooping(allowLoopingOnPause());
+        }
+        if(org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount) && videoPlayer!=null && videoPlayer.isPlaying()) {
+            pausedOnMinimizePlayer=videoPlayer;
+            videoPlayer.pause();
         }
     }
 
@@ -19244,7 +19349,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 zooming = false;
                 moving = false;
             } else if (draggingDown) {
-                if (Math.abs(dragY - ev.getY()) > getContainerViewHeight() / 6.0f) {
+                if (velocityTracker == null) {
+                    velocityTracker = VelocityTracker.obtain();
+                }
+                velocityTracker.computeCurrentVelocity(1000);
+                float yVelocity = velocityTracker.getYVelocity();
+                float dragDistance = Math.abs(dragY - ev.getY());
+                int swipeVelocity = AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y ? 1250 : 850;
+                if (dragDistance > getContainerViewHeight() / 6.0f || dragDistance > AndroidUtilities.getPixelsInCM(0.4f, false) && Math.abs(yVelocity) >= swipeVelocity) {
                     if (enableSwipeToPiP() && (dragY - ev.getY() > 0)) {
                         switchToPip(true);
                     } else {
@@ -20923,7 +21035,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         boolean forward = x >= width / 3 * 2;
         long current = getCurrentVideoPosition();
         long total = getVideoDuration();
-        return current != C.TIME_UNSET && total > 15 * 1000 && (!forward || total - current > 10000);
+        long seekDuration = org.telegram.messenger.xmpp.MonogramMediaPlayback.doubleTapSeekDurationMillis(currentAccount);
+        long minimumDuration = org.telegram.messenger.xmpp.MonogramMediaPlayback.doubleTapSeekDuration(currentAccount) == 0 ? 10_000L : 15_000L;
+        return current != C.TIME_UNSET && total > minimumDuration && (!forward || total - current > seekDuration);
     }
 
     long totalRewinding;
@@ -20937,31 +21051,22 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             int width = getContainerViewWidth();
             boolean forward = x >= width / 3 * 2;
             if (canDoubleTapSeekVideo(e)) {
+                long seekDuration = org.telegram.messenger.xmpp.MonogramMediaPlayback.doubleTapSeekDurationMillis(currentAccount);
                 long old = current;
                 if (x >= width / 3 * 2) {
-                    current += 10000;
+                    current += seekDuration;
                 } else if (x < width / 3) {
-                    current -= 10000;
+                    current -= seekDuration;
                 }
                 if (old != current) {
-                    boolean apply = true;
-                    if (current > total) {
-                        current = total;
-                    } else if (current < 0) {
-                        if (current < -9000) {
-                            apply = false;
-                        }
-                        current = 0;
-                    }
-                    if (apply) {
-                        videoForwardDrawable.setOneShootAnimation(true);
-                        videoForwardDrawable.setLeftSide(x < width / 3);
-                        videoForwardDrawable.addTime(10000);
-                        seekVideoOrWebTo(current);
-                        containerView.invalidate();
-                        videoPlayerSeekbar.setProgress(current / (float) total, true);
-                        videoPlayerSeekbarView.invalidate();
-                    }
+                    current = Utilities.clamp(current, total, 0);
+                    videoForwardDrawable.setOneShootAnimation(true);
+                    videoForwardDrawable.setLeftSide(x < width / 3);
+                    videoForwardDrawable.addTime(seekDuration);
+                    seekVideoOrWebTo(current);
+                    containerView.invalidate();
+                    videoPlayerSeekbar.setProgress(current / (float) total, true);
+                    videoPlayerSeekbarView.invalidate();
                     return true;
                 }
             }
@@ -20999,7 +21104,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private boolean enableSwipeToPiP() {
-        return false;
+        return (pipItem.getVisibility() == View.VISIBLE || menuItem.getVisibility() == View.VISIBLE && menuItem.isSubItemVisible(gallery_menu_pip))
+                && org.telegram.messenger.xmpp.MonogramMediaPlayback.swipeToPip(currentAccount)
+                && pipAvailable
+                && textureUploaded
+                && videoPlayer != null
+                && videoPlayer.getRepeatCount() == 0
+                && checkInlinePermissions()
+                && !changingTextureView
+                && !switchingInlineMode
+                && !isInline;
     }
 
     @Override

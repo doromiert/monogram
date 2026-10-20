@@ -281,16 +281,20 @@ public class LocationController extends BaseController implements NotificationCe
                             break;
                         case ILocationServiceProvider.STATUS_RESOLUTION_REQUIRED:
                             Utilities.stageQueue.postRunnable(() -> {
-                                if (!sharingLocations.isEmpty()) {
+                                if (started && !sharingLocations.isEmpty()) {
                                     AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.needShowPlayServicesAlert, status));
                                 }
                             });
                             break;
                         case ILocationServiceProvider.STATUS_SETTINGS_CHANGE_UNAVAILABLE:
                             Utilities.stageQueue.postRunnable(() -> {
+                                if (!started || sharingLocations.isEmpty()) {
+                                    return;
+                                }
                                 servicesAvailable = false;
                                 try {
                                     apiClient.disconnect();
+                                    started = false;
                                     start();
                                 } catch (Throwable ignore) {}
                             });
@@ -305,8 +309,24 @@ public class LocationController extends BaseController implements NotificationCe
         }
     }
 
+    public void onLocationSettingsResult() {
+        Utilities.stageQueue.postRunnable(() -> {
+            if (!started || sharingLocations.isEmpty()) {
+                return;
+            }
+            ApplicationLoader.getLocationServiceProvider().checkLocationSettings(locationRequest, status -> {
+                if (status == ILocationServiceProvider.STATUS_SUCCESS) {
+                    startFusedLocationRequest(true);
+                }
+            });
+        });
+    }
+
     public void startFusedLocationRequest(boolean permissionsGranted) {
         Utilities.stageQueue.postRunnable(() -> {
+            if (!started || sharingLocations.isEmpty()) {
+                return;
+            }
             if (!permissionsGranted) {
                 servicesAvailable = false;
             }
@@ -319,6 +339,7 @@ public class LocationController extends BaseController implements NotificationCe
                         FileLog.e(e);
                     }
                 } else {
+                    started = false;
                     start();
                 }
             }
@@ -852,13 +873,11 @@ public class LocationController extends BaseController implements NotificationCe
 
     private void stop(boolean empty) {
         started = false;
-        if (checkServices()) {
-            try {
-                ApplicationLoader.getLocationServiceProvider().removeLocationUpdates(fusedLocationListener);
-                apiClient.disconnect();
-            } catch (Throwable e) {
-                FileLog.e(e, false);
-            }
+        try {
+            ApplicationLoader.getLocationServiceProvider().removeLocationUpdates(fusedLocationListener);
+            apiClient.disconnect();
+        } catch (Throwable e) {
+            FileLog.e(e, false);
         }
         locationManager.removeUpdates(gpsLocationListener);
         if (empty) {

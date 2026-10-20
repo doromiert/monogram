@@ -8126,6 +8126,47 @@ public class MessagesStorage extends BaseController {
     }
 
 
+    private int[] markMonogramReadInternal(long dialogId, java.util.Collection<Integer> ids) throws Exception {
+        int previous=0,remaining=0;
+        SQLiteCursor cursor=database.queryFinalized("SELECT unread_count FROM dialogs WHERE did=?",dialogId);
+        try { if(cursor.next()) previous=cursor.intValue(0); } finally { cursor.dispose(); }
+        database.beginTransaction();
+        try {
+            ArrayList<Integer> batch=new ArrayList<>(256);
+            for(int id:ids) if(id>0) {
+                batch.add(id);
+                if(batch.size()==256) { markMonogramReadBatch(dialogId,batch);batch.clear(); }
+            }
+            if(!batch.isEmpty()) markMonogramReadBatch(dialogId,batch);
+            cursor=database.queryFinalized("SELECT COUNT(*) FROM messages_v2 WHERE uid=? AND out=0 AND mid>0 AND (read_state & 1)=0",dialogId);
+            try { if(cursor.next()) remaining=cursor.intValue(0); } finally { cursor.dispose(); }
+            database.executeFast("UPDATE dialogs SET unread_count="+remaining+",inbox_max=0,flags=COALESCE(flags,0)&~1 WHERE did="+dialogId).stepThis().dispose();
+            return new int[]{previous,remaining};
+        } finally { database.commitTransaction(); }
+    }
+    private void markMonogramReadBatch(long dialogId, ArrayList<Integer> ids) throws Exception {
+        String selection="uid="+dialogId+" AND mid IN ("+TextUtils.join(",",ids)+")";
+        database.executeFast("UPDATE messages_v2 SET read_state=read_state|1 WHERE "+selection+" AND out=0").stepThis().dispose();
+        database.executeFast("DELETE FROM unread_push_messages WHERE "+selection).stepThis().dispose();
+    }
+    public void processMonogramRead(long dialogId,java.util.Set<Integer> ids,java.util.function.BooleanSupplier current,java.util.function.IntConsumer callback) {
+        java.util.Set<Integer> snapshot=new java.util.LinkedHashSet<>(ids);
+        storageQueue.postRunnable(() -> {
+            if(!current.getAsBoolean()) { callback.accept(-1);return; }
+            int[] counts;
+            try { counts=markMonogramReadInternal(dialogId,snapshot); }
+            catch(Exception error) { checkSQLException(error);callback.accept(-1);return; }
+            try {
+                if(counts[0]!=0 && counts[1]==0) {
+                    LongSparseIntArray changed=new LongSparseIntArray();changed.put(dialogId,0);
+                    updateFiltersReadCounter(changed,null,true);
+                }
+                updateWidgets(dialogId);
+            } catch(Exception error) { checkSQLException(error); }
+            callback.accept(counts[1]);
+        });
+    }
+
     public void processPendingRead(long dialogId, int maxPositiveId, int maxNegativeId, int scheduledCount) {
         int maxDate = lastSavedDate;
         storageQueue.postRunnable(() -> {
@@ -8574,6 +8615,109 @@ public class MessagesStorage extends BaseController {
                 }
             }
             getContactsController().processLoadedContacts(contacts, users, 1);
+        });
+    }
+
+    private void restoreMonogramMessageReadState(ArrayList<TLRPC.Message> messages) {
+        java.util.HashMap<Long, java.util.HashMap<Integer, TLRPC.Message>> peers = new java.util.HashMap<>();
+        for (TLRPC.Message message : messages) if (org.telegram.messenger.xmpp.MonogramReceipts.hasIncomingState(message) && message.id > 0) {
+            peers.computeIfAbsent(message.dialog_id, ignored -> new java.util.HashMap<>()).put(message.id, message);
+        }
+        for (java.util.Map.Entry<Long, java.util.HashMap<Integer, TLRPC.Message>> peer : peers.entrySet()) {
+            SQLiteCursor cursor = null;
+            try {
+                // IDs originate in our local store; peer scoping prevents same-ID cross-chat matches.
+                cursor = database.queryFinalized("SELECT mid,read_state FROM messages_v2 WHERE uid=? AND out=0 AND mid IN (" + TextUtils.join(",", peer.getValue().keySet()) + ")", peer.getKey());
+                while (cursor.next()) {
+                    TLRPC.Message message = peer.getValue().get(cursor.intValue(0));
+                    if (message != null) org.telegram.messenger.xmpp.MonogramReceipts.restoreIncoming(message, cursor.intValue(1));
+                }
+            } catch (Exception unavailable) {
+                if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram read-state load: " + unavailable.getClass().getSimpleName());
+            } finally { if (cursor != null) cursor.dispose(); }
+        }
+    }
+
+    /** Restore existing native flags/counts after XMPP reconstructs message content. */
+    public void restoreMonogramReadState(ArrayList<TLRPC.Message> messages, ArrayList<TLRPC.Dialog> dialogs, Runnable callback) {
+        storageQueue.postRunnable(() -> {
+            restoreMonogramMessageReadState(messages);
+            if (dialogs != null) for (TLRPC.Dialog dialog : dialogs) {
+                SQLiteCursor cursor = null;
+                try {
+                    cursor = database.queryFinalized("SELECT unread_count,unread_count_i,unread_reactions,flags FROM dialogs WHERE did=?", dialog.id);
+                    if (cursor.next()) {
+                        dialog.unread_count = cursor.intValue(0);
+                        dialog.unread_mentions_count = cursor.intValue(1);
+                        dialog.unread_reactions_count = cursor.intValue(2);
+                        dialog.unread_mark = (cursor.intValue(3) & 1) != 0;
+                    }
+                } catch (Exception unavailable) {
+                    if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram unread-count load: " + unavailable.getClass().getSimpleName());
+                } finally { if (cursor != null) cursor.dispose(); }
+            }
+            callback.run();
+        });
+    }
+
+    /** Read pending and failed native messages for the XMPP history adapter, on the storage queue. */
+    public void getMonogramOutbox(long dialogId,Consumer<ArrayList<TLRPC.Message>> callback) {
+        storageQueue.postRunnable(() -> {
+            ArrayList<TLRPC.Message> messages=new ArrayList<>();
+            SQLiteCursor cursor=null;
+            try {
+                cursor=database.queryFinalized("SELECT m.data,m.mid,m.date,m.send_state,m.read_state,r.random_id,m.replydata FROM messages_v2 m LEFT JOIN randoms_v2 r ON r.mid=m.mid AND r.uid=m.uid WHERE m.uid=? AND m.mid<0 AND m.out=1 AND m.send_state!=0 ORDER BY m.date DESC,m.mid ASC",dialogId);
+                while(cursor.next()) {
+                    NativeByteBuffer data=cursor.byteBufferValue(0);
+                    if(data==null) continue;
+                    try {
+                        TLRPC.Message message=TLRPC.Message.TLdeserialize(data,data.readInt32(false),false);
+                        if(message==null) continue;
+                        message.readAttachPath(data,getUserConfig().clientUserId);
+                        message.id=cursor.intValue(1); message.date=cursor.intValue(2);
+                        message.send_state=cursor.intValue(3); MessageObject.setUnreadFlags(message,cursor.intValue(4));
+                        message.dialog_id=dialogId;
+                        if(!cursor.isNull(5)) message.random_id=cursor.longValue(5);
+                        NativeByteBuffer reply=cursor.byteBufferValue(6);
+                        if(reply!=null) try {
+                            message.replyMessage=TLRPC.Message.TLdeserialize(reply,reply.readInt32(false),false);
+                            if(message.replyMessage!=null) message.replyMessage.readAttachPath(reply,getUserConfig().clientUserId);
+                        } finally { reply.reuse(); }
+                        messages.add(message);
+                    } catch(Exception invalid) {
+                        if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram outbox row: "+invalid.getClass().getSimpleName());
+                    } finally { data.reuse(); }
+                }
+            } catch(Exception unavailable) {
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram outbox load: "+unavailable.getClass().getSimpleName());
+            } finally { if(cursor!=null) cursor.dispose(); }
+            callback.accept(messages);
+        });
+    }
+
+    /** Fail closed: null means draft assets must be retained because a native reference could not be inspected. */
+    public void getMonogramDraftReferences(Consumer<java.util.Set<String>> callback) {
+        storageQueue.postRunnable(() -> {
+            java.util.Set<String> references=new java.util.HashSet<>();
+            try {
+                for(String query:new String[]{"SELECT data FROM messages_v2 WHERE out=1 AND (mid<0 OR send_state!=0)","SELECT data FROM scheduled_messages_v2"}) {
+                    SQLiteCursor cursor=null;
+                    try {
+                        cursor=database.queryFinalized(query);
+                        while(cursor.next()) {
+                            NativeByteBuffer data=cursor.byteBufferValue(0);if(data==null) throw new IllegalStateException("Missing draft reference data");
+                            try {
+                                TLRPC.Message message=TLRPC.Message.TLdeserialize(data,data.readInt32(true),true);
+                                if(message==null) throw new IllegalStateException("Invalid draft reference data");
+                                message.readAttachPath(data,getUserConfig().clientUserId);
+                                if(message.attachPath!=null) references.add(message.attachPath);
+                                if(message.params!=null) references.addAll(message.params.values());
+                            } finally { data.reuse(); }
+                        }
+                    } finally { if(cursor!=null) cursor.dispose(); }
+                }
+                callback.accept(references);
+            } catch(Exception failed) { callback.accept(null); }
         });
     }
 
@@ -11862,6 +12006,8 @@ public class MessagesStorage extends BaseController {
 
     private void putMessagesInternal(ArrayList<TLRPC.Message> messages, boolean withTransaction, boolean doNotUpdateDialogDate, int downloadMask, boolean ifNoLastMessage, int mode, long threadMessageId) {
         if (messages != null) {
+            // Content-only XMPP refreshes must retain native read/media-read flags at write time.
+            restoreMonogramMessageReadState(messages);
             ArrayList<TL_ephemeral.EphemeralMessage> ephemeralMessages = null;
             for (TLRPC.Message message : messages) {
                 if (MessageObject.isEphemeralAndNotWelcome(message) && message.id > 0) {
@@ -17542,9 +17688,11 @@ public class MessagesStorage extends BaseController {
                     }
 
                     if (dialog.notify_settings != null) {
+                        new NotificationsSettingsFacade(currentAccount).restoreLocalNotificationSettings(dialog.id, 0, dialog.notify_settings);
                         state_settings.requery();
                         state_settings.bindLong(1, dialog.id);
-                        state_settings.bindInteger(2, dialog.notify_settings.mute_until != 0 ? 1 : 0);
+                        int until = dialog.notify_settings.mute_until;
+                        state_settings.bindLong(2, until == 0 ? 0 : until == Integer.MAX_VALUE ? 1 : ((long) until << 32) | 1);
                         state_settings.step();
                     }
                 }

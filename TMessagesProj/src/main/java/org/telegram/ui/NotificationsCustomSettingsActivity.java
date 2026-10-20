@@ -416,7 +416,7 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
 
         fragmentView = new FrameLayout(context);
         FrameLayout frameLayout = (FrameLayout) fragmentView;
-        frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        frameLayout.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
 
         emptyView = new EmptyTextProgressView(context);
         emptyView.setTextSize(18);
@@ -1824,12 +1824,12 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
             View view;
             switch (viewType) {
                 case 0: {
-                    view = new UserCell(mContext, 4, 0, false, true);
+                    view = new UserCell(mContext, 4, 0, false, true, getResourceProvider());
                     break;
                 }
                 case 1:
                 default: {
-                    view = new GraySectionCell(mContext);
+                    view = new GraySectionCell(mContext, getResourceProvider());
                     view.setBackgroundColor(0);
                     view.setTag(RecyclerListView.TAG_NOT_SECTION);
                     break;
@@ -1999,29 +1999,29 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
             View view;
             switch (viewType) {
                 case VIEW_TYPE_HEADER:
-                    view = new HeaderCell(mContext);
+                    view = new HeaderCell(mContext, getResourceProvider());
                     break;
                 case VIEW_TYPE_CHECK:
-                    view = new TextCheckCell(mContext);
+                    view = new TextCheckCell(mContext, getResourceProvider());
                     break;
                 case VIEW_TYPE_USER:
-                    view = new UserCell(mContext, 6, 0, false);
+                    view = new UserCell(mContext, 6, 0, false, getResourceProvider());
                     break;
                 case VIEW_TYPE_COLOR:
-                    view = new TextColorCell(mContext);
+                    view = new TextColorCell(mContext, getResourceProvider());
                     break;
                 case VIEW_TYPE_SHADOW:
-                    view = new TextInfoPrivacyCell(mContext);
+                    view = new TextInfoPrivacyCell(mContext, getResourceProvider());
                     break;
                 case VIEW_TYPE_SETTING:
-                    view = new TextSettingsCell(mContext);
+                    view = new TextSettingsCell(mContext, getResourceProvider());
                     break;
                 case VIEW_TYPE_CHECK2:
                     view = new NotificationsCheckCell(mContext, 21, 64, true, resourceProvider);
                     break;
                 case VIEW_TYPE_BUTTON:
                 default:
-                    view = new TextCell(mContext);
+                    view = new TextCell(mContext, getResourceProvider());
                     break;
                 case VIEW_TYPE_EXPAND:
                     view = new ExpandView(mContext);
@@ -2157,10 +2157,10 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
         }
     }
 
-    public class ExpandView extends TextCell {
+    public class ExpandView extends TextCell implements Theme.Colorable {
         public ImageView imageView;
         public ExpandView(Context context) {
-            super(context);
+            super(context, NotificationsCustomSettingsActivity.this.getResourceProvider());
 
             imageView = new ImageView(context);
             imageView.setScaleType(ImageView.ScaleType.CENTER);
@@ -2198,6 +2198,13 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
             }
         }
 
+        @Override
+        public void updateColors() {
+            super.updateColors();
+            imageView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlueIcon), PorterDuff.Mode.SRC_IN));
+            imageView.invalidate();
+        }
+
     }
 
     @Override
@@ -2206,17 +2213,14 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
 
         ThemeDescription.ThemeDescriptionDelegate cellDelegate = () -> {
             if (listView != null) {
-                int count = listView.getChildCount();
-                for (int a = 0; a < count; a++) {
-                    View child = listView.getChildAt(a);
-                    if (child instanceof UserCell) {
-                        ((UserCell) child).update(0);
-                    }
+                listView.forAllChild(this::updateThemeCell);
+                for (int i = 0; i < listView.getCachedChildCount(); i++) {
+                    updateThemeCell(listView.getCachedChildAt(i));
                 }
             }
         };
 
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{HeaderCell.class, TextCheckCell.class, TextColorCell.class, TextSettingsCell.class, UserCell.class, NotificationsCheckCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{HeaderCell.class, TextCheckCell.class, TextColorCell.class, TextSettingsCell.class, TextCell.class, UserCell.class, NotificationsCheckCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
 //        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
@@ -2253,6 +2257,8 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"multilineValueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{NotificationsCheckCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_dialogIcon));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrack));
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{NotificationsCheckCell.class}, new String[]{"checkBox"}, null, null, null, Theme.key_switchTrackChecked));
 
@@ -2263,8 +2269,23 @@ public class NotificationsCustomSettingsActivity extends BaseFragment implements
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueButton));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_text_RedRegular));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CHECKTAG, new Class[]{TextCell.class}, new String[]{"imageView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueIcon));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{ExpandView.class}, new String[]{"imageView"}, null, null, cellDelegate, Theme.key_windowBackgroundWhiteBlueIcon));
+
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{TextInfoPrivacyCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+        themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText4));
+        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LINKCOLOR, new Class[]{TextInfoPrivacyCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteLinkText));
 
         return themeDescriptions;
+    }
+
+    private void updateThemeCell(View child) {
+        if (child instanceof UserCell) {
+            ((UserCell) child).update(0);
+        } else if (child instanceof ExpandView) {
+            ((ExpandView) child).updateColors();
+        } else if (child instanceof TextCell) {
+            ((TextCell) child).updateColors();
+        }
     }
 
     @Override

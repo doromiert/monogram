@@ -105,10 +105,7 @@ public class DefaultThemesPreviewCell extends LinearLayout {
                 info = Theme.getTheme(key);
 
                 if (info != null) {
-                    Theme.ThemeAccent accent = info.accentsByThemeId.get(theme.id);
-                    if (accent == null) {
-                        accent = info.createNewAccent(theme, parentFragment.getCurrentAccount());
-                    }
+                    Theme.ThemeAccent accent = info.createNewAccent(theme, parentFragment.getCurrentAccount(), false, settingsIndex);
                     accentId = accent.id;
                     info.setCurrentAccentId(accentId);
                 }

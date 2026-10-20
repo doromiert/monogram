@@ -2373,6 +2373,8 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
     private boolean onTop = true;
     private float onTopAnimated = 1.0f;
     private ValueAnimator adaptive_animator;
+    private RecyclerView adaptiveBackgroundList;
+    private RecyclerView.OnScrollListener adaptiveBackgroundScrollListener;
     public void setAdaptiveBackground(RecyclerView list) {
         setAdaptiveBackground(list, false, Theme.key_windowBackgroundGray, Theme.key_actionBarDefault);
     }
@@ -2380,6 +2382,10 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
         setAdaptiveBackground(list, hideTitle, Theme.key_windowBackgroundGray, Theme.key_actionBarDefault);
     }
     public void setAdaptiveBackground(RecyclerView list, boolean hideTitle, final int topColorKey, final int lowerColorKey) {
+        if (adaptiveBackgroundList != null && adaptiveBackgroundScrollListener != null) {
+            adaptiveBackgroundList.removeOnScrollListener(adaptiveBackgroundScrollListener);
+        }
+        adaptiveBackgroundList = list;
         this.adaptive_topColorKey = topColorKey;
         this.adaptive_lowerColorKey = lowerColorKey;
         final Runnable checkScroll = () -> {
@@ -2403,15 +2409,17 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
             adaptive_animator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
             adaptive_animator.start();
         };
-        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+        adaptiveBackgroundScrollListener = new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 checkScroll.run();
             }
-        });
+        };
+        list.addOnScrollListener(adaptiveBackgroundScrollListener);
         this.adaptiveBackgroundHideTitle = hideTitle;
         if (this.adaptiveBackground) {
             checkScroll.run();
+            adaptive_updateColor();
         } else {
             this.adaptiveBackground = true;
             this.onTopAnimated = (this.onTop = !list.canScrollVertically(-1)) ? 1 : 0;

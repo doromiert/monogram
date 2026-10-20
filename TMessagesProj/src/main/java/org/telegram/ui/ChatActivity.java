@@ -118,9 +118,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.dynamicanimation.animation.FloatValueHolder;
-import androidx.dynamicanimation.animation.SpringAnimation;
-import androidx.dynamicanimation.animation.SpringForce;
 
 import org.telegram.ui.Wallet.GramWallet;
 import org.telegram.ui.Wallet.WalletEngine2;
@@ -137,6 +134,10 @@ import androidx.viewpager.widget.ViewPager;
 import com.google.zxing.common.detector.MathUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import org.telegram.messenger.xmpp.MonogramDoubleTap;
+import org.telegram.messenger.xmpp.MonogramSwipeAction;
+import org.telegram.ui.Components.MonogramSwipeActionsHelper;
+import org.telegram.ui.Components.MonogramMessageDetailsPopup;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -613,6 +614,7 @@ public class ChatActivity extends BaseFragment implements
     private final int searchContainerHeight = 44;
     private FrameLayout searchContainer;
     private ImageView searchCalendarButton;
+    private boolean monogramSearchHistoryLoading;
     private ImageView searchUserButton;
     private AnimatedTextView searchCountText;
     private AnimatedTextView searchExpandList;
@@ -831,6 +833,16 @@ public class ChatActivity extends BaseFragment implements
     private String pendingLinkSearchString;
     private Runnable pendingWebPageTimeoutRunnable;
     private Runnable waitingForCharaterEnterRunnable;
+    private final Runnable saveInputDraftRunnable = () -> {
+        if (!paused && chatActivityEnterView != null && !chatActivityEnterView.isEditingMessage()) saveDraft();
+    };
+
+    private void scheduleInputDraftSave() {
+        if (chatMode != MODE_DEFAULT || inPreviewMode || paused || chatActivityEnterView == null
+                || chatActivityEnterView.isEditingMessage() || ignoreDraft || ignoreAttachOnPause) return;
+        AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
+        AndroidUtilities.runOnUIThread(saveInputDraftRunnable, 750);
+    }
     private Runnable onChatMessagesLoaded;
 
     private TLRPC.ChatInvite chatInvite;
@@ -898,6 +910,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean firstLoading = true;
     private boolean chatWasReset;
     private boolean firstUnreadSent;
+    private final java.util.Set<Integer> monogramPendingReads=new java.util.HashSet<>();
     private int loadsCount;
     private int last_message_id = 0;
     private long mergeDialogId;
@@ -981,6 +994,8 @@ public class ChatActivity extends BaseFragment implements
     private Runnable unselectRunnable;
 
     private String currentPicturePath;
+    private final HashMap<Integer,String> monogramExternalRequests=new HashMap<>();
+    private Runnable monogramExternalReady;
 
     private ChatObject.Call groupCall;
     private boolean lastCallCheckFromServer;
@@ -1076,6 +1091,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean postponedScrollIsCanceled;
     private ChatActivityTextSelectionHelper textSelectionHelper;
     private View slidingView;
+    private MonogramSwipeActionsHelper swipeActionsHelper;
 
     private final float[] tmpOverlayPos = new float[2];
     private float[] computeArticleOverlayPos(View overlay) {
@@ -1262,6 +1278,11 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_VIEW_STATISTICS = 115;
     public final static int OPTION_WELCOME_REVERT = 116;
     public final static int OPTION_SEND_MONEY = 117;
+    public final static int OPTION_MONOGRAM_DIAGNOSTICS = 118;
+    public final static int OPTION_MONOGRAM_SAVE = 119;
+    public final static int OPTION_MONOGRAM_REPEAT = 120;
+    public final static int OPTION_MONOGRAM_COPY_PHOTO = 121;
+    public final static int OPTION_MONOGRAM_DETAILS = 122;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -1937,28 +1958,18 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public boolean hasDoubleTap(View view, int position) {
-            if (isQuickRepliesOrWelcomeMessagesMode()) return false;
+            if (isQuickRepliesOrWelcomeMessagesMode() || isSecretChat() || isInScheduleMode() || isInPreviewMode() || actionBar.isActionModeShowed()) return false;
+            MessageObject messageObject = view instanceof ChatMessageCell ? ((ChatMessageCell)view).getPrimaryMessageObject()
+                    : view instanceof ChatActionCell ? ((ChatActionCell)view).getMessageObject() : null;
+            if (messageObject == null || messageObject.isDateObject || messageObject.isSending() || messageObject.isEditing() || messageObject.isSponsored()) return false;
+            int action = MonogramDoubleTap.action(currentAccount,messageObject.isOutOwner());
+            if (action != MonogramDoubleTap.REACTION) return canDoubleTapMessageAction(messageObject,action);
             String reactionStringSetting = getMediaDataController().getDoubleTapReaction();
             TLRPC.TL_availableReaction reaction = getMediaDataController().getReactionsMap().get(reactionStringSetting);
-            if (reaction == null && (reactionStringSetting == null || !reactionStringSetting.startsWith("animated_"))) {
-                return false;
-            }
+            if (reaction == null && (reactionStringSetting == null || !reactionStringSetting.startsWith("animated_"))) return false;
             boolean available = dialog_id >= 0;
-            if (!available && chatInfo != null) {
-                available = ChatObject.reactionIsAvailable(chatInfo, reaction == null ? reactionStringSetting : reaction.reaction);
-            }
-            if (!available) {
-                return false;
-            }
-            MessageObject messageObject;
-            if (view instanceof ChatMessageCell) {
-                messageObject = ((ChatMessageCell) view).getPrimaryMessageObject();
-            } else if (view instanceof ChatActionCell) {
-                messageObject = ((ChatActionCell) view).getMessageObject();
-            } else {
-                return false;
-            }
-            return messageObject != null && !messageObject.isDateObject && !messageObject.isSending() && messageObject.canSetReaction() && !messageObject.isEditing() && !actionBar.isActionModeShowed() && !isSecretChat() && !isInScheduleMode() && !messageObject.isSponsored();
+            if (!available && chatInfo != null) available = ChatObject.reactionIsAvailable(chatInfo,reaction == null ? reactionStringSetting : reaction.reaction);
+            return available && messageObject.canSetReaction();
         }
 
         @Override
@@ -1975,6 +1986,12 @@ public class ChatActivity extends BaseFragment implements
                     return;
                 }
             } else {
+                return;
+            }
+            if (messageObject == null || messageObject.isSending() || messageObject.isEditing() || actionBar.isActionModeShowed()) return;
+            int action = MonogramDoubleTap.action(currentAccount,messageObject.isOutOwner());
+            if (action != MonogramDoubleTap.REACTION) {
+                performDoubleTapMessageAction(messageObject,action);
                 return;
             }
             if (messageObject.isSecret() || !messageObject.canSetReaction() || messageObject.isExpiredStory() || messageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
@@ -2011,6 +2028,145 @@ public class ChatActivity extends BaseFragment implements
             }
         }
     };
+
+    private ArrayList<Integer> doubleTapMessageOptions(MessageObject message) {
+        MessageObject old = selectedObject, oldCaption = selectedObjectToEditCaption;
+        MessageObject.GroupedMessages oldGroup = selectedObjectGroup;
+        try {
+            selectedObject = message;
+            selectedObjectGroup = getValidGroupedMessage(message);
+            selectedObjectToEditCaption = null;
+            ArrayList<Integer> options = new ArrayList<>();
+            fillMessageMenu(message,new ArrayList<>(),new ArrayList<>(),options);
+            return options;
+        } finally {
+            selectedObject = old; selectedObjectGroup = oldGroup; selectedObjectToEditCaption = oldCaption;
+        }
+    }
+
+    private int doubleTapMenuOption(int action) {
+        switch (action) {
+            case MonogramDoubleTap.REPLY: return OPTION_REPLY;
+            case MonogramDoubleTap.COPY: return OPTION_COPY;
+            case MonogramDoubleTap.FORWARD: return OPTION_FORWARD;
+            case MonogramDoubleTap.EDIT: return OPTION_EDIT;
+            case MonogramDoubleTap.DELETE: return OPTION_DELETE;
+            case MonogramDoubleTap.TRANSLATE: return OPTION_TRANSLATE;
+            default: return -1;
+        }
+    }
+
+    private boolean canDoubleTapMessageAction(MessageObject message,int action) {
+        return canDoubleTapMessageAction(message,action,null);
+    }
+
+    private boolean canDoubleTapMessageAction(MessageObject message,int action,ArrayList<Integer> options) {
+        if (message == null || message.messageOwner == null || message.isDateObject || message.isSending() || message.isEditing()
+                || message.isSponsored() || message.isSecretMedia() || message.isExpiredStory()
+                || message.isHiddenSensitive() && !message.isMediaSpoilersRevealed || action == MonogramDoubleTap.DISABLED) return false;
+        if(options==null) options=doubleTapMessageOptions(message);
+        if (action == MonogramDoubleTap.SAVE) return message.getDialogId() != getUserConfig().getClientUserId() && options.contains(OPTION_FORWARD);
+        if (action == MonogramDoubleTap.REPEAT) return !UserObject.isUserSelf(currentUser) && !ChatObject.isChannelAndNotMegaGroup(currentChat)
+                && (currentChat == null || ChatObject.canSendMessages(currentChat)) && options.contains(OPTION_FORWARD);
+        return options.contains(doubleTapMenuOption(action));
+    }
+
+    private void performDoubleTapMessageAction(MessageObject message,int action) {
+        if (!canDoubleTapMessageAction(message,action)) return;
+        selectedObject = message;
+        selectedObjectGroup = getValidGroupedMessage(message);
+        selectedObjectToEditCaption = null;
+        // Native menu preparation also chooses the editable caption within an album.
+        fillMessageMenu(message,new ArrayList<>(),new ArrayList<>(),new ArrayList<>());
+        if (action == MonogramDoubleTap.SAVE || action == MonogramDoubleTap.REPEAT) {
+            ArrayList<MessageObject> messages = selectedObjectGroup == null ? new ArrayList<>() : new ArrayList<>(selectedObjectGroup.messages);
+            if (messages.isEmpty()) messages.add(message);
+            if (action == MonogramDoubleTap.SAVE) {
+                int result = getSendMessagesHelper().sendMessage(messages,getUserConfig().getClientUserId(),false,false,true,0,0);
+                AlertsCreator.showSendMediaAlert(result,this,themeDelegate);
+            } else {
+                AlertsCreator.ensurePaidMessageConfirmation(currentAccount,dialog_id,messages.size(),payStars -> forwardMessages(messages,true,false,true,0,payStars));
+            }
+        } else processSelectedOption(doubleTapMenuOption(action));
+    }
+
+    private String swipeQuickReaction(MessageObject message) {
+        if(message==null || !message.canSetReaction() || message.isSecret() || message.isSponsored() || message.isDateObject
+                || message.isSending() || message.isEditing() || message.isExpiredStory() || message.type==MessageObject.TYPE_JOINED_CHANNEL
+                || isSecretChat() || isInScheduleMode() || actionBar.isActionModeShowed()) return null;
+        if(currentChat!=null && !ChatObject.isChannelAndNotMegaGroup(currentChat) && !ChatObject.canUserDoAction(currentChat,ChatObject.ACTION_SEND_REACTIONS)) return null;
+        String emoji=getMediaDataController().getDoubleTapReaction();
+        // XEP-0444 carries Unicode; a Telegram document ID cannot be sent as a reaction.
+        if(emoji==null || emoji.startsWith("animated_")) return null;
+        if(!getMediaDataController().getReactionsMap().containsKey(emoji)) return null;
+        return dialog_id>=0 || chatInfo!=null && ChatObject.reactionIsAvailable(chatInfo,emoji) ? emoji : null;
+    }
+
+    private ArrayList<MonogramSwipeAction> collectSwipeActions(MessageObject message,boolean replyAllowed) {
+        ArrayList<MonogramSwipeAction> actions=new ArrayList<>();
+        if(message==null || hasTextSelection() || actionBar.isActionModeShowed()) return actions;
+        ArrayList<Integer> options=null;
+        java.util.List<MonogramSwipeAction> enabled=MonogramSwipeAction.enabled(currentAccount);
+        String reaction=enabled.contains(MonogramSwipeAction.REACTION) ? swipeQuickReaction(message) : null;
+        swipeActionsHelper.setReaction(reaction);
+        for(MonogramSwipeAction action:enabled) {
+            if(action==MonogramSwipeAction.REPLY) { if(replyAllowed) actions.add(action); }
+            else if(action==MonogramSwipeAction.REACTION) { if(reaction!=null) actions.add(action); }
+            else {
+                if(options==null) options=doubleTapMessageOptions(message);
+                if(canDoubleTapMessageAction(message,action.actionId,options)) actions.add(action);
+            }
+        }
+        return actions;
+    }
+
+    private void performSwipeAction(MonogramSwipeAction action,MessageObject message) {
+        if(action==null || message==null || !MonogramSwipeAction.enabled(currentAccount).contains(action)) return;
+        if(action==MonogramSwipeAction.REACTION) {
+            String reaction=swipeQuickReaction(message);
+            if(reaction!=null) {
+                ReactionsEffectOverlay.removeCurrent(false);
+                selectReaction(slidingView,message,null,null,0,0,ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(reaction),true,false,false,false);
+            }
+        } else if(action!=MonogramSwipeAction.REPLY) performDoubleTapMessageAction(message,action.actionId);
+        else performSwipeReply(message);
+    }
+
+    private void performSwipeReply(MessageObject message) {
+        final boolean allowReplyOnOpenTopic = canSendMessageToTopic(message);
+        if (
+            bottomChannelButtonsLayout != null && bottomChannelButtonsLayout.getVisibility() == View.VISIBLE && !(bottomOverlayChatWaitsReply && allowReplyOnOpenTopic || message.wasJustSent) ||
+            currentChat != null && (
+                ChatObject.isNotInChat(currentChat) && !isThreadChat() ||
+                ChatObject.isChannel(currentChat) && !ChatObject.canPost(currentChat) && !currentChat.megagroup ||
+                !ChatObject.canSendMessages(currentChat)
+            )
+        ) {
+            if (message.getGroupId() != 0) {
+                MessageObject.GroupedMessages group = getGroup(message.getGroupId());
+                if (group != null && group.captionMessage != null) {
+                    message = group.captionMessage;
+                }
+            }
+            replyingMessageObject = message;
+            Bundle args = new Bundle();
+            args.putBoolean("onlySelect", true);
+            args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
+            args.putBoolean("quote", true);
+            args.putBoolean("reply_to", true);
+            final long author = DialogObject.getPeerDialogId(message.getFromPeer());
+            if (author != 0 && author != getDialogId() && author != getUserConfig().getClientUserId() && author > 0) {
+                args.putLong("reply_to_author", author);
+            }
+            args.putInt("messagesCount", 1);
+            args.putBoolean("canSelectTopics", true);
+            final DialogsActivity fragment = new DialogsActivity(args);
+            fragment.setDelegate(ChatActivity.this);
+            presentFragment(fragment);
+        } else {
+            showFieldPanelForReply(message);
+        }
+    }
 
     private class ChatActivityEnterViewDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
 
@@ -2268,6 +2424,11 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void onTextChanged(final CharSequence text, boolean bigChange, boolean fromDraft) {
+            if (!fromDraft) scheduleInputDraftSave();
+            if (!fromDraft && !paused && chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode
+                    && dialog_id > 0 && !chatActivityEnterView.isEditingMessage()) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingInput(dialog_id, !TextUtils.isEmpty(text));
+            }
             MediaController.getInstance().setInputFieldHasText(!TextUtils.isEmpty(text) || chatActivityEnterView.isEditingMessage());
             if (mentionContainer != null && mentionContainer.getAdapter() != null) {
                 mentionContainer.getAdapter().searchUsernameOrHashtag(text, chatActivityEnterView.getCursorPosition(), messages, false, false);
@@ -2309,12 +2470,14 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void onTextSpansChanged(CharSequence text) {
+            scheduleInputDraftSave();
             searchLinks(text, true);
         }
 
         @Override
         public void needSendTyping() {
             if (isQuickRepliesOrWelcomeMessagesMode() || chatMode == MODE_EDIT_BUSINESS_LINK || chatMode == MODE_SUGGESTIONS) return;
+            if (dialog_id > 0) return; // XMPP uses actual input changes, excluding draft restoration.
             getMessagesController().sendTyping(dialog_id, threadMessageId, 0, classGuid);
         }
 
@@ -3401,6 +3564,9 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        if(swipeActionsHelper!=null) swipeActionsHelper.detach();
+        AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
+        if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatGone(dialog_id);
         super.onFragmentDestroy();
         if (messageMetricsView != null) {
             messageMetricsView.finish();
@@ -3737,10 +3903,11 @@ public class ChatActivity extends BaseFragment implements
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(final int id) {
-                if (id == 91001 && dialog_id > 0) {
+                if (id == 91001 && (dialog_id > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id))) {
                     presentFragment(new MonogramSecurityActivity(currentAccount, dialog_id));
                     return;
                 }
+                if (id == 91002 && dialog_id<0) { presentFragment(new MonogramRoomActivity(currentAccount,dialog_id)); return; }
                 if (id == -1) {
                     if (isInPollAddOptionMode()) {
                         pollAddOptionModeClose();
@@ -4282,9 +4449,6 @@ public class ChatActivity extends BaseFragment implements
         });
 
         ActionBarMenu menu = actionBar.createMenu();
-        if (dialog_id > 0 && currentEncryptedChat == null) {
-            menu.addItem(91001, R.drawable.msg_secret).setContentDescription("Conversation security");
-        }
 
         if (chatMode == MODE_QUICK_REPLIES && !QuickRepliesController.isSpecial(quickReplyShortcut)) {
             menu.addItem(edit_quick_reply, R.drawable.group_edit).setContentDescription(LocaleController.getString(R.string.Edit));
@@ -4301,7 +4465,7 @@ public class ChatActivity extends BaseFragment implements
             searchItem.setSearchPaddingStart(7);
             searchItem.setIsSearchField(true);
             searchItem.setActionBarMenuItemSearchListener(getSearchItemListener());
-            searchItem.setSearchFieldHint(isSupportedTags() ? LocaleController.getString(R.string.SavedTagSearchHint) : LocaleController.getString(R.string.Search));
+            searchItem.setSearchFieldHint(monogramSearchHint());
             if (chatMode == MODE_SAVED || chatMode == MODE_SUGGESTIONS || threadMessageId == 0 && !UserObject.isReplyUser(currentUser) || threadMessageObject != null && threadMessageObject.getRepliesCount() < 10) {
                 searchItem.setVisibility(View.GONE);
             } else {
@@ -4364,6 +4528,11 @@ public class ChatActivity extends BaseFragment implements
             });
             otherIcon.addView(headerItem.getIconView());
             headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
+
+            if ((dialog_id > 0 || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) && currentEncryptedChat == null) {
+                headerItem.lazilyAddSubItem(91001, R.drawable.msg_secret, getString(R.string.MonogramConversationSecurity));
+            }
+            if (org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) headerItem.lazilyAddSubItem(91002, R.drawable.msg_groups, "Room settings");
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));
@@ -4694,49 +4863,10 @@ public class ChatActivity extends BaseFragment implements
             private float endTrackingX;
             private boolean wasTrackingVibrate;
 
-            private float springMultiplier = 2000f;
-
-            private Paint outlineActionBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            private Paint outlineActionBackgroundDarkenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-            private FloatValueHolder slidingDrawableVisibilityProgress = new FloatValueHolder(0);
-            private SpringAnimation slidingDrawableVisibilitySpring = new SpringAnimation(slidingDrawableVisibilityProgress)
-                    .setMinValue(0f)
-                    .setMaxValue(springMultiplier)
-                    .setSpring(new SpringForce(0)
-                            .setStiffness(SpringForce.STIFFNESS_MEDIUM)
-                            .setDampingRatio(SpringForce.DAMPING_RATIO_NO_BOUNCY))
-                    .addUpdateListener((animation, value, velocity) -> invalidate());
-            private FloatValueHolder slidingFillProgress = new FloatValueHolder(0);
-            private SpringAnimation slidingFillProgressSpring = new SpringAnimation(slidingFillProgress)
-                    .setMinValue(0f)
-                    .setSpring(new SpringForce(0)
-                            .setStiffness(400f)
-                            .setDampingRatio(SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY))
-                    .addUpdateListener((animation, value, velocity) -> invalidate());
-            private FloatValueHolder slidingOuterRingProgress = new FloatValueHolder(0);
-            private SpringAnimation slidingOuterRingSpring = new SpringAnimation(slidingOuterRingProgress)
-                    .setMinValue(0f)
-                    .setSpring(new SpringForce(0)
-                            .setStiffness(200f)
-                            .setDampingRatio(SpringForce.DAMPING_RATIO_NO_BOUNCY))
-                    .addUpdateListener((animation, value, velocity) -> invalidate());
-            private boolean slidingBeyondMax;
-            private Path path = new Path();
-
             private boolean ignoreLayout;
             private boolean invalidated;
 
             int lastH = 0;
-
-            {
-                outlineActionBackgroundPaint.setStyle(Paint.Style.STROKE);
-                outlineActionBackgroundPaint.setStrokeCap(Paint.Cap.ROUND);
-                outlineActionBackgroundPaint.setStrokeWidth(AndroidUtilities.dp(2));
-                outlineActionBackgroundDarkenPaint.setStyle(Paint.Style.STROKE);
-                outlineActionBackgroundDarkenPaint.setStrokeCap(Paint.Cap.ROUND);
-                outlineActionBackgroundDarkenPaint.setStrokeWidth(AndroidUtilities.dp(2));
-            }
 
             @Override
             public void requestLayout() {
@@ -4852,187 +4982,21 @@ public class ChatActivity extends BaseFragment implements
             }
 
             private void drawReplyButton(Canvas canvas) {
-                if (slidingView == null || Thread.currentThread() != Looper.getMainLooper().getThread()) {
-                    return;
-                }
-                Paint chatActionBackgroundPaint = getThemedPaint(Theme.key_paint_chatActionBackground);
-                Paint chatActionBackgroundDarkenPaint = Theme.chat_actionBackgroundGradientDarkenPaint;
-                if (outlineActionBackgroundPaint.getColor() != chatActionBackgroundPaint.getColor()) {
-                    outlineActionBackgroundPaint.setColor(chatActionBackgroundPaint.getColor());
-                }
-                if (outlineActionBackgroundDarkenPaint.getColor() != chatActionBackgroundDarkenPaint.getColor()) {
-                    outlineActionBackgroundDarkenPaint.setColor(chatActionBackgroundDarkenPaint.getColor());
-                }
-                if (outlineActionBackgroundPaint.getShader() != chatActionBackgroundPaint.getShader()) {
-                    outlineActionBackgroundPaint.setShader(chatActionBackgroundPaint.getShader());
-                }
-                if (outlineActionBackgroundDarkenPaint.getShader() != chatActionBackgroundDarkenPaint.getShader()) {
-                    outlineActionBackgroundDarkenPaint.setShader(chatActionBackgroundDarkenPaint.getShader());
-                }
-
-                float fillProgress = slidingFillProgress.getValue() / springMultiplier;
-                int wasDarkenColor = outlineActionBackgroundDarkenPaint.getColor();
-
-                if (fillProgress > 1) {
-                    slidingBeyondMax = true;
-                }
-
-                float translationX = getSlidingNonAnimationTranslationX(false);
-                if (slidingDrawableVisibilityProgress.getValue() == 0) {
-                    slidingFillProgressSpring.cancel();
-                    slidingFillProgressSpring.getSpring().setFinalPosition(0);
-                    slidingFillProgress.setValue(0f);
-                    slidingOuterRingSpring.cancel();
-                    slidingOuterRingSpring.getSpring().setFinalPosition(0);
-                    slidingOuterRingProgress.setValue(0f);
-                    slidingBeyondMax = false;
-                }
-                float progress;
-                if (slidingFillProgressSpring.getSpring().getFinalPosition() != springMultiplier) {
-                    progress = androidx.core.math.MathUtils.clamp((-translationX - AndroidUtilities.dp(20)) / AndroidUtilities.dp(30), 0, 1);
-                } else {
-                    progress = 1f;
-                }
-
-                if (progress == 1f && slidingFillProgressSpring.getSpring().getFinalPosition() != springMultiplier) {
-                    slidingFillProgressSpring.getSpring().setFinalPosition(springMultiplier);
-                    slidingFillProgressSpring.start();
-
-                    slidingOuterRingSpring.getSpring().setFinalPosition(springMultiplier);
-                    slidingOuterRingSpring.start();
-                }
-
-                boolean visible = translationX <= -AndroidUtilities.dp(20);
-                float endVisibleValue = visible ? springMultiplier : 0;
-                if (endVisibleValue != slidingDrawableVisibilitySpring.getSpring().getFinalPosition()) {
-                    slidingDrawableVisibilitySpring.getSpring().setFinalPosition(endVisibleValue);
-                    if (!slidingDrawableVisibilitySpring.isRunning()) {
-                        slidingDrawableVisibilitySpring.start();
+                if(slidingView==null || swipeActionsHelper==null) return;
+                MessageObject message=getSlidingMessageObject();
+                float offset=getSlidingNonAnimationTranslationX(false);
+                float right=slidingView.getRight();
+                if(slidingView instanceof ChatMessageCell) {
+                    ChatMessageCell cell=(ChatMessageCell)slidingView;
+                    right=cell.getLeft()+cell.getBackgroundDrawableRight();
+                    MessageObject.GroupedMessages group=cell.getCurrentMessagesGroup();
+                    if(group!=null) for(int i=0;i<getChildCount();i++) {
+                        View child=getChildAt(i);
+                        if(child instanceof ChatMessageCell && ((ChatMessageCell)child).getCurrentMessagesGroup()==group)
+                            right=Math.max(right,child.getLeft()+((ChatMessageCell)child).getBackgroundDrawableRight());
                     }
                 }
-
-                float iconProgress = slidingDrawableVisibilityProgress.getValue() / springMultiplier;
-                MessageObject slidingMsg = getSlidingMessageObject();
-                float x = getMeasuredWidth() + translationX * (slidingMsg != null && slidingMsg.isOut() ? 0.5f : 1f);
-                float y = slidingView.getTop() + slidingView.getMeasuredHeight() / 2f;
-                float scale = slidingBeyondMax ? fillProgress : iconProgress;
-
-                float clearScale = slidingBeyondMax ? 0f : 1f - fillProgress;
-
-                boolean isDark = ColorUtils.calculateLuminance(getThemedColor(Theme.key_windowBackgroundWhite)) <= 0.5f;
-                if (iconProgress != 0) {
-                    AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * scale + outlineActionBackgroundPaint.getStrokeWidth() / 2f), (int) (y - AndroidUtilities.dp(16) * scale + outlineActionBackgroundPaint.getStrokeWidth() / 2f), (int) (x + AndroidUtilities.dp(16) * scale - outlineActionBackgroundPaint.getStrokeWidth() / 2f), (int) (y + AndroidUtilities.dp(16) * scale - outlineActionBackgroundPaint.getStrokeWidth() / 2f));
-                    Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-                    if (fillProgress == 0) {
-                        int outlineAlpha = outlineActionBackgroundPaint.getAlpha();
-                        outlineActionBackgroundPaint.setAlpha((int) (outlineAlpha * iconProgress));
-                        canvas.drawArc(AndroidUtilities.rectTmp, -90, 360 * progress, false, outlineActionBackgroundPaint);
-                        outlineActionBackgroundPaint.setAlpha(outlineAlpha);
-
-                        if (themeDelegate.hasGradientService()) {
-                            outlineAlpha = outlineActionBackgroundDarkenPaint.getAlpha();
-                            if (isDark) {
-                                outlineActionBackgroundDarkenPaint.setColor(Color.WHITE);
-                            }
-                            outlineActionBackgroundDarkenPaint.setAlpha((int) (outlineAlpha * iconProgress));
-                            canvas.drawArc(AndroidUtilities.rectTmp, -90, 360 * progress, false, outlineActionBackgroundDarkenPaint);
-                        }
-                    }
-                }
-                AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * scale), (int) (y - AndroidUtilities.dp(16) * scale), (int) (x + AndroidUtilities.dp(16) * scale), (int) (y + AndroidUtilities.dp(16) * scale));
-                Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-                path.rewind();
-                path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * scale, AndroidUtilities.dp(16) * scale, Path.Direction.CW);
-
-                int wasAlpha = chatActionBackgroundPaint.getAlpha();
-                chatActionBackgroundPaint.setAlpha((int) (iconProgress * 0.6f * progress * wasAlpha));
-                canvas.drawPath(path, chatActionBackgroundPaint);
-                chatActionBackgroundPaint.setAlpha(wasAlpha);
-
-                if (themeDelegate.hasGradientService()) {
-                    wasAlpha = Theme.chat_actionBackgroundGradientDarkenPaint.getAlpha();
-                    if (isDark) {
-                        Theme.chat_actionBackgroundGradientDarkenPaint.setColor(Color.WHITE);
-                    }
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha((int) (iconProgress * 0.6f * progress * wasAlpha));
-                    canvas.drawPath(path, Theme.chat_actionBackgroundGradientDarkenPaint);
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha(wasAlpha);
-                }
-
-                if (clearScale != 0f) {
-                    AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * clearScale), (int) (y - AndroidUtilities.dp(16) * clearScale), (int) (x + AndroidUtilities.dp(16) * clearScale), (int) (y + AndroidUtilities.dp(16) * clearScale));
-                    path.rewind();
-                    path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16), AndroidUtilities.dp(16), Path.Direction.CW);
-
-                    canvas.save();
-                    canvas.clipPath(path, Region.Op.DIFFERENCE);
-                }
-
-                AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * scale), (int) (y - AndroidUtilities.dp(16) * scale), (int) (x + AndroidUtilities.dp(16) * scale), (int) (y + AndroidUtilities.dp(16) * scale));
-                Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-                path.rewind();
-                path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * scale, AndroidUtilities.dp(16) * scale, Path.Direction.CW);
-
-                wasAlpha = chatActionBackgroundPaint.getAlpha();
-                chatActionBackgroundPaint.setAlpha((int) (iconProgress * 0.4f * wasAlpha));
-                canvas.drawPath(path, chatActionBackgroundPaint);
-                chatActionBackgroundPaint.setAlpha(wasAlpha);
-
-                if (themeDelegate.hasGradientService()) {
-                    wasAlpha = Theme.chat_actionBackgroundGradientDarkenPaint.getAlpha();
-                    if (isDark) {
-                        Theme.chat_actionBackgroundGradientDarkenPaint.setColor(Color.WHITE);
-                    }
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha((int) (iconProgress * 0.4f * wasAlpha));
-                    canvas.drawPath(path, Theme.chat_actionBackgroundGradientDarkenPaint);
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha(wasAlpha);
-                }
-                if (clearScale != 0f) {
-                    canvas.restore();
-                }
-
-                float outerRingProgress = slidingOuterRingProgress.getValue() / springMultiplier;
-                if (outerRingProgress != 0 && outerRingProgress != 1) {
-                    float outScale = 1f + outerRingProgress;
-
-                    float wasWidth = outlineActionBackgroundPaint.getStrokeWidth();
-                    float width = (1f - outerRingProgress) * wasWidth;
-                    if (width != 0f) {
-                        AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * outScale + width), (int) (y - AndroidUtilities.dp(16) * outScale + width), (int) (x + AndroidUtilities.dp(16) * outScale - width), (int) (y + AndroidUtilities.dp(16) * outScale - width));
-                        Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-
-                        wasAlpha = outlineActionBackgroundPaint.getAlpha();
-                        outlineActionBackgroundPaint.setAlpha((int) (wasAlpha * iconProgress));
-
-                        outlineActionBackgroundPaint.setStrokeWidth(width);
-                        canvas.drawRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * outScale, AndroidUtilities.dp(16) * outScale, outlineActionBackgroundPaint);
-                        outlineActionBackgroundPaint.setStrokeWidth(wasWidth);
-
-                        outlineActionBackgroundPaint.setAlpha(wasAlpha);
-
-                        if (themeDelegate.hasGradientService()) {
-                            wasAlpha = outlineActionBackgroundDarkenPaint.getAlpha();
-                            if (isDark) {
-                                outlineActionBackgroundDarkenPaint.setColor(Color.WHITE);
-                            }
-                            outlineActionBackgroundDarkenPaint.setAlpha((int) (wasAlpha * iconProgress));
-
-                            outlineActionBackgroundDarkenPaint.setStrokeWidth(width);
-                            canvas.drawRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * outScale, AndroidUtilities.dp(16) * outScale, outlineActionBackgroundDarkenPaint);
-                            outlineActionBackgroundDarkenPaint.setStrokeWidth(wasWidth);
-                        }
-                    }
-                }
-
-                int alpha = (int) (iconProgress * 0xFF);
-                Drawable replyIconDrawable = getThemedDrawable(Theme.key_drawable_replyIcon);
-                replyIconDrawable.setAlpha(alpha);
-                replyIconDrawable.setBounds((int) (x - replyIconDrawable.getIntrinsicWidth() / 2 * scale), (int) (y - replyIconDrawable.getIntrinsicHeight() / 2 * scale), (int) (x + replyIconDrawable.getIntrinsicWidth() / 2 * scale), (int) (y + replyIconDrawable.getIntrinsicHeight() / 2 * scale));
-                replyIconDrawable.draw(canvas);
-                replyIconDrawable.setAlpha(255);
-
-                outlineActionBackgroundDarkenPaint.setColor(wasDarkenColor);
-                chatActionBackgroundDarkenPaint.setColor(wasDarkenColor);
+                swipeActionsHelper.draw(canvas,offset,message!=null && message.isOut(),slidingView.getTop()+slidingView.getMeasuredHeight()/2f,right+offset);
             }
 
             private void processTouchEvent(MotionEvent e) {
@@ -5048,8 +5012,9 @@ public class ChatActivity extends BaseFragment implements
                         }
                         slidingView = view;
                         MessageObject message = getSlidingMessageObject();
+                        if(message==null) { slidingView=null;return; }
                         boolean allowReplyOnOpenTopic = canSendMessageToTopic(message);
-                        if (
+                        boolean replyAllowed = !(
                             chatMode != 0 && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SUGGESTIONS && (chatMode != MODE_SAVED || threadMessageId != getUserConfig().getClientUserId()) ||
                             threadMessageObjects != null && threadMessageObjects.contains(message) ||
                             getMessageType(message) == 1 && (message.getDialogId() == mergeDialogId || message.needDrawBluredPreview()) ||
@@ -5057,7 +5022,9 @@ public class ChatActivity extends BaseFragment implements
                             currentChat != null && ChatObject.isForum(currentChat) && !allowReplyOnOpenTopic ||
                             hasTextSelection() ||
                             message.isEphemeral() && message.isOut()
-                        ) {
+                        );
+                        swipeActionsHelper.start(collectSwipeActions(message,replyAllowed));
+                        if(swipeActionsHelper.size()==0) {
                             slidingViewSetOffset(0);
                             slidingView = null;
                             return;
@@ -5094,6 +5061,7 @@ public class ChatActivity extends BaseFragment implements
                             wasTrackingVibrate = false;
                         }
                         slidingViewSetOffset(dx);
+                        swipeActionsHelper.update(dx,e.getX(),e.getY());
                         MessageObject messageObject = getSlidingMessageObject();
                         if (messageObject != null && (messageObject.isRoundVideo() || messageObject.isVideo())) {
                             updateTextureViewPosition(false, false);
@@ -5104,41 +5072,10 @@ public class ChatActivity extends BaseFragment implements
                         invalidate();
                     }
                 } else if (slidingView != null && (e == null || e.getPointerId(0) == startedTrackingPointerId && (e.getAction() == MotionEvent.ACTION_CANCEL || e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_POINTER_UP))) {
-                    if (e != null && e.getAction() != MotionEvent.ACTION_CANCEL && Math.abs(getSlidingNonAnimationTranslationX(false)) >= AndroidUtilities.dp(50)) {
+                    // Selection/sidebar offsets are not swipes and must never trigger an action.
+                    if (startedTrackingSlidingView && e != null && e.getAction() != MotionEvent.ACTION_CANCEL && slidingViewGetOffsetX() <= -AndroidUtilities.dp(50)) {
                         MessageObject message = getSlidingMessageObject();
-                        final boolean allowReplyOnOpenTopic = canSendMessageToTopic(message);
-                        if (
-                            bottomChannelButtonsLayout != null && bottomChannelButtonsLayout.getVisibility() == View.VISIBLE && !(bottomOverlayChatWaitsReply && allowReplyOnOpenTopic || message.wasJustSent) ||
-                            currentChat != null && (
-                                ChatObject.isNotInChat(currentChat) && !isThreadChat() ||
-                                ChatObject.isChannel(currentChat) && !ChatObject.canPost(currentChat) && !currentChat.megagroup ||
-                                !ChatObject.canSendMessages(currentChat)
-                            )
-                        ) {
-                            if (message.getGroupId() != 0) {
-                                MessageObject.GroupedMessages group = getGroup(message.getGroupId());
-                                if (group != null && group.captionMessage != null) {
-                                    message = group.captionMessage;
-                                }
-                            }
-                            replyingMessageObject = message;
-                            Bundle args = new Bundle();
-                            args.putBoolean("onlySelect", true);
-                            args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
-                            args.putBoolean("quote", true);
-                            args.putBoolean("reply_to", true);
-                            final long author = DialogObject.getPeerDialogId(message.getFromPeer());
-                            if (author != 0 && author != getDialogId() && author != getUserConfig().getClientUserId() && author > 0) {
-                                args.putLong("reply_to_author", author);
-                            }
-                            args.putInt("messagesCount", 1);
-                            args.putBoolean("canSelectTopics", true);
-                            final DialogsActivity fragment = new DialogsActivity(args);
-                            fragment.setDelegate(ChatActivity.this);
-                            presentFragment(fragment);
-                        } else {
-                            showFieldPanelForReply(getSlidingMessageObject());
-                        }
+                        performSwipeAction(swipeActionsHelper.getSelected(),message);
                     }
                     endTrackingX = slidingViewGetOffsetX();
                     if (endTrackingX == 0) {
@@ -6467,6 +6404,9 @@ public class ChatActivity extends BaseFragment implements
                 return super.createAccessibilityNodeInfo();
             }
         };
+        if(swipeActionsHelper!=null) swipeActionsHelper.detach();
+        slidingViewSetOffset(0);slidingView=null;maybeStartTrackingSlidingView=startedTrackingSlidingView=false;
+        swipeActionsHelper=new MonogramSwipeActionsHelper(chatListView,currentAccount,themeDelegate);
         chatListView.addEdgeEffectListener(() -> invalidateMergedVisibleBlurredPositionsAndSources(BLUR_INVALIDATE_FLAG_SCROLL | BLUR_INVALIDATE_FLAG_CLIP));
         if (currentEncryptedChat != null) {
             chatListView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
@@ -6863,6 +6803,10 @@ public class ChatActivity extends BaseFragment implements
                         wasManualScroll = true;
                         scrollingChatListView = true;
                     } else if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                        if (org.telegram.messenger.xmpp.MonogramChatBehavior.hideKeyboardOnScroll(currentAccount)) {
+                            if (isKeyboardVisible() && getParentActivity() != null) AndroidUtilities.hideKeyboard(getParentActivity().getCurrentFocus());
+                            else if (chatActivityEnterView != null && chatActivityEnterView.isPopupShowing()) chatActivityEnterView.hidePopup(true);
+                        }
                         pollHintCell = null;
                         wasManualScroll = true;
                         scrollingFloatingDate = true;
@@ -6895,6 +6839,17 @@ public class ChatActivity extends BaseFragment implements
                 }
                 scrollUp = dy < 0;
                 int firstVisibleItem = chatLayoutManager.findFirstVisibleItemPosition();
+                int oldestVisiblePosition=-1,oldestVisibleMessage=0;
+                for(int childIndex=0;childIndex<recyclerView.getChildCount();childIndex++) {
+                    View child=recyclerView.getChildAt(childIndex);
+                    int position=recyclerView.getChildAdapterPosition(child);
+                    if(child instanceof ChatMessageCell && position>oldestVisiblePosition) {
+                        MessageObject visible=((ChatMessageCell)child).getMessageObject();
+                        if(visible!=null && visible.getId()>0) { oldestVisiblePosition=position; oldestVisibleMessage=visible.getId(); }
+                    }
+                }
+                if(oldestVisibleMessage!=0) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).historyVisible(dialog_id,oldestVisibleMessage);
+
                 if (dy != 0 && (scrollByTouch && recyclerView.getScrollState() == RecyclerView.SCROLL_STATE_SETTLING) || recyclerView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING) {
                     if (forceNextPinnedMessageId != 0) {
                         if ((!scrollUp || forceScrollToFirst)) {
@@ -7398,7 +7353,7 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     String username = ChatObject.getPublicUsername(chat);
                     if (username != null) {
-                        chatActivityEnterView.replaceWithText(start, len, "@" + username + " ", false);
+                        chatActivityEnterView.replaceWithText(start, len, "@" + username + org.telegram.messenger.xmpp.MonogramChatBehavior.mentionSuffix(currentAccount,false), false);
                     }
                 }
             } else if (object instanceof TLRPC.User) {
@@ -7407,11 +7362,11 @@ public class ChatActivity extends BaseFragment implements
                     searchUserMessages(user, null);
                 } else {
                     if (UserObject.getPublicUsername(user) != null) {
-                        chatActivityEnterView.replaceWithText(start, len, "@" + UserObject.getPublicUsername(user) + " ", false);
+                        chatActivityEnterView.replaceWithText(start, len, "@" + UserObject.getPublicUsername(user) + org.telegram.messenger.xmpp.MonogramChatBehavior.mentionSuffix(currentAccount,user.bot), false);
                     } else {
-                        String name = UserObject.getFirstName(user, false);
-                        Spannable spannable = new SpannableString(name + " ");
-                        spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, spannable.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        String name = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mentionName(dialog_id,user);
+                        Spannable spannable = new SpannableString(name + org.telegram.messenger.xmpp.MonogramChatBehavior.mentionSuffix(currentAccount,user.bot));
+                        spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, name.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         chatActivityEnterView.replaceWithText(start, len, spannable, false);
                     }
                 }
@@ -10673,21 +10628,44 @@ public class ChatActivity extends BaseFragment implements
             searchCalendarButton.setBackgroundDrawable(Theme.createSelectorDrawable(getThemedColor(Theme.key_actionBarActionModeDefaultSelector), 1));
             searchContainer.addView(searchCalendarButton, LayoutHelper.createFrame(44, 44, Gravity.LEFT | Gravity.TOP, 2.66f, 0, 0, 0));
             searchCalendarButton.setOnClickListener(view -> {
-                if (getParentActivity() == null) {
-                    return;
-                }
-                if (searchItem != null) {
-                    AndroidUtilities.hideKeyboard(searchItem.getSearchField());
-                }
-                showDialog(AlertsCreator.createCalendarPickerDialog(getParentActivity(), 1375315200000L, new MessagesStorage.IntCallback() {
-                    @Override
-                    public void run(int param) {
-                        jumpToDate(param);
-                    }
-                }, themeDelegate).create());
+                if (getParentActivity() == null) return;
+                if (searchItem != null) AndroidUtilities.hideKeyboard(searchItem.getSearchField());
+                if(!monogramLocalSearch()) { showSearchCalendar();return; }
+                showDialog(new AlertDialog.Builder(getParentActivity(),themeDelegate)
+                        .setTitle(getString(R.string.MonogramSearchHistory))
+                        .setMessage(getString(R.string.MonogramSearchHistoryInfo))
+                        .setItems(new CharSequence[]{getString(R.string.JumpToDate),getString(monogramSearchHistoryLoading ? R.string.Loading : R.string.MonogramLoadOlderSearch)},(dialog,which) -> {
+                            if(which==0) showSearchCalendar();else loadMonogramSearchHistory();
+                        }).create());
             });
-            searchCalendarButton.setContentDescription(LocaleController.getString(R.string.JumpToDate));
+            searchCalendarButton.setContentDescription(getString(monogramLocalSearch() ? R.string.MonogramSearchHistory : R.string.JumpToDate));
         }
+    }
+
+    private boolean monogramLocalSearch() {
+        return chatMode==MODE_DEFAULT && threadMessageId==0 && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+    }
+    private String monogramSearchHint() {
+        return getString(isSupportedTags() ? R.string.SavedTagSearchHint : monogramLocalSearch() ? R.string.MonogramSearchLoadedMessages : R.string.Search);
+    }
+    private void showSearchCalendar() {
+        if(getParentActivity()==null) return;
+        showDialog(AlertsCreator.createCalendarPickerDialog(getParentActivity(),1375315200000L,this::jumpToDate,themeDelegate).create());
+    }
+    private void loadMonogramSearchHistory() {
+        if(monogramSearchHistoryLoading || !monogramLocalSearch()) return;
+        monogramSearchHistoryLoading=true;
+        if(searchItem!=null) searchItem.setShowSearchProgress(true);
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadOlderForSearch(dialog_id,error -> {
+            monogramSearchHistoryLoading=false;
+            if(searchItem!=null) searchItem.setShowSearchProgress(getMediaDataController().isSearchLoading());
+            if(isFinishing() || getParentActivity()==null || currentAccount!=UserConfig.selectedAccount) return;
+            if(error!=null) { BulletinFactory.of(this).createErrorBulletin(error,themeDelegate).show();return; }
+            if(searching && searchItem!=null && !searchingForUser && searchingHashtag==null) {
+                searchingQuery=searchItem.getSearchField().getText().toString();
+                getMediaDataController().searchMessagesInChat(searchingQuery,dialog_id,mergeDialogId,classGuid,0,threadMessageId,false,searchingUserMessages,searchingChatMessages,false,searchingReaction);
+            }
+        });
     }
 
     private void showSearchShowOther(boolean show) {
@@ -12740,6 +12718,7 @@ public class ChatActivity extends BaseFragment implements
                                     info.hasMediaSpoilers = photoEntry.hasSpoiler;
                                     info.stars = photoEntry.starsAmount;
                                     info.highQuality = !isStickerMode && photoEntry.isHighQuality();
+                                    chatAttachAlert.tagMediaDraft(info,photoEntry);
                                     photos.add(info);
                                     photoEntry.reset();
                                 }
@@ -14080,6 +14059,7 @@ public class ChatActivity extends BaseFragment implements
         if (checkSlowModeAlert()) {
             if (!fmessages.isEmpty() && !TextUtils.isEmpty(caption)) {
                 SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(caption, dialog_id, null, null, null, true, captionEntities, null, null, true, 0, 0, null, false);
+                params.params = org.telegram.messenger.xmpp.MonogramMediaDrafts.captureCaption(currentAccount,dialog_id,"document");
                 params.sendMessageChatArguments = getMessageChatSendParams();
                 params.invert_media = invertMedia;
                 params.payStars = payStars;
@@ -14151,10 +14131,52 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    private boolean ordinaryExternalDrafts() {
+        return chatMode==MODE_DEFAULT && getThreadId()==0 && editingMessageObject==null && (chatAttachAlert==null || !chatAttachAlert.isPhotoPicker && !chatAttachAlert.isStickerMode && !chatAttachAlert.isPollAttach && !chatAttachAlert.storyMediaPicker && !(chatAttachAlert.getCurrentAttachLayout() instanceof ChatAttachAlertRichLayout));
+    }
+
+    @Override
+    public void startActivityForResult(Intent intent,int requestCode) {
+        boolean ordinary=ordinaryExternalDrafts();
+        if(ordinary && (requestCode==0 || requestCode==1 || requestCode==2 || requestCode==21)) {
+            String token=org.telegram.messenger.xmpp.MonogramExternalSelections.launch(currentAccount,dialog_id,requestCode,requestCode==0 || requestCode==2 ? currentPicturePath : null);
+            monogramExternalRequests.put(requestCode,token==null ? "" : token);
+        }
+        super.startActivityForResult(intent,requestCode);
+    }
+
+    private boolean captureMonogramExternalResult(int requestCode,int resultCode,Intent data) {
+        if(!monogramExternalRequests.containsKey(requestCode)) return false;
+        final String token=monogramExternalRequests.remove(requestCode);
+        if(resultCode!=Activity.RESULT_OK) { org.telegram.messenger.xmpp.MonogramExternalSelections.cancel(token);if(requestCode==0 || requestCode==2) currentPicturePath=null;return true; }
+        final org.telegram.messenger.xmpp.MonogramMediaDrafts.Owner owner=org.telegram.messenger.xmpp.MonogramExternalSelections.owner(token,requestCode);
+        boolean receiverMatches=org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id);
+        boolean captured=org.telegram.messenger.xmpp.MonogramExternalSelections.stage(token,requestCode,data,message -> {
+            if(getParentActivity()!=null) BulletinFactory.of(this).createErrorBulletin(message,themeDelegate).show();
+        },() -> {
+            if(!org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id) || currentAccount!=UserConfig.selectedAccount) return;
+            Runnable show=() -> {
+                if(getParentActivity()==null || !ordinaryExternalDrafts() || !org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id) || currentAccount!=UserConfig.selectedAccount) return;
+                createChatAttachView();if(chatAttachAlert==null) return;
+                chatAttachAlert.enableDefaultMode();chatAttachAlert.parentThemeDelegate=themeDelegate;
+                if(requestCode==0 || requestCode==2) chatAttachAlert.initExternalCameraPreview();else chatAttachAlert.init();
+                showDialog(chatAttachAlert);
+            };
+            if(paused) monogramExternalReady=show;else show.run();
+        });
+        if(captured) {
+            currentPicturePath=null;
+            if(!receiverMatches && getParentActivity()!=null) BulletinFactory.of(this).createErrorBulletin("External selection saved for its original conversation.",themeDelegate).show();
+        }
+        return true;
+    }
+
     @Override
     public void startDocumentSelectActivity() {
         try {
-            Intent photoPickerIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            boolean ordinary=ordinaryExternalDrafts();
+            Intent photoPickerIntent = new Intent(ordinary ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
+            if(ordinary) { photoPickerIntent.addCategory(Intent.CATEGORY_OPENABLE);photoPickerIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); }
             photoPickerIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             photoPickerIntent.setType("*/*");
             startActivityForResult(photoPickerIntent, 21);
@@ -15615,6 +15637,7 @@ public class ChatActivity extends BaseFragment implements
             updateBottomOverlay();
         }
 
+        scheduleInputDraftSave();
         if (showHint) {
             if (tapForForwardingOptionsHitRunnable == null) {
                 AndroidUtilities.runOnUIThread(tapForForwardingOptionsHitRunnable = () -> {
@@ -16022,6 +16045,8 @@ public class ChatActivity extends BaseFragment implements
         int maxPositiveUnreadId = Integer.MIN_VALUE;
         int maxNegativeUnreadId = Integer.MAX_VALUE;
         int maxUnreadDate = Integer.MIN_VALUE;
+        boolean monogramRead=threadId==0 && currentEncryptedChat==null && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+        ArrayList<Integer> monogramVisibleReads=monogramRead ? new ArrayList<>() : null;
         int recyclerChatViewHeight = (contentView.getMeasuredHeight() - (inPreviewMode || isInsideContainer ? 0 : AndroidUtilities.dp(48)) - chatListView.getTop());
         pollsToCheck.clear();
         float clipTop = chatListViewPaddingTop;
@@ -16307,6 +16332,7 @@ public class ChatActivity extends BaseFragment implements
                     if (group != null) {
                         for (MessageObject msg : group.messages) {
                             final int msg_id = msg.getId();
+                            if(monogramRead && msg_id>0 && !msg.isOut()) monogramVisibleReads.add(msg_id);
                             if (msg_id > 0) {
                                 maxPositiveUnreadId = Math.max(maxPositiveUnreadId, msg_id);
                             }
@@ -16316,6 +16342,7 @@ public class ChatActivity extends BaseFragment implements
                             maxUnreadDate = Math.max(maxUnreadDate, msg.messageOwner.date);
                         }
                     } else {
+                        if(monogramRead && id>0 && !messageObject.isOut()) monogramVisibleReads.add(id);
                         if (id > 0) {
                             maxPositiveUnreadId = Math.max(maxPositiveUnreadId, messageObject.getId());
                         }
@@ -16645,7 +16672,14 @@ public class ChatActivity extends BaseFragment implements
         invalidateChatListViewTopPadding();
         if (!firstLoading && !paused && !inPreviewMode && (chatMode == 0 || chatMode == MODE_SUGGESTIONS) && !getMessagesController().ignoreSetOnline) {
             int scheduledRead = 0;
-            if ((maxPositiveUnreadId != Integer.MIN_VALUE || maxNegativeUnreadId != Integer.MAX_VALUE)) {
+            if(monogramRead) {
+                if(!monogramVisibleReads.isEmpty()) markMonogramVisibleRead(monogramVisibleReads);
+                else if(!firstUnreadSent && chatLayoutManager.findFirstVisibleItemPosition()==0) {
+                    for(MessageObject message:messages) if(message.getId()>0) {
+                        markMonogramVisibleRead(java.util.Collections.singletonList(message.getId()));break;
+                    }
+                }
+            } else if ((maxPositiveUnreadId != Integer.MIN_VALUE || maxNegativeUnreadId != Integer.MAX_VALUE)) {
                 int counterDecrement = 0;
                 for (int a = 0; a < messages.size(); a++) {
                     MessageObject messageObject = messages.get(a);
@@ -16725,6 +16759,23 @@ public class ChatActivity extends BaseFragment implements
 
     private boolean pinnedOnlyStarterMessage() {
         return pinnedMessageIds.size() == 1 && topicStarterMessageObject != null && pinnedMessageIds.get(0) == topicStarterMessageObject.getId();
+    }
+
+    private void markMonogramVisibleRead(java.util.Collection<Integer> anchors) {
+        ArrayList<Integer> requested=new ArrayList<>();
+        for(int id:anchors) if(id>0 && monogramPendingReads.add(id)) requested.add(id);
+        if(requested.isEmpty()) return;
+        getMessagesController().markMonogramMessagesAsRead(dialog_id,requested,read -> {
+            monogramPendingReads.removeAll(requested);
+            if(read==null) return;
+            int changed=0;
+            for(MessageObject message:messages) if(!message.isOut() && read.contains(message.getId()) && message.isUnread()) {
+                org.telegram.messenger.xmpp.MonogramReceipts.markLocalRead(message.messageOwner);changed++;
+            }
+            newUnreadMessageCount=Math.max(0,newUnreadMessageCount-changed);
+            firstUnreadSent=true;
+            if(fragmentView!=null) inlineUpdate1();
+        });
     }
 
     private void inlineUpdate1() {
@@ -18946,9 +18997,11 @@ public class ChatActivity extends BaseFragment implements
         if (requestCode == BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE) {
             if (chatAttachAlert != null) {
                 chatAttachAlert.getPhotoLayout().checkStorage();
+                chatAttachAlert.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
             }
             if (chatThemeBottomSheet != null && chatThemeBottomSheet.chatAttachAlert != null) {
                 chatThemeBottomSheet.chatAttachAlert.getPhotoLayout().checkStorage();
+                chatThemeBottomSheet.chatAttachAlert.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
             }
         } else if ((requestCode == BasePermissionsActivity.REQUEST_CODE_ATTACH_CONTACT || requestCode == 30) && chatAttachAlert != null) {
             chatAttachAlert.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
@@ -20432,6 +20485,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        if(captureMonogramExternalResult(requestCode,resultCode,data)) return;
         if (resultCode == Activity.RESULT_OK) {
             if (requestCode == 0 || requestCode == 2) {
                 createChatAttachView();
@@ -20538,6 +20592,8 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void saveSelfArgs(Bundle args) {
+        org.json.JSONObject requests=new org.json.JSONObject();for(java.util.Map.Entry<Integer,String> entry:monogramExternalRequests.entrySet()) try { requests.put(Integer.toString(entry.getKey()),entry.getValue()); } catch(org.json.JSONException ignored) {}
+        args.putString("monogramExternalRequests",requests.toString());
         if (currentPicturePath != null) {
             args.putString("path", currentPicturePath);
         }
@@ -20546,6 +20602,7 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void restoreSelfArgs(Bundle args) {
         currentPicturePath = args.getString("path");
+        try { org.json.JSONObject requests=new org.json.JSONObject(args.getString("monogramExternalRequests","{}"));java.util.Iterator<String> keys=requests.keys();while(keys.hasNext()) { String key=keys.next();monogramExternalRequests.put(Integer.parseInt(key),requests.getString(key)); } } catch(Exception ignored) {}
     }
 
     private boolean isSkeletonVisible() {
@@ -20814,6 +20871,8 @@ public class ChatActivity extends BaseFragment implements
         int last_unread_date = (Integer) args[7];
         int load_type = (Integer) args[8];
         boolean isEnd = (Boolean) args[9];
+        boolean monogramCalendarHistory = chatMode == MODE_DEFAULT && threadMessageId == 0
+                && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).calendarWindowActive(dialog_id);
         int loaded_max_id = (Integer) args[12];
         int loaded_mentions_count = chatWasReset ? 0 : (Integer) args[13];
 
@@ -20825,6 +20884,10 @@ public class ChatActivity extends BaseFragment implements
         }
         if (load_type == 4) {
             startLoadFromMessageId = loaded_max_id;
+            if (monogramCalendarHistory) {
+                endReached[loadIndex] = false;
+                forwardEndReached[loadIndex] = false;
+            }
 
             for (int a = messArr.size() - 1; a > 0; a--) {
                 MessageObject obj = messArr.get(a);
@@ -21101,7 +21164,7 @@ public class ChatActivity extends BaseFragment implements
             getMediaDataController().loadReplyMessagesForMessages(messArr, dialog_id, chatMode, 0, null, classGuid, null);
         }
         int approximateHeightSum = 0;
-        if (!chatWasReset && (load_type == 2 || load_type == 1) && messArr.isEmpty() && !isCache) {
+        if (!chatWasReset && (load_type == 2 || load_type == 1) && messArr.isEmpty() && !isCache && (!monogramCalendarHistory || isEnd)) {
             forwardEndReached[0] = true;
         }
         LongSparseArray<MessageObject.GroupedMessages> newGroups = null;
@@ -21514,7 +21577,8 @@ public class ChatActivity extends BaseFragment implements
         }
 
         if (load_type == 1) {
-            if (!chatWasReset && messArr.size() != count && (!isCache || currentEncryptedChat != null || forwardEndReached[loadIndex])) {
+            if (!chatWasReset && messArr.size() != count && (!monogramCalendarHistory || isEnd)
+                    && (!isCache || currentEncryptedChat != null || forwardEndReached[loadIndex])) {
                 forwardEndReached[loadIndex] = true;
                 if (loadIndex != 1) {
                     first_unread_id = 0;
@@ -21555,7 +21619,7 @@ public class ChatActivity extends BaseFragment implements
             }
             loadingForward = false;
         } else {
-            if (messArr.size() < count && load_type != 3 && load_type != 4 && (dialog_id <= 0 || isEnd)) {
+            if (messArr.size() < count && load_type != 3 && load_type != 4 && (dialog_id <= 0 && !monogramCalendarHistory || isEnd)) {
                 if (isCache) {
                     if (currentEncryptedChat != null || loadIndex == 1 && mergeDialogId != 0 && isEnd) {
                         endReached[loadIndex] = true;
@@ -22017,7 +22081,7 @@ public class ChatActivity extends BaseFragment implements
                 pinnedMessageButton[1].invalidate();
             }
         } else if (id == NotificationCenter.didUpdateConnectionState) {
-            int state = ConnectionsManager.getInstance(account).getConnectionState();
+            if (avatarContainer != null) avatarContainer.updateSubtitle();
         } else if (id == NotificationCenter.chatOnlineCountDidLoad) {
             Long chatId = (Long) args[0];
             if (chatInfo == null || currentChat == null || currentChat.id != chatId) {
@@ -22474,6 +22538,15 @@ public class ChatActivity extends BaseFragment implements
             }
             Integer msgId = (Integer) args[0];
             MessageObject obj = messagesDict[0].get(msgId);
+            if (obj == null && chatMode == MODE_DEFAULT && (Long) args[3] == dialog_id
+                    && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                TLRPC.Message sent = (TLRPC.Message) args[2];
+                if (sent != null && messagesDict[0].get((Integer) args[1]) == null) {
+                    ArrayList<MessageObject> restored = new ArrayList<>();
+                    restored.add(new MessageObject(currentAccount, sent, true, true));
+                    processNewMessages(restored, false);
+                }
+            }
             if (isThreadChat() && pendingSendMessagesDict.size() > 0) {
                 MessageObject object = pendingSendMessagesDict.get(msgId);
                 if (object != null) {
@@ -22568,6 +22641,12 @@ public class ChatActivity extends BaseFragment implements
                 messagesDict[0].put(newMsgId, obj);
                 obj.messageOwner.id = newMsgId;
                 obj.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
+                if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                    obj.updateMessageText();
+                    obj.resetLayout();
+                    obj.caption = null;
+                    obj.generateCaption();
+                }
                 obj.forceUpdate = mediaUpdated;
                 addReplyMessageOwner(obj, msgId);
                 if (args.length >= 6) {
@@ -23483,7 +23562,18 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
             int loadIndex = did == dialog_id ? 0 : 1;
+            final boolean archivePage = args.length > 2 && Boolean.TRUE.equals(args[2]);
             doOnIdle(() -> {
+                if (archivePage && chatMode == MODE_DEFAULT && loadIndex == 0) {
+                    int oldestDate = Integer.MAX_VALUE;
+                    for (MessageObject visible : messages) if (visible.getId() > 0 && visible.type >= 0)
+                        oldestDate = Math.min(oldestDate, visible.messageOwner.date);
+                    ArrayList<MessageObject> missing = new ArrayList<>();
+                    for (MessageObject message : messageObjects) if (messagesDict[0].get(message.getId()) == null
+                            && (oldestDate == Integer.MAX_VALUE || message.messageOwner.date >= oldestDate)) missing.add(message);
+                    missing.sort(java.util.Comparator.comparingInt(message -> message.messageOwner.date));
+                    if (!missing.isEmpty()) processNewMessages(missing, false);
+                }
                 replaceMessageObjects(messageObjects, loadIndex, false);
             });
         } else if (id == NotificationCenter.notificationsSettingsUpdated) {
@@ -23824,7 +23914,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 if (searchItem != null) {
-                    searchItem.setShowSearchProgress(false);
+                    searchItem.setShowSearchProgress(monogramSearchHistoryLoading);
                 }
                 if (messagesSearchAdapter != null) {
                     messagesSearchAdapter.notifyDataSetChanged();
@@ -23839,7 +23929,7 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.chatSearchResultsLoading) {
             if (classGuid == (Integer) args[0]) {
                 if (searchItem != null) {
-                    searchItem.setShowSearchProgress(!TextUtils.isEmpty(searchingQuery) || searchingReaction != null);
+                    searchItem.setShowSearchProgress(monogramSearchHistoryLoading || !TextUtils.isEmpty(searchingQuery) || searchingReaction != null);
                 }
                 onSearchLoadingUpdate(true);
                 if (messagesSearchAdapter != null) {
@@ -25933,7 +26023,7 @@ public class ChatActivity extends BaseFragment implements
                         for (int b = 0; b < size; b++) {
                             final MessageObject lastMessage = messages.get(b);
                             if (lastMessage.type >= 0 && lastMessage.messageOwner.date > 0) {
-                                if (dialog_id <= 0 && chatMode != MODE_SCHEDULED && lastMessage.messageOwner.id > 0 && obj.messageOwner.id > 0 && lastMessage.messageOwner.id < obj.messageOwner.id || lastMessage.messageOwner.date < obj.messageOwner.date || lastMessage.messageOwner.date == obj.messageOwner.date) {
+                                if (dialog_id <= 0 && chatMode != MODE_SCHEDULED && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id) && lastMessage.messageOwner.id > 0 && obj.messageOwner.id > 0 && lastMessage.messageOwner.id < obj.messageOwner.id || lastMessage.messageOwner.date < obj.messageOwner.date || lastMessage.messageOwner.date == obj.messageOwner.date) {
                                     MessageObject.GroupedMessages lastGroupedMessages;
                                     if (lastMessage.getGroupId() != 0) {
                                         lastGroupedMessages = groupedMessagesMap.get(lastMessage.getGroupId());
@@ -29807,9 +29897,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private int getAvatarRightMargin(boolean expanded) {
-        int margin = expanded && chatMode != MODE_SAVED ? 92 : 52;
-        if (dialog_id > 0 && currentEncryptedChat == null) margin += 48;
-        return margin;
+        return expanded && chatMode != MODE_SAVED ? 92 : 52;
     }
 
     @Override
@@ -29901,6 +29989,7 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
+        if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatOpened(dialog_id);
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
@@ -29998,6 +30087,7 @@ public class ChatActivity extends BaseFragment implements
         }
 
         paused = false;
+        if(monogramExternalReady!=null) { Runnable ready=monogramExternalReady;monogramExternalReady=null;AndroidUtilities.runOnUIThread(ready); }
         pausedOnLastMessage = false;
         checkScrollForLoad(false);
         if (wasPaused) {
@@ -30072,6 +30162,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public void saveDraft() {
+        AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
         if (chatActivityEnterView != null && chatActivityEnterView.isRichDraftActive()) {
             return;
         }
@@ -30112,6 +30203,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onPause() {
+        if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatInactive(dialog_id);
         super.onPause();
         scrolling = false;
         if (scrimPopupWindow != null) {
@@ -31030,6 +31122,10 @@ public class ChatActivity extends BaseFragment implements
             ArrayList<CharSequence> items = new ArrayList<>();
             final ArrayList<Integer> options = new ArrayList<>();
             View optionsView = null;
+            if(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).debugLog.enabled()) {
+                items.add("Message diagnostics");options.add(OPTION_MONOGRAM_DIAGNOSTICS);icons.add(R.drawable.msg_info);
+            }
+
 
             if (AndroidUtilities.isAccessibilityScreenReaderEnabled() && message.messageOwner != null && message.messageOwner.from_id != null && message.messageOwner.from_id.user_id != getUserConfig().clientUserId && chatMode != MODE_SAVED) {
                 items.add(LocaleController.getString(R.string.OpenProfile));
@@ -31086,6 +31182,10 @@ public class ChatActivity extends BaseFragment implements
                 selectedObject = message;
                 selectedObjectGroup = groupedMessages;
                 fillMessageMenu(primaryMessage, icons, items, options);
+                if(org.telegram.messenger.xmpp.MonogramChatBehavior.showDetailsButton(currentAccount)
+                        && !noforwardsOrPaidMedia && !message.isEphemeral() && !message.isSecretMedia() && !message.isSponsored()) {
+                    items.add(LocaleController.getString(R.string.MonogramMessageDetails));options.add(OPTION_MONOGRAM_DETAILS);icons.add(R.drawable.msg_info);
+                }
             }
 
             if (selectedObject != null && selectedObject.isHiddenSensitive() && !selectedObject.isMediaSpoilersRevealed) {
@@ -31097,6 +31197,10 @@ public class ChatActivity extends BaseFragment implements
                         case OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC:
                         case OPTION_SHARE:
                         case OPTION_FORWARD:
+                        case OPTION_MONOGRAM_SAVE:
+                        case OPTION_MONOGRAM_REPEAT:
+                        case OPTION_MONOGRAM_COPY_PHOTO:
+                        case OPTION_MONOGRAM_DETAILS:
                         case OPTION_REPLY:
                             options.remove(i);
                             items.remove(i);
@@ -31145,7 +31249,7 @@ public class ChatActivity extends BaseFragment implements
 
             List<TLRPC.TL_availableReaction> availableReacts = getMediaDataController().getEnabledReactionsList();
             final boolean isEphemeral = message != null && message.isEphemeral();
-            final boolean isReactionsViewAvailable = !isEphemeral && !suggestEdit && !isSecretChat() && !isInScheduleMode() && currentUser == null && primaryMessage.hasReactions() && (!ChatObject.isChannel(currentChat) || currentChat.megagroup) && !ChatObject.isMonoForum(currentChat) && !availableReacts.isEmpty() && primaryMessage.messageOwner.reactions.can_see_list && !primaryMessage.isSecretMedia();
+            final boolean isReactionsViewAvailable = !isEphemeral && !suggestEdit && !isSecretChat() && !isInScheduleMode() && currentUser == null && primaryMessage.hasReactions() && (!ChatObject.isChannel(currentChat) || currentChat.megagroup) && !ChatObject.isMonoForum(currentChat) && primaryMessage.messageOwner.reactions.can_see_list && !primaryMessage.isSecretMedia();
             final boolean isReactionsAvailable;
             if (suggestEdit || isEphemeral) {
                 isReactionsAvailable = false;
@@ -31158,7 +31262,6 @@ public class ChatActivity extends BaseFragment implements
                         && !isQuickRepliesOrWelcomeMessagesMode()
                         && !isInScheduleMode()
                         && primaryMessage.isReactionsAvailable()
-                        && !availableReacts.isEmpty()
                         && (chatInfo != null && (
                             !(chatInfo.available_reactions instanceof TLRPC.TL_chatReactionsNone)
                             || chatInfo.paid_reactions_available)
@@ -31169,7 +31272,6 @@ public class ChatActivity extends BaseFragment implements
                     && !isQuickRepliesOrWelcomeMessagesMode()
                     && !isInScheduleMode()
                     && primaryMessage.isReactionsAvailable()
-                    && !availableReacts.isEmpty()
                     && !message.isSecretMedia()
                     && (chatInfo != null && (
                         !(chatInfo.available_reactions instanceof TLRPC.TL_chatReactionsNone)
@@ -31182,14 +31284,14 @@ public class ChatActivity extends BaseFragment implements
             }
             final boolean showMessageSeen = !suggestEdit && !isEphemeral && !isReactionsViewAvailable && !isInScheduleMode() && currentChat != null && message.isOutOwner() && message.isSent() && !message.isEditing() && !message.isSending() && !message.isSendError() && !message.isContentUnread() && !message.isUnread() && (ConnectionsManager.getInstance(currentAccount).getCurrentTime() - message.messageOwner.date < getMessagesController().chatReadMarkExpirePeriod) && (ChatObject.isMegagroup(currentChat) || !ChatObject.isChannel(currentChat)) && chatInfo != null && chatInfo.participants_count <= getMessagesController().chatReadMarkSizeThreshold && !(message.messageOwner.action instanceof TLRPC.TL_messageActionChatJoinedByRequest) && chatMode != MODE_SAVED && message.canSetReaction() && !ChatObject.isMonoForum(currentChat);
             final boolean showMessageAuthor = !suggestEdit && !isEphemeral && currentChat != null && !message.isOut() && ChatObject.isMonoForum(currentChat) && ChatObject.canManageMonoForum(currentAccount, currentChat) && -currentChat.linked_monoforum_id == message.getFromChatId();
-            final boolean showPrivateMessageSeen = !suggestEdit && !isEphemeral && !isReactionsViewAvailable && currentChat == null && currentEncryptedChat == null && (currentUser != null && !UserObject.isUserSelf(currentUser) && !UserObject.isReplyUser(currentUser) && !UserObject.isAnonymous(currentUser) && !currentUser.bot && !UserObject.isService(currentUser.id)) && (userInfo == null || !userInfo.read_dates_private) && !isInScheduleMode() && message.isOutOwner() && message.isSent() && !message.isEditing() && !message.isSending() && !message.isSendError() && !message.isContentUnread() && !message.isUnread() && (ConnectionsManager.getInstance(currentAccount).getCurrentTime() - message.messageOwner.date < getMessagesController().pmReadDateExpirePeriod) && !(message.messageOwner.action instanceof TLRPC.TL_messageActionChatJoinedByRequest);
+            final boolean showPrivateMessageSeen = !suggestEdit && !isEphemeral && !isReactionsViewAvailable && currentChat == null && currentEncryptedChat == null && (currentUser != null && !UserObject.isUserSelf(currentUser) && !UserObject.isReplyUser(currentUser) && !UserObject.isAnonymous(currentUser) && !currentUser.bot && !UserObject.isService(currentUser.id)) && (userInfo != null && !userInfo.read_dates_private) && !isInScheduleMode() && message.isOutOwner() && message.isSent() && !message.isEditing() && !message.isSending() && !message.isSendError() && !message.isContentUnread() && !message.isUnread() && (ConnectionsManager.getInstance(currentAccount).getCurrentTime() - message.messageOwner.date < getMessagesController().pmReadDateExpirePeriod) && !(message.messageOwner.action instanceof TLRPC.TL_messageActionChatJoinedByRequest);
             final boolean showPrivateMessageEdit = !suggestEdit && !isEphemeral && (currentUser == null || !UserObject.isReplyUser(currentUser) && !UserObject.isAnonymous(currentUser)) && !isInScheduleMode() && message.isEdited() && !(message.messageOwner.action instanceof TLRPC.TL_messageActionChatJoinedByRequest);
             final boolean showPrivateMessageFwdOriginal = !suggestEdit && !isEphemeral && false && (currentUser == null || !UserObject.isReplyUser(currentUser) && !UserObject.isAnonymous(currentUser)) && !isInScheduleMode() && message.isForwarded() && !(message.messageOwner.action instanceof TLRPC.TL_messageActionChatJoinedByRequest);
             final boolean showSponsorInfo = !suggestEdit && !isEphemeral && selectedObject != null && selectedObject.isSponsored() && (selectedObject.sponsoredInfo != null || selectedObject.sponsoredAdditionalInfo != null || selectedObject.sponsoredUrl != null && !selectedObject.sponsoredUrl.startsWith("https://" + getMessagesController().linkPrefix));
             final boolean isReactionsAvailableFinal = !suggestEdit && isReactionsAvailable;
 
             int flags = 0;
-            if (isReactionsViewAvailable || showMessageSeen || showSponsorInfo) {
+            if (isReactionsViewAvailable || showMessageSeen || showSponsorInfo || options.contains(OPTION_MONOGRAM_DETAILS)) {
                 flags |= ActionBarPopupWindow.ActionBarPopupWindowLayout.FLAG_USE_SWIPEBACK;
             }
 
@@ -31200,6 +31302,7 @@ public class ChatActivity extends BaseFragment implements
             shadowDrawable.getPadding(backgroundPaddings);
             popupLayout.setBackgroundColor(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground));
             MessageSeenView messageSeenView = null;
+            MonogramMessageActionRow compactActionRow = null;
 
             updateScrimSourceBitmap();
 
@@ -31949,14 +32052,52 @@ public class ChatActivity extends BaseFragment implements
                         popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
                     }
                 }
-                scrimPopupWindowItems = new ActionBarMenuSubItem[items.size()];
-                for (int a = 0, N = items.size(); a < N; a++) {
-                    final Integer option = options.get(a);
+                if (org.telegram.messenger.xmpp.MonogramChatBehavior.groupMessageMenu(currentAccount) && items.size() > 5 && selectedObject != null) {
+                    final boolean canReply = options.contains(OPTION_REPLY);
+                    final boolean canDelete = options.contains(OPTION_DELETE) && !showWelcomeMessageRevertOption(selectedObject);
+                    final boolean canCopy = options.contains(OPTION_COPY);
+                    final boolean canCopyPhoto = options.contains(OPTION_MONOGRAM_COPY_PHOTO);
+                    final boolean canCopyPhone = options.contains(OPTION_COPY_PHONE_NUMBER);
+                    final boolean canEdit = options.contains(OPTION_EDIT);
+                    final boolean canCopyLink = options.contains(OPTION_COPY_LINK);
+                    final boolean canForward = options.contains(OPTION_FORWARD);
+                    final int copyOption = canCopyPhone ? OPTION_COPY_PHONE_NUMBER : canCopy ? OPTION_COPY : canCopyPhoto ? OPTION_MONOGRAM_COPY_PHOTO : OPTION_COPY;
+                    final CharSequence copyLabel = canCopyPhoto && !canCopy && !canCopyPhone
+                            ? LocaleController.getString(R.string.MonogramCopyPhoto)
+                            : LocaleController.getString(R.string.Copy);
+                    ArrayList<MonogramMessageActionRow.Item> compactItems = new ArrayList<>();
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_REPLY, R.drawable.menu_reply,
+                            LocaleController.getString(R.string.Reply), canReply, view -> processSelectedOption(OPTION_REPLY)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_DELETE, R.drawable.msg_delete,
+                            LocaleController.getString(R.string.Delete), canDelete, view -> processSelectedOption(OPTION_DELETE)));
+                    compactItems.add(new MonogramMessageActionRow.Item(copyOption, R.drawable.msg_copy, copyLabel,
+                            canCopy || canCopyPhoto || canCopyPhone, view -> processSelectedOption(copyOption)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_EDIT, R.drawable.msg_edit,
+                            LocaleController.getString(R.string.Edit), canEdit, view -> processSelectedOption(OPTION_EDIT)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_COPY_LINK, R.drawable.msg_link,
+                            LocaleController.getString(R.string.CopyLink), canCopyLink, view -> processSelectedOption(OPTION_COPY_LINK)));
+                    compactItems.add(new MonogramMessageActionRow.Item(OPTION_FORWARD, R.drawable.msg_forward,
+                            LocaleController.getString(R.string.Forward), canForward, view -> processSelectedOption(OPTION_FORWARD)));
+                    compactActionRow = new MonogramMessageActionRow(getContext(), themeDelegate, compactItems);
+                }
+
+                ArrayList<Integer> visibleOptionIndices = new ArrayList<>(items.size());
+                for (int a = 0; a < items.size(); a++) {
+                    final int option = options.get(a);
+                    if (compactActionRow != null && compactActionRow.containsOption(option)) {
+                        continue;
+                    }
                     if (option == OPTION_DELETE && showWelcomeMessageRevertOption(selectedObject)) {
                         continue;
                     }
+                    visibleOptionIndices.add(a);
+                }
+                scrimPopupWindowItems = new ActionBarMenuSubItem[visibleOptionIndices.size()];
+                for (int visiblePosition = 0, N = visibleOptionIndices.size(); visiblePosition < N; visiblePosition++) {
+                    final int a = visibleOptionIndices.get(visiblePosition);
+                    final Integer option = options.get(a);
 
-                    ActionBarMenuSubItem cell = new ActionBarMenuSubItem(getParentActivity(), a == 0, a == N - 1, themeDelegate);
+                    ActionBarMenuSubItem cell = new ActionBarMenuSubItem(getParentActivity(), visiblePosition == 0, visiblePosition == N - 1, themeDelegate);
                     cell.setMinimumWidth(AndroidUtilities.dp(200));
                     cell.setTextAndIcon(items.get(a), icons.get(a));
 
@@ -31986,7 +32127,7 @@ public class ChatActivity extends BaseFragment implements
                             cell.setSubtextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText6));
                         }
                     }
-                    scrimPopupWindowItems[a] = cell;
+                    scrimPopupWindowItems[visiblePosition] = cell;
                     if (option == OPTION_REMOVE_ADS) {
                         popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
                     }
@@ -31998,6 +32139,14 @@ public class ChatActivity extends BaseFragment implements
                         }
                         processSelectedOption(options.get(i));
                     });
+                    if(option==OPTION_MONOGRAM_DETAILS) {
+                        MonogramMessageDetailsPopup details=new MonogramMessageDetailsPopup(this,popupLayout.getSwipeBack(),message,themeDelegate,this::closeMenu);
+                        int detailsIndex=popupLayout.addViewToSwipeBack(details.layout);
+                        cell.setOnClickListener(view -> {
+                            if(scrimPopupWindow==null) return;
+                            popupLayout.getSwipeBack().openForeground(detailsIndex);details.load();
+                        });
+                    }
                     if (option == OPTION_TRANSLATE) {
                         final boolean translateEnabled = getMessagesController().getTranslateController().isContextTranslateEnabled();
                         String toLangDefault = LocaleController.getInstance().getCurrentLocale().getLanguage();
@@ -32336,6 +32485,17 @@ public class ChatActivity extends BaseFragment implements
                 boolean showNoForwards = (isPeerNoForwards() || message.messageOwner.noforwards && currentUser != null && currentUser.bot) && message.messageOwner.action == null && message.isSent() && !message.isEditing() && chatMode != MODE_SCHEDULED && chatMode != MODE_SAVED && getDialogId() != UserObject.VERIFY;
                 scrimPopupContainerLayout.addView(popupLayout, LayoutHelper.createLinearRelatively(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, 0, isReactionsAvailable ? 36 : 0, 0));
                 scrimPopupContainerLayout.setPopupWindowLayout(popupLayout);
+                if (compactActionRow != null) {
+                    popupLayout.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    Drawable compactBackground = ContextCompat.getDrawable(contentView.getContext(), R.drawable.popup_fixed_alert4).mutate();
+                    compactBackground.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground), PorterDuff.Mode.MULTIPLY));
+                    FrameLayout compactPanel = new FrameLayout(contentView.getContext());
+                    compactPanel.setBackground(compactBackground);
+                    compactPanel.setTag(R.id.fit_width_tag, 1);
+                    compactPanel.addView(compactActionRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56));
+                    scrimPopupContainerLayout.addView(compactPanel, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, -8, isReactionsAvailable ? 36 : 0, 0));
+                    scrimPopupContainerLayout.applyViewBottom(compactPanel);
+                }
                 if (showNoForwards) {
                     popupLayout.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
                     boolean isChannel = ChatObject.isChannel(currentChat) && !currentChat.megagroup;
@@ -32948,6 +33108,20 @@ public class ChatActivity extends BaseFragment implements
         if (isInScheduleMode() || primaryMessage == null) {
             return;
         }
+        final org.telegram.messenger.xmpp.MonogramController monogram=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        if(visibleReaction!=null && (visibleReaction.isStar || visibleReaction.documentId!=0)) {
+            BulletinFactory.of(this).createErrorBulletin("Choose a standard emoji. Custom emoji reactions are not supported yet.").show(); return;
+        }
+        if(monogram.requiresPlainReactionConsent(primaryMessage.getId(),primaryMessage.getDialogId())) {
+            final View selectedCell=cell;
+            showDialog(new AlertDialog.Builder(getContext(),themeDelegate).setTitle("Reaction privacy")
+                .setMessage("Legacy OMEMO encrypts message text, but standard XMPP reactions are visible to the server. Allow unencrypted reactions in this chat?")
+                .setPositiveButton("Allow reactions",(dialog,which) -> {
+                    if(monogram.allowPlainReactions(primaryMessage.getDialogId())) selectReaction(selectedCell,primaryMessage,reactionsLayout,fromView,x,y,visibleReaction,fromDoubleTap,bigEmoji,addToRecent,withoutAnimation);
+                }).setNegativeButton(getString(R.string.Cancel),null).create()); return;
+        }
+        final boolean animateReaction=visibleReaction!=null && visibleReaction.emojicon!=null
+                && (getMediaDataController().getReactionsMap().containsKey(visibleReaction.emojicon) || Emoji.getEmojiBigDrawable(visibleReaction.emojicon)!=null);
         if (getMessagesController().isFrozen()) {
             AccountFrozenAlert.show(currentAccount);
             return;
@@ -33032,8 +33206,7 @@ public class ChatActivity extends BaseFragment implements
 
         if (added) {
             cell = findMessageCell(finalMessageIdForCell, true);
-            showMultipleReactionsPromo(cell, visibleReaction, currentChosenReactions);
-            if (!fromDoubleTap) {
+            if (!fromDoubleTap && animateReaction) {
                 ReactionsEffectOverlay.show(ChatActivity.this, reactionsLayout, cell, fromView, x, y, visibleReaction, currentAccount, reactionsLayout != null ? (bigEmoji ? ReactionsEffectOverlay.LONG_ANIMATION : ReactionsEffectOverlay.ONLY_MOVE_ANIMATION) : ReactionsEffectOverlay.SHORT_ANIMATION);
             }
         }
@@ -33045,8 +33218,8 @@ public class ChatActivity extends BaseFragment implements
         getSendMessagesHelper().sendReaction(primaryMessage, visibleReactions, added ? visibleReaction : null, bigEmoji, addToRecent, ChatActivity.this, updateReactionRunnable = new Runnable() {
             @Override
             public void run() {
-                if (withoutAnimation) {
-                    return;
+                if (withoutAnimation || !animateReaction) {
+                    updateReactionRunnable=null; updateMessageAnimated(primaryMessage,true); closeMenu(); return;
                 }
                 if (updateReactionRunnable != null) {
                     updateReactionRunnable = null;
@@ -33078,11 +33251,11 @@ public class ChatActivity extends BaseFragment implements
             }
         });
 
-        if (fromDoubleTap || withoutAnimation) {
+        if (fromDoubleTap || withoutAnimation || !animateReaction) {
             updateMessageAnimated(primaryMessage, true);
             updateReactionRunnable.run();
         }
-        if (!withoutAnimation) {
+        if (!withoutAnimation && animateReaction) {
             AndroidUtilities.runOnUIThread(updateReactionRunnable, 50);
         }
     }
@@ -33245,7 +33418,8 @@ public class ChatActivity extends BaseFragment implements
                     }
                     AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), themeDelegate);
                     builder.setTitle(LocaleController.getString(R.string.AppName));
-                    builder.setMessage(LocaleController.getString(R.string.EditMessageError));
+                    builder.setMessage(error != null && error.text != null && error.text.startsWith("MONOGRAM_")
+                            ? AlertsCreator.monogramSendErrorText(error.text) : LocaleController.getString(R.string.EditMessageError));
                     builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
                     showDialog(builder.create());
 
@@ -33446,6 +33620,19 @@ public class ChatActivity extends BaseFragment implements
         }
         boolean preserveDim = false;
         switch (option) {
+            case OPTION_MONOGRAM_SAVE:
+            case OPTION_MONOGRAM_REPEAT: {
+                performDoubleTapMessageAction(selectedObject, option == OPTION_MONOGRAM_SAVE ? MonogramDoubleTap.SAVE : MonogramDoubleTap.REPEAT);
+                break;
+            }
+            case OPTION_MONOGRAM_COPY_PHOTO: {
+                org.telegram.messenger.xmpp.MonogramPhotoClipboard.copy(this,selectedObject);break;
+            }
+            case OPTION_MONOGRAM_DIAGNOSTICS: {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).inspectMessage(selectedObject,
+                        text -> MonogramDebugActivity.showText(this,"Message diagnostics",text));
+                break;
+            }
             case OPTION_RETRY: {
                 final MessageObject object = selectedObject;
                 final MessageObject.GroupedMessages group = selectedObjectGroup;
@@ -33554,6 +33741,9 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_SAVE_TO_GALLERY: {
+                if(selectedObject!=null && (selectedObject.isSticker() || selectedObject.isAnimatedSticker() || selectedObject.isVideoSticker())) {
+                    org.telegram.messenger.xmpp.MonogramStickerExport.save(getParentActivity(),currentAccount,selectedObject.getDocument());break;
+                }
                 if (Build.VERSION.SDK_INT >= 23 && (Build.VERSION.SDK_INT <= 28 || BuildVars.NO_SCOPED_STORAGE) && getParentActivity().checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                     getParentActivity().requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 4);
                     selectedObject = null;
@@ -33909,11 +34099,15 @@ public class ChatActivity extends BaseFragment implements
             }
             case OPTION_ADD_TO_GIFS: {
                 TLRPC.Document document = selectedObject.getDocument();
-                getMessagesController().saveGif(selectedObject, document);
-                if (!showGifHint() && getParentActivity() != null) {
-                    BulletinFactory.of(this).createDownloadBulletin(BulletinFactory.FileType.GIF, themeDelegate).show();
+                if (document != null && MessageObject.isGifDocument(document)) {
+                    if ((document.localPath == null || document.localPath.isEmpty()) && selectedObject.messageOwner.attachPath != null
+                            && new File(selectedObject.messageOwner.attachPath).isFile()) document.localPath = selectedObject.messageOwner.attachPath;
+                    boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, document);
+                    if (!org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount, document, !favorite)) {
+                        BulletinFactory.of(this).createErrorBulletin("Could not save the GIF library. Check available storage.").show();
+                    }
+                    getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
                 }
-                chatActivityEnterView.addRecentGif(document);
                 break;
             }
             case OPTION_SUGGESTION_EDIT_MESSAGE:
@@ -33960,6 +34154,13 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_PIN: {
+                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                    showDialog(new AlertDialog.Builder(getParentActivity(), themeDelegate)
+                            .setTitle("Message pins")
+                            .setMessage("Shared message pins aren't available for this XMPP conversation yet.")
+                            .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
+                    break;
+                }
                 final int mid;
                 if (selectedObjectGroup != null && !selectedObjectGroup.messages.isEmpty()) {
                     mid = selectedObjectGroup.messages.get(0).getId();
@@ -35657,6 +35858,7 @@ public class ChatActivity extends BaseFragment implements
         if (checkSlowModeAlert()) {
             if (!TextUtils.isEmpty(caption)) {
                 SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(caption, dialog_id, null, null, null, true, null, null, null, true, 0, 0, null, false);
+                params.params = org.telegram.messenger.xmpp.MonogramMediaDrafts.captureCaption(currentAccount,dialog_id,"contacts");
                 params.sendMessageChatArguments = getMessageChatSendParams();
                 params.effect_id = effectId;
                 params.invert_media = invertMedia;
@@ -35666,8 +35868,10 @@ public class ChatActivity extends BaseFragment implements
                 effectId = 0;
                 SendMessagesHelper.getInstance(currentAccount).sendMessage(params);
             }
+            int draftContactIndex=0;
             for (TLRPC.User user : users) {
                 SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(user, dialog_id, null, null, null, null, notify, scheduleDate, 0);
+                params.params = org.telegram.messenger.xmpp.MonogramMediaDrafts.captureContact(currentAccount,dialog_id,draftContactIndex++);
                 params.sendMessageChatArguments = getMessageChatSendParams();
                 params.effect_id = effectId;
                 params.invert_media = invertMedia;
@@ -38692,7 +38896,7 @@ public class ChatActivity extends BaseFragment implements
             searchingUserMessages = null;
             searchingChatMessages = null;
             searchingHashtag = null;
-			searchItem.setSearchFieldHint(isSupportedTags() ? LocaleController.getString(R.string.SavedTagSearchHint) : LocaleController.getString(R.string.Search));
+			searchItem.setSearchFieldHint(monogramSearchHint());
             searchItem.setSearchFieldCaption(null);
             animatorSearchFieldVisibility.setValue(false, true);
             animatorSearchHashtagHistoryVisibility.setValue(false, true);
@@ -38966,7 +39170,7 @@ public class ChatActivity extends BaseFragment implements
                     searchingForUser = false;
                     searchItem.setSearchFieldText("", true);
                 }
-				searchItem.setSearchFieldHint(isSupportedTags() ? LocaleController.getString(R.string.SavedTagSearchHint) : LocaleController.getString(R.string.Search));
+				searchItem.setSearchFieldHint(monogramSearchHint());
                 searchCalendarButton.setVisibility(View.VISIBLE);
                 if (searchUserButton != null) {
                     searchUserButton.setVisibility(View.VISIBLE);
@@ -39969,7 +40173,7 @@ public class ChatActivity extends BaseFragment implements
                 if (username != null) {
                     sb.append("@").append(username).append(" ");
                 } else {
-                    String name = UserObject.getFirstName(user, false);
+                    String name = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mentionName(dialog_id,user);
                     Spannable spannable = new SpannableString(name + " ");
                     spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, spannable.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     sb.append(spannable);
@@ -43445,7 +43649,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void showChatThemeBottomSheet() {
-        if (currentChat != null) {
+        if (currentChat != null && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
             if (ChatObject.isMegagroup(currentChat)) {
                 if (ChatObject.hasAdminRights(currentChat)) {
                     presentFragment(new GroupColorActivity(getDialogId()).setOnApplied(ChatActivity.this));
@@ -43482,7 +43686,8 @@ public class ChatActivity extends BaseFragment implements
 
     private void checkThemeEmoticonOrWallpaper() {
         getNotificationCenter().doOnIdle(() -> {
-            setChatThemeEmoticon(userInfo != null ? userInfo.theme : null);
+            EmojiThemes localTheme=ChatThemeController.getInstance(currentAccount).getDialogTheme(dialog_id);
+            setChatThemeEmoticon(localTheme==null ? null : localTheme.getChatTheme());
 //            if (emoticon == null && chatInfo != null) {
 //                emoticon = chatInfo.theme_emoticon;
 //            }
@@ -43688,6 +43893,7 @@ public class ChatActivity extends BaseFragment implements
 
         public boolean isThemeChangeAvailable(boolean canEdit) {
             return currentEncryptedChat == null && (
+                org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ||
                 (!canEdit /*|| currentChat != null && ChatObject.isChannelAndNotMegaGroup(currentChat) && ChatObject.canChangeChatInfo(currentChat)*/) ||
                 currentChat == null && currentUser != null && !currentUser.bot
             );
@@ -46220,10 +46426,11 @@ public class ChatActivity extends BaseFragment implements
                         }
                     }
                 } else if (type == 3 && !noforwardsOrPaidMedia) {
-                    if (selectedObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage && MessageObject.isNewGifDocument(selectedObject.messageOwner.media.webpage.document)) {
-                        items.add(LocaleController.getString(R.string.SaveToGIFs));
+                    if (selectedObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage && MessageObject.isGifDocument(selectedObject.messageOwner.media.webpage.document)) {
+                        boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, selectedObject.messageOwner.media.webpage.document);
+                        items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
                         options.add(OPTION_ADD_TO_GIFS);
-                        icons.add(R.drawable.msg_gif);
+                        icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);
                     }
                 } else if (type == 4) {
                     if (!noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia()) {
@@ -46244,10 +46451,11 @@ public class ChatActivity extends BaseFragment implements
                             options.add(OPTION_SHARE);
                             icons.add(R.drawable.msg_shareout);
                         } else if (selectedObject.getDocument() != null && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce()) {
-                            if (MessageObject.isNewGifDocument(selectedObject.getDocument())) {
-                                items.add(LocaleController.getString(R.string.SaveToGIFs));
+                            if (MessageObject.isGifDocument(selectedObject.getDocument())) {
+                                boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, selectedObject.getDocument());
+                                items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
                                 options.add(OPTION_ADD_TO_GIFS);
-                                icons.add(R.drawable.msg_gif);
+                                icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);
                             }
                             items.add(LocaleController.getString(R.string.SaveToDownloads));
                             options.add(OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC);
@@ -46357,6 +46565,14 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
+                if(!noforwardsOrPaidMedia && !options.contains(OPTION_SAVE_TO_GALLERY) && (selectedObject.isSticker() || selectedObject.isAnimatedSticker() || selectedObject.isVideoSticker())) {
+                    items.add(org.telegram.messenger.xmpp.MonogramStickerExport.label(selectedObject.getDocument()));
+                    options.add(OPTION_SAVE_TO_GALLERY);icons.add(R.drawable.msg_gallery);
+                }
+                if(!noforwardsOrPaidMedia && org.telegram.messenger.xmpp.MonogramChatBehavior.showCopyPhotoButton(currentAccount)
+                        && org.telegram.messenger.xmpp.MonogramPhotoClipboard.isPhoto(selectedObject)) {
+                    items.add(LocaleController.getString(R.string.MonogramCopyPhoto));options.add(OPTION_MONOGRAM_COPY_PHOTO);icons.add(R.drawable.msg_copy);
+                }
                 final boolean canForward = !selectedObject.isSponsored()
                     && !isQuickRepliesOrWelcomeMessagesMode()
                     && chatMode != MODE_SCHEDULED
@@ -46378,6 +46594,19 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
+                    if (selectedObject.getDialogId() != getUserConfig().getClientUserId()
+                            && org.telegram.messenger.xmpp.MonogramChatBehavior.showSaveButton(currentAccount)) {
+                        items.add(LocaleController.getString(R.string.SavedMessages));
+                        options.add(OPTION_MONOGRAM_SAVE);
+                        icons.add(R.drawable.msg_saved);
+                    }
+                    if (!UserObject.isUserSelf(currentUser) && !ChatObject.isChannelAndNotMegaGroup(currentChat)
+                            && (currentChat == null || ChatObject.canSendMessages(currentChat))
+                            && org.telegram.messenger.xmpp.MonogramChatBehavior.showRepeatButton(currentAccount)) {
+                        items.add(LocaleController.getString(R.string.MonogramRepeatMessage));
+                        options.add(OPTION_MONOGRAM_REPEAT);
+                        icons.add(R.drawable.msg_retry);
+                    }
                 }
                 if (allowUnpin) {
                     items.add(LocaleController.getString(R.string.UnpinMessage));

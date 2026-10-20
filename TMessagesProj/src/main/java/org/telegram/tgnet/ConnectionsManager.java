@@ -180,12 +180,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public boolean isPushConnectionEnabled() {
-        SharedPreferences preferences = MessagesController.getGlobalNotificationsSettings();
-        if (preferences.contains("pushConnection")) {
-            return preferences.getBoolean("pushConnection", true);
-        } else {
-            return MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("backgroundConnection", false);
-        }
+        return MessagesController.getNotificationsSettings(currentAccount).getBoolean("pushConnection", true);
     }
 
     public long getCurrentTimeMillis() {
@@ -288,7 +283,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
-        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).request(object, (response, error) -> {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).request(requestToken,object, (response, error) -> {
             if (onComplete != null) onComplete.run(response, error);
             else if (onCompleteTimestamp != null) onCompleteTimestamp.run(response, error, System.currentTimeMillis());
         });
@@ -390,7 +385,10 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void cancelRequest(int token, boolean notifyServer, Runnable onCancelled) {
-        if (onCancelled != null) Utilities.stageQueue.postRunnable(onCancelled);
+        Utilities.stageQueue.postRunnable(() -> {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelRequest(token);
+            if(onCancelled!=null) onCancelled.run();
+        });
     }
 
     public void cleanup(boolean resetKeys) {
@@ -418,11 +416,11 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void checkConnection() {
-        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).networkChanged();
     }
 
     public void setPushConnectionEnabled(boolean value) {
-
+        ApplicationLoader.startPushService();
     }
 
     public void init(int version, int layer, int apiId, String deviceModel, String systemVersion, String appVersion, String langCode, String systemLangCode, String configPath, String logPath, String regId, String cFingerprint, int timezoneOffset, long userId, boolean userPremium, boolean enablePushConnection) {
@@ -525,6 +523,7 @@ public class ConnectionsManager extends BaseController {
             }
             if (lastPauseTime != 0 && System.currentTimeMillis() - lastPauseTime > 5000) {
                 getContactsController().checkContacts();
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).networkChanged();
             }
             lastPauseTime = 0;
             org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restore();

@@ -91,11 +91,34 @@ public class NotificationsSettingsFacade {
         return MessagesController.getNotificationsSettings(currentAccount);
     }
 
+    public void restoreLocalNotificationSettings(long dialogId, long topicId, TLRPC.PeerNotifySettings settings) {
+        // XMPP has no server notification settings; an absent synthetic field must not erase a local choice.
+        SharedPreferences preferences = getPreferences();
+        String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
+        settings.flags &= ~(2 | 4 | 64);
+        settings.mute_until = 0;
+        int mute = preferences.getInt(PROPERTY_NOTIFY + key, -1);
+        if (mute != -1) {
+            settings.flags |= 4;
+            settings.mute_until = mute == 2 ? Integer.MAX_VALUE : mute == 3
+                    ? preferences.getInt(PROPERTY_NOTIFY_UNTIL + key, 0) : 0;
+        }
+        if (preferences.contains(PROPERTY_SILENT + key)) {
+            settings.flags |= 2;
+            settings.silent = preferences.getBoolean(PROPERTY_SILENT + key, false);
+        }
+        if (preferences.contains(PROPERTY_STORIES_NOTIFY + key)) {
+            settings.flags |= 64;
+            settings.stories_muted = !preferences.getBoolean(PROPERTY_STORIES_NOTIFY + key, true);
+        }
+    }
+
     public void applyDialogNotificationsSettings(long dialogId, long topicId, TLRPC.PeerNotifySettings notify_settings) {
         if (notify_settings == null) {
             return;
         }
         Utilities.globalQueue.postRunnable(() -> {
+            restoreLocalNotificationSettings(dialogId, topicId, notify_settings);
             String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
             MessagesController messagesController = MessagesController.getInstance(currentAccount);
             ConnectionsManager connectionsManager = ConnectionsManager.getInstance(currentAccount);
@@ -264,6 +287,7 @@ public class NotificationsSettingsFacade {
 
     public void setSettingsForDialog(SharedPreferences.Editor editor, TLRPC.Dialog dialog, TLRPC.PeerNotifySettings notify_settings) {
         long dialogId = MessageObject.getPeerId(dialog.peer);
+        restoreLocalNotificationSettings(dialogId, 0, dialog.notify_settings);
 
         if ((dialog.notify_settings.flags & 2) != 0) {
             editor.putBoolean(PROPERTY_SILENT + dialogId, dialog.notify_settings.silent);

@@ -86,7 +86,6 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 
-import com.google.android.gms.common.api.Status;
 import com.google.common.primitives.Longs;
 
 import org.telegram.PhoneFormat.PhoneFormat;
@@ -113,6 +112,7 @@ import org.telegram.messenger.FingerprintController;
 import org.telegram.messenger.FlagSecureReason;
 import org.telegram.messenger.GenericProvider;
 import org.telegram.messenger.GiftAuctionController;
+import org.telegram.messenger.ILocationServiceProvider;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.LocationController;
@@ -143,6 +143,8 @@ import org.telegram.messenger.utils.LeakDetector;
 import org.telegram.messenger.utils.WindowVisibilityManager;
 import org.telegram.messenger.video.VideoAds;
 import org.telegram.messenger.voip.VideoCapturerDevice;
+import org.telegram.messenger.voip.VoIPCallController;
+import org.telegram.messenger.voip.VoIPCallControllers;
 import org.telegram.messenger.voip.VoIPGroupNotification;
 import org.telegram.messenger.voip.VoIPPendingCall;
 import org.telegram.messenger.voip.VoIPPreNotificationService;
@@ -361,7 +363,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     private List<Runnable> onUserLeaveHintListeners = new ArrayList<>();
 
-    private static final int PLAY_SERVICES_REQUEST_CHECK_SETTINGS = 140;
+    private static final int LOCATION_SETTINGS_REQUEST = 140;
+    private static final String STATE_LOCATION_SETTINGS_OPEN = "location_settings_open";
+    private static final String STATE_LOCATION_SETTINGS_ACCOUNT = "location_settings_account";
+    private static final String STATE_LOCATION_SETTINGS_USER = "location_settings_user";
+    private boolean locationSettingsOpen;
+    private int locationSettingsAccount = -1;
+    private long locationSettingsUserId;
     public static final int SCREEN_CAPTURE_REQUEST_CODE = 520;
     public static final int WEBVIEW_SHARE_API_REQUEST_CODE = 521;
 
@@ -409,6 +417,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         ApplicationLoader.postInitApplication();
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;
+        if (savedInstanceState != null) {
+            locationSettingsOpen = savedInstanceState.getBoolean(STATE_LOCATION_SETTINGS_OPEN, false);
+            locationSettingsAccount = savedInstanceState.getInt(STATE_LOCATION_SETTINGS_ACCOUNT, -1);
+            locationSettingsUserId = savedInstanceState.getLong(STATE_LOCATION_SETTINGS_USER, 0);
+        }
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         if (!UserConfig.getInstance(currentAccount).isClientActivated()) {
             Intent intent = getIntent();
@@ -595,6 +608,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     if (fragmentName != null) {
                         Bundle args = savedInstanceState.getBundle("args");
                         switch (fragmentName) {
+                            case "monogram_login": {
+                                int loginAccount=savedInstanceState.getInt("monogram_account",currentAccount);
+                                if(loginAccount>=0 && loginAccount<UserConfig.MAX_ACCOUNT_COUNT && !UserConfig.getInstance(loginAccount).isClientActivated()) {
+                                    MonogramLoginActivity login=new MonogramLoginActivity(loginAccount);
+                                    if(!UserConfig.getInstance(currentAccount).isClientActivated()) actionBarLayout.removeAllFragments();
+                                    if(actionBarLayout.addFragmentToStack(login)) login.restoreSelfArgs(savedInstanceState);
+                                }
+                                break;
+                            }
                             case "chat":
                                 if (args != null) {
                                     ChatActivity chat = new ChatActivity(args);
@@ -1086,7 +1108,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private BaseFragment getClientNotActivatedFragment() {
-        return new MonogramLoginActivity(currentAccount);
+        return UserConfig.getActivatedAccountsCount() == 0 && !MessagesController.getGlobalMainSettings().getBoolean("monogram_intro_seen", false)
+                ? new IntroActivity(currentAccount) : new MonogramLoginActivity(currentAccount);
     }
 
     public FireworksOverlay getFireworksOverlay() {
@@ -1503,6 +1526,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @SuppressLint("Range")
     private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
+        if(intent!=null && intent.getData()!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)
+                && org.telegram.messenger.xmpp.MonogramPurchaseLinks.blocked(intent.getData().toString())) {
+            intent.setAction(null);intent.setData(null);rejectMonogramPurchase(progress);return true;
+        }
         if (GiftInfoBottomSheet.handleIntent(intent, progress)) {
             return true;
         }
@@ -1526,6 +1553,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         int flags = intent.getFlags();
         String action = intent.getAction();
         final int[] intentAccount = new int[]{intent.getIntExtra("currentAccount", UserConfig.selectedAccount)};
+        VoIPCallController activeCall = VoIPCallControllers.get();
+        if (action != null && (action.equals("voip") || action.equals("voip_answer")) && activeCall != null) {
+            intentAccount[0] = activeCall.getAccount();
+        }
         switchToAccount(intentAccount[0], true);
         final boolean isVoipIntent = action != null && action.equals("voip");
         final boolean isVoipAnswerIntent = action != null && action.equals("voip_answer");
@@ -1542,6 +1573,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 return false;
             }
         }
+        if(handleXmppInvitation(intent)) return true;
         boolean pushOpened = false;
         long push_user_id = 0;
         long push_chat_id = 0;
@@ -3367,7 +3399,30 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
     }
 
+    private void rejectMonogramPurchase(Browser.Progress progress) {
+        navigateToPremiumBot=false;navigateToPremiumGiftCallback=null;
+        if(progress!=null) progress.end();
+        Toast.makeText(this,LocaleController.getString(R.string.MonogramPurchasesUnavailable),Toast.LENGTH_SHORT).show();
+    }
+
     private static Pattern timestampPattern;
+    private boolean handleXmppInvitation(Intent intent) {
+        if(intent==null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData()==null || !"xmpp".equalsIgnoreCase(intent.getData().getScheme())) return false;
+        String uri=intent.getData().toString();intent.setAction(null);intent.setData(null);
+        try {
+            com.negzero.monogram.xmpp.RegistrationInvitation invitation=com.negzero.monogram.xmpp.RegistrationInvitation.parse(uri);
+            BaseFragment previous=getSafeLastFragment();
+            if(previous instanceof MonogramLoginActivity && ((MonogramLoginActivity)previous).isConnecting())
+                throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Finish the current sign-in before opening another invitation.");
+            int slot=UserConfig.getInstance(currentAccount).isClientActivated() ? UserConfig.getFreeAccount() : currentAccount;
+            if(slot<0) throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("All account slots are in use. Remove an account before creating another one.");
+            presentFragment(new MonogramLoginActivity(slot,invitation),previous instanceof MonogramLoginActivity || previous instanceof IntroActivity,false);
+        } catch(com.negzero.monogram.xmpp.XmppInvitations.InvitationException invalid) {
+            new AlertDialog.Builder(this).setTitle("XMPP invitation").setMessage(invalid.getMessage()).setPositiveButton(getString(R.string.OK),null).show();
+        }
+        return true;
+    }
+
     public static int getTimestampFromLink(Uri data) {
         List<String> segments = data.getPathSegments();
         String timestampStr = null;
@@ -3958,6 +4013,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         boolean openDirect,
         byte[] pollOptionId
     ) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(intentAccount)
+                && (inputInvoiceSlug!=null || uniqueGiftSlug!=null || auctionSlug!=null || stargiftPreviewSlug!=null || giftCollectionId>0 || isBoost
+                    || "sendgrams".equalsIgnoreCase(username) || "premiumbot".equalsIgnoreCase(username))) {
+            rejectMonogramPurchase(progress);return;
+        }
         if (state == 0 && ChatActivity.SCROLL_DEBUG_DELAY && progress != null) {
             Runnable runnable = () -> runLinkRequest(intentAccount, username, group, sticker, emoji, botUser, botChat, botChannel, botChatAdminParams, message, contactToken, folderSlug, text, hasUrl, messageId, channelId, threadId, commentId, game, auth, lang, unsupportedUrl, code, loginToken, wallPaper, inputInvoiceSlug, uniqueGiftSlug, theme, voicechat, videochat, livestream, 1, videoTimestamp, setAsAttachBot, attachMenuBotToOpen, attachMenuBotChoose, botAppMaybe, botAppStartParam, progress, forceNotInternalForApps, storyId, liveStory, storyAlbumId, giftCollectionId, auctionSlug, stargiftPreviewSlug, isBoost, chatLinkSlug, botCompact, botFullscreen, openedTelegram, openProfile, forceRequest, referrer, taskId, openDirect, pollOptionId);
             progress.init();
@@ -5027,6 +5087,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     });
                 }, ConnectionsManager.RequestFlagFailOnServerErrors);
             }
+        } else if ((sticker != null || emoji != null) && !org.telegram.messenger.xmpp.MonogramController.get(intentAccount).accountJid().isEmpty()) {
+            if(!mainFragmentsStack.isEmpty()) {
+                String link="https://t.me/"+(sticker!=null ? "addstickers/"+sticker : "addemoji/"+emoji);
+                mainFragmentsStack.get(mainFragmentsStack.size()-1).presentFragment(new MonogramPacksActivity(intentAccount,link));
+            }
+            return;
         } else if (sticker != null) {
             if (!mainFragmentsStack.isEmpty()) {
                 TLRPC.TL_inputStickerSetShortName stickerset = new TLRPC.TL_inputStickerSetShortName();
@@ -5626,6 +5692,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void processBoostDialog(Long peerId, Runnable dismissLoading, Browser.Progress progress, ChatMessageCell chatMessageCell) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
+            if(dismissLoading!=null) dismissLoading.run();rejectMonogramPurchase(progress);return;
+        }
         ChannelBoostsController boostsController = MessagesController.getInstance(currentAccount).getBoostsController();
         if (progress != null) {
             progress.init();
@@ -6093,11 +6162,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     public void setNavigateToPremiumBot(boolean val) {
-        navigateToPremiumBot = val;
+        navigateToPremiumBot = val && !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount);
     }
 
     public void setNavigateToPremiumGiftCallback(Runnable val) {
-        navigateToPremiumGiftCallback = val;
+        navigateToPremiumGiftCallback = org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) ? null : val;
     }
 
     @Override
@@ -6604,6 +6673,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
             UserConfig.getInstance(currentAccount).saveConfig(false);
         }
+        if (StickersAlert.onLocalStickerFilesResult(requestCode, resultCode, data)) return;
         if (requestCode == 105) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (ApplicationLoader.canDrawOverlays = Settings.canDrawOverlays(this)) {
@@ -6628,8 +6698,18 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     service.createCaptureDevice(true);
                 }
             }
-        } else if (requestCode == PLAY_SERVICES_REQUEST_CHECK_SETTINGS) {
-            LocationController.getInstance(currentAccount).startFusedLocationRequest(resultCode == Activity.RESULT_OK);
+        } else if (requestCode == LOCATION_SETTINGS_REQUEST) {
+            final int account = locationSettingsAccount;
+            final long userId = locationSettingsUserId;
+            locationSettingsOpen = false;
+            locationSettingsAccount = -1;
+            locationSettingsUserId = 0;
+            if (account >= 0 && account < UserConfig.MAX_ACCOUNT_COUNT) {
+                UserConfig userConfig = UserConfig.getInstance(account);
+                if (userConfig.isClientActivated() && userId != 0 && userConfig.getClientUserId() == userId) {
+                    LocationController.getInstance(account).onLocationSettingsResult();
+                }
+            }
         } else if (requestCode == WEBVIEW_SHARE_API_REQUEST_CODE) {
             if (webviewShareAPIDoneListener != null) {
                 webviewShareAPIDoneListener.run(resultCode == RESULT_OK);
@@ -6947,6 +7027,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onResume() {
         super.onResume();
+        org.telegram.ui.ActionBar.MonogramMonet.refreshIfNeeded();
         isResumed = true;
         pipActivityHandler.onResume();
         if (onResumeStaticCallback != null) {
@@ -7455,11 +7536,24 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             }
         } else if (id == NotificationCenter.needShowPlayServicesAlert) {
-            try {
-                final Status status = (Status) args[0];
-                status.startResolutionForResult(this, PLAY_SERVICES_REQUEST_CHECK_SETTINGS);
-            } catch (Throwable ignore) {
-
+            if (!locationSettingsOpen && args.length > 0 && args[0] instanceof Integer
+                    && (Integer) args[0] == ILocationServiceProvider.STATUS_RESOLUTION_REQUIRED
+                    && account >= 0 && account < UserConfig.MAX_ACCOUNT_COUNT) {
+                UserConfig userConfig = UserConfig.getInstance(account);
+                if (!userConfig.isClientActivated()) {
+                    return;
+                }
+                locationSettingsOpen = true;
+                locationSettingsAccount = account;
+                locationSettingsUserId = userConfig.getClientUserId();
+                try {
+                    startActivityForResult(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS), LOCATION_SETTINGS_REQUEST);
+                } catch (Throwable error) {
+                    locationSettingsOpen = false;
+                    locationSettingsAccount = -1;
+                    locationSettingsUserId = 0;
+                    FileLog.e(error);
+                }
             }
         } else if (id == NotificationCenter.fileLoaded) {
             String path = (String) args[0];
@@ -8193,8 +8287,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         Runnable action = null;
         currentConnectionState = ConnectionsManager.getInstance(currentAccount).getConnectionState();
         if (currentConnectionState == ConnectionsManager.ConnectionStateWaitingForNetwork) {
-            title = "WaitingForNetwork";
-            titleId = R.string.WaitingForNetwork;
+            title = "MonogramDisconnected";
+            titleId = R.string.MonogramDisconnected;
         } else if (currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
             title = "Updating";
             titleId = R.string.Updating;
@@ -8204,24 +8298,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         } else if (currentConnectionState == ConnectionsManager.ConnectionStateConnecting) {
             title = "Connecting";
             titleId = R.string.Connecting;
-        }
-        if (currentConnectionState == ConnectionsManager.ConnectionStateConnecting || currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy) {
-            action = () -> {
-                BaseFragment lastFragment = null;
-                if (AndroidUtilities.isTablet()) {
-                    if (!layerFragmentsStack.isEmpty()) {
-                        lastFragment = layerFragmentsStack.get(layerFragmentsStack.size() - 1);
-                    }
-                } else {
-                    if (!mainFragmentsStack.isEmpty()) {
-                        lastFragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
-                    }
-                }
-                if (lastFragment instanceof ProxyListActivity || lastFragment instanceof ProxySettingsActivity) {
-                    return;
-                }
-                presentFragment(new ProxyListActivity());
-            };
         }
         actionBarLayout.setTitleOverlayText(title, titleId, action);
     }
@@ -8237,6 +8313,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onSaveInstanceState(Bundle outState) {
         try {
             super.onSaveInstanceState(outState);
+            outState.putBoolean(STATE_LOCATION_SETTINGS_OPEN, locationSettingsOpen);
+            outState.putInt(STATE_LOCATION_SETTINGS_ACCOUNT, locationSettingsAccount);
+            outState.putLong(STATE_LOCATION_SETTINGS_USER, locationSettingsUserId);
             BaseFragment lastFragment = null;
             if (AndroidUtilities.isTablet()) {
                 if (layersActionBarLayout != null && !layersActionBarLayout.getFragmentStack().isEmpty()) {
@@ -8254,7 +8333,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
             if (lastFragment != null) {
                 Bundle args = lastFragment.getArguments();
-                if (lastFragment instanceof ChatActivity && args != null) {
+                if(lastFragment instanceof MonogramLoginActivity) {
+                    outState.putString("fragment","monogram_login");
+                } else if (lastFragment instanceof ChatActivity && args != null) {
                     outState.putBundle("args", args);
                     outState.putString("fragment", "chat");
                 } else if (lastFragment instanceof GroupCreateFinalActivity && args != null) {
@@ -8435,14 +8516,16 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             } else if (!mainFragmentsStack.isEmpty() && (!PhotoViewer.hasInstance() || !PhotoViewer.getInstance().isVisible()) && event.getRepeatCount() == 0) {
                 BaseFragment fragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
-                if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)) {
+                if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)
+                        && org.telegram.messenger.xmpp.MonogramMediaPlayback.unmuteWithVolumeButtons(fragment.getCurrentAccount())) {
                     if (((ChatActivity) fragment).maybePlayVisibleVideo()) {
                         return true;
                     }
                 }
                 if (AndroidUtilities.isTablet() && !rightFragmentsStack.isEmpty()) {
                     fragment = rightFragmentsStack.get(rightFragmentsStack.size() - 1);
-                    if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)) {
+                    if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)
+                            && org.telegram.messenger.xmpp.MonogramMediaPlayback.unmuteWithVolumeButtons(fragment.getCurrentAccount())) {
                         if (((ChatActivity) fragment).maybePlayVisibleVideo()) {
                             return true;
                         }

@@ -48,6 +48,12 @@ public class VideoEncodingService extends Service implements NotificationCenter.
         }
     }
 
+    public static void uploadFinished(int account,String path) {
+        if (instance==null || instance.currentAccount!=account || !java.util.Objects.equals(instance.currentPath,path)) return;
+        MediaController.VideoConvertMessage next=MediaController.getInstance().getCurrentForegroundConverMessage();
+        if (next!=null) instance.setCurrentMessage(next); else instance.stopSelf();
+    }
+
     public static void stop() {
         if (instance != null) {
             instance.stopSelf();

@@ -5,8 +5,6 @@ import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.AndroidUtilities.replaceSingleTag;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.ui.PremiumPreviewFragment.applyNewSpan;
-import static org.telegram.ui.PremiumPreviewFragment.applyNewSpanTimed;
 import static org.telegram.ui.Stars.StarGiftSheet.replaceUnderstood;
 
 import android.animation.Animator;
@@ -67,7 +65,6 @@ import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.AuthTokensHelper;
-import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatThemeController;
 import org.telegram.messenger.Emoji;
@@ -84,9 +81,6 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SharedPrefsHelper;
-import org.telegram.ui.Cells.TextCell;
-import org.telegram.ui.Wallet.GramWallet;
-import org.telegram.ui.Wallet.WalletActivity;
 import org.telegram.utils.settings.SharedSettings;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
@@ -118,7 +112,6 @@ import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.Paint.PersistColorPalette;
-import org.telegram.ui.Components.Premium.boosts.UserSelectorBottomSheet;
 import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
@@ -133,11 +126,8 @@ import org.telegram.ui.Components.blur3.ViewGroupPartRenderer;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
 import org.telegram.ui.Components.voip.VoIPHelper;
-import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.DualCameraView;
-import org.telegram.ui.TON.TONIntroActivity;
 import org.telegram.ui.bots.BotBiometry;
 import org.telegram.ui.bots.BotDownloads;
 import org.telegram.ui.bots.BotLocation;
@@ -219,6 +209,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             hasMainTabs = arguments.getBoolean("hasMainTabs", false);
         }
 
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshProfile(getUserConfig().getClientUserId());
         additionNavigationBarHeight = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
         return super.onFragmentCreate();
     }
@@ -388,7 +379,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         contentView.addView(actionBarBackground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 200, Gravity.TOP));
         contentView.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP));
 
-        imageUpdater = new ImageUpdater(true, ImageUpdater.FOR_TYPE_USER, true);
+        imageUpdater = new ImageUpdater(false, ImageUpdater.FOR_TYPE_USER, false);
         imageUpdater.setOpenWithFrontfaceCamera(true);
         imageUpdater.parentFragment = this;
         imageUpdater.setDelegate(this);
@@ -536,15 +527,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         avatarDrawable.setInfo(user);
         avatarView.setForUserOrChat(user, avatarDrawable);
         titleView.setText(UserObject.getUserName(user));
-        final StringBuilder sb = new StringBuilder();
-        if (user != null) {
-            sb.append(PhoneFormat.getInstance().format("+" + user.phone));
-        }
-        final String username = UserObject.getPublicUsername(user);
-        if (username != null) {
-            sb.append(" • @").append(username);
-        }
-        subtitleView.setText(sb);
+        subtitleView.setText(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid());
 
         versionView.setText(getVersionName());
     }
@@ -643,18 +626,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         });
 
         final Set<String> suggestions = getMessagesController().pendingSuggestions;
-        if (suggestions.contains("PREMIUM_GRACE")) {
-            items.add(SuggestionCell.Factory.of(
-                getString(R.string.GraceSuggestionTitle),
-                getString(R.string.GraceSuggestionMessage),
-                null, null,
-                getString(R.string.GraceSuggestionButton), v -> {
-                    Browser.openUrl(getContext(), getMessagesController().premiumManageSubscriptionUrl);
-                    getMessagesController().removeSuggestion(0, "PREMIUM_GRACE");
-                }
-            ));
-            items.add(UItem.asShadow(null));
-        } else if (suggestions.contains("VALIDATE_PHONE_NUMBER") && getUserConfig().getCurrentUser() != null) {
+        if (suggestions.contains("VALIDATE_PHONE_NUMBER") && getUserConfig().getCurrentUser() != null) {
             items.add(SuggestionCell.Factory.of(
                 formatString(R.string.CheckPhoneNumber, PhoneFormat.getInstance().format("+" + getUserConfig().getCurrentUser().phone)),
                 replaceSingleTag(getString(R.string.CheckPhoneNumberInfo), () -> {
@@ -690,54 +662,27 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(UItem.asShadow(null));
         }
 
-        final boolean walletAbove = getConnectionsManager().getCurrentTime() - 1791538462 < 4 * 7 * 24 * 60 * 60;
-        if (walletAbove && getMessagesController().config.walletAvailable.get()) {
-            final GramWallet wallet = GramWallet.getInstance(currentAccount);
-            items.add(SettingCell.Factory.of(25, 0, 0, Theme.isCurrentThemeDark() ? R.drawable.settings_wallet_dark : R.drawable.settings_wallet, TextCell.applyNewSpanTimed(getString(R.string.WalletAttachMoney), 1790679020), null, wallet.getBalance() > 0 ? GramWallet.formatGrams(wallet.getBalance()) : null));
-            items.add(UItem.asShadow(null));
-        }
-
         items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
         items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
         items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
         items.add(SettingCell.Factory.of(5, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.settings_sounds, getString(R.string.SettingsNotifications), getString(R.string.SettingsNotificationsInfo)));
         items.add(SettingCell.Factory.of(6, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, getString(R.string.SettingsData), getString(R.string.SettingsDataInfo)));
+        items.add(SettingCell.Factory.of(1003, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                R.drawable.msg_gif, "GIF search", "GIPHY API key"));
+        items.add(SettingCell.Factory.of(1006, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                R.drawable.msg_sticker, "Stickers and custom emoji", "Private packs and Telegram imports"));
+        items.add(SettingCell.Factory.of(1005, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom,
+                R.drawable.msg_translate, "Translation", "LibreTranslate, Google Cloud and DeepL"));
+        items.add(SettingCell.Factory.of(1002, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
+                R.drawable.msg_retry, "XMPP connection", "Connection status and reconnect"));
+        items.add(SettingCell.Factory.of(1004, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom,
+                R.drawable.msg_contact_add, "Invite to your server", "Create an account invitation link"));
         items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders), getString(R.string.SettingsFoldersInfo)));
         items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
 
         items.add(UItem.asShadow(null));
-        if (!walletAbove && getMessagesController().config.walletAvailable.get()) {
-            final GramWallet wallet = GramWallet.getInstance(currentAccount);
-            items.add(SettingCell.Factory.of(25, 0, 0, Theme.isCurrentThemeDark() ? R.drawable.settings_wallet_dark : R.drawable.settings_wallet, TextCell.applyNewSpanTimed(getString(R.string.WalletAttachMoney), 1790679020), null, wallet.getBalance() > 0 ? GramWallet.formatGrams(wallet.getBalance()) : null));
-            items.add(UItem.asShadow(null));
-        }
-
-        if (!getMessagesController().premiumFeaturesBlocked()) {
-            items.add(SettingCell.Factory.of(11, 0xFFB659FF, 0xFF617CFF, R.drawable.settings_premium, getString(R.string.TelegramPremium)));
-        }
-        if (getMessagesController().starsPurchaseAvailable()) {
-            StarsController c = StarsController.getInstance(currentAccount);
-            long balance = c.getBalance().amount;
-            items.add(SettingCell.Factory.of(12, 0xFFEFA612, 0xFFE77512, R.drawable.settings_stars, getString(R.string.TelegramStars), null, c.balanceAvailable() && balance > 0 ? StarsIntroActivity.formatStarsAmount(c.getBalance(), 0.85f, ' ') : ""));
-        }
-        StarsController.getInstance(currentAccount, true).getBalance();
-        if (ApplicationLoader.isBetaBuild() || ApplicationLoader.isStandaloneBuild() || ApplicationLoader.isHuaweiStoreBuild() || (StarsController.getInstance(currentAccount, true).balanceAvailable() && (StarsController.getInstance(currentAccount, true).hasTransactions() || StarsController.getInstance(currentAccount, true).getBalance().positive()))) {
-            final StarsController c = StarsController.getTonInstance(currentAccount);
-            final long balance = c.getBalance().amount;
-            items.add(SettingCell.Factory.of(13, 0xFF1BA4ED, 0xFF1488E1, R.drawable.filled_gram_earnings, getString(R.string.GramEarnings), null, c.balanceAvailable() && balance > 0 ? StarsIntroActivity.formatStarsAmount(c.getBalance(), 0.85f, ' ') : ""));
-        }
-
-        if (!getMessagesController().premiumFeaturesBlocked()) {
-            items.add(SettingCell.Factory.of(15, 0xFFF45255, 0xFFDF3955, R.drawable.settings_business, getString(R.string.TelegramBusiness)));
-        }
-        if (!getMessagesController().premiumPurchaseBlocked()) {
-            items.add(SettingCell.Factory.of(16, 0xFFF38B31, 0xFFE26314, R.drawable.settings_gift, getString(R.string.SendAGift)));
-        }
-        if (items.get(items.size() - 1).viewType != UniversalAdapter.VIEW_TYPE_SHADOW)
-            items.add(UItem.asShadow(null));
-
         items.add(UItem.asHeader(getString(R.string.SettingsHelp)));
         items.add(SettingCell.Factory.of(17, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_ask, getString(R.string.AskAQuestion)));
         items.add(SettingCell.Factory.of(18, IconBackgroundColors.BLUE_LIGHT.top, IconBackgroundColors.BLUE_LIGHT.bottom, R.drawable.settings_faq, getString(R.string.TelegramFAQ)));
@@ -832,6 +777,21 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             case 6:
                 presentSettingFragment(new DataSettingsActivity());
                 break;
+            case 1003:
+                presentSettingFragment(new MonogramGifSettingsActivity(currentAccount));
+                break;
+            case 1006:
+                presentSettingFragment(new MonogramPacksActivity(currentAccount));
+                break;
+            case 1005:
+                presentSettingFragment(new MonogramTranslationSettingsActivity(currentAccount));
+                break;
+            case 1002:
+                presentSettingFragment(new MonogramConnectionActivity(currentAccount));
+                break;
+            case 1004:
+                presentSettingFragment(new MonogramAccountInviteActivity(currentAccount));
+                break;
             case 7:
                 presentSettingFragment(new FiltersSetupActivity());
                 break;
@@ -843,25 +803,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 10:
                 presentSettingFragment(new LanguageSelectActivity());
-                break;
-
-            case 11:
-                presentSettingFragment(new PremiumPreviewFragment("settings"));
-                break;
-            case 12:
-                presentSettingFragment(new StarsIntroActivity());
-                break;
-            case 13:
-                presentSettingFragment(new TONIntroActivity());
-                break;
-            case 25:
-                presentSettingFragment(new WalletActivity());
-                break;
-            case 15:
-                presentSettingFragment(new PremiumPreviewFragment(PremiumPreviewFragment.FEATURES_BUSINESS, "settings"));
-                break;
-            case 16:
-                UserSelectorBottomSheet.open(0, BirthdayController.getInstance(UserConfig.selectedAccount).getState());
                 break;
 
             case 17:
@@ -1463,7 +1404,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 getString(DualCameraView.dualAvailableStatic(getContext()) ? "DebugMenuDualOff" : "DebugMenuDualOn"),
                 BuildVars.DEBUG_VERSION ? SharedConfig.useSurfaceInStories ? "back to TextureView in stories" : "use SurfaceView in stories" : null,
                 BuildVars.DEBUG_PRIVATE_VERSION ? SharedConfig.photoViewerBlur ? "do not blur in photoviewer" : "blur in photoviewer" : null,
-                !SharedConfig.payByInvoice ? "Enable Invoice Payment" : "Disable Invoice Payment",
+                org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) ? null : !SharedConfig.payByInvoice ? "Enable Invoice Payment" : "Disable Invoice Payment",
                 BuildVars.DEBUG_PRIVATE_VERSION ? "Update Attach Bots" : null,
                 !SharedConfig.isUsingCamera2(currentAccount) ? "Use Camera 2 API" : "Use old Camera 1 API",
                 BuildVars.DEBUG_VERSION ? "Clear Mini Apps Permissions and Files" : null,
@@ -1880,6 +1821,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
     int avatarUploadingRequest = -1;
 
+    @Override public boolean isMonogramAccountAvatar() { return true; }
+
     @Override
     public void didUploadPhoto(final TLRPC.InputFile photo, final TLRPC.InputFile video, double videoStartTimestamp, String videoPath, TLRPC.PhotoSize bigSize, final TLRPC.PhotoSize smallSize, boolean isVideo, TLRPC.VideoSize emojiMarkup) {
         AndroidUtilities.runOnUIThread(() -> {
@@ -1930,7 +1873,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                             user.photo.photo_big = big.location;
                         }
 
-                        if (small != null && avatar != null) {
+                        if (small != null && avatar != null && !(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile)) {
                             final File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(small, true);
                             final File src = FileLoader.getInstance(currentAccount).getPathToAttach(avatar, true);
                             src.renameTo(destFile);
@@ -1943,7 +1886,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                             final File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(videoSize, "mp4", true);
                             final File src = new File(videoPath);
                             src.renameTo(destFile);
-                        } else if (big != null && avatarBig != null) {
+                        } else if (big != null && avatarBig != null && !(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile)) {
                             final File destFile = FileLoader.getInstance(currentAccount).getPathToAttach(big, true);
                             final File src = FileLoader.getInstance(currentAccount).getPathToAttach(avatarBig, true);
                             src.renameTo(destFile);
@@ -1961,6 +1904,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                         setInfo(user);
                     }
 
+                    if (error != null) {
+                        org.telegram.ui.Components.BulletinFactory.showError(error);
+                        setInfo(getUserConfig().getCurrentUser());
+                    }
                     avatar = null;
                     avatarBig = null;
                     showAvatarProgress(false, true);

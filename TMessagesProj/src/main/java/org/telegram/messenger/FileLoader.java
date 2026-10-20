@@ -199,7 +199,7 @@ public class FileLoader extends BaseController {
     private final FileLoaderPriorityQueue[] largeFilesQueue = new FileLoaderPriorityQueue[5];
 
     public final static long DEFAULT_MAX_FILE_SIZE = 1024L * 1024L * 2000L;
-    public final static long DEFAULT_MAX_FILE_SIZE_PREMIUM = DEFAULT_MAX_FILE_SIZE * 2L;
+    public final static long DEFAULT_MAX_FILE_SIZE_PREMIUM = com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES;
 
     public final static int PRELOAD_CACHE_TYPE = 11;
 
@@ -604,6 +604,7 @@ public class FileLoader extends BaseController {
         } else {
             fileName = name;
         }
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).cancelFile(fileName);
         LoadOperationUIObject uiObject = loadOperationPathsUI.remove(fileName);
         Runnable runnable = uiObject != null ? uiObject.loadInternalRunnable : null;
         boolean removed = uiObject != null;
@@ -742,7 +743,8 @@ public class FileLoader extends BaseController {
     }
 
     public boolean isLoadingFile(final String fileName) {
-        return fileName != null && loadOperationPathsUI.containsKey(fileName);
+        return fileName != null && (loadOperationPathsUI.containsKey(fileName)
+                || org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isFileLoading(fileName));
     }
 
     public float getBufferedProgressFromPosition(final float position, final String fileName) {
@@ -788,6 +790,10 @@ public class FileLoader extends BaseController {
     }
 
     public void loadFile(ImageLocation imageLocation, Object parentObject, String ext, int priority, int cacheType) {
+        if (parentObject instanceof MessageObject && org.telegram.messenger.xmpp.MonogramAttachments.has(((MessageObject) parentObject).messageOwner)) {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).download((MessageObject) parentObject);
+            return;
+        }
         if (imageLocation == null) {
             return;
         }
@@ -805,6 +811,10 @@ public class FileLoader extends BaseController {
     }
 
     public void loadFile(TLRPC.Document document, Object parentObject, int priority, int cacheType) {
+        if (parentObject instanceof MessageObject && org.telegram.messenger.xmpp.MonogramAttachments.has(((MessageObject) parentObject).messageOwner)) {
+            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).download((MessageObject) parentObject);
+            return;
+        }
         if (document == null) {
             return;
         }
@@ -1274,6 +1284,7 @@ public class FileLoader extends BaseController {
     }
 
     public File getPathToMessage(TLRPC.Message message, boolean forceCache, boolean useFileDatabaseQueue) {
+        if (org.telegram.messenger.xmpp.MonogramAttachments.has(message) && !TextUtils.isEmpty(message.attachPath)) return new File(message.attachPath);
         if (message == null) {
             return new File("");
         }
@@ -1337,6 +1348,33 @@ public class FileLoader extends BaseController {
      * Return real file name. Used before file.exist()
      */
     public File getPathToAttach(TLObject attach, String size, String ext, boolean forceCache, boolean useFileDatabaseQueue) {
+        File preview=attach instanceof TLRPC.PhotoSize ? org.telegram.messenger.xmpp.MonogramLinkPreviews.localThumbnail((TLRPC.PhotoSize)attach) : null;
+        if(preview!=null) return preview;
+        if (attach instanceof TLRPC.PhotoSize) {
+            TLRPC.FileLocation location = ((TLRPC.PhotoSize) attach).location;
+            if (location != null && org.telegram.messenger.xmpp.MonogramEmojis.isThumb(location.volume_id)) {
+                File local = org.telegram.messenger.xmpp.MonogramEmojis.thumb(currentAccount, location.volume_id, location.local_id);
+                return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-inline-emoji-unavailable") : local;
+            }
+            if (location != null && org.telegram.messenger.xmpp.MonogramPacks.isThumb(location.volume_id)) {
+                File local = org.telegram.messenger.xmpp.MonogramPacks.thumb(currentAccount, location.volume_id, location.local_id);
+                return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-pack-unavailable") : local;
+            }
+            if (location != null && location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
+                File local = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).attachmentPath(location.local_id);
+                return local == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-attachment-unavailable-" + location.local_id) : local;
+            }
+        }
+        TLRPC.FileLocation profileLocation = attach instanceof TLRPC.PhotoSize ? ((TLRPC.PhotoSize) attach).location
+                : attach instanceof TLRPC.FileLocation ? (TLRPC.FileLocation) attach : null;
+        if (profileLocation != null && profileLocation.volume_id == org.telegram.messenger.xmpp.MonogramProfiles.PHOTO_VOLUME) {
+            File avatar = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).avatarPath(profileLocation.local_id);
+            return avatar == null ? new File(getDirectory(MEDIA_DIR_CACHE), "monogram-avatar-missing") : avatar;
+        }
+        if (attach instanceof TLRPC.Document) {
+            TLRPC.Document document = (TLRPC.Document) attach;
+            if (!TextUtils.isEmpty(document.localPath) && org.telegram.messenger.xmpp.MonogramStickers.isSticker(document)) return new File(document.localPath);
+        }
         File dir = null;
         long documentId = 0;
         int dcId = 0;
@@ -1894,11 +1932,7 @@ public class FileLoader extends BaseController {
     }
 
     public static boolean checkUploadFileSize(int currentAccount, long length) {
-        boolean premium = AccountInstance.getInstance(currentAccount).getUserConfig().isPremium();
-        if (length < DEFAULT_MAX_FILE_SIZE || (length < DEFAULT_MAX_FILE_SIZE_PREMIUM && premium)) {
-            return true;
-        }
-        return false;
+        return length <= DEFAULT_MAX_FILE_SIZE_PREMIUM;
     }
 
     private static class LoadOperationUIObject {

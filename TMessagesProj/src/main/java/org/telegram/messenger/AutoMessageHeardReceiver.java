@@ -13,6 +13,7 @@ import android.content.Context;
 import android.content.Intent;
 
 import org.telegram.tgnet.TLRPC;
+import org.telegram.messenger.xmpp.MonogramNotificationActions;
 
 public class AutoMessageHeardReceiver extends BroadcastReceiver {
 
@@ -26,6 +27,21 @@ public class AutoMessageHeardReceiver extends BroadcastReceiver {
             return;
         }
         AccountInstance accountInstance = AccountInstance.getInstance(currentAccount);
+        if (MonogramNotificationActions.isXmpp(intent, currentAccount)) {
+            if (!MonogramNotificationActions.valid(intent, currentAccount)) return;
+            Runnable completion = MonogramNotificationActions.keepAlive(this);
+            try {
+                accountInstance.getMessagesController().markMonogramMessagesAsRead(dialogId,
+                        java.util.Collections.singleton(maxId), read -> {
+                            if (read == null || !MonogramNotificationActions.valid(intent, currentAccount)) { completion.run(); return; }
+                            try {
+                                accountInstance.getMessagesController().markReactionsAsRead(dialogId, 0);
+                                accountInstance.getMessagesStorage().getStorageQueue().postRunnable(completion);
+                            } catch (RuntimeException failure) { completion.run(); throw failure; }
+                        });
+            } catch (RuntimeException failure) { completion.run(); throw failure; }
+            return;
+        }
         if (DialogObject.isUserDialog(dialogId)) {
             TLRPC.User user = accountInstance.getMessagesController().getUser(dialogId);
             if (user == null) {

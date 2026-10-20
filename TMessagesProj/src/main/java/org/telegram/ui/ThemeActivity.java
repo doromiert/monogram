@@ -224,6 +224,10 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
     private int lastShadowRow;
     @Keep
     private int stickersRow;
+    private int doubleTapRow;
+    private int swipeActionsRow;
+    private int chatBehaviorRow;
+    private int mediaPlaybackRow;
     private int stickersInfoRow;
     private int stickersSectionRow, mediaSoundSectionRow, otherSectionRow;
     private int mediaSoundHeaderRow, otherHeaderRow;
@@ -569,6 +573,10 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
         pauseOnRecordRow = -1;
         pauseOnMediaRow = -1;
         stickersRow = -1;
+        doubleTapRow = -1;
+        swipeActionsRow = -1;
+        chatBehaviorRow = -1;
+        mediaPlaybackRow = -1;
         stickersInfoRow = -1;
         stickersSectionRow = -1;
         mediaSoundHeaderRow = -1;
@@ -682,6 +690,10 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             nightThemeRow = rowCount++;
             browserRow = rowCount++;
             liteModeRow = rowCount++;
+            doubleTapRow = rowCount++;
+            swipeActionsRow = rowCount++;
+            chatBehaviorRow = rowCount++;
+            mediaPlaybackRow = rowCount++;
             stickersRow = rowCount++;
             stickersSectionRow = rowCount++;
 
@@ -1116,7 +1128,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             } else if (position == backgroundRow) {
                 presentFragment(new WallpapersListActivity(WallpapersListActivity.TYPE_ALL));
             } else if (position == changeUserColor) {
-                presentFragment(new PeerColorActivity(0).setOnApplied(this));
+                presentFragment(new PeerColorActivity(currentAccount,0).setOnApplied(this));
             } else if (position == sendByEnterRow) {
                 SharedPreferences preferences = MessagesController.getGlobalMainSettings();
                 boolean send = preferences.getBoolean("send_by_enter", false);
@@ -1484,6 +1496,14 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 createNewTheme();
             } else if (position == editThemeRow) {
                 editTheme();
+            } else if (position == doubleTapRow) {
+                presentFragment(new MonogramDoubleTapActivity(currentAccount));
+            } else if (position == swipeActionsRow) {
+                presentFragment(new MonogramSwipeActionsActivity(currentAccount));
+            } else if (position == chatBehaviorRow) {
+                presentFragment(new MonogramChatBehaviorActivity(currentAccount));
+            } else if (position == mediaPlaybackRow) {
+                presentFragment(new MonogramMediaPlaybackActivity(currentAccount));
             } else if (position == stickersRow) {
                 presentFragment(new StickersActivity(MediaDataController.TYPE_IMAGE, null));
             } else if (position == liteModeRow) {
@@ -2687,6 +2707,28 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                         cell.heightDp = 60;
                         cell.offsetFromImage = 64;
                         cell.imageLeft = 20;
+                    } else if (position == chatBehaviorRow) {
+                        cell.setTextAndIcon("Chat behavior", R.drawable.msg_settings, true);
+                        cell.setSubtitle("Keyboard, mentions and message menu actions");
+                    } else if (position == swipeActionsRow) {
+                        cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
+                        cell.setTextAndIcon(getString(R.string.MonogramSwipeActionsTitle), R.drawable.msg_message, true);
+                        cell.setSubtitle(getString(R.string.MonogramSwipeEntryInfo));
+                        cell.offsetFromImage = 64;
+                        cell.heightDp = 60;
+                        cell.imageLeft = 20;
+                    } else if (position == doubleTapRow) {
+                        cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
+                        cell.setTextAndIcon(getString(R.string.MonogramDoubleTapTitle), R.drawable.msg2_reactions2, true);
+                        cell.setSubtitle(getString(R.string.MonogramDoubleTapSettingsInfo));
+                        cell.offsetFromImage = 64;
+                        cell.heightDp = 60;
+                        cell.imageLeft = 20;
+                    } else if (position == mediaPlaybackRow) {
+                        cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
+                        cell.setTextAndIcon(getString(R.string.MonogramMediaPlaybackTitle), R.drawable.msg_played, true);
+                        cell.setSubtitle(getString(R.string.MonogramMediaPlaybackSubtitle));
+                        cell.offsetFromImage = 64;cell.heightDp = 60;cell.imageLeft = 20;
                     } else if (position == stickersRow) {
                         cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
                         cell.setTextAndIcon(getString(R.string.StickersName), R.drawable.msg2_sticker, false);
@@ -2768,7 +2810,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             } else if (position == bubbleRadiusRow) {
                 return TYPE_BUBBLE_RADIUS;
             } else if (position == backgroundRow || position == editThemeRow || position == createNewThemeRow ||
-                        position == liteModeRow || position == stickersRow) {
+                        position == liteModeRow || position == stickersRow || position == doubleTapRow || position == swipeActionsRow || position == chatBehaviorRow || position == mediaPlaybackRow) {
                 return TYPE_TEXT_PREFERENCE;
             } else if (position == swipeGestureRow) {
                 return TYPE_SWIPE_GESTURE;

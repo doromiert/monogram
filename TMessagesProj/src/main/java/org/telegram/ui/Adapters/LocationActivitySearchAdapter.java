@@ -27,6 +27,7 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
 
     private static final int VIEW_TYPE_LOCATION = 0;
     private static final int VIEW_TYPE_SECTION = 1;
+    private static final int VIEW_TYPE_PLACE_STATUS=2,VIEW_TYPE_ATTRIBUTION=3;
 
     private Context mContext;
     private Theme.ResourcesProvider resourcesProvider;
@@ -51,6 +52,7 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
 
     @Override
     public int getItemCount() {
+        if(isXmppSearch()) return (isSearching()?3:Math.max(1,places.size()))+1;
         int count = 0;
         if (!locations.isEmpty()) {
             count += 1 + locations.size();
@@ -73,7 +75,10 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         View view;
-        if (viewType == VIEW_TYPE_LOCATION) {
+        if(viewType==VIEW_TYPE_PLACE_STATUS || viewType==VIEW_TYPE_ATTRIBUTION) {
+            android.widget.TextView label=new android.widget.TextView(mContext);label.setTextColor(Theme.getColor(Theme.key_dialogTextGray3,resourcesProvider));label.setTextSize(14);label.setPadding(org.telegram.messenger.AndroidUtilities.dp(20),org.telegram.messenger.AndroidUtilities.dp(16),org.telegram.messenger.AndroidUtilities.dp(20),org.telegram.messenger.AndroidUtilities.dp(16));
+            label.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));view=label;
+        } else if (viewType == VIEW_TYPE_LOCATION) {
             view = new LocationCell(mContext, false, resourcesProvider);
         } else {
             view = new GraySectionCell(mContext, resourcesProvider);
@@ -83,6 +88,11 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
 
     @Override
     public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+        if(holder.getItemViewType()==VIEW_TYPE_PLACE_STATUS || holder.getItemViewType()==VIEW_TYPE_ATTRIBUTION) {
+            android.widget.TextView label=(android.widget.TextView)holder.itemView;boolean attribution=holder.getItemViewType()==VIEW_TYPE_ATTRIBUTION;
+            label.setText(attribution?LocaleController.getString(R.string.MonogramPlaceAttribution):placeSearchStatus());
+            label.setOnClickListener(attribution?view -> { try { mContext.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://www.openstreetmap.org/copyright")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)); }catch(android.content.ActivityNotFoundException unavailable) {} }:null);return;
+        }
         if (holder.getItemViewType() == VIEW_TYPE_LOCATION) {
             TLRPC.TL_messageMediaVenue place = null;
             String iconUrl = null;
@@ -118,6 +128,7 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
 
     @Override
     public int getItemViewType(int position) {
+        if(isXmppSearch()) { if(position==getItemCount()-1) return VIEW_TYPE_ATTRIBUTION;return !isSearching() && places.isEmpty()?VIEW_TYPE_PLACE_STATUS:VIEW_TYPE_LOCATION; }
         if ((position == 0 || position == (1 + locations.size())) && !locations.isEmpty()) {
             return VIEW_TYPE_SECTION;
         }
@@ -125,6 +136,7 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
     }
 
     public TLRPC.TL_messageMediaVenue getItem(int position) {
+        if(isXmppSearch()) return currentPlaceResults() && !isSearching() && position>=0 && position<places.size()?places.get(position):null;
         if (!locations.isEmpty()) {
             position--;
         }
@@ -144,6 +156,7 @@ public class LocationActivitySearchAdapter extends BaseLocationAdapter {
 
     @Override
     public boolean isEnabled(RecyclerView.ViewHolder holder) {
+        if(isXmppSearch()) return currentPlaceResults() && !isSearching() && holder.getItemViewType()==VIEW_TYPE_LOCATION;
         return true;
     }
 

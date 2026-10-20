@@ -128,7 +128,7 @@ public class ThemePreviewMessagesCell extends LinearLayout {
             message.replyMessage.message = LocaleController.getString(isChannel ? R.string.ChannelColorPreviewReply : R.string.UserColorPreviewReply);
             message.media = new TLRPC.TL_messageMediaWebPage();
             message.media.webpage = new TLRPC.TL_webPage();
-            message.media.webpage.embed_url = "https://telegram.org/";
+            message.media.webpage.embed_url = "https://github.com/doromiert/monogram";
             message.media.webpage.flags |= 2;
             message.media.webpage.site_name = LocaleController.getString(R.string.AppName);
             message.media.webpage.flags |= 4;
@@ -223,7 +223,7 @@ public class ThemePreviewMessagesCell extends LinearLayout {
                     TLRPC.TL_messageEntityTextUrl entityUrl = new TLRPC.TL_messageEntityTextUrl();
                     entityUrl.offset = index1;
                     entityUrl.length = index2 - index1 - 1;
-                    entityUrl.url = "https://telegram.org";
+                    entityUrl.url = "https://github.com/doromiert/monogram";
                     message.entities.add(entityUrl);
                 }
                 message.message = builder.toString();

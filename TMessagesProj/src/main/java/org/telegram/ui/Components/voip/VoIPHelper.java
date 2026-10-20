@@ -38,7 +38,11 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.voip.Instance;
+import org.telegram.messenger.voip.VoIPCallController;
+import org.telegram.messenger.voip.VoIPCallControllers;
 import org.telegram.messenger.voip.VoIPService;
+import org.telegram.messenger.xmpp.MonogramCallService;
+import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
@@ -74,6 +78,14 @@ public class VoIPHelper {
 	private static final int VOIP_SUPPORT_ID = 4244000;
 
 	public static void startCall(TLRPC.User user, boolean videoCall, boolean canVideoCall, final Activity activity, TLRPC.UserFull userFull, AccountInstance accountInstance) {
+		final int account = accountInstance != null ? accountInstance.getCurrentAccount() : UserConfig.selectedAccount;
+		if (activity == null || user == null) {
+			return;
+		}
+		if (!MonogramController.get(account).accountJid().isEmpty()) {
+			startXmppCall(user, videoCall, activity, account);
+			return;
+		}
 		if (accountInstance == null ? MessagesController.getInstance(UserConfig.selectedAccount).isFrozen() : accountInstance.getMessagesController().isFrozen()) {
 			AccountFrozenAlert.show(accountInstance == null ? UserConfig.selectedAccount : accountInstance.getCurrentAccount());
 			return;
@@ -121,6 +133,39 @@ public class VoIPHelper {
 		}
 	}
 
+	private static void startXmppCall(TLRPC.User user, boolean videoCall, Activity activity, int account) {
+		VoIPCallController active = VoIPCallControllers.get();
+		if (active == null) {
+			MonogramCallService.start(activity, account, user.id, videoCall);
+			return;
+		}
+		if (active.getAccount() == account && active.getPeerId() == user.id) {
+			activity.startActivity(new Intent(activity, LaunchActivity.class).setAction("voip").putExtra("currentAccount", account));
+			return;
+		}
+
+		TLRPC.User activeUser = active.getUser();
+		String oldName = activeUser != null
+				? ContactsController.formatName(activeUser.first_name, activeUser.last_name)
+				: LocaleController.getString(R.string.VoipOngoingAlertTitle);
+		String newName = ContactsController.formatName(user.first_name, user.last_name);
+		new AlertDialog.Builder(activity)
+				.setTitle(LocaleController.getString(R.string.VoipOngoingAlertTitle))
+				.setMessage(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.VoipOngoingAlert, oldName, newName)))
+				.setPositiveButton(LocaleController.getString(R.string.OK), (dialog, which) -> {
+					if (!VoIPCallControllers.isActive(active)) {
+						startXmppCall(user, videoCall, activity, account);
+						return;
+					}
+					active.hangUp(() -> {
+						lastCallTime = 0;
+						startXmppCall(user, videoCall, activity, account);
+					});
+				})
+				.setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+				.show();
+	}
+
 	public static void startCall(TLRPC.Chat chat, TLRPC.InputPeer peer, String hash, boolean createCall, Activity activity, BaseFragment fragment, AccountInstance accountInstance) {
 		startCall(chat, peer, hash, createCall, null, activity, fragment, accountInstance);
 	}
@@ -154,6 +199,30 @@ public class VoIPHelper {
 
 	private static void initiateCall(TLRPC.User user, TLRPC.Chat chat, String hash, boolean videoCall, boolean canVideoCall, boolean createCall, Boolean checkJoiner, final Activity activity, BaseFragment fragment, AccountInstance accountInstance) {
 		if (activity == null || user == null && chat == null) {
+			return;
+		}
+		VoIPCallController activeController = VoIPCallControllers.get();
+		if (user != null && activeController != null && !(activeController instanceof VoIPService)) {
+			TLRPC.User activeUser = activeController.getUser();
+			String oldName = activeUser != null
+					? ContactsController.formatName(activeUser.first_name, activeUser.last_name)
+					: LocaleController.getString(R.string.VoipOngoingAlertTitle);
+			String newName = ContactsController.formatName(user.first_name, user.last_name);
+			new AlertDialog.Builder(activity)
+					.setTitle(LocaleController.getString(R.string.VoipOngoingAlertTitle))
+					.setMessage(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.VoipOngoingAlert, oldName, newName)))
+					.setPositiveButton(LocaleController.getString(R.string.OK), (dialog, which) -> {
+						if (!VoIPCallControllers.isActive(activeController)) {
+							initiateCall(user, chat, hash, videoCall, canVideoCall, createCall, checkJoiner, activity, fragment, accountInstance);
+							return;
+						}
+						activeController.hangUp(() -> {
+							lastCallTime = 0;
+							initiateCall(user, chat, hash, videoCall, canVideoCall, createCall, checkJoiner, activity, fragment, accountInstance);
+						});
+					})
+					.setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+					.show();
 			return;
 		}
 		VoIPService voIPService = VoIPService.getSharedInstance();

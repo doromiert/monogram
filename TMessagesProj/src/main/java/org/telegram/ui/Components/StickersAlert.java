@@ -28,6 +28,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import org.telegram.messenger.xmpp.MonogramPacks;
 import android.os.Parcelable;
 import android.text.Editable;
 import android.text.InputType;
@@ -162,6 +163,13 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     private int itemSize, itemHeight;
     public boolean probablyEmojis;
     private boolean isEditModeEnabled;
+    private boolean localOptionsAdded;
+    private MonogramPacks.ImportObserver localUpdateObserver;
+    private AlertDialog localUpdateDialog;
+    private String localPackOwner;
+    private static StickersAlert addingLocalStickers;
+    private static final int LOCAL_STICKER_FILES = 7212;
+
 
     public TLRPC.TL_messages_stickerSet stickerSet;
     private TLRPC.Document selectedSticker;
@@ -235,6 +243,9 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
         @Override
         public void deleteSticker(TLRPC.Document document) {
+            if (localPack()!=null) {
+                editableLocalPack(() -> editLocalPack(() -> MonogramPacks.removeItem(currentAccount,stickerSet.set.id,document.id))); return;
+            }
             stickerSet.documents.remove(document);
             boolean empty = stickerSet.documents.isEmpty();
             if (empty)
@@ -266,6 +277,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
         @Override
         public void editSticker(TLRPC.Document document) {
+            if(localPack()!=null) { localItemMenu(document,gridView);return; }
             StickersAlert.editSticker(parentFragment, stickerSet, document);
         }
 
@@ -966,7 +978,12 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
             @Override
             public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
                 super.onSelectedChanged(viewHolder, actionState);
-                if (actionState == ItemTouchHelper.ACTION_STATE_IDLE && draggedDocument != null && movedPos > 0) {
+                if (actionState == ItemTouchHelper.ACTION_STATE_IDLE && draggedDocument != null && movedPos >= 0) {
+                    if(localPack()!=null) {
+                        long movedId=draggedDocument.id; int position=movedPos;
+                        movedPos=-1;draggedDocument=null;
+                        editLocalPack(() -> MonogramPacks.moveItem(currentAccount,stickerSet.set.id,movedId,position));return;
+                    }
                     TLRPC.TL_stickers_changeStickerPosition req = new TLRPC.TL_stickers_changeStickerPosition();
                     req.position = movedPos;
                     req.sticker = MediaDataController.getInputStickerSetItem(draggedDocument, "").document;
@@ -1012,6 +1029,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         });
         stickersOnItemClickListener = (view, position) -> {
             if (view instanceof AddStickerBtnView) {
+                if(localPack()!=null) { addLocalStickers();return; }
                 StickersDialogs.showAddStickerDialog(stickerSet, view, parentFragment, resourcesProvider);
                 return;
             }
@@ -1225,7 +1243,231 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         }
     }
 
+    private MonogramPacks.Pack localPack() {
+        if(stickerSet==null || stickerSet.set==null) return null;
+        if(localPackOwner!=null && !localPackOwner.equals(MonogramPacks.owner(currentAccount))) return null;
+        MonogramPacks.Pack pack=MonogramPacks.pack(currentAccount,stickerSet.set.id);
+        if(pack!=null && localPackOwner==null) localPackOwner=MonogramPacks.owner(currentAccount);
+        return pack;
+    }
+    private interface LocalPackChange { void run() throws Exception; }
+    private boolean editLocalPack(LocalPackChange change) {
+        if(localPack()==null) return false;
+        try { change.run(); reloadLocalPack();return true; }
+        catch(Exception failed) { localPackError(failed.getMessage());return false; }
+    }
+    private void localPackError(String text) {
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Sticker pack")
+                .setMessage(text==null ? "Could not update this pack." : text)
+                .setPositiveButton(LocaleController.getString(R.string.OK),null).show();
+    }
+    private void reloadLocalPack() {
+        MonogramPacks.Pack pack=localPack();
+        if(pack==null || !pack.installed) { dismiss();return; }
+        TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=pack.id;
+        stickerSet=MonogramPacks.find(currentAccount,input);
+        MediaDataController.getInstance(currentAccount).putStickerSet(stickerSet);
+        updateFields();adapter.notifyDataSetChanged();checkOptions();
+    }
+    private void editableLocalPack(Runnable action) {
+        MonogramPacks.Pack pack=localPack();if(pack==null) return;
+        if(pack.connected || MonogramPacks.telegramSource(pack)) detachLocalPack(action);else action.run();
+    }
+    private void detachLocalPack(Runnable after) {
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Detach from Telegram?")
+                .setMessage("Keep all stickers on this phone as an editable local pack. The Telegram source link is removed; this pack will not receive Telegram updates. Existing messages and favorites keep working.")
+                .setPositiveButton("Detach",(dialog,which) -> {
+                    if(editLocalPack(() -> MonogramPacks.detach(currentAccount,stickerSet.set.id)) && after!=null) after.run();
+                }).setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+    }
+    private void showLocalUpdateStatus() {
+        MonogramPacks.Pack pack=localPack();if(pack==null) return;
+        if(localUpdateDialog!=null) localUpdateDialog.dismiss();
+        LineProgressView progress=new LineProgressView(getContext());
+        progress.setProgressColor(getThemedColor(Theme.key_windowBackgroundWhiteBlueText4));
+        progress.setBackColor(getThemedColor(Theme.key_listSelector));
+        FrameLayout meter=new FrameLayout(getContext());
+        meter.setMinimumHeight(AndroidUtilities.dp(27));
+        meter.addView(progress,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,3,Gravity.CENTER,24,12,24,12));
+        localUpdateDialog=new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Telegram pack update").setMessage("Preparing update status…")
+                .setView(meter).setPositiveButton(LocaleController.getString(R.string.Close),null)
+                .setNeutralButton("Cancel update",(dialog,which) -> MonogramPacks.cancelImport(currentAccount,pack.id)).create();
+        localUpdateObserver=ignoredState -> {
+            if(localUpdateDialog==null) return;
+            MonogramPacks.ImportProgress state=MonogramPacks.importProgress(currentAccount,pack.id);
+            String text=state==null ? "Connected to Telegram. Updates preserve your local sticker order and existing messages." : state.stage;
+            if(state!=null && state.total>0) text+="\n"+state.completed+" / "+state.total+" stickers";
+            if(state!=null && state.totalBytes>0) text+="\n"+AndroidUtilities.formatFileSize(state.currentBytes)+" / "+AndroidUtilities.formatFileSize(state.totalBytes);
+            if(state!=null && state.error!=null) text+="\n"+state.error;
+            MonogramPacks.Pack current=localPack();
+            if(state==null && current!=null) {
+                if(current.lastSync>0) text+="\nLast updated: "+java.text.DateFormat.getDateTimeInstance().format(new java.util.Date(current.lastSync));
+                if(!current.syncError.isEmpty()) text+="\n"+current.syncError;
+            }
+            if(state!=null && state.active) text+="\nYou can close this view; the update continues in the background.";
+            localUpdateDialog.setMessage(text);
+            progress.setProgress(state!=null && state.total>0 ? Math.min(1f,(float)state.completed/state.total) : 0,true);
+            meter.setVisibility(state!=null && state.active ? View.VISIBLE : View.GONE);
+            if(state!=null && !state.active) reloadLocalPack();
+        };
+        localUpdateDialog.setOnDismissListener(dialog -> {
+            MonogramPacks.removeImportObserver(currentAccount,localUpdateObserver);localUpdateObserver=null;localUpdateDialog=null;
+        });
+        localUpdateDialog.show();localUpdateObserver.changed(MonogramPacks.importProgress(currentAccount,pack.id));
+        MonogramPacks.addImportObserver(currentAccount,localUpdateObserver);
+    }
+    private void localItemMenu(TLRPC.Document document,View anchor) {
+        MonogramPacks.Pack pack=localPack();if(pack==null) return;
+        for(MonogramPacks.Item item:pack.items) if(item.id==document.id) {
+                ItemOptions.makeOptions(containerView,resourcesProvider,anchor)
+                    .addText(item.name,14,AndroidUtilities.bold(),280)
+                    .add(R.drawable.msg_gallery,org.telegram.messenger.xmpp.MonogramStickerExport.label(document),() -> org.telegram.messenger.xmpp.MonogramStickerExport.save(parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity(),currentAccount,document))
+                    .add(R.drawable.msg_edit,"Edit artwork",() -> editableLocalPack(() -> StickersAlert.editSticker(parentFragment,stickerSet,document)))
+                    .add(R.drawable.msg_gallery,"Replace artwork",() -> addLocalStickers(item.id))
+                    .add(R.drawable.msg_edit,"Edit name",() -> editableLocalPack(() -> localItemInput(item,false)))
+                    .add(R.drawable.msg_emoji_stickers,"Change emoji tag",() -> editableLocalPack(() -> localItemInput(item,true)))
+                    .add(R.drawable.msg_delete,"Remove sticker",() -> new AlertDialog.Builder(getContext(),resourcesProvider)
+                        .setTitle("Remove sticker?").setPositiveButton("Remove",(dialog,which) -> editableLocalPack(() -> editLocalPack(() -> MonogramPacks.removeItem(currentAccount,pack.id,item.id))))
+                        .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show())
+                    .show();return;
+        }
+    }
+    private void localItemInput(MonogramPacks.Item item,boolean emoji) {
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),emoji ? "Associated emoji" : "Sticker name",false);
+        input.editText.setSingleLine(true);input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
+        input.editText.setText(emoji ? item.emoji : item.name);
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle(emoji ? "Associated emoji" : "Sticker name").setView(input)
+                .setPositiveButton(LocaleController.getString(R.string.Save),(dialog,which) -> editLocalPack(() -> MonogramPacks.rename(currentAccount,stickerSet.set.id,item.id,input.getText().toString(),emoji)))
+                .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+    }
+    private void addLocalStickers() { addLocalStickers(0); }
+    private void addLocalStickers(long replacedItemId) {
+        editableLocalPack(() -> {
+            ChatAttachAlert picker = new ChatAttachAlert(getContext(), parentFragment, false, false, false, resourcesProvider);
+            picker.setupPhotoPicker("Add stickers");
+            picker.setMaxSelectedPhotos(replacedItemId == 0 ? -1 : 1, true);
+            picker.setDelegate(new ChatAttachAlert.ChatAttachViewDelegate() {
+                @Override
+                public void didPressedButton(int button, boolean arg, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia, boolean forceDocument, long payStars) {
+                    ArrayList<Uri> files = new ArrayList<>();
+                    try {
+                        for (Object key : picker.getPhotoLayout().getSelectedPhotosOrder()) {
+                            Object selected = picker.getPhotoLayout().getSelectedPhotos().get(key);
+                            if (!(selected instanceof MediaController.PhotoEntry)) continue;
+                            MediaController.PhotoEntry photo = (MediaController.PhotoEntry) selected;
+                            String path = photo.path != null && org.telegram.messenger.xmpp.MonogramAttachments.isGif(new java.io.File(photo.path))
+                                    ? photo.path : photo.imagePath != null ? photo.imagePath : photo.path;
+                            if (path == null) throw new IllegalArgumentException("The selected image is unavailable.");
+                            files.add(androidx.core.content.FileProvider.getUriForFile(getContext(),
+                                    org.telegram.messenger.ApplicationLoader.getApplicationId() + ".provider", new java.io.File(path)));
+                        }
+                        if (files.isEmpty()) return;
+                        picker.dismiss();
+                        addLocalStickerUris(files,replacedItemId);
+                    } catch (Exception failed) {
+                        localPackError("Could not read the selected images. Try Import sticker files from the pack menu.");
+                    }
+                }
+            });
+            picker.init();
+            picker.getPhotoLayout().loadGalleryPhotos();
+            picker.show();
+        });
+    }
+    private void addLocalStickerUris(ArrayList<Uri> files) { addLocalStickerUris(files,0); }
+    private void addLocalStickerUris(ArrayList<Uri> files,long replacedItemId) {
+        if (files.isEmpty() || localPack() == null) return;
+        if (replacedItemId != 0 && files.size() != 1) { localPackError("Select one replacement image.");return; }
+        // External pickers pause the fragment and dismiss its dialog; restore a fresh pack sheet.
+        if (isDismissed()) {
+            TLRPC.TL_inputStickerSetID input = new TLRPC.TL_inputStickerSetID();input.id = stickerSet.set.id;
+            StickersAlert restored = new StickersAlert(getContext(), parentFragment, input,
+                    MonogramPacks.find(currentAccount,input), delegate, resourcesProvider, false);
+            if (parentFragment != null) parentFragment.showDialog(restored);else restored.show();
+            restored.addLocalStickerUris(files,replacedItemId);
+            return;
+        }
+        MonogramPacks.Callback finished = error -> {
+            if(isDismissed() || localPack()==null) return;
+            pickerBottomLayout.setEnabled(true);reloadLocalPack();
+            if(error!=null) localPackError(error);
+        };
+        if (files.size() == 1) {
+            org.telegram.ui.Cells.EditTextCell name = new org.telegram.ui.Cells.EditTextCell(getContext(), "Sticker name", false);
+            name.editText.setSingleLine(true);
+            name.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(100)});
+            name.editText.setText("Sticker");
+            String previousEmoji="🙂";
+            for(MonogramPacks.Item item:localPack().items) if(item.id==replacedItemId) { name.editText.setText(item.name);previousEmoji=item.emoji; }
+            final String emoji=previousEmoji;
+            AlertDialog nameDialog = new AlertDialog.Builder(getContext(), resourcesProvider).setTitle("Sticker name").setView(name)
+                    .setPositiveButton(LocaleController.getString(R.string.Save), (dialog, which) -> {
+                        if (localPack() == null) { dialog.dismiss();return; }
+                        final String label;
+                        try { label=MonogramPacks.name(name.getText().toString()); }
+                        catch(IllegalArgumentException invalid) { name.editText.setError(invalid.getMessage());return; }
+                        dialog.dismiss();
+                        pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
+                        if(replacedItemId==0) MonogramPacks.saveSticker(currentAccount, stickerSet.set.id, stickerSet.set.title,
+                                files.get(0), label, emoji, finished);
+                        else MonogramPacks.replaceSticker(currentAccount,stickerSet.set.id,replacedItemId,
+                                files.get(0),label,emoji,finished);
+                    }).setNegativeButton(LocaleController.getString(R.string.Cancel), (dialog,which)->dialog.dismiss()).create();
+            nameDialog.setDismissDialogByButtons(false);
+            nameDialog.show();
+            name.editText.selectAll();
+        } else {
+            pickerBottomLayout.setText("Adding stickers…",true);pickerBottomLayout.setEnabled(false);
+            MonogramPacks.addItems(currentAccount,stickerSet.set.id,files,finished);
+        }
+    }
+    private void importLocalStickerFiles() {
+        editableLocalPack(() -> {
+            try {
+                android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                        .setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        .putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE,true)
+                        .putExtra(android.content.Intent.EXTRA_MIME_TYPES,new String[]{"image/*","video/webm","application/gzip","application/x-tgsticker","application/octet-stream"});
+                addingLocalStickers=this;
+                Activity activity=parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity();
+                if(activity==null) throw new IllegalStateException("Reopen the pack to select files.");
+                activity.startActivityForResult(intent,LOCAL_STICKER_FILES);
+            } catch(Exception failed) { addingLocalStickers=null;localPackError("Could not open the file picker."); }
+        });
+    }
+    public static boolean onLocalStickerFilesResult(int requestCode,int resultCode,android.content.Intent data) {
+        if(requestCode!=LOCAL_STICKER_FILES) return false;
+        StickersAlert sheet=addingLocalStickers;addingLocalStickers=null;
+        if(sheet==null || sheet.localPack()==null || resultCode!=Activity.RESULT_OK || data==null) return true;
+        ArrayList<Uri> files=new ArrayList<>();
+        if(data.getClipData()!=null) for(int i=0;i<data.getClipData().getItemCount();i++) files.add(data.getClipData().getItemAt(i).getUri());
+        else if(data.getData()!=null) files.add(data.getData());
+        if(files.isEmpty()) return true;
+        sheet.addLocalStickerUris(files);
+        return true;
+    }
+
     private void checkOptions() {
+        MonogramPacks.Pack local=localPack();
+        if(local!=null) {
+            if(!localOptionsAdded) {
+                optionsButton.removeAllSubItems();
+                optionsButton.addSubItem(103,R.drawable.tabs_reorder,LocaleController.getString(R.string.StickersReorder));
+                optionsButton.addSubItem(104,R.drawable.msg_edit,LocaleController.getString(R.string.EditName));
+                optionsButton.addSubItem(106,R.drawable.menu_sticker_add,"Add stickers");
+                optionsButton.addSubItem(108,R.drawable.msg_gallery,"Import sticker files");
+                optionsButton.addSubItem(107,R.drawable.msg_link,"Detach from Telegram");
+                optionsButton.addSubItem(109,R.drawable.msg_retry,"Check for Telegram updates");
+                optionsButton.addSubItem(110,R.drawable.msg_settings,"Automatic Telegram updates");
+                optionsButton.addSubItem(111,R.drawable.msg_info,"Telegram update status");
+                optionsButton.addSubItem(105,R.drawable.msg_delete,"Remove pack");
+                localOptionsAdded=true;
+            }
+            for(int option:new int[]{107,109,110,111}) {
+                if(MonogramPacks.telegramSource(local)) optionsButton.showSubItem(option);else optionsButton.hideSubItem(option);
+            }
+            return;
+        }
         final MediaDataController mediaDataController = MediaDataController.getInstance(currentAccount);
         boolean notInstalled = stickerSet == null || !mediaDataController.isStickerPackInstalled(stickerSet.set.id);
         if (stickerSet != null && stickerSet.set != null && stickerSet.set.creator && deleteItem == null && !DISABLE_STICKER_EDITOR) {
@@ -1326,6 +1568,31 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     }
 
     private void onSubItemClick(int id) {
+        if(localPack()!=null && id>=103 && id<=111) {
+            optionsButton.closeSubMenu();
+            if(id==103) { if(isEditModeEnabled) disableEditMode();else enableEditMode(); }
+            else if(id==104) editableLocalPack(() -> StickersDialogs.showNameEditorDialog(stickerSet.set,resourcesProvider,getContext(),(text,done) -> {
+                boolean success=editLocalPack(() -> MonogramPacks.rename(currentAccount,stickerSet.set.id,0,text.toString(),false));done.run(success);
+            }));
+            else if(id==105) new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Remove pack?")
+                    .setMessage("Existing messages and their artwork are kept.")
+                    .setPositiveButton("Remove",(dialog,which) -> editLocalPack(() -> MonogramPacks.remove(currentAccount,stickerSet.set.id)))
+                    .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+            else if(id==106) addLocalStickers();
+            else if(id==107) detachLocalPack(null);
+            else if(id==108) importLocalStickerFiles();
+            else if(id==109) {
+                try { MonogramPacks.resync(currentAccount,stickerSet.set.id); showLocalUpdateStatus(); }
+                catch(Exception failed) { localPackError(failed.getMessage()); }
+            } else if(id==110) {
+                MonogramPacks.Pack pack=localPack();
+                new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Automatic Telegram updates")
+                        .setMessage((pack.autoSync ? "Enabled." : "Disabled.")+" Connected packs are read-only. When enabled, Monogram checks Telegram about every six hours while running. The bot token is required. Detached packs are never updated. Artwork removed from Telegram stays available in old messages and favorites.")
+                        .setPositiveButton(pack.autoSync ? "Disable" : "Enable",(dialog,which) -> editLocalPack(() -> MonogramPacks.autoSync(currentAccount,pack.id,!pack.autoSync)))
+                        .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+            } else if(id==111) showLocalUpdateStatus();
+            return;
+        }
         if (stickerSet == null) {
             return;
         }
@@ -1429,6 +1696,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         if (titleTextView == null) {
             return;
         }
+        if(localPack()!=null) stickerSet.set.creator=true;
         if (stickerSet != null && stickerSet.documents != null && !stickerSet.documents.isEmpty()) {
             SpannableStringBuilder stringBuilder = null;
             CharSequence title = stickerSet.set.title;
@@ -1970,6 +2238,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
     @Override
     public void dismiss() {
+        if(localUpdateDialog!=null) localUpdateDialog.dismiss();
         super.dismiss();
         stickersShaker.stopShake(false);
         if (!ignoreMasterDismiss && masterDismissListener != null) {
@@ -2315,6 +2584,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                     if (stickerSet == null) return;
                     cell.setSticker(stickerSet.documents.get(position), null, stickerSet, null, showEmoji, isEditModeEnabled);
                     cell.editModeIcon.setOnClickListener(v -> {
+                        if(localPack()!=null) { localItemMenu(cell.getSticker(),cell);return; }
                         ContentPreviewViewer.getInstance().setDelegate(previewDelegate);
                         ContentPreviewViewer.getInstance().showMenuFor(cell);
                     });
@@ -2372,7 +2642,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 totalItems = importingStickersPaths.size();
             } else {
                 totalItems = stickerSet != null ? stickerSet.documents.size() : 0;
-                if (stickerSet != null && stickerSet.set.creator && stickerSet.documents.size() < STICKERS_MAX_COUNT && !DISABLE_STICKER_EDITOR && !stickerSet.set.masks && !stickerSet.set.emojis) {
+                if (stickerSet != null && stickerSet.set.creator && (localPack()!=null || stickerSet.documents.size() < STICKERS_MAX_COUNT) && !DISABLE_STICKER_EDITOR && !stickerSet.set.masks && (!stickerSet.set.emojis || localPack()!=null)) {
                     totalItems++;
                 }
             }
@@ -2407,6 +2677,8 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
     @SuppressLint("NotifyDataSetChanged")
     public void enableEditMode() {
+        MonogramPacks.Pack local=localPack();
+        if(local!=null && (local.connected || MonogramPacks.telegramSource(local))) { detachLocalPack(this::enableEditMode);return; }
         if (isEditModeEnabled) {
             return;
         }

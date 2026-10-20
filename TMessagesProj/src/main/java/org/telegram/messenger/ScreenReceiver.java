@@ -30,6 +30,12 @@ public class ScreenReceiver extends BroadcastReceiver {
             }
             ConnectionsManager.getInstance(UserConfig.selectedAccount).setAppPaused(false, true);
             ApplicationLoader.isScreenOn = true;
+            // Waking a backgrounded app does not pass through the activity resume connection check.
+            for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) {
+                if (context.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE).contains("jid")) {
+                    org.telegram.messenger.xmpp.MonogramController.get(account).networkChanged();
+                }
+            }
         }
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.screenStateChanged);
     }
