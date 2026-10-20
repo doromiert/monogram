@@ -2182,12 +2182,12 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 if (cancelTakingPhotos && cameraPhotos.size() == 1) {
                     for (int a = 0, size = cameraPhotos.size(); a < size; a++) {
                         MediaController.PhotoEntry photoEntry = (MediaController.PhotoEntry) cameraPhotos.get(a);
-                        new File(photoEntry.path).delete();
+                        if(!org.telegram.messenger.xmpp.MonogramMediaDrafts.protectedFile(photoEntry.path)) new File(photoEntry.path).delete();
                         if (photoEntry.imagePath != null) {
-                            new File(photoEntry.imagePath).delete();
+                            if(!org.telegram.messenger.xmpp.MonogramMediaDrafts.protectedFile(photoEntry.imagePath)) new File(photoEntry.imagePath).delete();
                         }
                         if (photoEntry.thumbPath != null) {
-                            new File(photoEntry.thumbPath).delete();
+                            if(!org.telegram.messenger.xmpp.MonogramMediaDrafts.protectedFile(photoEntry.thumbPath)) new File(photoEntry.thumbPath).delete();
                         }
                     }
                     cameraPhotos.clear();

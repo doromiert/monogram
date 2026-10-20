@@ -67,30 +67,62 @@ Protected original temporary paths can still remain until cache cleanup/process
 restart.
 No account credentials or OMEMO keys are copied into this store.
 
+## External provider and camera results
+
+Ordinary external document/gallery results now return to the native picker for
+confirmation and captions instead of immediately sending the selected files.
+External camera results keep the native photo/video preview. Editing, scheduled
+and rich-composer result paths continue using their existing behavior.
+
+Each ordinary launch records the account JID, conversation, logout generation
+and camera output path. The fragment saves its request tokens across recreation.
+A result for a different currently displayed chat/account is preserved only for
+its original still-valid owner; it never sends or opens in the new context.
+Results from a logged-out/replaced owner are rejected with a recovery notice.
+
+SAF documents request retained read grants. Returned content URIs are recorded
+before background copying into private draft assets; provider display names are
+kept. Temporary grants have the same private-copy fallback. Image orientation
+and video dimensions/duration are resolved on the worker, and the ready native
+picker opens only when the owning chat resumes. URI access/copy failures retain
+recoverable metadata and show a notice to restore access or select the inputs
+again. Unsupported schemes and the app’s own private FileProvider are rejected.
+An external result never replaces another media kind or a batch awaiting native
+handoff. The existing composition remains intact, and the UI asks the user to
+finish/discard it first. Result metadata and retained grants stay owner-bound;
+reopening an empty attachment picker retries the deferred result. Sources with
+only a temporary grant may need to be selected again if that access has expired.
+Captions are merged only with the same compatible unsent kind.
+No automatic-send queue is added: pressing Send uses the ordinary native outbox
+and existing all-item handoff. A copy interrupted before its private snapshot
+finishes still requires the original URI/file to be accessible, as above.
+
 ## Remaining coverage and acceptance
 
 Scheduled compositions and unapplied crop/paint editor canvases are not covered. The native location tab dispatches its current place directly
 through didSelectLocation from its action/venue callbacks; it has no selected
 attachment batch to restore. Contacts’ native selectedContacts/order and caption path are now recovered.
-External Android
-file-provider launch/result selection is also outside the in-picker file list. No cross-device draft support is
+External Android provider/camera results are covered for ordinary chats. No cross-device draft support is
 claimed. Keep the broader media-draft TODO in progress until those paths and
 phone acceptance are finished.
 
-Fifteen source fixtures cover selection order and caption entities, video edits,
+Twenty-three source fixtures cover selection order and caption entities, video edits,
 private camera snapshots, changed/missing sources, owner isolation, all-item
 outbox acknowledgement, reserved native params, logout retention, document/music
 restoration, contact/provider metadata, history-forward source metadata, partial
 caption/contact acceptance, scoped one-use handoffs and conservative asset
-collection including a stale-scan/cross-owner-selection race. They are
+collection including a stale-scan/cross-owner-selection race, external launch
+ownership, SAF multiple files/provider names, missing grants, camera output
+recovery, stale/private-provider rejection, incompatible-kind preservation and
+pending-batch preservation/deferred recovery. They are
 prepared, **not run**. Run at the next planned phone-update gate:
 
 ```sh
-nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMediaDraftsTest --tests org.telegram.messenger.xmpp.MonogramSelectionDraftsTest
+nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMediaDraftsTest --tests org.telegram.messenger.xmpp.MonogramSelectionDraftsTest --tests org.telegram.messenger.xmpp.MonogramExternalSelectionsTest
 ```
 
 Phone acceptance should exercise keep/discard, back navigation, process restart,
-account switching, file/music/contact/history selections, applied photo/video edits, missing files and conversion
+account switching, file/music/contact/history/external selections, camera preview, applied photo/video edits, missing files and conversion
 failure/partial batches before claiming complete attachment draft support.
 Text draft acceptance still includes formatting-only edits and reply quotes;
 the two earlier text comparison cases passed at the 0.2.119 gate.

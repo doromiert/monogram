@@ -6090,6 +6090,8 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
     private org.telegram.messenger.xmpp.MonogramMediaDrafts.Session mediaDraft;
     private boolean mediaDraftInitializing,mediaDraftDiscarded;
+    private boolean externalCameraPreviewAfterRestore,externalCameraInit;
+    public void initExternalCameraPreview() { externalCameraInit=true;init(); }
     private final Runnable saveMediaDraftRunnable=() -> saveMediaDraftNow(false);
     public Object mediaDraftOwner() { return hasMediaDraftSession() ? mediaDraft : null; }
     public boolean hasMediaDraftSession() { return mediaDraft!=null && mediaDraft.active() && !mediaDraftDiscarded; }
@@ -6121,6 +6123,10 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     private void restoreMediaDraft() {
         if(!hasMediaDraftSession()) return;
         final org.telegram.messenger.xmpp.MonogramMediaDrafts.Session owner=mediaDraft;
+        if(org.telegram.messenger.xmpp.MonogramExternalSelections.recoverWhenEmpty(currentAccount,getDialogId(),this::mediaDraftError,() -> {
+            if(mediaDraft!=owner || destroyed || isDismissed() || currentAccount!=UserConfig.selectedAccount) return;
+            bindMediaDraft();restoreMediaDraft();
+        })) return;
         mediaDraft.restore(restored -> {
             if(mediaDraft!=owner || !owner.active() || destroyed || isDismissed() || currentAccount!=UserConfig.selectedAccount) return;
             mediaDraftInitializing=true;
@@ -6141,10 +6147,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 getCommentView().setText(text);
             }
             updateCountButton(0);mediaDraftInitializing=false;
+            if(externalCameraPreviewAfterRestore) { externalCameraPreviewAfterRestore=false;if(!restored.photos.isEmpty()) photoLayout.openPhotoViewer(null,false,true); }
             if(restored.missing>0) mediaDraftError(restored.missing+" draft item(s) are unavailable or changed. They remain saved for recovery; restore access to the original files or discard the draft.");
         });
     }
     public void init() {
+        externalCameraPreviewAfterRestore=externalCameraInit;externalCameraInit=false;
         saveMediaDraftNow(false);mediaDraftInitializing=true;mediaDraftDiscarded=false;bindMediaDraft();
         writeButton.setEffect(effectId = 0);
         botButtonWasVisible = false;

@@ -194,6 +194,26 @@ public final class MonogramMediaDrafts {
     public static HashMap<String,String> captureContact(int account,long dialog,int index) { return active!=null && active.kind.equals("contacts") ? captureReference(account,dialog,"contact:"+index) : null; }
     public static HashMap<String,String> captureCaption(int account,long dialog,String kind) { return active!=null && active.kind.equals(kind) ? captureReference(account,dialog,"caption") : null; }
     public static void finishReferenceHandoff() { Session session=active;if(session!=null) session.handoffOpen=false; }
+    /** External results become a native composition, never an automatic send or another queue. */
+    public static boolean recordExternal(Owner owner,List<MediaController.PhotoEntry> inputs,String kind,Consumer<String> errors,Runnable ready) {
+        synchronized(gcFence) { try {
+            if(owner==null || !owner.current()) return false;
+            JSONArray entries=new JSONArray();String capture=UUID.randomUUID().toString();JSONObject previous=load(owner);
+            if(previous!=null && (previous.has("batch") || !kind.equals(previous.optString("kind","photo")))) {
+                report(errors,"Finish sending or discard the existing attachment draft, then reopen the attachment picker to import this selection. The returned selection is retained for recovery.");return false;
+            }
+            Session picker=active;if(picker!=null && picker.owner.key.equals(owner.key)) picker.close();
+            if(previous!=null && !previous.has("batch") && kind.equals(previous.optString("kind","photo"))) { JSONArray old=previous.getJSONArray("photos");for(int i=0;i<old.length();i++) entries.put(old.getJSONObject(i)); }
+            for(MediaController.PhotoEntry photo:inputs) { JSONObject entry=encode(photo,owner.account).put("capture",capture).put("originalUri",photo.path);if(kind.equals("photo")) entry.put("resolveMedia",true);entries.put(entry);protect(entry); }
+            if(entries.length()==0) return false;
+            JSONObject state=new JSONObject().put("kind",kind).put("version",1).put("account",owner.account).put("jid",owner.jid).put("peer",owner.peer).put("epoch",owner.epoch).put("photos",entries).put("caption","").put("entities",entities(null));
+            if(previous!=null && !previous.has("batch") && kind.equals(previous.optString("kind","photo"))) state.put("caption",previous.optString("caption")).put("entities",previous.optString("entities",entities(null))).put("above",previous.optBoolean("above"));
+            return publish(owner,state,errors,ready);
+        } catch(Exception failed) { report(errors,"Could not preserve the external selection. Select the files again.");return false; } }
+    }
+    static boolean hasComposition(Owner owner) {
+        try { return load(owner)!=null; } catch(Exception uncertain) { return true; }
+    }
     public static void deactivate() { Session session=active;if(session!=null) session.close();active=null; }
     public static boolean protectedFile(String path) { return path!=null && protectedPaths.contains(path); }
     public static void mergeParams(HashMap<String,String> destination,HashMap<String,String> source) {
@@ -260,6 +280,7 @@ public final class MonogramMediaDrafts {
     }
     public static void logout(int account,String jid) {
         gcFence.incrementAndGet();
+        MonogramExternalSelections.logout(account,jid);
         final String nextEpoch=UUID.randomUUID().toString();
         loggedOut.add(account+"\n"+jid);runtimeEpochs.put(account+"\n"+jid,nextEpoch);
         boolean persisted=false;
@@ -290,13 +311,15 @@ public final class MonogramMediaDrafts {
     }
     private static void deleteTree(File file) { File[] children=file.listFiles();if(children!=null) for(File child:children) deleteTree(child);file.delete(); }
     private static AtomicLong revision(Owner owner) { return revisions.computeIfAbsent(owner.key,key -> new AtomicLong()); }
-    private static void publish(Owner owner,JSONObject state,Consumer<String> errors) {
+    private static void publish(Owner owner,JSONObject state,Consumer<String> errors) { publish(owner,state,errors,null); }
+    private static boolean publish(Owner owner,JSONObject state,Consumer<String> errors,Runnable ready) {
         gcFence.incrementAndGet();
+        boolean durable=true;
         final long version;
         synchronized(revision(owner)) {
             version=revision(owner).incrementAndGet();
             try { state.put("revision",version);latest.put(owner.key,state);cleared.remove(owner.key);write(owner,state); }
-            catch(Exception failed) { report(errors,"Could not save the media draft. Keep the picker open and try again."); }
+            catch(Exception failed) { durable=false;report(errors,"Could not save the media draft. Keep the picker open and try again."); }
         }
         WRITER.execute(() -> {
             if(version!=revision(owner).get() || !owner.current()) return;
@@ -310,7 +333,9 @@ public final class MonogramMediaDrafts {
                 }
                 if(incomplete) report(errors,"Some draft media could not be preserved. Keep the original files available before leaving the picker.");
             } catch(Exception failed) { report(errors,"Some draft media could not be preserved. Keep the original files available before leaving the picker."); }
+            if(ready!=null && owner.current() && version==revision(owner).get()) AndroidUtilities.runOnUIThread(ready);
         });
+        return durable;
     }
     private static void clear(Owner owner) {
         gcFence.incrementAndGet();
@@ -427,6 +452,22 @@ public final class MonogramMediaDrafts {
             String path=copy ? copy(owner,source,entry.optString("capture",UUID.randomUUID().toString())) : source;entry.put(key,path);
             if(key.equals("path")) { File file=new File(path);entry.put("sourceSize",file.length()).put("sourceModified",file.lastModified()); }
         }
+        if(entry.optBoolean("resolveMedia")) {
+            String path=entry.getString("path"),source=entry.optString("originalUri",path),mime=null;
+            if(source.startsWith("content:")) try { mime=ApplicationLoader.applicationContext.getContentResolver().getType(Uri.parse(source)); } catch(Exception ignored) {}
+            String lower=path.toLowerCase(Locale.ROOT);
+            boolean video=entry.optBoolean("video") || mime!=null && mime.startsWith("video/") || lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mkv") || lower.endsWith(".mov");entry.put("video",video);
+            if(video) {
+                android.media.MediaMetadataRetriever retriever=new android.media.MediaMetadataRetriever();try {
+                    retriever.setDataSource(path);String width=retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH),height=retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT),duration=retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+                    if(width!=null) entry.put("width",Integer.parseInt(width));if(height!=null) entry.put("height",Integer.parseInt(height));if(duration!=null) entry.put("duration",(int)Math.ceil(Long.parseLong(duration)/1000d));
+                    String rotation=retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);if(rotation!=null) entry.put("videoOrientation",Integer.parseInt(rotation));
+                } finally { retriever.release(); }
+            } else {
+                android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeFile(path,bounds);if(bounds.outWidth>0) entry.put("width",bounds.outWidth).put("height",bounds.outHeight);
+                android.util.Pair<Integer,Integer> orientation=AndroidUtilities.getImageOrientation(path);entry.put("orientation",orientation.first).put("invert",orientation.second);
+            }
+        }
         if(entry.has("edit")) {
             VideoEditedInfo info=readEdit(entry.getJSONObject("edit"));info.originalPath=entry.getString("path");
             if(info.paintPath!=null) info.paintPath=copy(owner,info.paintPath);if(info.blurPath!=null) info.blurPath=copy(owner,info.blurPath);
@@ -443,17 +484,30 @@ public final class MonogramMediaDrafts {
             for(VideoEditedInfo.EmojiEntity emoji:entity.entities) if(emoji.documentAbsolutePath!=null && !emoji.documentAbsolutePath.isEmpty()) emoji.documentAbsolutePath=copy(owner,emoji.documentAbsolutePath);
         }
     }
+    private static String providerName(Uri uri) {
+        String name=null;try(android.database.Cursor cursor=ApplicationLoader.applicationContext.getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)) {
+            if(cursor!=null && cursor.moveToFirst()) { int index=cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);if(index>=0) name=cursor.getString(index); }
+        } catch(Exception ignored) {}
+        if(name==null || name.isEmpty()) name=uri.getLastPathSegment();
+        if(name!=null && name.indexOf('.')<0) try { String mime=ApplicationLoader.applicationContext.getContentResolver().getType(uri),extension=android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);if(extension!=null) name+="."+extension; } catch(Exception ignored) {}
+        return name;
+    }
     private static String copy(Owner owner,String source) throws Exception { return copy(owner,source,UUID.randomUUID().toString()); }
     private static String copy(Owner owner,String source,String capture) throws Exception {
         File original=new File(source),assets=new File(owner.directory(),"assets");if(source.startsWith(assets.getAbsolutePath()+File.separator) && original.isFile()) return source;
         if(!assets.isDirectory() && !assets.mkdirs()) throw new IOException("Draft assets unavailable");
         String suffix="";int dot=source.lastIndexOf('.');if(dot>=0 && source.length()-dot<=10) suffix=source.substring(dot).replaceAll("[^a-zA-Z0-9.]","");
-        File destination=new File(assets,hash(source+"\n"+original.length()+"\n"+original.lastModified()+(source.startsWith("content:") ? "\n"+capture : ""))+suffix);if(destination.isFile()) return destination.getAbsolutePath();
         Uri uri=Uri.parse(source);boolean content="content".equals(uri.getScheme());
+        File destination;
+        if(content) {
+            String name=FileLoader.fixFileName(providerName(uri));if(name==null || name.isEmpty() || name.equals(".") || name.equals("..")) name="attachment";if(name.length()>180) name=name.substring(name.length()-180);
+            File captureDirectory=new File(assets,hash(source+"\n"+capture));if(!captureDirectory.isDirectory() && !captureDirectory.mkdirs()) throw new IOException("Draft asset directory unavailable");destination=new File(captureDirectory,name);
+        } else destination=new File(assets,hash(source+"\n"+original.length()+"\n"+original.lastModified())+suffix);
+        if(destination.isFile()) return destination.getAbsolutePath();
         if(content) try { ApplicationLoader.applicationContext.getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch(SecurityException unsupported) { /* A private snapshot outlives temporary grants. */ }
         File temporary=File.createTempFile("asset-",".tmp",assets);
         try(InputStream input=content ? ApplicationLoader.applicationContext.getContentResolver().openInputStream(uri) : new FileInputStream(original);FileOutputStream output=new FileOutputStream(temporary)) {
-            if(input==null) throw new FileNotFoundException();byte[] buffer=new byte[65536];int count;while((count=input.read(buffer))>=0) { if(loggedOut.contains(owner.account+"\n"+owner.jid)) throw new InterruptedIOException("Draft owner logged out");output.write(buffer,0,count); }output.getFD().sync();
+            if(input==null) throw new FileNotFoundException();byte[] buffer=new byte[65536];int count;long copied=0;while((count=input.read(buffer))>=0) { if(loggedOut.contains(owner.account+"\n"+owner.jid) || !owner.current()) throw new InterruptedIOException("Draft owner changed");if(count>com.negzero.monogram.xmpp.FileTransfer.MAX_BYTES-copied) throw new IOException("Draft source exceeds the attachment size limit");output.write(buffer,0,count);copied+=count; }output.getFD().sync();
             if(!temporary.renameTo(destination)) throw new IOException("Could not save draft asset");return destination.getAbsolutePath();
         } finally { temporary.delete(); }
     }

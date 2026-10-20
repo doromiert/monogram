@@ -993,6 +993,8 @@ public class ChatActivity extends BaseFragment implements
     private Runnable unselectRunnable;
 
     private String currentPicturePath;
+    private final HashMap<Integer,String> monogramExternalRequests=new HashMap<>();
+    private Runnable monogramExternalReady;
 
     private ChatObject.Call groupCall;
     private boolean lastCallCheckFromServer;
@@ -14241,10 +14243,52 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    private boolean ordinaryExternalDrafts() {
+        return chatMode==MODE_DEFAULT && getThreadId()==0 && editingMessageObject==null && (chatAttachAlert==null || !chatAttachAlert.isPhotoPicker && !chatAttachAlert.isStickerMode && !chatAttachAlert.isPollAttach && !chatAttachAlert.storyMediaPicker && !(chatAttachAlert.getCurrentAttachLayout() instanceof ChatAttachAlertRichLayout));
+    }
+
+    @Override
+    public void startActivityForResult(Intent intent,int requestCode) {
+        boolean ordinary=ordinaryExternalDrafts();
+        if(ordinary && (requestCode==0 || requestCode==1 || requestCode==2 || requestCode==21)) {
+            String token=org.telegram.messenger.xmpp.MonogramExternalSelections.launch(currentAccount,dialog_id,requestCode,requestCode==0 || requestCode==2 ? currentPicturePath : null);
+            monogramExternalRequests.put(requestCode,token==null ? "" : token);
+        }
+        super.startActivityForResult(intent,requestCode);
+    }
+
+    private boolean captureMonogramExternalResult(int requestCode,int resultCode,Intent data) {
+        if(!monogramExternalRequests.containsKey(requestCode)) return false;
+        final String token=monogramExternalRequests.remove(requestCode);
+        if(resultCode!=Activity.RESULT_OK) { org.telegram.messenger.xmpp.MonogramExternalSelections.cancel(token);if(requestCode==0 || requestCode==2) currentPicturePath=null;return true; }
+        final org.telegram.messenger.xmpp.MonogramMediaDrafts.Owner owner=org.telegram.messenger.xmpp.MonogramExternalSelections.owner(token,requestCode);
+        boolean receiverMatches=org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id);
+        boolean captured=org.telegram.messenger.xmpp.MonogramExternalSelections.stage(token,requestCode,data,message -> {
+            if(getParentActivity()!=null) BulletinFactory.of(this).createErrorBulletin(message,themeDelegate).show();
+        },() -> {
+            if(!org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id) || currentAccount!=UserConfig.selectedAccount) return;
+            Runnable show=() -> {
+                if(getParentActivity()==null || !ordinaryExternalDrafts() || !org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id) || currentAccount!=UserConfig.selectedAccount) return;
+                createChatAttachView();if(chatAttachAlert==null) return;
+                chatAttachAlert.enableDefaultMode();chatAttachAlert.parentThemeDelegate=themeDelegate;
+                if(requestCode==0 || requestCode==2) chatAttachAlert.initExternalCameraPreview();else chatAttachAlert.init();
+                showDialog(chatAttachAlert);
+            };
+            if(paused) monogramExternalReady=show;else show.run();
+        });
+        if(captured) {
+            currentPicturePath=null;
+            if(!receiverMatches && getParentActivity()!=null) BulletinFactory.of(this).createErrorBulletin("External selection saved for its original conversation.",themeDelegate).show();
+        }
+        return true;
+    }
+
     @Override
     public void startDocumentSelectActivity() {
         try {
-            Intent photoPickerIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            boolean ordinary=ordinaryExternalDrafts();
+            Intent photoPickerIntent = new Intent(ordinary ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
+            if(ordinary) { photoPickerIntent.addCategory(Intent.CATEGORY_OPENABLE);photoPickerIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); }
             photoPickerIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             photoPickerIntent.setType("*/*");
             startActivityForResult(photoPickerIntent, 21);
@@ -20553,6 +20597,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        if(captureMonogramExternalResult(requestCode,resultCode,data)) return;
         if (resultCode == Activity.RESULT_OK) {
             if (requestCode == 0 || requestCode == 2) {
                 createChatAttachView();
@@ -20659,6 +20704,8 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void saveSelfArgs(Bundle args) {
+        org.json.JSONObject requests=new org.json.JSONObject();for(java.util.Map.Entry<Integer,String> entry:monogramExternalRequests.entrySet()) try { requests.put(Integer.toString(entry.getKey()),entry.getValue()); } catch(org.json.JSONException ignored) {}
+        args.putString("monogramExternalRequests",requests.toString());
         if (currentPicturePath != null) {
             args.putString("path", currentPicturePath);
         }
@@ -20667,6 +20714,7 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void restoreSelfArgs(Bundle args) {
         currentPicturePath = args.getString("path");
+        try { org.json.JSONObject requests=new org.json.JSONObject(args.getString("monogramExternalRequests","{}"));java.util.Iterator<String> keys=requests.keys();while(keys.hasNext()) { String key=keys.next();monogramExternalRequests.put(Integer.parseInt(key),requests.getString(key)); } } catch(Exception ignored) {}
     }
 
     private boolean isSkeletonVisible() {
@@ -30151,6 +30199,7 @@ public class ChatActivity extends BaseFragment implements
         }
 
         paused = false;
+        if(monogramExternalReady!=null) { Runnable ready=monogramExternalReady;monogramExternalReady=null;AndroidUtilities.runOnUIThread(ready); }
         pausedOnLastMessage = false;
         checkScrollForLoad(false);
         if (wasPaused) {
