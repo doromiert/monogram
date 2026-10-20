@@ -86,3 +86,14 @@ query handling. No URI is opened and no account/server/network action occurs.
 The stock compiled payment implementations and their Gradle dependencies still
 remain; these guards remove the reviewed reachable routes, rather than claiming
 those unused classes have already been deleted.
+
+## Local per-chat appearance
+
+0.2.122 adds free device-local DM and group palettes, solid/gradient colors and
+custom image wallpapers through the existing native theme/background sheet.
+Premium/boost gates and Telegram wallpaper uploads/updates are bypassed for
+XMPP accounts. Persistent overrides belong to account and peer JIDs. Native
+group appearance is local and does not require room admin rights. Four focused
+persistence/ownership/failure/lifecycle cases pass; phone UI acceptance remains.
+See [CHAT_APPEARANCE.md](CHAT_APPEARANCE.md) for static-pattern/snapshot limits
+and the remaining profile/name/shared-appearance scope.

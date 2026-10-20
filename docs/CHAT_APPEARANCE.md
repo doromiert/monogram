@@ -38,7 +38,7 @@ profile/name colors, or peer-wide appearance synchronization.
 Four focused synthetic fixtures in `MonogramChatAppearanceTest` cover peer/account
 isolation and reopen, native settings and atomic theme reset, owned-file
 replacement/reset/failure retention, and same-JID logout fencing of a pending
-write. Prepared only; not run before the combined release gate. Device acceptance
+write. All four pass at the 0.2.122 release gate. Device acceptance
 should apply a palette and custom photo in a DM and MUC, reset them, reopen and
 restart, and switch accounts. Confirm loading/failed images cannot replace the
 current wallpaper and no Telegram request/boost/purchase UI appears.

@@ -60,5 +60,5 @@ Static references: ignored `.state/ExteraSwipeAction.java`,
 and `.state/ExteraChatActivity.java`. The rendering method failed full JADX
 reconstruction; its native arc/fill/ring drawing is expressed using the existing
 Telegram renderer and the recoverable selector parameters. This is not a runtime
-comparison or a claim of pixel-exact APK parity. Prepared preference/threshold/loop
-fixtures have not yet run. Native visual/accessibility/gesture checks remain.
+comparison or a claim of pixel-exact APK parity. Three focused preference/threshold/loop
+fixtures pass at the 0.2.122 release gate. Native visual/accessibility/gesture checks remain.
