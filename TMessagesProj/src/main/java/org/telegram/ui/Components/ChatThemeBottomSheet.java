@@ -1383,13 +1383,13 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                                     return true;
                                 }
                             };
+                            themePreviewActivity.setCurrentAccount(fragment.getCurrentAccount());
                             themePreviewActivity.boostsStatus = cachedBoostsStatus;
                             themePreviewActivity.setResourceProvider(resourcesProvider);
                             themePreviewActivity.setOnSwitchDayNightDelegate(toggleTheme);
                             themePreviewActivity.setInitialModes(false, false, .20f);
                             themePreviewActivity.setDialogId(dialogId);
                             themePreviewActivity.setDelegate(wallPaper -> {
-                                applyLocalPreviewWallpaper(wallPaper);
                                 chatAttachAlert.dismissInternal();
                                 if (onSet != null) {
                                     onSet.run(wallPaper);
@@ -1417,12 +1417,12 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                         return true;
                     }
                 };
+                wallpaperActivity.setCurrentAccount(fragment.getCurrentAccount());
                 wallpaperActivity.boostsStatus = cachedBoostsStatus;
                 wallpaperActivity.setResourceProvider(resourcesProvider);
                 wallpaperActivity.setOnSwitchDayNightDelegate(toggleTheme);
                 wallpaperActivity.setDialogId(dialogId);
                 wallpaperActivity.setDelegate(wallPaper -> {
-                    applyLocalPreviewWallpaper(wallPaper);
                     chatAttachAlert.dismissInternal();
                     if (onSet != null) {
                         onSet.run(wallPaper);
@@ -1490,6 +1490,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                             themePreviewActivity.setInitialModes(false, false, .20f);
                             themePreviewActivity.setDialogId(chatActivity.getDialogId());
                             themePreviewActivity.setDelegate(wallPaper -> {
+                                applyLocalPreviewWallpaper(wallPaper);
                                 chatAttachAlert.dismissInternal();
                                 dismiss();
                             });
@@ -1513,6 +1514,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                 wallpaperActivity.boostsStatus = boostsStatus;
                 wallpaperActivity.setDialogId(chatActivity.getDialogId());
                 wallpaperActivity.setDelegate(wallPaper -> {
+                    applyLocalPreviewWallpaper(wallPaper);
                     chatAttachAlert.dismissInternal();
                     dismiss();
                 });

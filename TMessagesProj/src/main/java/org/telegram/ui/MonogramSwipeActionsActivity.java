@@ -65,8 +65,8 @@ public final class MonogramSwipeActionsActivity extends MonogramSettingsActivity
             items.add(UItem.asShadow(LocaleController.getString(R.string.MonogramSwipeAvailableInfo)));
         }
         items.add(UItem.asHeader(LocaleController.getString(R.string.MonogramSwipeSelection)));
-        items.add(UItem.asCheck(LOOP,LocaleController.getString(R.string.MonogramSwipeLoop)).setChecked(MonogramChatBehavior.swipeLoop(currentAccount)));
-        items.add(UItem.asCheck(REVERSED,LocaleController.getString(R.string.MonogramSwipeReverse)).setChecked(MonogramChatBehavior.swipeReversed(currentAccount)));
+        items.add(UItem.asCheck(LOOP,LocaleController.getString(R.string.MonogramSwipeLoop)).setChecked(MonogramChatBehavior.swipeLoop(currentAccount)).onBind(view -> view.setAccessibilityDelegate(null)));
+        items.add(UItem.asCheck(REVERSED,LocaleController.getString(R.string.MonogramSwipeReverse)).setChecked(MonogramChatBehavior.swipeReversed(currentAccount)).onBind(view -> view.setAccessibilityDelegate(null)));
         items.add(UItem.asShadow(LocaleController.getString(R.string.MonogramSwipeSelectionInfo)));
     }
     private void accessibility(View view,MonogramSwipeAction action) {
