@@ -122,6 +122,36 @@ class XmppRoomsIntegrationTest {
         }
         public void close() { alice.close();bob.close(); }
     }
+    @Test void newAndDistrustedDevicesCannotBlockTrustedRoomRecipients() throws Exception {
+        try(RecoveryRoom fixture=new RecoveryRoom(3971,true,Collections.emptyMap());
+                XmppSession extra=new XmppSession(new Account(fixture.bob.ownJid(),"127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Unverified-room-device"),
+                        "monogram-test",3973,new File(root,"unverified-room-trust"),recoveryListener(null))) {
+            extra.connect();fixture.alice.devices(fixture.bob.ownJid());
+            org.jivesoftware.smackx.omemo.internal.OmemoDevice unknown=new org.jivesoftware.smackx.omemo.internal.OmemoDevice(JidCreate.bareFrom(fixture.bob.ownJid()),3973);
+            org.jivesoftware.smackx.omemo.trust.OmemoFingerprint fingerprint=fixture.alice.fingerprint(unknown);
+            java.util.concurrent.atomic.AtomicReference<org.jivesoftware.smackx.omemo.element.OmemoElement> wire=new java.util.concurrent.atomic.AtomicReference<>();
+            fixture.alice.connection().addStanzaInterceptor(stanza -> wire.set(stanza.getExtension("encrypted","eu.siacs.conversations.axolotl")),
+                    stanza -> stanza instanceof Message && ((Message)stanza).getType()==Message.Type.groupchat);
+            XmppRoomMessage sent=fixture.alice.rooms.send(fixture.room,"Skip unknown device, deliver encrypted",true,Collections.emptySet(),true);
+            assertTrue(sent.skippedRecipients.keySet().stream().anyMatch(key -> key.endsWith("device 3973")));
+            assertTrue(readable(fixture.messages,"Skip unknown device, deliver encrypted").encrypted);
+            assertEquals(org.jivesoftware.smackx.omemo.trust.TrustState.undecided,fixture.alice.trustState(unknown,fingerprint));
+            assertNotNull(wire.get());assertTrue(wire.get().getHeader().getKeys().stream().noneMatch(key -> key.getId()==3973));
+            assertThrows(org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException.class,
+                    () -> fixture.alice.rooms.send(fixture.room,"Strict still requires approval",true,Collections.emptySet(),false));
+            fixture.alice.decide(unknown,fingerprint,false);
+            fixture.alice.rooms.send(fixture.room,"Distrusted device cannot block delivery",true,Collections.emptySet(),true);
+            assertTrue(readable(fixture.messages,"Distrusted device cannot block delivery").encrypted);
+            assertEquals(org.jivesoftware.smackx.omemo.trust.TrustState.untrusted,fixture.alice.trustState(unknown,fingerprint));
+            assertTrue(wire.get().getHeader().getKeys().stream().noneMatch(key -> key.getId()==3973));
+            for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:fixture.alice.devices(fixture.bob.ownJid()))
+                fixture.alice.decide(device,fixture.alice.fingerprint(device),false);
+            wire.set(null);
+            assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,assertThrows(OmemoSendException.class,
+                    () -> fixture.alice.rooms.send(fixture.room,"No trusted recipient, no ciphertext",true,Collections.emptySet(),true)).reason);
+            assertNull(wire.get());
+        }
+    }
     @Test void readOnlyDevicesCannotBlockAutomaticRoomSendsOrPermitOwnOnlyCiphertext() throws Exception {
         try(RecoveryRoom fixture=new RecoveryRoom(3961,true,Collections.emptyMap());
                 XmppSession quiet=new XmppSession(new Account(fixture.alice.ownJid(),"127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Quiet-room-device"),
@@ -181,7 +211,9 @@ class XmppRoomsIntegrationTest {
                 assertEquals(2,lookups.get(),"Remembered failure must avoid foreground lookup and coalesce the blocked background job");
                 release.countDown();
                 eventually(() -> fixture.snapshots.stream().anyMatch(snapshot -> !snapshot.containsKey(target)));
-                assertEquals(OmemoSendException.Reason.TRUST_REQUIRED,assertThrows(OmemoSendException.class,() -> fixture.alice.rooms.send(fixture.room,"recovery must not approve identity",true,Collections.emptySet(),true)).reason);
+                XmppRoomMessage unverified=fixture.alice.rooms.send(fixture.room,"recovery must not approve identity",true,Collections.emptySet(),true);
+                assertTrue(unverified.skippedRecipients.keySet().stream().anyMatch(key -> key.startsWith(target+" · device ")));
+                assertTrue(readable(fixture.messages,"recovery must not approve identity").encrypted);
                 for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:fixture.alice.devices(target)) fixture.alice.decide(device,fixture.alice.fingerprint(device),true);
                 assertFalse(fixture.alice.rooms.send(fixture.room,"recovered recipient eligible",true,Collections.emptySet(),true).skippedRecipients.containsKey(target));
                 assertTrue(readable(fixture.messages,"recovered recipient eligible").encrypted);
@@ -214,7 +246,7 @@ class XmppRoomsIntegrationTest {
                 eventually(() -> { synchronized(privateField(fixture.alice.rooms,"unavailableLock")) { Map<?,?> recovered=privateField(fixture.alice.rooms,"recoveredBundles");return recovered.containsKey(key); } });
                 assertTrue(org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.needsSession(manager,recipient),"Recovery may fetch public keys but must not advance Signal state");
                 int fetched=requests.get();
-                assertEquals(OmemoSendException.Reason.TRUST_REQUIRED,assertThrows(OmemoSendException.class,() -> fixture.alice.rooms.send(fixture.room,"cached bundle still requires trust",true,Collections.emptySet(),true)).reason);
+                assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,assertThrows(OmemoSendException.class,() -> fixture.alice.rooms.send(fixture.room,"cached bundle still requires trust",true,Collections.emptySet(),true)).reason);
                 assertEquals(fetched,requests.get(),"Foreground preparation must consume the recovered bundle without another fetch");
                 fixture.alice.decide(recipient,fixture.alice.fingerprint(recipient),true);
                 assertTrue(fixture.alice.rooms.send(fixture.room,"cached device recovered",true,Collections.emptySet(),true).skippedRecipients.isEmpty());
@@ -279,7 +311,7 @@ class XmppRoomsIntegrationTest {
             bob.connection().createStanzaCollectorAndSend(roomCard).nextResultOrThrow();
             assertArrayEquals(avatar,alice.profiles.loadRoom(room).avatar);
             assertThrows(org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException.class,() -> alice.rooms.send(room,"requires trust",true));
-            assertEquals(OmemoSendException.Reason.TRUST_REQUIRED,assertThrows(OmemoSendException.class,() -> alice.rooms.send(room,"Auto skip must not approve unknown fingerprints",true,Collections.emptySet(),true)).reason);
+            assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,assertThrows(OmemoSendException.class,() -> alice.rooms.send(room,"Auto skip must not approve unknown fingerprints",true,Collections.emptySet(),true)).reason);
             for(String jid:new String[]{"roomalice@localhost","roombob@localhost"}) {
                 for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:alice.devices(jid)) {
                     if(device.getJid().toString().equals(alice.ownJid()) && device.getDeviceId()==alice.ownDeviceId()) continue;

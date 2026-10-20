@@ -729,6 +729,8 @@ public final class XmppRooms implements AutoCloseable {
         return error instanceof CachedUnavailable || error instanceof org.jivesoftware.smack.SmackException.NoResponseException
             || error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
             || error instanceof org.jivesoftware.smackx.omemo.exceptions.CannotEstablishOmemoSessionException
+            || error instanceof org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
+            || error instanceof org.jivesoftware.smackx.omemo.exceptions.NoIdentityKeyException
             || error instanceof OmemoSendException && (((OmemoSendException)error).reason==OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED || ((OmemoSendException)error).reason==OmemoSendException.Reason.NO_DEVICES);
     }
     private void checkUnavailable(String key,Map<String,Unavailable> attempt) throws Exception {
@@ -906,8 +908,12 @@ public final class XmppRooms implements AutoCloseable {
                     rememberUnavailable(key,error,failures); skipped.put(key,unavailableReason(error)); continue;
                 }
                 if(automatic) {
-                    if(!omemo.isDecidedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED,key);
-                    if(!omemo.isTrustedOmemoIdentity(device,fingerprint)) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES,key);
+                    if(!omemo.isDecidedOmemoIdentity(device,fingerprint)) {
+                        skipped.put(key,"Fingerprint requires approval; device was not included");continue;
+                    }
+                    if(!omemo.isTrustedOmemoIdentity(device,fingerprint)) {
+                        skipped.put(key,"Fingerprint is not trusted; device was not included");continue;
+                    }
                 }
                 available.add(device);
             }
@@ -917,9 +923,12 @@ public final class XmppRooms implements AutoCloseable {
             OmemoMessage.Sent ciphertext=org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.encrypt(omemo,available,body);
             for(OmemoDevice device:ciphertext.getSkippedDevices().keySet()) {
                 Throwable cause=ciphertext.getSkippedDevices().get(device);
-                // Automatic mode follows Smack's inactive-device cutoff; strict mode requires every device.
-                if(automatic && cause instanceof org.jivesoftware.smackx.omemo.exceptions.ReadOnlyDeviceException) {
-                    skipped.put(deviceKey(device),"Inactive OMEMO device (read-only cutoff)");continue;
+                // Per-device failures must not block healthy trusted recipients in automatic mode.
+                if(automatic && (cause instanceof org.jivesoftware.smackx.omemo.exceptions.ReadOnlyDeviceException
+                        || cause instanceof org.jivesoftware.smackx.omemo.exceptions.UntrustedOmemoIdentityException
+                        || cause instanceof Exception && unavailable((Exception)cause))) {
+                    skipped.put(deviceKey(device),cause instanceof org.jivesoftware.smackx.omemo.exceptions.ReadOnlyDeviceException
+                            ? "Inactive OMEMO device (read-only cutoff)" : unavailableReason((Exception)cause));continue;
                 }
                 throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,
                         deviceKey(device)+": "+cause.getClass().getSimpleName());
