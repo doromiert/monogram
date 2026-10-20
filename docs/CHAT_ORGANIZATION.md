@@ -13,5 +13,5 @@ share these settings. Room bookmarks and membership are unaffected by archiving.
 Existing native custom chat filters and pinned messages still need their own
 facade audit. This change does not claim shared room pins or cross-device chat
 folders. Phone acceptance for pin order and archive state across reconnect and
-restart remains open; focused local-state fixtures are prepared for the update
+restart remains open; both focused local-state fixtures passed at the 0.2.119 release
 gate.

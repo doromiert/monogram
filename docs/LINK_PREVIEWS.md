@@ -8,7 +8,7 @@ The reader uses platform certificate trust and hostname verification, resolves a
 
 Native `TL_messageMediaWebPage` rendering displays the result. Explicit received photos/documents/stickers are preserved. Schema28 adds only `link_previews`; existing accounts, messages, encryption keys, trust, and archive cursors are preserved. Metadata lives in the account's private message database (up to256 URL entries). Thumbnails use the private Android cache (at most128 files or16MiB). Positive results cache for7days, failures for1hour to avoid network retry storms. Clearing previews or logging out removes the preview cache; a chat must be reopened to refresh rows already displayed. OS cache eviction can leave a text-only preview until metadata refresh.
 
-Prepared validation (run only when preparing a phone update):
+Seven focused cases passed at the 0.2.119 release gate (run only when preparing a phone update):
 
 ```sh
 nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramLinkPreviewsTest

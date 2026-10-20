@@ -38,9 +38,10 @@ reused. Removed/replaced sticker artwork is retained in hidden uninstalled local
 history packs so old messages and favorites still resolve. An update does not
 silently trust, publish, or upload private pack material.
 
-## Deferred validation before the next phone update
+## Validation
 
-Do not run this during feature work. Immediately before packaging an update:
+All twenty focused pack cases passed at the 0.2.119 release gate. Do not run
+these during feature work; repeat immediately before packaging relevant updates:
 
 ```sh
 nix develop --command ./gradlew --offline --no-daemon \
