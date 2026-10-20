@@ -108,7 +108,8 @@ public class MonogramCaptionEditingTest {
             int legacy=store.save(XmppMessage.sent(JidCreate.entityFullFrom(OWN+"/phone"),PEER,"legacy",legacyUrl,XmppMessage.Encryption.LEGACY_OMEMO,null,null));
             int legacyCorrection=store.save(XmppMessage.sent(JidCreate.entityFullFrom(OWN+"/phone"),PEER,"legacy-edit",legacyUrl,XmppMessage.Encryption.LEGACY_OMEMO,null,new MessageCorrection("legacy")));
             store.reconcileCorrections(peer); assertFalse(store.hiddenCorrection(legacyCorrection));
-            try { store.editTarget(legacy,peer,self); fail("Legacy attachment edit accepted"); } catch(IllegalArgumentException expected) { }
+            try { store.editTarget(legacy,peer,self); fail("Legacy attachment edit accepted"); }
+            catch(MonogramStore.EditUnavailable expected) { assertEquals("MONOGRAM_EDIT_LEGACY_CAPTION_UNSUPPORTED",expected.code); }
         } finally { context.deleteDatabase(database); }
     }
 

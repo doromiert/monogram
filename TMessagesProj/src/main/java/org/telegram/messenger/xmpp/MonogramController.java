@@ -2745,7 +2745,7 @@ public final class MonogramController {
     private MonogramStore.EditTarget editTarget(int id,long peer) {
         MonogramStore.EditTarget target=store.editTarget(id,peer,self);
         if(target.sharing!=null && target.encryption==XmppMessage.Encryption.PLAIN && encryption(peer)!=XmppMessage.Encryption.PLAIN)
-            throw new IllegalArgumentException("An unencrypted attachment caption cannot be edited while this chat requires encryption");
+            throw new MonogramStore.EditUnavailable("MONOGRAM_EDIT_CAPTION_ENCRYPTION_REQUIRED");
         return target;
     }
     public String lastSendError(long peer) { return preferences.getString(sendErrorKey(peer),null); }
@@ -3019,6 +3019,7 @@ public final class MonogramController {
                 else if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
                 else if(request instanceof TLRPC.TL_messages_sendReaction && e instanceof IllegalArgumentException) error.text="MONOGRAM_REACTION_UNAVAILABLE: "+e.getMessage();
                 else if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
+                else if (e instanceof MonogramStore.EditUnavailable) error.text = ((MonogramStore.EditUnavailable)e).code;
                 else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
                         && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
                 else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";

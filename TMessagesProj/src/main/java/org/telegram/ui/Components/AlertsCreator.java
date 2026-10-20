@@ -330,7 +330,17 @@ public class AlertsCreator {
                 text = "The original message or selected quote is unavailable in this conversation. Load its history and try again.";
                 break;
             case "MONOGRAM_EDIT_UNAVAILABLE":
-                text = "This text message cannot be edited because its original content or unique XMPP message ID is unavailable. Your correction was not sent."; break;
+                text = "This message cannot be edited because its original content or unique XMPP message ID is unavailable. Your correction was not sent."; break;
+            case "MONOGRAM_EDIT_LEGACY_CAPTION_UNSUPPORTED":
+                text = "Editing attachment captions sent with legacy OMEMO is not supported yet. Send the updated caption as a new encrypted message."; break;
+            case "MONOGRAM_EDIT_ROOM_CAPTION_UNSUPPORTED":
+                text = "Editing encrypted attachment captions in groups is not supported yet. Send the updated caption as a new encrypted message."; break;
+            case "MONOGRAM_EDIT_ATTACHMENT_METADATA_UNAVAILABLE":
+                text = "The original attachment information is unavailable. Load its history and try again. Your correction was not sent."; break;
+            case "MONOGRAM_EDIT_ROOM_AUTHOR_UNVERIFIED":
+                text = "Monogram cannot verify that this group message belongs to you. Refresh the room history and try again. Your correction was not sent."; break;
+            case "MONOGRAM_EDIT_CAPTION_ENCRYPTION_REQUIRED":
+                text = "The original attachment was sent without encryption, while this conversation now requires encryption. Send the updated caption as a new encrypted message."; break;
             case "MONOGRAM_FEATURE_UNAVAILABLE":
                 text = "This action is not supported by Monogram yet. Your message was not sent."; break;
             default:

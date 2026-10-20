@@ -33488,7 +33488,8 @@ public class ChatActivity extends BaseFragment implements
                     }
                     AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), themeDelegate);
                     builder.setTitle(LocaleController.getString(R.string.AppName));
-                    builder.setMessage(LocaleController.getString(R.string.EditMessageError));
+                    builder.setMessage(error != null && error.text != null && error.text.startsWith("MONOGRAM_")
+                            ? AlertsCreator.monogramSendErrorText(error.text) : LocaleController.getString(R.string.EditMessageError));
                     builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
                     showDialog(builder.create());
 

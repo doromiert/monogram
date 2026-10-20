@@ -344,7 +344,8 @@ public class MonogramRoomStoreTest {
             }
             try(MonogramStore store=new MonogramStore(context,file)) {
                 assertEquals(28,store.getReadableDatabase().getVersion()); assertEquals("Keep me",store.getMessage(original,self).message);
-                try { store.editTarget(original,dialog,self); fail("Old unverified author accepted"); } catch(IllegalArgumentException expected) {}
+                try { store.editTarget(original,dialog,self); fail("Old unverified author accepted"); }
+                catch(MonogramStore.EditUnavailable expected) { assertEquals("MONOGRAM_EDIT_ROOM_AUTHOR_UNVERIFIED",expected.code); }
                 store.saveRoom(message,self); assertEquals("mine",store.editTarget(original,dialog,self).correction.id);
                 assertEquals(1,store.history(dialog,self,0,100).size());
             }

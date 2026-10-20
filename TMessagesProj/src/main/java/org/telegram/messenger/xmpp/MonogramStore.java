@@ -1002,6 +1002,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         TLRPC.TL_textWithEntities result=new TLRPC.TL_textWithEntities();result.text=message.message;result.entities.addAll(message.entities);
         return result;
     }
+    static final class EditUnavailable extends IllegalArgumentException {
+        final String code;
+        EditUnavailable(String code) { super(code); this.code=code; }
+    }
     static final class EditTarget {
         final com.negzero.monogram.xmpp.MessageCorrection correction;
         final boolean encrypted;
@@ -1021,7 +1025,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (!original.out || original.dialog_id != peer) throw new IllegalArgumentException("Only your messages can be edited");
         SQLiteDatabase db = getReadableDatabase(); String wire = null; int protocol;
         if(peer<0) try(Cursor actor=db.rawQuery("SELECT 1 FROM room_message_actors WHERE message=? AND verified=1 AND real_jid=?",new String[]{Integer.toString(id),jid(self)})) {
-            if(!actor.moveToFirst()) throw new IllegalArgumentException("Original room author is not verified; refresh room history");
+            if(!actor.moveToFirst()) throw new EditUnavailable("MONOGRAM_EDIT_ROOM_AUTHOR_UNVERIFIED");
         }
         try (Cursor c = db.rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END,readable FROM messages WHERE id=? AND NOT EXISTS(SELECT 1 FROM corrections WHERE message=?)", new String[]{Integer.toString(id), Integer.toString(id)})) {
             if (!c.moveToFirst() || c.getInt(1) == 0) throw new IllegalArgumentException("Original message unavailable"); protocol = c.getInt(0);
@@ -1044,13 +1048,14 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         com.negzero.monogram.xmpp.FileShare sharing = null;
         if (attachment) {
-            if (protocol == XmppMessage.Encryption.LEGACY_OMEMO.ordinal()) throw new IllegalArgumentException("Legacy OMEMO attachment captions cannot be edited");
+            if (protocol == XmppMessage.Encryption.LEGACY_OMEMO.ordinal()) throw new EditUnavailable("MONOGRAM_EDIT_LEGACY_CAPTION_UNSUPPORTED");
             try (Cursor c = db.rawQuery("SELECT url,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(payload(id))})) {
-                if (!c.moveToFirst()) throw new IllegalArgumentException("Attachment metadata unavailable");
+                if (!c.moveToFirst()) throw new EditUnavailable("MONOGRAM_EDIT_ATTACHMENT_METADATA_UNAVAILABLE");
                 sharing = sharing(c.getString(0), c.getString(1));
-                if (sharing == null) throw new IllegalArgumentException("Attachment metadata unavailable");
-            } catch (IllegalArgumentException unavailable) { throw unavailable; }
-            catch (Exception invalid) { throw new IllegalArgumentException("Attachment metadata unavailable", invalid); }
+                if (sharing == null) throw new EditUnavailable("MONOGRAM_EDIT_ATTACHMENT_METADATA_UNAVAILABLE");
+            } catch (EditUnavailable unavailable) { throw unavailable; }
+            catch (Exception invalid) { throw new EditUnavailable("MONOGRAM_EDIT_ATTACHMENT_METADATA_UNAVAILABLE"); }
+            if(peer<0 && sharing.link.encrypted()) throw new EditUnavailable("MONOGRAM_EDIT_ROOM_CAPTION_UNSUPPORTED");
         }
         return new EditTarget(wire, protocol, reply, sharing);
     }
