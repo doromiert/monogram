@@ -95,7 +95,7 @@ final class MonogramBackupDatabase {
             }
         }
     }
-    private static byte[] blob(SQLiteDatabase db,String table,String column,long rowId) throws IOException {
+    static byte[] blob(SQLiteDatabase db,String table,String column,long rowId) throws IOException {
         long length;
         try(Cursor size=db.rawQuery("SELECT length("+quote(column)+") FROM "+quote(table)+" WHERE rowid=?",new String[]{Long.toString(rowId)})) {
             if(!size.moveToFirst()) throw new IOException("Backup source row disappeared.");length=size.getLong(0);

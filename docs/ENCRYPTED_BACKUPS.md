@@ -1,9 +1,10 @@
 # Encrypted account backups — implementation status and format
 
 **Not a shipped backup feature yet.** The portable encryption/container, logical Android SQLite snapshot/restore and
-Keystore secret-conversion primitives are implemented. A consistent account
-snapshot, native durable-outbox adapter and cold restore transaction are still
-required before exposing a settings entry. No real account has been exported or
+Keystore secret-conversion primitives are implemented. Native durable-store capture/staging and owner-specific legacy bootstrap
+materialization adapters are also implemented. A coherent cross-store snapshot,
+media/secret collection and cold restore transaction are still required before
+exposing a settings entry. No real account has been exported or
 restored, and the prepared tests have not been run during this feature phase.
 
 ## What the repository actually stores
@@ -89,7 +90,7 @@ safety limits, not sticker-count limits.
 The ZIP contains `manifest.json` with format `monogram-account-backup`, version
 `1`, canonical bare `owner`, millisecond `created` timestamp, and a `files` list
 of `{path,size,sha256}`. Required logical sections are `data/history.db`,
-`data/outbox.db`, `data/omemo2.db`, `data/legacy.db`, `trust/legacy.properties`,
+`data/outbox.db`, `data/outbox-meta.json`, `data/omemo2.db`, `data/legacy.db`, `trust/legacy.properties`,
 `preferences/xmpp.json`, `preferences/native.json`, `preferences/packs.json`,
 `preferences/giphy.json` and `paths.json`. Empty real sections still need valid
 empty snapshots. Additional account-owned artwork/media/bootstrap files use
@@ -116,6 +117,60 @@ replace files, merge key states or initialize native `MessagesStorage`.
 Schemas from older/newer app versions must be migrated separately in staging;
 blind cross-version restoration is rejected.
 
+## Native durable store adapter
+
+`MonogramBackupNativeStore.capture` uses existing `MessagesStorage` public storage
+queue/database APIs. It executes `VACUUM INTO` on that queue, using the bundled
+SQLite 3.39.3 implementation, to capture a full standalone account-native database
+including committed WAL content. It does not copy a running main database file,
+recreate serialized outgoing messages in another queue, or modify the live
+outbox. Account JID/native self ID are checked before/after snapshot. Existing
+output files are rejected and preserved. No `MessagesStorage` hooks/edits were
+needed.
+
+`data/outbox-meta.json` binds canonical owner, native self ID, native DB version,
+full schema fingerprint and queued/failed/scheduled counts. `prepareRestore`
+requires metadata agreement, integrity checks and an exact schema/version match
+to an app-created empty native template **before** copying/modifying private
+restore staging. It never executes schema supplied by the archive and rejects
+portable DB sidecars. Divergent migrated schemas currently fail closed rather
+than being guessed compatible.
+
+Attachment paths and native local params are read/written using existing TL
+message serialization. Current `TL_message.serializeToStream` already appends
+`writeAttachPath`, so the adapter does not append it twice. It remaps attachment,
+`originalPath`, video edit original source and poll attachment paths while
+preserving negative local IDs, dialog IDs, send state, `monogram-encryption`,
+opaque custom params, random IDs and scheduled rows. Every local/content-URI
+reference in a queued/failed/scheduled message requires a portable mapping or
+restore staging fails and is deleted. Callers must copy/validate the mapped
+source assets and resolve content URIs into app-private files; enumeration alone
+is not proof of a recoverable media outbox. Unmapped historical attachment paths
+are optional and remain unchanged; historically uncached media may need a new
+download. Nothing invokes `getUnsentMessages` or starts sends during staging.
+
+## Legacy bootstrap materialization adapter
+
+`MonogramBackupLegacyStore` takes an already owner-filtered overlay snapshot
+inside a dedicated private backup work directory. It rejects the live legacy
+DB path and foreign-owner rows. Core `MonogramLegacyBackup` copies only that
+owner's Smack 4.4.8 URL-encoded bootstrap tree into separate private staging;
+original files and the live overlay factory are never written. Linked/escaped
+paths, unknown file shapes and corrupt typed key/session records fail closed.
+The temporary copy has a 512 MiB total safety bound and each record obeys the
+existing legacy record-size limit.
+
+A typed merged store materializes every own device's identities, prekeys,
+signed prekeys, sessions, cached active/inactive device lists, counters and dates
+into the isolated overlay, honoring existing tombstones and purge markers.
+Incoming-journal bytes remain untouched. It sets bootstrap suppression **only in
+the snapshot** after a device's values are committed, so restore does not consult
+unrelated destination-phone bootstrap files. The wrapper discards the entire
+isolated snapshot if any device fails. Fingerprint trust still needs the
+separately bound account trust file. Fixtures prepare two-owner/two-device
+coverage, prekey zero/tombstones, byte-identical source preservation, restoration
+against empty bootstrap and corrupt-record rejection.
+
 ## Required integration before enabling settings
 
 1. Define a durable quiescence barrier: stop/reject new sends, close XMPP and
@@ -130,11 +185,20 @@ blind cross-version restoration is rejected.
    replace flow after disconnecting it. Validate the entire staged snapshot
    first. Never merge opaque ratchet snapshots into newer live state. A restored
    identity/device must not run concurrently with the old phone: that would
-   fork ratchets. Explain migration and keep the source client disconnected.
+   fork ratchets. An older backup must also never reactivate an old outbound
+   ratchet/send-chain state: it could reuse message keys/counters even after
+   disconnecting the source phone. Preserve identity/trust but design fresh
+   outbound session establishment or a receive-only restored-session strategy
+   before reconnection. This crypto restore policy is still unimplemented.
+   Explain migration and keep the source client disconnected.
 4. Stage target vault encryption, slot/path remapping and native DB allocation.
    Record a recoverable commit journal; replace databases/files/preferences as
    one recoverable cold-start operation before any controller, Smack device,
-   pack cache or native storage instance opens them. Interrupted restore must
+   pack cache or native storage instance opens them. Never include the private
+   `monogram-notification-actions-N` preferences in an export. Invalidate the
+   target slot's `MonogramNotificationActions` generation during cold commit
+   before restored native IDs/reconnection can be used; old notification action
+   tokens must stay invalid even if restoration rolls back. Interrupted restore must
    either roll back or resume before messaging restarts.
 5. Add native settings UI: SAF create/open document, passphrase confirmation,
    progress/cancel, owner/scope summary, explicit replace/migration confirmation

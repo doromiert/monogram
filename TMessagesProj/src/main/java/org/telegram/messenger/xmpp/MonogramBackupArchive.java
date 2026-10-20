@@ -13,7 +13,7 @@ import org.jxmpp.jid.impl.JidCreate;
 /** An authenticated account snapshot container; restoring live stores is deliberately a separate operation. */
 final class MonogramBackupArchive {
     private static final int MAX_MANIFEST = 8 * 1024 * 1024;
-    private static final Set<String> REQUIRED = new HashSet<>(Arrays.asList("data/history.db", "data/outbox.db", "data/omemo2.db",
+    private static final Set<String> REQUIRED = new HashSet<>(Arrays.asList("data/history.db", "data/outbox.db", "data/outbox-meta.json", "data/omemo2.db",
             "data/legacy.db", "trust/legacy.properties", "preferences/xmpp.json", "preferences/native.json",
             "preferences/packs.json", "preferences/giphy.json", "paths.json"));
     private MonogramBackupArchive() { }

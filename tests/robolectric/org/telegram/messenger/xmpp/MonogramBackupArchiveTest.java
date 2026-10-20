@@ -17,7 +17,7 @@ public class MonogramBackupArchiveTest {
     private final char[] password="portable account backup phrase".toCharArray();
     private File snapshot() throws Exception {
         File root=temporary.newFolder("snapshot");
-        for(String path:new String[]{"data/history.db","data/outbox.db","data/omemo2.db","data/legacy.db","trust/legacy.properties",
+        for(String path:new String[]{"data/history.db","data/outbox.db","data/outbox-meta.json","data/omemo2.db","data/legacy.db","trust/legacy.properties",
                 "preferences/xmpp.json","preferences/native.json","preferences/packs.json","preferences/giphy.json","paths.json","packs/item.webp"}) {
             File file=new File(root,path);file.getParentFile().mkdirs();Files.write(file.toPath(),("container fixture "+path).getBytes("UTF-8"));
         }
