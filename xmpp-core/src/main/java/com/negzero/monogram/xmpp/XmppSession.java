@@ -51,6 +51,7 @@ public final class XmppSession implements AutoCloseable {
         default void roomInviteFailed(String room,String target,String condition) {}
         default void roomMetadataChanged(String room) {}
         default void bookmarksChanged() {}
+        default void readSyncChanged() {}
         default void blockedChanged(List<String> addresses) {}
         default void reactionRejected(String from,String id) {}
         default void contactRequest(String address,boolean pending) {}
@@ -97,6 +98,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppProfiles profiles;
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
+    public final XmppReadSync readSync;
     public final XmppContacts contacts;
     public final XmppBlocking blocking;
     public final XmppInvitations invitations;
@@ -250,6 +252,7 @@ public final class XmppSession implements AutoCloseable {
         contacts=new XmppContacts(connection,rooms,listener::contactRequest);
         blocking=new XmppBlocking(connection,listener::blockedChanged);
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
+        readSync=new XmppReadSync(connection,listener::readSyncChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
             @Override public void connectionClosed() { disconnected(null); }
             @Override public void connectionClosedOnError(Exception error) { disconnected(error); }
@@ -1131,7 +1134,7 @@ public final class XmppSession implements AutoCloseable {
         synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }
         MonogramLegacyOmemoService.instance().unregister(omemo);legacyWorker.shutdownNow();
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
-        calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); fingerprints.close();
+        calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); readSync.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

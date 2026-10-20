@@ -37,6 +37,14 @@ public final class MonogramController {
     }
     public final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService sendWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService readSyncWorker=Executors.newSingleThreadExecutor();
+    private final Object readSyncLock=new Object();
+    private final java.util.concurrent.atomic.AtomicBoolean readSyncSending=new java.util.concurrent.atomic.AtomicBoolean(),readSyncReload=new java.util.concurrent.atomic.AtomicBoolean(),readSyncReconcile=new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicLong readSyncRequests=new java.util.concurrent.atomic.AtomicLong();
+    private volatile long readSyncPrivacyEpoch;
+    private volatile com.negzero.monogram.xmpp.XmppReadSync.Snapshot readSyncSnapshot;
+    private volatile XmppSession readSyncSession;
+    private final MonogramReadSyncState privateReads;
     private final ExecutorService bookmarkWorker = Executors.newSingleThreadExecutor();
     private final java.util.Set<Long> joinedRooms = new java.util.HashSet<>();
     private final java.util.Set<String> pendingRecoveryRooms=new java.util.HashSet<>();
@@ -93,6 +101,7 @@ public final class MonogramController {
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
         store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account);
         linkPreviews=new MonogramLinkPreviews(account,preferences,store);
+        privateReads=new MonogramReadSyncState(store,preferences);
         legacyStore=MonogramLegacyOmemoStore.application();vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
         debugLog.enabled(preferences.getBoolean("debug-message-xml",false));
@@ -134,17 +143,21 @@ public final class MonogramController {
     }
     public void markLocalRead(long peer,java.util.Collection<Integer> anchors,boolean all,boolean publish,java.util.function.BiConsumer<java.util.Set<Integer>,Integer> callback) {
         final long owner=accountEpoch;
-        final long consent=displayedPrivacyEpoch;
+        final long consent=displayedPrivacyEpoch,privateConsent=readSyncPrivacyEpoch;
+        final String own=accountJid();
+        final boolean sync=publish && readSyncEnabled();
         final boolean share=publish && readReceiptsEnabled() && (peer>0 || groupReadReceiptsEnabled());
         ArrayList<Integer> requested=new ArrayList<>(anchors);
         worker.execute(() -> {
             java.util.Set<Integer> read;
             MonogramReads.DisplayedCandidate candidate;
+            MonogramReadSyncState.Candidate privateCandidate;
             try {
                 if(owner!=accountEpoch || accountJid().isEmpty()) { AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return; }
                 MonogramReads.ReadResult result=store.reads.throughWithChanges(peer,requested,all);
                 if(result==null) { AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return; }
                 read=result.read;
+                privateCandidate=sync && peer!=0 && peer!=self ? privateReadCandidate(own,peer,result.newlyRead) : null;
                 candidate=share && peer!=0 && peer!=self ? store.reads.displayedCandidate(peer,result.newlyRead) : null;
             } catch(Exception failure) {
                 if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram local read: "+failure.getClass().getSimpleName());
@@ -153,6 +166,14 @@ public final class MonogramController {
             MessagesStorage.getInstance(account).processMonogramRead(peer,read,() -> owner==accountEpoch,count ->
                     AndroidUtilities.runOnUIThread(() -> {
                         callback.accept(owner==accountEpoch && count>=0 ? read : null,count);
+                        if(privateCandidate!=null && count>=0) worker.execute(() -> {
+                            synchronized(readSyncLock) {
+                                try {
+                                    if(sameAccount(owner,own) && privateConsent==readSyncPrivacyEpoch && readSyncEnabled()
+                                            && privateReads.queue(own,privateCandidate)) syncOwnReads(false);
+                                } catch(Exception failure) { if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram private read queue: "+failure.getClass().getSimpleName()); }
+                            }
+                        });
                         if(candidate!=null && count>=0) worker.execute(() -> {
                             if(owner==accountEpoch && consent==displayedPrivacyEpoch && displayedReady && readReceiptsEnabled()
                                     && store.reads.queueDisplayed(candidate)) flushDisplayedMarkers();
@@ -184,6 +205,80 @@ public final class MonogramController {
                 if(displayedRequests.get()!=revision) flushDisplayedMarkers();
             }
         });
+    }
+    private MonogramReadSyncState.Candidate privateReadCandidate(String own,long peer,java.util.Collection<Integer> newlyRead) {
+        try { return privateReads.candidate(own,peer,newlyRead); }
+        catch(Exception failure) {
+            if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram private read candidate: "+failure.getClass().getSimpleName());return null;
+        }
+    }
+    public boolean readSyncEnabled() {
+        String own=accountJid();return !own.isEmpty() && preferences.getBoolean("private-read-enabled-"+own,true);
+    }
+    public boolean setReadSyncEnabled(boolean enabled) {
+        synchronized(readSyncLock) {
+            String own=accountJid();if(own.isEmpty()) return false;
+            if(enabled==readSyncEnabled()) return true;
+            if(!privateReads.setEnabled(own,enabled)) return false;
+            readSyncPrivacyEpoch++;
+            XmppSession current=session;if(current!=null) current.readSync.setEnabled(enabled);
+            readSyncSnapshot=null;readSyncSession=null;
+            if(enabled) syncOwnReads(true);
+            return true;
+        }
+    }
+    /** Coalesce PEP events and reuse the snapshot for archive catch-up and local reads. */
+    private void syncOwnReads(boolean reload) { syncOwnReads(reload,false); }
+    private void syncOwnReads(boolean reload,boolean reconcile) {
+        if(reload) readSyncReload.set(true);
+        if(reconcile) readSyncReconcile.set(true);
+        readSyncRequests.incrementAndGet();
+        if(!readSyncEnabled() || !readSyncSending.compareAndSet(false,true)) return;
+        final long owner=accountEpoch,consent=readSyncPrivacyEpoch,revision=readSyncRequests.get();final String own=accountJid();
+        readSyncWorker.execute(() -> {
+            XmppSession expected=session;
+            try {
+                if(expected==null || !expected.connection().isAuthenticated() || !sameAccount(owner,own)) return;
+                boolean refresh=readSyncReload.getAndSet(false),apply=readSyncReconcile.getAndSet(false);
+                com.negzero.monogram.xmpp.XmppReadSync.Snapshot snapshot=readSyncSnapshot;
+                if(refresh || snapshot==null || readSyncSession!=expected) { snapshot=expected.readSync.load();apply=true; }
+                synchronized(readSyncLock) {
+                    if(!currentReadSync(expected,owner,own,consent)) return;
+                    readSyncSnapshot=snapshot;readSyncSession=expected;
+                }
+                if(apply) for(com.negzero.monogram.xmpp.XmppReadSync.Entry entry:snapshot.entries) {
+                    if(entry.by.equals(own) && !snapshot.directIds) continue;
+                    final MonogramReadSyncState.Candidate read;
+                    synchronized(readSyncLock) {
+                        if(!currentReadSync(expected,owner,own,consent)) return;
+                        read=privateReads.observe(own,entry);
+                    }
+                    if(read!=null) AndroidUtilities.runOnUIThread(() -> {
+                        if(currentReadSync(expected,owner,own,consent)) MessagesController.getInstance(account).applyMonogramSyncedRead(read.peer,read.id);
+                    });
+                }
+                if(!snapshot.writable) return;
+                for(MonogramReadSyncState.Candidate candidate:privateReads.pending(own)) {
+                    synchronized(readSyncLock) {
+                        if(!currentReadSync(expected,owner,own,consent)) return;
+                        if(candidate.peer>0 && !snapshot.directIds || !privateReads.current(own,candidate)) continue;
+                    }
+                    expected.readSync.publish(candidate.entry,snapshot);
+                    synchronized(readSyncLock) {
+                        if(!currentReadSync(expected,owner,own,consent)) return;
+                        privateReads.acknowledge(own,candidate);
+                    }
+                }
+            } catch(Exception failure) {
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram private read sync: "+failure.getClass().getSimpleName());
+            } finally {
+                readSyncSending.set(false);
+                if(readSyncRequests.get()!=revision) syncOwnReads(false);
+            }
+        });
+    }
+    private boolean currentReadSync(XmppSession expected,long owner,String own,long consent) {
+        return session==expected && sameAccount(owner,own) && consent==readSyncPrivacyEpoch && readSyncEnabled() && expected.connection().isAuthenticated();
     }
     public java.util.Set<String> pendingContactRequests() {
         return new java.util.TreeSet<>(preferences.getStringSet("contact-requests-"+accountJid(),java.util.Collections.emptySet()));
@@ -544,6 +639,9 @@ public final class MonogramController {
                                 rememberBlocked(current,epoch);
                         });
                     }
+                    @Override public void readSyncChanged() {
+                        worker.execute(() -> { if(sessionEpoch==epoch && session!=null && sameAccount(owner,details.jid.toString())) syncOwnReads(true); });
+                    }
                     @Override public void bookmarksChanged() {
                         worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
@@ -613,7 +711,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch);
+                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch); syncOwnReads(true);
                         });
                     }
                 });
@@ -652,11 +750,13 @@ public final class MonogramController {
         for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
         connecting.chatStates.setEnabled(typingEnabled());
         connecting.recoverIncoming();
+        connecting.readSync.setEnabled(preferences.getBoolean("private-read-enabled-"+details.jid,true));
         connecting.connect();
         synchronized(displayedSettingsLock) {
             session = connecting;
             connecting.setDisplayedMarkersEnabled(displayedReady && readReceiptsEnabled());
         }
+        synchronized(readSyncLock) { connecting.readSync.setEnabled(preferences.getBoolean("private-read-enabled-"+details.jid,true)); }
         for (RosterEntry entry : Roster.getInstanceFor(connecting.connection()).getEntries()) {
             long peer = store.peer(entry.getJid().toString()); store.rosterName(peer, entry.getName());
         }
@@ -665,7 +765,7 @@ public final class MonogramController {
         state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
         recoverPendingSends();
-        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null); refreshBlocked(connecting,epoch);
+        startArchiveSync(connecting); syncBookmarks(connecting,epoch,null); refreshBlocked(connecting,epoch); syncOwnReads(true);
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
         roomWorker.execute(() -> {
@@ -1115,6 +1215,7 @@ public final class MonogramController {
             archiveWorker.execute(() -> syncArchive(sync, next));
             return;
         }
+        syncOwnReads(false,true);
     }
     private void finishArchivePage(ArchiveSync sync,ArchiveTask task,String first,boolean complete) {
         task.loaded++; task.before=first; task.complete=complete || first==null; sync.running=false;
@@ -1407,6 +1508,7 @@ public final class MonogramController {
                 if(owner!=accountEpoch) throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Please sign in again.");
                 if (!preferences.edit().putString("jid", details.jid.toString()).putString("host", host)
                         .putInt("port", port).putString("credential", vault.encrypt(password)).commit()) throw new java.io.IOException("Cannot save account");
+                syncOwnReads(true);
             } catch (Exception e) {
                 error = e;
                 if(signingIn) {
@@ -1442,6 +1544,7 @@ public final class MonogramController {
                 requireRegistrationSlot(owner);signingIn=true;connect(details,password);requireRegistrationSlot(owner);
                 if(!preferences.edit().putString("jid",details.jid.toString()).putString("host",host).putInt("port",port)
                         .putString("credential",sealed).commit()) throw new java.io.IOException("Cannot save account");
+                syncOwnReads(true);
             } catch(Exception failed) {
                 error=failed;
                 if(signingIn) {
@@ -1458,6 +1561,11 @@ public final class MonogramController {
     }
     public void logout() {
         final String departing=accountJid();
+        synchronized(readSyncLock) {
+            readSyncPrivacyEpoch++;
+            XmppSession current=session;if(current!=null) current.readSync.setEnabled(false);
+            privateReads.clearPending(departing);readSyncSnapshot=null;readSyncSession=null;
+        }
         MonogramNotificationActions.invalidate(account);
         MonogramMediaDrafts.logout(account,departing);
         debugCapture(false);
@@ -1476,7 +1584,7 @@ public final class MonogramController {
         try { MonogramTranslation.clearConfiguration(account); }
         catch(java.io.IOException unavailable) { throw new IllegalStateException("Cannot clear translation settings",unavailable); }
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("blocked-jids-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("private-read-") || key.startsWith("group-read-receipts-enabled-") || key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("blocked-jids-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {

@@ -119,6 +119,7 @@ public final class XmppMessage {
             StanzaIdElement id = (StanzaIdElement) extension;
             if (own.toString().equals(id.getBy())) put(ids, "archive", id.getId());
         }
+        put(ids,XmppReadSync.LOCAL_ID,XmppReadSync.assignedId(message,own));
         if (archiveId != null) put(ids, "archive", archiveId);
         if (ids.isEmpty() && (encrypted || reactions!=null)) ids.put("local", opaqueId(message));
         ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? body : null);

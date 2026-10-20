@@ -11555,6 +11555,8 @@
     <string name="MonogramTypingSaveFailed">Could not save the typing preference.</string>
     <string name="MonogramReadReceipts">Send read receipts</string>
     <string name="MonogramReadReceiptsInfo">Let authorized contacts in direct chats see when you have read their messages. Read markers are sent outside OMEMO encryption.</string>
+    <string name="MonogramReadSync">Sync read state between devices</string>
+    <string name="MonogramReadSyncInfo">Keep unread counts in sync through private state on your XMPP server. Only your own devices can access it. This does not send read receipts to contacts or groups. Requires compatible server support.</string>
     <string name="MonogramGroupReadReceipts">Include group read receipts</string>
     <string name="MonogramGroupReadReceiptsInfo">When Send read receipts is enabled, also let participants in supported groups see when you have read messages. Group read markers are sent outside OMEMO encryption.</string>
     <string name="MonogramReadReceiptsSaveFailed">Could not save the read receipt preference.</string>

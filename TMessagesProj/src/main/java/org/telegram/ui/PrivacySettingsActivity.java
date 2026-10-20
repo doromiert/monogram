@@ -92,6 +92,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     private int monogramTypingRow;
     private int monogramReadReceiptsRow;
     private int monogramGroupReadReceiptsRow;
+    private int monogramReadSyncRow;
     @Keep
     private int blockedRow;
     @Keep
@@ -328,6 +329,11 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
                 boolean enabled = !controller.readReceiptsEnabled();
                 if (controller.setReadReceiptsEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
+                else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramReadReceiptsSaveFailed)).show();
+            } else if (position == monogramReadSyncRow) {
+                org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+                boolean enabled = !controller.readSyncEnabled();
+                if (controller.setReadSyncEnabled(enabled)) ((TextCheckCell) view).setChecked(enabled);
                 else org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramReadReceiptsSaveFailed)).show();
             } else if (position == monogramGroupReadReceiptsRow) {
                 org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
@@ -756,6 +762,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         monogramTypingRow = rowCount++;
         monogramReadReceiptsRow = rowCount++;
         monogramGroupReadReceiptsRow = rowCount++;
+        monogramReadSyncRow = rowCount++;
         profilePhotoRow = rowCount++;
         forwardsRow = rowCount++;
         callsRow = rowCount++;
@@ -1041,7 +1048,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
+            return position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == monogramReadSyncRow || position == passcodeRow || position == passwordRow || position == passkeysRow || position == blockedRow || position == sessionsRow || position == secretWebpageRow || position == webSessionsRow ||
                     position == groupsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_INVITE) ||
                     position == lastSeenRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_LASTSEEN) ||
                     position == callsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_CALLS) ||
@@ -1303,6 +1310,9 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                     } else if (position == monogramReadReceiptsRow) {
                         textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramReadReceipts), getString(R.string.MonogramReadReceiptsInfo),
                                 org.telegram.messenger.xmpp.MonogramController.get(currentAccount).readReceiptsEnabled(), true, true);
+                    } else if (position == monogramReadSyncRow) {
+                        textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramReadSync), getString(R.string.MonogramReadSyncInfo),
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).readSyncEnabled(), true, true);
                     } else if (position == monogramGroupReadReceiptsRow) {
                         textCheckCell.setTextAndValueAndCheck(getString(R.string.MonogramGroupReadReceipts), getString(R.string.MonogramGroupReadReceiptsInfo),
                                 org.telegram.messenger.xmpp.MonogramController.get(currentAccount).groupReadReceiptsEnabled(), true, true);
@@ -1427,7 +1437,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 return 1;
             } else if (position == securitySectionRow || position == advancedSectionRow || position == privacySectionRow || position == secretSectionRow || position == botsSectionRow || position == contactsSectionRow || position == newChatsHeaderRow) {
                 return 2;
-            } else if (position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
+            } else if (position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == monogramReadSyncRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
                 return 3;
             } else if (position == botsAndWebsitesShadowRow) {
                 return 4;

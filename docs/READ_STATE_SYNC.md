@@ -35,11 +35,46 @@ disabled, preserving notification counts without an echo loop. Ordinary outgoing
 messages do not mark a chat read. References must already resolve uniquely in
 the relevant conversation; unknown anchors are not guessed or backfilled.
 
-This is not complete offline device synchronization. [XEP-0490](https://xmpp.org/extensions/xep-0490.html)
-defines private PEP read state and catch-up independently of public read receipts.
-That publication/catch-up path remains unfinished; it must use whitelist access
-and validated account-origin notifications before being enabled. No XEP-0490
-support is advertised by these changes.
+Unreleased source now also wires the independent private
+[XEP-0490](https://xmpp.org/extensions/xep-0490.html) PEP publication/catch-up path.
+Native Privacy settings adds **Sync read state between devices**, on by default
+for configured accounts, independently of both public read-receipt options.
+The description explains private server storage and compatible-server support.
+Turning it off clears its pending queue without changing public receipt consent;
+turning it back on does not manufacture publication from previously read history.
+It leaves already published server state in place.
+
+The node uses whitelist access, persistence, max-items `max` and no last-item
+broadcast. Publication requires discovered publish-options support; conflicting
+node configuration is repaired to those same private options before retrying.
+There is no public-node or contact-message fallback. Both notifications and
+catch-up target the authenticated own account. Only own-account PEP notifications
+trigger refresh. Initial connection and reconnect retrieve all items; completed
+archive catch-up retries unresolved references from the cached snapshot rather
+than issuing a request per message. Local reads reuse that snapshot and only
+publish the coalesced durable newest candidate for each conversation.
+
+DM references retain a separate internal `read-sync` alias for an unambiguous
+actual own-server stanza ID. A MAM result ID is never substituted, and discovered
+own-account stanza-ID support is required before consuming/publishing DM state.
+Rooms reuse discovered room-assigned IDs. Unknown chats, unknown or ambiguous
+references, wrong authorities, deleted/control/decrypting messages and full-JID
+room private chats are ignored. An identified own-device publication may use an
+outgoing message as a history anchor; ordinary outgoing messages never queue a
+publication. Seen state advances chronologically, not by insertion ID. Account,
+session and privacy generations fence queued work and publication retries;
+logout disables the transport and clears account-owned private state.
+
+The source is not verified interoperation. Server-assisted publication,
+per-reader presentation, room private-message read sync and synchronization to an
+anchor outside the loaded history window remain unsupported. Server state is
+reconsidered when the bounded archive window finishes, but this feature does not
+fetch extra history solely to resolve a read anchor.
+
+Three additional core fixtures cover parsing, distinct server/MAM references and
+private publication options; four additional Android fixtures cover private queue
+persistence/consent, chronological coalescing, own-device references and room
+isolation. They are prepared, not run.
 
 Three core parser/reference fixtures and two Android group persistence/privacy cases are
 prepared, not run. No build, phone operation, real message send or archive query

@@ -17,6 +17,13 @@ public final class MessageFixture {
                 own ? nickname : "Alice",id,false,true),wire,true);
         return model.canonical(model.ids,time,false,model.outgoing,model.realSender,model.realSenderVerified,model.occupantId);
     }
+    public static XmppMessage serverAssigned(String wire,String assigned,String archive,long time,boolean outgoing) throws Exception {
+        Message stanza=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
+        stanza.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/phone"));
+        stanza.setStanzaId(wire);stanza.setBody("Message "+wire);
+        if(assigned!=null) stanza.addExtension(new org.jivesoftware.smackx.sid.element.StanzaIdElement(assigned,"alice@example.org"));
+        return XmppMessage.from(stanza,JidCreate.entityBareFrom("alice@example.org"),stanza.getBody(),false,true,archive,new Date(time));
+    }
     public static XmppMessage markable(String stanza,String origin,String archive,String body,boolean outgoing,boolean readable,long time,String resource) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
         wire.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/"+resource));
