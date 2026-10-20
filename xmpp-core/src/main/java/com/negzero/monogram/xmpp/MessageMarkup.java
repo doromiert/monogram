@@ -169,7 +169,7 @@ public final class MessageMarkup {
     /** The exact parser map removes recognized directives only; raw models and archive offsets stay unchanged. */
     public MessageMarkup display() {
         if(unstyled || body.codePointCount(0,body.length())>65536) return this;
-        Styling parsed=new Styling(body);parsed.parse();
+        Styling parsed=new Styling(body,ranges);parsed.parse();
         List<Range> styles=new ArrayList<>(ranges);
         if(styles.isEmpty()) styles.addAll(parsed.ranges);
         try { return mapped(parsed.text,parsed.removed,styles,true,mentions,false); }
@@ -178,7 +178,7 @@ public final class MessageMarkup {
     public InlineEmoji displayInline(InlineEmoji inline) {
         if(inline==null || !body.equals(inline.body)) return null;
         if(unstyled || body.codePointCount(0,body.length())>65536) return inline;
-        Styling parsed=new Styling(body);parsed.parse();List<int[]> removed=new ArrayList<>();
+        Styling parsed=new Styling(body,ranges);parsed.parse();List<int[]> removed=new ArrayList<>();
         for(int i=0;i<parsed.removed.length;) {
             if(!parsed.removed[i]) { i++;continue; } int start=i;while(i<parsed.removed.length && parsed.removed[i]) i++;
             removed.add(new int[]{start,i});
@@ -292,13 +292,30 @@ public final class MessageMarkup {
     private static boolean space(int c) { return Character.isWhitespace(c) || Character.isSpaceChar(c) || c==0x85; }
     private static final class Styling {
         final int[] text;final boolean[] removed;final List<Range> ranges=new ArrayList<>();
-        Styling(String body) { text=body.codePoints().toArray();removed=new boolean[text.length]; }
+        final List<Range> declared;
+        final boolean inferQuotes;
+        Styling(String body,List<Range> declared) {
+            text=body.codePoints().toArray();removed=new boolean[text.length];this.declared=declared;
+            inferQuotes=declared.stream().noneMatch(range -> range.styles.contains(Style.QUOTE));
+        }
+        /** Explicit quotes strip only their own fallback prefix, preserving literal markers inside them. */
+        boolean quotePrefix(int line) {
+            for(Range range:declared) if(range.styles.contains(Style.QUOTE)) {
+                int first=range.start-2;
+                if(first>=0 && text[first]=='>' && text[first+1]==' ' && (first==0 || text[first-1]=='\n')
+                        && (line==first || line>range.start && line<range.end)) return true;
+            }
+            return false;
+        }
         void parse() {
             for(int line=0;line<text.length;) {
                 int end=line;while(end<text.length && text[end]!='\n') end++;
                 int start=line,quote=0;
-                while(start<end && text[start]=='>' && quote<8) { removed[start++]=true;if(start<end && space(text[start])) removed[start++]=true;quote++; }
-                if(quote>0 && start<end) ranges.add(new Range(start,end,Collections.singleton(Style.QUOTE),null));
+                while(start+1<end && text[start]=='>' && text[start+1]==' ' && quote<8
+                        && (inferQuotes || quote==0 && quotePrefix(line))) {
+                    removed[start++]=true;removed[start++]=true;quote++;
+                }
+                if(inferQuotes && quote>0 && start<end) ranges.add(new Range(start,end,Collections.singleton(Style.QUOTE),null));
                 if(start+2<end && text[start]=='`' && text[start+1]=='`' && text[start+2]=='`') {
                     int content=end<text.length ? end+1 : end,close=content;
                     while(close<text.length) {

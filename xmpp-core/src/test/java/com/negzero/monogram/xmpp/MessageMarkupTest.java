@@ -103,6 +103,21 @@ public class MessageMarkupTest {
         assertEquals(literal.body,MessageMarkup.decode(literal.body,literal.encode()).display().body);
         assertNull(MessageMarkup.decode(body,"not base64"));assertNull(MessageMarkup.decode(body,wire.encode()+"AAAA"));
     }
+    @Test public void greentextRemainsLiteralAndDoesNotBecomeAQuote() {
+        for(String body:Arrays.asList(">greentext",">first\n>second\n>>nested",">")) {
+            MessageMarkup display=MessageMarkup.body(body).display();
+            assertEquals(body,display.body);
+            assertTrue(display.ranges.stream().noneMatch(range -> range.styles.contains(QUOTE)));
+        }
+        MessageMarkup spaced=MessageMarkup.body("> quote\n>greentext\n> > nested quote").display();
+        assertEquals("quote\n>greentext\nnested quote",spaced.body);
+        assertEquals(2,spaced.ranges.stream().filter(range -> range.styles.contains(QUOTE)).count());
+        String body=">literal inside explicit quote\n> another line";
+        MessageMarkup explicit=new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(0,body.length(),Collections.singleton(QUOTE),null)));
+        assertEquals(body,explicit.display().body);
+        assertEquals(body,explicit.styled().display().body);
+        assertTrue(explicit.styled().display().ranges.stream().anyMatch(range -> range.styles.contains(QUOTE)));
+    }
     @Test public void preAndQuoteBodyStylesRoundTripAndMetadataOnlyFallbackNeverChangesLiteralContent() {
         for(MessageMarkup.Style style:Arrays.asList(PRE,QUOTE)) {
             String body="first\nsecond";MessageMarkup markup=new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(0,body.length(),Collections.singleton(style),style==PRE ? "java" : null)));
