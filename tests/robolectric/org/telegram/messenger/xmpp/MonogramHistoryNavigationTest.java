@@ -55,6 +55,37 @@ public class MonogramHistoryNavigationTest {
     private List<String> text(List<TLRPC.Message> messages) {
         List<String> result=new ArrayList<>();for(TLRPC.Message message:messages) result.add(message.message);return result;
     }
+    private MonogramController controller() {
+        MonogramController controller=Shadow.newInstanceOf(MonogramController.class);
+        ReflectionHelpers.setField(controller,"store",store);ReflectionHelpers.setField(controller,"self",self);
+        ReflectionHelpers.setField(controller,"cacheWorker",new Inline());ReflectionHelpers.setField(controller,"archiveWorker",new Inline());ReflectionHelpers.setField(controller,"outbox",new MonogramOutbox());
+        ReflectionHelpers.setField(controller,"calendarHistory",ConcurrentHashMap.newKeySet());ReflectionHelpers.setField(controller,"visibleHistory",new ConcurrentHashMap<>());
+        ReflectionHelpers.setField(controller,"calendarWindows",new ConcurrentHashMap<>());
+        android.content.SharedPreferences preferences=context.getSharedPreferences("navigation-controller",0);preferences.edit().clear().putString("jid","alice@example.org").commit();ReflectionHelpers.setField(controller,"preferences",preferences);
+        ReflectionHelpers.setStaticField(Utilities.class,"stageQueue",Shadow.newInstanceOf(DispatchQueue.class));return controller;
+    }
+    @Test public void messageJumpCannotRetainAnotherDateWindowsRowsOrCursorsWhenOffline() throws Exception {
+        int latest=message("latest",900),target=message("target",500),older=message("older",100);
+        MonogramController controller=controller();MonogramCalendarWindow previous=new MonogramCalendarWindow();
+        previous.start(new MonogramCalendarWindow.Page("recent-first","recent-last",Collections.singleton(latest),false),new MonogramCalendarWindow.Page(null,null,Collections.emptySet(),true));
+        ((Map<Long,MonogramCalendarWindow>)ReflectionHelpers.getField(controller,"calendarWindows")).put(peer,previous);
+        List<TLRPC.messages_Messages> results=new ArrayList<>();List<Boolean> ends=new ArrayList<>();
+        controller.loadHistory(peer,target,1,3,(messages,end)->{results.add(messages);ends.add(end);});
+        assertEquals(Collections.singletonList("target"),text(results.get(0).messages));assertEquals(Boolean.FALSE,ends.get(0));assertEquals(0,Storage.outboxLoads);
+        MonogramCalendarWindow current=((Map<Long,MonogramCalendarWindow>)ReflectionHelpers.getField(controller,"calendarWindows")).get(peer);
+        assertNotSame(previous,current);assertTrue(current.cachedOnly());assertEquals(Collections.singleton(target),current.ids());assertNull(current.cursor(true));assertNull(current.cursor(false));
+        controller.loadHistory(peer,target,50,1,(messages,end)->{results.add(messages);ends.add(end);});
+        assertEquals(Collections.singletonList("latest"),text(results.get(1).messages));assertTrue(ends.get(1));assertTrue(current.ids().contains(latest));assertFalse(current.ids().contains(older));
+        assertNull(current.cursor(true));assertNull(current.cursor(false)); // Local continuation never borrows the old date cursor.
+        assertThrows(IllegalArgumentException.class,()->store.historyAround(peer,self,target,50,Collections.singleton(latest)));
+    }
+    @Test public void onlyExplicitMamResultMetadataCanSupplyANavigationCursor() throws Exception {
+        int serverOnly=store.save(MessageFixture.serverAssigned("wire-only","server-stanza",null,100000,false));
+        int mam=store.save(MessageFixture.serverAssigned("wire-mam","server-stanza-2","real-mam-uid",200000,false));
+        assertNull(store.navigationArchiveId(peer,serverOnly));assertEquals("real-mam-uid",store.navigationArchiveId(peer,mam));assertNull(store.navigationArchiveId(store.peer("foreign@example.org"),mam));
+        store.getWritableDatabase().execSQL("INSERT INTO message_ids(peer,outgoing,kind,value,message) VALUES(?,1,'mam','real-mam-uid',?)",new Object[]{peer,serverOnly});
+        assertNull(store.navigationArchiveId(peer,mam));
+    }
     @Test public void calendarUsesChronologyWithBoundedWindowAndBoundaryDates() throws Exception {
         message("latest",900);message("oldest",100);message("target",500);message("next",700);
         assertEquals(Arrays.asList("next","target","oldest"),text(store.historyAroundDate(peer,self,500,3)));
@@ -133,12 +164,7 @@ public class MonogramHistoryNavigationTest {
     }
     @Test public void controllerRoutesSelectedDateAndDoesNotMixRecentOutboxIntoOldCalendarWindow() throws Exception {
         message("latest",900);message("selected",500);
-        MonogramController controller=Shadow.newInstanceOf(MonogramController.class);
-        ReflectionHelpers.setField(controller,"store",store);ReflectionHelpers.setField(controller,"self",self);
-        ReflectionHelpers.setField(controller,"cacheWorker",new Inline());ReflectionHelpers.setField(controller,"outbox",new MonogramOutbox());
-        ReflectionHelpers.setField(controller,"calendarHistory",ConcurrentHashMap.newKeySet());ReflectionHelpers.setField(controller,"visibleHistory",new ConcurrentHashMap<>());
-        ReflectionHelpers.setField(controller,"calendarWindows",new ConcurrentHashMap<>());
-        ReflectionHelpers.setStaticField(Utilities.class,"stageQueue",Shadow.newInstanceOf(DispatchQueue.class));
+        MonogramController controller=controller();
         List<TLRPC.messages_Messages> result=new ArrayList<>();
         controller.loadHistory(peer,0,1,4,500,(messages,end)->result.add(messages));
         assertEquals(Collections.singletonList("selected"),text(result.get(0).messages));assertEquals(0,Storage.outboxLoads);

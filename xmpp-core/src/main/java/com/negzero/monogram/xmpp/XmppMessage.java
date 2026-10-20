@@ -76,7 +76,7 @@ public final class XmppMessage {
         if(archiveId==null && time==null) return this;
         Map<String,String> merged=new LinkedHashMap<>(ids);
         String cipher=merged.remove("omemo2-cipher");
-        if(archiveId!=null) merged.put("archive",archiveId);
+        if(archiveId!=null) { merged.put("archive",archiveId);merged.put("mam",archiveId); }
         if(cipher!=null) merged.put("omemo2-cipher",cipher);
         return canonical(merged,time==null ? timestamp : time.getTime(),archived || archiveId!=null,markableId);
     }
@@ -120,7 +120,7 @@ public final class XmppMessage {
             if (own.toString().equals(id.getBy())) put(ids, "archive", id.getId());
         }
         put(ids,XmppReadSync.LOCAL_ID,XmppReadSync.assignedId(message,own));
-        if (archiveId != null) put(ids, "archive", archiveId);
+        if (archiveId != null) { put(ids, "archive", archiveId);put(ids,"mam",archiveId); }
         if (ids.isEmpty() && (encrypted || reactions!=null)) ids.put("local", opaqueId(message));
         ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? body : null);
         FileLink attachment = null;

@@ -1473,8 +1473,8 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized ArrayList<TLRPC.Message> historyAround(long peer, long self, int anchor, int limit) {
         return historyAround(peer,self,anchor,limit,null);
     }
-    private ArrayList<TLRPC.Message> historyAround(long peer,long self,int anchor,int limit,java.util.Collection<Integer> window) {
-        if(hiddenMessage(anchor)) throw new IllegalArgumentException("Message is not visible locally");
+    synchronized ArrayList<TLRPC.Message> historyAround(long peer,long self,int anchor,int limit,java.util.Collection<Integer> window) {
+        if(hiddenMessage(anchor) || window!=null && !window.contains(anchor)) throw new IllegalArgumentException("Message is not visible in this history window");
         TLRPC.Message target = getMessage(anchor, self);
         if (target.dialog_id != peer) throw new IllegalArgumentException("History anchor belongs to another conversation");
         int count = Math.min(Math.max(limit, 1), 100);
@@ -1482,6 +1482,12 @@ final class MonogramStore extends SQLiteOpenHelper {
         ArrayList<TLRPC.Message> older = count > newer.size() + 1 ? history(peer, self, anchor, count - newer.size() - 1, false,window) : new ArrayList<>();
         if (older.size() + newer.size() + 1 < count && count > 1) newer = history(peer, self, anchor, count - older.size() - 1, true,window);
         newer.add(target); newer.addAll(older); return newer;
+    }
+    /** Only a MAM result ID is a proven RSM cursor; an account-injected stanza ID need not equal it. */
+    synchronized String navigationArchiveId(long peer,int anchor) {
+        try(Cursor rows=getReadableDatabase().rawQuery("SELECT DISTINCT k.value FROM message_ids k WHERE k.peer=? AND k.message=? AND k.kind='mam' AND NOT EXISTS(SELECT 1 FROM message_ids other WHERE other.peer=k.peer AND other.kind=k.kind AND other.value=k.value AND other.message!=k.message)",new String[]{Long.toString(peer),Integer.toString(anchor)})) {
+            if(!rows.moveToFirst()) return null;String value=rows.getString(0);return rows.moveToNext() ? null : value;
+        }
     }
     synchronized ArrayList<TLRPC.Message> historyAroundDate(long peer,long self,int date,int limit) {
         return historyAroundDate(peer,self,date,limit,null);

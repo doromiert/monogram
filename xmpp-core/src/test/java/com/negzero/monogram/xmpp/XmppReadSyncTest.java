@@ -30,7 +30,9 @@ class XmppReadSyncTest {
         wire.addExtension(new StanzaIdElement("foreign","bob@example.org"));assertNull(XmppReadSync.assignedId(wire,own));
         wire.addExtension(new StanzaIdElement("server-id",own.toString()));
         XmppMessage model=XmppMessage.from(wire,own,"hello",false,true,"different-mam-id",new Date(100000));
-        assertEquals("server-id",model.ids.get(XmppReadSync.LOCAL_ID));assertEquals("different-mam-id",model.ids.get("archive"));
+        assertEquals("server-id",model.ids.get(XmppReadSync.LOCAL_ID));assertEquals("different-mam-id",model.ids.get("archive"));assertEquals("different-mam-id",model.ids.get("mam"));
+        XmppMessage live=XmppMessage.from(wire,own,"hello",false,true,null,null);
+        assertNull(live.ids.get("mam"));assertEquals("journal-mam",live.archived("journal-mam",new Date(200000)).ids.get("mam"));
         assertEquals("server-id",model.withSenderFingerprint("fingerprint").ids.get(XmppReadSync.LOCAL_ID));
         wire.addExtension(new StanzaIdElement("second-server-id",own.toString()));assertNull(XmppReadSync.assignedId(wire,own));
         assertNull(XmppMessage.from(wire,own,"hello",false,true,"mam",null).ids.get(XmppReadSync.LOCAL_ID));

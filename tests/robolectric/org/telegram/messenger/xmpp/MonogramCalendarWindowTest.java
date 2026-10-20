@@ -29,4 +29,20 @@ public class MonogramCalendarWindowTest {
         window.add(new MonogramCalendarWindow.Page(null,null,Collections.emptySet(),true),true);
         assertTrue(window.end(true));
     }
+    @Test public void messageAnchorOwnsItsAdjacentCursorsAndCachedFallbackCannotBorrowThem() throws Exception {
+        MonogramCalendarWindow window=new MonogramCalendarWindow();
+        window.startAround(page(0,false),new MonogramCalendarWindow.Page("target","target",Collections.singleton(50),false),page(2,false));
+        assertEquals(new LinkedHashSet<>(Arrays.asList(0,50,2)),window.ids());assertEquals("first-0",window.cursor(false));assertEquals("last-2",window.cursor(true));
+        window.add(page(3,true),true);assertFalse(window.ids().contains(0));assertTrue(window.ids().contains(50));assertFalse(window.end(false));
+        window.cached(Arrays.asList(80,81));assertTrue(window.cachedOnly());assertEquals(new LinkedHashSet<>(Arrays.asList(80,81)),window.ids());
+        assertNull(window.cursor(false));assertNull(window.cursor(true));assertFalse(window.end(false));assertFalse(window.end(true));
+        window.addCached(Collections.singleton(82),true,true);assertTrue(window.end(true));assertFalse(window.end(false));assertTrue(window.ids().contains(82));
+        assertThrows(java.io.IOException.class,()->window.add(page(4,false),true));
+        List<Integer> initial=new ArrayList<>(),next=new ArrayList<>(),last=new ArrayList<>();
+        for(int id=100;id>0;id--) initial.add(id);for(int id=150;id>100;id--) next.add(id);for(int id=200;id>150;id--) last.add(id);
+        window.cached(initial);window.addCached(next,true,false);window.addCached(last,true,true);
+        assertEquals(150,window.ids().size());assertFalse(window.ids().contains(1));assertTrue(window.ids().contains(51));assertTrue(window.ids().contains(200));assertFalse(window.end(false));
+        window.start(page(2,false),page(1,false));assertFalse(window.cachedOnly());assertFalse(window.ids().contains(80));
+    }
+
 }

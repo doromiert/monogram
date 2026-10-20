@@ -28,9 +28,13 @@ does not mark an active calendar direction exhausted until its archive end is
 known. Account/session changes, another date jump and returning to the latest
 messages invalidate previous window work.
 
-Offline/unsupported initial queries retain the closest cached date window.
-An interrupted continuation keeps already fetched rows and retries on a later
-scroll. Searching remains cache-only: this change does not add server full-text
+Offline/unsupported initial queries retain at most 100 closest cached rows in
+an explicitly cache-only window with no server cursors. Scrolling still loads
+known local neighbors in batches of up to 50, retains at most three cached pages
+and stops when that local direction is exhausted. It never borrows another date's
+server cursor. Reselecting the date/message retries archive loading; returning to latest history
+leaves this window. An interrupted online continuation keeps already fetched
+rows and retries on a later scroll. Searching remains cache-only: this change does not add server full-text
 search or claim that unfetched history has been searched.
 
 No tests, build, phone actions or network archive requests were run while making
@@ -69,3 +73,36 @@ Older history is expanded deliberately within a chosen chat; global search does
 not silently download every conversation. Native search result/date-window
 navigation and phone layout acceptance remain open. No tests, build, server operation or phone action ran for
 this checkpoint.
+
+
+## Message-result and reply jumps
+
+Unreleased source gives native around-message jumps the same independent paging
+window as date navigation. A jump outside the current window invalidates its old
+rows/cursors; a target already within a live fetched window can reuse that window.
+Outbox items from the present are not injected into an old result window.
+
+New direct-message MAM imports retain an explicit internal `mam` alias, separate
+from `archive` (which may also originate from a server stanza ID). Room imports
+already retain their MAM alias. Only an unambiguous MAM result ID from the selected
+conversation can seed exact before/after queries. The resulting three-page window
+contains up to 50 prior archive entries, the cached target, and up to 50 subsequent
+entries, with independent directional end flags. Later scrolls retain the existing
+three-page bookkeeping limit and 50-entry query limit. Sync cursors/read state are
+unchanged by navigation.
+
+For older cached rows without a proven MAM alias, date seeding is accepted only
+if the fetched window contains the exact selected local identity. If it does not,
+or a cursor expired/query failed, the cached selected message and its bounded
+neighbors remain visible in a cache-only window instead of attaching that row to
+an unrelated archive cursor. Further scrolling uses only known local rows in
+bounded pages; these local ends do not claim that the server archive is exhausted. A new explicit jump can reseed online. Account/session/window
+checks reject superseded work.
+
+Three additional fixtures are prepared, not run: centered cursor ownership versus
+cache fallback, offline result jumps replacing a previous date window without
+recent outbox rows, and proven MAM cursor metadata versus stanza-only/ambiguous
+IDs. The core server/MAM separation fixture also records the new alias. Online
+DM/MUC result/reply navigation, repeated timestamp boundaries, expired IDs,
+reconnect timing and native row-cache layout still need the authorized release
+acceptance gate.
