@@ -23,7 +23,7 @@ The last four behaviors are based on static JADX excerpts in the ignored
 SCROLL_STATE_DRAGGING handling and mention span boundaries. This is ordinary
 decompilation evidence, not an observed runtime or REA Evidence record. REA MCP
 remains unavailable; its previously saved doctor reports registration drift.
-The settings/suffix fixture is prepared, not run; native interaction awaits release.
+The settings/suffix fixture passes at the 0.2.120 gate; native interaction remains unverified.
 
 ## Remaining scope
 

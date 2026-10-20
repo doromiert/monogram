@@ -354,8 +354,7 @@ is reported on that path. Account close is serialized with the apply manager loc
 There is no implicit account activation, reconnection, key publication or network
 send during approval. The only network operation is public bundle lookup.
 
-This source checkpoint includes prepared headless crypto/rollback/lineage fixtures
-and Android schema/owner/logout fixtures; they have not been run or compiled.
+The 0.2.120 release gate passes seven headless active-rotation crypto/rollback/lineage checks, two prior peer-rotation checks and nine Android legacy-store schema/owner/logout checks. This does not verify the complete backup/export/restore pipeline.
 Global backup quiescence/cold-install transaction and its settings UI remain
 unavailable pending the integration work below.
 

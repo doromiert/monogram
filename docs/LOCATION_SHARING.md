@@ -39,10 +39,7 @@ intent, avoiding a mandatory Google Maps installation or automatic submission of
 the phone's current position to a Google directions URL. Missing external apps
 leave the built-in map available.
 
-Source checkpoint only. Geo parsing, native transport/projection/forwarding
-fixtures are prepared but have not been executed; no real location was captured,
-shared or viewed. Native gesture/layout behavior and source lifetime need the next
-approved build/device gate. Capture/restore backup work remains separate.
+Published in 0.2.120 after two core geo parsing and two native transport/projection/forwarding checks pass, with successful Nix arm64 packaging. No real location was captured, shared or viewed. Native gesture/layout behavior and independent-client exchange remain unverified. Capture/restore backup work remains separate.
 
 References: [RFC 5870](https://www.rfc-editor.org/rfc/rfc5870),
 [OpenStreetMap tile policy](https://operations.osmfoundation.org/policies/tiles/),

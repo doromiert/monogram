@@ -45,8 +45,7 @@ rich-message editor are not unlocked by pretending the account is Premium.
 Additional native purchase/feature entrypoints may remain outside this bounded
 keyboard/profile pass and must be audited before declaring full monetization removal.
 
-Validation is source-only. No tests, Gradle builds or device actions were run for
-this checkpoint. At the parent's next planned release gate, compile and inspect:
+Compiled and packaged in 0.2.120. No device actions or visual payment-gate acceptance were performed. Remaining native acceptance:
 self settings with no monetary rows; contact menu without wallet; long imported
 emoji packs fully visible without lock/purchase rows; send local custom emoji and
 Premium-tagged imported stickers; captions beyond the old free allowance; regular

@@ -160,7 +160,7 @@ collection including a stale-scan/cross-owner-selection race, external launch
 ownership, SAF multiple files/provider names, missing grants, camera output
 recovery, stale/private-provider rejection, incompatible-kind preservation and
 pending-batch preservation/deferred recovery, unapplied crop versus applied metadata, editable painting baselines/entities, stale capture fencing, editor-only cancellation and recycling superseded waiting paint snapshots, and retired-PNG retention on native reference failures/references/corrupt manifests followed by safe reclamation. They are
-prepared, **not run**. Run at the next planned phone-update gate:
+passing at the 0.2.120 release gate (17 media/editor, eight external-selection and three selection-codec checks). Native phone acceptance remains open. Targeted rerun command:
 
 ```sh
 nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMediaDraftsTest --tests org.telegram.messenger.xmpp.MonogramSelectionDraftsTest --tests org.telegram.messenger.xmpp.MonogramExternalSelectionsTest
