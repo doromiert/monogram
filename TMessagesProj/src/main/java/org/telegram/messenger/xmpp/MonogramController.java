@@ -1383,6 +1383,7 @@ public final class MonogramController {
     }
     public void logout() {
         final String departing=accountJid();
+        MonogramNotificationActions.invalidate(account);
         debugCapture(false);
         linkPreviews.cancel();
         MonogramDialogState.clear(account,departing);

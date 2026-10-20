@@ -5242,6 +5242,7 @@ public class NotificationsController extends BaseController implements Notificat
                 replyIntent.putExtra("max_id", maxId);
                 replyIntent.putExtra("topic_id", topicId);
                 replyIntent.putExtra("currentAccount", currentAccount);
+                org.telegram.messenger.xmpp.MonogramNotificationActions.bind(replyIntent, currentAccount);
                 if (messageObjects != null && !messageObjects.isEmpty()) {
                     ArrayList<Integer> voiceIdsList = new ArrayList<>();
                     for (int vi = 0; vi < messageObjects.size(); vi++) {
@@ -5646,7 +5647,8 @@ public class NotificationsController extends BaseController implements Notificat
             msgHeardIntent.putExtra("dialog_id", dialogId);
             msgHeardIntent.putExtra("max_id", maxId);
             msgHeardIntent.putExtra("currentAccount", currentAccount);
-            PendingIntent readPendingIntent = PendingIntent.getBroadcast(ApplicationLoader.applicationContext, internalId, msgHeardIntent, PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            org.telegram.messenger.xmpp.MonogramNotificationActions.bind(msgHeardIntent, currentAccount);
+            PendingIntent readPendingIntent = PendingIntent.getBroadcast(ApplicationLoader.applicationContext, internalId, msgHeardIntent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             NotificationCompat.Action readAction = new NotificationCompat.Action.Builder(R.drawable.msg_markread, LocaleController.getString(R.string.MarkAsRead), readPendingIntent)
                     .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
                     .setShowsUserInterface(false)

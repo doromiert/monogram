@@ -5448,6 +5448,27 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     mode = 0;
                 }
                 MessagesStorage.getInstance(currentAccount).putMessages(arr, false, true, false, 0, mode, threadMessageId);
+                if (sendMessageParams.onLocalMessageStored != null) {
+                    final java.util.function.Consumer<Boolean> callback = sendMessageParams.onLocalMessageStored;
+                    final long storedDialog = peer;
+                    final int storedId = newMsg.id;
+                    final long storedRandomId = newMsg.random_id;
+                    final MessagesStorage nativeStorage = getMessagesStorage();
+                    nativeStorage.getStorageQueue().postRunnable(() -> {
+                        boolean stored = false;
+                        org.telegram.SQLite.SQLiteCursor cursor = null;
+                        try {
+                            cursor = nativeStorage.getDatabase().queryFinalized(
+                                    "SELECT 1 FROM messages_v2 m INNER JOIN randoms_v2 r ON r.uid=m.uid AND r.mid=m.mid WHERE m.uid=? AND m.mid=? AND r.random_id=?",
+                                    storedDialog, storedId, storedRandomId);
+                            stored = cursor.next();
+                        } catch (Exception unavailable) {
+                            if (BuildVars.LOGS_ENABLED) FileLog.e("Notification outbox confirmation: " + unavailable.getClass().getSimpleName());
+                        } finally { if (cursor != null) cursor.dispose(); }
+                        final boolean committed = stored;
+                        AndroidUtilities.runOnUIThread(() -> callback.accept(committed));
+                    });
+                }
                 MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objArr, mode);
                 if (scheduleDate == 0) {
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
@@ -12413,6 +12434,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public static class SendMessageParams {
+        /** Ordinary immediate sends only; true after the native outbox row is confirmed on its storage queue. */
+        public java.util.function.Consumer<Boolean> onLocalMessageStored;
         public String message;
         public String caption;
         public TLRPC.MessageMedia location;
