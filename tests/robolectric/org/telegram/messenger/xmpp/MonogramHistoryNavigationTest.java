@@ -120,12 +120,24 @@ public class MonogramHistoryNavigationTest {
             try(android.database.Cursor c=store.getReadableDatabase().rawQuery("SELECT count(*) FROM "+table,null)) { assertTrue(c.moveToFirst());assertEquals(0,c.getInt(0)); }
         }
     }
+    @Test public void calendarWindowExcludesUnrelatedCachedHistoryAndKeepsCursorOwnership() throws Exception {
+        int latest=message("latest",900),selected=message("selected",500),older=message("older",400),oldest=message("oldest",100);
+        Set<Integer> window=new HashSet<>(Arrays.asList(selected,older));
+        assertEquals(Arrays.asList("selected","older"),text(store.historyAroundDate(peer,self,500,50,window)));
+        assertEquals(Collections.singletonList("older"),text(store.history(peer,self,selected,50,false,window)));
+        assertEquals(Collections.singletonList("selected"),text(store.history(peer,self,older,50,true,window)));
+        assertTrue(store.history(peer,self,older,50,false,window).isEmpty());
+        assertTrue(store.historyAroundDate(peer,self,500,50,Collections.emptySet()).isEmpty());
+        assertNull(store.archiveCursor(peer,true));assertNull(store.archiveCursor(peer,false));
+        assertEquals(4,store.history(peer,self,0,50).size());
+    }
     @Test public void controllerRoutesSelectedDateAndDoesNotMixRecentOutboxIntoOldCalendarWindow() throws Exception {
         message("latest",900);message("selected",500);
         MonogramController controller=Shadow.newInstanceOf(MonogramController.class);
         ReflectionHelpers.setField(controller,"store",store);ReflectionHelpers.setField(controller,"self",self);
         ReflectionHelpers.setField(controller,"cacheWorker",new Inline());ReflectionHelpers.setField(controller,"outbox",new MonogramOutbox());
         ReflectionHelpers.setField(controller,"calendarHistory",ConcurrentHashMap.newKeySet());ReflectionHelpers.setField(controller,"visibleHistory",new ConcurrentHashMap<>());
+        ReflectionHelpers.setField(controller,"calendarWindows",new ConcurrentHashMap<>());
         ReflectionHelpers.setStaticField(Utilities.class,"stageQueue",Shadow.newInstanceOf(DispatchQueue.class));
         List<TLRPC.messages_Messages> result=new ArrayList<>();
         controller.loadHistory(peer,0,1,4,500,(messages,end)->result.add(messages));

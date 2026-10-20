@@ -20933,6 +20933,8 @@ public class ChatActivity extends BaseFragment implements
         int last_unread_date = (Integer) args[7];
         int load_type = (Integer) args[8];
         boolean isEnd = (Boolean) args[9];
+        boolean monogramCalendarHistory = chatMode == MODE_DEFAULT && threadMessageId == 0
+                && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).calendarWindowActive(dialog_id);
         int loaded_max_id = (Integer) args[12];
         int loaded_mentions_count = chatWasReset ? 0 : (Integer) args[13];
 
@@ -20944,6 +20946,10 @@ public class ChatActivity extends BaseFragment implements
         }
         if (load_type == 4) {
             startLoadFromMessageId = loaded_max_id;
+            if (monogramCalendarHistory) {
+                endReached[loadIndex] = false;
+                forwardEndReached[loadIndex] = false;
+            }
 
             for (int a = messArr.size() - 1; a > 0; a--) {
                 MessageObject obj = messArr.get(a);
@@ -21220,7 +21226,7 @@ public class ChatActivity extends BaseFragment implements
             getMediaDataController().loadReplyMessagesForMessages(messArr, dialog_id, chatMode, 0, null, classGuid, null);
         }
         int approximateHeightSum = 0;
-        if (!chatWasReset && (load_type == 2 || load_type == 1) && messArr.isEmpty() && !isCache) {
+        if (!chatWasReset && (load_type == 2 || load_type == 1) && messArr.isEmpty() && !isCache && (!monogramCalendarHistory || isEnd)) {
             forwardEndReached[0] = true;
         }
         LongSparseArray<MessageObject.GroupedMessages> newGroups = null;
@@ -21633,7 +21639,8 @@ public class ChatActivity extends BaseFragment implements
         }
 
         if (load_type == 1) {
-            if (!chatWasReset && messArr.size() != count && (!isCache || currentEncryptedChat != null || forwardEndReached[loadIndex])) {
+            if (!chatWasReset && messArr.size() != count && (!monogramCalendarHistory || isEnd)
+                    && (!isCache || currentEncryptedChat != null || forwardEndReached[loadIndex])) {
                 forwardEndReached[loadIndex] = true;
                 if (loadIndex != 1) {
                     first_unread_id = 0;
@@ -21674,7 +21681,7 @@ public class ChatActivity extends BaseFragment implements
             }
             loadingForward = false;
         } else {
-            if (messArr.size() < count && load_type != 3 && load_type != 4 && (dialog_id <= 0 || isEnd)) {
+            if (messArr.size() < count && load_type != 3 && load_type != 4 && (dialog_id <= 0 && !monogramCalendarHistory || isEnd)) {
                 if (isCache) {
                     if (currentEncryptedChat != null || loadIndex == 1 && mergeDialogId != 0 && isEnd) {
                         endReached[loadIndex] = true;

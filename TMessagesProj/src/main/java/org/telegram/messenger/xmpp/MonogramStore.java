@@ -624,7 +624,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         return saveRoomArchive(dialog,page,backwards,self,updated,true);
     }
     synchronized boolean saveRoomCalendar(long dialog,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page,long self,java.util.Set<Integer> updated) {
-        return saveRoomArchive(dialog,page,false,self,updated,false);
+        return saveRoomCalendar(dialog,page,false,self,updated);
+    }
+    synchronized boolean saveRoomCalendar(long dialog,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page,boolean backwards,long self,java.util.Set<Integer> updated) {
+        return saveRoomArchive(dialog,page,backwards,self,updated,false);
     }
     private boolean saveRoomArchive(long dialog,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page,boolean backwards,long self,java.util.Set<Integer> updated,boolean advanceCursor) {
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
@@ -1093,7 +1096,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         return saveArchive(scope,page,backwards,updated,true);
     }
     synchronized boolean saveCalendar(long peer,XmppSession.ArchivePage page,java.util.Set<Integer> updated) {
-        return saveArchive(peer,page,false,updated,false);
+        return saveCalendar(peer,page,false,updated);
+    }
+    synchronized boolean saveCalendar(long peer,XmppSession.ArchivePage page,boolean backwards,java.util.Set<Integer> updated) {
+        return saveArchive(peer,page,backwards,updated,false);
     }
     private boolean saveArchive(long scope,XmppSession.ArchivePage page,boolean backwards,java.util.Set<Integer> updated,boolean advanceCursor) {
         SQLiteDatabase db = getWritableDatabase();
@@ -1463,20 +1469,27 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized TLRPC.Document customEmoji(long id) { return MonogramEmojis.document(getReadableDatabase(),storeContext,database,id); }
     synchronized ArrayList<TLRPC.Message> historyAround(long peer, long self, int anchor, int limit) {
+        return historyAround(peer,self,anchor,limit,null);
+    }
+    private ArrayList<TLRPC.Message> historyAround(long peer,long self,int anchor,int limit,java.util.Collection<Integer> window) {
         if(hiddenMessage(anchor)) throw new IllegalArgumentException("Message is not visible locally");
         TLRPC.Message target = getMessage(anchor, self);
         if (target.dialog_id != peer) throw new IllegalArgumentException("History anchor belongs to another conversation");
         int count = Math.min(Math.max(limit, 1), 100);
-        ArrayList<TLRPC.Message> newer = count > 1 ? history(peer, self, anchor, count / 2, true) : new ArrayList<>();
-        ArrayList<TLRPC.Message> older = count > newer.size() + 1 ? history(peer, self, anchor, count - newer.size() - 1, false) : new ArrayList<>();
-        if (older.size() + newer.size() + 1 < count && count > 1) newer = history(peer, self, anchor, count - older.size() - 1, true);
+        ArrayList<TLRPC.Message> newer = count > 1 ? history(peer, self, anchor, count / 2, true,window) : new ArrayList<>();
+        ArrayList<TLRPC.Message> older = count > newer.size() + 1 ? history(peer, self, anchor, count - newer.size() - 1, false,window) : new ArrayList<>();
+        if (older.size() + newer.size() + 1 < count && count > 1) newer = history(peer, self, anchor, count - older.size() - 1, true,window);
         newer.add(target); newer.addAll(older); return newer;
     }
     synchronized ArrayList<TLRPC.Message> historyAroundDate(long peer,long self,int date,int limit) {
-        if(date<=0) return history(peer,self,0,limit);
+        return historyAroundDate(peer,self,date,limit,null);
+    }
+    synchronized ArrayList<TLRPC.Message> historyAroundDate(long peer,long self,int date,int limit,java.util.Collection<Integer> window) {
+        if(date<=0) return history(peer,self,0,limit,false,window);
         String visible=" FROM messages m WHERE m.peer=? AND m.deleted=0"
                 +" AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0)"
                 +" AND NOT EXISTS(SELECT 1 FROM reaction_sources s WHERE s.message=m.id)"+pendingClause("m");
+        visible+=calendarClause(window);
         String[] args={Long.toString(peer),Long.toString((long)date*1000)};
         int anchor=0;
         // Choose the first visible message on/after the selected date, then fall back before it.
@@ -1486,12 +1499,15 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(anchor==0) try(Cursor c=getReadableDatabase().rawQuery("SELECT m.id"+visible+" AND m.time_ms<? ORDER BY m.time_ms DESC,m.archive_order DESC,m.id DESC LIMIT 1",args)) {
             if(c.moveToFirst()) anchor=c.getInt(0);
         }
-        return anchor==0 ? new ArrayList<>() : historyAround(peer,self,anchor,limit);
+        return anchor==0 ? new ArrayList<>() : historyAround(peer,self,anchor,limit,window);
     }
     synchronized ArrayList<TLRPC.Message> history(long peer, long self, int offset, int limit) {
         return history(peer, self, offset, limit, false);
     }
     synchronized ArrayList<TLRPC.Message> history(long peer, long self, int offset, int limit, boolean forward) {
+        return history(peer,self,offset,limit,forward,null);
+    }
+    synchronized ArrayList<TLRPC.Message> history(long peer,long self,int offset,int limit,boolean forward,java.util.Collection<Integer> window) {
         ArrayList<TLRPC.Message> result = new ArrayList<>();
         // Local IDs reflect insertion, not chronology: an archive import may insert an older message later.
         String sql = "SELECT m.id,m.body,m.outgoing,m.time FROM messages m";
@@ -1502,6 +1518,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         sql += " WHERE m.peer=? AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) AND NOT EXISTS(SELECT 1 FROM reaction_sources s WHERE s.message=m.id)"; args.add(Long.toString(peer));
         sql += pendingClause("m");
+        sql += calendarClause(window);
         if (offset != 0) {
             String compare = forward ? ">" : "<";
             sql += " AND (m.time_ms" + compare + "a.time_ms OR (m.time_ms=a.time_ms AND m.archive_order" + compare
@@ -1518,6 +1535,21 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         if (forward) java.util.Collections.reverse(result);
         return result;
+    }
+    private static String calendarClause(java.util.Collection<Integer> window) {
+        if(window==null) return "";
+        if(window.isEmpty()) return " AND 0";
+        StringBuilder sql=new StringBuilder(" AND m.id IN (");
+        for(Integer id:window) { if(sql.charAt(sql.length()-1)!='(') sql.append(',');sql.append(id.intValue()); }
+        return sql.append(')').toString();
+    }
+    synchronized java.util.Set<Integer> calendarIds(long peer,java.util.Collection<String> archiveIds) {
+        java.util.Set<Integer> ids=new java.util.LinkedHashSet<>();
+        for(String archive:archiveIds) if(archive!=null) {
+            try(Cursor rows=getReadableDatabase().rawQuery("SELECT DISTINCT message FROM message_ids WHERE peer=? AND kind=? AND value=?",
+                    new String[]{Long.toString(peer),peer<0 ? "mam" : "archive",archive})) { while(rows.moveToNext()) ids.add(rows.getInt(0)); }
+        }
+        return ids;
     }
     synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {

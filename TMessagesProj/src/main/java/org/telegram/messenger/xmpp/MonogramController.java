@@ -431,7 +431,7 @@ public final class MonogramController {
     }
     private void connect(Account details, String password) throws Exception {
         if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
-        joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();calendarHistory.clear();
+        joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();calendarHistory.clear();calendarWindows.clear();
         final long epoch = ++sessionEpoch, owner=accountEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
@@ -1223,6 +1223,8 @@ public final class MonogramController {
     }
     private final java.util.concurrent.ConcurrentHashMap<Long,Integer> visibleHistory=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Long> calendarHistory=java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.concurrent.ConcurrentHashMap<Long,MonogramCalendarWindow> calendarWindows=new java.util.concurrent.ConcurrentHashMap<>();
+    public boolean calendarWindowActive(long peer) { return calendarWindows.containsKey(peer); }
     public void historyVisible(long peer,int message) {
         // A date jump must not extend the unrelated newest-to-oldest sync window across a sparse cache.
         if(peer==0 || message<=0 || calendarHistory.contains(peer) || java.util.Objects.equals(visibleHistory.put(peer,message),message)) return;
@@ -1245,49 +1247,97 @@ public final class MonogramController {
     }
     public void loadHistory(long peer, int offset, int count, int loadType, int date, java.util.function.BiConsumer<TLRPC.messages_Messages, Boolean> completed) {
         long epoch=accountEpoch;
-        if(loadType==4 && date>0) calendarHistory.add(peer);
-        else if(offset<=0 && loadType!=4) { calendarHistory.remove(peer);visibleHistory.remove(peer); }
+        if(loadType==4 && date>0) { calendarHistory.add(peer);calendarWindows.remove(peer); }
+        else if(offset<=0 && loadType!=4) { calendarHistory.remove(peer);calendarWindows.remove(peer);visibleHistory.remove(peer); }
         XmppSession expected=session;
         if(loadType==4 && date>0 && expected!=null && expected.connection().isAuthenticated()) {
-            loadCalendarHistory(peer,offset,count,date,epoch,expected,sessionEpoch,completed);return;
+            MonogramCalendarWindow window=new MonogramCalendarWindow();calendarWindows.put(peer,window);
+            loadCalendarHistory(peer,offset,count,date,epoch,expected,sessionEpoch,window,completed);return;
+        }
+        MonogramCalendarWindow window=calendarWindows.get(peer);
+        if(window!=null && offset>0 && (loadType==0 || loadType==1)) {
+            loadCalendarContinuation(peer,offset,count,loadType,epoch,expected,sessionEpoch,window,completed);return;
         }
         if(loadType!=4 && (offset<=0 || loadType==2 || loadType==3)) {
             MessagesStorage.getInstance(account).getMonogramOutbox(peer,pending -> loadHistory(peer,offset,count,loadType,date,epoch,pending,completed));
         } else loadHistory(peer,offset,count,loadType,date,epoch,new ArrayList<>(),completed);
     }
-    private void loadCalendarHistory(long peer,int offset,int count,int date,long owner,XmppSession expected,long epoch,
+    private boolean currentCalendar(long peer,MonogramCalendarWindow window,long owner,String own,XmppSession expected,long epoch) {
+        return calendarWindows.get(peer)==window && session==expected && sessionEpoch==epoch && sameAccount(owner,own);
+    }
+    private void loadCalendarHistory(long peer,int offset,int count,int date,long owner,XmppSession expected,long epoch,MonogramCalendarWindow window,
             java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
         final String own=accountJid(),address=store.jid(peer);
         archiveWorker.execute(() -> {
+            boolean seeded=false;
             try {
-                if(session!=expected || sessionEpoch!=epoch || !sameAccount(owner,own)) throw new IllegalStateException("Account changed");
+                if(!currentCalendar(peer,window,owner,own,expected,epoch)) throw new IllegalStateException("Account changed");
                 java.util.Date since=new java.util.Date((long)date*1000);
+                MonogramCalendarWindow.Page newer,older;
                 if(peer>0) {
                     XmppSession.ArchivePage after=expected.archiveSince(address,since,50);
-                    worker.submit(() -> saveCalendarPage(peer,owner,own,after)).get();
-                    XmppSession.ArchivePage before=expected.archiveBefore(address,after.messages.isEmpty() ? null : after.firstId,50);
-                    worker.submit(() -> saveCalendarPage(peer,owner,own,before)).get();
+                    newer=worker.submit(() -> currentCalendar(peer,window,owner,own,expected,epoch) ? saveCalendarPage(peer,owner,own,after,false) : null).get();
+                    if(!currentCalendar(peer,window,owner,own,expected,epoch)) throw new IllegalStateException("Calendar changed");
+                    XmppSession.ArchivePage before=expected.archiveBefore(address,after.firstId,50);
+                    older=worker.submit(() -> currentCalendar(peer,window,owner,own,expected,epoch) ? saveCalendarPage(peer,owner,own,before,true) : null).get();
                 } else {
                     com.negzero.monogram.xmpp.XmppRooms.ArchivePage after=expected.rooms.archiveSince(address,since,50);
-                    worker.submit(() -> saveCalendarPage(peer,owner,own,after)).get();
+                    newer=worker.submit(() -> currentCalendar(peer,window,owner,own,expected,epoch) ? saveCalendarPage(peer,owner,own,after,false) : null).get();
+                    if(!currentCalendar(peer,window,owner,own,expected,epoch)) throw new IllegalStateException("Calendar changed");
                     com.negzero.monogram.xmpp.XmppRooms.ArchivePage before=expected.rooms.archive(address,after.firstId==null ? "" : after.firstId,null,50);
-                    worker.submit(() -> saveCalendarPage(peer,owner,own,before)).get();
+                    older=worker.submit(() -> currentCalendar(peer,window,owner,own,expected,epoch) ? saveCalendarPage(peer,owner,own,before,true) : null).get();
                 }
-            } catch(Exception unavailable) { /* Offline/unsupported archives retain the closest cached calendar window. */ }
-            loadHistory(peer,offset,count,4,date,owner,new ArrayList<>(),completed);
+                if(newer==null || older==null || !currentCalendar(peer,window,owner,own,expected,epoch)) throw new IllegalStateException("Calendar changed");
+                window.start(newer,older);
+                seeded=true;
+            } catch(Exception unavailable) {
+                if(!calendarWindows.remove(peer,window)) {
+                    Utilities.stageQueue.postRunnable(() -> completed.accept(new TLRPC.TL_messages_messages(),false));return;
+                }
+            }
+            loadHistory(peer,offset,count,4,date,owner,new ArrayList<>(),seeded ? window : null,completed);
         });
     }
-    private void saveCalendarPage(long peer,long owner,String own,XmppSession.ArchivePage page) {
-        if(!sameAccount(owner,own)) return;
-        java.util.Set<Integer> updated=new java.util.HashSet<>();
-        store.saveCalendar(peer,page,updated);
-        page.stored();calendarPageSaved(peer,updated);
+    private void loadCalendarContinuation(long peer,int offset,int count,int type,long owner,XmppSession expected,long epoch,MonogramCalendarWindow window,
+            java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
+        final String own=accountJid(),address=store.jid(peer);final boolean forward=type==1;
+        archiveWorker.execute(() -> {
+            try {
+                int needed=Math.min(100,Math.max(1,count));
+                for(int pages=0;pages<3 && !window.end(forward)
+                        && store.history(peer,self,offset,needed,forward,window.ids()).size()<needed;pages++) {
+                    if(!currentCalendar(peer,window,owner,own,expected,epoch) || expected==null || !expected.connection().isAuthenticated()) break;
+                    String cursor=window.cursor(forward);if(cursor==null) break;
+                    MonogramCalendarWindow.Page page;
+                    if(peer>0) {
+                        XmppSession.ArchivePage result=forward ? expected.archiveAfter(address,cursor,50) : expected.archiveBefore(address,cursor,50);
+                        page=worker.submit(() -> currentCalendar(peer,window,owner,own,expected,epoch) ? saveCalendarPage(peer,owner,own,result,!forward) : null).get();
+                    } else {
+                        com.negzero.monogram.xmpp.XmppRooms.ArchivePage result=expected.rooms.archive(address,forward ? null : cursor,forward ? cursor : null,50);
+                        page=worker.submit(() -> currentCalendar(peer,window,owner,own,expected,epoch) ? saveCalendarPage(peer,owner,own,result,!forward) : null).get();
+                    }
+                    if(page==null || !currentCalendar(peer,window,owner,own,expected,epoch)) break;
+                    window.add(page,forward);
+                }
+            } catch(Exception unavailable) { /* Keep the fetched window and retry its cursor on the next scroll. */ }
+            loadHistory(peer,offset,count,type,0,owner,new ArrayList<>(),window,completed);
+        });
     }
-    private void saveCalendarPage(long peer,long owner,String own,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page) {
-        if(!sameAccount(owner,own)) return;
+    private MonogramCalendarWindow.Page saveCalendarPage(long peer,long owner,String own,XmppSession.ArchivePage page,boolean backwards) {
+        if(!sameAccount(owner,own)) return null;
         java.util.Set<Integer> updated=new java.util.HashSet<>();
-        store.saveRoomCalendar(peer,page,self,updated);
+        store.saveCalendar(peer,page,backwards,updated);
         page.stored();calendarPageSaved(peer,updated);
+        java.util.List<String> ids=new ArrayList<>();for(com.negzero.monogram.xmpp.XmppMessage message:page.messages) ids.add(message.ids.get("archive"));
+        return new MonogramCalendarWindow.Page(page.firstId,page.lastId,store.calendarIds(peer,ids),page.complete);
+    }
+    private MonogramCalendarWindow.Page saveCalendarPage(long peer,long owner,String own,com.negzero.monogram.xmpp.XmppRooms.ArchivePage page,boolean backwards) {
+        if(!sameAccount(owner,own)) return null;
+        java.util.Set<Integer> updated=new java.util.HashSet<>();
+        store.saveRoomCalendar(peer,page,backwards,self,updated);
+        page.stored();calendarPageSaved(peer,updated);
+        java.util.List<String> ids=new ArrayList<>();for(com.negzero.monogram.xmpp.XmppRoomMessage message:page.messages) ids.add(message.ids.get("mam"));
+        return new MonogramCalendarWindow.Page(page.firstId,page.lastId,store.calendarIds(peer,ids),page.complete);
     }
     private void calendarPageSaved(long peer,java.util.Set<Integer> updated) {
         applyRetractions(peer);MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(peer,updated);
@@ -1295,16 +1345,20 @@ public final class MonogramController {
         refreshNotifications(updated);refreshReplies(peer,updated);publishReactions(peer,null);
     }
     private void loadHistory(long peer,int offset,int count,int loadType,int date,long epoch,ArrayList<TLRPC.Message> pending,java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
+        loadHistory(peer,offset,count,loadType,date,epoch,pending,null,completed);
+    }
+    private void loadHistory(long peer,int offset,int count,int loadType,int date,long epoch,ArrayList<TLRPC.Message> pending,MonogramCalendarWindow window,java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
         cacheWorker.execute(() -> {
-            if(epoch!=accountEpoch) { Utilities.stageQueue.postRunnable(() -> completed.accept(new TLRPC.TL_messages_messages(),true));return; }
+            if(epoch!=accountEpoch || window!=null && calendarWindows.get(peer)!=window) { Utilities.stageQueue.postRunnable(() -> completed.accept(new TLRPC.TL_messages_messages(),false));return; }
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             mediaHistoryPeer = peer;
             ArchiveSync sync = archiveSync;
-            boolean end=store.archiveComplete(peer);
+            boolean end=window==null ? store.archiveComplete(peer) : window.end(loadType==1);
             try {
-                result.messages.addAll(loadType==4 ? store.historyAroundDate(peer,self,date,count)
+                java.util.Set<Integer> allowed=window==null ? null : window.ids();
+                result.messages.addAll(loadType==4 ? store.historyAroundDate(peer,self,date,count,allowed)
                         : loadType==3 && offset>0 ? store.historyAround(peer,self,offset,count)
-                        : store.history(peer,self,Math.max(0,offset),count,loadType==1));
+                        : store.history(peer,self,Math.max(0,offset),count,loadType==1,allowed));
                 if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
                 else result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
             } catch (RuntimeException failed) {
@@ -1313,7 +1367,7 @@ public final class MonogramController {
             }
             final boolean archiveEnd = end;
             MessagesStorage.getInstance(account).restoreMonogramReadState(result.messages,null,() -> Utilities.stageQueue.postRunnable(() -> {
-                if(epoch!=accountEpoch) { completed.accept(new TLRPC.TL_messages_messages(),archiveEnd); return; }
+                if(epoch!=accountEpoch || window!=null && calendarWindows.get(peer)!=window) { completed.accept(new TLRPC.TL_messages_messages(),false); return; }
                 outbox.merge(peer,result.messages,pending);
                 completed.accept(result,archiveEnd);
             }));
