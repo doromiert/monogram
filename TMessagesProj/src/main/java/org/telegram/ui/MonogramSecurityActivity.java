@@ -20,6 +20,8 @@ import org.jxmpp.jid.impl.JidCreate;
 
 public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     private final long peer;
+    private final boolean fingerprintsPage;
+    private final String fingerprintContact;
     private final Map<OmemoDevice, OmemoFingerprint> identities = new LinkedHashMap<>();
     private final Map<OmemoDevice, String> states = new LinkedHashMap<>();
     private final ArrayList<String> roomMembers=new ArrayList<>();
@@ -31,7 +33,23 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     private boolean showRecipients;
     private boolean modern;
     private volatile int generation;
-    public MonogramSecurityActivity(int account, long peer) { currentAccount = account; this.peer = peer; }
+    public MonogramSecurityActivity(int account, long peer) { this(account,peer,false,null); }
+    private MonogramSecurityActivity(int account,long peer,boolean fingerprintsPage,String contact) {
+        currentAccount=account;this.peer=peer;this.fingerprintsPage=fingerprintsPage;fingerprintContact=contact;
+    }
+    private void openFingerprints(String contact) {
+        MonogramSecurityActivity page=new MonogramSecurityActivity(currentAccount,peer,true,contact);
+        page.identities.putAll(identities);page.states.putAll(states);page.modern=modern;
+        page.ownFingerprint=ownFingerprint;page.loadedSession=loadedSession;
+        presentFragment(page);
+    }
+    private Map<OmemoDevice,OmemoFingerprint> displayedIdentities() {
+        Map<OmemoDevice,OmemoFingerprint> result=new LinkedHashMap<>();
+        identities.forEach((device,fingerprint) -> {
+            if(fingerprintContact==null || fingerprintContact.equals(device.getJid().toString())) result.put(device,fingerprint);
+        });
+        return result;
+    }
     private void refresh() { if (listView != null) listView.adapter.update(true); }
     @Override public boolean onFragmentCreate() {
         super.onFragmentCreate();
@@ -52,7 +70,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(force) try { controller.session().rooms.retryUnavailable(); } catch(Exception disconnected) {}
         final boolean selectedModern=controller.modernEncryption(peer);
         if(modern!=selectedModern) { identities.clear(); states.clear(); ownFingerprint=null; }
-        modern=selectedModern; status=identities.isEmpty() ? "Loading fingerprints…" : "Showing cached fingerprints; refreshing…"; refresh();
+        modern=selectedModern; status=!fingerprintsPage ? "Checking conversation…" : identities.isEmpty() ? "Loading fingerprints…" : "Showing cached fingerprints; refreshing…"; refresh();
         fingerprintSetupTask=fingerprintSetup.submit(() -> {
             try {
                 com.negzero.monogram.xmpp.XmppSession session=controller.session();
@@ -92,7 +110,11 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     private void loadFingerprintAddresses(com.negzero.monogram.xmpp.XmppSession session,java.util.Set<String> addresses,boolean selectedModern,boolean force,int loading,String warning) {
         if(loading!=generation) return;
+        if(!fingerprintsPage) {
+            AndroidUtilities.runOnUIThread(() -> { if(loading==generation) { status=warning;refresh(); } });return;
+        }
         java.util.Set<String> lookupAddresses=new java.util.LinkedHashSet<>(addresses);
+        if(fingerprintContact!=null) lookupAddresses.retainAll(java.util.Collections.singleton(fingerprintContact));
         if(peer<0) {
             lookupAddresses.removeAll(MonogramController.get(currentAccount).excludedRoomRecipients(peer));
         }
@@ -134,28 +156,44 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(fingerprintRequest!=null) fingerprintRequest.close();
         fingerprintSetup.shutdownNow(); super.onFragmentDestroy();
     }
-    @Override protected CharSequence getTitle() { return "Conversation security"; }
+    @Override protected CharSequence getTitle() { return !fingerprintsPage ? "Conversation security" : fingerprintContact==null ? "Fingerprints" : "Devices"; }
+    private void fillFingerprints(ArrayList<UItem> items) {
+        MonogramController controller=MonogramController.get(currentAccount);
+        Map<OmemoDevice,OmemoFingerprint> displayed=displayedIdentities();
+        if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
+        items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
+        if(!displayed.isEmpty()) {
+            items.add(UItem.asButton(2,saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
+            items.add(UItem.asShadow("Verify fingerprints before trusting devices."));
+            int id=100;
+            if(peer<0 && fingerprintContact==null) {
+                Map<String,Integer> contacts=new LinkedHashMap<>();
+                displayed.keySet().forEach(device -> contacts.merge(device.getJid().toString(),1,Integer::sum));
+                for(Map.Entry<String,Integer> contact:contacts.entrySet()) {
+                    UItem row=UItem.asButton(id++,contact.getKey().equals(controller.accountJid()) ? "Your devices" : contact.getKey(),contact.getValue()+(contact.getValue()==1 ? " device" : " devices"));
+                    row.object=contact.getKey();items.add(row);
+                }
+            } else for(Map.Entry<OmemoDevice,OmemoFingerprint> entry:displayed.entrySet()) {
+                OmemoDevice device=entry.getKey();
+                String label=(peer>0 && device.getJid().toString().equals(controller.accountJid()) ? "Your device " : "Device ")+device.getDeviceId();
+                UItem row=UItem.asButton(id++,label,states.get(device)).setEnabled(!saving);
+                row.object=device;row.object2=entry.getValue();items.add(row);
+            }
+        } else items.add(UItem.asShadow(status!=null && status.startsWith("Loading") ? "Loading fingerprints…" : "No devices available. See Diagnostics for details."));
+        items.add(UItem.asShadow(null));
+        if(ownFingerprint!=null) items.add(UItem.asButton(3,"Your fingerprint"));
+        items.add(UItem.asButton(11,"Diagnostics"));
+    }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
+        if(fingerprintsPage) { fillFingerprints(items);return; }
         items.add(UItem.asHeader("Encryption"));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
-        items.add(UItem.asHeader("Fingerprints"));
-        items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
-        if (!identities.isEmpty()) {
-            items.add(UItem.asButton(2, saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
-            items.add(UItem.asShadow("Verify fingerprints with your contact."));
-            int id = 100;
-            for (Map.Entry<OmemoDevice, OmemoFingerprint> entry : identities.entrySet()) {
-                OmemoDevice device = entry.getKey();
-                items.add(UItem.asButton(id++, device.getJid() + " · device " + device.getDeviceId(), states.get(device)).setEnabled(!saving));
-                items.add(UItem.asShadow(entry.getValue().toString()));
-            }
-        } else items.add(UItem.asShadow(status!=null && status.startsWith("Loading") ? "Loading fingerprints…" : "No fingerprints available. See Diagnostics for details."));
+        items.add(UItem.asButton(13,"Fingerprints"));
         items.add(UItem.asHeader("More"));
-        if (ownFingerprint != null) items.add(UItem.asButton(3,"Your fingerprint"));
         if(peer<0 && !roomMembers.isEmpty()) {
             java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
             long included=roomMembers.stream().filter(member -> !excluded.contains(member)).count();
@@ -186,7 +224,11 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id==10) {
+        if(item.id==13) {
+            openFingerprints(null);
+        } else if(fingerprintsPage && item.object instanceof String) {
+            openFingerprints((String)item.object);
+        } else if(item.id==10) {
             showDialog(new AlertDialog.Builder(getContext()).setTitle("About encryption")
                     .setMessage(controller.jid(peer)+"\n\nCompare fingerprints through another trusted channel. New devices and changed keys need review before they are trusted.\n\n"
                             +(peer<0 ? "Room encryption uses legacy OMEMO in members-only rooms that reveal participant addresses. Automatic skipping sends to available trusted devices; unavailable, inactive, unverified or distrusted devices are omitted and cannot read that message. Skipping never approves fingerprints. Turn it off to require every selected recipient.\n\n" : "")
@@ -234,14 +276,15 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));
         else if (item.id == 3) showDialog(new AlertDialog.Builder(getContext()).setTitle("Your fingerprint").setMessage(ownFingerprint)
                 .setPositiveButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(ownFingerprint)).setNegativeButton("Close", null).create());
-        else if (item.id == 2 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("Trust all fingerprints?")
-                .setMessage("Trust the " + identities.size() + (modern ? " OMEMO 2" : " legacy OMEMO") + " fingerprints currently shown, including any marked Distrusted. New devices and changed keys will still need review.")
-                .setPositiveButton("Trust all", (dialog, which) -> decide(new LinkedHashMap<>(identities), true))
-                .setNegativeButton("Cancel", null).create());
-        else if (item.id >= 100 && !saving && item.id - 100 < identities.size()) {
-            OmemoDevice device = new ArrayList<>(identities.keySet()).get(item.id - 100);
-            OmemoFingerprint fingerprint = identities.get(device);
-            Map<OmemoDevice, OmemoFingerprint> selected = new LinkedHashMap<>(); selected.put(device, fingerprint);
+        else if (item.id == 2 && !saving) {
+            Map<OmemoDevice,OmemoFingerprint> selected=displayedIdentities();
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Trust all fingerprints?")
+                    .setMessage("Trust the " + selected.size() + (modern ? " OMEMO 2" : " legacy OMEMO") + " fingerprints in this list, including any marked Distrusted. New devices and changed keys will still need review.")
+                    .setPositiveButton("Trust all", (dialog, which) -> decide(selected, true)).setNegativeButton("Cancel", null).create());
+        } else if (item.object instanceof OmemoDevice && item.object2 instanceof OmemoFingerprint && !saving) {
+            OmemoDevice device=(OmemoDevice)item.object;
+            OmemoFingerprint fingerprint=(OmemoFingerprint)item.object2;
+            Map<OmemoDevice,OmemoFingerprint> selected=new LinkedHashMap<>();selected.put(device,fingerprint);
             showDialog(new AlertDialog.Builder(getContext()).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint)
                     .setPositiveButton("Trust", (d, w) -> decide(selected, true)).setNegativeButton("Distrust", (d, w) -> decide(selected, false))
                     .setNeutralButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(fingerprint.toString())).create());
