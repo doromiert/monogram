@@ -28,6 +28,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     private String ownFingerprint;
     private String status = "Loading fingerprints…";
     private boolean saving;
+    private boolean showRecipients;
     private boolean modern;
     private volatile int generation;
     public MonogramSecurityActivity(int account, long peer) { currentAccount = account; this.peer = peer; }
@@ -136,57 +137,68 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     @Override protected CharSequence getTitle() { return "Conversation security"; }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
-        String sendError=controller.lastSendError(peer);
-        if(sendError!=null) items.add(UItem.asShadow("Last send failure: "+org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(sendError)));
         items.add(UItem.asHeader("Encryption"));
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
-        else items.add(UItem.asShadow("Room encryption uses legacy OMEMO and requires a members-only room that reveals participant addresses. Available devices need compatible trusted keys. OMEMO 2 rooms are not available yet."));
-        items.add(UItem.asShadow(controller.jid(peer)+"\n\nCompare fingerprints through another trusted channel before trusting devices. New devices and changed keys require a new decision."));
-        items.add(UItem.asHeader("Reactions"));
-        items.add(UItem.asCheck(7,"Allow unencrypted reactions").setChecked(controller.plainReactionsAllowed(peer)));
-        items.add(UItem.asShadow("Standard reactions are visible to the server with legacy OMEMO. OMEMO 2 direct chats encrypt reactions; this permission never changes message encryption."));
-        items.add(UItem.asHeader("Connection and verification"));
-        items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
-        items.add(UItem.asButton(8,"Contact authorization").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
+        else items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
+        items.add(UItem.asShadow(null));
+        items.add(UItem.asHeader("Fingerprints"));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
-        items.add(UItem.asShadow(status));
-        if (ownFingerprint != null) {
-            items.add(UItem.asHeader("Your device"));
-            items.add(UItem.asButton(3,modern ? "Your OMEMO 2 fingerprint" : "Your legacy OMEMO fingerprint")); items.add(UItem.asShadow(ownFingerprint));
-        }
-        if(peer<0) {
-            items.add(UItem.asHeader("Recipient policy"));
-            items.add(UItem.asCheck(9,"Skip unavailable or unverified devices").setChecked(controller.automaticRoomRecipients(peer)));
-            items.add(UItem.asShadow("Send to available trusted devices without waiting for every device. Unavailable, inactive, unverified or distrusted devices are skipped and cannot read this message. Offline devices with usable trusted keys remain included. Skipping never approves a fingerprint. Turn this off to require every selected recipient."));
-            String skipped=controller.skippedRoomRecipients(peer); if(skipped!=null) items.add(UItem.asShadow(skipped));
-        }
-        if(peer<0 && !roomMembers.isEmpty()) {
-            java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
-            items.add(UItem.asHeader("Encrypted recipients"));
-            for(int i=0;i<roomMembers.size();i++) {
-                String address=roomMembers.get(i);
-                items.add(UItem.asCheck(100000+i,address).setChecked(!excluded.contains(address)).setEnabled(!saving && roomMembersChecked));
-                if(!excluded.contains(address) && identities.keySet().stream().noneMatch(device -> address.equals(device.getJid().toString())))
-                    items.add(UItem.asShadow("No fingerprint loaded for this account. Unavailable keys are skipped only when automatic skipping is enabled; available fingerprints still need trust."));
-            }
-            items.add(UItem.asShadow("Checked members receive keys for your new encrypted messages. Unchecked members cannot decrypt those messages. This only affects messages you send; it does not change room membership or fingerprint trust."));
-        }
         if (!identities.isEmpty()) {
-            items.add(UItem.asHeader("Devices"));
             items.add(UItem.asButton(2, saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
-            items.add(UItem.asShadow(null));
+            items.add(UItem.asShadow("Verify fingerprints with your contact."));
             int id = 100;
             for (Map.Entry<OmemoDevice, OmemoFingerprint> entry : identities.entrySet()) {
                 OmemoDevice device = entry.getKey();
                 items.add(UItem.asButton(id++, device.getJid() + " · device " + device.getDeviceId(), states.get(device)).setEnabled(!saving));
                 items.add(UItem.asShadow(entry.getValue().toString()));
             }
+        } else items.add(UItem.asShadow(status!=null && status.startsWith("Loading") ? "Loading fingerprints…" : "No fingerprints available. See Diagnostics for details."));
+        items.add(UItem.asHeader("More"));
+        if (ownFingerprint != null) items.add(UItem.asButton(3,"Your fingerprint"));
+        if(peer<0 && !roomMembers.isEmpty()) {
+            java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
+            long included=roomMembers.stream().filter(member -> !excluded.contains(member)).count();
+            items.add(UItem.asButton(12,"Encrypted recipients",showRecipients ? "Hide" : included+"/"+roomMembers.size()));
+            if(showRecipients) {
+                for(int i=0;i<roomMembers.size();i++) {
+                    String address=roomMembers.get(i);
+                    items.add(UItem.asCheck(100000+i,address).setChecked(!excluded.contains(address)).setEnabled(!saving && roomMembersChecked));
+                }
+                items.add(UItem.asShadow("Unchecked members cannot read new encrypted messages you send."));
+            }
         }
+        items.add(UItem.asCheck(7,"Allow unencrypted reactions").setChecked(controller.plainReactionsAllowed(peer)));
+        items.add(UItem.asButton(8,"Contact authorization").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
+        items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
+        items.add(UItem.asButton(10,"About encryption"));
+        items.add(UItem.asButton(11,"Diagnostics",controller.lastSendError(peer)!=null ? "Send failed" : null));
+    }
+    private String diagnostics() {
+        MonogramController controller=MonogramController.get(currentAccount);
+        StringBuilder details=new StringBuilder();
+        String error=controller.lastSendError(peer);
+        if(error!=null) details.append("Last send failure: ").append(org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(error)).append("\n\n");
+        if(status!=null) details.append(status).append("\n\n");
+        String skipped=peer<0 ? controller.skippedRoomRecipients(peer) : null;
+        if(skipped!=null) details.append(skipped);
+        return details.length()==0 ? "No issues reported." : details.toString().trim();
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id==9) {
+        if(item.id==10) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("About encryption")
+                    .setMessage(controller.jid(peer)+"\n\nCompare fingerprints through another trusted channel. New devices and changed keys need review before they are trusted.\n\n"
+                            +(peer<0 ? "Room encryption uses legacy OMEMO in members-only rooms that reveal participant addresses. Automatic skipping sends to available trusted devices; unavailable, inactive, unverified or distrusted devices are omitted and cannot read that message. Skipping never approves fingerprints. Turn it off to require every selected recipient.\n\n" : "")
+                            +"Legacy OMEMO reactions are visible to the server. OMEMO 2 direct chats encrypt reactions. Reaction permissions never change message encryption.")
+                    .setPositiveButton("Close",null).create());
+        } else if(item.id==11) {
+            String details=diagnostics();
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Diagnostics").setMessage(details)
+                    .setPositiveButton("Close",null).setNeutralButton("Copy",(dialog,which) -> AndroidUtilities.addToClipboard(details)).create());
+        } else if(item.id==12) {
+            showRecipients=!showRecipients;refresh();
+        } else if(item.id==9) {
             try { controller.setAutomaticRoomRecipients(peer,!controller.automaticRoomRecipients(peer)); loadIdentities(); }
             catch(Exception failed) { showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not save recipient policy").setMessage("Try again.").setPositiveButton("OK",null).create()); }
         } else if(item.id>=100000 && item.id-100000<roomMembers.size() && !saving && roomMembersChecked) {
