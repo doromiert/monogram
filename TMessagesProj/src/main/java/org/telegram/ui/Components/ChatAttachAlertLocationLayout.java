@@ -378,7 +378,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
             locationType = LOCATION_TYPE_STORY;
         } else if (parentAlert.isBizLocationPicker) {
             locationType = LOCATION_TYPE_BIZ;
-        } else if (allowLiveLocation && chatActivity != null && chatActivity.getCurrentEncryptedChat() == null && !chatActivity.isInScheduleMode() && !UserObject.isUserSelf(chatActivity.getCurrentUser())) {
+        } else if (allowLiveLocation && org.telegram.messenger.xmpp.MonogramController.get(parentAlert.currentAccount).accountJid().isEmpty() && chatActivity != null && chatActivity.getCurrentEncryptedChat() == null && !chatActivity.isInScheduleMode() && !UserObject.isUserSelf(chatActivity.getCurrentUser())) {
             locationType = LOCATION_TYPE_SEND_WITH_LIVE;
         } else {
             locationType = LOCATION_TYPE_SEND;
@@ -459,7 +459,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 searchAdapter.searchDelayed(text, userLocation);
             }
         });
-        searchItem.setVisibility(locationDenied && !parentAlert.isStoryLocationPicker || parentAlert.isBizLocationPicker ? View.GONE : View.VISIBLE);
+        searchItem.setVisibility(View.GONE); // Telegram venue bot search is unavailable for XMPP.
         searchItem.setSearchFieldHint(LocaleController.getString(R.string.Search));
         searchItem.setContentDescription(LocaleController.getString(R.string.Search));
         EditTextBoldCursor editText = searchItem.getSearchField();
@@ -539,6 +539,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
 
         mapTypeButton = new ActionBarMenuItem(context, null, 0, getThemedColor(Theme.key_location_actionIcon), resourcesProvider);
         mapTypeButton.setClickable(true);
+        if(!ApplicationLoader.getMapsProvider().supportsMapTypes()) mapTypeButton.setVisibility(GONE);
         mapTypeButton.setSubMenuOpenSide(2);
         mapTypeButton.setAdditionalXOffset(AndroidUtilities.dp(10));
         mapTypeButton.setAdditionalYOffset(-AndroidUtilities.dp(10));
@@ -1096,6 +1097,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
     }
 
     private void showSearchPlacesButton(boolean show) {
+        if(!org.telegram.messenger.xmpp.MonogramController.get(parentAlert.currentAccount).accountJid().isEmpty()) { if(searchAreaButton!=null) searchAreaButton.setVisibility(GONE);return; }
         if (locationDenied) {
             show = false;
         }
@@ -1678,7 +1680,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
             }
         }
         fixLayoutInternal(true);
-        searchItem.setVisibility(locationDenied && !parentAlert.isStoryLocationPicker || parentAlert.isBizLocationPicker ? View.GONE : View.VISIBLE);
+        searchItem.setVisibility(View.GONE); // Telegram venue bot search is unavailable for XMPP.
     }
 
     @Override
@@ -1701,7 +1703,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
             mapViewClip.addView(overlayView, 1, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, overScrollHeight + AndroidUtilities.dp(10), Gravity.TOP | Gravity.LEFT));
             mapViewClip.addView(loadingMapView, 2, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         }
-        searchItem.setVisibility(VISIBLE);
+        searchItem.setVisibility(GONE);
 
         if (mapView != null && mapsInitialized) {
             try {

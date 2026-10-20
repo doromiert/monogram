@@ -288,7 +288,9 @@ public class MonogramRoomStoreTest {
             long self=store.peer(own),dialog=store.room(room,"Alice");
             ReplyReference reference=new ReplyReference(room+"/Bob","server-original").quoted("Before 😀");
             int reply=store.saveRoom(MessageFixture.roomText(room,"Charlie","reply-wire","server-reply",reference.wireBody("Answer"),"charlie@example.org","charlie",200000,false,reference,null),self);
-            assertNull(store.getMessage(reply,self).reply_to); assertTrue(store.getMessage(reply,self).message.startsWith("> Before"));
+            TLRPC.Message missingOriginal=store.getMessage(reply,self);
+            assertNull(missingOriginal.reply_to);assertEquals("Before 😀\nAnswer",missingOriginal.message);
+            assertTrue(missingOriginal.entities.stream().anyMatch(entity -> entity instanceof TLRPC.TL_messageEntityBlockquote && entity.offset==0 && entity.length>=9));
             int original=store.saveRoom(MessageFixture.roomText(room,"Bob","client-original","server-original","Before 😀","bob@example.org","bob",100000,false,null,null),self);
             assertEquals(reply,store.changedReplies(dialog,self).get(0).id);
             assertEquals(original,store.getMessage(reply,self).reply_to.reply_to_msg_id);

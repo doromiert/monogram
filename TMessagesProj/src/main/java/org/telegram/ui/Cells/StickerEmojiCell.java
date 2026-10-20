@@ -198,7 +198,7 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
 
     public void setSticker(TLRPC.Document document, SendMessagesHelper.ImportingSticker path, Object parent, String emoji, boolean showEmoji, boolean editModeEnabled) {
         currentEmoji = emoji;
-        isPremiumSticker = MessageObject.isPremiumSticker(document);
+        isPremiumSticker = MessageObject.isPremiumSticker(document) && !org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,document);
         drawInParentView = false;
         imageView.setColorFilter(null);
         editModeIconColor = 0;

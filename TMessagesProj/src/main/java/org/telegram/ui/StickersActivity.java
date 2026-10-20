@@ -694,6 +694,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
         } else if (cell.removeButtonView == view) {
             MediaDataController.getInstance(currentAccount).toggleStickerSet(getParentActivity(), set, 0, this, false, true);
         } else if (cell.premiumButtonView == view) {
+            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { presentFragment(new MonogramPacksActivity(currentAccount,true));return; }
             showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
         }
     }

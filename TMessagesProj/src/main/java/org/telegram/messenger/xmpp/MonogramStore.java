@@ -716,8 +716,8 @@ final class MonogramStore extends SQLiteOpenHelper {
             ContentValues value = new ContentValues(); value.put("card", profile.xml()); value.put("nickname", profile.nickname);
             if (avatar == null) value.putNull("avatar"); else value.put("avatar", avatar.getAbsolutePath());
             db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
-            ContentValues source=new ContentValues();source.put("peer",peer);source.put("bytes",profile.avatar);
-            if(db.insertWithOnConflict("profile_avatar_sources",null,source,SQLiteDatabase.CONFLICT_REPLACE)<0) throw new IllegalStateException("Cannot save profile avatar source");
+            // Room peer IDs are negative; a successful insert's row ID can be negative too.
+            db.execSQL("INSERT OR REPLACE INTO profile_avatar_sources(peer,bytes) VALUES(?,?)",new Object[]{peer,profile.avatar});
             db.setTransactionSuccessful();profileCache.remove(peer);
         } finally { db.endTransaction(); }
     }
@@ -1226,6 +1226,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         com.negzero.monogram.xmpp.MessageMarkup visibleMarkup=MonogramFormatting.decorate(getReadableDatabase(),message,payload,body);
         MonogramMentions.decorate(this,message,self,visibleMarkup);
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
+        MonogramLocation.decorate(message);
         decorateLinkPreview(message);
         message.reactions=reactions.snapshot(id,self);
         if (outgoing && peer != 0 && peer != self) receipts.decorate(message);

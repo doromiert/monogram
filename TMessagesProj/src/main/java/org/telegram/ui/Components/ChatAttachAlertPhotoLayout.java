@@ -1158,7 +1158,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             cameraButton.setContentDescription(LocaleController.getString(R.string.AccDescrInstantCamera));
             ScaleStateListAnimator.apply(cameraButton, .04f, 0);
             cameraButton.setElevation(dp(4));
-            addView(cameraButton, LayoutHelper.createFrame(56, 56, Gravity.BOTTOM | Gravity.RIGHT, 16, 0, 16, 100));
+            addView(cameraButton, LayoutHelper.createFrame(56, 56, Gravity.BOTTOM | Gravity.RIGHT, 16, 0, 16, 16));
             cameraButton.setOnClickListener(v -> openCameraWithPermissionCheck());
             checkColors();
         }
@@ -2495,6 +2495,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             return;
         }
         cameraView.initTexture();
+        // The first camera frame can take longer than the entire expansion animation.
+        if (cameraButton != null && !cameraView.isInited()) return;
+        checkCameraViewPosition();
         if (shouldLoadAllMedia()) {
             tooltipTextView.setVisibility(VISIBLE);
         } else {
@@ -2654,13 +2657,14 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             cameraView.setClipToOutline(true);
             cameraView.setContentDescription(LocaleController.getString(R.string.AccDescrInstantCamera));
             parentAlert.getContainer().addView(cameraView, 1, new FrameLayout.LayoutParams(itemSize, itemSize));
+            final CameraViewInternal initializedView = cameraView;
             cameraView.setDelegate(new CameraView.CameraViewDelegate() {
                 @Override
                 public void onCameraInit() {
+                    if (cameraView != initializedView) return;
                     String current = cameraView.getCameraSession().getCurrentFlashMode();
                     String next = cameraView.getCameraSession().getNextFlashMode();
-                    if (current == null || next == null) return;
-                    if (current.equals(next)) {
+                    if (current == null || next == null || current.equals(next)) {
                         for (int a = 0; a < 2; a++) {
                             flashModeButton[a].setVisibility(View.INVISIBLE);
                             flashModeButton[a].setAlpha(0.0f);
@@ -2676,7 +2680,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     }
                     switchCameraButton.setImageResource(cameraView.isFrontface() ? R.drawable.camera_revert1 : R.drawable.camera_revert2);
                     switchCameraButton.setVisibility(cameraView.hasFrontFaceCamera() ? View.VISIBLE : View.INVISIBLE);
-                    if (!cameraOpened) {
+                    if (!cameraOpened && cameraButton == null) {
                         cameraInitAnimation = new AnimatorSet();
                         cameraInitAnimation.playTogether(
                             ObjectAnimator.ofFloat(cameraView, View.ALPHA, 0.0f, 1.0f)
@@ -2701,6 +2705,11 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     if (afterCameraInitRunnable != null) {
                         afterCameraInitRunnable.run();
                     }
+                    if (cameraButton != null) initializedView.post(() -> {
+                        // CameraView marks itself initialized after this delegate returns.
+                        if (cameraView == initializedView && cameraRequested && !cameraOpened
+                                && !parentAlert.paused && !parentAlert.destroyed && parentAlert.isShowing()) openCamera(true);
+                    });
                 }
             });
 
@@ -2726,7 +2735,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         }
         if (!cameraOpened) {
             cameraView.setTranslationX(cameraViewLocation[0]);
-            // cameraView.setTranslationY(cameraViewLocation[1] + currentPanTranslationY);
+            cameraView.setTranslationY(cameraViewLocation[1]);
         }
     }
 
@@ -2736,15 +2745,14 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         }
         saveLastCameraBitmap();
         cameraViewItemDecoration.updateBitmap();
-        cameraView.destroy(async, null);
+        final CameraViewInternal releasedView = cameraView;
+        releasedView.destroy(async, null);
         if (cameraInitAnimation != null) {
             cameraInitAnimation.cancel();
             cameraInitAnimation = null;
         }
-        AndroidUtilities.runOnUIThread(() -> {
-            parentAlert.getContainer().removeView(cameraView);
-            cameraView = null;
-        }, 300);
+        cameraView = null;
+        AndroidUtilities.runOnUIThread(() -> parentAlert.getContainer().removeView(releasedView), 300);
         canSaveCameraPreview = false;
     }
 
@@ -3073,6 +3081,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     }
 
     protected void checkCameraViewPosition() {
+        updateCameraButtonPosition();
         if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().stickerMakerView != null && PhotoViewer.getInstance().stickerMakerView.isThanosInProgress) {
             return;
         }
@@ -3184,7 +3193,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         if (cameraView != null) {
             if (!cameraOpened) {
                 cameraView.setTranslationX(cameraViewLocation[0]);
-                // cameraView.setTranslationY(cameraViewLocation[1] + currentPanTranslationY);
+                cameraView.setTranslationY(cameraViewLocation[1]);
             }
             int finalWidth = cameraButton != null ? dp(56) : itemSize;
             int finalHeight = cameraButton != null ? dp(56) : itemSize * 2 + dp(GAP);
@@ -4141,10 +4150,10 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     }
 
     private void updateCameraButtonPosition() {
-        if (cameraButton == null || parentAlert.getCommentTextViewTop() <= 0) return;
+        if (cameraButton == null || getHeight() == 0) return;
         int[] origin = new int[2];
         getLocationOnScreen(origin);
-        cameraButton.setTranslationY(Math.min(0, parentAlert.getCommentTextViewTop() - origin[1] - cameraButton.getBottom() - dp(16)));
+        cameraButton.setTranslationY(Math.min(0, parentAlert.getPhotoPickerControlsTop() - origin[1] - cameraButton.getBottom() - dp(16)));
     }
 
     @Override

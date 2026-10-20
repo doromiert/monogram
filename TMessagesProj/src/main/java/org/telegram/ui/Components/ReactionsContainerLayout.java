@@ -549,7 +549,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
     }
 
     private boolean showUnlockPremiumButton() {
-        return !premiumLockedReactions.isEmpty() && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked();
+        return !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !premiumLockedReactions.isEmpty() && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked();
     }
 
     private void showUnlockPremium(float x, float y) {

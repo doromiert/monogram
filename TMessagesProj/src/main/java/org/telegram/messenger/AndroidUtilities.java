@@ -1798,6 +1798,7 @@ public class AndroidUtilities {
 
     public static boolean isMapsInstalled(BaseFragment fragment) {
         String pkg = ApplicationLoader.getMapsProvider().getMapsAppPackageName();
+        if (pkg == null) return true; // Built-in map provider does not require an external app.
         try {
             ApplicationLoader.applicationContext.getPackageManager().getApplicationInfo(pkg, 0);
             return true;

@@ -47,6 +47,8 @@ public final class MonogramForwarding {
                 send.params.put(SOURCE, Integer.toString(source.id));
                 send.params.put(ADDRESS, source.params.get(MonogramAttachments.PARAM));
             }
+        } else if(media instanceof TLRPC.TL_messageMediaGeo || media instanceof TLRPC.TL_messageMediaVenue) {
+            send.location=TLObject.deepCopy(media,TLRPC.MessageMedia::TLdeserialize);send.entities.clear();
         } else if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
             send.message = text;
         } else throw new IllegalArgumentException("This message type cannot be forwarded over XMPP yet.");

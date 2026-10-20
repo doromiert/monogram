@@ -3478,7 +3478,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     writeButton.invalidate();
                 }
 
-                if (!captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codepointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codepointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
+                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codepointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codepointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
                     captionLimitBulletinShown = true;
                     showCaptionLimitBulletin(parentFragment);
                 }
@@ -3660,7 +3660,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     try {
                         writeButton.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
                     } catch (Exception ignored) {}
-                    if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codepointCount) {
+                    if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codepointCount) {
                         showCaptionLimitBulletin(parentFragment);
                     }
                     if (messageSendPreview != null) {
@@ -4296,7 +4296,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 writeButton.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
             } catch (Exception ignored) {}
 
-            if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codepointCount) {
+            if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codepointCount) {
                 showCaptionLimitBulletin(baseFragment);
             }
             return;
@@ -4347,6 +4347,19 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
     public int getCommentTextViewTop() {
         return commentTextViewLocation[1];
+    }
+
+    public int getPhotoPickerControlsTop() {
+        int[] location = new int[2];
+        containerView.getLocationOnScreen(location);
+        int top = location[1] + containerView.getHeight() - getBottomInset();
+        for (View controls : new View[]{frameLayout2, buttonsRecyclerViewWrapper}) {
+            if (controls != null && controls.getVisibility() == View.VISIBLE && controls.getAlpha() > 0 && controls.getHeight() > 0) {
+                controls.getLocationOnScreen(location);
+                top = Math.min(top, location[1]);
+            }
+        }
+        return top;
     }
 
     private void showCaptionLimitBulletin(BaseFragment parentFragment) {

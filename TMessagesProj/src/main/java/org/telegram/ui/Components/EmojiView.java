@@ -662,7 +662,7 @@ public class EmojiView extends FrameLayout implements
         @Override
         public boolean needSend(int contentType) {
             if (contentType == ContentPreviewViewer.CONTENT_TYPE_EMOJI) {
-                return fragment instanceof ChatActivity && ((ChatActivity) fragment).canSendMessage() && (UserConfig.getInstance(UserConfig.selectedAccount).isPremium() || ((ChatActivity) fragment).getCurrentUser() != null && UserObject.isUserSelf(((ChatActivity) fragment).getCurrentUser()));
+                return fragment instanceof ChatActivity && ((ChatActivity) fragment).canSendMessage() && ((UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) || ((ChatActivity) fragment).getCurrentUser() != null && UserObject.isUserSelf(((ChatActivity) fragment).getCurrentUser()));
             }
             return true;
         }
@@ -962,7 +962,7 @@ public class EmojiView extends FrameLayout implements
             });
             box.addView(clear, LayoutHelper.createFrame(36, 36, Gravity.RIGHT | Gravity.TOP));
 
-            if (type != 2 && (type != 1 || allowAnimatedEmoji && UserConfig.getInstance(UserConfig.selectedAccount).isPremium())) {
+            if (type != 2 && (type != 1 || allowAnimatedEmoji && (UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)))) {
                 categoriesListView = new StickerCategoriesListView(context, null, type == 0 ? StickerCategoriesListView.CategoriesType.STICKERS : StickerCategoriesListView.CategoriesType.DEFAULT, resourcesProvider) {
                     @Override
                     public void selectCategory(int categoryIndex) {
@@ -1388,7 +1388,7 @@ public class EmojiView extends FrameLayout implements
                 if (emoticon == null && document != null) {
                     emoticon = MessageObject.findAnimatedEmojiEmoticon(document);
                 }
-                if (!MessageObject.isFreeEmoji(document) && !UserConfig.getInstance(currentAccount).isPremium() && !(delegate != null && delegate.isUserSelf()) && !allowEmojisForNonPremium && !isGroupEmojis) {
+                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,document) && !MessageObject.isFreeEmoji(document) && !UserConfig.getInstance(currentAccount).isPremium() && !(delegate != null && delegate.isUserSelf()) && !allowEmojisForNonPremium && !isGroupEmojis) {
                     showBottomTab(false, true);
                     BulletinFactory factory = fragment != null ? BulletinFactory.of(fragment) : BulletinFactory.of(bulletinContainer, resourcesProvider);
                     if (premiumBulletin || fragment == null) {
@@ -2342,7 +2342,7 @@ public class EmojiView extends FrameLayout implements
                     return;
                 }
                 StickerEmojiCell cell = (StickerEmojiCell) view;
-                if (cell.getSticker() != null && MessageObject.isPremiumSticker(cell.getSticker()) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
+                if (cell.getSticker() != null && !org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,cell.getSticker()) && MessageObject.isPremiumSticker(cell.getSticker()) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
                     ContentPreviewViewer.getInstance().showMenuFor(cell);
                     return;
                 }
@@ -3710,7 +3710,7 @@ public class EmojiView extends FrameLayout implements
                 }
                 clipBottom += AndroidUtilities.dp(6);
 
-                float lockT = premiumT.set(UserConfig.getInstance(currentAccount).isPremium() || allowEmojisForNonPremium ? 0f : 1f); // CubicBezierInterpolator.EASE_OUT_QUINT.getInterpolation(Math.min(now - appearTime, 550) / 550f);
+                float lockT = premiumT.set(UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium ? 0f : 1f); // CubicBezierInterpolator.EASE_OUT_QUINT.getInterpolation(Math.min(now - appearTime, 550) / 550f);
 
                 int positionInGroup = childPosition - start;
                 float top;
@@ -3872,6 +3872,7 @@ public class EmojiView extends FrameLayout implements
     }
 
     private void openPremiumAnimatedEmojiFeature() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { openEmptyPackAction(true);return; }
         if (delegate != null) {
             delegate.onAnimatedEmojiUnlockClick();
         }
@@ -4304,7 +4305,7 @@ public class EmojiView extends FrameLayout implements
             }
             int state = BUTTON_STATE_EMPTY;
             boolean installed = pack.installed || installedEmojiSets.contains(pack.set.id);
-            if (!pack.free && !UserConfig.getInstance(currentAccount).isPremium() && !allowEmojisForNonPremium) {
+            if (!pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium() && !allowEmojisForNonPremium) {
                 state = BUTTON_STATE_LOCKED;
             } else if (pack.featured) {
                 if (installed) {
@@ -7661,12 +7662,12 @@ public class EmojiView extends FrameLayout implements
             }
             for (int i = 0; i < installedEmojipacks.size(); ++i) {
                 TLRPC.TL_messages_stickerSet set = installedEmojipacks.get(i);
-                if (isPremium) {
+                if (isPremium || set!=null && set.set!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,set.set.id)) {
                     EmojiPack pack = new EmojiPack();
                     pack.index = index++;
                     pack.set = set.set;
                     pack.documents = set.documents;
-                    pack.free = false;
+                    pack.free = org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,set.set.id);
                     pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
                     pack.featured = false;
                     pack.expanded = true;

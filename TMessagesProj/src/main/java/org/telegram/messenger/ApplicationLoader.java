@@ -101,7 +101,7 @@ public class ApplicationLoader extends Application {
     }
 
     protected IMapsProvider onCreateMapsProvider() {
-        return new GoogleMapsProvider();
+        return new OpenStreetMapProvider();
     }
 
     public static PushListenerController.IPushListenerServiceProvider getPushProvider() {
@@ -270,7 +270,7 @@ public class ApplicationLoader extends Application {
             ContactsController.getInstance(a).checkAppAccount();
             DownloadController.getInstance(a);
         }
-        BillingController.getInstance().startConnection();
+        if(!BuildVars.IS_BILLING_UNAVAILABLE) BillingController.getInstance().startConnection();
     }
 
     public ApplicationLoader() {

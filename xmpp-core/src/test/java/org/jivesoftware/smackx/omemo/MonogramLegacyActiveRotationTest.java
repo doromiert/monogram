@@ -59,8 +59,13 @@ class MonogramLegacyActiveRotationTest {
         return MonogramLegacyRotation.verify(MonogramLegacyRotation.replacement(store,own,peer,fingerprint),fingerprint,bundle(replacement));
     }
     void apply(MonogramLegacyRotation.Verified prepared,java.util.function.BooleanSupplier guard) throws Exception {
-        Map<OmemoDevice,String> observed=Collections.singletonMap(peer,store.getFingerprint(own,peer).toString());
-        MonogramLegacyRotation.apply(store,own,journal,trust,Collections.singletonMap(peer,prepared.approved),Collections.singletonList(prepared),observed,store.getFingerprint(own).toString(),guard);
+        Map<OmemoDevice,String> observed;String ownFingerprint;
+        // Inspection must not consume the commit failure intended for the rotation transaction.
+        try(LegacyOmemoRecords tx=store.begin(own)) {
+            observed=store.withTransaction(own,tx,() -> Collections.singletonMap(peer,store.getFingerprint(own,peer).toString()));
+            ownFingerprint=store.withTransaction(own,tx,() -> store.getFingerprint(own).toString());
+        }
+        MonogramLegacyRotation.apply(store,own,journal,trust,Collections.singletonMap(peer,prepared.approved),Collections.singletonList(prepared),observed,ownFingerprint,guard);
     }
     @Test void approvedReplacementRetiresCompleteOldStateAndNeverPromotesItIntoActiveSending() throws Exception {
         setup();byte[] before=store.loadRawSession(own,peer).serialize();IdentityKeyPair replacement=KeyHelper.generateIdentityKeyPair();

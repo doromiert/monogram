@@ -2766,7 +2766,14 @@ public final class MonogramController {
             }
             if(callback!=null) callback.run(response,error);
         };
-        if(request instanceof TLRPC.TL_messages_sendMessage || request instanceof MonogramFileRequest) queueSend(token,request,completed);
+        if(MonogramLocation.supports(request)) {
+            try {
+                TLRPC.TL_messages_sendMessage converted=MonogramLocation.text((TLRPC.TL_messages_sendMedia)request);
+                Integer local=queuedLocalIds.remove(request);String mode=queuedEncryption.remove(request);
+                if(local!=null) queuedLocalIds.put(converted,local);if(mode!=null) queuedEncryption.put(converted,mode);
+                queueSend(token,converted,completed);
+            } catch(Exception invalid) { queuedLocalIds.remove(request);queuedEncryption.remove(request);TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;error.text="MONOGRAM_INVALID_LOCATION";Utilities.stageQueue.postRunnable(() -> completed.run(null,error)); }
+        } else if(request instanceof TLRPC.TL_messages_sendMessage || request instanceof MonogramFileRequest) queueSend(token,request,completed);
         else dispatchRequest(request,completed);
     }
     private static final String QUEUED_ENCRYPTION="monogram-encryption";
@@ -2778,7 +2785,7 @@ public final class MonogramController {
         message.params.putIfAbsent(QUEUED_ENCRYPTION,encryption(message.dialog_id).name());
     }
     public void prepareOutgoingRequest(TLObject request,TLRPC.Message message) {
-        if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest)) return;
+        if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request)) return;
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
     }
     private static final class PendingSend {

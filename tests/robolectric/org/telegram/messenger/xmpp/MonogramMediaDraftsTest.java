@@ -30,7 +30,10 @@ public class MonogramMediaDraftsTest {
         @Implementation public String jid(long dialog) { return dialog<0 ? "friends@conference.example.org" : "bob"+dialog+"@example.org"; }
     }
     @Implements(value=ApplicationLoader.class,isInAndroidSdk=false)
-    public static class App { @Implementation public static void __staticInitializer__() {} }
+    public static class App {
+        @Implementation public static void __staticInitializer__() {}
+        @Implementation public static String getApplicationId() { return RuntimeEnvironment.getApplication().getPackageName(); }
+    }
     @Implements(value=AndroidUtilities.class,isInAndroidSdk=false)
     public static class Ui {
         @Implementation public static void __staticInitializer__() {}
@@ -39,24 +42,35 @@ public class MonogramMediaDraftsTest {
     @Implements(value=MediaDataController.class,isInAndroidSdk=false)
     public static class Caption {
         @Implementation public static void __staticInitializer__() {}
-        @Implementation public static MediaDataController getInstance(int account) { return Shadow.newInstanceOf(MediaDataController.class); }
+        @Implementation public void __constructor__(int account) {}
+        @Implementation public static MediaDataController getInstance(int account) { return ReflectionHelpers.callConstructor(MediaDataController.class,ReflectionHelpers.ClassParameter.from(int.class,account)); }
         @Implementation public ArrayList<TLRPC.MessageEntity> getEntities(CharSequence[] text,boolean allow) { return new ArrayList<>(); }
     }
     @Implements(value=MessagesStorage.class,isInAndroidSdk=false)
     public static class Storage {
         @Implementation public static void __staticInitializer__() {}
-        @Implementation public static MessagesStorage getInstance(int account) { return Shadow.newInstanceOf(MessagesStorage.class); }
+        @Implementation public void __constructor__(int account) {}
+        @Implementation public static MessagesStorage getInstance(int account) { return ReflectionHelpers.callConstructor(MessagesStorage.class,ReflectionHelpers.ClassParameter.from(int.class,account)); }
         @Implementation public void getMonogramOutbox(long dialog,Consumer<ArrayList<TLRPC.Message>> callback) { callback.accept(new ArrayList<>(outbox)); }
         @Implementation public void getMonogramDraftReferences(Consumer<Set<String>> callback) { callback.accept(draftReferences); }
     }
     @Implements(value=MessageObject.class,isInAndroidSdk=false)
     public static class NativeMessage {
         @RealObject MessageObject real;
+        @Implementation public static void __staticInitializer__() {}
         @Implementation public void __constructor__(int account,TLRPC.Message message,boolean layout,boolean media) { real.messageOwner=message;real.currentAccount=account; }
+        @Implementation public void __constructor__(int account,TLRPC.Message message,MessageObject reply,
+                java.util.AbstractMap<Long,TLRPC.User> users,java.util.AbstractMap<Long,TLRPC.Chat> chats,
+                androidx.collection.LongSparseArray<TLRPC.User> sparseUsers,androidx.collection.LongSparseArray<TLRPC.Chat> sparseChats,
+                boolean layout,boolean media,long event,boolean repost,boolean repostVideo,boolean saved,int searchType) {
+            real.messageOwner=message;real.currentAccount=account;
+        }
     }
     private Context context;private final ArrayList<String> errors=new ArrayList<>();
     @Before public void setup() {
         context=RuntimeEnvironment.getApplication();ApplicationLoader.applicationContext=context;
+        ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();
+        ApplicationLoader.applicationHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         controller=Shadow.newInstanceOf(MonogramController.class);jid=UUID.randomUUID()+"@example.org";outbox=new ArrayList<>();draftReferences=null;
         MonogramMediaDrafts.deactivate();
     }

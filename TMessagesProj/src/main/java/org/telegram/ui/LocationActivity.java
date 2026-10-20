@@ -436,7 +436,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
 
     public LocationActivity(int type) {
         super();
-        locationType = type;
+        locationType = type==LOCATION_TYPE_SEND_WITH_LIVE && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()?LOCATION_TYPE_SEND:type;
         AndroidUtilities.fixGoogleMapsBug();
     }
 
@@ -581,7 +581,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                     try {
                         double lat = messageObject.messageOwner.media.geo.lat;
                         double lon = messageObject.messageOwner.media.geo._long;
-                        getParentActivity().startActivity(new Intent(android.content.Intent.ACTION_VIEW, Uri.parse("geo:" + lat + "," + lon + "?q=" + lat + "," + lon)));
+                        openExternalPoint(lat,lon);
                     } catch (Exception e) {
                         FileLog.e(e);
                     }
@@ -610,7 +610,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                 if (locationType != 3) {
                     otherItem = menu.addItem(0, R.drawable.ic_ab_other, getResourceProvider());
                     otherItem.addSubItem(open_in, R.drawable.msg_openin, getString(R.string.OpenInExternalApp));
-                    if (!getLocationController().isSharingLocation(dialogId) && isSharingAllowed) {
+                    if (org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty() && !getLocationController().isSharingLocation(dialogId) && isSharingAllowed) {
                         otherItem.addSubItem(share_live_location, R.drawable.msg_location, getString(R.string.SendLiveLocationMenu));
                     }
                     otherItem.setContentDescription(getString(R.string.AccDescrMoreOptions));
@@ -679,6 +679,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                     }
                 });
                 searchItem.setSearchFieldHint(getString(R.string.Search));
+                searchItem.setVisibility(View.GONE);
                 searchItem.setContentDescription(getString(R.string.Search));
                 EditTextBoldCursor editText = searchItem.getSearchField();
                 editText.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
@@ -735,7 +736,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                     try {
                         double lat = messageObject.messageOwner.media.geo.lat;
                         double lon = messageObject.messageOwner.media.geo._long;
-                        getParentActivity().startActivity(new Intent(android.content.Intent.ACTION_VIEW, Uri.parse("geo:" + lat + "," + lon + "?q=" + lat + "," + lon)));
+                        openExternalPoint(lat,lon);
                     } catch (Exception e) {
                         FileLog.e(e);
                     }
@@ -754,6 +755,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
 
         mapTypeButton = new ActionBarMenuItem(context, null, 0, getThemedColor(Theme.key_location_actionIcon), getResourceProvider());
         mapTypeButton.setClickable(true);
+        if(!ApplicationLoader.getMapsProvider().supportsMapTypes()) mapTypeButton.setVisibility(View.GONE);
         mapTypeButton.setSubMenuOpenSide(2);
         mapTypeButton.setAdditionalXOffset(dp(10));
         mapTypeButton.setAdditionalYOffset(-dp(10));
@@ -1584,6 +1586,12 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
         return 0;
     }
 
+    private void openExternalPoint(double latitude,double longitude) {
+        if(getParentActivity()==null) return;
+        try { getParentActivity().startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(String.format(Locale.US,"geo:%.7f,%.7f?q=%.7f,%.7f",latitude,longitude,latitude,longitude)))); }
+        catch(android.content.ActivityNotFoundException unavailable) { AlertsCreator.showSimpleAlert(this,getString(R.string.AppName),getString(R.string.MonogramNoMapsApp)); }
+    }
+
     private void openDirections(LiveLocation location) {
         double daddrLat, daddrLong;
         if (location != null && location.object != null) {
@@ -1596,6 +1604,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
             daddrLat = chatLocation.geo_point.lat;
             daddrLong = chatLocation.geo_point._long;
         }
+        if(ApplicationLoader.getMapsProvider().getMapsAppPackageName()==null) { openExternalPoint(daddrLat,daddrLong);return; }
         String domain;
         if (BuildVars.isHuaweiStoreApp()) {
             domain = "mapapp://navigation";
@@ -1634,6 +1643,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
     }
 
     private void showSearchPlacesButton(boolean show) {
+        if(locationType!=3 && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) { if(searchAreaButton!=null) searchAreaButton.setVisibility(View.GONE);return; }
         if (locationType == 3) {
             show = true;
         }
@@ -1785,6 +1795,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
     }
 
     private void openShareLiveLocation(boolean expand, int proximityRadius) {
+        if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) return;
         if (delegate == null || disablePermissionCheck() || getParentActivity() == null || myLocation == null || !checkGpsEnabled()) {
             return;
         }

@@ -153,6 +153,10 @@ public abstract class BaseLocationAdapter extends AdapterWithDiffUtils {
     }
 
     public void searchPlacesWithQuery(final String query, final Location coordinate, boolean searchUser, boolean animated) {
+        if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            searching=false;searchingLocations=false;searchInProgress=false;searched=true;
+            places.clear();locations.clear();notifyDataSetChanged();if(delegate!=null) delegate.didLoadSearchResult(new ArrayList<>());return;
+        }
         if (coordinate == null && !stories || lastSearchLocation != null && coordinate != null && coordinate.distanceTo(lastSearchLocation) < 200) {
             return;
         }

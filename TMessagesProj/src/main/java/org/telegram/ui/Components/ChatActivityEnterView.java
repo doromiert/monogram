@@ -6045,7 +6045,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 }
                 checkBotMenu();
 
-                if (editingCaption && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
+                if (editingCaption && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
                     captionLimitBulletinShown = true;
                     if (heightShouldBeChanged) {
                         AndroidUtilities.runOnUIThread(() -> showCaptionLimitBulletin(), 300);
@@ -7539,7 +7539,10 @@ public class ChatActivityEnterView extends FrameLayout implements
                             }
                         }
 
-                        if (emoji == null || !MessageObject.isFreeEmoji(emoji)) {
+                        if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.emoji(currentAccount,documentId) && (emoji == null || !MessageObject.isFreeEmoji(emoji))) {
+                            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                                BulletinFactory.of(parentFragment).createErrorBulletin(getString(R.string.MonogramImportEmojiFirst)).show();return true;
+                            }
                             BulletinFactory.of(parentFragment)
                                 .createEmojiBulletin(
                                     emoji,

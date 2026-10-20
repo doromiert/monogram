@@ -728,7 +728,7 @@ public class ContentPreviewViewer {
                     title.setPadding(dp(16), dp(10), dp(16), dp(8));
                     previewMenu.addView(title);
                 }
-                if (MessageObject.isPremiumSticker(currentDocument) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
+                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,currentDocument) && MessageObject.isPremiumSticker(currentDocument) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
                     showUnlockPremiumView();
                     menuVisible = true;
                     containerView.invalidate();

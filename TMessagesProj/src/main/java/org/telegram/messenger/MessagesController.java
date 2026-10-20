@@ -543,7 +543,7 @@ public class MessagesController extends BaseController implements NotificationCe
     public String mapKey;
     public int maxMessageLength;
     public int getMaxMessageLength() {
-        return getUserConfig().isPremium() ? config.messageLengthLimitPremium.get() : config.messageLengthLimitDefault.get();
+        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(config.messageLengthLimitPremium.get(),config.messageLengthLimitDefault.get()) : config.messageLengthLimitDefault.get();
     }
     public int maxCaptionLength;
     public int roundVideoSize;
@@ -749,13 +749,13 @@ public class MessagesController extends BaseController implements NotificationCe
     public boolean starsLocked;
 
     public boolean starsPurchaseAvailable() {
-        return !starsLocked;
+        return !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !starsLocked;
     }
     public boolean premiumFeaturesBlocked() {
         return premiumLocked && !getUserConfig().isPremium();
     }
     public boolean premiumPurchaseBlocked() {
-        return premiumLocked;
+        return org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || premiumLocked;
     }
 
     public List<String> directPaymentsCurrency = new ArrayList<>();
@@ -922,11 +922,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int getCaptionMaxLengthLimit() {
-        return getUserConfig().isPremium() ? captionLengthLimitPremium : captionLengthLimitDefault;
+        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(captionLengthLimitPremium,captionLengthLimitDefault) : captionLengthLimitDefault;
     }
 
     public int getAboutLimit() {
-        return getUserConfig().isPremium() ? aboutLengthLimitPremium : aboutLengthLimitDefault;
+        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(aboutLengthLimitPremium,aboutLengthLimitDefault) : aboutLengthLimitDefault;
     }
 
     public int getMaxUserReactionsCount() {
@@ -934,7 +934,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int getChatReactionsCount() {
-        return getUserConfig().isPremium() ? reactionsInChatMax : 1;
+        return org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? getMaxUserReactionsCount() : getUserConfig().isPremium() ? reactionsInChatMax : 1;
     }
 
     public int getChatMaxUniqReactions(long dialogId) {

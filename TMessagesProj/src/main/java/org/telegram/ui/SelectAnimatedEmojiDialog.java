@@ -2648,7 +2648,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     }
                     boolean lock = false;
                     if (type != TYPE_SET_REPLY_ICON && type != TYPE_SET_REPLY_ICON_BOTTOM && type != TYPE_CHAT_REACTIONS) {
-                        lock = !pack.free && !UserConfig.getInstance(currentAccount).isPremium();
+                        lock = !pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium();
                     }
                     header.setText(pack.set.title, lock);
                 } else {
@@ -2767,8 +2767,11 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 if (packIndex >= 0 && packIndex < packs.size()) {
                     EmojiView.EmojiPack pack = packs.get(packIndex);
                     if (pack != null) {
-                        button.set(pack.set.title, !pack.free && !UserConfig.getInstance(currentAccount).isPremium(), pack.installed, e -> {
-                            if (!pack.free && !UserConfig.getInstance(currentAccount).isPremium()) {
+                        button.set(pack.set.title, !pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium(), pack.installed, e -> {
+                            if (!pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium()) {
+                                if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                                    if(baseFragment!=null) baseFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount,true));return;
+                                }
                                 BaseFragment fragment = LaunchActivity.getLastFragment();
                                 if (fragment != null) {
                                     fragment.showDialog(new PremiumFeatureBottomSheet(baseFragment, getContext(), currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));

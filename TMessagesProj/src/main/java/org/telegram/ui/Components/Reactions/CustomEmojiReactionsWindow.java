@@ -209,6 +209,9 @@ public class CustomEmojiReactionsWindow {
 
             @Override
             protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
+                if(baseFragment!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.local(baseFragment.getCurrentAccount()) && reactionsContainerLayout.getWindowType()!=SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
+                    BulletinFactory.of(windowView,null).createErrorBulletin(LocaleController.getString(org.telegram.messenger.R.string.MonogramCustomReactionsUnavailable)).show();return;
+                }
                 if (baseFragment != null && !reactionsContainerLayout.channelReactions && reactionsContainerLayout.getWindowType() != SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI && !UserConfig.getInstance(baseFragment.getCurrentAccount()).isPremium()) {
                     try {
                         windowView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);

@@ -12,6 +12,10 @@ import org.telegram.tgnet.TLRPC;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramMediaDraftsTest.NativeMessage.class})
 public class MonogramSelectionDraftsTest {
+    @org.junit.Before public void application() {
+        ApplicationLoader.applicationContext=org.robolectric.RuntimeEnvironment.getApplication();
+        ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();
+    }
     @Test public void phonebookLookupAndAllPhoneMetadataAreLocalSnapshots() throws Exception {
         ContactsController.Contact source=new ContactsController.Contact();source.contact_id=73;source.key="private-lookup";source.provider="example";source.first_name="Alice";source.last_name="Example";source.namesFilled=true;source.phones.addAll(Arrays.asList("+40 123 456","+48-123-456"));source.shortPhones.addAll(Arrays.asList("40123456","48123456"));source.phoneTypes.addAll(Arrays.asList("home","work"));source.phoneDeleted.addAll(Arrays.asList(0,1));
         ContactsController.Contact copy=(ContactsController.Contact)MonogramSelectionDrafts.contact(MonogramSelectionDrafts.contact(source));

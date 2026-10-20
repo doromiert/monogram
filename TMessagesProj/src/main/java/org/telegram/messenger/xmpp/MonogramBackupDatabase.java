@@ -114,7 +114,7 @@ final class MonogramBackupDatabase {
     }
     private static Map<String,String> schema(SQLiteDatabase db) throws IOException {
         Map<String,String> result=new TreeMap<>();
-        try(Cursor rows=db.rawQuery("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY type,name",null)) {
+        try(Cursor rows=db.rawQuery("SELECT type,name,sql FROM sqlite_master WHERE type IN ('table','index','trigger') AND name NOT LIKE 'sqlite_%' AND name<>'android_metadata' AND sql IS NOT NULL ORDER BY type,name",null)) {
             while(rows.moveToNext()) {
                 String name=rows.getString(1);quote(name);String sql=rows.getString(2);
                 if(sql.contains("VIRTUAL TABLE") || sql.toUpperCase(Locale.ROOT).contains("WITHOUT ROWID")) throw new IOException("Unsupported logical backup table type.");

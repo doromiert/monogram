@@ -10691,24 +10691,26 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 devicesRow = rowCount++;
                 languageRow = rowCount++;
                 devicesSectionRow = rowCount++;
-                if (!getMessagesController().premiumFeaturesBlocked()) {
-                    premiumRow = rowCount++;
-                }
-                if (getMessagesController().starsPurchaseAvailable()) {
-                    starsRow = rowCount++;
-                }
-                StarsController.getInstance(currentAccount, true).getBalance();
-                if (ApplicationLoader.isBetaBuild() || ApplicationLoader.isStandaloneBuild() || ApplicationLoader.isHuaweiStoreBuild() || (StarsController.getInstance(currentAccount, true).balanceAvailable() && (StarsController.getInstance(currentAccount, true).hasTransactions() || StarsController.getInstance(currentAccount, true).getBalance().positive()))) {
-                    tonRow = rowCount++;
-                }
-                if (!getMessagesController().premiumFeaturesBlocked()) {
-                    businessRow = rowCount++;
-                }
-                if (!getMessagesController().premiumPurchaseBlocked()) {
-                    premiumGiftingRow = rowCount++;
-                }
-                if (premiumRow >= 0 || starsRow >= 0 || tonRow >= 0 || businessRow >= 0 || premiumGiftingRow >= 0) {
-                    premiumSectionsRow = rowCount++;
+                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                    if (!getMessagesController().premiumFeaturesBlocked()) {
+                        premiumRow = rowCount++;
+                    }
+                    if (getMessagesController().starsPurchaseAvailable()) {
+                        starsRow = rowCount++;
+                    }
+                    StarsController.getInstance(currentAccount, true).getBalance();
+                    if (ApplicationLoader.isBetaBuild() || ApplicationLoader.isStandaloneBuild() || ApplicationLoader.isHuaweiStoreBuild() || (StarsController.getInstance(currentAccount, true).balanceAvailable() && (StarsController.getInstance(currentAccount, true).hasTransactions() || StarsController.getInstance(currentAccount, true).getBalance().positive()))) {
+                        tonRow = rowCount++;
+                    }
+                    if (!getMessagesController().premiumFeaturesBlocked()) {
+                        businessRow = rowCount++;
+                    }
+                    if (!getMessagesController().premiumPurchaseBlocked()) {
+                        premiumGiftingRow = rowCount++;
+                    }
+                    if (premiumRow >= 0 || starsRow >= 0 || tonRow >= 0 || businessRow >= 0 || premiumGiftingRow >= 0) {
+                        premiumSectionsRow = rowCount++;
+                    }
                 }
                 helpHeaderRow = rowCount++;
                 questionRow = rowCount++;
@@ -12224,7 +12226,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         otherItem.addSubItem(gift_premium, R.drawable.msg_gift_premium, LocaleController.getString(R.string.ProfileSendAGift));
                         giftAction = true;
                     }
-                    if (getMessagesController().config.walletAvailable.get() && !MessagesController.isSupportUser(user) && !UserObject.isService(user.id)) {
+                    if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && getMessagesController().config.walletAvailable.get() && !MessagesController.isSupportUser(user) && !UserObject.isService(user.id)) {
                         otherItem.addSubItem(send_money, R.drawable.ic_gram, LocaleController.getString(R.string.WalletSendMoney));
                     }
                     otherItem.addSubItem(start_secret_chat, R.drawable.msg_secret, LocaleController.getString(R.string.StartEncryptedChat));
@@ -14718,6 +14720,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     new SearchResult(609, getString(R.string.SuggestAnimatedEmoji), "suggestAnimatedEmojiRow", getString(R.string.StickersName), getString(R.string.Emoji), R.drawable.input_smile, () -> f.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, null))).withLink("tg://settings/appearance/stickers-and-emoji/emoji/suggest"),
                     new SearchResult(610, getString(R.string.FeaturedEmojiPacks), "featuredStickersHeaderRow", getString(R.string.StickersName), getString(R.string.Emoji), R.drawable.input_smile, () -> f.presentFragment(new StickersActivity(MediaDataController.TYPE_EMOJIPACKS, null))),
                     new SearchResult(611, getString(R.string.MonogramDoubleTapTitle), null, getString(R.string.ChatSettings), R.drawable.msg2_reactions2, () -> f.presentFragment(new MonogramDoubleTapActivity(f.getCurrentAccount()))).withLink("tg://settings/appearance/stickers-and-emoji/emoji/quick-reaction"),
+                    new SearchResult(612, "Chat behavior", null, getString(R.string.ChatSettings), R.drawable.msg_settings, () -> f.presentFragment(new MonogramChatBehaviorActivity(f.getCurrentAccount()))),
 
                     new SearchResult(700, getString(R.string.Filters), null, R.drawable.msg2_folder, () -> f.presentFragment(new FiltersSetupActivity())).withLink("tg://settings/folders"),
                     new SearchResult(701, getString(R.string.CreateNewFilter), "createFilterRow", getString(R.string.Filters), R.drawable.msg2_folder, () -> f.presentFragment(new FiltersSetupActivity())).withLink("tg://settings/folders/create"),

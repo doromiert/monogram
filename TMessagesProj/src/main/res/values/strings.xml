@@ -11601,4 +11601,8 @@
     <string name="MonogramDoubleTapReactionInfo">Choose the emoji used when a double-tap action is set to Reactions.</string>
     <string name="MonogramRepeatMessage">Repeat message</string>
     <string name="MonogramDoubleTapSettingsInfo">Choose actions for incoming and your own messages</string>
+    <string name="MonogramCustomReactionsUnavailable">Custom emoji reactions are not supported by XMPP yet. Use a regular emoji reaction.</string>
+    <string name="MonogramImportEmojiFirst">Import this emoji pack into Monogram before sending its custom emoji.</string>
+    <string name="MonogramMapTilesHint">Map tiles need an internet connection</string>
+    <string name="MonogramNoMapsApp">No external map app is installed. You can view this point on the map in Monogram.</string>
 </resources>

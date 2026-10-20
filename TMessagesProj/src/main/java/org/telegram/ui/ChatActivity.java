@@ -1278,6 +1278,8 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_WELCOME_REVERT = 116;
     public final static int OPTION_SEND_MONEY = 117;
     public final static int OPTION_MONOGRAM_DIAGNOSTICS = 118;
+    public final static int OPTION_MONOGRAM_SAVE = 119;
+    public final static int OPTION_MONOGRAM_REPEAT = 120;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -2053,7 +2055,8 @@ public class ChatActivity extends BaseFragment implements
 
     private boolean canDoubleTapMessageAction(MessageObject message,int action) {
         if (message == null || message.messageOwner == null || message.isDateObject || message.isSending() || message.isEditing()
-                || message.isSponsored() || message.isSecretMedia() || message.isExpiredStory() || action == MonogramDoubleTap.DISABLED) return false;
+                || message.isSponsored() || message.isSecretMedia() || message.isExpiredStory()
+                || message.isHiddenSensitive() && !message.isMediaSpoilersRevealed || action == MonogramDoubleTap.DISABLED) return false;
         ArrayList<Integer> options = doubleTapMessageOptions(message);
         if (action == MonogramDoubleTap.SAVE) return message.getDialogId() != getUserConfig().getClientUserId() && options.contains(OPTION_FORWARD);
         if (action == MonogramDoubleTap.REPEAT) return !UserObject.isUserSelf(currentUser) && !ChatObject.isChannelAndNotMegaGroup(currentChat)
@@ -6943,6 +6946,10 @@ public class ChatActivity extends BaseFragment implements
                         wasManualScroll = true;
                         scrollingChatListView = true;
                     } else if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                        if (org.telegram.messenger.xmpp.MonogramChatBehavior.hideKeyboardOnScroll(currentAccount)) {
+                            if (isKeyboardVisible() && getParentActivity() != null) AndroidUtilities.hideKeyboard(getParentActivity().getCurrentFocus());
+                            else if (chatActivityEnterView != null && chatActivityEnterView.isPopupShowing()) chatActivityEnterView.hidePopup(true);
+                        }
                         pollHintCell = null;
                         wasManualScroll = true;
                         scrollingFloatingDate = true;
@@ -7489,7 +7496,7 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     String username = ChatObject.getPublicUsername(chat);
                     if (username != null) {
-                        chatActivityEnterView.replaceWithText(start, len, "@" + username + " ", false);
+                        chatActivityEnterView.replaceWithText(start, len, "@" + username + org.telegram.messenger.xmpp.MonogramChatBehavior.mentionSuffix(currentAccount,false), false);
                     }
                 }
             } else if (object instanceof TLRPC.User) {
@@ -7498,11 +7505,11 @@ public class ChatActivity extends BaseFragment implements
                     searchUserMessages(user, null);
                 } else {
                     if (UserObject.getPublicUsername(user) != null) {
-                        chatActivityEnterView.replaceWithText(start, len, "@" + UserObject.getPublicUsername(user) + " ", false);
+                        chatActivityEnterView.replaceWithText(start, len, "@" + UserObject.getPublicUsername(user) + org.telegram.messenger.xmpp.MonogramChatBehavior.mentionSuffix(currentAccount,user.bot), false);
                     } else {
                         String name = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mentionName(dialog_id,user);
-                        Spannable spannable = new SpannableString(name + " ");
-                        spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, spannable.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        Spannable spannable = new SpannableString(name + org.telegram.messenger.xmpp.MonogramChatBehavior.mentionSuffix(currentAccount,user.bot));
+                        spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, name.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         chatActivityEnterView.replaceWithText(start, len, spannable, false);
                     }
                 }
@@ -31329,6 +31336,8 @@ public class ChatActivity extends BaseFragment implements
                         case OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC:
                         case OPTION_SHARE:
                         case OPTION_FORWARD:
+                        case OPTION_MONOGRAM_SAVE:
+                        case OPTION_MONOGRAM_REPEAT:
                         case OPTION_REPLY:
                             options.remove(i);
                             items.remove(i);
@@ -33690,6 +33699,11 @@ public class ChatActivity extends BaseFragment implements
         }
         boolean preserveDim = false;
         switch (option) {
+            case OPTION_MONOGRAM_SAVE:
+            case OPTION_MONOGRAM_REPEAT: {
+                performDoubleTapMessageAction(selectedObject, option == OPTION_MONOGRAM_SAVE ? MonogramDoubleTap.SAVE : MonogramDoubleTap.REPEAT);
+                break;
+            }
             case OPTION_MONOGRAM_DIAGNOSTICS: {
                 org.telegram.messenger.xmpp.MonogramController.get(currentAccount).inspectMessage(selectedObject,
                         text -> MonogramDebugActivity.showText(this,"Message diagnostics",text));
@@ -46651,6 +46665,19 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
+                    if (selectedObject.getDialogId() != getUserConfig().getClientUserId()
+                            && org.telegram.messenger.xmpp.MonogramChatBehavior.showSaveButton(currentAccount)) {
+                        items.add(LocaleController.getString(R.string.SavedMessages));
+                        options.add(OPTION_MONOGRAM_SAVE);
+                        icons.add(R.drawable.msg_saved);
+                    }
+                    if (!UserObject.isUserSelf(currentUser) && !ChatObject.isChannelAndNotMegaGroup(currentChat)
+                            && (currentChat == null || ChatObject.canSendMessages(currentChat))
+                            && org.telegram.messenger.xmpp.MonogramChatBehavior.showRepeatButton(currentAccount)) {
+                        items.add(LocaleController.getString(R.string.MonogramRepeatMessage));
+                        options.add(OPTION_MONOGRAM_REPEAT);
+                        icons.add(R.drawable.msg_retry);
+                    }
                 }
                 if (allowUnpin) {
                     items.add(LocaleController.getString(R.string.UnpinMessage));

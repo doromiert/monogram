@@ -142,6 +142,7 @@ public class BillingController implements PurchasesUpdatedListener, BillingClien
     }
 
     public void startConnection() {
+        if(BuildVars.IS_BILLING_UNAVAILABLE) return;
         if (isReady()) {
             return;
         }
