@@ -11605,4 +11605,9 @@
     <string name="MonogramImportEmojiFirst">Import this emoji pack into Monogram before sending its custom emoji.</string>
     <string name="MonogramMapTilesHint">Map tiles need an internet connection</string>
     <string name="MonogramNoMapsApp">No external map app is installed. You can view this point on the map in Monogram.</string>
+    <string name="MonogramPurchasesUnavailable">Telegram payments, Premium and gifts are not available in Monogram.</string>
+    <string name="MonogramPlaceSearchFieldHint">Search places (press Search)</string>
+    <string name="MonogramPlaceSearchHint">Enter a place or address, then press Search. Only your submitted search text is sent to Photon; your GPS location is not sent.</string>
+    <string name="MonogramPlaceSearchEmpty">No matching places. Try a more specific place name or address.</string>
+    <string name="MonogramPlaceAttribution">Place search: Photon / Komoot · © OpenStreetMap contributors</string>
 </resources>

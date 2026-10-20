@@ -13675,7 +13675,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (containsGift) {
                         Drawable drawable = ContextCompat.getDrawable(detailCell.getContext(), R.drawable.msg_input_gift);
                         drawable.setColorFilter(new PorterDuffColorFilter(dontApplyPeerColor(getThemedColor(Theme.key_switch2TrackChecked), false), PorterDuff.Mode.MULTIPLY));
-                        if (UserObject.areGiftsDisabled(userInfo)) {
+                        if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || UserObject.areGiftsDisabled(userInfo)) {
                             detailCell.setImage(null);
                             detailCell.setImageClickListener(null);
                         } else {
@@ -15545,6 +15545,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             args.putLong("user_id", userId);
             presentFragment(new QrActivity(args));
         } else if (parent.getTag() != null && ((int) parent.getTag()) == birthdayRow) {
+            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return;
             if (userId == getUserConfig().getClientUserId()) {
                 presentFragment(new PremiumPreviewFragment("my_profile_gift"));
                 return;

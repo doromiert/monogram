@@ -51,3 +51,38 @@ emoji packs fully visible without lock/purchase rows; send local custom emoji an
 Premium-tagged imported stickers; captions beyond the old free allowance; regular
 multi-reactions and the unsupported-custom-reaction explanation. Verify that
 actual limits, account switching and queued encrypted sends still behave normally.
+
+## Purchase links, sidebar and notifications
+
+A second source checkpoint blocks known monetary routes before LaunchActivity's
+GiftInfo/UserSelector handlers or LinkManager can open a payment form or request
+Telegram payment data. The classifier covers tg opaque/hierarchical links,
+Telegram public-link aliases (including invoice `$slug` paths and username.t.me),
+Stars/Premium/Business purchase settings, gifts/auctions/boosts and TON/TonConnect
+wallet routes. Percent-encoded commands and Android-accepted malformed query
+values cannot turn a known purchase route into an unclassified link. Unrelated
+external sites are not classified just because a path contains “invoice”.
+
+Rejection uses native toast/bulletin handling, closes link progress and clears
+pending Premium navigation callbacks. The internal typed invoice/gift/boost
+request path has an additional guard, including boost notifications. This does
+not send a help/deep-link-info request to Telegram to explain the rejection.
+Chat, sticker/custom-emoji import, XMPP invitations, translation/settings and
+location routes continue through their existing handlers.
+
+The native chat-list top menu no longer exposes the wallet or Telegram-only bot
+sidebar entries for XMPP accounts. Premium restore/annual/Christmas, Stars low
+balance, auction and download-speed purchase hints are suppressed before promo
+lookups. Birthday gift purchase icons are omitted while ordinary profile birthday
+text remains. The debug invoice-payment toggle is hidden using the existing
+nullable debug-row pattern. Wallet-only TonConnect notifications are suppressed
+and any notification left by an earlier version is cancelled during notification
+controller initialization; ordinary XMPP message notifications are unchanged.
+
+Four pure synthetic URI regression fixtures are prepared in
+`MonogramPurchaseLinksTest`; they have not been run. They check the monetary
+aliases, preserved ordinary links, settings route boundaries and encoded/malformed
+query handling. No URI is opened and no account/server/network action occurs.
+The stock compiled payment implementations and their Gradle dependencies still
+remain; these guards remove the reviewed reachable routes, rather than claiming
+those unused classes have already been deleted.

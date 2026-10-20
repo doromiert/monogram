@@ -1404,7 +1404,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 getString(DualCameraView.dualAvailableStatic(getContext()) ? "DebugMenuDualOff" : "DebugMenuDualOn"),
                 BuildVars.DEBUG_VERSION ? SharedConfig.useSurfaceInStories ? "back to TextureView in stories" : "use SurfaceView in stories" : null,
                 BuildVars.DEBUG_PRIVATE_VERSION ? SharedConfig.photoViewerBlur ? "do not blur in photoviewer" : "blur in photoviewer" : null,
-                !SharedConfig.payByInvoice ? "Enable Invoice Payment" : "Disable Invoice Payment",
+                org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) ? null : !SharedConfig.payByInvoice ? "Enable Invoice Payment" : "Disable Invoice Payment",
                 BuildVars.DEBUG_PRIVATE_VERSION ? "Update Attach Bots" : null,
                 !SharedConfig.isUsingCamera2(currentAccount) ? "Use Camera 2 API" : "Use old Camera 1 API",
                 BuildVars.DEBUG_VERSION ? "Clear Mini Apps Permissions and Files" : null,

@@ -3298,7 +3298,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         fragmentSearchField.setPadding(dp(4), dp(4), dp(4), dp(4));
         fragmentSearchField.setPivotX(0);
         fragmentSearchField.setPivotY(0);
-        if (initialDialogsType == DIALOGS_TYPE_DEFAULT) {
+        if (initialDialogsType == DIALOGS_TYPE_DEFAULT && !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
             speedItem = menu.addItem(-47, R.drawable.avd_speed);
             AndroidUtilities.removeFromParent(speedItem);
             speedItem.setOnClickListener(v -> showDialog(new PremiumFeatureBottomSheet(DialogsActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED, true)));
@@ -5774,6 +5774,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isStarsSubscriptionHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (folderId != 0 || communityId != 0) {
             return false;
         }
@@ -5817,6 +5818,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isPremiumRestoreHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && folderId == 0 && communityId == 0) {
             return MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_RESTORE") && !getUserConfig().isPremium() && MediaDataController.getInstance(currentAccount).getPremiumHintAnnualDiscount(false) != null;
         }
@@ -5824,6 +5826,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isPremiumChristmasHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && folderId == 0 && communityId == 0) {
             return MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_CHRISTMAS");
         }
@@ -5831,6 +5834,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     public boolean isPremiumHintVisible() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
         if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && folderId == 0 && communityId == 0) {
             if (MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_UPGRADE") && getUserConfig().isPremium() || MessagesController.getInstance(currentAccount).pendingSuggestions.contains("PREMIUM_ANNUAL") && !getUserConfig().isPremium()) {
                 if (UserConfig.getInstance(currentAccount).isPremium() ? !BuildVars.useInvoiceBilling() && MediaDataController.getInstance(currentAccount).getPremiumHintAnnualDiscount(true) != null : MediaDataController.getInstance(currentAccount).getPremiumHintAnnualDiscount(false) != null) {
@@ -5976,7 +5980,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             username = UserObject.getUserName(MessagesController.getInstance(currentAccount).getUser(dialogId));
         }
         Bulletin bulletin;
-        if (getMessagesController().premiumFeaturesBlocked()) {
+        if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || getMessagesController().premiumFeaturesBlocked()) {
             bulletin = BulletinFactory.of(this).createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBlockedNonPremium, username)));
         } else {
             bulletin = BulletinFactory.of(this)
@@ -6381,7 +6385,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return;
         }
 
-        final boolean isVisible = !isInPreviewMode()
+        final boolean isVisible = !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && !isInPreviewMode()
             && folderId == 0 && communityId == 0 && initialDialogsType == DIALOGS_TYPE_DEFAULT
             && getGiftAuctionsController().hasActiveAuctions()
             && (rightSlidingDialogContainer == null || !rightSlidingDialogContainer.hasFragment())
@@ -6720,7 +6724,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 break;
             }
         }
-        boolean visible = !getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && visibleByDownload && visibleByPosition;
+        boolean visible = !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && !getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && visibleByDownload && visibleByPosition;
         animatorSpeedButtonVisible.setValue(visible, true);
     }
 
@@ -13749,11 +13753,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (ApplicationLoader.applicationLoaderInstance != null) {
             ApplicationLoader.applicationLoaderInstance.addItemOptions(io);
         }
-        if (getMessagesController().config.walletAvailable.get()) {
+        if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && getMessagesController().config.walletAvailable.get()) {
             io.add(R.drawable.ic_gram, LocaleController.getString(R.string.WalletAttachMoney), () -> {
                 presentFragment(new WalletActivity());
             });
-        } else {
+        } else if(!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
             TLRPC.TL_attachMenuBots menuBots = MediaDataController.getInstance(UserConfig.selectedAccount).getAttachMenuBots();
             if (launchActivity != null && menuBots != null && menuBots.bots != null && !menuBots.bots.isEmpty()) {
                 for (TLRPC.TL_attachMenuBot attachMenuBot : menuBots.bots) {

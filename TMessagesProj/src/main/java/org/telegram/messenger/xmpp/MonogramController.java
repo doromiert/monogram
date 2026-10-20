@@ -1811,6 +1811,7 @@ public final class MonogramController {
         result.full_user.blocked=blockingCache().blocked(store.jid(peer));
         applyCallCapabilities(peer,result.full_user);result.users.add(result.full_user.user);return result;
     }
+    public long accountGeneration() { return accountEpoch; }
     long callOwner() { return accountEpoch; }
     void callEnded(long owner,String ownerJid,long peer,String sid,boolean outgoing,boolean video,long timestamp,int duration,String reason) {
         worker.execute(() -> {

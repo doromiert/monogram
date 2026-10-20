@@ -646,6 +646,11 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                     }
 
                     @Override
+                    public void onSearchPressed(EditText editText) {
+                        if(searchAdapter!=null) { searchAdapter.submitPlaceSearch(editText.getText().toString());AndroidUtilities.hideKeyboard(editText); }
+                    }
+
+                    @Override
                     public void onTextChanged(EditText editText) {
                         if (searchAdapter == null) {
                             return;
@@ -678,10 +683,16 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                         searchAdapter.searchDelayed(text, userLocation);
                     }
                 });
-                searchItem.setSearchFieldHint(getString(R.string.Search));
-                searchItem.setVisibility(View.GONE);
+                searchItem.setSearchFieldHint(getString(R.string.MonogramPlaceSearchFieldHint));
+                searchItem.setVisibility(View.VISIBLE);
                 searchItem.setContentDescription(getString(R.string.Search));
                 EditTextBoldCursor editText = searchItem.getSearchField();
+                editText.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+                editText.setOnEditorActionListener((view,action,event) -> {
+                    if(action==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH || event!=null && event.getAction()==android.view.KeyEvent.ACTION_DOWN && event.getKeyCode()==android.view.KeyEvent.KEYCODE_ENTER) {
+                        if(searchAdapter!=null) searchAdapter.submitPlaceSearch(editText.getText().toString());AndroidUtilities.hideKeyboard(editText);return true;
+                    }return false;
+                });
                 editText.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
                 editText.setCursorColor(getThemedColor(Theme.key_dialogTextBlack));
                 editText.setHintTextColor(getThemedColor(Theme.key_chat_messagePanelHint));
@@ -1228,6 +1239,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                 }
             }
         });
+        adapter.setSearchAccount(currentAccount);
         adapter.setDelegate(dialogId, this::updatePlacesMarkers);
         adapter.setOverScrollHeight(overScrollHeight);
 
@@ -1362,6 +1374,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
                     super.notifyDataSetChanged();
                 }
             };
+            searchAdapter.setSearchAccount(currentAccount);
             searchAdapter.setDelegate(0, places -> {
                 searchInProgress = false;
                 updateEmptyView();
@@ -2891,6 +2904,7 @@ public class LocationActivity extends BaseFragment implements NotificationCenter
     @Override
     public void onPause() {
         super.onPause();
+        if(searchAdapter!=null) { searchAdapter.cancelPlaceSearch();searchAdapter.notifyDataSetChanged(); }
         if (mapView != null && mapsInitialized) {
             try {
                 mapView.onPause();

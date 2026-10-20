@@ -212,6 +212,9 @@ public class NotificationsController extends BaseController implements Notificat
 
         notificationManager = NotificationManagerCompat.from(ApplicationLoader.applicationContext);
         systemNotificationManager = (NotificationManager) ApplicationLoader.applicationContext.getSystemService(Context.NOTIFICATION_SERVICE);
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
+            try { notificationManager.cancel("wallet_tonconnect",currentAccount); } catch(Exception ignored) {}
+        }
 
         try {
             audioManager = (AudioManager) ApplicationLoader.applicationContext.getSystemService(Context.AUDIO_SERVICE);
@@ -371,8 +374,9 @@ public class NotificationsController extends BaseController implements Notificat
 
     // Wallet requests are local notifications, never synthetic chat messages or stored FCM messages.
     public void showTonConnectNotification(String dapp, long time) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return;
         notificationsQueue.postRunnable(() -> {
-            if (!getUserConfig().isClientActivated()
+            if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || !getUserConfig().isClientActivated()
                     || !SharedConfig.showNotificationsForAllAccounts && currentAccount != UserConfig.selectedAccount) {
                 return;
             }

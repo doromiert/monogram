@@ -1526,6 +1526,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @SuppressLint("Range")
     private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
+        if(intent!=null && intent.getData()!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)
+                && org.telegram.messenger.xmpp.MonogramPurchaseLinks.blocked(intent.getData().toString())) {
+            intent.setAction(null);intent.setData(null);rejectMonogramPurchase(progress);return true;
+        }
         if (GiftInfoBottomSheet.handleIntent(intent, progress)) {
             return true;
         }
@@ -3395,6 +3399,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
     }
 
+    private void rejectMonogramPurchase(Browser.Progress progress) {
+        navigateToPremiumBot=false;navigateToPremiumGiftCallback=null;
+        if(progress!=null) progress.end();
+        Toast.makeText(this,LocaleController.getString(R.string.MonogramPurchasesUnavailable),Toast.LENGTH_SHORT).show();
+    }
+
     private static Pattern timestampPattern;
     private boolean handleXmppInvitation(Intent intent) {
         if(intent==null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData()==null || !"xmpp".equalsIgnoreCase(intent.getData().getScheme())) return false;
@@ -4003,6 +4013,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         boolean openDirect,
         byte[] pollOptionId
     ) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(intentAccount)
+                && (inputInvoiceSlug!=null || uniqueGiftSlug!=null || auctionSlug!=null || stargiftPreviewSlug!=null || giftCollectionId>0 || isBoost
+                    || "sendgrams".equalsIgnoreCase(username) || "premiumbot".equalsIgnoreCase(username))) {
+            rejectMonogramPurchase(progress);return;
+        }
         if (state == 0 && ChatActivity.SCROLL_DEBUG_DELAY && progress != null) {
             Runnable runnable = () -> runLinkRequest(intentAccount, username, group, sticker, emoji, botUser, botChat, botChannel, botChatAdminParams, message, contactToken, folderSlug, text, hasUrl, messageId, channelId, threadId, commentId, game, auth, lang, unsupportedUrl, code, loginToken, wallPaper, inputInvoiceSlug, uniqueGiftSlug, theme, voicechat, videochat, livestream, 1, videoTimestamp, setAsAttachBot, attachMenuBotToOpen, attachMenuBotChoose, botAppMaybe, botAppStartParam, progress, forceNotInternalForApps, storyId, liveStory, storyAlbumId, giftCollectionId, auctionSlug, stargiftPreviewSlug, isBoost, chatLinkSlug, botCompact, botFullscreen, openedTelegram, openProfile, forceRequest, referrer, taskId, openDirect, pollOptionId);
             progress.init();
@@ -5677,6 +5692,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private void processBoostDialog(Long peerId, Runnable dismissLoading, Browser.Progress progress, ChatMessageCell chatMessageCell) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
+            if(dismissLoading!=null) dismissLoading.run();rejectMonogramPurchase(progress);return;
+        }
         ChannelBoostsController boostsController = MessagesController.getInstance(currentAccount).getBoostsController();
         if (progress != null) {
             progress.init();
@@ -6144,11 +6162,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     public void setNavigateToPremiumBot(boolean val) {
-        navigateToPremiumBot = val;
+        navigateToPremiumBot = val && !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount);
     }
 
     public void setNavigateToPremiumGiftCallback(Runnable val) {
-        navigateToPremiumGiftCallback = val;
+        navigateToPremiumGiftCallback = org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) ? null : val;
     }
 
     @Override

@@ -89,6 +89,7 @@ public class LinkManager {
 
     public boolean handle(Uri uri) {
         if (uri == null) return false;
+        if(org.telegram.messenger.xmpp.MonogramPurchaseLinks.blocked(uri.toString()) && rejectMonetaryRoute()) return true;
 
         FileLog.d("link manager handle " + uri);
 
@@ -109,6 +110,12 @@ public class LinkManager {
             return handleTc(uri);
 
         return false;
+    }
+
+    private boolean rejectMonetaryRoute() {
+        if(!org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
+        if(progress!=null) progress.end();activity.navigateToPremiumGiftCallback=null;
+        getBulletinFactory().createErrorBulletin(LocaleController.getString(R.string.MonogramPurchasesUnavailable)).show();return true;
     }
 
     private boolean handleTonsite(Uri uri) {
@@ -313,6 +320,7 @@ public class LinkManager {
     // tg://settings/*
     private boolean handleSettings(final List<String> segments) {
         if (segments == null) return false;
+        if(org.telegram.messenger.xmpp.MonogramPurchaseLinks.blocked("tg://settings/"+TextUtils.join("/",segments)) && rejectMonetaryRoute()) return true;
         if (segments.isEmpty()) {
             presentFragment(new SettingsActivity());
             return true;
@@ -1260,6 +1268,7 @@ public class LinkManager {
     }
 
     private boolean handleInvoiceSlug(String slug) {
+        if(rejectMonetaryRoute()) return true;
         if (TextUtils.isEmpty(slug)) return false;
 
         init();
@@ -1442,6 +1451,7 @@ public class LinkManager {
     }
 
     private boolean handleSendGrams(Uri uri) {
+        if(rejectMonetaryRoute()) return true;
         if (!getMessagesController().config.walletAvailable.get()) return false;
         final Uri tonConnectUri = parseTonConnectStartApp(uri.getQueryParameter("startapp"));
         if (tonConnectUri != null) {
@@ -1520,6 +1530,7 @@ public class LinkManager {
     }
 
     private boolean handleTon(Uri uri) {
+        if(rejectMonetaryRoute()) return true;
         if (!getMessagesController().config.walletAvailable.get()) return false;
         uri = normalizeTgUri(uri);
 
@@ -1653,6 +1664,7 @@ public class LinkManager {
     }
 
     private boolean handleTc(Uri uri) {
+        if(rejectMonetaryRoute()) return true;
         uri = normalizeTgUri(uri);
 
         final List<String> _segments = uri.getPathSegments();

@@ -14,9 +14,27 @@ Forwarding creates a new native location send, using the destination chat's own
 encryption mode. Replies, temporary local IDs, retry/failed queue persistence,
 account ownership and session fences reuse the existing message path. This is
 static sharing only: live tracking/start/update/stop protocols are not implemented,
-and the native live-share action is disabled for XMPP. Telegram's venue-search bot
-is unavailable and is not queried; selecting a point/current permitted position
-still works. Received venue labels are preserved.
+and the native live-share action is disabled for XMPP. Telegram's venue-search bot is not queried. Native place search uses Photon /
+Komoot's open geocoder only after pressing the keyboard Search action or explicitly
+submitting the search field. Typing, opening the picker, panning and GPS updates do
+not issue place queries. Results become native venues with locally drawn pin icons,
+so selecting one uses the same encrypted transport. Search works without location
+permission and never submits the phone's coordinates or a GPS-derived bias.
+Queries can themselves contain sensitive text; the native hint states that submitted
+text goes to Photon. Search results show OpenStreetMap/Photon attribution.
+
+Photon's official demo terms permit project use within reasonable traffic and warn
+that extensive traffic may be throttled/banned, with no availability guarantee.
+The client has a single process-wide network worker, actual request starts spaced
+by at least 1.1 seconds, an eight-job cap, cancellation/disconnect on editing,
+pause/destroy and account/JID generation changes, bounded responses and ten results.
+Rate-limit/service-busy replies impose a shared cooldown; there is no automatic retry.
+Successful queries use a seven-day per-account/JID cache capped at 128 entries/5 MB.
+Search failure/empty states stay visible in the native result list. No search endpoint
+was queried during implementation. For higher application traffic, deploy a Photon
+instance instead of assuming an unlimited public service.
+[Photon project/demo policy](https://github.com/komoot/photon#demo-server),
+[Photon API](https://photon.komoot.io/).
 
 The native full-screen map/picker uses an `IMapsProvider` implementation backed by
 OpenStreetMap raster tiles, without a Google API key or Play Services location.
