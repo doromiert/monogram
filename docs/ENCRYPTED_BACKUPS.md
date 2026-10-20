@@ -261,17 +261,33 @@ must qualify; trust, IO, duplicate, unsupported-version and untyped crypto failu
 never retry. There must be one encrypted key per targeted local own-device ID,
 preventing the installed ratchet's ignored-identity branch from being hidden by
 another key's error. Historical recipient IDs are routed without registering them.
+For a prekey packet, candidate selection parses the actual Signal identity and
+checks current trust while holding the trust monitor. An explicitly trusted new
+peer identity may skip an incompatible archive through a private
+`TrustedPeerMismatch` result. An undecided/revoked identity or a corrupt store
+remains terminal; no generic trust exception is reclassified. Old peer pins and
+session bytes are not overwritten to make a candidate fit. If the archive already
+contains a previous receive state matching the packet's version, base key and
+remote identity, trusted prekey resends may continue using that state.
+
+Installed Java Signal authenticates ordinary packets against the receive state
+that actually decrypts the MAC, which can be a promoted previous state. Archive
+trust therefore uses that exact `SessionState.remoteIdentityKey`; returned/journal
+fingerprints use the authenticated state rather than the archive's current global
+peer pin. A previous trusted state can advance inside the receive-only archive
+while preserving its newer peer pin. Revoking that old fingerprint blocks both
+prekey and ordinary packets even if the newer fingerprint remains trusted. The
+prepared rotation fixture covers incompatible-old-archive -> compatible-active
+selection, unchanged old records, corrupt/revoked candidates and old prekey/normal
+packets from previous states with their correct fingerprint.
+
 Legacy journal source provenance determines acceptance and protocol cleanup; saved
 MUC route/identity tags, including `room-displayed`, survive replay without resolving
 today's nickname mapping.
 
-A remaining legacy routing edge also blocks enabling restore UI: if a contact
-rotates its identity after migration and the user trusts the new fingerprint,
-archive-first prekey routing can stop at the old archive's peer identity mismatch
-before reaching active state. The mismatch is deliberately terminal today.
-Candidate selection must distinguish an archive that cannot own that packet from
-an untrusted sender, without rewriting historical receive lineage or weakening
-current trust checks. This is not covered by the prepared acceptance fixtures.
+The incompatible archive candidate case is addressed above when another compatible
+active or archived state exists. Ordinary active peer-identity replacement remains
+a distinct unfinished transition, described below.
 
 Prepared fixtures cover manifest round-trip and repeated archive generations,
 partial/foreign/unconfirmed startup, pinned historical own devices, fresh native
@@ -287,6 +303,39 @@ already enumerated/remapped, but restoring editable composition drafts additiona
 requires portable ownership generations and peer keys. Do not blindly copy a
 stale generation. Notification-action generations remain excluded and must be
 invalidated at cold commit.
+
+## Source audit: ordinary active peer identity rotation
+
+This checkpoint fixes archive candidate selection, not the separate ordinary
+active-state case where a peer reuses the same device ID with a different identity
+and the active Signal store still pins its previous identity. The current source
+path is explicit: `MonogramSecurityActivity.decide` calls `XmppSession.decideAll`
+for legacy fingerprints; that method only calls `IdentityTrust.setTrustAll`, which
+persists fingerprint decisions without updating Signal identity/session records.
+The fingerprint list can show a new PEP identity through `XmppLegacyDiscovery`,
+while `MonogramDeviceEncryption.needsSession` only fetches/applies a new bundle
+when the raw session is absent. Its local prepare path intentionally preserves an
+already existing session. Installed Smack's build-missing-sessions path similarly
+skips existing raw sessions.
+
+Installed `SignalOmemoRatchet.doubleRatchetDecrypt` rejects a prekey identity that
+differs from the stored peer identity independently of the application trust
+callback. Its caller `OmemoRatchet.retrieveMessageKeyAndAuthTag` logs/ignores that
+identity exception and ultimately produces an untyped crypto failure; the custom
+service's existing `NoRawSessionException` repair branch is not that path. These
+are source/API findings, not a reproduced runtime claim; explicit rebuild paths
+can apply a new bundle, but merely trusting its fingerprint does not invoke them.
+
+A concrete next implementation should atomically retire the old peer identity and
+its complete SessionRecord into an explicitly receive-only, fingerprint-keyed
+lineage table when accepting a verified new identity, then establish the new active
+session with **no old session record supplied to SessionBuilder**. The old record
+must remain recoverable for currently trusted historical packets through the same
+MAC-selected-identity checks. Do not silently delete it, overwrite its identity or
+keep it as a previous state inside the active sending record: later receive-state
+promotion could reactivate an old sender chain. The new typed lineage rows and
+journals must participate in backup schema/owner validation and migration; this
+broader active-store transition is not implemented in the bounded archive fix.
 
 ## Required integration before enabling settings
 

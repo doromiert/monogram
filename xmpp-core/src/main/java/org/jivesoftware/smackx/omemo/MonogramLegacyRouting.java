@@ -42,6 +42,8 @@ final class MonogramLegacyRouting {
             for(CryptoFailedException child:children) if(!recoverable(child,seen,depth+1)) return false;
             return true;
         }
+        if(failure.getClass()==MonogramLegacyArchiveCipher.TrustedPeerMismatch.class)
+            return failure.getCause()==null;
         if(failure.getClass()==CryptoFailedException.class || failure.getClass()==NoRawSessionException.class)
             return recoverable(failure.getCause(),seen,depth+1);
         if(failure.getClass()==InvalidKeyIdException.class || failure.getClass()==InvalidMessageException.class || failure.getClass()==NoSessionException.class)

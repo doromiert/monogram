@@ -77,14 +77,16 @@ public final class MonogramLegacyReceiveOnly {
                         if(selected!=null) throw new GeneralSecurityException("Ambiguous historical recipient keys");selected=key;
                     }
                     if(selected==null) throw new org.whispersystems.libsignal.NoSessionException("Not addressed to historical device");
-                    byte[] transported=MonogramLegacyArchiveCipher.decrypt(archive,own,sender,selected);
+                    MonogramLegacyArchiveCipher.checkCandidate(archive,own,sender,selected,trust);
+                    MonogramLegacyArchiveCipher.Authenticated authenticated=MonogramLegacyArchiveCipher.decryptAuthenticated(archive,own,sender,selected,trust);
+                    byte[] transported=authenticated.material;
                     CipherAndAuthTag material;
                     if(transported.length==32) material=new CipherAndAuthTag(Arrays.copyOf(transported,16),element.getHeader().getIv(),Arrays.copyOfRange(transported,16,32),selected.isPreKey());
                     else if(transported.length==16 && element.isKeyTransportElement()) material=new CipherAndAuthTag(transported.clone(),element.getHeader().getIv(),null,selected.isPreKey());
                     else { Arrays.fill(transported,(byte)0);throw new GeneralSecurityException("Invalid historical transported key length"); }
                     Arrays.fill(transported,(byte)0);
                     try {
-                        OmemoFingerprint fingerprint=archive.getFingerprint(own,sender);
+                        OmemoFingerprint fingerprint=authenticated.fingerprint;
                         if(!trust.isTrusted(sender,fingerprint)) throw new GeneralSecurityException("Recovery sender is no longer trusted");
                         String body=element.isMessageElement()?OmemoRatchet.decryptMessageElement(element,material):null;
                         OmemoMessage.Received decrypted=new OmemoMessage.Received(element,material.getKey(),material.getIv(),body,fingerprint,sender,material.wasPreKeyEncrypted());
