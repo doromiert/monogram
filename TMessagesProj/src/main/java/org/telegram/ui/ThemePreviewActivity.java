@@ -122,6 +122,7 @@ import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.LoadingCell;
 import org.telegram.ui.Cells.PatternCell;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.BackgroundGradientDrawable;
@@ -407,6 +408,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
     private boolean checkingBoostsLevel = false, checkedBoostsLevel = false;
     public TL_stories.TL_premium_boostsStatus boostsStatus;
     private void checkBoostsLevel() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { checkedBoostsLevel=true;checkingBoostsLevel=false;return; }
         if (dialogId >= 0 || checkingBoostsLevel || checkedBoostsLevel || boostsStatus != null) {
             return;
         }
@@ -1459,7 +1461,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                 updateApplyButton1(false);
                 applyButton1.setOnClickListener(view -> applyWallpaperBackground(false));
 
-                if (dialogId > 0 && !self && serverWallpaper == null) {
+                if (dialogId > 0 && !self && serverWallpaper == null && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
                     applyButton2 = new BlurButton(context);
                     ScaleStateListAnimator.apply(applyButton2, 0.033f, 1.2f);
                     TLRPC.User user = getMessagesController().getUser(dialogId);
@@ -2397,6 +2399,9 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
     }
 
     private void updateApplyButton1(boolean animated) {
+        if(dialogId!=0 && org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+            applyButton1.setText(LocaleController.getString(R.string.MonogramApplyWallpaperLocally));applyButton1.setSubText(null,animated);return;
+        }
         if (dialogId > 0) {
             applyButton1.setText(LocaleController.getString(R.string.ApplyWallpaperForMe));
         } else if (dialogId < 0) {
@@ -2432,7 +2437,45 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
         return getMessagesController().groupCustomWallpaperLevelMin;
     }
 
+    private boolean applyingLocalWallpaper;
+    private void applyLocalChatWallpaper() {
+        if(applyingLocalWallpaper) return;
+        ChatThemeController controller=ChatThemeController.getInstance(currentAccount);
+        if(currentWallpaper instanceof WallpapersListActivity.EmojiWallpaper
+                || currentWallpaper instanceof WallpapersListActivity.ColorWallpaper && (Theme.DEFAULT_BACKGROUND_SLUG.equals(((WallpapersListActivity.ColorWallpaper)currentWallpaper).slug) || Theme.THEME_BACKGROUND_SLUG.equals(((WallpapersListActivity.ColorWallpaper)currentWallpaper).slug))) {
+            if(!controller.resetLocalWallpaper(dialogId,true)) { BulletinFactory.of(this).createErrorBulletin(LocaleController.getString(R.string.MonogramWallpaperSaveError)).show();return; }setupFinished=true;if(delegate!=null) delegate.didSetNewBackground(null);finishFragment();return;
+        }
+        Theme.OverrideWallpaperInfo info=new Theme.OverrideWallpaperInfo();
+        info.isMotion=isMotion;info.intensity=shouldShowBrightnessControll && dimAmount>=0 ? dimAmount : currentIntensity;
+        boolean colors=currentWallpaper instanceof WallpapersListActivity.ColorWallpaper && selectedPattern==null;
+        Bitmap snapshot=null;
+        try {
+            if(colors) {
+                info.color=backgroundColor;info.gradientColor1=backgroundGradientColor1;info.gradientColor2=backgroundGradientColor2;info.gradientColor3=backgroundGradientColor3;info.rotation=backgroundRotation;
+            } else {
+                if(backgroundImage.getWidth()<1 || backgroundImage.getHeight()<1) throw new IllegalStateException();
+                boolean resource=currentWallpaper instanceof WallpapersListActivity.FileWallpaper && ((WallpapersListActivity.FileWallpaper)currentWallpaper).resId!=0;
+                if(originalBitmap==null && !resource && !backgroundImage.getImageReceiver().hasNotThumb()) throw new IllegalStateException();
+                float scale=Math.min(1f,2048f/Math.max(backgroundImage.getWidth(),backgroundImage.getHeight()));
+                snapshot=Bitmap.createBitmap(Math.max(1,(int)(backgroundImage.getWidth()*scale)),Math.max(1,(int)(backgroundImage.getHeight()*scale)),Bitmap.Config.ARGB_8888);
+                Canvas canvas=new Canvas(snapshot);canvas.scale(scale,scale);float previousDim=dimAmount;
+                try { dimAmount=0;backgroundImage.draw(canvas); } finally { dimAmount=previousDim; }
+                // Preview already includes blur/pattern; retain dimming separately for native dark-mode rendering.
+                info.intensity=shouldShowBrightnessControll && dimAmount>=0 ? dimAmount : 0;
+            }
+        } catch(RuntimeException unavailable) { if(snapshot!=null) snapshot.recycle();BulletinFactory.of(this).createErrorBulletin(LocaleController.getString(R.string.MonogramWallpaperSaveError)).show();return; }
+        applyingLocalWallpaper=true;if(applyButton1!=null) applyButton1.setEnabled(false);
+        controller.setLocalWallpaper(dialogId,MessagesController.getWallpaperSetting(info),snapshot,null,wallpaper -> {
+            applyingLocalWallpaper=false;setupFinished=true;
+            if(!isFinished) { if(delegate!=null) delegate.didSetNewBackground(wallpaper);finishFragment(); }
+        },() -> {
+            applyingLocalWallpaper=false;if(isFinished) return;if(applyButton1!=null) applyButton1.setEnabled(true);
+            BulletinFactory.of(this).createErrorBulletin(LocaleController.getString(R.string.MonogramWallpaperSaveError)).show();
+        });
+    }
+
     private void applyWallpaperBackground(boolean forBoth) {
+        if(dialogId!=0 && org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { applyLocalChatWallpaper();return; }
         if (dialogId < 0) {
             if (boostsStatus != null && boostsStatus.level < getCustomWallpaperLevelMin()) {
                 getMessagesController().getBoostsController().userCanBoostChannel(dialogId, boostsStatus, canApplyBoost -> {

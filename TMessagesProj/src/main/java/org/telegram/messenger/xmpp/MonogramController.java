@@ -1661,6 +1661,7 @@ public final class MonogramController {
             privateReads.clearPending(departing);readSyncSnapshot=null;readSyncSession=null;
         }
         MonogramNotificationActions.invalidate(account);
+        MonogramChatAppearance.invalidate(account);
         MonogramMediaDrafts.logout(account,departing);
         debugCapture(false);
         linkPreviews.cancel();

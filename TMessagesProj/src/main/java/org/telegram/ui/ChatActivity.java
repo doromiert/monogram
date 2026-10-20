@@ -118,9 +118,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.dynamicanimation.animation.FloatValueHolder;
-import androidx.dynamicanimation.animation.SpringAnimation;
-import androidx.dynamicanimation.animation.SpringForce;
 
 import org.telegram.ui.Wallet.GramWallet;
 import org.telegram.ui.Wallet.WalletEngine2;
@@ -138,6 +135,8 @@ import com.google.zxing.common.detector.MathUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.xmpp.MonogramDoubleTap;
+import org.telegram.messenger.xmpp.MonogramSwipeAction;
+import org.telegram.ui.Components.MonogramSwipeActionsHelper;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -1091,6 +1090,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean postponedScrollIsCanceled;
     private ChatActivityTextSelectionHelper textSelectionHelper;
     private View slidingView;
+    private MonogramSwipeActionsHelper swipeActionsHelper;
 
     private final float[] tmpOverlayPos = new float[2];
     private float[] computeArticleOverlayPos(View overlay) {
@@ -2054,10 +2054,14 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private boolean canDoubleTapMessageAction(MessageObject message,int action) {
+        return canDoubleTapMessageAction(message,action,null);
+    }
+
+    private boolean canDoubleTapMessageAction(MessageObject message,int action,ArrayList<Integer> options) {
         if (message == null || message.messageOwner == null || message.isDateObject || message.isSending() || message.isEditing()
                 || message.isSponsored() || message.isSecretMedia() || message.isExpiredStory()
                 || message.isHiddenSensitive() && !message.isMediaSpoilersRevealed || action == MonogramDoubleTap.DISABLED) return false;
-        ArrayList<Integer> options = doubleTapMessageOptions(message);
+        if(options==null) options=doubleTapMessageOptions(message);
         if (action == MonogramDoubleTap.SAVE) return message.getDialogId() != getUserConfig().getClientUserId() && options.contains(OPTION_FORWARD);
         if (action == MonogramDoubleTap.REPEAT) return !UserObject.isUserSelf(currentUser) && !ChatObject.isChannelAndNotMegaGroup(currentChat)
                 && (currentChat == null || ChatObject.canSendMessages(currentChat)) && options.contains(OPTION_FORWARD);
@@ -2081,6 +2085,84 @@ public class ChatActivity extends BaseFragment implements
                 AlertsCreator.ensurePaidMessageConfirmation(currentAccount,dialog_id,messages.size(),payStars -> forwardMessages(messages,true,false,true,0,payStars));
             }
         } else processSelectedOption(doubleTapMenuOption(action));
+    }
+
+    private String swipeQuickReaction(MessageObject message) {
+        if(message==null || !message.canSetReaction() || message.isSecret() || message.isSponsored() || message.isDateObject
+                || message.isSending() || message.isEditing() || message.isExpiredStory() || message.type==MessageObject.TYPE_JOINED_CHANNEL
+                || isSecretChat() || isInScheduleMode() || actionBar.isActionModeShowed()) return null;
+        if(currentChat!=null && !ChatObject.isChannelAndNotMegaGroup(currentChat) && !ChatObject.canUserDoAction(currentChat,ChatObject.ACTION_SEND_REACTIONS)) return null;
+        String emoji=getMediaDataController().getDoubleTapReaction();
+        // XEP-0444 carries Unicode; a Telegram document ID cannot be sent as a reaction.
+        if(emoji==null || emoji.startsWith("animated_")) return null;
+        if(!getMediaDataController().getReactionsMap().containsKey(emoji)) return null;
+        return dialog_id>=0 || chatInfo!=null && ChatObject.reactionIsAvailable(chatInfo,emoji) ? emoji : null;
+    }
+
+    private ArrayList<MonogramSwipeAction> collectSwipeActions(MessageObject message,boolean replyAllowed) {
+        ArrayList<MonogramSwipeAction> actions=new ArrayList<>();
+        if(message==null || hasTextSelection() || actionBar.isActionModeShowed()) return actions;
+        ArrayList<Integer> options=null;
+        java.util.List<MonogramSwipeAction> enabled=MonogramSwipeAction.enabled(currentAccount);
+        String reaction=enabled.contains(MonogramSwipeAction.REACTION) ? swipeQuickReaction(message) : null;
+        swipeActionsHelper.setReaction(reaction);
+        for(MonogramSwipeAction action:enabled) {
+            if(action==MonogramSwipeAction.REPLY) { if(replyAllowed) actions.add(action); }
+            else if(action==MonogramSwipeAction.REACTION) { if(reaction!=null) actions.add(action); }
+            else {
+                if(options==null) options=doubleTapMessageOptions(message);
+                if(canDoubleTapMessageAction(message,action.actionId,options)) actions.add(action);
+            }
+        }
+        return actions;
+    }
+
+    private void performSwipeAction(MonogramSwipeAction action,MessageObject message) {
+        if(action==null || message==null || !MonogramSwipeAction.enabled(currentAccount).contains(action)) return;
+        if(action==MonogramSwipeAction.REACTION) {
+            String reaction=swipeQuickReaction(message);
+            if(reaction!=null) {
+                ReactionsEffectOverlay.removeCurrent(false);
+                selectReaction(slidingView,message,null,null,0,0,ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(reaction),true,false,false,false);
+            }
+        } else if(action!=MonogramSwipeAction.REPLY) performDoubleTapMessageAction(message,action.actionId);
+        else performSwipeReply(message);
+    }
+
+    private void performSwipeReply(MessageObject message) {
+        final boolean allowReplyOnOpenTopic = canSendMessageToTopic(message);
+        if (
+            bottomChannelButtonsLayout != null && bottomChannelButtonsLayout.getVisibility() == View.VISIBLE && !(bottomOverlayChatWaitsReply && allowReplyOnOpenTopic || message.wasJustSent) ||
+            currentChat != null && (
+                ChatObject.isNotInChat(currentChat) && !isThreadChat() ||
+                ChatObject.isChannel(currentChat) && !ChatObject.canPost(currentChat) && !currentChat.megagroup ||
+                !ChatObject.canSendMessages(currentChat)
+            )
+        ) {
+            if (message.getGroupId() != 0) {
+                MessageObject.GroupedMessages group = getGroup(message.getGroupId());
+                if (group != null && group.captionMessage != null) {
+                    message = group.captionMessage;
+                }
+            }
+            replyingMessageObject = message;
+            Bundle args = new Bundle();
+            args.putBoolean("onlySelect", true);
+            args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
+            args.putBoolean("quote", true);
+            args.putBoolean("reply_to", true);
+            final long author = DialogObject.getPeerDialogId(message.getFromPeer());
+            if (author != 0 && author != getDialogId() && author != getUserConfig().getClientUserId() && author > 0) {
+                args.putLong("reply_to_author", author);
+            }
+            args.putInt("messagesCount", 1);
+            args.putBoolean("canSelectTopics", true);
+            final DialogsActivity fragment = new DialogsActivity(args);
+            fragment.setDelegate(ChatActivity.this);
+            presentFragment(fragment);
+        } else {
+            showFieldPanelForReply(message);
+        }
     }
 
     private class ChatActivityEnterViewDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
@@ -3479,6 +3561,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        if(swipeActionsHelper!=null) swipeActionsHelper.detach();
         AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatGone(dialog_id);
         super.onFragmentDestroy();
@@ -4777,49 +4860,10 @@ public class ChatActivity extends BaseFragment implements
             private float endTrackingX;
             private boolean wasTrackingVibrate;
 
-            private float springMultiplier = 2000f;
-
-            private Paint outlineActionBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            private Paint outlineActionBackgroundDarkenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-            private FloatValueHolder slidingDrawableVisibilityProgress = new FloatValueHolder(0);
-            private SpringAnimation slidingDrawableVisibilitySpring = new SpringAnimation(slidingDrawableVisibilityProgress)
-                    .setMinValue(0f)
-                    .setMaxValue(springMultiplier)
-                    .setSpring(new SpringForce(0)
-                            .setStiffness(SpringForce.STIFFNESS_MEDIUM)
-                            .setDampingRatio(SpringForce.DAMPING_RATIO_NO_BOUNCY))
-                    .addUpdateListener((animation, value, velocity) -> invalidate());
-            private FloatValueHolder slidingFillProgress = new FloatValueHolder(0);
-            private SpringAnimation slidingFillProgressSpring = new SpringAnimation(slidingFillProgress)
-                    .setMinValue(0f)
-                    .setSpring(new SpringForce(0)
-                            .setStiffness(400f)
-                            .setDampingRatio(SpringForce.DAMPING_RATIO_MEDIUM_BOUNCY))
-                    .addUpdateListener((animation, value, velocity) -> invalidate());
-            private FloatValueHolder slidingOuterRingProgress = new FloatValueHolder(0);
-            private SpringAnimation slidingOuterRingSpring = new SpringAnimation(slidingOuterRingProgress)
-                    .setMinValue(0f)
-                    .setSpring(new SpringForce(0)
-                            .setStiffness(200f)
-                            .setDampingRatio(SpringForce.DAMPING_RATIO_NO_BOUNCY))
-                    .addUpdateListener((animation, value, velocity) -> invalidate());
-            private boolean slidingBeyondMax;
-            private Path path = new Path();
-
             private boolean ignoreLayout;
             private boolean invalidated;
 
             int lastH = 0;
-
-            {
-                outlineActionBackgroundPaint.setStyle(Paint.Style.STROKE);
-                outlineActionBackgroundPaint.setStrokeCap(Paint.Cap.ROUND);
-                outlineActionBackgroundPaint.setStrokeWidth(AndroidUtilities.dp(2));
-                outlineActionBackgroundDarkenPaint.setStyle(Paint.Style.STROKE);
-                outlineActionBackgroundDarkenPaint.setStrokeCap(Paint.Cap.ROUND);
-                outlineActionBackgroundDarkenPaint.setStrokeWidth(AndroidUtilities.dp(2));
-            }
 
             @Override
             public void requestLayout() {
@@ -4935,187 +4979,21 @@ public class ChatActivity extends BaseFragment implements
             }
 
             private void drawReplyButton(Canvas canvas) {
-                if (slidingView == null || Thread.currentThread() != Looper.getMainLooper().getThread()) {
-                    return;
-                }
-                Paint chatActionBackgroundPaint = getThemedPaint(Theme.key_paint_chatActionBackground);
-                Paint chatActionBackgroundDarkenPaint = Theme.chat_actionBackgroundGradientDarkenPaint;
-                if (outlineActionBackgroundPaint.getColor() != chatActionBackgroundPaint.getColor()) {
-                    outlineActionBackgroundPaint.setColor(chatActionBackgroundPaint.getColor());
-                }
-                if (outlineActionBackgroundDarkenPaint.getColor() != chatActionBackgroundDarkenPaint.getColor()) {
-                    outlineActionBackgroundDarkenPaint.setColor(chatActionBackgroundDarkenPaint.getColor());
-                }
-                if (outlineActionBackgroundPaint.getShader() != chatActionBackgroundPaint.getShader()) {
-                    outlineActionBackgroundPaint.setShader(chatActionBackgroundPaint.getShader());
-                }
-                if (outlineActionBackgroundDarkenPaint.getShader() != chatActionBackgroundDarkenPaint.getShader()) {
-                    outlineActionBackgroundDarkenPaint.setShader(chatActionBackgroundDarkenPaint.getShader());
-                }
-
-                float fillProgress = slidingFillProgress.getValue() / springMultiplier;
-                int wasDarkenColor = outlineActionBackgroundDarkenPaint.getColor();
-
-                if (fillProgress > 1) {
-                    slidingBeyondMax = true;
-                }
-
-                float translationX = getSlidingNonAnimationTranslationX(false);
-                if (slidingDrawableVisibilityProgress.getValue() == 0) {
-                    slidingFillProgressSpring.cancel();
-                    slidingFillProgressSpring.getSpring().setFinalPosition(0);
-                    slidingFillProgress.setValue(0f);
-                    slidingOuterRingSpring.cancel();
-                    slidingOuterRingSpring.getSpring().setFinalPosition(0);
-                    slidingOuterRingProgress.setValue(0f);
-                    slidingBeyondMax = false;
-                }
-                float progress;
-                if (slidingFillProgressSpring.getSpring().getFinalPosition() != springMultiplier) {
-                    progress = androidx.core.math.MathUtils.clamp((-translationX - AndroidUtilities.dp(20)) / AndroidUtilities.dp(30), 0, 1);
-                } else {
-                    progress = 1f;
-                }
-
-                if (progress == 1f && slidingFillProgressSpring.getSpring().getFinalPosition() != springMultiplier) {
-                    slidingFillProgressSpring.getSpring().setFinalPosition(springMultiplier);
-                    slidingFillProgressSpring.start();
-
-                    slidingOuterRingSpring.getSpring().setFinalPosition(springMultiplier);
-                    slidingOuterRingSpring.start();
-                }
-
-                boolean visible = translationX <= -AndroidUtilities.dp(20);
-                float endVisibleValue = visible ? springMultiplier : 0;
-                if (endVisibleValue != slidingDrawableVisibilitySpring.getSpring().getFinalPosition()) {
-                    slidingDrawableVisibilitySpring.getSpring().setFinalPosition(endVisibleValue);
-                    if (!slidingDrawableVisibilitySpring.isRunning()) {
-                        slidingDrawableVisibilitySpring.start();
+                if(slidingView==null || swipeActionsHelper==null) return;
+                MessageObject message=getSlidingMessageObject();
+                float offset=getSlidingNonAnimationTranslationX(false);
+                float right=slidingView.getRight();
+                if(slidingView instanceof ChatMessageCell) {
+                    ChatMessageCell cell=(ChatMessageCell)slidingView;
+                    right=cell.getLeft()+cell.getBackgroundDrawableRight();
+                    MessageObject.GroupedMessages group=cell.getCurrentMessagesGroup();
+                    if(group!=null) for(int i=0;i<getChildCount();i++) {
+                        View child=getChildAt(i);
+                        if(child instanceof ChatMessageCell && ((ChatMessageCell)child).getCurrentMessagesGroup()==group)
+                            right=Math.max(right,child.getLeft()+((ChatMessageCell)child).getBackgroundDrawableRight());
                     }
                 }
-
-                float iconProgress = slidingDrawableVisibilityProgress.getValue() / springMultiplier;
-                MessageObject slidingMsg = getSlidingMessageObject();
-                float x = getMeasuredWidth() + translationX * (slidingMsg != null && slidingMsg.isOut() ? 0.5f : 1f);
-                float y = slidingView.getTop() + slidingView.getMeasuredHeight() / 2f;
-                float scale = slidingBeyondMax ? fillProgress : iconProgress;
-
-                float clearScale = slidingBeyondMax ? 0f : 1f - fillProgress;
-
-                boolean isDark = ColorUtils.calculateLuminance(getThemedColor(Theme.key_windowBackgroundWhite)) <= 0.5f;
-                if (iconProgress != 0) {
-                    AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * scale + outlineActionBackgroundPaint.getStrokeWidth() / 2f), (int) (y - AndroidUtilities.dp(16) * scale + outlineActionBackgroundPaint.getStrokeWidth() / 2f), (int) (x + AndroidUtilities.dp(16) * scale - outlineActionBackgroundPaint.getStrokeWidth() / 2f), (int) (y + AndroidUtilities.dp(16) * scale - outlineActionBackgroundPaint.getStrokeWidth() / 2f));
-                    Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-                    if (fillProgress == 0) {
-                        int outlineAlpha = outlineActionBackgroundPaint.getAlpha();
-                        outlineActionBackgroundPaint.setAlpha((int) (outlineAlpha * iconProgress));
-                        canvas.drawArc(AndroidUtilities.rectTmp, -90, 360 * progress, false, outlineActionBackgroundPaint);
-                        outlineActionBackgroundPaint.setAlpha(outlineAlpha);
-
-                        if (themeDelegate.hasGradientService()) {
-                            outlineAlpha = outlineActionBackgroundDarkenPaint.getAlpha();
-                            if (isDark) {
-                                outlineActionBackgroundDarkenPaint.setColor(Color.WHITE);
-                            }
-                            outlineActionBackgroundDarkenPaint.setAlpha((int) (outlineAlpha * iconProgress));
-                            canvas.drawArc(AndroidUtilities.rectTmp, -90, 360 * progress, false, outlineActionBackgroundDarkenPaint);
-                        }
-                    }
-                }
-                AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * scale), (int) (y - AndroidUtilities.dp(16) * scale), (int) (x + AndroidUtilities.dp(16) * scale), (int) (y + AndroidUtilities.dp(16) * scale));
-                Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-                path.rewind();
-                path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * scale, AndroidUtilities.dp(16) * scale, Path.Direction.CW);
-
-                int wasAlpha = chatActionBackgroundPaint.getAlpha();
-                chatActionBackgroundPaint.setAlpha((int) (iconProgress * 0.6f * progress * wasAlpha));
-                canvas.drawPath(path, chatActionBackgroundPaint);
-                chatActionBackgroundPaint.setAlpha(wasAlpha);
-
-                if (themeDelegate.hasGradientService()) {
-                    wasAlpha = Theme.chat_actionBackgroundGradientDarkenPaint.getAlpha();
-                    if (isDark) {
-                        Theme.chat_actionBackgroundGradientDarkenPaint.setColor(Color.WHITE);
-                    }
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha((int) (iconProgress * 0.6f * progress * wasAlpha));
-                    canvas.drawPath(path, Theme.chat_actionBackgroundGradientDarkenPaint);
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha(wasAlpha);
-                }
-
-                if (clearScale != 0f) {
-                    AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * clearScale), (int) (y - AndroidUtilities.dp(16) * clearScale), (int) (x + AndroidUtilities.dp(16) * clearScale), (int) (y + AndroidUtilities.dp(16) * clearScale));
-                    path.rewind();
-                    path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16), AndroidUtilities.dp(16), Path.Direction.CW);
-
-                    canvas.save();
-                    canvas.clipPath(path, Region.Op.DIFFERENCE);
-                }
-
-                AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * scale), (int) (y - AndroidUtilities.dp(16) * scale), (int) (x + AndroidUtilities.dp(16) * scale), (int) (y + AndroidUtilities.dp(16) * scale));
-                Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-                path.rewind();
-                path.addRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * scale, AndroidUtilities.dp(16) * scale, Path.Direction.CW);
-
-                wasAlpha = chatActionBackgroundPaint.getAlpha();
-                chatActionBackgroundPaint.setAlpha((int) (iconProgress * 0.4f * wasAlpha));
-                canvas.drawPath(path, chatActionBackgroundPaint);
-                chatActionBackgroundPaint.setAlpha(wasAlpha);
-
-                if (themeDelegate.hasGradientService()) {
-                    wasAlpha = Theme.chat_actionBackgroundGradientDarkenPaint.getAlpha();
-                    if (isDark) {
-                        Theme.chat_actionBackgroundGradientDarkenPaint.setColor(Color.WHITE);
-                    }
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha((int) (iconProgress * 0.4f * wasAlpha));
-                    canvas.drawPath(path, Theme.chat_actionBackgroundGradientDarkenPaint);
-                    Theme.chat_actionBackgroundGradientDarkenPaint.setAlpha(wasAlpha);
-                }
-                if (clearScale != 0f) {
-                    canvas.restore();
-                }
-
-                float outerRingProgress = slidingOuterRingProgress.getValue() / springMultiplier;
-                if (outerRingProgress != 0 && outerRingProgress != 1) {
-                    float outScale = 1f + outerRingProgress;
-
-                    float wasWidth = outlineActionBackgroundPaint.getStrokeWidth();
-                    float width = (1f - outerRingProgress) * wasWidth;
-                    if (width != 0f) {
-                        AndroidUtilities.rectTmp.set((int) (x - AndroidUtilities.dp(16) * outScale + width), (int) (y - AndroidUtilities.dp(16) * outScale + width), (int) (x + AndroidUtilities.dp(16) * outScale - width), (int) (y + AndroidUtilities.dp(16) * outScale - width));
-                        Theme.applyServiceShaderMatrix(getMeasuredWidth(), AndroidUtilities.displaySize.y, 0, getY() + AndroidUtilities.rectTmp.top);
-
-                        wasAlpha = outlineActionBackgroundPaint.getAlpha();
-                        outlineActionBackgroundPaint.setAlpha((int) (wasAlpha * iconProgress));
-
-                        outlineActionBackgroundPaint.setStrokeWidth(width);
-                        canvas.drawRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * outScale, AndroidUtilities.dp(16) * outScale, outlineActionBackgroundPaint);
-                        outlineActionBackgroundPaint.setStrokeWidth(wasWidth);
-
-                        outlineActionBackgroundPaint.setAlpha(wasAlpha);
-
-                        if (themeDelegate.hasGradientService()) {
-                            wasAlpha = outlineActionBackgroundDarkenPaint.getAlpha();
-                            if (isDark) {
-                                outlineActionBackgroundDarkenPaint.setColor(Color.WHITE);
-                            }
-                            outlineActionBackgroundDarkenPaint.setAlpha((int) (wasAlpha * iconProgress));
-
-                            outlineActionBackgroundDarkenPaint.setStrokeWidth(width);
-                            canvas.drawRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.dp(16) * outScale, AndroidUtilities.dp(16) * outScale, outlineActionBackgroundDarkenPaint);
-                            outlineActionBackgroundDarkenPaint.setStrokeWidth(wasWidth);
-                        }
-                    }
-                }
-
-                int alpha = (int) (iconProgress * 0xFF);
-                Drawable replyIconDrawable = getThemedDrawable(Theme.key_drawable_replyIcon);
-                replyIconDrawable.setAlpha(alpha);
-                replyIconDrawable.setBounds((int) (x - replyIconDrawable.getIntrinsicWidth() / 2 * scale), (int) (y - replyIconDrawable.getIntrinsicHeight() / 2 * scale), (int) (x + replyIconDrawable.getIntrinsicWidth() / 2 * scale), (int) (y + replyIconDrawable.getIntrinsicHeight() / 2 * scale));
-                replyIconDrawable.draw(canvas);
-                replyIconDrawable.setAlpha(255);
-
-                outlineActionBackgroundDarkenPaint.setColor(wasDarkenColor);
-                chatActionBackgroundDarkenPaint.setColor(wasDarkenColor);
+                swipeActionsHelper.draw(canvas,offset,message!=null && message.isOut(),slidingView.getTop()+slidingView.getMeasuredHeight()/2f,right+offset);
             }
 
             private void processTouchEvent(MotionEvent e) {
@@ -5131,8 +5009,9 @@ public class ChatActivity extends BaseFragment implements
                         }
                         slidingView = view;
                         MessageObject message = getSlidingMessageObject();
+                        if(message==null) { slidingView=null;return; }
                         boolean allowReplyOnOpenTopic = canSendMessageToTopic(message);
-                        if (
+                        boolean replyAllowed = !(
                             chatMode != 0 && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SUGGESTIONS && (chatMode != MODE_SAVED || threadMessageId != getUserConfig().getClientUserId()) ||
                             threadMessageObjects != null && threadMessageObjects.contains(message) ||
                             getMessageType(message) == 1 && (message.getDialogId() == mergeDialogId || message.needDrawBluredPreview()) ||
@@ -5140,7 +5019,9 @@ public class ChatActivity extends BaseFragment implements
                             currentChat != null && ChatObject.isForum(currentChat) && !allowReplyOnOpenTopic ||
                             hasTextSelection() ||
                             message.isEphemeral() && message.isOut()
-                        ) {
+                        );
+                        swipeActionsHelper.start(collectSwipeActions(message,replyAllowed));
+                        if(swipeActionsHelper.size()==0) {
                             slidingViewSetOffset(0);
                             slidingView = null;
                             return;
@@ -5177,6 +5058,7 @@ public class ChatActivity extends BaseFragment implements
                             wasTrackingVibrate = false;
                         }
                         slidingViewSetOffset(dx);
+                        swipeActionsHelper.update(dx,e.getX(),e.getY());
                         MessageObject messageObject = getSlidingMessageObject();
                         if (messageObject != null && (messageObject.isRoundVideo() || messageObject.isVideo())) {
                             updateTextureViewPosition(false, false);
@@ -5187,41 +5069,10 @@ public class ChatActivity extends BaseFragment implements
                         invalidate();
                     }
                 } else if (slidingView != null && (e == null || e.getPointerId(0) == startedTrackingPointerId && (e.getAction() == MotionEvent.ACTION_CANCEL || e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_POINTER_UP))) {
-                    if (e != null && e.getAction() != MotionEvent.ACTION_CANCEL && Math.abs(getSlidingNonAnimationTranslationX(false)) >= AndroidUtilities.dp(50)) {
+                    // Selection/sidebar offsets are not swipes and must never trigger an action.
+                    if (startedTrackingSlidingView && e != null && e.getAction() != MotionEvent.ACTION_CANCEL && slidingViewGetOffsetX() <= -AndroidUtilities.dp(50)) {
                         MessageObject message = getSlidingMessageObject();
-                        final boolean allowReplyOnOpenTopic = canSendMessageToTopic(message);
-                        if (
-                            bottomChannelButtonsLayout != null && bottomChannelButtonsLayout.getVisibility() == View.VISIBLE && !(bottomOverlayChatWaitsReply && allowReplyOnOpenTopic || message.wasJustSent) ||
-                            currentChat != null && (
-                                ChatObject.isNotInChat(currentChat) && !isThreadChat() ||
-                                ChatObject.isChannel(currentChat) && !ChatObject.canPost(currentChat) && !currentChat.megagroup ||
-                                !ChatObject.canSendMessages(currentChat)
-                            )
-                        ) {
-                            if (message.getGroupId() != 0) {
-                                MessageObject.GroupedMessages group = getGroup(message.getGroupId());
-                                if (group != null && group.captionMessage != null) {
-                                    message = group.captionMessage;
-                                }
-                            }
-                            replyingMessageObject = message;
-                            Bundle args = new Bundle();
-                            args.putBoolean("onlySelect", true);
-                            args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
-                            args.putBoolean("quote", true);
-                            args.putBoolean("reply_to", true);
-                            final long author = DialogObject.getPeerDialogId(message.getFromPeer());
-                            if (author != 0 && author != getDialogId() && author != getUserConfig().getClientUserId() && author > 0) {
-                                args.putLong("reply_to_author", author);
-                            }
-                            args.putInt("messagesCount", 1);
-                            args.putBoolean("canSelectTopics", true);
-                            final DialogsActivity fragment = new DialogsActivity(args);
-                            fragment.setDelegate(ChatActivity.this);
-                            presentFragment(fragment);
-                        } else {
-                            showFieldPanelForReply(getSlidingMessageObject());
-                        }
+                        performSwipeAction(swipeActionsHelper.getSelected(),message);
                     }
                     endTrackingX = slidingViewGetOffsetX();
                     if (endTrackingX == 0) {
@@ -6550,6 +6401,9 @@ public class ChatActivity extends BaseFragment implements
                 return super.createAccessibilityNodeInfo();
             }
         };
+        if(swipeActionsHelper!=null) swipeActionsHelper.detach();
+        slidingViewSetOffset(0);slidingView=null;maybeStartTrackingSlidingView=startedTrackingSlidingView=false;
+        swipeActionsHelper=new MonogramSwipeActionsHelper(chatListView,currentAccount,themeDelegate);
         chatListView.addEdgeEffectListener(() -> invalidateMergedVisibleBlurredPositionsAndSources(BLUR_INVALIDATE_FLAG_SCROLL | BLUR_INVALIDATE_FLAG_CLIP));
         if (currentEncryptedChat != null) {
             chatListView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
@@ -43725,7 +43579,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void showChatThemeBottomSheet() {
-        if (currentChat != null) {
+        if (currentChat != null && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
             if (ChatObject.isMegagroup(currentChat)) {
                 if (ChatObject.hasAdminRights(currentChat)) {
                     presentFragment(new GroupColorActivity(getDialogId()).setOnApplied(ChatActivity.this));
@@ -43969,6 +43823,7 @@ public class ChatActivity extends BaseFragment implements
 
         public boolean isThemeChangeAvailable(boolean canEdit) {
             return currentEncryptedChat == null && (
+                org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ||
                 (!canEdit /*|| currentChat != null && ChatObject.isChannelAndNotMegaGroup(currentChat) && ChatObject.canChangeChatInfo(currentChat)*/) ||
                 currentChat == null && currentUser != null && !currentUser.bot
             );

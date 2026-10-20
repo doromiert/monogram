@@ -132,6 +132,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
     public ChatThemeBottomSheet(final ChatActivity chatActivity, ChatActivity.ThemeDelegate themeDelegate) {
         super(chatActivity.getParentActivity(), true, themeDelegate);
         this.chatActivity = chatActivity;
+        currentAccount=chatActivity.getCurrentAccount();
         this.themeDelegate = themeDelegate;
         this.originalTheme = themeDelegate.getCurrentTheme();
         this.currentWallpaper = themeDelegate.getCurrentWallpaper();
@@ -329,6 +330,13 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
             cancelOrResetTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             cancelOrResetTextView.setOnClickListener(v -> {
                 if (currentWallpaper != null) {
+                    if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                        if(!ChatThemeController.getInstance(currentAccount).resetLocalWallpaper(chatActivity.getDialogId(),true)) {
+                            BulletinFactory.of(chatActivity).createErrorBulletin(LocaleController.getString(R.string.MonogramWallpaperSaveError)).show();return;
+                        }
+                        isApplyClicked=true;currentWallpaper=null;
+                        themeDelegate.setCurrentTheme(originalTheme,null,true,originalIsDark);dismiss();return;
+                    }
                     currentWallpaper = null;
                     dismiss();
                     ChatThemeController.getInstance(currentAccount).clearWallpaper(chatActivity.getDialogId(), true);
@@ -418,7 +426,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                     applyTextView.setText(LocaleController.getString(R.string.ChatResetTheme));
                 } else {
                     applyTextView.setText(LocaleController.getString(R.string.ChatApplyTheme));
-                    if (chat != null && boostsStatus != null && boostsStatus.level < chatActivity.getMessagesController().channelWallpaperLevelMin) {
+                    if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && chat != null && boostsStatus != null && boostsStatus.level < chatActivity.getMessagesController().channelWallpaperLevelMin) {
                         showSubText = true;
                         SpannableStringBuilder text = new SpannableStringBuilder("l");
                         if (lockSpan == null) {
@@ -453,6 +461,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
     private boolean checkingBoostsLevel = false, checkedBoostsLevel = false;
     private TL_stories.TL_premium_boostsStatus boostsStatus;
     private void checkBoostsLevel() {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { checkedBoostsLevel=true;checkingBoostsLevel=false;return; }
         if (chatActivity == null || checkingBoostsLevel || checkedBoostsLevel || boostsStatus != null) {
             return;
         }
@@ -1005,7 +1014,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
         if (checkingBoostsLevel) {
             return;
         }
-        if (boostsStatus != null && boostsStatus.level < chatActivity.getMessagesController().channelWallpaperLevelMin) {
+        if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && boostsStatus != null && boostsStatus.level < chatActivity.getMessagesController().channelWallpaperLevelMin) {
             chatActivity.getMessagesController().getBoostsController().userCanBoostChannel(chatActivity.getDialogId(), boostsStatus, canApplyBoost -> {
                 if (getContext() == null) {
                     return;
@@ -1035,8 +1044,14 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                     () -> applySelectedTheme(true));
                 return;
             }
-            ChatThemeController.getInstance(currentAccount).clearWallpaper(chatActivity.getDialogId(), false);
-            ChatThemeController.getInstance(currentAccount).setDialogTheme(chatActivity.getDialogId(), tlChatTheme, true);
+            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                if(!ChatThemeController.getInstance(currentAccount).setLocalDialogTheme(chatActivity.getDialogId(),tlChatTheme)) {
+                    BulletinFactory.of(chatActivity).createErrorBulletin(LocaleController.getString(R.string.MonogramWallpaperSaveError)).show();return;
+                }
+            } else {
+                ChatThemeController.getInstance(currentAccount).clearWallpaper(chatActivity.getDialogId(), false);
+                ChatThemeController.getInstance(currentAccount).setDialogTheme(chatActivity.getDialogId(), tlChatTheme, true);
+            }
             TLRPC.WallPaper wallpaper = hasChanges() ? null : themeDelegate.getCurrentWallpaper();
             if (!chatTheme.showAsDefaultStub) {
                 themeDelegate.setCurrentTheme(chatTheme, wallpaper, true, originalIsDark);
@@ -1046,7 +1061,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
             isApplyClicked = true;
 
             TLRPC.User user = chatActivity.getCurrentUser();
-            if (user != null && !user.self) {
+            if (user != null && !user.self && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
                 final boolean themeDisabled = chatTheme.showAsDefaultStub;
                 TLRPC.Document document = chatTheme.getEmojiAnimatedSticker();
                 StickerSetBulletinLayout layout = new StickerSetBulletinLayout(getContext(), null, StickerSetBulletinLayout.TYPE_EMPTY, document, chatActivity.getResourceProvider());
@@ -1374,6 +1389,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                             themePreviewActivity.setInitialModes(false, false, .20f);
                             themePreviewActivity.setDialogId(dialogId);
                             themePreviewActivity.setDelegate(wallPaper -> {
+                                applyLocalPreviewWallpaper(wallPaper);
                                 chatAttachAlert.dismissInternal();
                                 if (onSet != null) {
                                     onSet.run(wallPaper);
@@ -1406,6 +1422,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                 wallpaperActivity.setOnSwitchDayNightDelegate(toggleTheme);
                 wallpaperActivity.setDialogId(dialogId);
                 wallpaperActivity.setDelegate(wallPaper -> {
+                    applyLocalPreviewWallpaper(wallPaper);
                     chatAttachAlert.dismissInternal();
                     if (onSet != null) {
                         onSet.run(wallPaper);
@@ -1424,6 +1441,12 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
         chatAttachAlert.show();
     }
 
+
+    private void applyLocalPreviewWallpaper(TLRPC.WallPaper wallpaper) {
+        if(!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) return;
+        isApplyClicked=true;currentWallpaper=wallpaper;
+        themeDelegate.setCurrentTheme(originalTheme,wallpaper,true,originalIsDark);
+    }
 
     private void openGalleryForBackground() {
         chatAttachAlert = new ChatAttachAlert(chatActivity.getParentActivity(), chatActivity, false, false, false, chatActivity.getResourceProvider());
@@ -1462,6 +1485,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                                     return true;
                                 }
                             };
+                            themePreviewActivity.setCurrentAccount(currentAccount);
                             themePreviewActivity.boostsStatus = boostsStatus;
                             themePreviewActivity.setInitialModes(false, false, .20f);
                             themePreviewActivity.setDialogId(chatActivity.getDialogId());
@@ -1485,6 +1509,7 @@ public class ChatThemeBottomSheet extends BottomSheet implements NotificationCen
                         return true;
                     }
                 };
+                wallpaperActivity.setCurrentAccount(currentAccount);
                 wallpaperActivity.boostsStatus = boostsStatus;
                 wallpaperActivity.setDialogId(chatActivity.getDialogId());
                 wallpaperActivity.setDelegate(wallPaper -> {

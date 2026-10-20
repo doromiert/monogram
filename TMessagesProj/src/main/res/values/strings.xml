@@ -11610,4 +11610,23 @@
     <string name="MonogramPlaceSearchHint">Enter a place or address, then press Search. Only your submitted search text is sent to Photon; your GPS location is not sent.</string>
     <string name="MonogramPlaceSearchEmpty">No matching places. Try a more specific place name or address.</string>
     <string name="MonogramPlaceAttribution">Place search: Photon / Komoot · © OpenStreetMap contributors</string>
+    <string name="MonogramSwipeActionsTitle">Message swipe actions</string>
+    <string name="MonogramSwipeGestures">Gestures</string>
+    <string name="MonogramSwipeEntryInfo">Choose and reorder the actions available when swiping a message.</string>
+    <string name="MonogramSwipeEnabled">Enabled actions</string>
+    <string name="MonogramSwipeAvailable">Available actions</string>
+    <string name="MonogramSwipeSelection">Selection</string>
+    <string name="MonogramSwipeLoop">Loop through actions</string>
+    <string name="MonogramSwipeReverse">Reverse selection direction</string>
+    <string name="MonogramSwipeSelectionInfo">Loop continues from the last action to the first. Reverse changes the direction used to move between actions.</string>
+    <string name="MonogramSwipeReorderInfo">Touch and hold an enabled action to drag it into order. Tap to disable it.</string>
+    <string name="MonogramSwipeAvailableInfo">Tap an action to enable it. Reorder enabled actions to choose their swipe order.</string>
+    <string name="MonogramSwipeDisabledInfo">Message swiping is disabled. Enable an action below to turn it on.</string>
+    <string name="MonogramSwipeMoveUp">Move action up</string>
+    <string name="MonogramSwipeMoveDown">Move action down</string>
+    <string name="MonogramSwipePreviewInfo">Try swiping the message left, then move your finger up or down to select an action. This preview does not send, edit or delete messages.</string>
+    <string name="MonogramSwipePreviewMessage">Try a swipe on this message</string>
+    <string name="MonogramSwipePreviewDisabled">Enable an action to try the gesture</string>
+    <string name="MonogramApplyWallpaperLocally">Apply on this device</string>
+    <string name="MonogramWallpaperSaveError">Could not save the chat wallpaper. Keep the preview open and try again.</string>
 </resources>

@@ -79,8 +79,8 @@ nullable debug-row pattern. Wallet-only TonConnect notifications are suppressed
 and any notification left by an earlier version is cancelled during notification
 controller initialization; ordinary XMPP message notifications are unchanged.
 
-Four pure synthetic URI regression fixtures are prepared in
-`MonogramPurchaseLinksTest`; they have not been run. They check the monetary
+Four pure synthetic URI regression fixtures in
+`MonogramPurchaseLinksTest` passed in the 0.2.121 release gate. They check the monetary
 aliases, preserved ordinary links, settings route boundaries and encoded/malformed
 query handling. No URI is opened and no account/server/network action occurs.
 The stock compiled payment implementations and their Gradle dependencies still
