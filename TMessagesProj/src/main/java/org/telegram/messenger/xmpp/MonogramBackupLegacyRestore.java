@@ -40,6 +40,7 @@ final class MonogramBackupLegacyRestore {
             }
             // Other historical own devices remain in recovery only; never open old outgoing chains.
             fresh.delete("records","device<>? OR kind=?",new String[]{Integer.toString(device),Integer.toString(LegacyOmemoRecords.SESSION)});
+            fresh.delete("retired_records",null,null); // All retired peer ratchets belong to the receive-only copy, never duplicate mutable archives.
             if(!bootstrap.mkdir()) throw new IOException("Could not create isolated empty bootstrap.");
             MonogramSignalStore store=new MonogramSignalStore(new SignalFileBasedOmemoStore(bootstrap),active);
             MonogramLegacyRestore.freshKeys(store,new OmemoDevice(JidCreate.entityBareFrom(owner),device),System.currentTimeMillis());

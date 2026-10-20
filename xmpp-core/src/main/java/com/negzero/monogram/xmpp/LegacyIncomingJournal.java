@@ -102,6 +102,12 @@ public final class LegacyIncomingJournal {
         byte[] value=new byte[20];new SecureRandom().nextBytes(value);
         java.nio.ByteBuffer.wrap(value).putInt(HEADER);tx.save(LegacyOmemoRecords.INCOMING,"",0,value);
     }
+    /** Logout revokes retained plaintext obligations without deleting retired cryptographic state. */
+    public static void rotateRetired(LegacyOmemoRecords tx,LegacyOmemoRecords.Retired lineage) throws Exception {
+        for(int id:tx.retiredIds(lineage,LegacyOmemoRecords.INCOMING)) tx.saveRetired(lineage,LegacyOmemoRecords.INCOMING,id,null);
+        byte[] value=new byte[20];new SecureRandom().nextBytes(value);
+        java.nio.ByteBuffer.wrap(value).putInt(HEADER);tx.saveRetired(lineage,LegacyOmemoRecords.INCOMING,0,value);
+    }
     private static byte[] header(byte[] value) throws IOException {
         if(value==null || value.length!=20 || java.nio.ByteBuffer.wrap(value).getInt()!=HEADER) throw new IOException("Invalid legacy incoming journal header");
         return Arrays.copyOfRange(value,4,20);
@@ -253,6 +259,24 @@ public final class LegacyIncomingJournal {
         Received result=received(saved,decrypted,context);byte[] bytes=encode(saved);
         if(total+bytes.length>MAX_BYTES) throw new FullException("Legacy incoming journal byte capacity exceeded");
         tx.save(LegacyOmemoRecords.INCOMING,"",slot,bytes);return result;
+    }
+    /** Same SQL transaction as peer rotation: preserve undelivered bodies, discard obsolete crypto obligations. */
+    public void retirePeer(LegacyOmemoRecords tx,OmemoDevice peer,Map<String,LegacyOmemoRecords.Retired> lineages) throws Exception {
+        check(tx);identity();
+        for(int slot:tx.ids(LegacyOmemoRecords.INCOMING,"")) if(slot!=0) {
+            Saved saved=decode(tx.load(LegacyOmemoRecords.INCOMING,"",slot),slot);
+            if(!peer.getJid().toString().equals(saved.author) || peer.getDeviceId()!=saved.senderDevice) continue;
+            if(!saved.accepted) {
+                LegacyOmemoRecords.Retired lineage=lineages.get(saved.fingerprint);
+                if(lineage==null) throw new GeneralSecurityException("Pending peer history lacks a recoverable identity lineage");
+                byte[] value=tx.loadRetired(lineage,LegacyOmemoRecords.INCOMING,0);
+                if(value==null) { rotateRetired(tx,lineage);value=tx.loadRetired(lineage,LegacyOmemoRecords.INCOMING,0); }
+                saved.token=new Token(header(value),saved.token.digest,slot);saved.completionXml=null;saved.replenish=false;
+                if(tx.loadRetired(lineage,LegacyOmemoRecords.INCOMING,slot)!=null) throw new GeneralSecurityException("Retired pending slot already exists");
+                tx.saveRetired(lineage,LegacyOmemoRecords.INCOMING,slot,encode(saved));
+            }
+            tx.save(LegacyOmemoRecords.INCOMING,"",slot,null);
+        }
     }
     public List<Received> pending() throws Exception {
         try(LegacyOmemoRecords tx=store.begin(own)) {

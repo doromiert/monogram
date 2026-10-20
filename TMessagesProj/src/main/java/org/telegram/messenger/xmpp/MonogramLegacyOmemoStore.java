@@ -17,6 +17,7 @@ import org.telegram.messenger.ApplicationLoader;
 
 /** Application-wide transactional overlay; existing Signal files remain a read-only bootstrap. */
 final class MonogramLegacyOmemoStore extends SQLiteOpenHelper implements LegacyOmemoRecords.Factory {
+    static final int VERSION=2;
     private static MonogramLegacyOmemoStore instance;
     private final ThreadLocal<ArrayDeque<Transaction>> transactions=new ThreadLocal<ArrayDeque<Transaction>>() {
         @Override protected ArrayDeque<Transaction> initialValue() { return new ArrayDeque<>(); }
@@ -29,12 +30,18 @@ final class MonogramLegacyOmemoStore extends SQLiteOpenHelper implements LegacyO
         }
         return instance;
     }
-    MonogramLegacyOmemoStore(Context context,String name) { super(context,name,null,1); }
+    MonogramLegacyOmemoStore(Context context,String name) { super(context,name,null,VERSION); }
     @Override public void onConfigure(SQLiteDatabase db) { db.execSQL("PRAGMA synchronous=FULL"); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE records(owner TEXT NOT NULL,device INTEGER NOT NULL CHECK(device BETWEEN 1 AND 2147483647),kind INTEGER NOT NULL,peer TEXT NOT NULL,id INTEGER NOT NULL,value BLOB NOT NULL,PRIMARY KEY(owner,device,kind,peer,id))");
+        createRetired(db);
     }
-    @Override public void onUpgrade(SQLiteDatabase db,int from,int to) { throw new IllegalStateException("Unknown legacy OMEMO migration"); }
+    static void createRetired(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE retired_records(owner TEXT NOT NULL,device INTEGER NOT NULL CHECK(device BETWEEN 1 AND 2147483647),peer TEXT NOT NULL,peer_device INTEGER NOT NULL CHECK(peer_device BETWEEN 1 AND 2147483647),fingerprint TEXT NOT NULL,generation TEXT NOT NULL,kind INTEGER NOT NULL,id INTEGER NOT NULL,value BLOB NOT NULL,PRIMARY KEY(owner,device,peer,peer_device,fingerprint,generation,kind,id))");
+    }
+    @Override public void onUpgrade(SQLiteDatabase db,int from,int to) {
+        if(from==1 && to==2) createRetired(db);else throw new IllegalStateException("Unknown legacy OMEMO migration");
+    }
     private static String owner(String account) throws Exception {
         if(account==null || account.indexOf('/')>=0) throw new IllegalArgumentException("Invalid legacy OMEMO account");
         return JidCreate.entityBareFrom(account).toString();
@@ -61,7 +68,9 @@ final class MonogramLegacyOmemoStore extends SQLiteOpenHelper implements LegacyO
         String owner=owner(account);SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
             for(int device:localDevices(owner)) try(LegacyOmemoRecords tx=begin(owner,device)) {
-                LegacyIncomingJournal.rotate(tx);tx.commit();
+                LegacyIncomingJournal.rotate(tx);
+                for(LegacyOmemoRecords.Retired lineage:tx.retired()) LegacyIncomingJournal.rotateRetired(tx,lineage);
+                tx.commit();
             }
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
@@ -128,8 +137,45 @@ final class MonogramLegacyOmemoStore extends SQLiteOpenHelper implements LegacyO
                 row.put("peer",peer);row.put("id",id);row.put("value",value.clone());db.replaceOrThrow("records",null,row);
             }
         }
+        private String[] retiredKey(LegacyOmemoRecords.Retired lineage,int kind,int id) throws Exception {
+            active();new LegacyOmemoRecords.Retired(lineage.peer,lineage.device,lineage.fingerprint,lineage.generation);
+            if(kind!=IDENTITY_PAIR && kind!=IDENTITY && kind!=SESSION && kind!=RETIRED_ORIGINAL_SESSION && kind!=INCOMING
+                    || (kind==INCOMING ? id<0 || id>LegacyIncomingJournal.MAX_ENTRIES : id!=0)) throw new IllegalArgumentException("Invalid retired receive record");
+            return new String[]{owner,Integer.toString(device),lineage.peer,Integer.toString(lineage.device),lineage.fingerprint,lineage.generation,Integer.toString(kind),Integer.toString(id)};
+        }
+        private static final String RETIRED_KEY="owner=? AND device=? AND peer=? AND peer_device=? AND fingerprint=? AND generation=? AND kind=? AND id=?";
+        @Override public java.util.List<LegacyOmemoRecords.Retired> retired() throws Exception {
+            active();java.util.List<LegacyOmemoRecords.Retired> result=new java.util.ArrayList<>();
+            try(Cursor rows=db.rawQuery("SELECT peer,peer_device,fingerprint,generation FROM retired_records WHERE owner=? AND device=? GROUP BY peer,peer_device,fingerprint,generation ORDER BY max(rowid) DESC",new String[]{owner,Integer.toString(device)})) {
+                while(rows.moveToNext()) result.add(new LegacyOmemoRecords.Retired(rows.getString(0),rows.getInt(1),rows.getString(2),rows.getString(3)));
+            }return result;
+        }
+        @Override public byte[] loadRetired(LegacyOmemoRecords.Retired lineage,int kind,int id) throws Exception {
+            String[] args=retiredKey(lineage,kind,id);long row;
+            try(Cursor rows=db.rawQuery("SELECT rowid FROM retired_records WHERE "+RETIRED_KEY,args)) { if(!rows.moveToFirst()) return null;row=rows.getLong(0); }
+            byte[] value=MonogramBackupDatabase.blob(db,"retired_records","value",row);
+            int limit=kind==INCOMING?LegacyIncomingJournal.MAX_ENTRY_BYTES:LegacyOmemoRecords.MAX_RECORD_BYTES;
+            if(value.length==0 || value.length>limit) throw new IllegalStateException("Invalid retired receive record size");return value;
+        }
+        @Override public int[] retiredIds(LegacyOmemoRecords.Retired lineage,int kind) throws Exception {
+            String[] args=retiredKey(lineage,kind,0);try(Cursor rows=db.rawQuery("SELECT id FROM retired_records WHERE owner=? AND device=? AND peer=? AND peer_device=? AND fingerprint=? AND generation=? AND kind=? ORDER BY id",java.util.Arrays.copyOf(args,7))) {
+                int[] result=new int[rows.getCount()];int at=0;while(rows.moveToNext()) result[at++]=rows.getInt(0);return result;
+            }
+        }
+        @Override public void saveRetired(LegacyOmemoRecords.Retired lineage,int kind,int id,byte[] value) throws Exception {
+            String[] args=retiredKey(lineage,kind,id);int limit=kind==INCOMING?LegacyIncomingJournal.MAX_ENTRY_BYTES:LegacyOmemoRecords.MAX_RECORD_BYTES;
+            if(value!=null && (value.length==0 || value.length>limit)) throw new IllegalArgumentException("Invalid retired receive record size");
+            if(kind!=SESSION && kind!=INCOMING) {
+                byte[] existing=loadRetired(lineage,kind,id);
+                if(value==null || existing!=null && !java.util.Arrays.equals(existing,value)) throw new IllegalStateException("Retired identity/original state is immutable");
+            }
+            if(value==null) db.delete("retired_records",RETIRED_KEY,args);
+            else {
+                ContentValues row=new ContentValues();row.put("owner",owner);row.put("device",device);row.put("peer",lineage.peer);row.put("peer_device",lineage.device);row.put("fingerprint",lineage.fingerprint);row.put("generation",lineage.generation);row.put("kind",kind);row.put("id",id);row.put("value",value.clone());db.replaceOrThrow("retired_records",null,row);
+            }
+        }
         @Override public void purge() {
-            active();db.delete("records","owner=? AND device=?",new String[]{owner,Integer.toString(device)});
+            active();db.delete("records","owner=? AND device=?",new String[]{owner,Integer.toString(device)});db.delete("retired_records","owner=? AND device=?",new String[]{owner,Integer.toString(device)});
         }
         @Override public void commit() {
             active();try { db.setTransactionSuccessful(); } finally { close(); }

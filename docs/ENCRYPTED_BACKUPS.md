@@ -304,38 +304,60 @@ requires portable ownership generations and peer keys. Do not blindly copy a
 stale generation. Notification-action generations remain excluded and must be
 invalidated at cold commit.
 
-## Source audit: ordinary active peer identity rotation
+## Ordinary active legacy peer identity rotation (source checkpoint)
 
-This checkpoint fixes archive candidate selection, not the separate ordinary
-active-state case where a peer reuses the same device ID with a different identity
-and the active Signal store still pins its previous identity. The current source
-path is explicit: `MonogramSecurityActivity.decide` calls `XmppSession.decideAll`
-for legacy fingerprints; that method only calls `IdentityTrust.setTrustAll`, which
-persists fingerprint decisions without updating Signal identity/session records.
-The fingerprint list can show a new PEP identity through `XmppLegacyDiscovery`,
-while `MonogramDeviceEncryption.needsSession` only fetches/applies a new bundle
-when the raw session is absent. Its local prepare path intentionally preserves an
-already existing session. Installed Smack's build-missing-sessions path similarly
-skips existing raw sessions.
+Explicit legacy fingerprint approval now handles a peer reusing a device ID with a
+new identity. `XmppSession.decideAll` captures the existing peer and local identity,
+fetches the replacement public bundle outside crypto/storage/trust locks, then
+`MonogramLegacyRotation` verifies both the exact approved fingerprint and signed
+prekey. A stale owner identity, peer identity, session lifecycle or trust decision
+revision aborts approval. Revocation never creates a session. Trust-all uses the
+same verified batch path; unchanged fingerprints and entirely new devices retain
+the ordinary session preparation path.
 
-Installed `SignalOmemoRatchet.doubleRatchetDecrypt` rejects a prekey identity that
-differs from the stored peer identity independently of the application trust
-callback. Its caller `OmemoRatchet.retrieveMessageKeyAndAuthTag` logs/ignores that
-identity exception and ultimately produces an untyped crypto failure; the custom
-service's existing `NoRawSessionException` repair branch is not that path. These
-are source/API findings, not a reproduced runtime claim; explicit rebuild paths
-can apply a new bundle, but merely trusting its fingerprint does not invoke them.
+The apply transaction saves frozen local/peer identities and the complete original
+SessionRecord in `retired_records`, scoped by account JID, own device, peer JID,
+peer device, fingerprint and a unique retirement UUID. It also saves an independent
+mutable receive session containing only states for that fingerprint. A→B→A
+rotations keep separate generations rather than overwriting an advanced historical
+ratchet. The new outgoing session is built from the approved signed bundle in an
+empty detached Signal store: no old SessionRecord/previous state enters it. Own
+identity/device, unrelated peer state and existing trust decisions stay intact.
 
-A concrete next implementation should atomically retire the old peer identity and
-its complete SessionRecord into an explicitly receive-only, fingerprint-keyed
-lineage table when accepting a verified new identity, then establish the new active
-session with **no old session record supplied to SessionBuilder**. The old record
-must remain recoverable for currently trusted historical packets through the same
-MAC-selected-identity checks. Do not silently delete it, overwrite its identity or
-keep it as a previous state inside the active sending record: later receive-state
-promotion could reactivate an old sender chain. The new typed lineage rows and
-journals must participate in backup schema/owner validation and migration; this
-broader active-store transition is not implemented in the bounded archive fix.
+`MonogramLegacyRetired` supplies peer-scoped receive views, suppressing every
+bootstrap/active-key fallback. Only session and incoming-journal writes are allowed;
+frozen identities and the original snapshot are immutable. Retired candidate views
+are restricted to the authenticated route's author/device, then the existing
+archive cipher checks current exact-fingerprint trust and the MAC-selected peer
+identity. Historical decryption never promotes state into the active sender store,
+creates a crypto ACK, replenishes a key or publishes a bundle. Undelivered active-journal bodies are atomically moved into their retired fingerprint
+branch, preserving captured DM/MUC routes while clearing old crypto obligations;
+accepted rows with only obsolete protocol work are removed. Pending plaintext
+uses each retired journal's own provenance/epoch; revoked fingerprints are rejected
+before replay. Logout rotates retired plaintext journals while retaining keys.
+Typed trust, corrupt-storage and duplicate failures remain terminal, rather than
+being interpreted as candidate mismatches.
+
+Legacy SQLite version 2 adds this owner-scoped table through trusted v1→v2 DDL.
+Portable import accepts an exact trusted v1 schema as the sole compatibility case;
+it never executes archive-provided schema. Owner filtering/rejection covers both
+tables. Cold staging puts prior retired rows exclusively in its receive-only copy,
+whose startup configuration expands their peer-scoped journals, so mutable ratchets
+are not duplicated in the fresh active stage. Repeated migration manifests continue
+to preserve earlier archives and historical own devices.
+
+The trust file and SQLite commit cannot form a cross-file atomic transaction.
+Trust persistence failure rolls SQL back. If the explicit trust decision persists
+but SQL commit fails, all old identities/sessions/lineage rows roll back; approval
+reports failure and repeating it still performs the required rotation. No success
+is reported on that path. Account close is serialized with the apply manager lock.
+There is no implicit account activation, reconnection, key publication or network
+send during approval. The only network operation is public bundle lookup.
+
+This source checkpoint includes prepared headless crypto/rollback/lineage fixtures
+and Android schema/owner/logout fixtures; they have not been run or compiled.
+Global backup quiescence/cold-install transaction and its settings UI remain
+unavailable pending the integration work below.
 
 ## Required integration before enabling settings
 

@@ -293,7 +293,7 @@ public final class XmppSession implements AutoCloseable {
             public void capacityChanged() { IncomingCapacity.changed(legacyCapacityKey,XmppSession.this); }
             public void blocked(LegacyIncomingJournal.Context context,long revision) { queueLegacy(context,revision); }
             public void failed(Exception error) { legacyFailure=error; }
-        });
+        },trust);
         if(recovery!=null) MonogramLegacyOmemoService.instance().configureRecoveries(omemo,recovery.legacy(
                 MonogramLegacyOmemoService.instance().records(),legacyIncoming.own,trust));
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
@@ -467,7 +467,8 @@ public final class XmppSession implements AutoCloseable {
     /** Explicit cold-migration opt-in, before connecting. Never activates or publishes an account. */
     public void configureLegacyRecovery(org.jivesoftware.smackx.omemo.MonogramLegacyReceiveOnly recovery) {
         if(closed) throw new IllegalStateException("Session is closed");
-        MonogramLegacyOmemoService.instance().configureRecovery(omemo,recovery);
+        try { MonogramLegacyOmemoService.instance().configureRecovery(omemo,recovery); }
+        catch(Exception failure) { throw new IllegalStateException("Could not configure legacy recovery",failure); }
     }
     /** Local recovery also runs before connecting: authenticated plaintext must not depend on network availability. */
     public void recoverIncoming() {
@@ -1128,12 +1129,42 @@ public final class XmppSession implements AutoCloseable {
         return encryption==XmppMessage.Encryption.PLAIN ? null : encryption==XmppMessage.Encryption.OMEMO2 ? modern().ownFingerprint() : ownFingerprint().toString();
     }
     public OmemoFingerprint ownFingerprint() throws Exception { return legacyDiscovery.ownFingerprint(); }
-    public void decide(OmemoDevice device, OmemoFingerprint fingerprint, boolean trusted) { trust.setTrust(device, fingerprint, trusted); }
-    public void decideAll(java.util.Map<OmemoDevice, OmemoFingerprint> identities, boolean trusted) { trust.setTrustAll(identities, trusted); }
+    public void decide(OmemoDevice device, OmemoFingerprint fingerprint, boolean trusted) { decideAll(java.util.Collections.singletonMap(device,fingerprint),trusted); }
+    public void decideAll(java.util.Map<OmemoDevice, OmemoFingerprint> identities, boolean trusted) {
+        java.util.Map<OmemoDevice,OmemoFingerprint> selected=java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(identities));
+        if(!trusted) { synchronized(omemo) { if(closed) throw new IllegalStateException("Session is closed");trust.setTrustAll(selected,false); }return; }
+        long generation=lifecycle.get(),trustRevision=trust.revision();
+        org.jivesoftware.smackx.omemo.MonogramSignalStore records=MonogramLegacyOmemoService.instance().records();
+        java.util.List<org.jivesoftware.smackx.omemo.MonogramLegacyRotation.Verified> replacements=new java.util.ArrayList<>();
+        try {
+            java.util.Map<OmemoDevice,String> observed=new java.util.LinkedHashMap<>();String expectedOwn;
+            synchronized(omemo) { expectedOwn=records.getFingerprint(omemo.getOwnDevice()).toString(); }
+            for(java.util.Map.Entry<OmemoDevice,OmemoFingerprint> entry:selected.entrySet()) {
+                org.jivesoftware.smackx.omemo.MonogramLegacyRotation.Expected expected;
+                synchronized(omemo) {
+                    if(closed || lifecycle.get()!=generation) throw new java.util.ConcurrentModificationException("Account changed during approval");
+                    org.whispersystems.libsignal.IdentityKey old=entry.getKey().equals(omemo.getOwnDevice())?records.loadOmemoIdentityKeyPair(omemo.getOwnDevice()).getPublicKey():records.loadOmemoIdentityKey(omemo.getOwnDevice(),entry.getKey());
+                    observed.put(entry.getKey(),old==null?null:records.keyUtil().getFingerprintOfIdentityKey(old).toString());
+                    expected=org.jivesoftware.smackx.omemo.MonogramLegacyRotation.replacement(records,omemo.getOwnDevice(),entry.getKey(),entry.getValue());
+                }
+                if(expected!=null) replacements.add(org.jivesoftware.smackx.omemo.MonogramLegacyRotation.verify(expected,entry.getValue(),
+                        org.jivesoftware.smackx.omemo.MonogramDeviceEncryption.fetchBundle(connection,entry.getKey())));
+            }
+            synchronized(omemo) {
+                org.jivesoftware.smackx.omemo.MonogramLegacyRotation.apply(records,omemo.getOwnDevice(),legacyIncoming,trust,selected,replacements,observed,expectedOwn,
+                        () -> !closed && lifecycle.get()==generation && trust.revision()==trustRevision);
+                MonogramLegacyOmemoService.instance().refreshRetired(omemo);
+            }
+        } catch(Exception failure) { throw new IllegalStateException("Could not safely approve replacement identity",failure); }
+        // Replay failures (including a revoked historical fingerprint) must not misreport a committed approval.
+        if(!replacements.isEmpty()) try {
+            for(LegacyIncomingJournal.Received pending:MonogramLegacyOmemoService.instance().retiredPending(omemo)) { if(closed) break;deliverLegacy(pending); }
+        } catch(Exception failure) { legacyFailure=failure; }
+    }
     public boolean hasArchive() throws Exception { return MamManager.getInstanceFor(connection).isSupported(); }
     public XMPPTCPConnection connection() { return connection; }
     @Override public void close() {
-        closed = true; started = false; lifecycle.incrementAndGet();
+        synchronized(omemo) { closed = true; started = false; lifecycle.incrementAndGet(); }
         IncomingCapacity.unregister(legacyCapacityKey,this);IncomingCapacity.unregister(modernCapacityKey,this);
         synchronized(modernInboxLock) { modernInbox.clear();modernInboxBytes=0;modernInboxLock.notifyAll(); }
         synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }

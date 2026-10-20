@@ -20,6 +20,7 @@ public final class MonogramLegacyReceiveOnly {
     private final IdentityTrust trust;
     private final OmemoDevice own;
     private final LegacyIncomingJournal journal;
+    private LegacyOmemoRecords.Retired retired;
 
     public MonogramLegacyReceiveOnly(MonogramSignalStore active,OmemoDevice own,
             SignalFileBasedOmemoStore emptyBootstrap,LegacyOmemoRecords.Factory archived,IdentityTrust trust) throws Exception {
@@ -48,6 +49,21 @@ public final class MonogramLegacyReceiveOnly {
         archive=new MonogramSignalStore(emptyBootstrap,guard(archived,own));
         if(fingerprint!=null && !fingerprint.equals(archive.getFingerprint(own).toString())) throw new GeneralSecurityException("Historical identity pin changed");
         journal=new LegacyIncomingJournal(archive,own,trust);
+    }
+    /** Ordinary verified peer rotation: no migration marker or alternate active backend. */
+    MonogramLegacyReceiveOnly(MonogramSignalStore active,MonogramSignalStore source,OmemoDevice own,IdentityTrust trust,LegacyOmemoRecords.Retired retired,
+            LegacyOmemoRecords.Factory scoped) throws Exception {
+        this.active=active;this.own=own;this.trust=java.util.Objects.requireNonNull(trust);this.retired=retired;
+        archive=source.receiveView(scoped);
+        OmemoDevice peer=new OmemoDevice(JidCreate.bareFrom(retired.peer),retired.device);
+        if(!retired.fingerprint.equals(archive.getFingerprint(own,peer).toString())) throw new GeneralSecurityException("Retired peer pin changed");
+        journal=new LegacyIncomingJournal(archive,own,trust);
+    }
+    boolean accepts(LegacyIncomingJournal.Context context,OmemoElement element) {
+        return retired==null || retired.peer.equals(context.author) && retired.device==element.getHeader().getSid();
+    }
+    java.util.Collection<MonogramLegacyReceiveOnly> retiredBranches() throws Exception {
+        return retired==null?MonogramLegacyRetired.load(active,archive,own,trust,java.util.Collections.emptyMap()).values():java.util.Collections.emptyList();
     }
     public LegacyIncomingJournal journal() { return journal; }
     boolean addressed(OmemoElement element) { for(OmemoKeyElement key:element.getHeader().getKeys()) if(key.getId()==own.getDeviceId()) return true;return false; }
@@ -113,6 +129,13 @@ public final class MonogramLegacyReceiveOnly {
                                 && !(kind==PRE_KEY && value!=null && value.length==1 && value[0]==0))
                             throw new IOException("Receive-only archive cannot change sending keys or publication state");
                         tx.save(kind,peer,id,value);
+                    }
+                    public java.util.List<Retired> retired() throws Exception { return tx.retired(); }
+                    public byte[] loadRetired(Retired lineage,int kind,int id) throws Exception { return tx.loadRetired(lineage,kind,id); }
+                    public int[] retiredIds(Retired lineage,int kind) throws Exception { return tx.retiredIds(lineage,kind); }
+                    public void saveRetired(Retired lineage,int kind,int id,byte[] value) throws Exception {
+                        if(kind!=SESSION && kind!=INCOMING) throw new IOException("Receive-only archive cannot change retired identities");
+                        tx.saveRetired(lineage,kind,id,value);
                     }
                     public void purge() throws Exception { throw new IOException("Receive-only archive cannot purge keys"); }
                     public void commit() throws Exception { tx.commit(); }

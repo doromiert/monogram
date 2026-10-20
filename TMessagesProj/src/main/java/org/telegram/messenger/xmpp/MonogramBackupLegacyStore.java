@@ -30,7 +30,7 @@ final class MonogramBackupLegacyStore {
         MonogramLegacyOmemoStore store=new MonogramLegacyOmemoStore(ApplicationLoader.applicationContext,isolatedOverlay.getAbsolutePath());boolean success=false;
         try {
             SQLiteDatabase database=store.getWritableDatabase();
-            try(Cursor rows=database.rawQuery("SELECT 1 FROM records WHERE owner IS NULL OR owner<>? LIMIT 1",new String[]{owner})) {
+            for(String table:new String[]{"records","retired_records"}) try(Cursor rows=database.rawQuery("SELECT 1 FROM "+table+" WHERE owner IS NULL OR owner<>? LIMIT 1",new String[]{owner})) {
                 if(rows.moveToFirst()) throw new IOException("Legacy overlay snapshot contains another account.");
             }
             MonogramLegacyBackup.materialize(new File(ApplicationLoader.getFilesDirFixed(),"monogram-omemo"),bootstrap,account,store,(jid,device) -> {

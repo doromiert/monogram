@@ -32,6 +32,44 @@ public class MonogramLegacyOmemoStoreTest {
             LegacyIncomingJournal.rotate(tx);tx.save(LegacyOmemoRecords.INCOMING,"",1,new byte[]{24});tx.commit();
         }
     }
+    private LegacyOmemoRecords.Retired lineage(String generation) throws Exception {
+        return new LegacyOmemoRecords.Retired(PEER,202,String.join("",java.util.Collections.nCopies(64,"a")),generation);
+    }
+    @Test public void versionOneUpgradePreservesRowsAndAddsEmptyRetiredNamespace() throws Exception {
+        try(MonogramLegacyOmemoStore store=open()) {
+            seed(store,OWNER,101);store.getWritableDatabase().execSQL("DROP TABLE retired_records");store.getWritableDatabase().setVersion(1);
+        }
+        try(MonogramLegacyOmemoStore store=open();LegacyOmemoRecords tx=store.begin(OWNER,101)) {
+            assertEquals(2,store.getWritableDatabase().getVersion());assertTrue(tx.retired().isEmpty());
+            assertArrayEquals(new byte[]{1,23},tx.load(LegacyOmemoRecords.SESSION,PEER,202));
+        }
+    }
+    @Test public void retiredScopesAreAtomicImmutableAndOwnerIsolatedAndLogoutOnlyRevokesPlaintext() throws Exception {
+        LegacyOmemoRecords.Retired branch=lineage("11111111-1111-4111-8111-111111111111"),next=lineage("22222222-2222-4222-8222-222222222222");
+        try(MonogramLegacyOmemoStore store=open()) {
+            seed(store,OWNER,101);seed(store,OTHER,101);
+            try(LegacyOmemoRecords tx=store.begin(OWNER,101)) {
+                tx.saveRetired(branch,LegacyOmemoRecords.IDENTITY_PAIR,0,new byte[]{1,60});tx.saveRetired(branch,LegacyOmemoRecords.IDENTITY,0,new byte[]{1,61});
+                tx.saveRetired(branch,LegacyOmemoRecords.SESSION,0,new byte[]{1,62});tx.saveRetired(branch,LegacyOmemoRecords.RETIRED_ORIGINAL_SESSION,0,new byte[]{1,63});
+                tx.saveRetired(branch,LegacyOmemoRecords.INCOMING,1,new byte[]{64});tx.commit();
+            }
+            try(LegacyOmemoRecords tx=store.begin(OWNER,101)) {
+                tx.saveRetired(branch,LegacyOmemoRecords.SESSION,0,new byte[]{1,70});tx.saveRetired(next,LegacyOmemoRecords.IDENTITY,0,new byte[]{1,71});
+                tx.save(LegacyOmemoRecords.SESSION,PEER,202,new byte[]{1,72});
+            }
+            try(LegacyOmemoRecords tx=store.begin(OWNER,101)) {
+                assertArrayEquals(new byte[]{1,62},tx.loadRetired(branch,LegacyOmemoRecords.SESSION,0));assertNull(tx.loadRetired(next,LegacyOmemoRecords.IDENTITY,0));
+                assertArrayEquals(new byte[]{1,23},tx.load(LegacyOmemoRecords.SESSION,PEER,202));
+                try { tx.saveRetired(branch,LegacyOmemoRecords.RETIRED_ORIGINAL_SESSION,0,new byte[]{1,90});fail("Original snapshot was mutable"); } catch(IllegalStateException expected) { }
+            }
+            for(String owner:new String[]{OWNER,OTHER}) try(LegacyOmemoRecords tx=store.begin(owner,owner.equals(OWNER)?102:101)) { assertTrue(tx.retired().isEmpty()); }
+            store.clearIncoming(OWNER);
+            try(LegacyOmemoRecords tx=store.begin(OWNER,101)) {
+                assertNull(tx.loadRetired(branch,LegacyOmemoRecords.INCOMING,1));assertNotNull(tx.loadRetired(branch,LegacyOmemoRecords.INCOMING,0));
+                assertArrayEquals(new byte[]{1,62},tx.loadRetired(branch,LegacyOmemoRecords.SESSION,0));assertArrayEquals(new byte[]{1,63},tx.loadRetired(branch,LegacyOmemoRecords.RETIRED_ORIGINAL_SESSION,0));
+            }
+        }
+    }
     @Test public void ratchetJournalAndOpaqueTombstonesCommitTogetherAcrossReopen() throws Exception {
         try(MonogramLegacyOmemoStore store=open()) {
             seed(store,OWNER,101);
@@ -147,7 +185,7 @@ public class MonogramLegacyOmemoStoreTest {
                 assertArrayEquals(new byte[]{24},tx.load(LegacyOmemoRecords.INCOMING,"",1));
             }
             try(Cursor rows=store.getReadableDatabase().rawQuery("PRAGMA synchronous",null)) { assertTrue(rows.moveToFirst());assertEquals(2,rows.getInt(0)); }
-            assertEquals(1,store.getWritableDatabase().getVersion());
+            assertEquals(MonogramLegacyOmemoStore.VERSION,store.getWritableDatabase().getVersion());
         }
     }
     @Test public void largeExistingSessionBytesSurviveReopenAndOversizedWritesPreservePreviousState() throws Exception {

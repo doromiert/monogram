@@ -81,11 +81,14 @@ final class MonogramRecoveryStore implements XmppRecovery {
             if(entry.protocol==RecoveryManifest.Protocol.MODERN) {
                 MonogramOmemo2Store helper=new MonogramOmemo2Store(ApplicationLoader.applicationContext,null);try { helper.onCreate(trusted);trusted.setVersion(2); } finally { helper.close(); }
             } else {
-                MonogramLegacyOmemoStore helper=new MonogramLegacyOmemoStore(ApplicationLoader.applicationContext,null);try { helper.onCreate(trusted);trusted.setVersion(1); } finally { helper.close(); }
+                MonogramLegacyOmemoStore helper=new MonogramLegacyOmemoStore(ApplicationLoader.applicationContext,null);try { helper.onCreate(trusted);trusted.setVersion(MonogramLegacyOmemoStore.VERSION); } finally { helper.close(); }
             }
-            if(source.getVersion()!=trusted.getVersion() || !schema(source).equals(schema(trusted))) throw new IOException("Unsupported recovery archive schema.");
+            Map<String,String> expected=schema(trusted),actual=schema(source),oldLegacy=new TreeMap<>(expected);oldLegacy.remove("table:retired_records");
+            boolean legacyV1=entry.protocol==RecoveryManifest.Protocol.LEGACY && source.getVersion()==1 && actual.equals(oldLegacy);
+            if(!legacyV1 && (source.getVersion()!=trusted.getVersion() || !actual.equals(expected))) throw new IOException("Unsupported recovery archive schema.");
             try(Cursor check=source.rawQuery("PRAGMA quick_check",null)) { if(!check.moveToFirst() || !"ok".equals(check.getString(0)) || check.moveToNext()) throw new IOException("Recovery archive failed its integrity check."); }
-            try(Cursor owners=source.rawQuery("SELECT 1 FROM records WHERE owner IS NULL OR owner<>? LIMIT 1",new String[]{manifest.owner})) { if(owners.moveToFirst()) throw new IOException("Recovery archive contains another account."); }
+            for(String table:actual.containsKey("table:retired_records")?new String[]{"records","retired_records"}:new String[]{"records"})
+                try(Cursor owners=source.rawQuery("SELECT 1 FROM "+table+" WHERE owner IS NULL OR owner<>? LIMIT 1",new String[]{manifest.owner})) { if(owners.moveToFirst()) throw new IOException("Recovery archive contains another account."); }
         }
         if(entry.protocol==RecoveryManifest.Protocol.MODERN) {
             MonogramOmemo2Store store=new MonogramOmemo2Store(ApplicationLoader.applicationContext,file.getAbsolutePath());modern.put(entry.id,store);

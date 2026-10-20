@@ -34,6 +34,8 @@ public class MonogramSignalStore extends OmemoStore<IdentityKeyPair,IdentityKey,
     public MonogramSignalStore(SignalFileBasedOmemoStore bootstrap,LegacyOmemoRecords.Factory records) {
         this.bootstrap=Objects.requireNonNull(bootstrap);this.records=Objects.requireNonNull(records);
     }
+    /** Internal isolated record view; its factory must suppress bootstrap and reject outgoing writes. */
+    MonogramSignalStore receiveView(LegacyOmemoRecords.Factory factory) { return new MonogramSignalStore(bootstrap,factory); }
     /** Acquire before SQLite, also ordering list PEP/CAS changes against crypto transactions. Caller closes. */
     public LegacyOmemoRecords begin(OmemoDevice own) throws Exception {
         storageLock.lock();
@@ -47,6 +49,12 @@ public class MonogramSignalStore extends OmemoStore<IdentityKeyPair,IdentityKey,
             public int[] ids(int kind,String peer) throws Exception { check();return tx.ids(kind,peer); }
             public void save(int kind,String peer,int id,byte[] value) throws Exception {
                 check();try { tx.save(kind,peer,id,value); } catch(Exception failure) { poison(failure);throw failure; }
+            }
+            public java.util.List<LegacyOmemoRecords.Retired> retired() throws Exception { check();return tx.retired(); }
+            public byte[] loadRetired(LegacyOmemoRecords.Retired lineage,int kind,int id) throws Exception { check();return tx.loadRetired(lineage,kind,id); }
+            public int[] retiredIds(LegacyOmemoRecords.Retired lineage,int kind) throws Exception { check();return tx.retiredIds(lineage,kind); }
+            public void saveRetired(LegacyOmemoRecords.Retired lineage,int kind,int id,byte[] value) throws Exception {
+                check();try { tx.saveRetired(lineage,kind,id,value); } catch(Exception failure) { poison(failure);throw failure; }
             }
             public void purge() throws Exception { check();try { tx.purge(); } catch(Exception failure) { poison(failure);throw failure; } }
             void poison(Exception failure) { Context context=transactions.get(this);if(context!=null && context.failure==null) context.failure=new IOException("Legacy transaction write failed",failure); }

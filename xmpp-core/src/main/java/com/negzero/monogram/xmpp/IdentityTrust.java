@@ -15,6 +15,8 @@ import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
 public final class IdentityTrust implements OmemoTrustCallback {
     private final File file;
     private final Properties decisions = new Properties();
+    private long revision;
+    public synchronized long revision() { return revision; }
 
     public IdentityTrust(File file) throws IOException {
         this.file = file;
@@ -66,6 +68,6 @@ public final class IdentityTrust implements OmemoTrustCallback {
             throw new IllegalStateException("Could not persist identity decision", e);
         }
         decisions.clear();
-        decisions.putAll(updated);
+        decisions.putAll(updated);revision++;
     }
 }

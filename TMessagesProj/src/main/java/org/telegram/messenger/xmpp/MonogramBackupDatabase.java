@@ -40,7 +40,9 @@ final class MonogramBackupDatabase {
             MonogramBackupSecrets.Transform reseal) throws Exception {
         owner(owner);Map<String,String> expected=schema(target),actual=schema(staged);
         validateScope(actual,scope);
-        if(staged.getVersion()!=target.getVersion() || !actual.equals(expected)) throw new IOException("Backup database schema does not match this app version.");
+        Map<String,String> compatible=new TreeMap<>(expected);compatible.remove("table:retired_records");
+        boolean legacyV1=scope==Scope.LEGACY && staged.getVersion()==1 && target.getVersion()==MonogramLegacyOmemoStore.VERSION && actual.equals(compatible);
+        if(!legacyV1 && (staged.getVersion()!=target.getVersion() || !actual.equals(expected))) throw new IOException("Backup database schema does not match this app version.");
         try(Cursor check=staged.rawQuery("PRAGMA quick_check",null)) {
             if(!check.moveToFirst() || !"ok".equals(check.getString(0)) || check.moveToNext()) throw new IOException("Backup database failed its integrity check.");
         }
@@ -51,7 +53,7 @@ final class MonogramBackupDatabase {
                     if(rows.moveToFirst()) throw new IOException("Restore destination must be empty; existing messages and keys were preserved.");
                 }
             }
-            copyRows(staged,target,expected,scope,owner,reseal,true);copySequence(staged,target);target.setTransactionSuccessful();
+            copyRows(staged,target,actual,scope,owner,reseal,true);copySequence(staged,target);target.setTransactionSuccessful();
         } finally { target.endTransaction(); }
     }
     private static void copyRows(SQLiteDatabase source,SQLiteDatabase target,Map<String,String> schema,Scope scope,String owner,
@@ -127,6 +129,7 @@ final class MonogramBackupDatabase {
         } else {
             Set<String> tables=new HashSet<>();for(String key:schema.keySet()) if(key.startsWith("table:")) tables.add(key.substring(6));
             Set<String> expected=new HashSet<>(Collections.singletonList("records"));if(scope==Scope.MODERN) expected.add("own_devices");
+            if(scope==Scope.LEGACY && tables.contains("retired_records")) expected.add("retired_records");
             if(!tables.equals(expected)) throw new IOException("Unsupported OMEMO database tables.");
         }
     }

@@ -10,6 +10,7 @@ public class LegacyOmemoTestDatabase implements LegacyOmemoRecords.Factory {
     public static LegacyOmemoTestDatabase shared() { return SHARED; }
     private final ReentrantLock lock=new ReentrantLock();
     private final Map<String,Map<String,byte[]>> rows=new HashMap<>();
+    private final Map<String,Map<LegacyOmemoRecords.Retired,Map<String,byte[]>>> retiredRows=new HashMap<>();
     public boolean failNextSave,failNextCommit;
     @Override public SortedSet<Integer> localDevices(String owner) {
         lock.lock();try {
@@ -22,6 +23,10 @@ public class LegacyOmemoTestDatabase implements LegacyOmemoRecords.Factory {
         lock.lock();String scope=owner+"\n"+device;
         Map<String,byte[]> staged=new HashMap<>();
         for(Map.Entry<String,byte[]> row:rows.getOrDefault(scope,Collections.emptyMap()).entrySet()) staged.put(row.getKey(),row.getValue().clone());
+        Map<LegacyOmemoRecords.Retired,Map<String,byte[]>> retired=new LinkedHashMap<>();
+        for(Map.Entry<LegacyOmemoRecords.Retired,Map<String,byte[]>> branch:retiredRows.getOrDefault(scope,Collections.emptyMap()).entrySet()) {
+            Map<String,byte[]> copy=new HashMap<>();for(Map.Entry<String,byte[]> row:branch.getValue().entrySet()) copy.put(row.getKey(),row.getValue().clone());retired.put(branch.getKey(),copy);
+        }
         return new LegacyOmemoRecords() {
             final Thread thread=Thread.currentThread();boolean closed;
             void active() { if(closed || Thread.currentThread()!=thread) throw new IllegalStateException("Test transaction closed or on another thread"); }
@@ -36,10 +41,22 @@ public class LegacyOmemoTestDatabase implements LegacyOmemoRecords.Factory {
                 active();if(failNextSave) { failNextSave=false;throw new IOException("Injected legacy write failure"); }
                 if(value==null) staged.remove(key(kind,peer,id));else staged.put(key(kind,peer,id),value.clone());
             }
-            public void purge() { active();staged.clear(); }
+            public List<Retired> retired() { active();return new ArrayList<>(retired.keySet()); }
+            public byte[] loadRetired(Retired branch,int kind,int id) { active();byte[] value=retired.getOrDefault(branch,Collections.emptyMap()).get(kind+"\n"+id);return value==null?null:value.clone(); }
+            public int[] retiredIds(Retired branch,int kind) {
+                active();String prefix=kind+"\n";return retired.getOrDefault(branch,Collections.emptyMap()).keySet().stream().filter(key -> key.startsWith(prefix)).mapToInt(key -> Integer.parseInt(key.substring(prefix.length()))).sorted().toArray();
+            }
+            public void saveRetired(Retired branch,int kind,int id,byte[] value) throws IOException {
+                active();if(failNextSave) { failNextSave=false;throw new IOException("Injected retired write failure"); }
+                byte[] previous=loadRetired(branch,kind,id);
+                if(kind!=SESSION && kind!=INCOMING && (value==null || previous!=null && !Arrays.equals(previous,value))) throw new IOException("Immutable retired record");
+                Map<String,byte[]> rows=retired.computeIfAbsent(branch,ignored -> new HashMap<>());
+                if(value==null) rows.remove(kind+"\n"+id);else rows.put(kind+"\n"+id,value.clone());
+            }
+            public void purge() { active();staged.clear();retired.clear(); }
             public void commit() throws IOException {
                 active();if(failNextCommit) { failNextCommit=false;throw new IOException("Injected legacy commit failure"); }
-                rows.put(scope,staged);close();
+                rows.put(scope,staged);retiredRows.put(scope,retired);close();
             }
             public void close() { if(closed) return;active();closed=true;lock.unlock(); }
         };
