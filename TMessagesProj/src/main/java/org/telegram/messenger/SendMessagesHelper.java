@@ -11173,6 +11173,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (info.searchImage != null && info.videoEditedInfo == null) {
                     if (info.searchImage.type == 1) {
                         final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                         TLRPC.TL_document document = null;
                         String parentObject = null;
                         File cacheFile;
@@ -11331,6 +11332,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             final String parentFinal = parentObject;
                             final boolean needDownloadHttpFinal = needDownloadHttp;
                             final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                             if (info.searchImage.imageUrl != null) {
                                 params.put("originalPath", info.searchImage.imageUrl);
                             }
@@ -11582,6 +11584,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             final String originalPathFinal = originalPath;
                             final String finalPath = path;
                             final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                             final Bitmap thumbFinal = thumb;
                             final String thumbKeyFinal = thumbKey;
                             final TLRPC.PhotoSize coverFinal = cover;
@@ -11788,6 +11791,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 final TLRPC.TL_photo photoFinal = photo;
                                 final String parentFinal = parentObject;
                                 final HashMap<String, String> params = new HashMap<>();
+                            org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                                 final Bitmap[] bitmapFinal = new Bitmap[1];
                                 final String[] keyFinal = new String[1];
                                 if (photo.has_stickers = info.masks != null && !info.masks.isEmpty()) {

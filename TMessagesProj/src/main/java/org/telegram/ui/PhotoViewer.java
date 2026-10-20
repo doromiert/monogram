@@ -7058,6 +7058,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             captionEdit.setTimer(seconds);
         });
         topCaptionEdit.setAccount(currentAccount);
+        android.text.TextWatcher mediaDraftWatcher = new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (parentAlert != null && parentAlert.hasMediaDraftSession()) {
+                    AndroidUtilities.cancelRunOnUIThread(saveMediaDraftCaption);
+                    AndroidUtilities.runOnUIThread(saveMediaDraftCaption, 750);
+                }
+            }
+            @Override public void afterTextChanged(android.text.Editable s) {}
+        };
+        captionEdit.editText.getEditText().addTextChangedListener(mediaDraftWatcher);
+        topCaptionEdit.editText.getEditText().addTextChangedListener(mediaDraftWatcher);
         topCaptionEdit.setOnHeightUpdate(height -> {
             if (topCaptionEdit.mentionContainer != null) {
                 topCaptionEdit.mentionContainer.setTranslationY(height);
@@ -18725,6 +18737,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 FileLog.e(e);
             }
         });
+        AndroidUtilities.cancelRunOnUIThread(saveMediaDraftCaption);
         if (placeProvider != null) {
             placeProvider.willHidePhotoViewer();
         }
@@ -18775,7 +18788,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     public void onConfigurationChanged(Configuration newConfig) {}
 
+    private final Runnable saveMediaDraftCaption=() -> {
+        if(parentAlert==null || !parentAlert.hasMediaDraftSession() || !isVisible() || currentIndex<0 || currentIndex>=imagesArrLocals.size() || !(imagesArrLocals.get(currentIndex) instanceof MediaController.PhotoEntry)) return;
+        applyCaption();Object current=imagesArrLocals.get(currentIndex);
+        if(current instanceof MediaController.PhotoEntry && ((MediaController.PhotoEntry)current).isVideo) ((MediaController.PhotoEntry)current).editedInfo=getCurrentVideoEditedInfo();
+        parentAlert.saveMediaDraftNow(false);
+    };
     public void onPause() {
+        AndroidUtilities.cancelRunOnUIThread(saveMediaDraftCaption);saveMediaDraftCaption.run();
         if (currentAnimation != null) {
             closePhoto(false, false);
             return;

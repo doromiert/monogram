@@ -19,15 +19,59 @@ the delayed save and without a pause callback. Persisted drafts use the existing
 synchronous preference commit. No account credentials or OMEMO keys are copied
 into the draft store.
 
-## Remaining acceptance and media work
+## Native photo/video attachment drafts
 
-The native attachment picker keeps its selected photos and captions in memory;
-it does not provide a durable attachment-composition draft across process death.
-That needs a separate recoverable selection/caption model, including URI access
-permissions, missing-file handling and account/conversation ownership. Do not
-represent the text-draft repairs as completed caption-draft support.
+Ordinary chat photo/video selections now have a local recoverable composition.
+The original attachment grid and photo/video editor remain responsible for
+selection, editing and sending. The manifest records native selection order,
+per-item and shared captions/entities, caption placement, applied crop/filter/
+paint state, video trim/mute settings, spoilers, timers and cover metadata.
+Reopening the picker merges recoverable entries into its native selection.
+The close confirmation offers **Keep draft**, **Discard** and **Cancel**.
 
-Phone acceptance still needs text, formatting-only edits and reply quotes across
-back navigation, restart and account switches. No cross-device draft support is
-claimed. Two regression cases covering entity and quote comparison passed at the
-0.2.119 release gate.
+Ownership uses the account slot, account JID, conversation address and a logout
+ownership generation. A delayed restore cannot populate another conversation or
+account. Logout invalidates the old generation. Sticker/import, avatar,
+message-media replacement and thread pickers do not restore these drafts.
+
+Metadata is written through AtomicFile synchronously at capture, before sending
+or the picker pause/dismiss lifecycle returns. Caption typing is captured after
+750 ms; an abrupt process kill inside that interval can still lose that edit.
+Camera/cache images, applied edit assets and content-URI inputs are copied into
+private app files in the background; temporary native camera cleanup preserves
+inputs while copying. URI grants are retained where the provider allows it.
+A kill before a URI/private-asset copy finishes still requires the original input
+to remain accessible. Gallery sources are checked for changed size/time before
+reuse. Missing inputs or applied edit assets produce a recovery notice; their
+manifest entries remain available rather than silently sending different media.
+
+Sending attaches private batch/item tokens to native media params. A selection
+is cleared only after **every item** is confirmed in the native durable outbox.
+Conversion failures before queuing retain the composition, and partial handoffs
+restore only unaccepted items. There is no second sending queue. Assets that
+might be used by queued/failed native sends are retained across draft clearing
+and logout; cleanup after final outbox completion is still pending. Protected
+original temporary paths can also remain until cache cleanup/process restart.
+No account credentials or OMEMO keys are copied into this store.
+
+## Remaining coverage and acceptance
+
+Document/music/location/contact tabs, scheduled compositions and unapplied
+crop/paint editor canvases are not covered. No cross-device draft support is
+claimed. Keep the broader media-draft TODO in progress until those paths and
+phone acceptance are finished.
+
+Six source fixtures cover selection order and caption entities, video edits,
+private camera snapshots, changed/missing sources, owner isolation, all-item
+outbox acknowledgement, reserved native params and logout retention. They are
+prepared, **not run**. Run at the next planned phone-update gate:
+
+```sh
+nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMediaDraftsTest
+```
+
+Phone acceptance should exercise keep/discard, back navigation, process restart,
+account switching, applied photo/video edits, missing files and conversion
+failure/partial batches before claiming complete attachment draft support.
+Text draft acceptance still includes formatting-only edits and reply quotes;
+the two earlier text comparison cases passed at the 0.2.119 gate.

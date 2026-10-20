@@ -12828,6 +12828,7 @@ public class ChatActivity extends BaseFragment implements
                                     info.hasMediaSpoilers = photoEntry.hasSpoiler;
                                     info.stars = photoEntry.starsAmount;
                                     info.highQuality = !isStickerMode && photoEntry.isHighQuality();
+                                    chatAttachAlert.tagMediaDraft(info,photoEntry);
                                     photos.add(info);
                                     photoEntry.reset();
                                 }

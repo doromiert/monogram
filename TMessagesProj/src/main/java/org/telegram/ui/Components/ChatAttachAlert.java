@@ -3278,6 +3278,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
             @Override
             public void afterTextChanged(Editable editable) {
+                scheduleMediaDraftSave();
                 if (wasEmpty != TextUtils.isEmpty(editable)) {
                     if (currentAttachLayout != null) {
                         currentAttachLayout.onSelectedItemsCountChanged(currentAttachLayout.getSelectedItemsCount());
@@ -3422,6 +3423,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
             @Override
             public void afterTextChanged(Editable editable) {
+                scheduleMediaDraftSave();
                 if (wasEmpty != TextUtils.isEmpty(editable)) {
                     if (currentAttachLayout != null) {
                         currentAttachLayout.onSelectedItemsCountChanged(currentAttachLayout.getSelectedItemsCount());
@@ -4441,6 +4443,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     public static final int EDITMEDIA_TYPE_MUSIC = 2;
 
     public void setEditingMessageObject(int type, MessageObject messageObject) {
+        if(messageObject!=null) { saveMediaDraftNow(false);if(mediaDraft!=null) mediaDraft.close(); }
         if (messageObject != null) {
             if (photoLayout != null) {
                 photoLayout.clearSelectedPhotos();
@@ -4511,6 +4514,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     public void setButtonPressed(boolean pressed) {
+        if(pressed && !buttonPressed) saveMediaDraftNow(true);
         buttonPressed = pressed;
     }
 
@@ -5612,6 +5616,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     public void onPause() {
+        saveMediaDraftNow(false);
         for (int a = 0; a < layouts.length; a++) {
             if (layouts[a] != null) {
                 layouts[a].onPause();
@@ -5926,6 +5931,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     public void updateCountButton(int animated) {
+        scheduleMediaDraftSave();
         if (viewChangeAnimator != null) {
             return;
         }
@@ -6081,7 +6087,55 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         emojiViewDelegate = delegate;
     }
 
+    private org.telegram.messenger.xmpp.MonogramMediaDrafts.Session mediaDraft;
+    private boolean mediaDraftInitializing,mediaDraftDiscarded;
+    private final Runnable saveMediaDraftRunnable=() -> saveMediaDraftNow(false);
+    public boolean hasMediaDraftSession() { return mediaDraft!=null && mediaDraft.active() && !mediaDraftDiscarded; }
+    public void scheduleMediaDraftSave() {
+        if(mediaDraftInitializing || !hasMediaDraftSession()) return;
+        AndroidUtilities.cancelRunOnUIThread(saveMediaDraftRunnable);AndroidUtilities.runOnUIThread(saveMediaDraftRunnable,750);
+    }
+    public void saveMediaDraftNow(boolean sending) {
+        AndroidUtilities.cancelRunOnUIThread(saveMediaDraftRunnable);
+        if(mediaDraftInitializing || !hasMediaDraftSession() || photoLayout==null) return;
+        mediaDraft.save(photoLayout.getSelectedPhotos(),photoLayout.getSelectedPhotosOrder(),getCommentView().getText(),captionAbove,sending);
+    }
+    public void tagMediaDraft(SendMessagesHelper.SendingMediaInfo info,MediaController.PhotoEntry photo) { if(mediaDraft!=null) mediaDraft.tag(info,photo); }
+    private void mediaDraftError(String message) {
+        if(currentAccount!=UserConfig.selectedAccount || baseFragment==null || baseFragment.getCurrentAccount()!=currentAccount || baseFragment.getParentActivity()==null) return;
+        new AlertDialog.Builder(baseFragment.getParentActivity(),resourcesProvider).setTitle("Media draft").setMessage(message).setPositiveButton(getString(R.string.OK),null).show();
+    }
+    private void bindMediaDraft() {
+        org.telegram.messenger.xmpp.MonogramMediaDrafts.deactivate();mediaDraft=null;
+        if(!(baseFragment instanceof ChatActivity) || baseFragment.getCurrentAccount()!=currentAccount || isPhotoPicker || isStickerMode || avatarPicker!=0 || storyMediaPicker || isPollAttach || editingMessageObject!=null) return;
+        ChatActivity chat=(ChatActivity)baseFragment;if(chat.getChatMode()!=0 || chat.getThreadId()!=0) return;
+        mediaDraft=org.telegram.messenger.xmpp.MonogramMediaDrafts.bind(currentAccount,getDialogId(),this::mediaDraftError);
+    }
+    private void restoreMediaDraft() {
+        if(!hasMediaDraftSession()) return;
+        final org.telegram.messenger.xmpp.MonogramMediaDrafts.Session owner=mediaDraft;
+        mediaDraft.restore(restored -> {
+            if(mediaDraft!=owner || !owner.active() || destroyed || isDismissed() || currentAccount!=UserConfig.selectedAccount) return;
+            mediaDraftInitializing=true;
+            photoLayout.restoreMediaDraftPhotos(restored.photos);
+            if(getCommentView().length()==0 && !restored.caption.isEmpty()) {
+                setCaptionAbove(restored.above,false);
+                android.text.SpannableStringBuilder text=new android.text.SpannableStringBuilder(restored.caption);
+                MessageObject.addEntitiesToText(text,restored.entities,true,true,false,false);
+                for(TLRPC.MessageEntity entity:restored.entities) {
+                    if(entity.offset<0 || entity.length<=0 || (long)entity.offset+entity.length>text.length()) continue;
+                    if(entity instanceof TLRPC.TL_messageEntityBlockquote) QuoteSpan.putQuoteToEditable(text,entity.offset,entity.offset+entity.length,entity.collapsed);
+                    else if(entity instanceof TLRPC.TL_messageEntityPre) { TextStyleSpan.TextStyleRun run=new TextStyleSpan.TextStyleRun();run.flags=TextStyleSpan.FLAG_STYLE_MONO;MediaDataController.addStyleToText(new TextStyleSpan(run),entity.offset,entity.offset+entity.length,text,true); }
+                    else if(entity instanceof TLRPC.TL_messageEntityCustomEmoji) text.setSpan(new AnimatedEmojiSpan(((TLRPC.TL_messageEntityCustomEmoji)entity).document_id,null),entity.offset,entity.offset+entity.length,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                getCommentView().setText(text);
+            }
+            updateCountButton(0);mediaDraftInitializing=false;
+            if(restored.missing>0) mediaDraftError(restored.missing+" draft item(s) are unavailable or changed. They remain saved for recovery; restore access to the original files or discard the draft.");
+        });
+    }
     public void init() {
+        saveMediaDraftNow(false);mediaDraftInitializing=true;mediaDraftDiscarded=false;bindMediaDraft();
         writeButton.setEffect(effectId = 0);
         botButtonWasVisible = false;
         botButtonProgressWasVisible = false;
@@ -6226,9 +6280,11 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         buttonsAdapter.notifyDataSetChanged();
         getCommentView().setText("");
         buttonsLayoutManager.scrollToPositionWithOffset(0, 1000000);
+        mediaDraftInitializing=false;restoreMediaDraft();
     }
 
     public void onDestroy() {
+        saveMediaDraftNow(false);if(mediaDraft!=null) mediaDraft.close();
         for (int a = 0; a < layouts.length; a++) {
             if (layouts[a] != null) {
                 layouts[a].onDestroy();
@@ -7018,10 +7074,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     .setTitle(getString(R.string.DiscardSelectionAlertTitle))
                     .setMessage(getString(R.string.DiscardSelectionAlertMessage))
                     .setPositiveButton(getString(R.string.Discard), (dialogInterface, i) -> {
+                        if(hasMediaDraftSession()) { mediaDraft.discard();mediaDraftDiscarded=true; }
                         allowPassConfirmationAlert = true;
                         dismiss();
                     })
                     .setNegativeButton(getString(R.string.Cancel), null)
+                    .setNeutralButton(hasMediaDraftSession() ? "Keep draft" : null,(dialogInterface,i) -> { saveMediaDraftNow(false);allowPassConfirmationAlert=true;dismiss(); })
                     .setOnCancelListener(di -> {
                         if (appearSpringAnimation != null) {
                             appearSpringAnimation.cancel();
@@ -7055,6 +7113,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         if (baseFragment != null) {
             AndroidUtilities.setLightStatusBar(this, baseFragment.isLightStatusBar());
         }
+        saveMediaDraftNow(false);
         captionLimitBulletinShown = false;
         super.dismiss();
         allowPassConfirmationAlert = false;
@@ -7168,6 +7227,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         setCaptionAbove(above, true);
     }
     public void setCaptionAbove(boolean above, boolean animated) {
+        scheduleMediaDraftSave();
         animatorCaptionAbove.setValue(above, animated);
 
         final EditTextEmoji fromView = getCommentView();

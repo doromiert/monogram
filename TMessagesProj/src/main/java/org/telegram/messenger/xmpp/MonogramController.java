@@ -1438,6 +1438,7 @@ public final class MonogramController {
     public void logout() {
         final String departing=accountJid();
         MonogramNotificationActions.invalidate(account);
+        MonogramMediaDrafts.logout(account,departing);
         debugCapture(false);
         linkPreviews.cancel();
         MonogramDialogState.clear(account,departing);
@@ -2136,6 +2137,7 @@ public final class MonogramController {
             long size=MonogramFileRequest.prepareProgress(request.message,request.file);
             if(size>0) progress(request.message.attachPath,0,size,true,false);
         }
+        MonogramMediaDrafts.accepted(account,request.message);
     }
     public File attachmentPath(int id) { return store.attachmentPath(id); }
     public boolean isFileLoading(String name) { return name != null && fileNames.containsKey(name); }

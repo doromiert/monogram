@@ -436,6 +436,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
         @Override
         public void updatePhotoAtIndex(int index) {
+            parentAlert.scheduleMediaDraftSave();
             PhotoAttachPhotoCell cell = getCellForIndex(index);
             if (cell != null) {
                 cell.getImageView().setOrientation(0, true);
@@ -479,6 +480,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
         @Override
         public void willHidePhotoViewer() {
+            parentAlert.saveMediaDraftNow(false);
             int count = gridView.getChildCount();
             for (int a = 0; a < count; a++) {
                 View view = gridView.getChildAt(a);
@@ -491,6 +493,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
         @Override
         public void onApplyCaption(CharSequence caption) {
+            parentAlert.scheduleMediaDraftSave();
             if (selectedPhotos.size() > 0 && selectedPhotosOrder.size() > 0) {
                 Object o = selectedPhotos.get(selectedPhotosOrder.get(0));
                 CharSequence firstPhotoCaption = null;
@@ -707,7 +710,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         }
         position -= cameraCount;
         if (selectedAlbumEntry != null && position < selectedAlbumEntry.photos.size()) {
-            return selectedAlbumEntry.photos.get(position);
+            MediaController.PhotoEntry entry=selectedAlbumEntry.photos.get(position);
+            Object selected=parentAlert.hasMediaDraftSession() ? selectedPhotos.get(entry.imageId) : null;
+            return selected instanceof MediaController.PhotoEntry ? (MediaController.PhotoEntry)selected : entry;
         }
         return null;
     }
@@ -727,6 +732,12 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             arrayList = cameraPhotos;
         } else {
             arrayList = new ArrayList<>(0);
+        }
+        if(parentAlert.hasMediaDraftSession()) {
+            arrayList=new ArrayList<>(arrayList);
+            for(int i=0;i<arrayList.size();i++) if(arrayList.get(i) instanceof MediaController.PhotoEntry) {
+                Object selected=selectedPhotos.get(((MediaController.PhotoEntry)arrayList.get(i)).imageId);if(selected instanceof MediaController.PhotoEntry) arrayList.set(i,selected);
+            }
         }
         return arrayList;
     }
@@ -1875,13 +1886,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         if (!cameraPhotos.isEmpty()) {
             for (int a = 0, size = cameraPhotos.size(); a < size; a++) {
                 MediaController.PhotoEntry photoEntry = (MediaController.PhotoEntry) cameraPhotos.get(a);
-                new File(photoEntry.path).delete();
-                if (photoEntry.imagePath != null) {
-                    new File(photoEntry.imagePath).delete();
-                }
-                if (photoEntry.thumbPath != null) {
-                    new File(photoEntry.thumbPath).delete();
-                }
+                if(!org.telegram.messenger.xmpp.MonogramMediaDrafts.protectedFile(photoEntry.path)) new File(photoEntry.path).delete();
+                if (photoEntry.imagePath != null && !org.telegram.messenger.xmpp.MonogramMediaDrafts.protectedFile(photoEntry.imagePath)) new File(photoEntry.imagePath).delete();
+                if (photoEntry.thumbPath != null && !org.telegram.messenger.xmpp.MonogramMediaDrafts.protectedFile(photoEntry.thumbPath)) new File(photoEntry.thumbPath).delete();
             }
             cameraPhotos.clear();
         }
@@ -2338,6 +2345,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     }
 
     protected void updatePhotosCounter(boolean added) {
+        parentAlert.scheduleMediaDraftSave();
         if (counterTextView == null || parentAlert.avatarPicker != 0 || parentAlert.storyMediaPicker || parentAlert.isPollAttach) {
             return;
         }
@@ -3177,6 +3185,17 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         }
     }
 
+    public void restoreMediaDraftPhotos(ArrayList<MediaController.PhotoEntry> restored) {
+        for(MediaController.PhotoEntry photo:restored) {
+            boolean duplicate=false;for(Object existing:selectedPhotos.values()) if(existing instanceof MediaController.PhotoEntry && java.util.Objects.equals(((MediaController.PhotoEntry)existing).path,photo.path)) duplicate=true;
+            if(duplicate) continue;
+            MediaController.PhotoEntry gallery=galleryAlbumEntry==null ? null : galleryAlbumEntry.photosByIds.get(photo.imageId);
+            boolean inGallery=gallery!=null && java.util.Objects.equals(gallery.path,photo.path);
+            if(!inGallery || selectedPhotos.containsKey(photo.imageId)) { do { photo.imageId=--lastImageId; } while(selectedPhotos.containsKey(photo.imageId));cameraPhotos.add(photo); }
+            selectedPhotos.put(photo.imageId,photo);selectedPhotosOrder.add(photo.imageId);
+        }
+        updateCheckedPhotoIndices();updatePhotosCounter(false);adapter.notifyDataSetChanged();cameraAttachAdapter.notifyDataSetChanged();
+    }
     public HashMap<Object, Object> getSelectedPhotos() {
         return selectedPhotos;
     }
