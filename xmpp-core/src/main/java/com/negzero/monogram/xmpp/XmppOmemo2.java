@@ -32,6 +32,7 @@ public final class XmppOmemo2 implements AutoCloseable {
     private final XMPPConnection connection;
     public final Omemo2Device device;
     private final Omemo2IncomingJournal incoming;
+    private final Omemo2ReceiveOnly recovery;
     private final SecureRandom random = new SecureRandom();
     // Use Map's keySet signature: Android desugaring lacks ConcurrentHashMap's covariant overload.
     private final Map<String,Omemo2Bundle> bundles = new ConcurrentHashMap<>();
@@ -45,7 +46,12 @@ public final class XmppOmemo2 implements AutoCloseable {
     private volatile boolean ready, closed;
     private volatile Exception lastError;
     public XmppOmemo2(XMPPConnection connection, Omemo2Device device, Consumer<String> changed) throws Exception {
-        this.connection = connection; this.device = device; this.changed = changed;
+        this(connection,device,changed,null);
+    }
+    /** Explicit migration only. Recovery never supplies outgoing sessions or publishes bundles. */
+    public XmppOmemo2(XMPPConnection connection, Omemo2Device device, Consumer<String> changed, Omemo2ReceiveOnly recovery) throws Exception {
+        if(recovery!=null) recovery.requireActive(device);
+        this.connection = connection; this.device = device; this.changed = changed; this.recovery=recovery;
         incoming=new Omemo2IncomingJournal(device);
         FileShare.initialize(); MessageCorrection.initialize();
         ProviderManager.addExtensionProvider("encrypted",NS,StandardExtensionElementProvider.INSTANCE);
@@ -228,13 +234,27 @@ public final class XmppOmemo2 implements AutoCloseable {
         public final Omemo2IncomingJournal.Token token;
         public final boolean replenish;
         public final String senderFingerprint;
+        final Omemo2IncomingJournal journal;
         Received(Message content, Message acknowledgement, boolean replenish,String senderFingerprint,XmppMessage message,Omemo2IncomingJournal.Token token) {
+            this(content,acknowledgement,replenish,senderFingerprint,message,token,null);
+        }
+        Received(Message content, Message acknowledgement, boolean replenish,String senderFingerprint,XmppMessage message,Omemo2IncomingJournal.Token token,Omemo2IncomingJournal journal) {
+            this.journal=journal;
             this.content = content; this.acknowledgement = acknowledgement; this.replenish = replenish; this.senderFingerprint=senderFingerprint;this.message=message;this.token=token;
         }
     }
-    public List<Received> pendingIncoming() throws Exception { return incoming.pending(); }
-    public boolean acceptIncoming(Received received) throws Exception { return received==null || incoming.accept(received.token); }
-    public void acknowledgeIncoming(Received received) throws Exception { if(received!=null) incoming.acknowledge(received.token); }
+    public List<Received> pendingIncoming() throws Exception {
+        List<Received> pending=new java.util.ArrayList<>(incoming.pending());
+        if(recovery!=null) pending.addAll(recovery.journal.pending());
+        return java.util.Collections.unmodifiableList(pending);
+    }
+    private Omemo2IncomingJournal journal(Received received) {
+        if(received.journal==incoming || recovery!=null && received.journal==recovery.journal) return received.journal;
+        if(received.token==null) return incoming;
+        throw new IllegalArgumentException("Incoming frame belongs to a different journal");
+    }
+    public boolean acceptIncoming(Received received) throws Exception { return received==null || journal(received).accept(received.token); }
+    public void acknowledgeIncoming(Received received) throws Exception { if(received!=null) journal(received).acknowledge(received.token); }
     /** Persist content before sending its optional acknowledgement or refreshing public bundles. */
     public Received receive(Message outer) throws Exception { return receive(outer,null,null); }
     public Received receive(Message outer, java.util.Date archiveTime) throws Exception { return receive(outer,archiveTime,null); }
@@ -262,14 +282,39 @@ public final class XmppOmemo2 implements AutoCloseable {
         String flag = selected.getAttributeValue("kex"); boolean preKey = "true".equals(flag) || "1".equals(flag);
         if (flag != null && !preKey && !flag.equals("false") && !flag.equals("0")) throw Omemo2Bundle.invalid();
         byte[] key = decode(selected.getText(),16384);
-        try(Omemo2Records tx=device.records.begin()) {
-            Received cached=incoming.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
-        }
-        if (preKey) bundle(peer,sender,true);
+        try {
+            try(Omemo2Records tx=device.records.begin()) {
+                Received cached=incoming.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
+            }
+            if(recovery!=null) {
+                try(Omemo2Records tx=recovery.device.records.begin()) {
+                    Received cached=recovery.journal.find(tx,envelope.digest,archiveTime,archiveId);
+                    if(cached!=null) return cached;
+                }
+                // Old prekey packets may reference expired server bundles. Historical receive keys
+                // are sufficient: never require a network refresh before trying the isolated archive.
+                if(preKey) try {
+                    return decryptIncoming(recovery.device,recovery.journal,true,outer,archiveTime,archiveId,envelope,peer,sender,key,true);
+                } catch(Omemo2Native.Failure absent) {
+                    if(!Omemo2ReceiveOnly.recoverable(absent.code)) throw absent;
+                }
+            }
+            if (preKey) bundle(peer,sender,true);
+            return decryptIncoming(device,incoming,false,outer,archiveTime,archiveId,envelope,peer,sender,key,preKey);
+        } catch(Omemo2Native.Failure failure) {
+            // Only a ratchet/key mismatch may consult historical receive state. Never mask trust,
+            // malformed input, duplicate-message, storage or journal failures with an archive retry.
+            if(recovery==null || !Omemo2ReceiveOnly.recoverable(failure.code)) throw failure;
+            return decryptIncoming(recovery.device,recovery.journal,true,outer,archiveTime,archiveId,envelope,peer,sender,key,preKey);
+        } finally { Arrays.fill(key,(byte)0); }
+    }
+    private Received decryptIncoming(Omemo2Device source,Omemo2IncomingJournal journal,boolean receiveOnly,
+            Message outer,java.util.Date archiveTime,String archiveId,Omemo2IncomingJournal.Envelope envelope,
+            String peer,int sender,byte[] key,boolean preKey) throws Exception {
         byte[] ciphertext=envelope.ciphertext;
-        try (Omemo2Records tx = device.records.begin()) {
-            Received cached=incoming.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
-            byte[] material = Omemo2Native.decrypt(tx,device.id,peer,sender,key,preKey); Message content = null, ack = null;
+        try (Omemo2Records tx = source.records.begin()) {
+            Received cached=journal.find(tx,envelope.digest,archiveTime,archiveId);if(cached!=null) return cached;
+            byte[] material = Omemo2Native.decrypt(tx,source.id,peer,sender,key,preKey); Message content = null, ack = null;
             try {
                 if (ciphertext == null) {
                     if (material.length != 32 || !java.security.MessageDigest.isEqual(material,new byte[32])) throw Omemo2Bundle.invalid();
@@ -278,20 +323,20 @@ public final class XmppOmemo2 implements AutoCloseable {
                     try { content = archiveTime == null ? Omemo2Payload.content(outer,plaintext) : Omemo2Payload.content(outer,plaintext,archiveTime.getTime()); }
                     finally { Arrays.fill(plaintext,(byte)0); }
                 }
-                if (preKey) {
-                    byte[][] reply = Omemo2Native.encrypt(tx,device.id,peer,sender,new byte[32]);
+                if (preKey && !receiveOnly) {
+                    byte[][] reply = Omemo2Native.encrypt(tx,source.id,peer,sender,new byte[32]);
                     StandardExtensionElement keys = StandardExtensionElement.builder("keys",NS).addAttribute("jid",peer).addElement(key(sender,reply)).build();
-                    ack = new Message(outer.getFrom(),Message.Type.chat); ack.setFrom(JidCreate.entityBareFrom(device.jid));
+                    ack = new Message(outer.getFrom(),Message.Type.chat); ack.setFrom(JidCreate.entityBareFrom(source.jid));
                     ack.addExtension(StandardExtensionElement.builder("encrypted",NS).addElement(StandardExtensionElement.builder("header",NS)
-                            .addAttribute("sid",Integer.toString(device.id)).addElement(keys).build()).build());
+                            .addAttribute("sid",Integer.toString(source.id)).addElement(keys).build()).build());
                 }
                 byte[] senderIdentity=tx.load(SESSION_IDENTITY,peer,sender);
                 String fingerprint=senderIdentity==null ? null : XmppSession.hex(senderIdentity);
-                boolean replenish = tx.ids(PRE_KEY).length < 50;
-                XmppMessage model=content==null ? null : XmppMessage.modern(outer,content,JidCreate.entityBareFrom(device.jid),archiveId,archiveTime);
+                boolean replenish = !receiveOnly && tx.ids(PRE_KEY).length < 50;
+                XmppMessage model=content==null ? null : XmppMessage.modern(outer,content,JidCreate.entityBareFrom(source.jid),archiveId,archiveTime);
                 if(model!=null) model=model.withSenderFingerprint(fingerprint);
                 Received received;
-                if(content!=null || ack!=null) received=incoming.append(tx,envelope.digest,outer,content,ack,model,fingerprint,replenish);
+                if(content!=null || ack!=null) received=journal.append(tx,envelope.digest,outer,content,ack,model,fingerprint,replenish);
                 else received=new Received(null,null,replenish,fingerprint,null,null);
                 tx.commit();return received;
             } finally { Arrays.fill(material,(byte)0); }

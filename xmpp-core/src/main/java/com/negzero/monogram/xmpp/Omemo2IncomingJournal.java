@@ -17,6 +17,7 @@ public final class Omemo2IncomingJournal {
     public static final int MAX_ENTRIES=128,MAX_BYTES=16*1024*1024,MAX_ENTRY_BYTES=2*1024*1024;
     private static final int HEADER=0x4d494831,ENTRY=0x4d494a31;
     private final Omemo2Device device;
+    private final boolean receiveOnly;
     private final byte[] epoch;
     public static final class FullException extends IOException {
         FullException(String message) { super(message); }
@@ -33,7 +34,10 @@ public final class Omemo2IncomingJournal {
         }
     }
     public Omemo2IncomingJournal(Omemo2Device device) throws Exception {
-        this.device=device;
+        this(device,false);
+    }
+    Omemo2IncomingJournal(Omemo2Device device,boolean receiveOnly) throws Exception {
+        this.device=device; this.receiveOnly=receiveOnly;
         try(Omemo2Records tx=device.records.begin()) {
             byte[] header=tx.load(INCOMING,"",0);
             if(header==null) { rotate(tx);header=tx.load(INCOMING,"",0);tx.commit(); }
@@ -125,15 +129,21 @@ public final class Omemo2IncomingJournal {
         ReplyReference.initialize();FileShare.initialize();MessageCorrection.initialize();MessageReactions.initialize();MessageRetraction.initialize();MessageMarkup.initialize();
         return PacketParserUtils.parseStanza(xml);
     }
-    private XmppOmemo2.Received received(Saved saved,Date time,String archiveId) throws Exception {
-        Message acknowledgement=message(saved.ackXml),content=null;XmppMessage model=null;
+    private XmppOmemo2.Received received(Omemo2Records tx,Saved saved,Date time,String archiveId) throws Exception {
+        Message acknowledgement=message(receiveOnly?null:saved.ackXml),content=null;XmppMessage model=null;
         if(!saved.accepted) {
             Message outer=message(saved.outerXml);content=message(saved.contentXml);
+            if(receiveOnly) {
+                Envelope envelope=envelope(outer);
+                byte[] trusted=tx.load(TRUSTED,envelope.peer,envelope.sender);
+                if(trusted==null || !saved.fingerprint.equals(XmppSession.hex(trusted)))
+                    throw new GeneralSecurityException("Recovery sender is no longer trusted");
+            }
             model=XmppMessage.modern(outer,content,JidCreate.entityBareFrom(device.jid),null,null);
             if(model==null) throw new IOException("Invalid authenticated journal content");
             model=model.canonical(saved.ids,saved.timestamp,saved.archived,saved.markable).withSenderFingerprint(saved.fingerprint).archived(archiveId,time);
         }
-        return new XmppOmemo2.Received(content,acknowledgement,saved.replenish,saved.fingerprint,model,saved.token);
+        return new XmppOmemo2.Received(content,receiveOnly?null:acknowledgement,!receiveOnly && saved.replenish,saved.fingerprint,model,saved.token,this);
     }
     XmppOmemo2.Received find(Omemo2Records tx,byte[] digest,Date time,String archiveId) throws Exception {
         check(tx);int count=0;long bytes=0;
@@ -141,7 +151,7 @@ public final class Omemo2IncomingJournal {
             Saved saved=read(tx,slot);
             if(saved!=null) bytes+=saved.size;
             if(++count>MAX_ENTRIES || bytes>MAX_BYTES) throw new IOException("Incoming journal exceeds capacity");
-            if(saved!=null && MessageDigest.isEqual(digest,saved.token.digest)) return received(saved,time,archiveId);
+            if(saved!=null && MessageDigest.isEqual(digest,saved.token.digest)) return received(tx,saved,time,archiveId);
         }
         return null;
     }
@@ -169,7 +179,7 @@ public final class Omemo2IncomingJournal {
         }
         byte[] bytes=write(saved);if(total+bytes.length>MAX_BYTES) throw new FullException("Incoming journal byte capacity is exhausted");
         tx.save(INCOMING,"",slot,bytes);
-        return new XmppOmemo2.Received(content,acknowledgement,replenish,fingerprint,model,saved.token);
+        return new XmppOmemo2.Received(content,acknowledgement,replenish,fingerprint,model,saved.token,this);
     }
     public List<XmppOmemo2.Received> pending() throws Exception {
         List<XmppOmemo2.Received> pending=new ArrayList<>();
@@ -179,7 +189,7 @@ public final class Omemo2IncomingJournal {
             for(int slot:tx.ids(INCOMING)) if(slot!=0) {
                 byte[] value=tx.load(INCOMING,"",slot);if(value!=null) bytes+=value.length;
                 if(++count>MAX_ENTRIES || bytes>MAX_BYTES) throw new IOException("Incoming journal exceeds capacity");
-                pending.add(received(read(tx,slot),null,null));
+                pending.add(received(tx,read(tx,slot),null,null));
             }
         }
         return Collections.unmodifiableList(pending);

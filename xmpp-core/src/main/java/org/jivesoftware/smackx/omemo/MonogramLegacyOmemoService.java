@@ -31,8 +31,9 @@ public final class MonogramLegacyOmemoService extends OmemoService<IdentityKeyPa
     private static MonogramLegacyOmemoService instance;
     private final MonogramSignalStore records;
     private static final class Registration {
-        final LegacyIncomingJournal journal;final Receiver receiver;
-        Registration(LegacyIncomingJournal journal,Receiver receiver) { this.journal=journal;this.receiver=receiver; }
+        final LegacyIncomingJournal journal;final Receiver receiver;final MonogramLegacyReceiveOnly recovery;
+        Registration(LegacyIncomingJournal journal,Receiver receiver) { this(journal,receiver,null); }
+        Registration(LegacyIncomingJournal journal,Receiver receiver,MonogramLegacyReceiveOnly recovery) { this.journal=journal;this.receiver=receiver;this.recovery=recovery; }
     }
     private final Map<OmemoManager,Registration> receivers=Collections.synchronizedMap(new WeakHashMap<>());
     private MonogramLegacyOmemoService(MonogramSignalStore store) { records=store;setOmemoStoreBackend(store); }
@@ -45,6 +46,28 @@ public final class MonogramLegacyOmemoService extends OmemoService<IdentityKeyPa
     }
     public MonogramSignalStore records() { return records; }
     public void register(OmemoManager manager,LegacyIncomingJournal journal,Receiver receiver) { receivers.put(manager,new Registration(journal,receiver)); }
+    /** Cold migration startup only; never swap the singleton's backend or cached active ratchets. */
+    public void configureRecovery(OmemoManager manager,MonogramLegacyReceiveOnly recovery) {
+        synchronized(manager) {
+            if(manager.getConnection().isConnected()) throw new IllegalStateException("Configure recovery before connecting");
+            Registration registration=receivers.get(manager);
+            if(registration==null) throw new IllegalStateException("Register active incoming journal first");
+            if(recovery!=null) recovery.requireActive(records,registration.journal);
+            receivers.put(manager,new Registration(registration.journal,registration.receiver,recovery));
+        }
+    }
+    public List<LegacyIncomingJournal.Received> pending(OmemoManager manager,LegacyIncomingJournal journal) throws Exception {
+        List<LegacyIncomingJournal.Received> result=new ArrayList<>(journal.pending());
+        Registration registration=receivers.get(manager);
+        if(registration!=null && registration.journal==journal && registration.recovery!=null) result.addAll(registration.recovery.journal().pending());
+        return Collections.unmodifiableList(result);
+    }
+    public LegacyIncomingJournal source(OmemoManager manager,LegacyIncomingJournal active,LegacyIncomingJournal.Received received) {
+        if(received==null || received.journal==active) return active;
+        Registration registration=receivers.get(manager);
+        if(registration!=null && registration.journal==active && registration.recovery!=null && received.journal==registration.recovery.journal()) return received.journal;
+        throw new IllegalArgumentException("Legacy incoming frame belongs to another journal");
+    }
     public void unregister(OmemoManager manager) { receivers.remove(manager); }
     @Override protected MonogramSignalStore createDefaultOmemoStoreBackend() { return records; }
     @Override protected MonogramSignalRatchet instantiateOmemoRatchet(OmemoManager manager,
@@ -98,6 +121,25 @@ public final class MonogramLegacyOmemoService extends OmemoService<IdentityKeyPa
             OmemoElement element=context.outer.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
             if(element==null || context.outer.hasExtension("encrypted",XmppOmemo2.NS)) throw new IOException("Invalid legacy incoming envelope");
             byte[] digest=journal.digest(context);
+            Registration registration=receivers.get(manager);
+            MonogramLegacyReceiveOnly recovery=registration!=null && registration.journal==journal ? registration.recovery : null;
+            if(recovery==null) return receiveActive(manager,journal,context,guard,digest);
+            LegacyIncomingJournal.Received cached=recovery.cached(context);if(cached!=null) return cached;
+            boolean prekey=false;int localKeys=0;
+            for(OmemoKeyElement key:element.getHeader().getKeys()) if(key.getId()==journal.own.getDeviceId()) {
+                localKeys++;prekey=key.isPreKey();
+            }
+            // The installed ratchet silently ignores a mismatched identity before aggregating
+            // failures. One local recipient key makes its typed aggregate unambiguous.
+            if(localKeys!=1) throw new IOException("Migration receive requires exactly one local recipient key");
+            return MonogramLegacyRouting.receive(prekey,
+                    () -> receiveActive(manager,journal,context,guard,digest),() -> recovery.receive(manager,context));
+        }
+    }
+    /** Caller holds the manager monitor; no alternate store is consulted in this normal path. */
+    private LegacyIncomingJournal.Received receiveActive(OmemoManager manager,LegacyIncomingJournal journal,
+            LegacyIncomingJournal.Context context,OmemoManager.LoggedInOmemoManager guard,byte[] digest) throws Exception {
+            OmemoElement element=context.outer.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
             try(LegacyOmemoRecords tx=records.begin(manager.getOwnDevice())) {
                 LegacyIncomingJournal.Received result=records.withTransaction(manager.getOwnDevice(),tx,() -> {
                     LegacyIncomingJournal.Received existing=journal.find(tx,context,digest);if(existing!=null) return existing;
@@ -117,7 +159,6 @@ public final class MonogramLegacyOmemoService extends OmemoService<IdentityKeyPa
                 });
                 tx.commit();return result;
             }
-        }
     }
     private void repair(OmemoManager manager,OmemoDevice device) {
         synchronized(manager) {
@@ -132,6 +173,8 @@ public final class MonogramLegacyOmemoService extends OmemoService<IdentityKeyPa
     }
     /** Exact stored packet only; never rebuild a session or advance the ratchet again during recovery. */
     public void completePending(OmemoManager manager,LegacyIncomingJournal journal,LegacyIncomingJournal.Received received) throws Exception {
+        LegacyIncomingJournal source=source(manager,journal,received);
+        if(source!=journal) { source.completed(received,true,true);return; }
         Registration registration=null;List<LegacyIncomingJournal.Received> publication=null;OmemoBundleElement bundle=null;
         boolean changed=false;
         try {

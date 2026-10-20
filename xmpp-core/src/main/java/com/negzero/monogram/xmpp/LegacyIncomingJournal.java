@@ -18,6 +18,7 @@ public final class LegacyIncomingJournal {
     public static final int MAX_ENTRIES=128,MAX_ENTRY_BYTES=2*1024*1024,MAX_BYTES=16*1024*1024;
     private static final int HEADER=0x4c494831,ENTRY=0x4c494a32;
     private final MonogramSignalStore store;
+    private final IdentityTrust recoveryTrust;
     public final OmemoDevice own;
     private final byte[] epoch;
     private volatile String localIdentity;
@@ -72,13 +73,22 @@ public final class LegacyIncomingJournal {
         public final OmemoMessage.Received decrypted;
         public final Message completion;
         public final boolean replenish;
+        public final LegacyIncomingJournal journal;
         Received(XmppMessage message,XmppRoomMessage roomMessage,Token token,Context context,OmemoMessage.Received decrypted,Message completion,boolean replenish) {
+            this(message,roomMessage,token,context,decrypted,completion,replenish,null);
+        }
+        private Received(XmppMessage message,XmppRoomMessage roomMessage,Token token,Context context,OmemoMessage.Received decrypted,Message completion,boolean replenish,LegacyIncomingJournal journal) {
+            this.journal=journal;
             this.message=message;this.roomMessage=roomMessage;this.token=token;this.context=context;this.decrypted=decrypted;this.completion=completion;this.replenish=replenish;
         }
-        public boolean receiptEligible() { return context!=null && context.receipt!=null && context.receipt.accepts(message); }
+        public boolean receiptEligible() { return (journal==null || journal.recoveryTrust==null) && context!=null && context.receipt!=null && context.receipt.accepts(message); }
     }
     public LegacyIncomingJournal(MonogramSignalStore store,OmemoDevice own) throws Exception {
-        this.store=store;this.own=own;
+        this(store,own,null);
+    }
+    /** Explicit migration archive only; the ordinary journal constructor is unchanged. */
+    public LegacyIncomingJournal(MonogramSignalStore store,OmemoDevice own,IdentityTrust recoveryTrust) throws Exception {
+        this.store=store;this.own=own;this.recoveryTrust=recoveryTrust;
         try(LegacyOmemoRecords tx=store.begin(own)) {
             byte[] value=tx.load(LegacyOmemoRecords.INCOMING,"",0);
             if(value==null) { rotate(tx);value=tx.load(LegacyOmemoRecords.INCOMING,"",0);tx.commit(); }
@@ -183,8 +193,16 @@ public final class LegacyIncomingJournal {
             throw new IOException("Invalid persisted legacy completion");
         return result;
     }
+    private Received frame(XmppMessage message,XmppRoomMessage roomMessage,Token token,Context context,OmemoMessage.Received decrypted,Message completion,boolean replenish) {
+        return new Received(message,roomMessage,token,context,decrypted,recoveryTrust==null?completion:null,recoveryTrust==null && replenish,this);
+    }
+    private void trusted(Saved saved) throws Exception {
+        if(recoveryTrust!=null && !saved.accepted && !recoveryTrust.isTrusted(new OmemoDevice(JidCreate.bareFrom(saved.author),saved.senderDevice),new org.jivesoftware.smackx.omemo.trust.OmemoFingerprint(saved.fingerprint)))
+            throw new GeneralSecurityException("Recovery sender is no longer trusted");
+    }
     private Received received(Saved saved,OmemoMessage.Received decrypted,Context current) throws Exception {
-        if(saved.accepted) return new Received(null,null,saved.token,null,null,completion(saved),saved.replenish);
+        trusted(saved);
+        if(saved.accepted) return frame(null,null,saved.token,null,null,recoveryTrust==null?completion(saved):null,saved.replenish);
         Context c=saved.context;EntityBareJid owner=own.getJid().asEntityBareJidOrThrow();
         Map<String,String> ids=new LinkedHashMap<>(c.ids);ids.put("legacy-cipher",XmppSession.hex(saved.token.digest));
         long timestamp=c.timestamp;boolean archived=c.archived;
@@ -202,7 +220,7 @@ public final class LegacyIncomingJournal {
             if(roomMessage!=null) roomMessage=roomMessage.canonical(ids,timestamp,archived,c.outgoing,c.realSender,c.verified,c.occupantId).withSenderFingerprint(saved.fingerprint);
         }
         if(message==null && roomMessage==null) throw new IOException("Invalid authenticated legacy incoming model");
-        return new Received(message,roomMessage,saved.token,current==null ? c : current,decrypted,completion(saved),saved.replenish);
+        return frame(message,roomMessage,saved.token,current==null ? c : current,decrypted,recoveryTrust==null?completion(saved):null,saved.replenish);
     }
     public Received find(LegacyOmemoRecords tx,Context context,byte[] digest) throws Exception {
         check(tx);identity();int count=0;long total=0;
@@ -222,7 +240,7 @@ public final class LegacyIncomingJournal {
     }
     public Received append(LegacyOmemoRecords tx,Context context,byte[] digest,OmemoMessage.Received decrypted,Message completion,boolean replenish) throws Exception {
         check(tx);identity();
-        if(decrypted.isKeyTransportMessage() && completion==null && !replenish) return new Received(null,null,null,context,decrypted,null,false);
+        if(decrypted.isKeyTransportMessage() && completion==null && !replenish) return frame(null,null,null,context,decrypted,null,false);
         boolean[] used=new boolean[MAX_ENTRIES+1];long total=0;int count=0;
         for(int slot:tx.ids(LegacyOmemoRecords.INCOMING,"")) if(slot!=0) {
             if(slot<1 || slot>MAX_ENTRIES) throw new IOException("Invalid legacy incoming slot");used[slot]=true;count++;total+=tx.load(LegacyOmemoRecords.INCOMING,"",slot).length;
@@ -250,7 +268,7 @@ public final class LegacyIncomingJournal {
         }
     }
     private Saved matching(LegacyOmemoRecords tx,Received received) throws Exception {
-        if(received==null || received.token==null || !current(tx) || !MessageDigest.isEqual(epoch,received.token.epoch)) return null;
+        if(received==null || received.journal!=this || received.token==null || !current(tx) || !MessageDigest.isEqual(epoch,received.token.epoch)) return null;
         byte[] bytes=tx.load(LegacyOmemoRecords.INCOMING,"",received.token.slot);if(bytes==null) return null;
         Saved saved=decode(bytes,received.token.slot);return MessageDigest.isEqual(saved.token.digest,received.token.digest) ? saved : null;
     }
@@ -259,7 +277,9 @@ public final class LegacyIncomingJournal {
         try(LegacyOmemoRecords tx=store.begin(own)) {
             boolean accepted=store.withTransaction(own,tx,() -> {
                 Saved saved=matching(tx,received);if(saved==null) return false;if(saved.accepted) return true;
+                trusted(saved);
                 saved.accepted=true;saved.body=null;saved.context=null;
+                if(recoveryTrust!=null) { saved.completionXml=null;saved.replenish=false; }
                 tx.save(LegacyOmemoRecords.INCOMING,"",saved.token.slot,saved.completionXml==null && !saved.replenish ? null : encode(saved));return true;
             });if(accepted) tx.commit();return accepted;
         }

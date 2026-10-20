@@ -456,10 +456,15 @@ public final class XmppSession implements AutoCloseable {
         java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
         listener.message(message,() -> { if(accepted.compareAndSet(false,true)) afterModern(received,receipt!=null && receipt.accepts(message) ? receipt : null); });
     }
+    /** Explicit cold-migration opt-in, before connecting. Never activates or publishes an account. */
+    public void configureLegacyRecovery(org.jivesoftware.smackx.omemo.MonogramLegacyReceiveOnly recovery) {
+        if(closed) throw new IllegalStateException("Session is closed");
+        MonogramLegacyOmemoService.instance().configureRecovery(omemo,recovery);
+    }
     /** Local recovery also runs before connecting: authenticated plaintext must not depend on network availability. */
     public void recoverIncoming() {
         if(closed) return;
-        try { for(LegacyIncomingJournal.Received pending:legacyIncoming.pending()) { if(closed) return;deliverLegacy(pending); } }
+        try { for(LegacyIncomingJournal.Received pending:MonogramLegacyOmemoService.instance().pending(omemo,legacyIncoming)) { if(closed) return;deliverLegacy(pending); } }
         catch(Exception failure) { legacyFailure=failure; }
         if(modern==null) return;
         try {
@@ -472,7 +477,7 @@ public final class XmppSession implements AutoCloseable {
     /** Retry only a room whose native metadata has just become available. No connection or join is needed. */
     public void recoverRoomIncoming(String room) {
         if(closed || room==null) return;
-        try { for(LegacyIncomingJournal.Received pending:legacyIncoming.pending())
+        try { for(LegacyIncomingJournal.Received pending:MonogramLegacyOmemoService.instance().pending(omemo,legacyIncoming))
             if(!closed && pending.roomMessage!=null && room.equals(pending.roomMessage.room.toString())) deliverLegacy(pending);
         } catch(Exception failure) { legacyFailure=failure; }
     }
@@ -535,7 +540,7 @@ public final class XmppSession implements AutoCloseable {
             do {
                 synchronized(legacyInboxLock) { revision=foreignLegacyRevision; }
                 try {
-                    for(LegacyIncomingJournal.Received pending:legacyIncoming.pending())
+                    for(LegacyIncomingJournal.Received pending:MonogramLegacyOmemoService.instance().pending(omemo,legacyIncoming))
                         if(pending.message==null && pending.roomMessage==null)
                             MonogramLegacyOmemoService.instance().completePending(omemo,legacyIncoming,pending);
                 } catch(Exception failure) { legacyFailure=failure; }
@@ -606,7 +611,8 @@ public final class XmppSession implements AutoCloseable {
     }
     void acceptLegacy(LegacyIncomingJournal.Received received) {
         try {
-            if(!legacyIncoming.accept(received)) return;
+            LegacyIncomingJournal source=MonogramLegacyOmemoService.instance().source(omemo,legacyIncoming,received);
+            if(!source.accept(received)) return;
             if(received.message!=null || received.roomMessage!=null) IncomingCapacity.changed(legacyCapacityKey,this);
             if(!closed) try { legacyWorker.execute(() -> {
                 try { MonogramLegacyOmemoService.instance().completePending(omemo,legacyIncoming,received); }
