@@ -8695,6 +8695,32 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    /** Fail closed: null means draft assets must be retained because a native reference could not be inspected. */
+    public void getMonogramDraftReferences(Consumer<java.util.Set<String>> callback) {
+        storageQueue.postRunnable(() -> {
+            java.util.Set<String> references=new java.util.HashSet<>();
+            try {
+                for(String query:new String[]{"SELECT data FROM messages_v2 WHERE out=1 AND (mid<0 OR send_state!=0)","SELECT data FROM scheduled_messages_v2"}) {
+                    SQLiteCursor cursor=null;
+                    try {
+                        cursor=database.queryFinalized(query);
+                        while(cursor.next()) {
+                            NativeByteBuffer data=cursor.byteBufferValue(0);if(data==null) throw new IllegalStateException("Missing draft reference data");
+                            try {
+                                TLRPC.Message message=TLRPC.Message.TLdeserialize(data,data.readInt32(true),true);
+                                if(message==null) throw new IllegalStateException("Invalid draft reference data");
+                                message.readAttachPath(data,getUserConfig().clientUserId);
+                                if(message.attachPath!=null) references.add(message.attachPath);
+                                if(message.params!=null) references.addAll(message.params.values());
+                            } finally { data.reuse(); }
+                        }
+                    } finally { if(cursor!=null) cursor.dispose(); }
+                }
+                callback.accept(references);
+            } catch(Exception failed) { callback.accept(null); }
+        });
+    }
+
     public void getUnsentMessages(int count) {
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;

@@ -2295,6 +2295,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             try {
                 for (MessageObject source : messages) {
                     SendMessageParams copy = org.telegram.messenger.xmpp.MonogramForwarding.copy(source.messageOwner, peer, hideCaption);
+                    if(scheduleDate==0) org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(copy.params,org.telegram.messenger.xmpp.MonogramMediaDrafts.captureForward(currentAccount,peer,source));
                     copy.notify = notify;
                     copy.scheduleDate = scheduleDate;
                     copy.scheduleRepeatPeriod = scheduleRepeatPeriod;
@@ -5469,6 +5470,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         AndroidUtilities.runOnUIThread(() -> callback.accept(committed));
                     });
                 }
+                if(scheduleDate==0) org.telegram.messenger.xmpp.MonogramMediaDrafts.accepted(currentAccount,newMsg);
                 MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objArr, mode);
                 if (scheduleDate == 0) {
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
@@ -9565,6 +9567,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     private final static int ERROR_TYPE_FILE_TOO_LARGE = 2;
 
     private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex) {
+        return prepareSendingDocumentInternal(accountInstance, path, originalPath, uri, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, entities, editingMessageObject, groupId, isGroupFinal, caption, notify, scheduleDate, scheduleRepeatPeriod, docType, forceDocument, sendMessageChatArguments, effectId, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollIndex, null);
+    }
+
+    private static int prepareSendingDocumentInternal(AccountInstance accountInstance, String path, String originalPath, Uri uri, String mime, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, final ArrayList<TLRPC.MessageEntity> entities, final MessageObject editingMessageObject, long[] groupId, boolean isGroupFinal, CharSequence caption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, Integer[] docType, boolean forceDocument, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, PollSendParams pollSendParams, int pollIndex, HashMap<String,String> mediaDraftParams) {
         final long forcedPollGroupId = pollSendParams != null ? pollSendParams.groupId : 0;
 
         if ((path == null || path.length() == 0) && uri == null) {
@@ -9821,6 +9827,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         final String pathFinal = path;
         final String parentFinal = parentObject;
         final HashMap<String, String> params = new HashMap<>();
+        org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,mediaDraftParams);
         if (originalPath != null) {
             params.put("originalPath", originalPath);
         }
@@ -10116,6 +10123,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
     @UiThread
     public static void prepareSendingAudioDocuments(AccountInstance accountInstance, ArrayList<MessageObject> messageObjects, CharSequence caption, long dialogId, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, boolean notify, int scheduleDate, int scheduledRepeatPeriod, MessageObject editingMessageObject, SendMessageChatArguments sendMessageChatArguments, long effectId, boolean invertMedia, long payStars, PollSendParams pollSendParams, ArrayList<Integer> pollSendIndexes, boolean forcedPollDoNotSendFinal, Runnable afterCommandsDone) {
+        final ArrayList<String> draftPaths=new ArrayList<>();for(MessageObject message:messageObjects) draftPaths.add(message.messageOwner.attachPath);
+        final java.util.Map<String,HashMap<String,String>> draftHandoff=editingMessageObject==null && scheduleDate==0 ? org.telegram.messenger.xmpp.MonogramMediaDrafts.captureFileHandoff(accountInstance.getCurrentAccount(),dialogId,draftPaths) : java.util.Collections.emptyMap();
         new Thread(() -> {
             final long forcedPollGroupId = pollSendParams != null ? pollSendParams.groupId : 0;
             final boolean forceDisableCheckSentMedia = pollSendParams != null;
@@ -10183,6 +10192,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 final ArrayList<TLRPC.MessageEntity> entities = a == 0 ? accountInstance.getMediaDataController().getEntities(text, true) : null;
                 final String captionFinal = a == 0 ? text[0].toString() : null;
                 final HashMap<String, String> params = new HashMap<>();
+                org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,draftHandoff.get(messageObject.messageOwner.attachPath));
                 if (originalPath != null) {
                     params.put("originalPath", originalPath);
                 }
@@ -10269,6 +10279,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (paths == null && originalPaths == null && uris == null || paths != null && originalPaths != null && paths.size() != originalPaths.size()) {
             return;
         }
+        final java.util.Map<String,HashMap<String,String>> draftHandoff=editingMessageObject==null && scheduleDate==0 ? org.telegram.messenger.xmpp.MonogramMediaDrafts.captureFileHandoff(accountInstance.getCurrentAccount(),dialogId,paths) : java.util.Collections.emptyMap();
         Utilities.globalQueue.postRunnable(() -> {
             int error = 0;
             long[] groupId = new long[1];
@@ -10290,7 +10301,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                     mediaCount++;
                     long prevGroupId = groupId[0];
-                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1);
+                    error = prepareSendingDocumentInternal(accountInstance, paths.get(a), originalPaths.get(a), null, mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, a == 0 ? captionEntities : null, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendIndexes!= null ? pollSendIndexes.get(a) : -1, draftHandoff.get(paths.get(a)));
                     first = false;
                     if (prevGroupId != groupId[0] || groupId[0] == -1) {
                         mediaCount = 1;
@@ -10313,7 +10324,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     }
                     mediaCount++;
                     long prevGroupId = groupId[0];
-                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1);
+                    error = prepareSendingDocumentInternal(accountInstance, null, null, uris.get(a), mime, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, captionEntitiesFinal, editingMessageObject, groupId, !forcedPollDoNotSendFinal && (pollSendParams == null && mediaCount == 10 || a == count - 1), captionFinal, notify, scheduleDate, scheduleRepeatPeriod, docType, inputContent == null, sendMessageChatArguments, first ? effectId : 0, invertMedia, payStars, monoForumPeerId, suggestionParams, pollSendParams, pollSendUriIndexes != null ? pollSendUriIndexes.get(a) : -1, draftHandoff.get(uris.get(a).toString()));
                     first = false;
                     if (prevGroupId != groupId[0] || groupId[0] == -1) {
                         mediaCount = 1;

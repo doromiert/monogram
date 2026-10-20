@@ -14169,6 +14169,7 @@ public class ChatActivity extends BaseFragment implements
         if (checkSlowModeAlert()) {
             if (!fmessages.isEmpty() && !TextUtils.isEmpty(caption)) {
                 SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(caption, dialog_id, null, null, null, true, captionEntities, null, null, true, 0, 0, null, false);
+                params.params = org.telegram.messenger.xmpp.MonogramMediaDrafts.captureCaption(currentAccount,dialog_id,"document");
                 params.sendMessageChatArguments = getMessageChatSendParams();
                 params.invert_media = invertMedia;
                 params.payStars = payStars;
@@ -35845,6 +35846,7 @@ public class ChatActivity extends BaseFragment implements
         if (checkSlowModeAlert()) {
             if (!TextUtils.isEmpty(caption)) {
                 SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(caption, dialog_id, null, null, null, true, null, null, null, true, 0, 0, null, false);
+                params.params = org.telegram.messenger.xmpp.MonogramMediaDrafts.captureCaption(currentAccount,dialog_id,"contacts");
                 params.sendMessageChatArguments = getMessageChatSendParams();
                 params.effect_id = effectId;
                 params.invert_media = invertMedia;
@@ -35854,8 +35856,10 @@ public class ChatActivity extends BaseFragment implements
                 effectId = 0;
                 SendMessagesHelper.getInstance(currentAccount).sendMessage(params);
             }
+            int draftContactIndex=0;
             for (TLRPC.User user : users) {
                 SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(user, dialog_id, null, null, null, null, notify, scheduleDate, 0);
+                params.params = org.telegram.messenger.xmpp.MonogramMediaDrafts.captureContact(currentAccount,dialog_id,draftContactIndex++);
                 params.sendMessageChatArguments = getMessageChatSendParams();
                 params.effect_id = effectId;
                 params.invert_media = invertMedia;

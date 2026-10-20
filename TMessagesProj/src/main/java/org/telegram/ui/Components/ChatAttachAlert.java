@@ -4621,6 +4621,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             return;
         }
 
+        saveMediaDraftNow(false);
         animatorToggleCaptionSupported.setValue(newId == LAYOUT_TYPE_PHOTO, animated);
         animatorCurrentVisibleLayout.replace(newId, animated);
 
@@ -6090,6 +6091,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     private org.telegram.messenger.xmpp.MonogramMediaDrafts.Session mediaDraft;
     private boolean mediaDraftInitializing,mediaDraftDiscarded;
     private final Runnable saveMediaDraftRunnable=() -> saveMediaDraftNow(false);
+    public Object mediaDraftOwner() { return hasMediaDraftSession() ? mediaDraft : null; }
     public boolean hasMediaDraftSession() { return mediaDraft!=null && mediaDraft.active() && !mediaDraftDiscarded; }
     public void scheduleMediaDraftSave() {
         if(mediaDraftInitializing || !hasMediaDraftSession()) return;
@@ -6098,7 +6100,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     public void saveMediaDraftNow(boolean sending) {
         AndroidUtilities.cancelRunOnUIThread(saveMediaDraftRunnable);
         if(mediaDraftInitializing || !hasMediaDraftSession() || photoLayout==null) return;
-        mediaDraft.save(photoLayout.getSelectedPhotos(),photoLayout.getSelectedPhotosOrder(),getCommentView().getText(),captionAbove,sending);
+        if(currentAttachLayout==documentLayout && documentLayout!=null) mediaDraft.saveSelections("document",documentLayout.getDraftFiles(),null,null,documentLayout.getDraftMessages(),getCommentView().getText(),captionAbove,sending);
+        else if(currentAttachLayout==audioLayout && audioLayout!=null) {
+            ArrayList<MediaController.AudioEntry> audios=audioLayout.getDraftAudios();ArrayList<String> paths=new ArrayList<>();for(MediaController.AudioEntry audio:audios) paths.add(audio.messageObject.messageOwner.attachPath);
+            mediaDraft.saveFiles("audio",paths,audios,getCommentView().getText(),captionAbove,sending);
+        } else if(currentAttachLayout==contactsLayout && contactsLayout!=null) mediaDraft.saveSelections("contacts",java.util.Collections.emptyList(),null,contactsLayout.getDraftContacts(),null,getCommentView().getText(),captionAbove,sending);
+        else if(currentAttachLayout==photoLayout) mediaDraft.save(photoLayout.getSelectedPhotos(),photoLayout.getSelectedPhotosOrder(),getCommentView().getText(),captionAbove,sending);
     }
     public void tagMediaDraft(SendMessagesHelper.SendingMediaInfo info,MediaController.PhotoEntry photo) { if(mediaDraft!=null) mediaDraft.tag(info,photo); }
     private void mediaDraftError(String message) {
@@ -6117,7 +6124,10 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         mediaDraft.restore(restored -> {
             if(mediaDraft!=owner || !owner.active() || destroyed || isDismissed() || currentAccount!=UserConfig.selectedAccount) return;
             mediaDraftInitializing=true;
-            photoLayout.restoreMediaDraftPhotos(restored.photos);
+            if(restored.kind.equals("document")) { openDocumentsLayout(true);documentLayout.restoreDraftFiles(restored.files);documentLayout.restoreDraftMessages(restored.forwards); }
+            else if(restored.kind.equals("contacts")) { openContactsLayout();contactsLayout.restoreDraftContacts(restored.contacts); }
+            else if(restored.kind.equals("audio")) { openAudioLayout(true);audioLayout.restoreDraftAudios(restored.audios); }
+            else photoLayout.restoreMediaDraftPhotos(restored.photos);
             if(getCommentView().length()==0 && !restored.caption.isEmpty()) {
                 setCaptionAbove(restored.above,false);
                 android.text.SpannableStringBuilder text=new android.text.SpannableStringBuilder(restored.caption);
@@ -7116,6 +7126,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         saveMediaDraftNow(false);
         captionLimitBulletinShown = false;
         super.dismiss();
+        if(mediaDraft!=null) mediaDraft.pickerClosed();
         allowPassConfirmationAlert = false;
     }
 

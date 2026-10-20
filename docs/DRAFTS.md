@@ -19,14 +19,14 @@ the delayed save and without a pause callback. Persisted drafts use the existing
 synchronous preference commit. No account credentials or OMEMO keys are copied
 into the draft store.
 
-## Native photo/video attachment drafts
+## Native attachment selections
 
-Ordinary chat photo/video selections now have a local recoverable composition.
+Ordinary chat photo/video, document-file, music, ordered contact and document-history forwarding selections now have a local recoverable composition.
 The original attachment grid and photo/video editor remain responsible for
 selection, editing and sending. The manifest records native selection order,
 per-item and shared captions/entities, caption placement, applied crop/filter/
 paint state, video trim/mute settings, spoilers, timers and cover metadata.
-Reopening the picker merges recoverable entries into its native selection.
+Reopening the picker restores the saved native tab and merges recoverable entries into its selection. Document selection order and native music document/track metadata are retained. Contacts preserve the selected native User/phonebook fields and order; phonebook lookup IDs are given local recovery identities because Android reallocates them between loads. Native contact preparation still resolves the selected provider lookup when sending; if that lookup is unavailable, the stored name/phone numbers remain available. Recovered contacts and history messages are visible as native checked rows. Forwarding keeps the source message, conversation, entities and native retry params and reuses the existing XMPP forwarding path. Tab switches retain same-owner selections in memory; the durable composition follows the last selected tab.
 The close confirmation offers **Keep draft**, **Discard** and **Cancel**.
 
 Ownership uses the account slot, account JID, conversation address and a logout
@@ -48,30 +48,49 @@ manifest entries remain available rather than silently sending different media.
 Sending attaches private batch/item tokens to native media params. A selection
 is cleared only after **every item** is confirmed in the native durable outbox.
 Conversion failures before queuing retain the composition, and partial handoffs
-restore only unaccepted items. There is no second sending queue. Assets that
+restore only unaccepted items. Contact/history-forward captions sent as separate
+text messages have separate batch tokens, so an accepted caption is not restored
+and sent again. Reference tokens can only be claimed during the picker’s native
+delegate call; they are closed in finally and cannot tag unrelated later sends. There is no second sending queue. Assets that
 might be used by queued/failed native sends are retained across draft clearing
-and logout; cleanup after final outbox completion is still pending. Protected
-original temporary paths can also remain until cache cleanup/process restart.
+and logout; completion/deletion notifications trigger a scan on the native storage queue.
+Private owner directories are removed only with no active/recoverable manifest
+and no pending, failed or scheduled native reference. Collection defers while
+any picker is open or any recoverable manifest remains in that account scope,
+conservatively protecting references into another draft directory, including
+binary editor data. A lifecycle lock and mutation fence prevent a stale native
+scan from racing a new selection/handoff. Closing the picker or completing batch
+acceptance requests a fresh native scan. The scan checks owner
+tokens, attachment paths and path-bearing native params; query/decode failure
+retains files. Opening the picker also schedules collection after a restart.
+Protected original temporary paths can still remain until cache cleanup/process
+restart.
 No account credentials or OMEMO keys are copied into this store.
 
 ## Remaining coverage and acceptance
 
-Document/music/location/contact tabs, scheduled compositions and unapplied
-crop/paint editor canvases are not covered. No cross-device draft support is
+Scheduled compositions and unapplied crop/paint editor canvases are not covered. The native location tab dispatches its current place directly
+through didSelectLocation from its action/venue callbacks; it has no selected
+attachment batch to restore. Contacts’ native selectedContacts/order and caption path are now recovered.
+External Android
+file-provider launch/result selection is also outside the in-picker file list. No cross-device draft support is
 claimed. Keep the broader media-draft TODO in progress until those paths and
 phone acceptance are finished.
 
-Six source fixtures cover selection order and caption entities, video edits,
+Fifteen source fixtures cover selection order and caption entities, video edits,
 private camera snapshots, changed/missing sources, owner isolation, all-item
-outbox acknowledgement, reserved native params and logout retention. They are
+outbox acknowledgement, reserved native params, logout retention, document/music
+restoration, contact/provider metadata, history-forward source metadata, partial
+caption/contact acceptance, scoped one-use handoffs and conservative asset
+collection including a stale-scan/cross-owner-selection race. They are
 prepared, **not run**. Run at the next planned phone-update gate:
 
 ```sh
-nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMediaDraftsTest
+nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMediaDraftsTest --tests org.telegram.messenger.xmpp.MonogramSelectionDraftsTest
 ```
 
 Phone acceptance should exercise keep/discard, back navigation, process restart,
-account switching, applied photo/video edits, missing files and conversion
+account switching, file/music/contact/history selections, applied photo/video edits, missing files and conversion
 failure/partial batches before claiming complete attachment draft support.
 Text draft acceptance still includes formatting-only edits and reply quotes;
 the two earlier text comparison cases passed at the 0.2.119 gate.

@@ -26,6 +26,9 @@ public final class MonogramMediaDrafts {
     private static final Set<String> loggedOut=ConcurrentHashMap.newKeySet();
     private static final Set<String> cleared=ConcurrentHashMap.newKeySet(),protectedPaths=ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<String,String> runtimeEpochs=new ConcurrentHashMap<>();
+    private static final Set<Integer> observedAccounts=ConcurrentHashMap.newKeySet();
+    private static final NotificationCenter.NotificationCenterDelegate completionObserver=(id,account,args) -> collectCompleted(account);
+    private static final AtomicLong gcFence=new AtomicLong();
     private static volatile Session active;
     public static final class Owner {
         final int account;final long dialog;final String jid,peer,key,epoch;
@@ -43,43 +46,59 @@ public final class MonogramMediaDrafts {
     }
     public static final class Restored {
         public final ArrayList<MediaController.PhotoEntry> photos=new ArrayList<>();
-        public String caption="";public ArrayList<TLRPC.MessageEntity> entities=new ArrayList<>();public boolean above;public int missing;
+        public String caption="",kind="photo";public final ArrayList<String> files=new ArrayList<>();public final ArrayList<MediaController.AudioEntry> audios=new ArrayList<>();
+        public final ArrayList<Object> contacts=new ArrayList<>();public final ArrayList<MessageObject> forwards=new ArrayList<>();
+        public ArrayList<TLRPC.MessageEntity> entities=new ArrayList<>();public boolean above;public int missing;
     }
     public static final class Session {
         public final Owner owner;
         private final Consumer<String> errors;
-        private volatile boolean closed,sending;
-        private String batch;
+        private volatile boolean closed,sending,pickerOpen=true;private boolean handoffCaptured,handoffOpen;
+        private String batch,kind="photo";private final String capture=UUID.randomUUID().toString();
         private JSONArray missingEntries=new JSONArray();
-        private final Map<Integer,String> itemTokens=new HashMap<>();
+        private final Map<Integer,String> itemTokens=new HashMap<>();private final Set<String> referenceClaims=new HashSet<>();
         private Session(Owner owner,Consumer<String> errors) { this.owner=owner;this.errors=errors; }
         public boolean active() { return !closed && active==this && owner.current(); }
-        public void close() { closed=true; }
+        public void close() { closed=true;pickerOpen=false;gcFence.incrementAndGet(); }
+        public void pickerClosed() { pickerOpen=false;gcFence.incrementAndGet();collectCompleted(owner.account); }
         public void restore(Consumer<Restored> result) {
             READER.execute(() -> {
                 Restored restored=new Restored();JSONArray unavailable=new JSONArray();
                 try {
                     JSONObject state=load(owner);if(state==null) return;
-                    checkOwner(owner,state);restored.caption=state.optString("caption");restored.above=state.optBoolean("above");restored.entities=readEntities(state.optString("entities"));
+                    checkOwner(owner,state);restored.kind=state.optString("kind","photo");restored.caption=state.optString("caption");restored.above=state.optBoolean("above");restored.entities=readEntities(state.optString("entities"));
                     Set<String> accepted=strings(state.optJSONArray("accepted"));JSONArray entries=state.getJSONArray("photos");
-                    for(int i=0;i<entries.length();i++) { JSONObject entry=entries.getJSONObject(i);if(accepted.contains(entry.optString("item"))) continue;
-                        try { restored.photos.add(decode(entry)); } catch(Exception missing) { restored.missing++;unavailable.put(entry); }
+                    for(int i=0;i<entries.length();i++) { JSONObject entry=entries.getJSONObject(i);
+                        if(entry.optString("selection").equals("caption")) { if(accepted.contains(entry.optString("item"))) restored.caption="";continue; }
+                        if(accepted.contains(entry.optString("item"))) continue;
+                        try {
+                            if(entry.has("contact")) { restored.contacts.add(MonogramSelectionDrafts.contact(entry.getJSONObject("contact")));continue; }
+                            if(entry.has("forward")) { restored.forwards.add(MonogramSelectionDrafts.message(owner.account,entry.getJSONObject("forward")));continue; }
+                            MediaController.PhotoEntry photo=decode(entry);
+                            if(restored.kind.equals("document")) restored.files.add(photo.path);
+                            else if(restored.kind.equals("audio")) restored.audios.add(decodeAudio(entry,photo.path));
+                            else restored.photos.add(photo);
+                        } catch(Exception missing) { restored.missing++;unavailable.put(entry); }
                     }
-                    if(restored.photos.isEmpty() && entries.length()>0) restored.caption="";
+                    if(restored.photos.isEmpty() && restored.files.isEmpty() && restored.audios.isEmpty() && restored.contacts.isEmpty() && restored.forwards.isEmpty() && entries.length()>0 && !state.optBoolean("separateCaption")) restored.caption="";
                 } catch(Exception invalid) { restored.missing++; }
-                finally { AndroidUtilities.runOnUIThread(() -> { if(active()) { missingEntries=unavailable;result.accept(restored); } }); }
+                finally { AndroidUtilities.runOnUIThread(() -> { if(active()) { missingEntries=unavailable;kind=restored.kind;result.accept(restored); } }); }
             });
         }
         public void save(Map<Object,Object> photos,List<Object> order,CharSequence caption,boolean above,boolean beginSend) {
-            if(!active() || sending && !beginSend) return;
+            synchronized(gcFence) { saveLocked(photos,order,caption,above,beginSend); }
+        }
+        private void saveLocked(Map<Object,Object> photos,List<Object> order,CharSequence caption,boolean above,boolean beginSend) {
+            if(!active() || !pickerOpen || sending && !beginSend) return;
+            if(!kind.equals("photo") && order.isEmpty()) return;if(!kind.equals("photo")) missingEntries=new JSONArray();kind="photo";
             try {
                 if(beginSend) { batch=UUID.randomUUID().toString();itemTokens.clear(); }
-                JSONObject state=new JSONObject().put("version",1).put("account",owner.account).put("jid",owner.jid).put("peer",owner.peer).put("epoch",owner.epoch).put("above",above);
+                JSONObject state=new JSONObject().put("kind",kind).put("version",1).put("account",owner.account).put("jid",owner.jid).put("peer",owner.peer).put("epoch",owner.epoch).put("above",above);
                 CharSequence[] text={caption==null ? "" : new android.text.SpannableStringBuilder(caption)};ArrayList<TLRPC.MessageEntity> entities=MediaDataController.getInstance(owner.account).getEntities(text,false);
                 state.put("caption",text[0].toString()).put("entities",entities(entities));JSONArray entries=new JSONArray();
                 for(Object key:order) {
                     Object value=photos.get(key);if(!(value instanceof MediaController.PhotoEntry)) throw new IOException("This selection cannot be saved as a media draft");
-                    MediaController.PhotoEntry photo=(MediaController.PhotoEntry)value;JSONObject entry=encode(photo,owner.account);
+                    MediaController.PhotoEntry photo=(MediaController.PhotoEntry)value;JSONObject entry=encode(photo,owner.account).put("capture",capture);
                     if(beginSend) { String token=UUID.randomUUID().toString();itemTokens.put(photo.imageId,token);entry.put("item",token); }
                     entries.put(entry);protect(entry);
                 }
@@ -89,6 +108,46 @@ public final class MonogramMediaDrafts {
                 publish(owner,state,errors);
             } catch(Exception failed) { report(errors,"Could not save the media draft. Keep the picker open and try again."); }
         }
+        public void saveFiles(String type,List<String> paths,List<MediaController.AudioEntry> audios,CharSequence caption,boolean above,boolean beginSend) {
+            saveSelections(type,paths,audios,null,null,caption,above,beginSend);
+        }
+        public void saveSelections(String type,List<String> paths,List<MediaController.AudioEntry> audios,List<Object> contacts,List<MessageObject> forwards,CharSequence caption,boolean above,boolean beginSend) {
+            synchronized(gcFence) { saveSelectionsLocked(type,paths,audios,contacts,forwards,caption,above,beginSend); }
+        }
+        private void saveSelectionsLocked(String type,List<String> paths,List<MediaController.AudioEntry> audios,List<Object> contacts,List<MessageObject> forwards,CharSequence caption,boolean above,boolean beginSend) {
+            if(!active() || !pickerOpen || sending && !beginSend || !kind.equals(type) && paths.isEmpty() && (contacts==null || contacts.isEmpty()) && (forwards==null || forwards.isEmpty())) return;
+            try {
+                if(!kind.equals(type)) missingEntries=new JSONArray();kind=type;
+                if(beginSend) { batch=UUID.randomUUID().toString();handoffCaptured=false;handoffOpen=true;referenceClaims.clear(); }
+                CharSequence[] text={caption==null ? "" : new android.text.SpannableStringBuilder(caption)};
+                JSONObject state=new JSONObject().put("kind",kind).put("version",1).put("account",owner.account).put("jid",owner.jid).put("peer",owner.peer).put("epoch",owner.epoch).put("above",above)
+                        .put("entities",entities(MediaDataController.getInstance(owner.account).getEntities(text,false))).put("caption",text[0].toString());
+                JSONArray entries=new JSONArray();int index=0;
+                for(String path:paths) {
+                    MediaController.PhotoEntry nativeEntry=new MediaController.PhotoEntry(0,index++,0,path,0,0,false,0,0,new File(path).length());
+                    JSONObject entry=encode(nativeEntry,owner.account).put("capture",capture).put("originalSource",path).put("account",owner.account);
+                    if(audios!=null) { if(audios.get(index-1).messageObject.currentAccount!=owner.account) throw new IOException("Music selection belongs to another account");entry.put("audio",encodeAudio(audios.get(index-1))); }
+                    if(beginSend) entry.put("item",UUID.randomUUID().toString());
+                    entries.put(entry);protect(entry);
+                }
+                if(contacts!=null) for(int i=0;i<contacts.size();i++) {
+                    JSONObject entry=new JSONObject().put("contact",MonogramSelectionDrafts.contact(contacts.get(i))).put("selection","contact:"+i);
+                    if(beginSend) entry.put("item",UUID.randomUUID().toString());entries.put(entry);
+                }
+                if(forwards!=null) for(MessageObject forward:forwards) {
+                    if(forward.currentAccount!=owner.account) throw new IOException("Forward selection belongs to another account");
+                    JSONObject entry=new JSONObject().put("forward",MonogramSelectionDrafts.message(forward)).put("selection","forward:"+MonogramSelectionDrafts.messageKey(forward));
+                    if(beginSend) entry.put("item",UUID.randomUUID().toString());entries.put(entry);
+                }
+                if(text[0].length()>0 && (contacts!=null || forwards!=null && !forwards.isEmpty())) {
+                    JSONObject entry=new JSONObject().put("selection","caption");if(beginSend) entry.put("item",UUID.randomUUID().toString());entries.put(entry);state.put("separateCaption",true);
+                }
+                for(int i=0;i<missingEntries.length();i++) entries.put(missingEntries.getJSONObject(i));
+                if(entries.length()==0 && text[0].length()==0) { discard();return; }
+                state.put("photos",entries);if(beginSend) { sending=true;state.put("batch",batch); }
+                publish(owner,state,errors);
+            } catch(Exception failed) { report(errors,"Could not save the attachment draft. Keep the picker open and try again."); }
+        }
         public void tag(SendMessagesHelper.SendingMediaInfo info,MediaController.PhotoEntry photo) {
             if(!owner.current() || batch==null || !itemTokens.containsKey(photo.imageId)) return;
             if(info.params==null) info.params=new HashMap<>();info.params.put(BATCH,batch);info.params.put(ITEM,itemTokens.get(photo.imageId));info.params.put(OWNER,owner.key);
@@ -96,9 +155,45 @@ public final class MonogramMediaDrafts {
         public void discard() { if(!active()) return;sending=false;batch=null;itemTokens.clear();clear(owner); }
     }
     public static Session bind(int account,long dialog,Consumer<String> errors) {
-        Owner owner=Owner.current(account,dialog);if(owner==null) return null;loggedOut.remove(account+"\n"+owner.jid);
+        synchronized(gcFence) { return bindLocked(account,dialog,errors); }
+    }
+    private static Session bindLocked(int account,long dialog,Consumer<String> errors) {
+        Owner owner=Owner.current(account,dialog);if(owner==null) return null;loggedOut.remove(account+"\n"+owner.jid);gcFence.incrementAndGet();
+        if(observedAccounts.add(account)) {
+            NotificationCenter.getInstance(account).addObserver(completionObserver,NotificationCenter.messageReceivedByServer);
+            NotificationCenter.getInstance(account).addObserver(completionObserver,NotificationCenter.messagesDeleted);
+        }
+        collectCompleted(account);
         Session previous=active;if(previous!=null) previous.close();Session session=new Session(owner,errors);active=session;return session;
     }
+    /** Captured on the native preparation call before its worker starts; never tags unrelated later sends. */
+    public static Map<String,HashMap<String,String>> captureFileHandoff(int account,long dialog,List<String> paths) {
+        Map<String,HashMap<String,String>> result=new HashMap<>();Session session=active;
+        if(session==null || session.owner.account!=account || session.owner.dialog!=dialog || !session.owner.current() || !session.sending || session.kind.equals("photo") || session.handoffCaptured || paths==null) return result;
+        try {
+            JSONObject state=load(session.owner);if(state==null || !session.batch.equals(state.optString("batch"))) return result;
+            JSONArray entries=state.getJSONArray("photos");
+            for(String path:paths) for(int i=0;i<entries.length();i++) {
+                JSONObject entry=entries.getJSONObject(i);if(!path.equals(entry.optString("originalSource")) && !path.equals(entry.optString("path"))) continue;
+                HashMap<String,String> params=new HashMap<>();params.put(BATCH,session.batch);params.put(ITEM,entry.getString("item"));params.put(OWNER,session.owner.key);result.put(path,params);break;
+            }
+        } catch(Exception unavailable) { /* Leave the composition recoverable if native preparation cannot be matched. */ }
+        if(!result.isEmpty()) { session.handoffCaptured=true;gcFence.incrementAndGet(); }
+        return result;
+    }
+    public static HashMap<String,String> captureReference(int account,long dialog,String key) {
+        Session session=active;if(session==null || session.owner.account!=account || session.owner.dialog!=dialog || !session.owner.current() || !session.sending || !session.handoffOpen) return null;
+        try {
+            JSONObject state=load(session.owner);if(state==null || !session.batch.equals(state.optString("batch"))) return null;JSONArray entries=state.getJSONArray("photos");
+            for(int i=0;i<entries.length();i++) { JSONObject entry=entries.getJSONObject(i);if(!key.equals(entry.optString("selection"))) continue;String item=entry.getString("item");if(!session.referenceClaims.add(item)) return null;gcFence.incrementAndGet();
+                HashMap<String,String> params=new HashMap<>();params.put(BATCH,session.batch);params.put(ITEM,item);params.put(OWNER,session.owner.key);return params;
+            }
+        } catch(Exception unavailable) { /* Retain draft on failed handoff matching. */ }return null;
+    }
+    public static HashMap<String,String> captureForward(int account,long dialog,MessageObject source) { return active!=null && active.kind.equals("document") ? captureReference(account,dialog,"forward:"+MonogramSelectionDrafts.messageKey(source)) : null; }
+    public static HashMap<String,String> captureContact(int account,long dialog,int index) { return active!=null && active.kind.equals("contacts") ? captureReference(account,dialog,"contact:"+index) : null; }
+    public static HashMap<String,String> captureCaption(int account,long dialog,String kind) { return active!=null && active.kind.equals(kind) ? captureReference(account,dialog,"caption") : null; }
+    public static void finishReferenceHandoff() { Session session=active;if(session!=null) session.handoffOpen=false; }
     public static void deactivate() { Session session=active;if(session!=null) session.close();active=null; }
     public static boolean protectedFile(String path) { return path!=null && protectedPaths.contains(path); }
     public static void mergeParams(HashMap<String,String> destination,HashMap<String,String> source) {
@@ -120,11 +215,37 @@ public final class MonogramMediaDrafts {
                     state=new JSONObject(state.toString()).put("accepted",acknowledgements);JSONArray photos=state.getJSONArray("photos");boolean complete=true;
                     for(int i=0;i<photos.length();i++) if(!accepted.contains(photos.getJSONObject(i).optString("item"))) complete=false;
                     File retained=new File(owner.directory(),"outbox-owned");try(FileOutputStream marker=new FileOutputStream(retained)) { marker.write(1);marker.getFD().sync(); }
-                    if(complete) { latest.remove(owner.key);cleared.add(owner.key);revision(owner).incrementAndGet();owner.manifest().delete(); }
-                    else { latest.put(owner.key,state);write(owner,state); }
+                    if(complete) {
+                        latest.remove(owner.key);cleared.add(owner.key);revision(owner).incrementAndGet();owner.manifest().delete();gcFence.incrementAndGet();collectCompleted(account);
+                    } else { latest.put(owner.key,state);write(owner,state); }
                     // Files can still be read by pending native outbox entries; successful handoff never deletes them.
                 } catch(Exception unavailable) { /* Retain the draft rather than falsely acknowledging a file. */ } }
             });
+        });
+    }
+    /** Native completion/deletion signals only trigger collection; the storage queue remains authoritative. */
+    public static void collectCompleted(int account) {
+        String jid=MonogramController.get(account).accountJid();if(jid==null || jid.isEmpty()) return;
+        Session picker=active;if(picker!=null && picker.pickerOpen && !picker.closed) return;
+        final long fence=gcFence.get();
+        MessagesStorage.getInstance(account).getMonogramDraftReferences(references -> {
+            if(references==null || !jid.equals(MonogramController.get(account).accountJid())) return;
+            WRITER.execute(() -> { synchronized(gcFence) {
+                if(loggedOut.contains(account+"\n"+jid) || !jid.equals(MonogramController.get(account).accountJid())) return;
+                if(fence!=gcFence.get()) return;
+                Session live=active;if(live!=null && live.pickerOpen && !live.closed) return;
+                File[] directories=scopeDirectory(account,jid).listFiles();if(directories==null) return;
+                // Any composition may refer to another owner's snapshot via editor/forward state.
+                // Keep the entire account scope until all such compositions finish instead of guessing at binary paths.
+                for(File directory:directories) if(latest.containsKey(directory.getName()) || new File(directory,"draft.json").exists() || new File(directory,"draft.json.bak").exists()) return;
+                for(File directory:directories) synchronized(revisions.computeIfAbsent(directory.getName(),key -> new AtomicLong())) {
+                    // Pending captures and active/recoverable compositions always own their snapshots.
+                    if(latest.containsKey(directory.getName()) || new File(directory,"draft.json").exists() || new File(directory,"draft.json.bak").exists()) continue;
+                    String prefix=directory.getAbsolutePath()+File.separator;boolean retained=false;
+                    for(String reference:references) if(reference!=null && (reference.equals(directory.getName()) || reference.contains(prefix))) { retained=true;break; }
+                    if(!retained && fence==gcFence.get()) deleteTree(directory);
+                }
+            } });
         });
     }
     private static File scopeDirectory(int account,String jid) {
@@ -138,6 +259,7 @@ public final class MonogramMediaDrafts {
         return value;
     }
     public static void logout(int account,String jid) {
+        gcFence.incrementAndGet();
         final String nextEpoch=UUID.randomUUID().toString();
         loggedOut.add(account+"\n"+jid);runtimeEpochs.put(account+"\n"+jid,nextEpoch);
         boolean persisted=false;
@@ -169,6 +291,7 @@ public final class MonogramMediaDrafts {
     private static void deleteTree(File file) { File[] children=file.listFiles();if(children!=null) for(File child:children) deleteTree(child);file.delete(); }
     private static AtomicLong revision(Owner owner) { return revisions.computeIfAbsent(owner.key,key -> new AtomicLong()); }
     private static void publish(Owner owner,JSONObject state,Consumer<String> errors) {
+        gcFence.incrementAndGet();
         final long version;
         synchronized(revision(owner)) {
             version=revision(owner).incrementAndGet();
@@ -190,6 +313,7 @@ public final class MonogramMediaDrafts {
         });
     }
     private static void clear(Owner owner) {
+        gcFence.incrementAndGet();
         synchronized(revision(owner)) { revision(owner).incrementAndGet();latest.remove(owner.key);cleared.add(owner.key);owner.manifest().delete(); }
     }
     private static JSONObject load(Owner owner) throws Exception {
@@ -219,6 +343,14 @@ public final class MonogramMediaDrafts {
     private static Set<String> strings(JSONArray array) { Set<String> values=new HashSet<>();if(array!=null) for(int i=0;i<array.length();i++) values.add(array.optString(i));return values; }
     private static String hash(String value) throws Exception { byte[] hash=MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));StringBuilder result=new StringBuilder();for(byte b:hash) result.append(String.format(Locale.ROOT,"%02x",b&255));return result.toString(); }
 
+    private static JSONObject encodeAudio(MediaController.AudioEntry audio) throws Exception {
+        return new JSONObject().put("id",audio.id).put("author",audio.author).put("title",audio.title).put("genre",audio.genre).put("duration",audio.duration).put("mime",audio.mimeType).put("name",audio.displayName).put("size",audio.size)
+                .put("message",binary(data -> audio.messageObject.messageOwner.serializeToStream(data)));
+    }
+    private static MediaController.AudioEntry decodeAudio(JSONObject entry,String path) throws Exception {
+        JSONObject in=entry.getJSONObject("audio");MediaController.AudioEntry audio=new MediaController.AudioEntry();audio.id=in.optLong("id");audio.author=in.optString("author");audio.title=in.optString("title");audio.genre=in.optString("genre");audio.duration=in.optInt("duration");audio.mimeType=in.optString("mime");audio.displayName=in.optString("name");audio.size=in.optLong("size");audio.path=path;
+        SerializedData data=read(in.getString("message"));try { TLRPC.Message message=TLRPC.Message.TLdeserialize(data,data.readInt32(true),true);message.attachPath=path;audio.messageObject=new MessageObject(entry.optInt("account"),message,false,false); } finally { data.cleanup(); }return audio;
+    }
     private static final String[] PATHS={"path","thumbPath","imagePath","filterPath","paintPath","croppedPaintPath","fullPaintPath","coverPath"};
     private static JSONObject encode(MediaController.PhotoEntry photo,int account) throws Exception {
         JSONObject out=new JSONObject().put("bucket",photo.bucketId).put("id",photo.imageId).put("date",photo.dateTaken).put("duration",photo.duration)
@@ -292,7 +424,7 @@ public final class MonogramMediaDrafts {
             String source=entry.optString(key);if(source.isEmpty()) continue;
             boolean copy=!key.equals("path") || entry.optBoolean("delete") || source.startsWith("content:") || source.startsWith(ApplicationLoader.applicationContext.getCacheDir().getAbsolutePath()+File.separator);
             if(key.equals("thumbPath") && !source.startsWith("content:") && !new File(source).isFile()) { entry.remove(key);continue; }
-            String path=copy ? copy(owner,source) : source;entry.put(key,path);
+            String path=copy ? copy(owner,source,entry.optString("capture",UUID.randomUUID().toString())) : source;entry.put(key,path);
             if(key.equals("path")) { File file=new File(path);entry.put("sourceSize",file.length()).put("sourceModified",file.lastModified()); }
         }
         if(entry.has("edit")) {
@@ -311,11 +443,12 @@ public final class MonogramMediaDrafts {
             for(VideoEditedInfo.EmojiEntity emoji:entity.entities) if(emoji.documentAbsolutePath!=null && !emoji.documentAbsolutePath.isEmpty()) emoji.documentAbsolutePath=copy(owner,emoji.documentAbsolutePath);
         }
     }
-    private static String copy(Owner owner,String source) throws Exception {
+    private static String copy(Owner owner,String source) throws Exception { return copy(owner,source,UUID.randomUUID().toString()); }
+    private static String copy(Owner owner,String source,String capture) throws Exception {
         File original=new File(source),assets=new File(owner.directory(),"assets");if(source.startsWith(assets.getAbsolutePath()+File.separator) && original.isFile()) return source;
         if(!assets.isDirectory() && !assets.mkdirs()) throw new IOException("Draft assets unavailable");
         String suffix="";int dot=source.lastIndexOf('.');if(dot>=0 && source.length()-dot<=10) suffix=source.substring(dot).replaceAll("[^a-zA-Z0-9.]","");
-        File destination=new File(assets,hash(source+"\n"+original.length()+"\n"+original.lastModified()+(source.startsWith("content:") ? "\n"+UUID.randomUUID() : ""))+suffix);if(destination.isFile()) return destination.getAbsolutePath();
+        File destination=new File(assets,hash(source+"\n"+original.length()+"\n"+original.lastModified()+(source.startsWith("content:") ? "\n"+capture : ""))+suffix);if(destination.isFile()) return destination.getAbsolutePath();
         Uri uri=Uri.parse(source);boolean content="content".equals(uri.getScheme());
         if(content) try { ApplicationLoader.applicationContext.getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch(SecurityException unsupported) { /* A private snapshot outlives temporary grants. */ }
         File temporary=File.createTempFile("asset-",".tmp",assets);

@@ -78,7 +78,8 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
     private boolean loadingAudio;
 
     private ArrayList<MediaController.AudioEntry> audioEntries = new ArrayList<>();
-    private final HashSet<MediaController.AudioEntry> selectedAudios = new HashSet<>();
+    private Object mediaDraftOwner;
+    private final HashSet<MediaController.AudioEntry> selectedAudios = new java.util.LinkedHashSet<>();
 
     private MessagesController.SavedMusicList savedMusicList;
     private ArrayList<MediaController.AudioEntry> profileEntries = new ArrayList<>();
@@ -618,6 +619,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
     @Override
     public void onShow(ChatAttachAlert.AttachAlertLayout previousLayout) {
+        Object owner=parentAlert.mediaDraftOwner();if(owner==null || owner!=mediaDraftOwner) selectedAudios.clear();mediaDraftOwner=owner;
         loadAudio();
         searchChats();
         savedMusicList.load();
@@ -628,7 +630,7 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
 
     @Override
     public void onHidden() {
-        selectedAudios.clear();
+        if(!parentAlert.hasMediaDraftSession()) selectedAudios.clear();
     }
 
     @Override
@@ -692,11 +694,20 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             audios.add(entry.messageObject);
         }
         return AlertsCreator.ensurePaidMessageConfirmation(parentAlert.currentAccount, parentAlert.getDialogId(), audios.size() + parentAlert.getAdditionalMessagesCount(), payStars -> {
+            parentAlert.saveMediaDraftNow(true);
             delegate.didSelectAudio(audios, parentAlert.getCommentView().getText(), notify, scheduleDate, scheduleRepeatPeriod, effectId, invertMedia, payStars);
             parentAlert.dismiss(true);
         });
     }
 
+    public ArrayList<MediaController.AudioEntry> getDraftAudios() { return new ArrayList<>(selectedAudios); }
+    public void restoreDraftAudios(ArrayList<MediaController.AudioEntry> entries) {
+        for(MediaController.AudioEntry entry:entries) {
+            boolean exists=false;for(MediaController.AudioEntry selected:selectedAudios) if(java.util.Objects.equals(selected.messageObject.messageOwner.attachPath,entry.messageObject.messageOwner.attachPath)) { exists=true;break; }
+            if(!exists) { selectedAudios.add(entry);audioEntries.add(0,entry); }
+        }
+        updateWithSavingScroll();parentAlert.updateCountButton(0);
+    }
     public ArrayList<MessageObject> getSelected() {
         ArrayList<MessageObject> audios = new ArrayList<>();
         for (MediaController.AudioEntry entry : selectedAudios) {
@@ -753,6 +764,10 @@ public class ChatAttachAlertAudioLayout extends ChatAttachAlert.AttachAlertLayou
             final ArrayList<MediaController.AudioEntry> newAudioEntries = MonogramAudioSources.query(parentAlert.currentAccount);
             AndroidUtilities.runOnUIThread(() -> {
                 loadingAudio = false;
+                for(MediaController.AudioEntry selected:selectedAudios) {
+                    boolean found=false;for(int i=0;i<newAudioEntries.size();i++) if(newAudioEntries.get(i).id==selected.id) { newAudioEntries.set(i,selected);found=true;break; }
+                    if(!found) newAudioEntries.add(0,selected);
+                }
                 audioEntries = newAudioEntries;
                 updateWithSavingScroll();
                 listView.post(this::loadVisibleCovers);
