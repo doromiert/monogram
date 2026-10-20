@@ -8516,14 +8516,16 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             } else if (!mainFragmentsStack.isEmpty() && (!PhotoViewer.hasInstance() || !PhotoViewer.getInstance().isVisible()) && event.getRepeatCount() == 0) {
                 BaseFragment fragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
-                if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)) {
+                if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)
+                        && org.telegram.messenger.xmpp.MonogramMediaPlayback.unmuteWithVolumeButtons(fragment.getCurrentAccount())) {
                     if (((ChatActivity) fragment).maybePlayVisibleVideo()) {
                         return true;
                     }
                 }
                 if (AndroidUtilities.isTablet() && !rightFragmentsStack.isEmpty()) {
                     fragment = rightFragmentsStack.get(rightFragmentsStack.size() - 1);
-                    if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)) {
+                    if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)
+                            && org.telegram.messenger.xmpp.MonogramMediaPlayback.unmuteWithVolumeButtons(fragment.getCurrentAccount())) {
                         if (((ChatActivity) fragment).maybePlayVisibleVideo()) {
                             return true;
                         }

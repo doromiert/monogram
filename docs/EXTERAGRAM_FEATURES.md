@@ -25,6 +25,23 @@ decompilation evidence, not an observed runtime or REA Evidence record. REA MCP
 remains unavailable; its previously saved doctor reports registration drift.
 The settings/suffix fixture passes at the 0.2.120 gate; native interaction remains unverified.
 
+## Message menu, playback and free self colors
+
+0.2.123 source adds Copy photo (default on) and lazy Message details (default
+off) in Chat Settings → Chat behavior, using the native swipe-back metadata
+submenu and existing copy/open handlers. Details substitute stored XMPP
+identifiers/encryption for Telegram-only fields; cached media inspection never
+fetches attachments. See EXTERA_MESSAGE_MENU.md for exact limits.
+
+Chat Settings → Media playback exposes pause-on-minimize for viewer videos,
+voice messages and round videos, plus volume-button unmute. Supplied APK defaults
+and native lifecycle entrypoints are retained; see EXTERA_MEDIA_PLAYBACK.md.
+
+The native self color picker now offers free device-local name/reply and profile
+swatches with durable account/JID ownership, without purchase or color-update
+RPCs. This is not peer-synchronized appearance or a complete background-emoji
+port; see PROFILE_COLORS.md.
+
 ## Remaining scope
 
 The full APK also contains chat/header/list appearance,

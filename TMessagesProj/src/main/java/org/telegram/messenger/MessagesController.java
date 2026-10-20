@@ -1771,6 +1771,7 @@ public class MessagesController extends BaseController implements NotificationCe
         giveawayGiftsPurchaseAvailable = mainPreferences.getBoolean("giveawayGiftsPurchaseAvailable", false);
         peerColors = PeerColors.fromString(PeerColors.TYPE_NAME, mainPreferences.getString("peerColors", ""));
         profilePeerColors = PeerColors.fromString(PeerColors.TYPE_PROFILE, mainPreferences.getString("profilePeerColors", ""));
+        org.telegram.messenger.xmpp.MonogramUserColors.ensurePalette(this,currentAccount);
         transcribeAudioTrialWeeklyNumber = mainPreferences.getInt("transcribeAudioTrialWeeklyNumber", BuildVars.DEBUG_PRIVATE_VERSION ? 2 : 0);
         transcribeAudioTrialCurrentNumber = mainPreferences.getInt("transcribeAudioTrialCurrentNumber", transcribeAudioTrialWeeklyNumber);
         transcribeAudioTrialDurationMax = mainPreferences.getInt("transcribeAudioTrialDurationMax", 300);
@@ -24333,6 +24334,7 @@ public class MessagesController extends BaseController implements NotificationCe
 
     private boolean loadingPeerColors, loadingProfilePeerColors;
     public void checkPeerColors(boolean force) {
+        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { org.telegram.messenger.xmpp.MonogramUserColors.ensurePalette(this,currentAccount);return; }
         if (getUserConfig().getCurrentUser() == null) {
             return;
         }

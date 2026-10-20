@@ -168,6 +168,10 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
     private final boolean isChannel;
     private final long dialogId;
+    private final String localColorOwner;
+    private final long localColorGeneration;
+    private final boolean localColorPicker;
+    private boolean localColors() { return localColorPicker; }
 
     private final StarsController.GiftsList gifts;
     private final StarsController.GiftsList giftsWithPeerColor;
@@ -259,6 +263,10 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         private static final int VIEW_TYPE_GIFT_FOREIGN = 12;
 
         public void setupValues() {
+            if(localColors()) {
+                TLRPC.User me=getUserConfig().getCurrentUser();
+                org.telegram.messenger.xmpp.MonogramUserColors.project("monogram-"+currentAccount+".db",localColorOwner,localColorOwner,me);
+            }
             if (type == PAGE_PROFILE) {
                 if (dialogId < 0) {
                     TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
@@ -291,6 +299,11 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
             if (selectedEmojiCollectible != null || selectedPeerCollectible != null) {
                 selectedColor = -1;
                 selectedEmoji = 0;
+            }
+            if(localColors()) {
+                selectedEmoji=0;selectedEmojiCollectible=null;selectedPeerCollectible=null;
+                if(type==PAGE_NAME && (selectedColor<0 || selectedColor>6)) selectedColor=(int)(getUserConfig().getClientUserId()%7);
+                if(type==PAGE_PROFILE && selectedColor>7) selectedColor=-1;
             }
 
         }
@@ -483,6 +496,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                                 } else {
                                     text = getString(isChannel ? R.string.ChannelProfileHint : R.string.UserProfileHint2);
                                 }
+                                if(localColors()) text=getString(R.string.MonogramLocalProfileColors);
                                 cell.setText(AndroidUtilities.replaceArrows(AndroidUtilities.replaceSingleTag(text, () -> {
                                     viewPager.scrollToPosition(1 - type);
                                 }), true));
@@ -1053,6 +1067,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
         private SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow selectAnimatedEmojiDialog;
         public void showSelectStatusDialog(SetReplyIconCell cell) {
+            if(localColors()) return;
             if (selectAnimatedEmojiDialog != null || cell == null) {
                 return;
             }
@@ -1181,7 +1196,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
             rowCount = 0;
             colorPickerRow = rowCount++;
-            iconRow = rowCount++;
+            iconRow = localColors() ? -1 : rowCount++;
             infoRow = rowCount++;
             if ((type == PAGE_PROFILE) && (selectedColor >= 0 || selectedEmojiCollectible != null || selectedPeerCollectible != null)) {
                 clearRow = rowCount++;
@@ -1271,7 +1286,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                     buttonState.subText = null;
                 }
             } else {
-                buttonState.text = !getUserConfig().isPremium() && !isChannel ? buttonLocked : (selectedEmojiCollectible != null ? buttonCollectible : buttonUnlocked);
+                buttonState.text = !localColors() && !getUserConfig().isPremium() && !isChannel ? buttonLocked : (selectedEmojiCollectible != null ? buttonCollectible : buttonUnlocked);
                 buttonState.subText = null;
             }
             if (getButtonPage() == this) {
@@ -1508,8 +1523,14 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     private final BlurredBackgroundSourceColor iBlur3SourceBackgroundColor;
     private final BlurredBackgroundDrawableViewFactory iBlur3BackgroundFactory;
 
-    public PeerColorActivity(long dialogId) {
+    public PeerColorActivity(long dialogId) { this(UserConfig.selectedAccount,dialogId); }
+    public PeerColorActivity(int account,long dialogId) {
         super();
+        setCurrentAccount(account);
+        localColorOwner=org.telegram.messenger.xmpp.MonogramUserColors.owner(account);
+        localColorPicker=org.telegram.messenger.xmpp.MonogramFreeFeatures.local(account);
+        localColorGeneration=localColorPicker ? org.telegram.messenger.xmpp.MonogramController.get(account).accountGeneration() : -1;
+        org.telegram.messenger.xmpp.MonogramUserColors.ensurePalette(getMessagesController(),account);
 
         iBlur3SourceButtonColor = new BlurredBackgroundSourceColor();
         iBlur3ButtonFactory = new BlurredBackgroundDrawableViewFactory(iBlur3SourceButtonColor);
@@ -1541,7 +1562,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
         this.dialogId = dialogId;
         this.isChannel = dialogId != 0;
-        if (dialogId >= 0) {
+        if (dialogId >= 0 && !localColors()) {
             StarsController.getInstance(currentAccount).loadStarGifts();
 
             this.gifts = new StarsController.GiftsList(currentAccount, dialogId, false);
@@ -1631,8 +1652,8 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                 return true;
             }
         });
-        getMediaDataController().loadReplyIcons();
-        if (MessagesController.getInstance(currentAccount).peerColors == null && BuildVars.DEBUG_PRIVATE_VERSION) {
+        if(!localColors()) getMediaDataController().loadReplyIcons();
+        if (!localColors() && MessagesController.getInstance(currentAccount).peerColors == null && BuildVars.DEBUG_PRIVATE_VERSION) {
             MessagesController.getInstance(currentAccount).loadAppConfig(true);
         }
         return super.onFragmentCreate();
@@ -1886,7 +1907,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
     @Override
     public boolean onBackPressed(boolean invoked) {
-        if (!isChannel && hasUnsavedChanged() && getUserConfig().isPremium()) {
+        if (!isChannel && hasUnsavedChanged() && (localColors() || getUserConfig().isPremium())) {
             if (invoked) showUnsavedAlert();
             return false;
         }
@@ -1895,7 +1916,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
     @Override
     public boolean isSwipeBackEnabled(MotionEvent event) {
-        if (!isChannel && hasUnsavedChanged() && getUserConfig().isPremium()) {
+        if (!isChannel && hasUnsavedChanged() && (localColors() || getUserConfig().isPremium())) {
             return false;
         }
         return super.isSwipeBackEnabled(event);
@@ -1923,6 +1944,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         if (loading) {
             return;
         }
+        if(localColors()) { applyLocalColors();return; }
         if (isChannel) {
             finishFragment();
         } else {
@@ -1962,6 +1984,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     }
 
     public void buy(TL_stars.TL_starGiftUnique gift, Utilities.Callback<Boolean> bought) {
+        if(localColors()) { if(bought!=null) bought.run(false);return; }
         final long to = UserConfig.getInstance(currentAccount).getClientUserId();
         final AmountUtils.Currency currency = gift.resale_ton_only ?
                 AmountUtils.Currency.TON : AmountUtils.Currency.STARS;
@@ -1990,9 +2013,23 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         });
     }
 
+    private void applyLocalColors() {
+        if(applying) return;
+        TLRPC.User me=getUserConfig().getCurrentUser();
+        if(isChannel || me==null || localColorGeneration!=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountGeneration() || !org.telegram.messenger.xmpp.MonogramUserColors.save(currentAccount,localColorOwner,me,namePage.selectedColor,profilePage.selectedColor)) {
+            BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramProfileColorsSaveError)).show();return;
+        }
+        applying=true;applyingName=true;applyingProfile=true;
+        getMessagesController().putUser(me,false);getUserConfig().saveConfig(true);
+        getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_NAME | MessagesController.UPDATE_MASK_EMOJI_STATUS);
+        getNotificationCenter().postNotificationName(NotificationCenter.mainUserInfoChanged);
+        finishFragment();showBulletin();
+    }
+
     private boolean applyingName, applyingProfile;
     private boolean applying;
     private void apply() {
+        if(localColors()) { applyLocalColors();return; }
         if (applying || !isChannel && !getUserConfig().isPremium()) {
             return;
         }

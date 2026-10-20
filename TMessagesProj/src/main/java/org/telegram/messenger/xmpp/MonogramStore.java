@@ -745,6 +745,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             user.photo.photo_small = user.photo.photo_big = MonogramProfiles.location(id); user.photo.dc_id = Integer.MIN_VALUE;
         } else user.photo = new TLRPC.TL_userProfilePhotoEmpty();
         user.status = new TLRPC.TL_userStatusEmpty();
+        if(user.self) MonogramUserColors.project(database,jid,jid,user);
         return user;
     }
     synchronized TLRPC.UserFull fullUser(long id, long self) {
@@ -1420,6 +1421,26 @@ final class MonogramStore extends SQLiteOpenHelper {
         media.serializeToStream(bytes); values.put("media", bytes.toByteArray()); bytes.cleanup();
         if (getWritableDatabase().update("attachments", values, "message=? AND url=?", new String[]{Integer.toString(id), url}) != 1) throw new IllegalStateException("Attachment reference changed");
     }
+    synchronized java.util.LinkedHashMap<String,String> messageMetadata(int id,long self) {
+        java.util.LinkedHashMap<String,String> result=new java.util.LinkedHashMap<>();
+        TLRPC.Message message=getMessage(id,self);
+        result.put("peer",jid(org.telegram.messenger.DialogObject.getPeerDialogId(message.peer_id)));
+        int mode=encryptionOf(id);
+        result.put("encryption",mode==0 ? "Plaintext" : mode==2 ? "OMEMO 2" : "OMEMO");
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT sender FROM message_senders WHERE message=? ORDER BY instr(sender,'/') DESC LIMIT 1",new String[]{Integer.toString(id)})) {
+            if(cursor.moveToFirst()) result.put("sender",cursor.getString(0));
+        }
+        if(!result.containsKey("sender")) result.put("sender",jid(message.out ? self : org.telegram.messenger.DialogObject.getPeerDialogId(message.peer_id)));
+        try(Cursor cursor=getReadableDatabase().rawQuery("SELECT kind,value FROM message_ids WHERE message=? ORDER BY kind,value",new String[]{Integer.toString(id)})) {
+            while(cursor.moveToNext()) {
+                String key="id:"+cursor.getString(0),value=cursor.getString(1);
+                if(result.containsKey(key)) value=result.get(key)+"\n"+value;
+                result.put(key,value);
+            }
+        }
+        return result;
+    }
+
     synchronized String debugMessage(int id,long self) {
         TLRPC.Message message=getMessage(id,self);
         StringBuilder result=new StringBuilder("Local message ID: ").append(id).append("\nEncryption mode: ").append(encryptionOf(id));

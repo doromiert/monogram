@@ -10,6 +10,10 @@ public final class MonogramChatBehavior {
     public static boolean commaAfterMention(int account) { return get(account,"comma-after-mention"); }
     public static boolean showSaveButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-save",false); }
     public static boolean showRepeatButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-repeat",false); }
+    public static boolean showCopyPhotoButton(int account) { return get(account,"show-copy-photo"); }
+    public static boolean showDetailsButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-details",false); }
+    public static void showCopyPhotoButton(int account,boolean enabled) { save(account,"show-copy-photo",enabled); }
+    public static void showDetailsButton(int account,boolean enabled) { save(account,"show-details",enabled); }
     public static boolean swipeLoop(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-swipe-loop",false); }
     public static boolean swipeReversed(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-swipe-reversed",false); }
     public static void swipeLoop(int account,boolean enabled) { save(account,"swipe-loop",enabled); }

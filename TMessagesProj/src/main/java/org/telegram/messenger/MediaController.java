@@ -1505,6 +1505,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 NotificationCenter.getInstance(a).addObserver(MediaController.this, NotificationCenter.musicListLoaded);
                 NotificationCenter.getGlobalInstance().addObserver(MediaController.this, NotificationCenter.playerDidStartPlaying);
             }
+            NotificationCenter.getGlobalInstance().addObserver(MediaController.this, NotificationCenter.stopAllHeavyOperations);
         });
 
         mediaProjections = new String[]{
@@ -1968,7 +1969,11 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     wasPlayingAudioBeforePause = true;
                 }
                 pauseMessage(message);
+            } else if (!LaunchActivity.isResumed) {
+                pauseInBackgroundIfNeeded();
             }
+        } else if (id == NotificationCenter.stopAllHeavyOperations) {
+            if ((Integer) args[0] == 4096 && !LaunchActivity.isResumed) pauseInBackgroundIfNeeded();
         } else if (id == NotificationCenter.musicListLoaded) {
             if (currentSavedMusicList != null && args[0] == currentSavedMusicList) {
                 int addedCount = currentSavedMusicList.list.size() - playlist.size();
@@ -4303,6 +4308,16 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             playMessage(message);
         }
         wasPlayingAudioBeforePause = false;
+    }
+
+    private void pauseInBackgroundIfNeeded() {
+        MessageObject message=getPlayingMessageObject();
+        if(message==null || !isPlayingMessage(message) || isMessagePaused()) return;
+        if(message.isVoice() && org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVoiceOnMinimize(message.currentAccount)
+                || message.isRoundVideo() && org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseRoundOnMinimize(message.currentAccount)) {
+            wasPlayingAudioBeforePause=false;
+            pauseMessage(message);
+        }
     }
 
     public boolean pauseMessage(MessageObject messageObject) {

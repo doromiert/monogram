@@ -125,6 +125,16 @@ public final class MonogramController {
             AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch) callback.accept(result); });
         });
     }
+    public void messageMetadata(int id,java.util.function.Consumer<java.util.LinkedHashMap<String,String>> callback) {
+        final long owner=accountEpoch;
+        cacheWorker.execute(() -> {
+            java.util.LinkedHashMap<String,String> values;
+            try { if(owner!=accountEpoch) return;values=store.messageMetadata(id,self); }
+            catch(Exception unavailable) { values=new java.util.LinkedHashMap<>(); }
+            final java.util.LinkedHashMap<String,String> result=values;
+            AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch) callback.accept(result); });
+        });
+    }
     public int state() { return state; }
     public String mentionName(long dialog,TLRPC.User user) {
         String fallback=UserObject.getFirstName(user,false);

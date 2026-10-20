@@ -1083,6 +1083,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private boolean playerWasPlaying;
     private boolean playerAutoStarted;
     private boolean playerLooping;
+    private VideoPlayer pausedOnMinimizePlayer;
     private float seekToProgressPending;
     private String shouldSavePositionForCurrentVideo;
     private String shouldSavePositionForCurrentVideoShortTerm;
@@ -9543,6 +9544,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         } else {
             pipVideoOverlayAnimateFlag = false;
 
+            if(org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount)) return;
             switchToPip(false);
         }
     }
@@ -10959,6 +10961,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void releasePlayer(boolean onClose) {
+        pausedOnMinimizePlayer=null;
         usedSurfaceView = false;
         if (pipSource != null) {
             pipSource.destroy();
@@ -18821,6 +18824,12 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (photoPaintView != null) {
             photoPaintView.onResume();
         }
+        VideoPlayer pausedPlayer=pausedOnMinimizePlayer;
+        pausedOnMinimizePlayer=null;
+        if(pausedPlayer!=null && pausedPlayer==videoPlayer && isVisible()
+                && org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount) && !pausedPlayer.isPlaying()) {
+            pausedPlayer.play();
+        }
     }
 
     public void onConfigurationChanged(Configuration newConfig) {}
@@ -18880,6 +18889,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         if (videoPlayer != null && playerLooping) {
             videoPlayer.setLooping(allowLoopingOnPause());
+        }
+        if(org.telegram.messenger.xmpp.MonogramMediaPlayback.pauseVideoOnMinimize(currentAccount) && videoPlayer!=null && videoPlayer.isPlaying()) {
+            pausedOnMinimizePlayer=videoPlayer;
+            videoPlayer.pause();
         }
     }
 

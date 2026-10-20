@@ -137,6 +137,7 @@ import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.xmpp.MonogramDoubleTap;
 import org.telegram.messenger.xmpp.MonogramSwipeAction;
 import org.telegram.ui.Components.MonogramSwipeActionsHelper;
+import org.telegram.ui.Components.MonogramMessageDetailsPopup;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -1280,6 +1281,8 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_MONOGRAM_DIAGNOSTICS = 118;
     public final static int OPTION_MONOGRAM_SAVE = 119;
     public final static int OPTION_MONOGRAM_REPEAT = 120;
+    public final static int OPTION_MONOGRAM_COPY_PHOTO = 121;
+    public final static int OPTION_MONOGRAM_DETAILS = 122;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -31179,6 +31182,10 @@ public class ChatActivity extends BaseFragment implements
                 selectedObject = message;
                 selectedObjectGroup = groupedMessages;
                 fillMessageMenu(primaryMessage, icons, items, options);
+                if(org.telegram.messenger.xmpp.MonogramChatBehavior.showDetailsButton(currentAccount)
+                        && !noforwardsOrPaidMedia && !message.isEphemeral() && !message.isSecretMedia() && !message.isSponsored()) {
+                    items.add(LocaleController.getString(R.string.MonogramMessageDetails));options.add(OPTION_MONOGRAM_DETAILS);icons.add(R.drawable.msg_info);
+                }
             }
 
             if (selectedObject != null && selectedObject.isHiddenSensitive() && !selectedObject.isMediaSpoilersRevealed) {
@@ -31192,6 +31199,8 @@ public class ChatActivity extends BaseFragment implements
                         case OPTION_FORWARD:
                         case OPTION_MONOGRAM_SAVE:
                         case OPTION_MONOGRAM_REPEAT:
+                        case OPTION_MONOGRAM_COPY_PHOTO:
+                        case OPTION_MONOGRAM_DETAILS:
                         case OPTION_REPLY:
                             options.remove(i);
                             items.remove(i);
@@ -31282,7 +31291,7 @@ public class ChatActivity extends BaseFragment implements
             final boolean isReactionsAvailableFinal = !suggestEdit && isReactionsAvailable;
 
             int flags = 0;
-            if (isReactionsViewAvailable || showMessageSeen || showSponsorInfo) {
+            if (isReactionsViewAvailable || showMessageSeen || showSponsorInfo || options.contains(OPTION_MONOGRAM_DETAILS)) {
                 flags |= ActionBarPopupWindow.ActionBarPopupWindowLayout.FLAG_USE_SWIPEBACK;
             }
 
@@ -32091,6 +32100,14 @@ public class ChatActivity extends BaseFragment implements
                         }
                         processSelectedOption(options.get(i));
                     });
+                    if(option==OPTION_MONOGRAM_DETAILS) {
+                        MonogramMessageDetailsPopup details=new MonogramMessageDetailsPopup(this,popupLayout.getSwipeBack(),message,themeDelegate,this::closeMenu);
+                        int detailsIndex=popupLayout.addViewToSwipeBack(details.layout);
+                        cell.setOnClickListener(view -> {
+                            if(scrimPopupWindow==null) return;
+                            popupLayout.getSwipeBack().openForeground(detailsIndex);details.load();
+                        });
+                    }
                     if (option == OPTION_TRANSLATE) {
                         final boolean translateEnabled = getMessagesController().getTranslateController().isContextTranslateEnabled();
                         String toLangDefault = LocaleController.getInstance().getCurrentLocale().getLanguage();
@@ -33557,6 +33574,9 @@ public class ChatActivity extends BaseFragment implements
             case OPTION_MONOGRAM_REPEAT: {
                 performDoubleTapMessageAction(selectedObject, option == OPTION_MONOGRAM_SAVE ? MonogramDoubleTap.SAVE : MonogramDoubleTap.REPEAT);
                 break;
+            }
+            case OPTION_MONOGRAM_COPY_PHOTO: {
+                org.telegram.messenger.xmpp.MonogramPhotoClipboard.copy(this,selectedObject);break;
             }
             case OPTION_MONOGRAM_DIAGNOSTICS: {
                 org.telegram.messenger.xmpp.MonogramController.get(currentAccount).inspectMessage(selectedObject,
@@ -46498,6 +46518,10 @@ public class ChatActivity extends BaseFragment implements
                 if(!noforwardsOrPaidMedia && !options.contains(OPTION_SAVE_TO_GALLERY) && (selectedObject.isSticker() || selectedObject.isAnimatedSticker() || selectedObject.isVideoSticker())) {
                     items.add(org.telegram.messenger.xmpp.MonogramStickerExport.label(selectedObject.getDocument()));
                     options.add(OPTION_SAVE_TO_GALLERY);icons.add(R.drawable.msg_gallery);
+                }
+                if(!noforwardsOrPaidMedia && org.telegram.messenger.xmpp.MonogramChatBehavior.showCopyPhotoButton(currentAccount)
+                        && org.telegram.messenger.xmpp.MonogramPhotoClipboard.isPhoto(selectedObject)) {
+                    items.add(LocaleController.getString(R.string.MonogramCopyPhoto));options.add(OPTION_MONOGRAM_COPY_PHOTO);icons.add(R.drawable.msg_copy);
                 }
                 final boolean canForward = !selectedObject.isSponsored()
                     && !isQuickRepliesOrWelcomeMessagesMode()

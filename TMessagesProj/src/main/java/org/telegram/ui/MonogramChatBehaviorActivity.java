@@ -20,6 +20,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asHeader("Message menu"));
         items.add(UItem.asCheck(3,"Show Save message").setChecked(MonogramChatBehavior.showSaveButton(currentAccount)));
         items.add(UItem.asCheck(4,"Show Repeat message").setChecked(MonogramChatBehavior.showRepeatButton(currentAccount)));
+        items.add(UItem.asCheck(5,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramCopyPhoto)).setChecked(MonogramChatBehavior.showCopyPhotoButton(currentAccount)));
+        items.add(UItem.asCheck(6,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramMessageDetails)).setChecked(MonogramChatBehavior.showDetailsButton(currentAccount)));
         items.add(UItem.asShadow("Save copies a message to Saved Messages. Repeat sends a copy to the current conversation. Available only for messages you can forward."));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
@@ -27,6 +29,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         else if(item.id==2) MonogramChatBehavior.commaAfterMention(currentAccount,!MonogramChatBehavior.commaAfterMention(currentAccount));
         else if(item.id==3) MonogramChatBehavior.showSaveButton(currentAccount,!MonogramChatBehavior.showSaveButton(currentAccount));
         else if(item.id==4) MonogramChatBehavior.showRepeatButton(currentAccount,!MonogramChatBehavior.showRepeatButton(currentAccount));
+        else if(item.id==5) MonogramChatBehavior.showCopyPhotoButton(currentAccount,!MonogramChatBehavior.showCopyPhotoButton(currentAccount));
+        else if(item.id==6) MonogramChatBehavior.showDetailsButton(currentAccount,!MonogramChatBehavior.showDetailsButton(currentAccount));
         else return;
         listView.adapter.update(true);
     }
