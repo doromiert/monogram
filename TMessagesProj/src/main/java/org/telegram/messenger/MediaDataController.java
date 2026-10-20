@@ -7836,6 +7836,8 @@ public class MediaDataController extends BaseController {
     private boolean loadingDrafts;
 
     public void loadDraftsIfNeed() {
+        // XMPP drafts are local; account-scoped preferences were loaded by the constructor.
+        if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) return;
         if (getUserConfig().draftsLoaded || loadingDrafts) {
             return;
         }
@@ -7976,6 +7978,7 @@ public class MediaDataController extends BaseController {
             boolean sameDraft;
             if (currentDraft != null) {
                 sameDraft = (currentDraft.message.equals(draftMessage.message)
+                    && draftEntitiesEqual(currentDraft.entities, draftMessage.entities)
                     && replyToEquals(currentDraft.reply_to, draftMessage.reply_to)
                     && suggestedPostEquals(currentDraft.suggested_post, draftMessage.suggested_post)
                     && richMessageEquals(currentDraft.rich_message, draftMessage.rich_message)
@@ -7996,7 +7999,8 @@ public class MediaDataController extends BaseController {
         saveDraft(dialogId, threadId, draftMessage, replyToMessage, false);
 
         if (threadId == 0 || ChatObject.isForum(chat) || ChatObject.isMonoForum(chat)) {
-            if (!DialogObject.isEncryptedDialog(dialogId)) {
+            if (!DialogObject.isEncryptedDialog(dialogId)
+                    && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
                 TLRPC.TL_messages_saveDraft req = new TLRPC.TL_messages_saveDraft();
                 req.peer = getMessagesController().getInputPeer(dialogId);
                 if (req.peer == null) {
@@ -8092,10 +8096,32 @@ public class MediaDataController extends BaseController {
         return input;
     }
 
-    private static boolean replyToEquals(TLRPC.InputReplyTo a, TLRPC.InputReplyTo b) {
+    static boolean draftEntitiesEqual(ArrayList<TLRPC.MessageEntity> a, ArrayList<TLRPC.MessageEntity> b) {
+        int size = a == null ? 0 : a.size();
+        if (size != (b == null ? 0 : b.size())) return false;
+        for (int i = 0; i < size; i++) {
+            SerializedData left = new SerializedData();
+            SerializedData right = new SerializedData();
+            try {
+                a.get(i).serializeToStream(left);
+                b.get(i).serializeToStream(right);
+                if (!Arrays.equals(left.toByteArray(), right.toByteArray())) return false;
+            } catch (Exception invalidEntity) {
+                FileLog.e(invalidEntity);
+                return false;
+            } finally {
+                left.cleanup();
+                right.cleanup();
+            }
+        }
+        return true;
+    }
+
+    static boolean replyToEquals(TLRPC.InputReplyTo a, TLRPC.InputReplyTo b) {
         if (a == b) {
             return true;
         }
+        if (a == null || b == null || a.getClass() != b.getClass()) return false;
         if (a instanceof TLRPC.TL_inputReplyToMessage != b instanceof TLRPC.TL_inputReplyToMessage) {
             return false;
         }
@@ -8106,7 +8132,9 @@ public class MediaDataController extends BaseController {
             if (!TextUtils.equals(a.quote_text, b.quote_text)) {
                 return false;
             }
-            return a.reply_to_msg_id == b.reply_to_msg_id;
+            return a.reply_to_msg_id == b.reply_to_msg_id
+                && a.quote_offset == b.quote_offset
+                && draftEntitiesEqual(a.quote_entities, b.quote_entities);
         }
         if (a instanceof TLRPC.TL_inputReplyToStory) {
             return MessageObject.peersEqual(a.peer, b.peer) && a.story_id == b.story_id;

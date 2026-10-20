@@ -61,6 +61,7 @@ public final class MonogramController {
     private final java.util.concurrent.atomic.AtomicBoolean displayedSending=new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.atomic.AtomicLong displayedRequests=new java.util.concurrent.atomic.AtomicLong();
     private final MonogramStore store;
+    public final MonogramLinkPreviews linkPreviews;
     private final MonogramOmemo2Store modernStore;
     private final MonogramLegacyOmemoStore legacyStore;
     private final AccountVault vault;
@@ -91,6 +92,7 @@ public final class MonogramController {
         this.account = account;
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
         store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account);
+        linkPreviews=new MonogramLinkPreviews(account,preferences,store);
         legacyStore=MonogramLegacyOmemoStore.application();vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
         debugLog.enabled(preferences.getBoolean("debug-message-xml",false));
@@ -580,7 +582,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch);
+                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch);
                         });
                     }
                 });
@@ -629,7 +631,7 @@ public final class MonogramController {
         }
         refreshProfile(self);
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
-        state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence();
+        state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
         recoverPendingSends();
         startArchiveSync(connecting); syncBookmarks(connecting,epoch,null); refreshBlocked(connecting,epoch);
@@ -1196,13 +1198,13 @@ public final class MonogramController {
             TLRPC.TL_dialog dialog = new TLRPC.TL_dialog(); dialog.id = peer; dialog.peer = new TLRPC.TL_peerUser(); dialog.peer.user_id = peer;
             dialog.top_message = history.get(0).id; dialog.last_message_date = history.get(0).date;
             dialog.notify_settings = new TLRPC.TL_peerNotifySettings();
-            result.dialogs.add(dialog); result.messages.addAll(history); result.users.add(store.user(peer, self));
+            MonogramDialogState.apply(account,accountJid(),dialog);result.dialogs.add(dialog); result.messages.addAll(history); result.users.add(store.user(peer, self));
         }
         for (long peer:store.rooms()) {
             ArrayList<TLRPC.Message> history=store.history(peer,self,0,1);
             TLRPC.TL_dialog dialog=new TLRPC.TL_dialog(); dialog.id=peer; dialog.peer=new TLRPC.TL_peerChat(); dialog.peer.chat_id=-peer;
             if(!history.isEmpty()) { dialog.top_message=history.get(0).id; dialog.last_message_date=history.get(0).date; }
-            dialog.notify_settings=new TLRPC.TL_peerNotifySettings(); result.dialogs.add(dialog); result.messages.addAll(history);
+            dialog.notify_settings=new TLRPC.TL_peerNotifySettings(); MonogramDialogState.apply(account,accountJid(),dialog);result.dialogs.add(dialog); result.messages.addAll(history);
             result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self));
         }
         result.dialogs.sort((a, b) -> Integer.compare(b.last_message_date, a.last_message_date));
@@ -1372,6 +1374,8 @@ public final class MonogramController {
     public void logout() {
         final String departing=accountJid();
         debugCapture(false);
+        linkPreviews.cancel();
+        MonogramDialogState.clear(account,departing);
         MonogramPacks.logout(account);
         if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
         synchronized(displayedSettingsLock) {
@@ -1397,7 +1401,7 @@ public final class MonogramController {
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
             automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
-            store.clear(); self = 0;
+            linkPreviews.clear();store.clear(); self = 0;
             state(ConnectionsManager.ConnectionStateWaitingForNetwork);
         });
     }
@@ -1949,6 +1953,7 @@ public final class MonogramController {
         worker.execute(() -> {
             if(owner!=accountEpoch) return;
             for(TLRPC.Message message:messages) {
+                maybeLinkPreview(message);
                 if(!MonogramAttachments.has(message)) continue;
                 File path=new File(message.attachPath);
                 if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
@@ -1997,7 +2002,38 @@ public final class MonogramController {
             }
         });
     }
+    private void maybeLinkPreview(TLRPC.Message message) {
+        if(!MonogramLinkPreviews.candidate(message) || store.pendingDecryption(message.id) || store.hiddenMessage(message.id)) return;
+        TLRPC.Message saved=store.getMessage(message.id,self);
+        if(!MonogramLinkPreviews.candidate(saved) || !java.util.Objects.equals(MonogramLinkPreviews.firstUrl(saved.message),MonogramLinkPreviews.firstUrl(message.message))) return;
+        final long owner=accountEpoch;
+        if((saved.media instanceof TLRPC.TL_messageMediaWebPage)!=(message.media instanceof TLRPC.TL_messageMediaWebPage)) publishLinkPreview(saved,owner);
+        if(!linkPreviews.enabled() || saved.media instanceof TLRPC.TL_messageMediaWebPage && message.media instanceof TLRPC.TL_messageMediaWebPage && store.linkPreviewFresh(MonogramLinkPreviews.firstUrl(saved.message),System.currentTimeMillis())) return;
+        linkPreviews.maybeFetch(saved,store.encryptionOf(message.id)>0,() -> owner==accountEpoch,worker,() -> {
+            if(owner!=accountEpoch || store.hiddenMessage(message.id)) return;
+            TLRPC.Message updated=store.getMessage(message.id,self);
+            if(!java.util.Objects.equals(MonogramLinkPreviews.firstUrl(updated.message),MonogramLinkPreviews.firstUrl(message.message))) return;
+            publishLinkPreview(updated,owner);
+        });
+    }
+    private void publishLinkPreview(TLRPC.Message updated,long owner) {
+        ArrayList<TLRPC.Message> stored=new ArrayList<>();stored.add(updated);
+        MessagesStorage.getInstance(account).putMessages(stored,false,true,false,0,0,0);
+        AndroidUtilities.runOnUIThread(() -> {
+            if(owner!=accountEpoch) return;
+            ArrayList<MessageObject> objects=new ArrayList<>();objects.add(new MessageObject(account,updated,true,true));
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,updated.dialog_id,objects);
+        });
+    }
+    public void clearLinkPreviews() {
+        final long owner=accountEpoch;
+        worker.execute(() -> { if(owner!=accountEpoch) return;linkPreviews.clear();
+            if(mediaHistoryPeer!=0) for(TLRPC.Message message:store.history(mediaHistoryPeer,self,0,150))
+                if(MonogramLinkPreviews.firstUrl(message.message)!=null) publishLinkPreview(message,owner);
+        });
+    }
     private void maybeAutoDownload(TLRPC.Message message) {
+        maybeLinkPreview(message);
         if (!MonogramAttachments.has(message)) return;
         File path=new File(message.attachPath);
         if(path.isFile()) return;
@@ -2654,7 +2690,7 @@ public final class MonogramController {
         if (request instanceof MonogramFileRequest) {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
-        boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getHistory
+        boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
@@ -2978,7 +3014,8 @@ public final class MonogramController {
             session().rooms.leave(store.jid(-leave.chat_id)); store.leaveRoom(-leave.chat_id); dirtyRoomBookmark(-leave.chat_id); publishRoom(-leave.chat_id);
             Updates result=new Updates(); result.date=now(); result.chats.add(store.roomChat(-leave.chat_id)); return result;
         }
-        if (request instanceof TLRPC.TL_messages_getDialogs) return dialogs();
+        if (request instanceof TLRPC.TL_messages_getDialogs) return MonogramDialogState.dialogs(account,accountJid(),dialogs(),(TLRPC.TL_messages_getDialogs)request);
+        if (request instanceof TLRPC.TL_messages_getPinnedDialogs) return MonogramDialogState.pinned(account,accountJid(),dialogs(),((TLRPC.TL_messages_getPinnedDialogs)request).folder_id);
         if (request instanceof TLRPC.TL_messages_getMessages) {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             java.util.Set<Long> peers = new java.util.HashSet<>();

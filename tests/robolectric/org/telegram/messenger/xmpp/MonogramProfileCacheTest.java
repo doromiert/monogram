@@ -49,7 +49,7 @@ public class MonogramProfileCacheTest {
             store.getWritableDatabase().execSQL("DROP TABLE profile_avatar_sources");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(19);
         }
         try(MonogramStore store=new MonogramStore(context,file)) {
-            assertEquals(27,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
+            assertEquals(28,store.getReadableDatabase().getVersion());assertEquals("Keep this",store.getMessage(message,self).message);
             assertEquals(image,store.avatar(peer));assertEquals("Bobby",store.profile(peer).nickname);
             assertArrayEquals(Files.readAllBytes(image.toPath()),store.profileForRefresh(peer).avatar);
             store.profile(peer,new XmppProfile(store.profile(peer).xml(),"New nickname",source));
@@ -87,7 +87,7 @@ public class MonogramProfileCacheTest {
             store.getWritableDatabase().execSQL("DROP TABLE local_contact_names");store.getWritableDatabase().setVersion(25);
         }
         try(MonogramStore store=new MonogramStore(context,file)) {
-            assertEquals(27,store.getReadableDatabase().getVersion());
+            assertEquals(28,store.getReadableDatabase().getVersion());
             assertEquals("Keep this",store.getMessage(message,self).message);assertEquals("Bob",store.user(peer,self).first_name);
             store.localName(peer,"Local Bob");assertEquals("Local Bob",store.user(peer,self).first_name);
         }

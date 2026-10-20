@@ -832,6 +832,16 @@ public class ChatActivity extends BaseFragment implements
     private String pendingLinkSearchString;
     private Runnable pendingWebPageTimeoutRunnable;
     private Runnable waitingForCharaterEnterRunnable;
+    private final Runnable saveInputDraftRunnable = () -> {
+        if (!paused && chatActivityEnterView != null && !chatActivityEnterView.isEditingMessage()) saveDraft();
+    };
+
+    private void scheduleInputDraftSave() {
+        if (chatMode != MODE_DEFAULT || inPreviewMode || paused || chatActivityEnterView == null
+                || chatActivityEnterView.isEditingMessage() || ignoreDraft || ignoreAttachOnPause) return;
+        AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
+        AndroidUtilities.runOnUIThread(saveInputDraftRunnable, 750);
+    }
     private Runnable onChatMessagesLoaded;
 
     private TLRPC.ChatInvite chatInvite;
@@ -2323,6 +2333,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void onTextChanged(final CharSequence text, boolean bigChange, boolean fromDraft) {
+            if (!fromDraft) scheduleInputDraftSave();
             if (!fromDraft && !paused && chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode
                     && dialog_id > 0 && !chatActivityEnterView.isEditingMessage()) {
                 org.telegram.messenger.xmpp.MonogramController.get(currentAccount).typingInput(dialog_id, !TextUtils.isEmpty(text));
@@ -2368,6 +2379,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void onTextSpansChanged(CharSequence text) {
+            scheduleInputDraftSave();
             searchLinks(text, true);
         }
 
@@ -3461,6 +3473,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatGone(dialog_id);
         super.onFragmentDestroy();
         if (messageMetricsView != null) {
@@ -15690,6 +15703,7 @@ public class ChatActivity extends BaseFragment implements
             updateBottomOverlay();
         }
 
+        scheduleInputDraftSave();
         if (showHint) {
             if (tapForForwardingOptionsHitRunnable == null) {
                 AndroidUtilities.runOnUIThread(tapForForwardingOptionsHitRunnable = () -> {
@@ -30202,6 +30216,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public void saveDraft() {
+        AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
         if (chatActivityEnterView != null && chatActivityEnterView.isRichDraftActive()) {
             return;
         }

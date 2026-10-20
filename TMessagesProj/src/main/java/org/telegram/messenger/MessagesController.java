@@ -12461,12 +12461,13 @@ public class MessagesController extends BaseController implements NotificationCe
                     dialog.pinned = false;
                     dialog.pinnedNum = 0;
                 }
+                org.telegram.messenger.xmpp.MonogramDialogState.save(currentAccount, dialog);
                 if (folderCreated == null) {
                     folderCreated = new boolean[1];
                     hasArchivedChats = true;
                     ensureFolderDialogExists(folderId, folderCreated);
                 }
-                if (DialogObject.isEncryptedDialog(dialogId)) {
+                if (DialogObject.isEncryptedDialog(dialogId) || org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
                     getMessagesStorage().setDialogsFolderId(null, null, dialogId, folderId);
                 } else {
                     TLRPC.TL_inputFolderPeer folderPeer = new TLRPC.TL_inputFolderPeer();
@@ -17323,6 +17324,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 dids.add(dialog.id);
                 pinned.add(dialog.pinnedNum);
+                org.telegram.messenger.xmpp.MonogramDialogState.save(currentAccount, dialog);
                 if (!DialogObject.isEncryptedDialog(dialog.id)) {
                     TLRPC.InputPeer inputPeer = getInputPeer(dialog.id);
                     TLRPC.Chat chat = getMessagesController().getChat(-dialog.id);
@@ -17340,6 +17342,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             }
             getMessagesStorage().setDialogsPinned(dids, pinned);
+            if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return;
 
             NativeByteBuffer data = null;
             try {
@@ -17398,7 +17401,7 @@ public class MessagesController extends BaseController implements NotificationCe
             dialogs.remove(dialogs.size() - 1);
         }
         getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
-        if (!DialogObject.isEncryptedDialog(dialogId)) {
+        if (!DialogObject.isEncryptedDialog(dialogId) && !org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
             if (taskId != -1) {
                 TLRPC.TL_messages_toggleDialogPin req = new TLRPC.TL_messages_toggleDialogPin();
                 req.pinned = pin;
@@ -17437,6 +17440,7 @@ public class MessagesController extends BaseController implements NotificationCe
             }
         }
         getMessagesStorage().setDialogPinned(dialogId, dialog.pinnedNum);
+        org.telegram.messenger.xmpp.MonogramDialogState.save(currentAccount, dialog);
         return true;
     }
 

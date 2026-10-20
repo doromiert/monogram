@@ -17,7 +17,7 @@ import org.telegram.tgnet.TLRPC;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
-        shadows={MonogramPacksTest.Account.class, MonogramPacksTest.App.class, MonogramPacksTest.Ui.class, MonogramPacksTest.PackUi.class, MonogramPacksTest.EmojiUi.class,MonogramPacksTest.Vault.class})
+        shadows={MonogramPacksTest.Account.class, MonogramPacksTest.App.class, MonogramPacksTest.Ui.class, MonogramPacksTest.PackUi.class, MonogramPacksTest.EmojiUi.class,MonogramPacksTest.Vault.class,MonogramPacksTest.Logging.class})
 public class MonogramPacksTest {
     static String jid;
     static MonogramController controller;
@@ -25,6 +25,12 @@ public class MonogramPacksTest {
     public static class Account {
         @Implementation public static MonogramController get(int account) { return controller; }
         @Implementation public String accountJid() { return jid; }
+    }
+    // Pack-save error callbacks must run without bootstrapping the native logger/AppCenter.
+    @Implements(value=org.telegram.messenger.FileLog.class,isInAndroidSdk=false)
+    public static class Logging {
+        @Implementation public static void e(Throwable failure) { failure.printStackTrace(System.err); }
+        @Implementation public static void e(String text) { System.err.println(text); }
     }
     @Implements(value=ApplicationLoader.class,isInAndroidSdk=false)
     public static class App { @Implementation public static void __staticInitializer__() {} }
@@ -41,9 +47,10 @@ public class MonogramPacksTest {
             if(method.equals("getStickerSet")) {
                 if(value.equals("Broken")) throw new java.io.IOException("fixture failure");
                 org.json.JSONArray items=new org.json.JSONArray();
-                for(int i=0;i<8;i++) items.put(new org.json.JSONObject().put("file_id",String.valueOf(i)).put("emoji","🙂"));
-                return new org.json.JSONObject().put("result",new org.json.JSONObject().put("name",value).put("title",value).put("sticker_type","regular").put("stickers",items));
+                for(int i:remoteIndices) items.put(new org.json.JSONObject().put("file_id",String.valueOf(i)).put("file_unique_id","fixture-"+i).put("emoji","🙂"));
+                return new org.json.JSONObject().put("result",new org.json.JSONObject().put("name",value).put("title",value).put("sticker_type",remoteEmojis ? "custom_emoji" : "regular").put("stickers",items));
             }
+            fileRequests.incrementAndGet();
             int now=networkActive.incrementAndGet();networkPeak.accumulateAndGet(now,Math::max);
             try {
                 parallelReady.countDown();
@@ -55,6 +62,9 @@ public class MonogramPacksTest {
             return java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
         }
     }
+    static volatile int[] remoteIndices;
+    static boolean remoteEmojis;
+    static java.util.concurrent.atomic.AtomicInteger fileRequests=new java.util.concurrent.atomic.AtomicInteger();
     static java.util.concurrent.CountDownLatch parallelReady;
     static java.util.concurrent.atomic.AtomicInteger networkActive=new java.util.concurrent.atomic.AtomicInteger(),networkPeak=new java.util.concurrent.atomic.AtomicInteger();
     @Implements(value=AccountVault.class,isInAndroidSdk=false)
@@ -66,7 +76,9 @@ public class MonogramPacksTest {
     public static class EmojiUi { @Implementation public static void clearMonogramPacks(int account) {} }
     @Before public void setup() {
         ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
+        ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();
         controller=Shadow.newInstanceOf(MonogramController.class); jid="alice@example.org";
+        remoteIndices=new int[]{0,1,2,3,4,5,6,7};remoteEmojis=false;fileRequests.set(0);parallelReady=new java.util.concurrent.CountDownLatch(0);
     }
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test public void gifStickerRetainsBothFramesAndArchiveRoundTrips() throws Exception {
@@ -275,6 +287,69 @@ public class MonogramPacksTest {
             }
             assertTrue(MonogramPacks.importProgress(0).error.contains("2 / 3 packs imported"));
         } finally { MonogramPacks.removeImportObserver(0,observer); }
+    }
+    private static void finishImport(Runnable start) throws Exception {
+        start.run(); java.util.concurrent.CountDownLatch finished=new java.util.concurrent.CountDownLatch(1);
+        MonogramPacks.ImportObserver observer=state->{if(!state.active) finished.countDown();};
+        MonogramPacks.addImportObserver(0,observer);
+        try {
+            assertTrue(finished.await(15,java.util.concurrent.TimeUnit.SECONDS));
+            assertNull(MonogramPacks.importProgress(0).error);assertTrue(MonogramPacks.importProgress(0).complete);
+        } finally { MonogramPacks.removeImportObserver(0,observer); }
+    }
+    @Test public void telegramResyncReusesFilesPreservesOrderAndRetainsRemovedReferences() throws Exception {
+        jid="telegram-updates@example.org";
+        MonogramPacks.saveToken(0,"123456:abcdefghijklmnopqrstuvwx");
+        finishImport(()->MonogramPacks.startImport(0,"https://t.me/addstickers/Updates"));
+        MonogramPacks.Pack original=MonogramPacks.packs(0).get(0);long id=original.id;
+        assertTrue(original.connected);assertFalse(original.autoSync);assertEquals(8,fileRequests.get());
+        long removedId=original.items.get(0).id;String removedPath=MonogramPacks.document(0,removedId).localPath;
+        ArrayList<Long> retained=new ArrayList<>();for(int i=1;i<8;i++) retained.add(original.items.get(i).id);
+        MonogramPacks.autoSync(0,id,true);
+        remoteIndices=new int[]{7,6,5,4,3,2,1,8};
+        finishImport(()->MonogramPacks.resync(0,id));
+        MonogramPacks.Pack updated=MonogramPacks.pack(0,id);
+        assertEquals(9,fileRequests.get());assertTrue(updated.autoSync);assertTrue(updated.lastSync>0);assertEquals("",updated.syncError);
+        assertEquals(8,updated.items.size());
+        for(int i=0;i<7;i++) assertEquals(retained.get(i).longValue(),updated.items.get(i).id);
+        assertEquals("fixture-8",updated.items.get(7).remoteId);
+        assertNotNull(MonogramPacks.document(0,removedId));assertEquals(removedPath,MonogramPacks.document(0,removedId).localPath);
+        assertTrue(new File(removedPath).isFile());assertEquals(1,MonogramPacks.sets(0,false).size());
+        MonogramPacks.maybeAutoSync(0);assertEquals(9,fileRequests.get());
+        java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+        assertTrue(MonogramPacks.pack(0,id).autoSync);assertEquals("fixture-8",MonogramPacks.pack(0,id).items.get(7).remoteId);
+        jid="another-update-account@example.org";assertNull(MonogramPacks.pack(0,id));assertNull(MonogramPacks.document(0,removedId));
+        jid="telegram-updates@example.org";
+        MonogramPacks.detach(0,id);updated=MonogramPacks.pack(0,id);assertFalse(updated.connected);assertFalse(updated.autoSync);
+        assertThrows(IllegalStateException.class,()->MonogramPacks.resync(0,id));
+        assertThrows(IllegalStateException.class,()->MonogramPacks.autoSync(0,id,true));
+        MonogramPacks.rename(0,id,0,"My editable copy",false);assertEquals("My editable copy",MonogramPacks.pack(0,id).name);
+        MonogramPacks.logout(0);
+    }
+    @Test public void connectedCustomEmojiPacksAlsoResyncAndBecomeEditableOnlyAfterDetach() throws Exception {
+        jid="emoji-updates@example.org";remoteEmojis=true;
+        MonogramPacks.saveToken(0,"123456:abcdefghijklmnopqrstuvwx");
+        finishImport(()->MonogramPacks.startImport(0,"https://t.me/addemoji/EmojiUpdates"));
+        MonogramPacks.Pack original=MonogramPacks.packs(0).get(0);
+        assertTrue(original.emojis);assertTrue(original.connected);
+        assertThrows(IllegalStateException.class,()->MonogramPacks.rename(0,original.id,0,"Not detached",false));
+        finishImport(()->MonogramPacks.resync(0,original.id));
+        assertEquals(8,fileRequests.get());assertEquals(original.items.get(0).id,MonogramPacks.pack(0,original.id).items.get(0).id);
+        assertEquals(1,MonogramPacks.sets(0,true).size());assertTrue(MonogramPacks.sets(0,false).isEmpty());
+        MonogramPacks.detach(0,original.id);MonogramPacks.rename(0,original.id,0,"Local emoji",false);
+        assertEquals("Local emoji",MonogramPacks.pack(0,original.id).name);
+    }
+    @Test public void anUpdateCannotOverwriteAPackDetachedWhileDownloading() throws Exception {
+        jid="detach-during-update@example.org";
+        MonogramPacks.saveToken(0,"123456:abcdefghijklmnopqrstuvwx");
+        finishImport(()->MonogramPacks.startImport(0,"https://t.me/addstickers/Detach"));
+        MonogramPacks.Pack snapshot=MonogramPacks.packs(0).get(0);MonogramPacks.detach(0,snapshot.id);
+        MonogramPacks.rename(0,snapshot.id,0,"Detached local edits",false);
+        ArrayList<MonogramPacks.Pack> current=MonogramPacks.packs(0);
+        String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        assertThrows(Exception.class,()->MonogramPacks.mergeUpdate(scope,current,snapshot));
+        assertEquals("Detached local edits",MonogramPacks.pack(0,snapshot.id).name);
+        assertEquals(snapshot.items.get(0).id,MonogramPacks.pack(0,snapshot.id).items.get(0).id);
     }
     private static class Connection extends javax.net.ssl.HttpsURLConnection {
         boolean disconnected;

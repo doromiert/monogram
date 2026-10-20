@@ -1348,6 +1348,8 @@ public class FileLoader extends BaseController {
      * Return real file name. Used before file.exist()
      */
     public File getPathToAttach(TLObject attach, String size, String ext, boolean forceCache, boolean useFileDatabaseQueue) {
+        File preview=attach instanceof TLRPC.PhotoSize ? org.telegram.messenger.xmpp.MonogramLinkPreviews.localThumbnail((TLRPC.PhotoSize)attach) : null;
+        if(preview!=null) return preview;
         if (attach instanceof TLRPC.PhotoSize) {
             TLRPC.FileLocation location = ((TLRPC.PhotoSize) attach).location;
             if (location != null && org.telegram.messenger.xmpp.MonogramEmojis.isThumb(location.volume_id)) {

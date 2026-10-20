@@ -31,7 +31,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 27); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 28); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -44,6 +44,40 @@ final class MonogramStore extends SQLiteOpenHelper {
         addCalls(db);
         addLocalNames(db);
         addStickerHints(db);
+        addLinkPreviews(db);
+    }
+    private static void addLinkPreviews(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS link_previews(url TEXT PRIMARY KEY,expires INTEGER NOT NULL,media BLOB)");
+    }
+    synchronized boolean linkPreviewFresh(String url,long now) {
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT expires FROM link_previews WHERE url=?",new String[]{url})) {
+            return row.moveToFirst() && row.getLong(0)>now;
+        }
+    }
+    synchronized void saveLinkPreview(String url,TLRPC.WebPage page,long expires) {
+        ContentValues value=new ContentValues();value.put("url",url);value.put("expires",expires);
+        if(page!=null) {
+            org.telegram.tgnet.SerializedData data=new org.telegram.tgnet.SerializedData();
+            try { page.serializeToStream(data);value.put("media",data.toByteArray()); } finally { data.cleanup(); }
+        }
+        getWritableDatabase().insertWithOnConflict("link_previews",null,value,SQLiteDatabase.CONFLICT_REPLACE);
+        getWritableDatabase().execSQL("DELETE FROM link_previews WHERE url NOT IN (SELECT url FROM link_previews ORDER BY expires DESC LIMIT 256)");
+    }
+    synchronized void clearLinkPreviews() { getWritableDatabase().delete("link_previews",null,null); }
+    private void decorateLinkPreview(TLRPC.Message message) {
+        if(!MonogramLinkPreviews.candidate(message)) return;
+        String url=MonogramLinkPreviews.firstUrl(message.message);
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT media FROM link_previews WHERE url=?",new String[]{url})) {
+            if(!row.moveToFirst() || row.isNull(0)) return;
+            org.telegram.tgnet.SerializedData data=new org.telegram.tgnet.SerializedData(row.getBlob(0));
+            try {
+                TLRPC.WebPage page=TLRPC.WebPage.TLdeserialize(data,data.readInt32(true),true);
+                if(!(page instanceof TLRPC.TL_webPage)) return;
+                TLRPC.TL_messageMediaWebPage media=new TLRPC.TL_messageMediaWebPage();media.webpage=page;
+                message.media=media;message.flags|=512;
+            } catch(RuntimeException invalid) { /* Corrupt optional cached metadata cannot hide messages. */ }
+            finally { data.cleanup(); }
+        }
     }
     private boolean rememberStickerHint(SQLiteDatabase db,int id,String url,boolean hint) {
         if(!hint) return false;
@@ -112,7 +146,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 27 || oldVersion < 1 || oldVersion > 26) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 28 || oldVersion < 1 || oldVersion > 27) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -138,6 +172,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<25) MonogramEmojis.create(db);
         if(oldVersion<26) addLocalNames(db);
         if(oldVersion<27) addStickerHints(db);
+        if(oldVersion<28) addLinkPreviews(db);
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -232,7 +267,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -1152,6 +1187,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         decorateReply(message, self, body, embedReply, payload);
         MonogramFormatting.decorate(getReadableDatabase(),message,payload,body);
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
+        decorateLinkPreview(message);
         message.reactions=reactions.snapshot(id,self);
         if (outgoing && peer > 0 && peer != self) receipts.decorate(message);
         if (!outgoing) MonogramReceipts.restoreIncoming(message, message.media_unread ? 0 : 2);

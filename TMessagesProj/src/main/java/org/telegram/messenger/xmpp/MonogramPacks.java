@@ -31,6 +31,10 @@ public final class MonogramPacks {
     private static final java.util.concurrent.ExecutorService DOWNLOADS=java.util.concurrent.Executors.newFixedThreadPool(4,r -> {
         Thread thread=new Thread(r,"monogram-sticker-download");thread.setDaemon(true);return thread;
     });
+    private static final java.util.concurrent.ScheduledExecutorService SYNC_TIMER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread thread = new Thread(r, "monogram-pack-updates"); thread.setDaemon(true); return thread;
+    });
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ScheduledFuture<?>> SYNC_TASKS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final Map<String, ArrayList<Pack>> CACHE = new HashMap<>();
     private static final java.util.concurrent.ConcurrentHashMap<Integer, java.util.concurrent.atomic.AtomicLong> GENERATIONS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final Set<String> INVALID = new HashSet<>();
@@ -38,14 +42,16 @@ public final class MonogramPacks {
     private MonogramPacks() {}
     public static final class Item {
         public long id;
-        public String name, emoji, mime, file;
+        public String name, emoji, mime, file, remoteId = "";
         public int width, height;
     }
     public static final class Pack {
         public long id;
         public String name, source;
         public boolean emojis, installed = true;
-        public boolean privatePack = true, connected = false;
+        public boolean privatePack = true, connected = false, autoSync = false;
+        public long lastSync;
+        public String syncError = "";
         public final ArrayList<Item> items = new ArrayList<>();
     }
     public interface Callback { void done(String error); }
@@ -72,6 +78,7 @@ public final class MonogramPacks {
         final Request request;
         volatile ImportProgress progress;
         volatile int packIndex=1,packCount=1;
+        volatile Set<Long> packIds = Collections.emptySet();
         ImportJob(int account) {
             this.account = account; request = new Request(account); owner = request.owner; request.importJob = this;
             progress = new ImportProgress("Queued", "", null, 0, 0, 0, -1, true, false);
@@ -98,6 +105,12 @@ public final class MonogramPacks {
         }
     }
     public static ImportProgress importProgress(int account) { ImportJob job = IMPORTS.get(owner(account)); return job == null ? null : job.progress; }
+    public static ImportProgress importProgress(int account, long packId) {
+        ImportJob job = IMPORTS.get(owner(account)); return job == null || !job.packIds.contains(packId) ? null : job.progress;
+    }
+    public static void cancelImport(int account, long packId) {
+        ImportJob job = IMPORTS.get(owner(account)); if (job != null && job.packIds.contains(packId)) cancelImport(account);
+    }
     public static void addImportObserver(int account, ImportObserver observer) {
         if (observer == null) return;
         String key = owner(account);
@@ -172,6 +185,7 @@ public final class MonogramPacks {
         return ApplicationLoader.applicationContext.getSharedPreferences("monogram-packs-" + scope(account), Context.MODE_PRIVATE);
     }
     public static synchronized void logout(int account) {
+        java.util.concurrent.ScheduledFuture<?> sync = SYNC_TASKS.remove(owner(account)); if (sync != null) sync.cancel(false);
         for (ImportJob job : IMPORTS.values()) if (job.account == account) {
             job.request.cancel(); IMPORTS.remove(job.owner, job); IMPORT_OBSERVERS.remove(job.owner); IMPORT_NOTIFICATIONS.remove(job.owner);
         }
@@ -193,10 +207,10 @@ public final class MonogramPacks {
     private static ArrayList<Pack> copy(ArrayList<Pack> source) {
         ArrayList<Pack> result = new ArrayList<>();
         for (Pack old : source) {
-            Pack pack = new Pack(); pack.id = old.id; pack.name = old.name; pack.source = old.source; pack.emojis = old.emojis; pack.installed = old.installed; pack.privatePack = old.privatePack; pack.connected = old.connected;
+            Pack pack = new Pack(); pack.id = old.id; pack.name = old.name; pack.source = old.source; pack.emojis = old.emojis; pack.installed = old.installed; pack.privatePack = old.privatePack; pack.connected = old.connected; pack.autoSync = old.autoSync; pack.lastSync = old.lastSync; pack.syncError = old.syncError;
             for (Item oldItem : old.items) {
                 Item item = new Item(); item.id = oldItem.id; item.name = oldItem.name; item.emoji = oldItem.emoji; item.mime = oldItem.mime;
-                item.file = oldItem.file; item.width = oldItem.width; item.height = oldItem.height; pack.items.add(item);
+                item.file = oldItem.file; item.remoteId = oldItem.remoteId; item.width = oldItem.width; item.height = oldItem.height; pack.items.add(item);
             }
             result.add(pack);
         }
@@ -215,11 +229,15 @@ public final class MonogramPacks {
                 pack.emojis = object.getBoolean("emojis"); pack.installed = object.optBoolean("installed", true);
                 pack.privatePack = object.optBoolean("privatePack", true); pack.connected = object.optBoolean("connected", false);
                 if (pack.connected) parseLink(pack.source);
+                // Earlier imports kept the source link but never initialized connected.
+                pack.connected = telegramSource(pack);
+                pack.autoSync = pack.connected && object.optBoolean("autoSync", false);
+                pack.lastSync = object.optLong("lastSync", 0); pack.syncError = object.optString("syncError", "");
                 JSONArray items = object.getJSONArray("items");
                 for (int j = 0; j < items.length(); j++) {
                     JSONObject entry = items.getJSONObject(j); Item item = new Item();
                     item.id = entry.getLong("id"); item.name = name(entry.getString("name")); item.emoji = tag(entry.optString("emoji", "🙂"));
-                    item.mime = entry.getString("mime"); item.file = entry.getString("file");
+                    item.mime = entry.getString("mime"); item.file = entry.getString("file"); item.remoteId = entry.optString("remoteId", "");
                     item.width = dimension(entry.optInt("width", 512)); item.height = dimension(entry.optInt("height", 512));
                     if (!localId(item.id) || !used.add(item.id) || !MonogramStickers.supported(item.mime) || !item.file.matches("[A-Za-z0-9_-]+\\.(webp|png|gif|tgs|webm)")) throw new IOException();
                     pack.items.add(item);
@@ -242,9 +260,9 @@ public final class MonogramPacks {
         JSONArray array = new JSONArray();
         for (Pack pack : packs) {
             JSONObject object = new JSONObject().put("id", pack.id).put("name", pack.name).put("source", pack.source)
-                    .put("emojis", pack.emojis).put("installed", pack.installed).put("privatePack", pack.privatePack).put("connected", pack.connected); JSONArray items = new JSONArray();
+                    .put("emojis", pack.emojis).put("installed", pack.installed).put("privatePack", pack.privatePack).put("connected", pack.connected).put("autoSync", pack.autoSync).put("lastSync", pack.lastSync).put("syncError", pack.syncError); JSONArray items = new JSONArray();
             for (Item item : pack.items) items.put(new JSONObject().put("id", item.id).put("name", item.name).put("emoji", item.emoji)
-                    .put("mime", item.mime).put("file", item.file).put("width", item.width).put("height", item.height));
+                    .put("mime", item.mime).put("file", item.file).put("remoteId", item.remoteId).put("width", item.width).put("height", item.height));
             array.put(object.put("items", items));
         }
         byte[] data = new JSONObject().put("packs", array).toString().getBytes("UTF-8");
@@ -367,7 +385,7 @@ public final class MonogramPacks {
         synchronized (MonogramPacks.class) {
             String scope=scope(account); ArrayList<Pack> packs=copy(read(scope)); boolean found=false;
             for (Pack pack:packs) if(pack.id==id) {
-                pack.connected=false; pack.source="local:"+UUID.randomUUID(); found=true; break;
+                pack.connected=false; pack.autoSync=false; pack.syncError=""; pack.source="local:"+UUID.randomUUID(); found=true; break;
             }
             if(!found) throw new IllegalArgumentException("Pack not found.");
             write(scope,packs);
@@ -547,64 +565,143 @@ public final class MonogramPacks {
     }
     /** Account-owned import: leaving a screen only removes its observer, never cancels this job. */
     public static void startImport(int account, String link) {
-        final ArrayList<String> links=parseLinks(link);
+        importTelegram(account, parseLinks(link), new ArrayList<>());
+    }
+    public static void resync(int account, long packId) {
+        Pack pack = pack(account, packId);
+        if (pack == null || !pack.installed || !telegramSource(pack)) throw new IllegalStateException("Only connected Telegram packs can be updated.");
+        ArrayList<String> links = new ArrayList<>(); links.add(pack.source);
+        ArrayList<Long> ids = new ArrayList<>(); ids.add(packId);
+        importTelegram(account, links, ids);
+    }
+    public static synchronized void autoSync(int account, long packId, boolean enabled) throws Exception {
+        String scope = scope(account); ArrayList<Pack> packs = copy(read(scope));
+        for (Pack pack : packs) if (pack.id == packId) {
+            if (!telegramSource(pack)) throw new IllegalStateException("Detached packs cannot receive Telegram updates.");
+            if (enabled && !configured(account)) throw new IllegalStateException("Add a Telegram bot token in sticker settings first.");
+            pack.connected = true; pack.autoSync = enabled; write(scope, packs);
+            if (enabled) scheduleAutoSync(account); return;
+        }
+        throw new IllegalArgumentException("Pack not found.");
+    }
+    private static void scheduleAutoSync(int account) {
+        String expectedOwner = owner(account);
+        SYNC_TASKS.computeIfAbsent(expectedOwner, ignored -> SYNC_TIMER.scheduleWithFixedDelay(() -> {
+            if (!expectedOwner.equals(owner(account))) {
+                java.util.concurrent.ScheduledFuture<?> stale = SYNC_TASKS.remove(expectedOwner); if (stale != null) stale.cancel(false);
+                return;
+            }
+            try { maybeAutoSync(account); } catch (RuntimeException ignoredFailure) { }
+        }, 6, 6, java.util.concurrent.TimeUnit.HOURS));
+    }
+    /** Called on account activation. Updates are opt-in, at most once per six hours per pack. */
+    public static void maybeAutoSync(int account) {
+        if (!configured(account)) return;
+        ImportProgress progress = importProgress(account); if (progress != null && progress.active) return;
+        long now = System.currentTimeMillis(); ArrayList<String> links = new ArrayList<>(); ArrayList<Long> ids = new ArrayList<>();
+        SharedPreferences prefs = preferences(account);
+        for (Pack pack : packs(account)) if (pack.installed && pack.autoSync && telegramSource(pack)) {
+            scheduleAutoSync(account);
+            if (now - prefs.getLong("sync-attempt-" + pack.id, pack.lastSync) >= 6 * 60 * 60 * 1000L) { links.add(pack.source); ids.add(pack.id); }
+        }
+        if (!ids.isEmpty()) try { importTelegram(account, links, ids); } catch (IllegalStateException busy) { }
+    }
+    private static void importTelegram(int account, ArrayList<String> links, ArrayList<Long> targets) {
         final String expectedScope = scope(account), encryptedToken = preferences(account).getString("token", null);
         if (encryptedToken == null) throw new IllegalStateException("Add your own Telegram bot token first. The import uses Telegram’s official Bot API.");
-        final ImportJob job = beginImport(account);
-        job.packCount=links.size();
-        final Request operation = job.request;
-        final String expectedOwner = job.owner;
+        final ImportJob job = beginImport(account); job.packCount = links.size(); job.packIds = new HashSet<>(targets);
+        final Request operation = job.request; final String expectedOwner = job.owner;
+        final SharedPreferences prefs = preferences(account);
         notifyImport(job);
         WORKER.execute(() -> {
-            ArrayList<String> errors=new ArrayList<>(); int saved=0;
-            for(int packIndex=0;packIndex<links.size();packIndex++) {
-            String currentLink=links.get(packIndex); Link parsed=parseLink(currentLink);
-            job.packIndex=packIndex+1; operation.committed=false;
-            String error = null; ArrayList<File> temporary = new ArrayList<>();
-            try {
-                operation.check();
-                job.update("Loading pack", "", 0, 0, 0, -1);
-                String token = new AccountVault(account).decrypt(encryptedToken);
-                JSONObject result = request(token, "getStickerSet", "name", parsed.name, operation).getJSONObject("result");
-                if (!parsed.name.equalsIgnoreCase(result.getString("name")) || parsed.emojis != "custom_emoji".equals(result.optString("sticker_type"))) throw new IOException();
-                Set<Long> pending = new HashSet<>(); Pack pack = new Pack(); pack.id = id(expectedScope, pending); pack.name = name(result.getString("title")); pack.source = currentLink; pack.emojis = parsed.emojis;
-                JSONArray stickers = result.getJSONArray("stickers"); if (stickers.length() < 1) throw new ImportFailure("This pack has no stickers.");
-                synchronized (MonogramPacks.class) {
-                    for (Pack old : read(expectedScope)) if (old.source.equals(currentLink) && old.installed) throw new ImportFailure("This pack is already installed.");
-                }
-                File dir = directory(expectedScope); if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException();
-                pack.items.addAll(downloadItems(account,token,stickers,pack,dir,expectedScope,pending,operation,job));
-                for(Item item:pack.items) temporary.add(new File(dir,item.file));
-                job.update("Saving pack", pack.name, stickers.length(), stickers.length(), 0, -1);
-                synchronized (MonogramPacks.class) {
-                    if (!expectedOwner.equals(owner(account))) throw new ImportFailure("The account changed. Import again on the intended account.");
-                    ArrayList<Pack> packs = new ArrayList<>(read(expectedScope));
-                    for (Pack old : packs) if (old.source.equals(currentLink) && old.installed) throw new ImportFailure("This pack is already installed.");
-                    synchronized (operation) {
-                        operation.check(); packs.add(0, pack); write(expectedScope, packs); operation.committed = true; temporary.clear();
+            ArrayList<String> errors = new ArrayList<>(); int saved = 0;
+            for (int packIndex = 0; packIndex < links.size(); packIndex++) {
+                String currentLink = links.get(packIndex); Link parsed = parseLink(currentLink);
+                long targetId = targets.isEmpty() ? 0 : targets.get(packIndex);
+                job.packIndex = packIndex + 1; operation.committed = false;
+                String error = null; ArrayList<File> temporary = new ArrayList<>();
+                try {
+                    operation.check(); Pack previous = targetId == 0 ? null : pack(account, targetId);
+                    if (targetId != 0 && (previous == null || !previous.installed || !currentLink.equals(previous.source)))
+                        throw new ImportFailure("The pack was detached or removed. Its local copy was preserved.");
+                    if (targetId != 0) prefs.edit().putLong("sync-attempt-" + targetId, System.currentTimeMillis()).apply();
+                    job.update(targetId == 0 ? "Loading pack" : "Checking for updates", "", 0, 0, 0, -1);
+                    String token = new AccountVault(account).decrypt(encryptedToken);
+                    JSONObject result = request(token, "getStickerSet", "name", parsed.name, operation).getJSONObject("result");
+                    if (!parsed.name.equalsIgnoreCase(result.getString("name")) || parsed.emojis != "custom_emoji".equals(result.optString("sticker_type"))) throw new IOException();
+                    Set<Long> pending = new HashSet<>(); Pack pack = new Pack();
+                    pack.id = targetId == 0 ? id(expectedScope, pending) : targetId;
+                    pack.name = name(result.getString("title")); pack.source = currentLink; pack.emojis = parsed.emojis; pack.connected = true;
+                    JSONArray stickers = result.getJSONArray("stickers"); if (stickers.length() < 1) throw new ImportFailure("This pack has no stickers.");
+                    synchronized (MonogramPacks.class) {
+                        if (targetId == 0) for (Pack old : read(expectedScope)) if (old.source.equalsIgnoreCase(currentLink) && old.installed) throw new ImportFailure("This pack is already installed. Use Check for updates in its menu.");
+                    }
+                    File dir = directory(expectedScope); if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException();
+                    pack.items.addAll(downloadItems(account, token, stickers, pack, previous, dir, expectedScope, pending, operation, job));
+                    Set<String> kept = new HashSet<>(); if (previous != null) for (Item item : previous.items) kept.add(item.file);
+                    for (Item item : pack.items) if (!kept.contains(item.file)) temporary.add(new File(dir, item.file));
+                    job.update("Saving pack", pack.name, stickers.length(), stickers.length(), 0, -1);
+                    synchronized (MonogramPacks.class) {
+                        operation.check(); ArrayList<Pack> packs = copy(read(expectedScope));
+                        synchronized (operation) {
+                            operation.check();
+                            if (targetId == 0) {
+                                for (Pack old : packs) if (old.source.equalsIgnoreCase(currentLink) && old.installed) throw new ImportFailure("This pack is already installed.");
+                                pack.lastSync = System.currentTimeMillis(); packs.add(0, pack);
+                            } else mergeUpdate(expectedScope, packs, pack);
+                            write(expectedScope, packs); operation.committed = true; temporary.clear();
+                        }
+                    }
+                } catch (Exception failure) { error = importError(failure, job.progress); }
+                finally { for (File file : temporary) file.delete(); }
+                if (operation.committed) saved++;
+                if (error != null) {
+                    errors.add(parsed.name + ": " + error);
+                    if (targetId != 0 && !operation.cancelled) synchronized (MonogramPacks.class) {
+                        try {
+                            operation.check(); ArrayList<Pack> packs = copy(read(expectedScope));
+                            for (Pack pack : packs) if (pack.id == targetId && pack.source.equals(currentLink)) pack.syncError = error;
+                            write(expectedScope, packs);
+                        } catch (Exception ignored) { }
                     }
                 }
-            } catch (Exception failure) { error = importError(failure, job.progress); }
-            finally { for (File file : temporary) file.delete(); }
-            if(operation.committed) saved++;
-            if(error!=null) errors.add(parsed.name+": "+error);
-            if(operation.cancelled || !expectedOwner.equals(owner(account))) break;
+                if (operation.cancelled || !expectedOwner.equals(owner(account))) break;
             }
-            final boolean anySaved=saved>0;
-            operation.committed=anySaved && !operation.cancelled;
-            final String failure=errors.isEmpty() ? null : saved+" / "+links.size()+" packs imported.\n"+android.text.TextUtils.join("\n",errors);
+            final boolean anySaved = saved > 0; operation.committed = anySaved && !operation.cancelled;
+            final String failure = errors.isEmpty() ? null : saved + " / " + links.size() + (targets.isEmpty() ? " packs imported.\n" : " packs updated.\n") + android.text.TextUtils.join("\n", errors);
             AndroidUtilities.runOnUIThread(() -> {
                 if (!expectedOwner.equals(owner(account)) || IMPORTS.get(expectedOwner) != job) return;
-                try { if (anySaved) refresh(account); }
-                finally { job.finished(failure); }
+                try { if (anySaved) refresh(account); } finally { job.finished(failure); }
             });
         });
+    }
+    /** Keep the pack's position and known sticker IDs; removed artwork remains resolvable in old messages/favorites. */
+    static void mergeUpdate(String scope, ArrayList<Pack> packs, Pack updated) throws Exception {
+        for (int i = 0; i < packs.size(); i++) {
+            Pack old = packs.get(i); if (old.id != updated.id) continue;
+            if (!old.installed || !telegramSource(old) || !old.source.equals(updated.source))
+                throw new ImportFailure("The pack was detached or removed while updating. Its local copy was preserved.");
+            Map<Long, Item> remaining = new LinkedHashMap<>(); for (Item item : updated.items) if (remaining.put(item.id, item) != null) throw new ImportFailure("Telegram returned duplicate sticker identities. The existing pack was preserved.");
+            ArrayList<Item> ordered = new ArrayList<>(), removed = new ArrayList<>();
+            for (Item item : old.items) { Item replacement = remaining.remove(item.id); if (replacement != null) ordered.add(replacement); else removed.add(item); }
+            ordered.addAll(remaining.values()); updated.items.clear(); updated.items.addAll(ordered);
+            updated.privatePack = old.privatePack; updated.autoSync = old.autoSync; updated.lastSync = System.currentTimeMillis(); updated.syncError = "";
+            packs.set(i, updated);
+            if (!removed.isEmpty()) {
+                Set<Long> pending = new HashSet<>(); for (Item item : updated.items) pending.add(item.id);
+                Pack history = new Pack(); history.id = id(scope, pending); history.name = old.name;
+                history.source = "local:telegram-history:" + old.id; history.installed = false; history.emojis = old.emojis;
+                history.privatePack = old.privatePack; history.items.addAll(removed); packs.add(history);
+            }
+            return;
+        }
+        throw new ImportFailure("The pack is no longer available.");
     }
     private static final class DownloadedItem {
         final int index; final Item item;
         DownloadedItem(int index,Item item) { this.index=index;this.item=item; }
     }
-    private static ArrayList<Item> downloadItems(int account,String token,JSONArray stickers,Pack pack,File dir,String scope,
+    private static ArrayList<Item> downloadItems(int account,String token,JSONArray stickers,Pack pack,Pack previous,File dir,String scope,
             Set<Long> pending,Request operation,ImportJob job) throws Exception {
         Request group=new Request(account);group.parent=operation;
         java.util.concurrent.CompletionService<DownloadedItem> completion=new java.util.concurrent.ExecutorCompletionService<>(DOWNLOADS);
@@ -619,12 +716,23 @@ public final class MonogramPacks {
                 operation.check();
                 while(next<stickers.length() && active.size()<4) {
                     final int index=next++;final JSONObject sticker=stickers.getJSONObject(index);
+                    String remoteId=sticker.optString("file_unique_id", "");
+                    if(remoteId.isEmpty()) remoteId="file:"+sticker.getString("file_id");
+                    final String identity=remoteId;
+                    Item existing=null;
+                    if(previous!=null) for(Item item:previous.items) if(identity.equals(item.remoteId) && new File(dir,item.file).isFile()) { existing=item;break; }
+                    if(existing!=null) {
+                        if(total.addAndGet(new File(dir,existing.file).length())>MAX_PACK) throw new ImportFailure("A pack may use up to 100 MB on this phone.");
+                        existing.emoji=tag(sticker.optString("emoji","🙂"));items.set(index,existing);finished++;
+                        synchronized(received) { done[0]++; }
+                        job.update("Files checked",pack.name,done[0],stickers.length(),total.get(),-1);continue;
+                    }
                     active.add(completion.submit(() -> {
                         Request child=new Request(account);child.parent=group;
                         JSONObject remote=request(token,"getFile","file_id",sticker.getString("file_id"),child).getJSONObject("result");
                         String path=remote.getString("file_path");
                         if(!path.matches("[A-Za-z0-9_/-]+\\.(webp|png|gif|tgs|webm)") || path.contains("..")) throw new IOException();
-                        Item item=new Item();item.id=id(scope,pending);item.emoji=tag(sticker.optString("emoji","🙂"));item.name="Item "+(index+1);
+                        Item item=new Item();item.id=id(scope,pending);item.emoji=tag(sticker.optString("emoji","🙂"));item.name="Item "+(index+1);item.remoteId=identity;
                         String ext=path.substring(path.lastIndexOf('.'));item.file=UUID.randomUUID()+ext;
                         item.mime=ext.equals(".gif") ? "image/gif" : ext.equals(".tgs") ? "application/x-tgsticker" : ext.equals(".webm") ? "video/webm" : ext.equals(".png") ? "image/png" : "image/webp";
                         item.width=dimension(sticker.optInt("width",512));item.height=dimension(sticker.optInt("height",512));
@@ -647,6 +755,7 @@ public final class MonogramPacks {
                         return new DownloadedItem(index,item);
                     }));
                 }
+                if(active.isEmpty()) continue;
                 java.util.concurrent.Future<DownloadedItem> ready=completion.take();active.remove(ready);
                 DownloadedItem item;
                 try { item=ready.get(); } catch(java.util.concurrent.ExecutionException failed) {

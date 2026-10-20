@@ -78,12 +78,12 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             items.add(UItem.asButton(1, "Import Telegram pack links"));
             items.add(UItem.asButton(2, "Create sticker pack"));
             items.add(UItem.asButton(3, "Create custom emoji pack"));
-            items.add(UItem.asShadow("Packs stay on this phone for this Jabber account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Inline emoji in media captions are not supported yet."));
+            items.add(UItem.asShadow("Packs stay on this phone for this Jabber account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Open a pack’s menu to update or detach it; automatic updates are off by default. Inline emoji in media captions are not supported yet."));
             if (busy) items.add(UItem.asShadow("Preparing local pack…"));
             if (lastError != null) items.add(UItem.asShadow(lastError));
             items.add(UItem.asHeader("Your packs"));
             int index = 0;
-            for (MonogramPacks.Pack entry : packs) if (entry.installed) items.add(row(100 + index++, entry.name, entry.items.size() + (entry.emojis ? " emoji" : " stickers"), entry));
+            for (MonogramPacks.Pack entry : packs) if (entry.installed) items.add(row(100 + index++, entry.name, entry.items.size() + (entry.emojis ? " emoji" : " stickers") + (MonogramPacks.telegramSource(entry) ? entry.autoSync ? " · Telegram · auto-update" : " · Telegram · manual updates" : " · editable"), entry));
             if (index == 0) items.add(UItem.asSettingsCell(0,"Installed packs","None").setEnabled(false));
             if (index == 0) items.add(UItem.asShadow("Import a Telegram pack or create one from images, TGS animations or WebM files. Every item can have its own name and separate emoji tag."));
             items.add(UItem.asHeader("Telegram import"));
@@ -124,7 +124,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
                 try { if (value.trim().isEmpty()) throw new IllegalArgumentException("Enter a bot token."); MonogramPacks.saveToken(currentAccount, value); update(); }
                 catch (Exception failed) { error("Could not save the token. Use the token supplied by @BotFather."); }
             });
-            else if (item.id == 5) showDialog(new AlertDialog.Builder(getContext()).setTitle("Remove bot token?").setMessage("Imported packs remain available offline.")
+            else if (item.id == 5) showDialog(new AlertDialog.Builder(getContext()).setTitle("Remove bot token?").setMessage("Imported packs remain available offline. Telegram updates pause until you add a token again.")
                     .setPositiveButton("Remove", (dialog, which) -> { try { MonogramPacks.saveToken(currentAccount, ""); update(); } catch (Exception failed) { error("Could not remove the token."); } }).setNegativeButton("Cancel", null).create());
         }
     }

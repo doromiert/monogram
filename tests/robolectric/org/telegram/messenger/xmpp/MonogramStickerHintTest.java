@@ -112,7 +112,7 @@ public class MonogramStickerHintTest {
         store.getWritableDatabase().execSQL("CREATE TABLE attachments(message INTEGER PRIMARY KEY,url TEXT NOT NULL,path TEXT,media BLOB,caption TEXT,sharing TEXT)");
         store.getWritableDatabase().execSQL("INSERT INTO attachments SELECT message,url,path,media,caption,sharing FROM before_hint");
         store.getWritableDatabase().execSQL("DROP TABLE before_hint");store.getWritableDatabase().setVersion(26);store.close();store=new MonogramStore(context,DATABASE);
-        assertEquals(27,store.getReadableDatabase().getVersion());assertEquals("My friend",store.localName(peer));assertNotNull(store.getMessage(id,self).media.photo);
+        assertEquals(28,store.getReadableDatabase().getVersion());assertEquals("My friend",store.localName(peer));assertNotNull(store.getMessage(id,self).media.photo);
         assertFalse(MessageObject.isStickerDocument(store.getMessage(id,self).media.document));assertNull(store.sharing(id));assertTrue(file.isFile());
         store.save(message("old",link,true));assertTrue(MessageObject.isStickerDocument(store.getMessage(id,self).media.document));
     }

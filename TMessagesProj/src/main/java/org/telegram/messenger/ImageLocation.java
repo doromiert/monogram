@@ -125,6 +125,8 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForPhoto(TLRPC.PhotoSize photoSize, TLRPC.Photo photo) {
+        ImageLocation preview=org.telegram.messenger.xmpp.MonogramLinkPreviews.thumbnail(photoSize,photo);
+        if(preview!=null) return preview;
         if (photoSize instanceof TLRPC.TL_photoStrippedSize || photoSize instanceof TLRPC.TL_photoPathSize) {
             ImageLocation imageLocation = new ImageLocation();
             imageLocation.photoSize = photoSize;

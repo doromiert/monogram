@@ -164,6 +164,8 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     public boolean probablyEmojis;
     private boolean isEditModeEnabled;
     private boolean localOptionsAdded;
+    private MonogramPacks.ImportObserver localUpdateObserver;
+    private AlertDialog localUpdateDialog;
     private String localPackOwner;
     private static StickersAlert addingLocalStickers;
     private static final int LOCAL_STICKER_FILES = 7212;
@@ -1278,6 +1280,42 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                     if(editLocalPack(() -> MonogramPacks.detach(currentAccount,stickerSet.set.id)) && after!=null) after.run();
                 }).setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
     }
+    private void showLocalUpdateStatus() {
+        MonogramPacks.Pack pack=localPack();if(pack==null) return;
+        if(localUpdateDialog!=null) localUpdateDialog.dismiss();
+        LineProgressView progress=new LineProgressView(getContext());
+        progress.setProgressColor(getThemedColor(Theme.key_windowBackgroundWhiteBlueText4));
+        progress.setBackColor(getThemedColor(Theme.key_listSelector));
+        FrameLayout meter=new FrameLayout(getContext());
+        meter.setMinimumHeight(AndroidUtilities.dp(27));
+        meter.addView(progress,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,3,Gravity.CENTER,24,12,24,12));
+        localUpdateDialog=new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Telegram pack update").setMessage("Preparing update status…")
+                .setView(meter).setPositiveButton(LocaleController.getString(R.string.Close),null)
+                .setNeutralButton("Cancel update",(dialog,which) -> MonogramPacks.cancelImport(currentAccount,pack.id)).create();
+        localUpdateObserver=ignoredState -> {
+            if(localUpdateDialog==null) return;
+            MonogramPacks.ImportProgress state=MonogramPacks.importProgress(currentAccount,pack.id);
+            String text=state==null ? "Connected to Telegram. Updates preserve your local sticker order and existing messages." : state.stage;
+            if(state!=null && state.total>0) text+="\n"+state.completed+" / "+state.total+" stickers";
+            if(state!=null && state.totalBytes>0) text+="\n"+AndroidUtilities.formatFileSize(state.currentBytes)+" / "+AndroidUtilities.formatFileSize(state.totalBytes);
+            if(state!=null && state.error!=null) text+="\n"+state.error;
+            MonogramPacks.Pack current=localPack();
+            if(state==null && current!=null) {
+                if(current.lastSync>0) text+="\nLast updated: "+java.text.DateFormat.getDateTimeInstance().format(new java.util.Date(current.lastSync));
+                if(!current.syncError.isEmpty()) text+="\n"+current.syncError;
+            }
+            if(state!=null && state.active) text+="\nYou can close this view; the update continues in the background.";
+            localUpdateDialog.setMessage(text);
+            progress.setProgress(state!=null && state.total>0 ? Math.min(1f,(float)state.completed/state.total) : 0,true);
+            meter.setVisibility(state!=null && state.active ? View.VISIBLE : View.GONE);
+            if(state!=null && !state.active) reloadLocalPack();
+        };
+        localUpdateDialog.setOnDismissListener(dialog -> {
+            MonogramPacks.removeImportObserver(currentAccount,localUpdateObserver);localUpdateObserver=null;localUpdateDialog=null;
+        });
+        localUpdateDialog.show();localUpdateObserver.changed(MonogramPacks.importProgress(currentAccount,pack.id));
+        MonogramPacks.addImportObserver(currentAccount,localUpdateObserver);
+    }
     private void localItemMenu(TLRPC.Document document,View anchor) {
         MonogramPacks.Pack pack=localPack();if(pack==null) return;
         for(MonogramPacks.Item item:pack.items) if(item.id==document.id) {
@@ -1419,10 +1457,15 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 optionsButton.addSubItem(106,R.drawable.menu_sticker_add,"Add stickers");
                 optionsButton.addSubItem(108,R.drawable.msg_gallery,"Import sticker files");
                 optionsButton.addSubItem(107,R.drawable.msg_link,"Detach from Telegram");
+                optionsButton.addSubItem(109,R.drawable.msg_retry,"Check for Telegram updates");
+                optionsButton.addSubItem(110,R.drawable.msg_settings,"Automatic Telegram updates");
+                optionsButton.addSubItem(111,R.drawable.msg_info,"Telegram update status");
                 optionsButton.addSubItem(105,R.drawable.msg_delete,"Remove pack");
                 localOptionsAdded=true;
             }
-            if(MonogramPacks.telegramSource(local) || local.connected) optionsButton.showSubItem(107);else optionsButton.hideSubItem(107);
+            for(int option:new int[]{107,109,110,111}) {
+                if(MonogramPacks.telegramSource(local)) optionsButton.showSubItem(option);else optionsButton.hideSubItem(option);
+            }
             return;
         }
         final MediaDataController mediaDataController = MediaDataController.getInstance(currentAccount);
@@ -1525,7 +1568,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     }
 
     private void onSubItemClick(int id) {
-        if(localPack()!=null && id>=103 && id<=107) {
+        if(localPack()!=null && id>=103 && id<=111) {
             optionsButton.closeSubMenu();
             if(id==103) { if(isEditModeEnabled) disableEditMode();else enableEditMode(); }
             else if(id==104) editableLocalPack(() -> StickersDialogs.showNameEditorDialog(stickerSet.set,resourcesProvider,getContext(),(text,done) -> {
@@ -1538,6 +1581,16 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
             else if(id==106) addLocalStickers();
             else if(id==107) detachLocalPack(null);
             else if(id==108) importLocalStickerFiles();
+            else if(id==109) {
+                try { MonogramPacks.resync(currentAccount,stickerSet.set.id); showLocalUpdateStatus(); }
+                catch(Exception failed) { localPackError(failed.getMessage()); }
+            } else if(id==110) {
+                MonogramPacks.Pack pack=localPack();
+                new AlertDialog.Builder(getContext(),resourcesProvider).setTitle("Automatic Telegram updates")
+                        .setMessage((pack.autoSync ? "Enabled." : "Disabled.")+" Connected packs are read-only. When enabled, Monogram checks Telegram about every six hours while running. The bot token is required. Detached packs are never updated. Artwork removed from Telegram stays available in old messages and favorites.")
+                        .setPositiveButton(pack.autoSync ? "Disable" : "Enable",(dialog,which) -> editLocalPack(() -> MonogramPacks.autoSync(currentAccount,pack.id,!pack.autoSync)))
+                        .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
+            } else if(id==111) showLocalUpdateStatus();
             return;
         }
         if (stickerSet == null) {
@@ -2185,6 +2238,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
     @Override
     public void dismiss() {
+        if(localUpdateDialog!=null) localUpdateDialog.dismiss();
         super.dismiss();
         stickersShaker.stopShake(false);
         if (!ignoreMasterDismiss && masterDismissListener != null) {
