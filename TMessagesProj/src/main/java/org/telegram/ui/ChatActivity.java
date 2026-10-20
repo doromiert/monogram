@@ -614,6 +614,7 @@ public class ChatActivity extends BaseFragment implements
     private final int searchContainerHeight = 44;
     private FrameLayout searchContainer;
     private ImageView searchCalendarButton;
+    private boolean monogramSearchHistoryLoading;
     private ImageView searchUserButton;
     private AnimatedTextView searchCountText;
     private AnimatedTextView searchExpandList;
@@ -4375,7 +4376,7 @@ public class ChatActivity extends BaseFragment implements
             searchItem.setSearchPaddingStart(7);
             searchItem.setIsSearchField(true);
             searchItem.setActionBarMenuItemSearchListener(getSearchItemListener());
-            searchItem.setSearchFieldHint(isSupportedTags() ? LocaleController.getString(R.string.SavedTagSearchHint) : LocaleController.getString(R.string.Search));
+            searchItem.setSearchFieldHint(monogramSearchHint());
             if (chatMode == MODE_SAVED || chatMode == MODE_SUGGESTIONS || threadMessageId == 0 && !UserObject.isReplyUser(currentUser) || threadMessageObject != null && threadMessageObject.getRepliesCount() < 10) {
                 searchItem.setVisibility(View.GONE);
             } else {
@@ -10763,21 +10764,44 @@ public class ChatActivity extends BaseFragment implements
             searchCalendarButton.setBackgroundDrawable(Theme.createSelectorDrawable(getThemedColor(Theme.key_actionBarActionModeDefaultSelector), 1));
             searchContainer.addView(searchCalendarButton, LayoutHelper.createFrame(44, 44, Gravity.LEFT | Gravity.TOP, 2.66f, 0, 0, 0));
             searchCalendarButton.setOnClickListener(view -> {
-                if (getParentActivity() == null) {
-                    return;
-                }
-                if (searchItem != null) {
-                    AndroidUtilities.hideKeyboard(searchItem.getSearchField());
-                }
-                showDialog(AlertsCreator.createCalendarPickerDialog(getParentActivity(), 1375315200000L, new MessagesStorage.IntCallback() {
-                    @Override
-                    public void run(int param) {
-                        jumpToDate(param);
-                    }
-                }, themeDelegate).create());
+                if (getParentActivity() == null) return;
+                if (searchItem != null) AndroidUtilities.hideKeyboard(searchItem.getSearchField());
+                if(!monogramLocalSearch()) { showSearchCalendar();return; }
+                showDialog(new AlertDialog.Builder(getParentActivity(),themeDelegate)
+                        .setTitle(getString(R.string.MonogramSearchHistory))
+                        .setMessage(getString(R.string.MonogramSearchHistoryInfo))
+                        .setItems(new CharSequence[]{getString(R.string.JumpToDate),getString(monogramSearchHistoryLoading ? R.string.Loading : R.string.MonogramLoadOlderSearch)},(dialog,which) -> {
+                            if(which==0) showSearchCalendar();else loadMonogramSearchHistory();
+                        }).create());
             });
-            searchCalendarButton.setContentDescription(LocaleController.getString(R.string.JumpToDate));
+            searchCalendarButton.setContentDescription(getString(monogramLocalSearch() ? R.string.MonogramSearchHistory : R.string.JumpToDate));
         }
+    }
+
+    private boolean monogramLocalSearch() {
+        return chatMode==MODE_DEFAULT && threadMessageId==0 && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+    }
+    private String monogramSearchHint() {
+        return getString(isSupportedTags() ? R.string.SavedTagSearchHint : monogramLocalSearch() ? R.string.MonogramSearchLoadedMessages : R.string.Search);
+    }
+    private void showSearchCalendar() {
+        if(getParentActivity()==null) return;
+        showDialog(AlertsCreator.createCalendarPickerDialog(getParentActivity(),1375315200000L,this::jumpToDate,themeDelegate).create());
+    }
+    private void loadMonogramSearchHistory() {
+        if(monogramSearchHistoryLoading || !monogramLocalSearch()) return;
+        monogramSearchHistoryLoading=true;
+        if(searchItem!=null) searchItem.setShowSearchProgress(true);
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).loadOlderForSearch(dialog_id,error -> {
+            monogramSearchHistoryLoading=false;
+            if(searchItem!=null) searchItem.setShowSearchProgress(getMediaDataController().isSearchLoading());
+            if(isFinishing() || getParentActivity()==null || currentAccount!=UserConfig.selectedAccount) return;
+            if(error!=null) { BulletinFactory.of(this).createErrorBulletin(error,themeDelegate).show();return; }
+            if(searching && searchItem!=null && !searchingForUser && searchingHashtag==null) {
+                searchingQuery=searchItem.getSearchField().getText().toString();
+                getMediaDataController().searchMessagesInChat(searchingQuery,dialog_id,mergeDialogId,classGuid,0,threadMessageId,false,searchingUserMessages,searchingChatMessages,false,searchingReaction);
+            }
+        });
     }
 
     private void showSearchShowOther(boolean show) {
@@ -24026,7 +24050,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 if (searchItem != null) {
-                    searchItem.setShowSearchProgress(false);
+                    searchItem.setShowSearchProgress(monogramSearchHistoryLoading);
                 }
                 if (messagesSearchAdapter != null) {
                     messagesSearchAdapter.notifyDataSetChanged();
@@ -24041,7 +24065,7 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.chatSearchResultsLoading) {
             if (classGuid == (Integer) args[0]) {
                 if (searchItem != null) {
-                    searchItem.setShowSearchProgress(!TextUtils.isEmpty(searchingQuery) || searchingReaction != null);
+                    searchItem.setShowSearchProgress(monogramSearchHistoryLoading || !TextUtils.isEmpty(searchingQuery) || searchingReaction != null);
                 }
                 onSearchLoadingUpdate(true);
                 if (messagesSearchAdapter != null) {
@@ -38933,7 +38957,7 @@ public class ChatActivity extends BaseFragment implements
             searchingUserMessages = null;
             searchingChatMessages = null;
             searchingHashtag = null;
-			searchItem.setSearchFieldHint(isSupportedTags() ? LocaleController.getString(R.string.SavedTagSearchHint) : LocaleController.getString(R.string.Search));
+			searchItem.setSearchFieldHint(monogramSearchHint());
             searchItem.setSearchFieldCaption(null);
             animatorSearchFieldVisibility.setValue(false, true);
             animatorSearchHashtagHistoryVisibility.setValue(false, true);
@@ -39207,7 +39231,7 @@ public class ChatActivity extends BaseFragment implements
                     searchingForUser = false;
                     searchItem.setSearchFieldText("", true);
                 }
-				searchItem.setSearchFieldHint(isSupportedTags() ? LocaleController.getString(R.string.SavedTagSearchHint) : LocaleController.getString(R.string.Search));
+				searchItem.setSearchFieldHint(monogramSearchHint());
                 searchCalendarButton.setVisibility(View.VISIBLE);
                 if (searchUserButton != null) {
                     searchUserButton.setVisibility(View.VISIBLE);

@@ -34,7 +34,7 @@ public class MonogramDecryptionVisibilityTest {
         ReflectionHelpers.setField(controller,"self",self);
     }
     @After public void cleanup() {
-        for(String name:new String[]{"worker","sendWorker","bookmarkWorker","roomWorker","cacheWorker","archiveWorker","fileWorker","profileWorker","fingerprintWorker","autoDownloadWorker"})
+        for(String name:new String[]{"worker","sendWorker","bookmarkWorker","readSyncWorker","roomWorker","cacheWorker","archiveWorker","fileWorker","profileWorker","fingerprintWorker","autoDownloadWorker"})
             ((ExecutorService)ReflectionHelpers.getField(controller,name)).shutdownNow();
         store.close(); ((MonogramOmemo2Store)ReflectionHelpers.getField(controller,"modernStore")).close();
         ApplicationLoader.applicationContext.deleteDatabase("monogram-0.db");

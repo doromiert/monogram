@@ -84,7 +84,7 @@ public class MonogramRoomStoreTest {
             try { controller.setRoomRecipient(store.peer("bob@example.org"),"offline@example.org",false); fail("Room choices cannot modify direct chats"); } catch(IllegalArgumentException expected) {}
             assertTrue(controller.setRoomRecipient(dialog,"offline@example.org",true)); assertTrue(controller.excludedRoomRecipients(dialog).isEmpty());
         } finally {
-            for(String name:new String[]{"worker","sendWorker", "cacheWorker","archiveWorker","fileWorker","profileWorker","autoDownloadWorker","roomWorker","bookmarkWorker","fingerprintWorker"})
+            for(String name:new String[]{"worker","sendWorker", "cacheWorker","archiveWorker","fileWorker","profileWorker","autoDownloadWorker","roomWorker","bookmarkWorker","readSyncWorker","fingerprintWorker"})
                 ((java.util.concurrent.ExecutorService)org.robolectric.util.ReflectionHelpers.getField(controller,name)).shutdownNow();
             store.close(); ((MonogramOmemo2Store)org.robolectric.util.ReflectionHelpers.getField(controller,"modernStore")).close();
             prefs.edit().clear().commit(); context.deleteDatabase("monogram-0.db");

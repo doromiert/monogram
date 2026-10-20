@@ -52,11 +52,11 @@ public class MonogramArchiveTest {
         XMPPTCPConnection connection;
         final List<String> calls = new ArrayList<>();
         final CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
-        boolean block,expireBob,failBob,windowMode;
+        boolean block,expireBob,failBob,windowMode,unsupported;
         String blockPeer;
         com.negzero.monogram.xmpp.XmppMessage lateMessage;
         @Implementation public XMPPTCPConnection connection() { return connection; }
-        @Implementation public boolean hasArchive() { return true; }
+        @Implementation public boolean hasArchive() { return !unsupported; }
         @Implementation public java.util.Set<org.jivesoftware.smackx.omemo.internal.OmemoDevice> devices(String jid) { stages.add("fingerprint:"+jid); return java.util.Collections.emptySet(); }
         @Implementation public XmppSession.ArchivePage archiveBefore(String peer, String before, int limit) throws Exception {
             calls.add("before:" + peer + ":" + before);
@@ -99,6 +99,7 @@ public class MonogramArchiveTest {
         ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
         controller = ReflectionHelpers.callConstructor(MonogramController.class, ReflectionHelpers.ClassParameter.from(int.class, 0));
         store = ReflectionHelpers.getField(controller, "store");
+        ((android.content.SharedPreferences)ReflectionHelpers.getField(controller,"preferences")).edit().putBoolean("private-read-enabled-alice@example.org",false).commit();
         ReflectionHelpers.setField(controller, "self", store.peer("alice@example.org"));
         bob = store.peer("bob@example.org"); other = store.peer("other@example.org");
         session = Shadow.newInstanceOf(XmppSession.class);
@@ -114,7 +115,7 @@ public class MonogramArchiveTest {
     @After public void cleanup() {
         profileRelease.countDown(); session.fingerprints.close();
         network.release.countDown();
-        for (String name : new String[]{"worker", "sendWorker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker", "fingerprintWorker"}) {
+        for (String name : new String[]{"worker", "sendWorker", "cacheWorker", "archiveWorker", "fileWorker", "profileWorker", "autoDownloadWorker", "roomWorker", "bookmarkWorker","readSyncWorker", "fingerprintWorker"}) {
             ((ExecutorService) ReflectionHelpers.getField(controller, name)).shutdownNow();
         }
         store.close(); ApplicationLoader.applicationContext.deleteDatabase("monogram-0.db");
@@ -156,6 +157,39 @@ public class MonogramArchiveTest {
         controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS); finished();
         assertEquals(4,network.calls.stream().filter(call -> call.startsWith("before:bob@example.org:")).count());
         try(android.database.Cursor c=store.getReadableDatabase().rawQuery("SELECT count(*) FROM messages WHERE peer=?",new String[]{Long.toString(bob)})) { c.moveToFirst(); assertEquals(200,c.getInt(0)); }
+    }
+    @Test public void explicitSearchExpansionLoadsExactlyOneMorePageAndKeepsItUnread() throws Exception {
+        network.windowMode=true;start();finished();
+        android.content.SharedPreferences preferences=ReflectionHelpers.getField(controller,"preferences");preferences.edit().putString("jid","alice@example.org").commit();
+        java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>("not completed");
+        CountDownLatch callback=new CountDownLatch(1);
+        controller.loadOlderForSearch(bob,value -> { error.set(value);callback.countDown(); });
+        finished();org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertTrue(callback.await(5,TimeUnit.SECONDS));assertNull(error.get());
+        assertEquals(4,network.calls.stream().filter(call -> call.startsWith("before:bob@example.org:")).count());
+        try(android.database.Cursor rows=store.getReadableDatabase().rawQuery("SELECT count(*) FROM messages WHERE peer=?",new String[]{Long.toString(bob)})) { assertTrue(rows.moveToFirst());assertEquals(200,rows.getInt(0)); }
+        try(android.database.Cursor rows=store.getReadableDatabase().rawQuery("SELECT count(*) FROM local_read_messages",null)) { assertTrue(rows.moveToFirst());assertEquals(0,rows.getInt(0)); }
+    }
+    @Test public void searchExpansionReportsUnsupportedEndAndDisconnectedStateWithoutFetching() throws Exception {
+        start();finished();android.content.SharedPreferences preferences=ReflectionHelpers.getField(controller,"preferences");preferences.edit().putString("jid","alice@example.org").commit();
+        int calls=network.calls.size();java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+        controller.loadOlderForSearch(bob,error::set);controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertNotNull(error.get());assertEquals(calls,network.calls.size());
+        network.unsupported=true;start();finished();error.set(null);
+        controller.loadOlderForSearch(bob,error::set);controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertNotNull(error.get());assertTrue(error.get().contains("server"));assertEquals(calls,network.calls.size());
+        ReflectionHelpers.setField(network.connection,"authenticated",false);error.set(null);
+        controller.loadOlderForSearch(bob,error::set);controller.worker.submit(() -> {}).get(5,TimeUnit.SECONDS);org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertNotNull(error.get());assertEquals(calls,network.calls.size());
+    }
+    @Test public void reconnectCancelsSearchWaiterExactlyOnceAndStaleCompletionCannotReuseIt() throws Exception {
+        start();finished();Object oldSync=ReflectionHelpers.getField(controller,"archiveSync");
+        Object task=((java.util.Map<?,?>)ReflectionHelpers.getField(oldSync,"windows")).get(bob);
+        java.util.concurrent.atomic.AtomicInteger callbacks=new java.util.concurrent.atomic.AtomicInteger();
+        ReflectionHelpers.setField(task,"searchCompletion",(java.util.function.Consumer<String>)error -> { assertNotNull(error);callbacks.incrementAndGet(); });
+        start();finished();org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(1,callbacks.get());
+        java.lang.reflect.Method finish=MonogramController.class.getDeclaredMethod("finishSearchLoad",task.getClass(),String.class);finish.setAccessible(true);finish.invoke(controller,task,null);
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertEquals(1,callbacks.get());
     }
     @Test public void cachedChatCatchesUpWhileItsRefreshAndAnotherChatsMetadataAreBlocked() throws Exception {
         long own=ReflectionHelpers.getField(controller,"self");

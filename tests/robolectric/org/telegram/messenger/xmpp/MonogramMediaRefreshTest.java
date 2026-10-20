@@ -60,7 +60,7 @@ public class MonogramMediaRefreshTest {
             refresh.invoke(controller,message,file);serial.submit(() -> {}).get(5,TimeUnit.SECONDS);
             assertFalse(scanning.contains(id));assertEquals(beforeMissing,Decoder.attempts.get());
         } finally {
-            for(String name:new String[]{"worker","sendWorker","bookmarkWorker","roomWorker","cacheWorker","archiveWorker","fileWorker","profileWorker","fingerprintWorker","autoDownloadWorker"})
+            for(String name:new String[]{"worker","sendWorker","bookmarkWorker","readSyncWorker","roomWorker","cacheWorker","archiveWorker","fileWorker","profileWorker","fingerprintWorker","autoDownloadWorker"})
                 ((ExecutorService)ReflectionHelpers.getField(controller,name)).shutdownNow();
             store.close();((MonogramOmemo2Store)ReflectionHelpers.getField(controller,"modernStore")).close();
             ApplicationLoader.applicationContext.deleteDatabase("monogram-0.db");file.delete();

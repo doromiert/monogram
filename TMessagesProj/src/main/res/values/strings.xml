@@ -11564,6 +11564,10 @@
     <string name="MonogramProfilePublished">Published in your Jabber profile. Other profile fields are preserved when you save.</string>
     <string name="MonogramFavoriteAndRecentEmoji">Favorites and recent</string>
     <string name="MonogramSavedGifsEmpty">Save a GIF from a chat to reuse it here.</string>
+    <string name="MonogramSearchLoadedMessages">Search downloaded messages</string>
+    <string name="MonogramSearchHistory">Search history</string>
+    <string name="MonogramSearchHistoryInfo">Search includes messages downloaded on this device. Continue loading older history from your recent messages one batch at a time, or jump to a date. Loading history does not mark the chat as read.</string>
+    <string name="MonogramLoadOlderSearch">Load up to 50 older archive entries</string>
     <string name="MonogramSearchSavedGifs">Search saved GIFs</string>
     <string name="MonogramFavoriteEmoji">Favorite emoji</string>
     <string name="MonogramFileSizeLimit">Choose a non-empty file up to %1$s. Your provider may have a smaller limit.</string>

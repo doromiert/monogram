@@ -706,7 +706,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             preferences.edit().putString("last-disconnect-"+details.jid,new java.util.Date()+" · "+(error==null ? "Connection closed" : com.negzero.monogram.xmpp.XmppRequestException.describe(error))).apply();
-                            archiveSync = null; joinedRooms.clear(); bookmarkSync=null;
+                            cancelSearchLoads(archiveSync);archiveSync = null; joinedRooms.clear(); bookmarkSync=null;
                             state(ConnectionsManager.ConnectionStateWaitingForNetwork); retryConnection();
                         });
                     }
@@ -1089,9 +1089,10 @@ public final class MonogramController {
     }
     private static final class ArchiveTask {
         final long peer;
-        boolean backwards=true,resetAttempted,complete;
+        boolean backwards=true,resetAttempted,complete,unsupported;
         int loaded,desired=3,capacityRetries;
         String before;
+        Consumer<String> searchCompletion;
         ArchiveTask(long peer) { this.peer = peer; }
     }
     private static final class ArchiveSync {
@@ -1117,10 +1118,39 @@ public final class MonogramController {
             tasks.addLast(task); return true;
         }
     }
+    private void finishSearchLoad(ArchiveTask task,String error) {
+        Consumer<String> completed=task.searchCompletion;task.searchCompletion=null;
+        if(completed!=null) AndroidUtilities.runOnUIThread(() -> completed.accept(error));
+    }
+    private void cancelSearchLoads(ArchiveSync sync) {
+        if(sync!=null) for(ArchiveTask task:sync.windows.values()) finishSearchLoad(task,"The connection changed. Reconnect and try loading older history again.");
+    }
+    /** Explicit single-page expansion of the ordinary recent-history cursor, never an unbounded search scan. */
+    public void loadOlderForSearch(long peer,Consumer<String> completed) {
+        final long owner=accountEpoch;final String own=accountJid();
+        worker.execute(() -> {
+            Consumer<String> result=error -> completed.accept(sameAccount(owner,own) ? error : "The account changed. Open search again.");
+            ArchiveSync sync=archiveSync;
+            String error=null;
+            ArchiveTask task=sync==null ? null : sync.windows.get(peer);
+            if(!sameAccount(owner,own) || sync==null || !currentArchive(sync)) error="Connect to XMPP before loading older history.";
+            else if(peer==0 || peer==self) error="Older server history is unavailable for this conversation.";
+            else if(task!=null && task.unsupported) error=peer<0 ? "This room does not provide server history." : "Your server does not provide message history.";
+            else if(task==null || sync.pending.contains(peer)) error="This conversation’s history is still loading. Try again when it finishes.";
+            else if(task.loaded==0) error="Recent history has not loaded. Reconnect and try again.";
+            else if(task.complete) error="All available server history for this conversation is already loaded.";
+            else if(task.searchCompletion!=null) error="An older history batch is already loading.";
+            if(error!=null) { final String failure=error;AndroidUtilities.runOnUIThread(() -> result.accept(failure));return; }
+            task.searchCompletion=result;task.desired=task.loaded+1;
+            sync.requestedPages.put(peer,task.desired);
+            sync.pending.add(peer);sync.tasks.addLast(task);nextArchivePage(sync);
+        });
+    }
     private boolean currentArchive(ArchiveSync sync) {
         return archiveSync == sync && accountEpoch == sync.epoch && session == sync.session && sync.session.connection().isAuthenticated();
     }
     private void startArchiveSync(XmppSession expected) {
+        cancelSearchLoads(archiveSync);
         ArchiveSync sync = new ArchiveSync(expected, accountEpoch,store.jid(self)); archiveSync = sync;
         for (long peer : store.peers()) if (peer != self) prepareArchivePeer(sync,peer);
         for(long room:store.rooms()) try { if(store.room(room).autojoin && expected.rooms.state(store.jid(room)).joined) { joinedRooms.add(room); prepareArchivePeer(sync,room); } } catch(Exception ignored) {}
@@ -1172,12 +1202,13 @@ public final class MonogramController {
     private void queueRoomArchive(long room,XmppSession expected) {
         ArchiveSync sync=archiveSync;
         if(sync!=null && currentArchive(sync)) { prepareArchivePeer(sync,room); return; }
+        cancelSearchLoads(archiveSync);
         sync=new ArchiveSync(expected,accountEpoch,store.jid(self)); archiveSync=sync; prepareArchivePeer(sync,room);
     }
     private void syncRoomArchive(ArchiveSync sync,ArchiveTask task) throws Exception {
         String jid=store.jid(task.peer);
         if(!sync.supportedRooms.contains(task.peer)) {
-            if(!sync.session.rooms.hasArchive(jid)) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); sync.running=false; nextArchivePage(sync); } }); return; }
+            if(!sync.session.rooms.hasArchive(jid)) { worker.execute(() -> { if(currentArchive(sync)) { task.unsupported=true;finishSearchLoad(task,"This room does not provide server history.");sync.pending.remove(task.peer); sync.running=false; nextArchivePage(sync); } }); return; }
             sync.supportedRooms.add(task.peer);
         }
         String cursor=task.before;
@@ -1207,6 +1238,7 @@ public final class MonogramController {
     private void nextArchivePage(ArchiveSync sync) {
         if (!currentArchive(sync) || sync.running) return;
         for (long peer:sync.rescan) {
+            ArchiveTask old=sync.windows.get(peer);if(old!=null) finishSearchLoad(old,"History is being refreshed after an encryption change. Try again when it finishes.");
             store.resetArchiveCursor(peer); sync.tasks.removeIf(task -> task.peer==peer);
             sync.windows.remove(peer); sync.pending.remove(peer); sync.add(peer);
         }
@@ -1222,6 +1254,7 @@ public final class MonogramController {
     }
     private void finishArchivePage(ArchiveSync sync,ArchiveTask task,String first,boolean complete) {
         task.loaded++; task.before=first; task.complete=complete || first==null; sync.running=false;
+        finishSearchLoad(task,null);
         if(!task.complete && task.loaded<task.desired) sync.tasks.addLast(task); else sync.pending.remove(task.peer);
         nextArchivePage(sync);
     }
@@ -1230,7 +1263,7 @@ public final class MonogramController {
         try {
             if(task.peer<0) { syncRoomArchive(sync,task); return; }
             if(!sync.directChecked) { sync.supported=sync.session.hasArchive(); sync.directChecked=true; }
-            if(!sync.supported) { worker.execute(() -> { if(currentArchive(sync)) { sync.pending.remove(task.peer); sync.running=false; nextArchivePage(sync); } }); return; }
+            if(!sync.supported) { worker.execute(() -> { if(currentArchive(sync)) { task.unsupported=true;finishSearchLoad(task,"Your server does not provide message history.");sync.pending.remove(task.peer); sync.running=false; nextArchivePage(sync); } }); return; }
             String cursor = task.before;
             String jid = task.peer == 0 ? null : store.jid(task.peer);
             XmppSession.ArchivePage page = sync.session.archiveBefore(jid,cursor,50);
@@ -1305,10 +1338,14 @@ public final class MonogramController {
         } else if (!task.resetAttempted && error instanceof org.jivesoftware.smack.XMPPException.XMPPErrorException
                 && ((org.jivesoftware.smack.XMPPException.XMPPErrorException) error).getStanzaError().getCondition()
                 == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
+            if(task.searchCompletion!=null) {
+                finishSearchLoad(task,"The server history cursor expired. Recent history will refresh; try again when it finishes.");task.desired=3;
+            }
             task.resetAttempted=true; task.before=null; task.loaded=0;
             store.resetArchiveCursor(task.peer); sync.tasks.addLast(task);
         } else {
             sync.pending.remove(task.peer);
+            if(task.searchCompletion!=null) { finishSearchLoad(task,"Could not load older history: "+com.negzero.monogram.xmpp.XmppRequestException.describe(error));task.desired=task.loaded; }
             // A failed chat must not prevent other chats from syncing or erase cached history.
             if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram archive sync: " + error.getClass().getSimpleName());
         }
@@ -1594,7 +1631,7 @@ public final class MonogramController {
             for (long peer : new ArrayList<>(typingPeers)) if (typingPeers.remove(peer)) publishTyping(peer, false);
             typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
             if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
-            sessionEpoch++; archiveSync = null;pendingRecoveryRooms.clear();
+            sessionEpoch++;cancelSearchLoads(archiveSync); archiveSync = null;pendingRecoveryRooms.clear();
             try { if(!departing.isEmpty()) { modernStore.clearIncoming(departing);legacyStore.clearIncoming(departing); } }
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
