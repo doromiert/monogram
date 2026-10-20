@@ -1,0 +1,20 @@
+# Room mentions
+
+The existing native `@` member picker and user context action compose a native named-mention span. Its visible text uses the actual room nickname, rather than a sender's private contact alias. Search matches both existing profile names and room nicknames. This gives legacy clients a useful readable fallback and avoids sending a private local alias as somebody else's name. If no room nickname is recorded, composition uses an occupant resource name or “Member”; it does not put a private contact alias, cached real profile name or undisclosed bare JID into the text. Public profile/native names remain available in the direct-message context. A profile fetched through a moderator-visible real JID is not assumed to be safe for room publication.
+
+XEP-0372 v0.5.0 defines a mention as a reference to a person's **bare JID**, with begin-inclusive/end-exclusive Unicode code-point indices: https://xmpp.org/extensions/xep-0372.html . Monogram maps native UTF-16 entities through the existing formatting, reply-prefix, caption and persistence pipeline. Authenticated OMEMO2/SCE references stay inside encryption. Legacy OMEMO protects only its body, so outer references are ignored and never emitted. Own locally composed mentions remain in the private local record; recipients can detect their nickname in the decrypted text. Anonymous occupants retain nickname fallback and local navigation, without inventing a bare user address from a room/nickname.
+
+Plain room references are emitted only after that room advertises `muc_nonanonymous`. Any metadata-change hint revokes this permission until rejoin; unknown/semi-anonymous rooms get nickname text rather than publishing a real JID that may only have been disclosed to a moderator. No separate device lookup, roster request or network round trip is started for a mention.
+
+Incoming references map only to known room-associated local users. Other referenced accounts remain readable text and do not create contacts automatically. Nickname fallback uses whole Unicode word boundaries and ignores code, preformatted text, quotes and existing URL entities. Explicit references take precedence when two people share a visible name. Incoming highlights set native `message.mentioned` and named-mention entities, allowing native profile navigation, unread-mention behavior and Telegram's existing muted-group mention notification exception. Ordinary unmentioned messages retain the room mute setting; global notification and sender settings still apply. This does not add an alternate notification service or independent settings override.
+
+Room-name maps are cached between membership updates; body fallback performs a cheap string check before compiling a matching expression. The reference list is bounded at64. Local formatting codec2 reads previous codec1 records, without a database schema change. Unreadable encrypted messages cannot gain a mention from unauthenticated outer metadata.
+
+Prepared update-gate checks, not run during implementation:
+
+```sh
+nix develop --command ./gradlew --offline --no-daemon :xmpp-core:test --tests com.negzero.monogram.xmpp.MessageMentionsTest
+nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :TMessagesProj:testDebugUnitTest --tests org.telegram.messenger.xmpp.MonogramMentionsTest --tests org.telegram.messenger.xmpp.MonogramFormattingTest
+```
+
+Fixtures cover Unicode offsets, serialization, styling/reply/caption mapping, legacy codec preservation, malformed/anonymous targets, encrypted outer metadata isolation, SCE inclusion, native identity projection, nickname highlights, ambiguous names, both private-alias and cached-profile identity non-disclosure, code/quote exclusions and reopen/deletion. Phone checks remain necessary for native picker navigation, account/occupant profiles, muted-room versus mentioned-room notifications and independent-client exchange. The cached capability gate and actual plain-group wire envelope also need a disposable room exchange before claiming privacy/interoperability verification.

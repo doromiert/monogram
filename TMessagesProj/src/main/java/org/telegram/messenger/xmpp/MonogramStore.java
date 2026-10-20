@@ -29,6 +29,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private String pendingClause(String alias) {
         return pendingDecryptions.isEmpty() ? "" : " AND " + alias + ".id NOT IN (" + android.text.TextUtils.join(",",pendingDecryptions) + ")";
     }
+    private final java.util.Map<Long,java.util.Map<Long,String>> mentionNamesCache=new java.util.HashMap<>();
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
     MonogramStore(Context context, String name) { super(context, name, null, 28); storeContext = context; database = new java.io.File(name).getName(); }
@@ -264,7 +265,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized void clear() {
         SQLiteDatabase db = getWritableDatabase();
-        profileCache.clear();
+        profileCache.clear();mentionNamesCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
         try { db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
@@ -339,6 +340,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized void leaveRoom(long dialog) { getWritableDatabase().execSQL("UPDATE rooms SET autojoin=0 WHERE id=?",new Object[]{-dialog}); }
     synchronized long roomUser(long dialog,String occupant,String realJid,long self) {
+        mentionNamesCache.remove(dialog);
         if (!occupant.startsWith(room(dialog).jid+"/")) throw new IllegalArgumentException("Occupant belongs to another room");
         long user=realJid!=null ? peer(realJid) : peer(occupant);
         if (realJid==null) rosterName(user,occupant.substring(occupant.indexOf('/')+1));
@@ -355,6 +357,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized void roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
         long dialog=knownRoom(state.room.toString()); if (dialog==0) return;
+        mentionNamesCache.remove(dialog);
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
         try {
             ContentValues values=new ContentValues(); values.put("subject",state.subject);
@@ -373,6 +376,28 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
+    }
+    synchronized java.util.Map<Long,String> mentionNames(long dialog,long self) {
+        if(mentionNamesCache.containsKey(dialog)) return mentionNamesCache.get(dialog);
+        java.util.Map<Long,String> result=new java.util.LinkedHashMap<>();if(dialog>=0) return result;
+        result.put(self,room(dialog).nickname);
+        try(Cursor rows=getReadableDatabase().rawQuery("SELECT user,occupant FROM room_participants WHERE room=? ORDER BY active DESC,occupant",new String[]{Long.toString(-dialog)})) {
+            while(rows.moveToNext()) { String occupant=rows.getString(1);int slash=occupant.indexOf('/');
+                if(slash>=0) result.putIfAbsent(rows.getLong(0),occupant.substring(slash+1)); }
+        }
+        java.util.Map<Long,String> cached=java.util.Collections.unmodifiableMap(result);mentionNamesCache.put(dialog,cached);return cached;
+    }
+    synchronized String roomMentionFallback(long user) {
+        String address=jid(user);int slash=address.indexOf('/');
+        return slash>=0 ? address.substring(slash+1) : "Member";
+    }
+    synchronized String mentionAddress(long dialog,long user) {
+        if(dialog<0) {
+            try(Cursor row=getReadableDatabase().rawQuery("SELECT real_jid FROM room_participants WHERE room=? AND user=? AND real_jid IS NOT NULL ORDER BY active DESC LIMIT 1",new String[]{Long.toString(-dialog),Long.toString(user)})) {
+                return row.moveToFirst() ? row.getString(0) : null;
+            }
+        }
+        try { return jid(user); } catch(IllegalArgumentException unknown) { return null; }
     }
     synchronized ArrayList<TLRPC.User> roomUsers(long dialog,long self) {
         java.util.Set<Long> ids=new java.util.LinkedHashSet<>(); ids.add(self);
@@ -1185,7 +1210,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         message.media = new TLRPC.TL_messageMediaEmpty();
         decorate(message, payload);
         decorateReply(message, self, body, embedReply, payload);
-        MonogramFormatting.decorate(getReadableDatabase(),message,payload,body);
+        com.negzero.monogram.xmpp.MessageMarkup visibleMarkup=MonogramFormatting.decorate(getReadableDatabase(),message,payload,body);
+        MonogramMentions.decorate(this,message,self,visibleMarkup);
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
         decorateLinkPreview(message);
         message.reactions=reactions.snapshot(id,self);

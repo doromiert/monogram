@@ -129,7 +129,7 @@ public final class XmppRoomMessage {
             if(!body.endsWith(payload)) throw new IllegalArgumentException("Markup belongs to another body");
             full=value.inBody(body,body.codePointCount(0,body.length()-payload.length()));
         }
-        if(encryption==XmppMessage.Encryption.LEGACY_OMEMO) full=MessageMarkup.body(body);
+        if(encryption==XmppMessage.Encryption.LEGACY_OMEMO) full=MessageMarkup.body(body).withMentions(full.mentions);
         MessageMarkup captionValue=null;
         if(sharing!=null) {
             String payload=sharing.body(caption);

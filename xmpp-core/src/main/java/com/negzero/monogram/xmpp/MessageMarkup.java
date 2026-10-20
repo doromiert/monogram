@@ -31,8 +31,10 @@ public final class MessageMarkup {
     }
     public final String body;
     public final List<Range> ranges;
+    public final List<MessageMentions.Mention> mentions;
     public MessageMarkup(String body,Collection<Range> ranges) { this(body,ranges,false); }
-    private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled) {
+    private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled) { this(body,ranges,unstyled,Collections.emptyList()); }
+    private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled,Collection<MessageMentions.Mention> mentions) {
         this.unstyled=unstyled;
         if(body==null || ranges==null || ranges.size()>MAX_RANGES) throw new IllegalArgumentException("Invalid markup");
         int count=body.codePointCount(0,body.length());
@@ -50,10 +52,10 @@ public final class MessageMarkup {
                     throw new IllegalArgumentException("Overlapping markup boundaries");
             }
         }
-        this.body=body;this.ranges=Collections.unmodifiableList(copy);
+        this.body=body;this.ranges=Collections.unmodifiableList(copy);this.mentions=MessageMentions.checked(body,mentions);
     }
     public static void initialize() {
-        InlineEmoji.initialize();
+        InlineEmoji.initialize();MessageMentions.initialize();
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("markup",NAMESPACE,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("unstyled",STYLING,
@@ -72,6 +74,7 @@ public final class MessageMarkup {
             markup.addElement(element.build());
         }
         if(!ranges.isEmpty()) message.addExtension(markup.build());
+        MessageMentions.addTo(message,mentions);
         if(unstyled) message.addExtension(StandardExtensionElement.builder("unstyled",STYLING).build());
     }
     /** Call only with cleartext or authenticated decrypted content, never an encrypted outer stanza. */
@@ -135,7 +138,7 @@ public final class MessageMarkup {
         if(body==null) return null;
         MessageMarkup metadata=metadata(message,body);
         boolean unstyled=message!=null && message.hasExtension("unstyled",STYLING);
-        return new MessageMarkup(body,metadata==null ? Collections.emptyList() : metadata.ranges,unstyled);
+        return new MessageMarkup(body,metadata==null ? Collections.emptyList() : metadata.ranges,unstyled,MessageMentions.from(message,body));
     }
     /** Pure body parser for legacy OMEMO, whose outer extensions are not authenticated. */
     public static MessageMarkup body(String body) { return body==null ? null : new MessageMarkup(body,Collections.emptyList()); }
@@ -153,15 +156,15 @@ public final class MessageMarkup {
                 throw new IllegalArgumentException("Invalid removed range");
             Arrays.fill(removed,interval[0],interval[1],true);
         }
-        return mapped(text,removed,ranges,unstyled);
+        return mapped(text,removed,ranges,unstyled,mentions,true);
     }
-    private static MessageMarkup mapped(int[] text,boolean[] removed,Collection<Range> ranges,boolean unstyled) {
+    private static MessageMarkup mapped(int[] text,boolean[] removed,Collection<Range> ranges,boolean unstyled,List<MessageMentions.Mention> mentions,boolean intactMentions) {
         int[] map=new int[text.length+1];StringBuilder visible=new StringBuilder();
         for(int i=0;i<text.length;i++) { map[i+1]=map[i];if(!removed[i]) { visible.appendCodePoint(text[i]);map[i+1]++; } }
         List<Range> projected=new ArrayList<>();
         for(Range range:ranges) if(map[range.end]>map[range.start])
             projected.add(new Range(map[range.start],map[range.end],range.styles,range.language));
-        return new MessageMarkup(visible.toString(),normalize(projected),unstyled);
+        return new MessageMarkup(visible.toString(),normalize(projected),unstyled,MessageMentions.mapped(mentions,map,removed,intactMentions));
     }
     /** The exact parser map removes recognized directives only; raw models and archive offsets stay unchanged. */
     public MessageMarkup display() {
@@ -169,8 +172,8 @@ public final class MessageMarkup {
         Styling parsed=new Styling(body);parsed.parse();
         List<Range> styles=new ArrayList<>(ranges);
         if(styles.isEmpty()) styles.addAll(parsed.ranges);
-        try { return mapped(parsed.text,parsed.removed,styles,true); }
-        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true); }
+        try { return mapped(parsed.text,parsed.removed,styles,true,mentions,false); }
+        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true,mentions); }
     }
     public InlineEmoji displayInline(InlineEmoji inline) {
         if(inline==null || !body.equals(inline.body)) return null;
@@ -198,9 +201,9 @@ public final class MessageMarkup {
         return result;
     }
     /** Native entities become interoperable body directives only when the literal text survives round-trip exactly. */
-    public MessageMarkup preservingBody() { return new MessageMarkup(body,ranges,true); }
+    public MessageMarkup preservingBody() { return new MessageMarkup(body,ranges,true,mentions); }
     public MessageMarkup styled() {
-        if(ranges.isEmpty()) return new MessageMarkup(body,ranges,true);
+        if(ranges.isEmpty()) return new MessageMarkup(body,ranges,true,mentions);
         int[] text=body.codePoints().toArray();Map<Integer,StringBuilder> opens=new HashMap<>(),closes=new HashMap<>();
         List<Range> directives=new ArrayList<>();
         for(Range range:ranges) if(range.block()) directives.add(range);
@@ -218,11 +221,11 @@ public final class MessageMarkup {
             String open="",close="";
             if(range.styles.contains(Style.PRE)) {
                 if(range.start!=0 && text[range.start-1]!='\n' || range.end<text.length && text[range.end]!='\n')
-                    return new MessageMarkup(body,ranges,true);
+                    return new MessageMarkup(body,ranges,true,mentions);
                 open="```\n";close="\n```";
             } else if(range.styles.contains(Style.QUOTE)) {
                 if(range.start!=0 && text[range.start-1]!='\n' || range.end<text.length && text[range.end]!='\n')
-                    return new MessageMarkup(body,ranges,true);
+                    return new MessageMarkup(body,ranges,true,mentions);
                 opens.computeIfAbsent(range.start,k -> new StringBuilder()).append("> ");
                 for(int i=range.start;i<range.end-1;i++) if(text[i]=='\n') opens.computeIfAbsent(i+1,k -> new StringBuilder()).append("> ");
                 continue;
@@ -246,38 +249,44 @@ public final class MessageMarkup {
         List<Range> shifted=new ArrayList<>();
         for(Range range:ranges) shifted.add(new Range(starts[range.start],ends[range.end],range.styles,range.language));
         MessageMarkup encoded;
-        try { encoded=new MessageMarkup(wire.toString(),normalize(shifted)); }
-        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true); }
-        return encoded.display().body.equals(body) ? encoded : new MessageMarkup(body,ranges,true);
+        try { List<MessageMentions.Mention> moved=new ArrayList<>();for(MessageMentions.Mention mention:mentions) moved.add(new MessageMentions.Mention(starts[mention.start],ends[mention.end],mention.address));
+            encoded=new MessageMarkup(wire.toString(),normalize(shifted),false,moved); }
+        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true,mentions); }
+        return encoded.display().body.equals(body) ? encoded : new MessageMarkup(body,ranges,true,mentions);
     }
     /** Rebase already-encoded markup after a reply prefix or SFS URL is added. Never search for a repeated substring. */
     public MessageMarkup inBody(String fullBody,int start) {
         int length=body.codePointCount(0,body.length()),offset=fullBody.offsetByCodePoints(0,start);
         if(!fullBody.regionMatches(offset,body,0,body.length())) throw new IllegalArgumentException("Markup belongs to another body");
         List<Range> shifted=new ArrayList<>();for(Range range:ranges) shifted.add(new Range(range.start+start,range.end+start,range.styles,range.language));
-        return new MessageMarkup(fullBody,shifted,unstyled);
+        List<MessageMentions.Mention> moved=new ArrayList<>();for(MessageMentions.Mention mention:mentions) moved.add(new MessageMentions.Mention(mention.start+start,mention.end+start,mention.address));
+        return new MessageMarkup(fullBody,shifted,unstyled,moved);
     }
+    public MessageMarkup withMentions(Collection<MessageMentions.Mention> mentions) { return new MessageMarkup(body,ranges,unstyled,mentions); }
     /** Bounded local persistence codec. The body remains in the existing message record. */
     public String encode() {
         try {
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();DataOutputStream out=new DataOutputStream(bytes);
-            out.writeByte(1);out.writeBoolean(unstyled);out.writeShort(ranges.size());
+            out.writeByte(2);out.writeBoolean(unstyled);out.writeShort(ranges.size());
             for(Range range:ranges) { out.writeInt(range.start);out.writeInt(range.end);int mask=0;for(Style style:range.styles) mask|=1<<style.ordinal();out.writeByte(mask);out.writeUTF(range.language==null ? "" : range.language); }
+            out.writeShort(mentions.size());for(MessageMentions.Mention mention:mentions) { out.writeInt(mention.start);out.writeInt(mention.end);out.writeUTF(mention.address); }
             return Base64.getEncoder().encodeToString(bytes.toByteArray());
         } catch(IOException impossible) { throw new IllegalStateException(impossible); }
     }
     public static MessageMarkup decode(String body,String encoded) {
-        if(body==null || encoded==null || encoded.length()>65536) return null;
+        if(body==null || encoded==null || encoded.length()>262144) return null;
         try {
             DataInputStream in=new DataInputStream(new ByteArrayInputStream(Base64.getDecoder().decode(encoded)));
-            if(in.readUnsignedByte()!=1) return null;boolean unstyled=in.readBoolean();int count=in.readUnsignedShort();
+            int version=in.readUnsignedByte();if(version!=1 && version!=2) return null;boolean unstyled=in.readBoolean();int count=in.readUnsignedShort();
             if(count>MAX_RANGES) return null;List<Range> ranges=new ArrayList<>();
             for(int i=0;i<count;i++) {
                 int start=in.readInt(),end=in.readInt(),mask=in.readUnsignedByte();EnumSet<Style> styles=EnumSet.noneOf(Style.class);
                 if((mask & ~63)!=0) return null;for(Style style:Style.values()) if((mask & 1<<style.ordinal())!=0) styles.add(style);
                 String language=in.readUTF();ranges.add(new Range(start,end,styles,language.isEmpty() ? null : language));
             }
-            if(in.read()!=-1) return null;return new MessageMarkup(body,ranges,unstyled);
+            List<MessageMentions.Mention> mentions=new ArrayList<>();if(version==2) { int total=in.readUnsignedShort();if(total>MessageMentions.MAX) return null;
+                for(int i=0;i<total;i++) mentions.add(new MessageMentions.Mention(in.readInt(),in.readInt(),in.readUTF())); }
+            if(in.read()!=-1) return null;return new MessageMarkup(body,ranges,unstyled,mentions);
         } catch(IOException|IllegalArgumentException invalid) { return null; }
     }
     private static boolean space(int c) { return Character.isWhitespace(c) || Character.isSpaceChar(c) || c==0x85; }

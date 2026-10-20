@@ -7497,7 +7497,7 @@ public class ChatActivity extends BaseFragment implements
                     if (UserObject.getPublicUsername(user) != null) {
                         chatActivityEnterView.replaceWithText(start, len, "@" + UserObject.getPublicUsername(user) + " ", false);
                     } else {
-                        String name = UserObject.getFirstName(user, false);
+                        String name = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mentionName(dialog_id,user);
                         Spannable spannable = new SpannableString(name + " ");
                         spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, spannable.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         chatActivityEnterView.replaceWithText(start, len, spannable, false);
@@ -34133,6 +34133,13 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_PIN: {
+                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                    showDialog(new AlertDialog.Builder(getParentActivity(), themeDelegate)
+                            .setTitle("Message pins")
+                            .setMessage("Shared message pins aren't available for this XMPP conversation yet.")
+                            .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
+                    break;
+                }
                 final int mid;
                 if (selectedObjectGroup != null && !selectedObjectGroup.messages.isEmpty()) {
                     mid = selectedObjectGroup.messages.get(0).getId();
@@ -40142,7 +40149,7 @@ public class ChatActivity extends BaseFragment implements
                 if (username != null) {
                     sb.append("@").append(username).append(" ");
                 } else {
-                    String name = UserObject.getFirstName(user, false);
+                    String name = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mentionName(dialog_id,user);
                     Spannable spannable = new SpannableString(name + " ");
                     spannable.setSpan(new URLSpanUserMention("" + user.id, 3), 0, spannable.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     sb.append(spannable);

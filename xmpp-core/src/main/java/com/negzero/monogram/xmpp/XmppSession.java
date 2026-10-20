@@ -203,6 +203,7 @@ public final class XmppSession implements AutoCloseable {
         FileShare.initialize();
         MessageMarkup.initialize();
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMentions.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.STYLING);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.LEGACY);

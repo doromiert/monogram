@@ -117,6 +117,16 @@ public final class MonogramController {
         });
     }
     public int state() { return state; }
+    public String mentionName(long dialog,TLRPC.User user) {
+        String fallback=UserObject.getFirstName(user,false);
+        if(dialog>=0 || accountJid().isEmpty()) return fallback;
+        try { String nickname=store.mentionNames(dialog,self).get(user.id);return nickname==null || nickname.isEmpty() ? store.roomMentionFallback(user.id) : nickname; }
+        catch(IllegalArgumentException unknownRoom) { try { return store.roomMentionFallback(user.id); } catch(IllegalArgumentException unknownUser) { return "Member"; } }
+    }
+    public java.util.Map<Long,String> mentionNames(long dialog) {
+        if(dialog>=0 || accountJid().isEmpty()) return java.util.Collections.emptyMap();
+        try { return store.mentionNames(dialog,self); } catch(IllegalArgumentException unknownRoom) { return java.util.Collections.emptyMap(); }
+    }
     public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
     public String accountJid() { return preferences.getString("jid", ""); }
     public void markLocalRead(long peer,java.util.Collection<Integer> anchors,boolean all,java.util.function.BiConsumer<java.util.Set<Integer>,Integer> callback) {
@@ -2236,7 +2246,7 @@ public final class MonogramController {
         final MessageMarkup captionMarkup;
         final ArrayList<TLRPC.MessageEntity> captionEntities = new ArrayList<>(request.message.entities);
         try {
-            captionMarkup = MonogramFormatting.fromEntities(request.caption == null ? "" : request.caption, captionEntities).styled();
+            captionMarkup = MonogramMentions.fromEntities(store,request.message.dialog_id,request.caption == null ? "" : request.caption,captionEntities).styled();
             TLRPC.MessageReplyHeader header = request.message.reply_to;
             if (header != null && (header.reply_to_peer_id != null && (request.message.dialog_id<0 ? -header.reply_to_peer_id.chat_id : header.reply_to_peer_id.user_id) != request.message.dialog_id || header.reply_to_top_id != 0)) throw new UnsupportedOperationException();
             reply = header == null ? null : replyTo(header.reply_to_msg_id, request.message.dialog_id, encrypted, header.quote_text, header.quote_offset);
@@ -2690,7 +2700,7 @@ public final class MonogramController {
         if (request instanceof MonogramFileRequest) {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
-        boolean cached = request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
+        boolean cached = MonogramLocalFilters.supports(request) || request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
@@ -2841,6 +2851,7 @@ public final class MonogramController {
         requireRoomSession(expected,epoch);rememberBlocked(expected,epoch);return new TLRPC.TL_boolTrue();
     }
     private TLObject handle(TLObject request) throws Exception {
+        TLObject localFilters=MonogramLocalFilters.handle(request);if(localFilters!=null) return localFilters;
         if(request instanceof TLRPC.TL_messages_getCustomEmojiDocuments) {
             org.telegram.tgnet.Vector<TLRPC.Document> result=new org.telegram.tgnet.Vector<>(TLRPC.Document::TLdeserialize);
             for(long id:((TLRPC.TL_messages_getCustomEmojiDocuments)request).document_id) {
@@ -3114,7 +3125,7 @@ public final class MonogramController {
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
             MonogramStore.EditTarget target = editTarget(edit.id, peer);
             com.negzero.monogram.xmpp.InlineEmoji inline=target.sharing==null ? MonogramEmojis.fromEntities(account,edit.message,edit.entities) : null;
-            MessageMarkup markup = MonogramFormatting.fromEntities(edit.message, edit.entities);
+            MessageMarkup markup = MonogramMentions.fromEntities(store,peer,edit.message,edit.entities);
             markup=inline==null ? markup.styled() : markup.preservingBody();
             XmppMessage.Encryption mode = target.sharing!=null ? target.encryption
                     : target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
@@ -3145,7 +3156,7 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
             com.negzero.monogram.xmpp.InlineEmoji inline=MonogramEmojis.fromEntities(account,send.message,send.entities);
-            MessageMarkup markup = MonogramFormatting.fromEntities(send.message, send.entities);
+            MessageMarkup markup = MonogramMentions.fromEntities(store,send.peer.chat_id>0 ? -send.peer.chat_id : send.peer.user_id,send.message,send.entities);
             markup=inline==null ? markup.styled() : markup.preservingBody();
             if (send.peer.chat_id!=0) {
                 if (send.schedule_date!=0) throw new UnsupportedOperationException();

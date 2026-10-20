@@ -105,29 +105,30 @@ public final class MonogramFormatting {
         if(caption!=null) { value.put("caption_body",caption.body);value.put("caption_markup",caption.encode()); }
         return db.insertWithOnConflict("message_formatting",null,value,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
     }
-    static void decorate(SQLiteDatabase db,TLRPC.Message message,int payload,String rawBody) {
+    static MessageMarkup decorate(SQLiteDatabase db,TLRPC.Message message,int payload,String rawBody) {
         try(Cursor row=db.rawQuery("SELECT body,markup,caption_body,caption_markup FROM message_formatting WHERE message=?",new String[]{Integer.toString(payload)})) {
-            if(!row.moveToFirst() || !Objects.equals(rawBody,row.getString(0))) return;
+            if(!row.moveToFirst() || !Objects.equals(rawBody,row.getString(0))) return null;
             MessageMarkup visible;
             if(MonogramAttachments.has(message)) {
-                if(row.isNull(3) || !Objects.equals(message.message,row.getString(2))) return;
+                if(row.isNull(3) || !Objects.equals(message.message,row.getString(2))) return null;
                 visible=MessageMarkup.decode(row.getString(2),row.getString(3));
-                if(visible==null) return;
+                if(visible==null) return null;
             } else {
-                if(row.isNull(1)) return;
+                if(row.isNull(1)) return null;
                 visible=MessageMarkup.decode(rawBody,row.getString(1));
-                if(visible==null) return;
+                if(visible==null) return null;
                 if(!Objects.equals(rawBody,message.message)) {
-                    if(message.reply_to==null || message.reply_to.reply_to_msg_id==0) return;
+                    if(message.reply_to==null || message.reply_to.reply_to_msg_id==0) return null;
                     try(Cursor reply=db.rawQuery("SELECT fallback FROM replies WHERE message=?",new String[]{Integer.toString(payload)})) {
-                        if(!reply.moveToFirst()) return;
+                        if(!reply.moveToFirst()) return null;
                         visible=visible.without(fallback(reply.getString(0),rawBody.codePointCount(0,rawBody.length())));
                     }
                 }
-                if(!Objects.equals(visible.body,message.message)) return;
+                if(!Objects.equals(visible.body,message.message)) return null;
             }
-            apply(message,visible);
+            apply(message,visible);return visible.display();
         } catch(IllegalArgumentException malformed) { /* Corrupt local formatting must not hide readable message text. */ }
+        return null;
     }
     static com.negzero.monogram.xmpp.InlineEmoji projectInline(SQLiteDatabase db,int payload,com.negzero.monogram.xmpp.InlineEmoji inline,String visibleBody) {
         MessageMarkup markup=MessageMarkup.body(inline.body);

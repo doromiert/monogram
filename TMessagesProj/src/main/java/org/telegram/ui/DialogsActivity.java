@@ -3937,7 +3937,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 currentCount = 0;
                             }
                             int totalCount = currentCount + alwaysShow.size();
-                            if ((totalCount > getMessagesController().dialogFiltersChatsLimitDefault && !getUserConfig().isPremium()) || totalCount > getMessagesController().dialogFiltersChatsLimitPremium) {
+                            if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)
+                                    && ((totalCount > getMessagesController().dialogFiltersChatsLimitDefault && !getUserConfig().isPremium())
+                                    || totalCount > getMessagesController().dialogFiltersChatsLimitPremium)) {
                                 showDialog(new LimitReachedBottomSheet(DialogsActivity.this, fragmentView.getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
                                 return;
                             }

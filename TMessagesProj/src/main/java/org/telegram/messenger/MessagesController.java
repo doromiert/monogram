@@ -865,7 +865,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (dialogFilters.isEmpty()) {
             return;
         }
-        if (!premium) {
+        if (!premium && !org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
             if (!dialogFilters.get(0).isDefault()) {
                 for (int i = 1; i < dialogFilters.size(); i++) {
                     if (dialogFilters.get(i).isDefault()) {
@@ -888,6 +888,15 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void lockFiltersInternal() {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            boolean changed = false;
+            for (DialogFilter filter : dialogFilters) {
+                changed |= filter.locked;
+                filter.locked = false;
+            }
+            if (changed) getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
+            return;
+        }
         boolean changed = false;
         if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
             int n = dialogFilters.size() - 1 - dialogFiltersLimitDefault;
@@ -2441,6 +2450,14 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void loadRemoteFilters(boolean force, Utilities.Callback<Boolean> whenDone) {
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            // Native SQLite loading is authoritative; an empty remote list would erase local folders.
+            loadingRemoteFilters = false;
+            getUserConfig().filtersLoaded = true;
+            getUserConfig().saveConfig(false);
+            if (whenDone != null) AndroidUtilities.runOnUIThread(() -> whenDone.run(true));
+            return;
+        }
         if (whenDone != null) {
             onLoadedRemoteFilters = whenDone;
         }
@@ -9601,10 +9618,25 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
+    private boolean explainUnavailableMessagePins() {
+        if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return false;
+        AndroidUtilities.runOnUIThread(() -> {
+            BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+            if (fragment != null && fragment.getParentActivity() != null) {
+                fragment.showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getParentActivity())
+                        .setTitle("Message pins")
+                        .setMessage("Shared message pins aren't available for this XMPP conversation yet.")
+                        .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
+            }
+        });
+        return true;
+    }
+
     public void unpinAllMessages(TLRPC.Chat chat, TLRPC.User user) {
         if (chat == null && user == null) {
             return;
         }
+        if (explainUnavailableMessagePins()) return;
         TLRPC.TL_messages_unpinAllMessages req = new TLRPC.TL_messages_unpinAllMessages();
         req.peer = getInputPeer(chat != null ? -chat.id : user.id);
         getConnectionsManager().sendRequest(req, (response, error) -> {
@@ -9625,6 +9657,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (chat == null && user == null) {
             return;
         }
+        if (explainUnavailableMessagePins()) return;
         TLRPC.TL_messages_updatePinnedMessage req = new TLRPC.TL_messages_updatePinnedMessage();
         req.peer = getInputPeer(chat != null ? -chat.id : user.id);
         req.id = id;
@@ -24344,6 +24377,9 @@ public class MessagesController extends BaseController implements NotificationCe
 
     public void setFolderTags(boolean value) {
         mainPreferences.edit().putBoolean("folderTags", folderTags = value).apply();
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+            AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated));
+        }
     }
 
     public boolean isStoryQualityFullOnAccount() {

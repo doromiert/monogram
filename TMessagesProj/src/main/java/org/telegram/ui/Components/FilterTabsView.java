@@ -1912,7 +1912,7 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
-            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {
+            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !(org.telegram.messenger.xmpp.MonogramDialogState.local(UserConfig.selectedAccount) || UserConfig.getInstance(UserConfig.selectedAccount).isPremium())))) {
                 return makeMovementFlags(0, 0);
             }
             return makeMovementFlags(ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT, 0);
@@ -1920,7 +1920,7 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder source, @NonNull RecyclerView.ViewHolder target) {
-            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && ((source.getAdapterPosition() == 0 || target.getAdapterPosition() == 0) && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium())) {
+            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && ((source.getAdapterPosition() == 0 || target.getAdapterPosition() == 0) && !(org.telegram.messenger.xmpp.MonogramDialogState.local(UserConfig.selectedAccount) || UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {
                 return false;
             }
             adapter.swapElements(source.getAdapterPosition(), target.getAdapterPosition());
@@ -1928,7 +1928,7 @@ public class FilterTabsView extends FrameLayout {
         }
 
         private final Runnable resetDefaultPosition = () ->  {
-            if (UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) {
+            if ((org.telegram.messenger.xmpp.MonogramDialogState.local(UserConfig.selectedAccount) || UserConfig.getInstance(UserConfig.selectedAccount).isPremium())) {
                 return;
             }
             for (int i = 0; i < tabs.size(); ++i) {

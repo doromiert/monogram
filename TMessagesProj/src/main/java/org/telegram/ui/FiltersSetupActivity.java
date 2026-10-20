@@ -82,6 +82,10 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
 
     private boolean ignoreUpdates;
 
+    private boolean canCustomizeFolders() {
+        return org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || getUserConfig().isPremium();
+    }
+
     private boolean highlightTags;
     public FiltersSetupActivity highlightTags() {
         this.highlightTags = true;
@@ -588,18 +592,18 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             }
             filtersSectionEnd = items.size();
 
-            if (listView != null) listView.forcedSections.add(AndroidUtilities.pack(filtersSectionStart, filtersSectionEnd - 1 + (dialogFilters.size() < getMessagesController().dialogFiltersLimitPremium ? 1 : 0)));
+            if (listView != null) listView.forcedSections.add(AndroidUtilities.pack(filtersSectionStart, filtersSectionEnd - 1 + ((org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || dialogFilters.size() < getMessagesController().dialogFiltersLimitPremium) ? 1 : 0)));
         } else {
             filtersSectionStart = filtersSectionEnd = -1;
         }
-        if (dialogFilters.size() < getMessagesController().dialogFiltersLimitPremium) {
+        if ((org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || dialogFilters.size() < getMessagesController().dialogFiltersLimitPremium)) {
             items.add(ItemInner.asButton(LocaleController.getString(R.string.CreateNewFilter)));
         }
         items.add(ItemInner.asShadow(null));
         folderTagsPosition = items.size();
         showTagsRow = items.size();
         items.add(ItemInner.asCheck(LocaleController.getString(R.string.FolderShowTags)));
-        items.add(ItemInner.asShadow(!getUserConfig().isPremium() ? AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.FolderShowTagsInfoPremium), Theme.key_windowBackgroundWhiteBlueHeader, AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD, () -> {
+        items.add(ItemInner.asShadow(!canCustomizeFolders() ? AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.FolderShowTagsInfoPremium), Theme.key_windowBackgroundWhiteBlueHeader, AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD, () -> {
             presentFragment(new PremiumPreviewFragment("settings"));
         }) : LocaleController.getString(R.string.FolderShowTagsInfo)));
 
@@ -688,7 +692,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                 return;
             }
             if (item.viewType == VIEW_TYPE_CHECK) {
-                if (!getUserConfig().isPremium()) {
+                if (!canCustomizeFolders()) {
                     showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_FOLDER_TAGS, true));
                     return;
                 }
@@ -733,10 +737,10 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
 
     public void createFolder(INavigationLayout navigationLayout) {
         final int count = getMessagesController().getDialogFilters().size();
-        if (
-            count - 1 >= getMessagesController().dialogFiltersLimitDefault && !getUserConfig().isPremium() ||
+        if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) && (
+            count - 1 >= getMessagesController().dialogFiltersLimitDefault && !canCustomizeFolders() ||
             count >= getMessagesController().dialogFiltersLimitPremium
-        ) {
+        )) {
             showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
         } else if (navigationLayout != null) {
             navigationLayout.presentFragment(new FilterCreateActivity());
@@ -931,6 +935,11 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                             builder.setMessage(LocaleController.getString(R.string.FilterDeleteAlert));
                             builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
                             builder.setPositiveButton(LocaleController.getString(R.string.Delete), (dialog2, which2) -> {
+                                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                                    getMessagesController().removeFilter(filter);
+                                    getMessagesStorage().deleteDialogFilter(filter);
+                                    return;
+                                }
                                 AlertDialog progressDialog = null;
                                 if (getParentActivity() != null) {
                                     progressDialog = new AlertDialog(getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER);
@@ -1087,7 +1096,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                 case VIEW_TYPE_CHECK: {
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
                     cell.setTextAndCheck(item.text, getMessagesController().folderTags, divider);
-                    cell.setCheckBoxIcon(!getUserConfig().isPremium() ? R.drawable.permission_locked : 0);
+                    cell.setCheckBoxIcon(!canCustomizeFolders() ? R.drawable.permission_locked : 0);
                     break;
                 }
                 case VIEW_TYPE_FILTER_SUGGESTION: {
@@ -1175,7 +1184,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         }
 
         private void resetDefaultPosition() {
-            if (UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) {
+            if (canCustomizeFolders()) {
                 return;
             }
             ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();

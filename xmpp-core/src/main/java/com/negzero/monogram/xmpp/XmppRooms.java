@@ -52,6 +52,7 @@ public final class XmppRooms implements AutoCloseable {
     private final Map<EntityBareJid,String> passwords=new ConcurrentHashMap<>();
     private static final String OCCUPANT_ID="urn:xmpp:occupant-id:0";
     private final Set<EntityBareJid> stableOccupants=ConcurrentHashMap.newKeySet();
+    private final Set<EntityBareJid> nonAnonymousRooms=ConcurrentHashMap.newKeySet();
     private final Map<EntityBareJid,Boolean> legacyRetractions=new ConcurrentHashMap<>();
     private final java.util.concurrent.ScheduledExecutorService presenceUpdates=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread=new Thread(r,"Monogram room presence"); thread.setDaemon(true); return thread;
@@ -71,7 +72,7 @@ public final class XmppRooms implements AutoCloseable {
     private void changedMetadata(Message message) {
         if(closed || connection.getUser()==null || !metadataHint(message,connection.getUser().asBareJid())) return;
         MultiUserChat chat=chats.get(message.getFrom().asEntityBareJidIfPossible());
-        if(chat!=null && chat.isJoined()) listener.roomMetadataChanged(chat.getRoom().toString());
+        if(chat!=null && chat.isJoined()) { nonAnonymousRooms.remove(chat.getRoom());listener.roomMetadataChanged(chat.getRoom().toString()); }
     }
     private void rejectInvitation(Message error) {
         RoomInvitations.Pending invitation=outgoingInvitations.rejected(error);
@@ -241,6 +242,7 @@ public final class XmppRooms implements AutoCloseable {
         RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
         org.jivesoftware.smackx.disco.packet.DiscoverInfo features=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(chat.getRoom());
         legacyRetractions.put(chat.getRoom(),!features.containsFeature(MessageRetraction.NAMESPACE) && features.containsFeature(MessageRetraction.LEGACY));
+        if(features.containsFeature("muc_nonanonymous")) nonAnonymousRooms.add(chat.getRoom());else nonAnonymousRooms.remove(chat.getRoom());
         if(features.containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
         else stableOccupants.remove(chat.getRoom());
         if (!chat.isJoined()) {
@@ -484,7 +486,7 @@ public final class XmppRooms implements AutoCloseable {
         return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete(),accepted);
     }
     public void leave(String jid) throws Exception {
-        MultiUserChat chat=chat(jid);
+        MultiUserChat chat=chat(jid);nonAnonymousRooms.remove(chat.getRoom());
         if(chatStates!=null) chatStates.roomLeft(chat.getRoom());
         if (chat.isJoined()) chat.leave(); listener.roomChanged(new State(chat));
     }
@@ -626,7 +628,8 @@ public final class XmppRooms implements AutoCloseable {
         Map<String,String> skipped=new TreeMap<>();
         Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped,failures);
         if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
-        if(!encrypted && markup!=null) markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
+        if(!encrypted && markup!=null) { MessageMarkup publicMarkup=nonAnonymousRooms.contains(chat.getRoom()) ? markup : markup.withMentions(Collections.emptyList());
+            publicMarkup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message); }
         if(sharing!=null) sharing.addTo(message,wireBody);
         if(displayStickerHint && encrypted) StickerHint.addTo(message);
         if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
@@ -1033,5 +1036,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { closed=true;cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); }
+    @Override public void close() { closed=true;cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); nonAnonymousRooms.clear(); }
 }
