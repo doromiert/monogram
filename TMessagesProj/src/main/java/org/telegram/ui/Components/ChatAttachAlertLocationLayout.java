@@ -790,7 +790,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 map.animateCamera(ApplicationLoader.getMapsProvider().newCameraUpdateLatLngZoom(new IMapsProvider.LatLng(liveLocation.marker.getPosition().latitude, liveLocation.marker.getPosition().longitude), map.getMaxZoomLevel() - 4));
             }
         });
-        adapter.setSearchAccount(currentAccount);
+        adapter.setSearchAccount(parentAlert.currentAccount);
         adapter.setDelegate(dialogId, this::updatePlacesMarkers);
         adapter.setOverScrollHeight(overScrollHeight + dp(16));
 
@@ -902,7 +902,7 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 super.notifyDataSetChanged();
             }
         };
-        searchAdapter.setSearchAccount(currentAccount);
+        searchAdapter.setSearchAccount(parentAlert.currentAccount);
         searchAdapter.setMyLocationDenied(locationDenied);
         searchAdapter.setDelegate(0, places -> {
             searchInProgress = false;
