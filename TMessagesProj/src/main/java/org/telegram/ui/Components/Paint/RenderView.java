@@ -622,6 +622,22 @@ public class RenderView extends TextureView {
         }
     }
 
+    /** Detached stroke-only snapshot; never waits on the GL queue from the UI thread. */
+    public void snapshotDraft(java.util.function.Consumer<Bitmap> result) {
+        final CanvasInternal renderer=internal;
+        if(renderer==null || shuttingDown) { result.accept(null);return; }
+        renderer.postRunnable(() -> {
+            Bitmap bitmap=null;
+            try {
+                if(renderer==internal && renderer.initialized && !shuttingDown && renderer.setCurrentContext()) {
+                    Painting.PaintingData data=painting.getPaintingData(new RectF(0,0,painting.getSize().width,painting.getSize().height),false,false,false);
+                    if(data!=null) bitmap=data.bitmap;
+                }
+            } catch(RuntimeException failed) { FileLog.e("Could not capture native paint draft"); }
+            final Bitmap detached=bitmap;AndroidUtilities.runOnUIThread(() -> result.accept(detached));
+        });
+    }
+
     public Bitmap getResultBitmap(boolean blurTex, boolean includeBlur) {
         if (brush instanceof Brush.Shape) {
             shapeInput.stop();

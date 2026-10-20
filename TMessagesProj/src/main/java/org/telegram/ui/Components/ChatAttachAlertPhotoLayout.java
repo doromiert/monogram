@@ -527,6 +527,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
         @Override
         public void sendButtonPressed(int index, VideoEditedInfo videoEditedInfo, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean forceDocument) {
+            if(resumePendingMediaEditor()) return;
             parentAlert.sent = true;
             MediaController.PhotoEntry photoEntry = getPhotoEntryAtPosition(index);
             if (photoEntry != null) {
@@ -570,6 +571,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             }
             AlertsCreator.ensurePaidMessageConfirmation(parentAlert.currentAccount, parentAlert.getDialogId(), getSelectedPhotos().size() + parentAlert.getAdditionalMessagesCount(), payStars -> {
                 if (parentAlert != null) {
+                    if(resumePendingMediaEditor()) return;
                     parentAlert.setButtonPressed(true);
                 }
                 parentAlert.delegate.didPressedButton(7, true, notify, scheduleDate, 0, 0, parentAlert.isCaptionAbove(), forceDocument, payStars);
@@ -701,6 +703,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     }
 
     private MediaController.PhotoEntry getPhotoEntryAtPosition(int position) {
+        final int absolutePosition=position;
         if (position < 0) {
             return null;
         }
@@ -714,6 +717,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             Object selected=parentAlert.hasMediaDraftSession() ? selectedPhotos.get(entry.imageId) : null;
             return selected instanceof MediaController.PhotoEntry ? (MediaController.PhotoEntry)selected : entry;
         }
+        if(parentAlert.hasMediaDraftSession()) { ArrayList<Object> all=getAllPhotosArray();if(absolutePosition<all.size() && all.get(absolutePosition) instanceof MediaController.PhotoEntry) return (MediaController.PhotoEntry)all.get(absolutePosition); }
         return null;
     }
 
@@ -738,6 +742,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             for(int i=0;i<arrayList.size();i++) if(arrayList.get(i) instanceof MediaController.PhotoEntry) {
                 Object selected=selectedPhotos.get(((MediaController.PhotoEntry)arrayList.get(i)).imageId);if(selected instanceof MediaController.PhotoEntry) arrayList.set(i,selected);
             }
+            ArrayList<MediaController.PhotoEntry> pending=org.telegram.messenger.xmpp.MonogramEditorDrafts.photos(parentAlert.currentAccount,parentAlert.getDialogId());
+            pending.sort((a,b) -> Integer.compare(a.imageId,b.imageId));
+            for(MediaController.PhotoEntry photo:pending) if(!arrayList.contains(photo)) arrayList.add(photo);
         }
         return arrayList;
     }
@@ -1061,6 +1068,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     }
                     PhotoViewer.getInstance().openPhotoForSelect(arrayList, finalPosition, avatarType, false, photoViewerProvider, parentAlert.isPollAttach ? null : chatActivity);
                     PhotoViewer.getInstance().setAvatarFor(parentAlert.getAvatarFor());
+                    AndroidUtilities.runOnUIThread(() -> PhotoViewer.getInstance().resumePendingMediaEditor(),350);
                     if (parentAlert.isPhotoPicker && !parentAlert.isStickerMode) {
                         PhotoViewer.getInstance().closePhotoAfterSelect = false;
                     } else if (parentAlert.avatarPicker != 0) {
@@ -1778,9 +1786,23 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         return Integer.MAX_VALUE;
     }
 
+    public boolean resumePendingMediaEditor() {
+        if(!parentAlert.hasMediaDraftSession()) return false;
+        MediaController.PhotoEntry pending=null;
+        for(Object value:org.telegram.messenger.xmpp.MonogramEditorDrafts.photos(parentAlert.currentAccount,parentAlert.getDialogId())) { if(value instanceof MediaController.PhotoEntry && org.telegram.messenger.xmpp.MonogramEditorDrafts.get((MediaController.PhotoEntry)value,parentAlert.currentAccount,parentAlert.getDialogId())!=null) { pending=(MediaController.PhotoEntry)value;break; } }
+        if(pending==null) return false;
+        if(PhotoViewer.getInstance().isVisible()) { PhotoViewer.getInstance().resumePendingMediaEditor(pending);return true; }
+        ArrayList<Object> photos=getAllPhotosArray();int index=photos.indexOf(pending);if(index<0) return true;
+        PhotoViewer viewer=PhotoViewer.getInstance();viewer.setParentActivity(parentAlert.baseFragment);viewer.setParentAlert(parentAlert);
+        viewer.setMaxSelectedPhotos(parentAlert.maxSelectedPhotos,parentAlert.allowOrder);
+        viewer.openPhotoForSelect(photos,index,0,false,photoViewerProvider,parentAlert.baseFragment instanceof ChatActivity ? (ChatActivity)parentAlert.baseFragment : null);
+        AndroidUtilities.runOnUIThread(viewer::resumePendingMediaEditor,350);return true;
+    }
+
     private int addToSelectedPhotos(MediaController.PhotoEntry object, int index) {
         Object key = object.imageId;
         if (selectedPhotos.containsKey(key)) {
+            if(parentAlert.hasMediaDraftSession()) org.telegram.messenger.xmpp.MonogramEditorDrafts.clear(object,parentAlert.currentAccount,parentAlert.getDialogId());
             object.starsAmount = 0;
             object.hasSpoiler = false;
             object.discardLivePhoto = null;
@@ -2220,6 +2242,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
             @Override
             public void sendButtonPressed(int index, VideoEditedInfo videoEditedInfo, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean forceDocument) {
+            if(resumePendingMediaEditor()) return;
                 if (cameraPhotos.isEmpty() || parentAlert.destroyed) {
                     return;
                 }
@@ -2246,6 +2269,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                         PhotoViewer.getInstance().closePhotoAfterSelect = false;
                         PhotoViewer.getInstance().doneButtonPressed = false;
                     }
+                    if(resumePendingMediaEditor()) return;
                     parentAlert.sent = true;
                     if (parentAlert != null) {
                         parentAlert.setButtonPressed(true);
@@ -3189,6 +3213,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         for(MediaController.PhotoEntry photo:restored) {
             boolean duplicate=false;for(Object existing:selectedPhotos.values()) if(existing instanceof MediaController.PhotoEntry && java.util.Objects.equals(((MediaController.PhotoEntry)existing).path,photo.path)) duplicate=true;
             if(duplicate) continue;
+            if(org.telegram.messenger.xmpp.MonogramEditorDrafts.previewOnly(photo)) { do { photo.imageId=--lastImageId; } while(selectedPhotos.containsKey(photo.imageId));cameraPhotos.add(photo);continue; }
             MediaController.PhotoEntry gallery=galleryAlbumEntry==null ? null : galleryAlbumEntry.photosByIds.get(photo.imageId);
             boolean inGallery=gallery!=null && java.util.Objects.equals(gallery.path,photo.path);
             if(!inGallery || selectedPhotos.containsKey(photo.imageId)) { do { photo.imageId=--lastImageId; } while(selectedPhotos.containsKey(photo.imageId));cameraPhotos.add(photo); }

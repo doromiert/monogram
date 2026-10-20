@@ -97,16 +97,61 @@ No automatic-send queue is added: pressing Send uses the ordinary native outbox
 and existing all-item handoff. A copy interrupted before its private snapshot
 finishes still requires the original URI/file to be accessible, as above.
 
+## Unapplied native crop and painting
+
+Ordinary photo/video selections now carry an independent `editor` checkpoint and
+stable `draftId`. Applied crop, image/paint paths and edit entities stay unchanged
+until native Done. Crop checkpoints use CropState's native codec. Painting saves
+a detached stroke-only PNG plus native editable entity metadata; text and stickers
+are recreated as native entity views, rather than flattened twice into the canvas.
+The draft remains local to the same account JID, conversation and logout epoch.
+Camera/cache inputs and entity assets use the existing private snapshot path.
+
+Reopening a pending item resumes its native crop/paint editor once the image/video
+is ready. Send first opens unfinished edits for Done or explicit Cancel, including
+an item previewed without selecting it. Such an item reopens as an unchecked
+preview; restoring it does not add it to the send selection. Explicit Cancel drops only the unapplied
+checkpoint; Done applies through the original native editor and then saves the
+normal selection. If native Done returns without a renderable result, the editor
+remains open, applied crop state is restored and checkpoint capture is rearmed;
+paint entity cleanup waits for successful application. The viewer’s direct Send
+path uses the same application-result guard before any outbox handoff; it cannot
+send the original merely because applying an unfinished edit returned early. A different attachment kind or a batch awaiting native outbox
+handoff is never replaced by opening an editor.
+
+Snapshots are debounced for 750 ms and requested again on pause/navigation.
+Stroke readback is asynchronous on the native GL queue and PNG compression runs
+on a worker. Each editor/selection retains at most its current compression and
+one latest waiting snapshot; superseded waiting bitmaps are recycled. Superseded
+helper-created PNGs become targeted cleanup candidates after metadata replacement.
+Deletion requires a newer durable checkpoint plus a successful native reference
+scan, fresh disk/latest manifests (including atomic backups), live editor/job
+references and an unchanged mutation fence. Unknown/corrupt metadata or a failed
+scan retains files for later retry; active compression/current PNGs are excluded.
+This reclaims old paint checkpoints even while an ordinary picker remains open,
+without collecting unrelated user media or whole draft directories. Owner epoch, stable selection ID, editor token and revision fence
+late captures after a newer edit, restored entry, apply, discard or logout. Only
+unapplied checkpoint fields are changed in the latest manifest. A last edit can
+still be lost if Android kills the process before pending GL/file work finishes;
+the previously committed checkpoint remains recoverable. A lost/corrupt pending
+asset is reported as a missing draft item instead of silently sending it unedited.
+
+Telegram's UndoStore contains runtime Runnable closures. They cannot be restored
+across process death. The current editable canvas/entities survive with a fresh
+native undo history; earlier individual steps are not undoable after restart.
+Unapplied filter adjustments, sticker-maker editing, avatars, stories and scheduled
+compositions are outside this ordinary attachment-editor checkpoint.
+
 ## Remaining coverage and acceptance
 
-Scheduled compositions and unapplied crop/paint editor canvases are not covered. The native location tab dispatches its current place directly
+Scheduled compositions and unapplied filter adjustments are not covered. The native location tab dispatches its current place directly
 through didSelectLocation from its action/venue callbacks; it has no selected
 attachment batch to restore. Contacts’ native selectedContacts/order and caption path are now recovered.
 External Android provider/camera results are covered for ordinary chats. No cross-device draft support is
 claimed. Keep the broader media-draft TODO in progress until those paths and
 phone acceptance are finished.
 
-Twenty-three source fixtures cover selection order and caption entities, video edits,
+Twenty-eight source fixtures cover selection order and caption entities, video edits,
 private camera snapshots, changed/missing sources, owner isolation, all-item
 outbox acknowledgement, reserved native params, logout retention, document/music
 restoration, contact/provider metadata, history-forward source metadata, partial
@@ -114,7 +159,7 @@ caption/contact acceptance, scoped one-use handoffs and conservative asset
 collection including a stale-scan/cross-owner-selection race, external launch
 ownership, SAF multiple files/provider names, missing grants, camera output
 recovery, stale/private-provider rejection, incompatible-kind preservation and
-pending-batch preservation/deferred recovery. They are
+pending-batch preservation/deferred recovery, unapplied crop versus applied metadata, editable painting baselines/entities, stale capture fencing, editor-only cancellation and recycling superseded waiting paint snapshots, and retired-PNG retention on native reference failures/references/corrupt manifests followed by safe reclamation. They are
 prepared, **not run**. Run at the next planned phone-update gate:
 
 ```sh
@@ -122,7 +167,7 @@ nix develop --command ./gradlew --offline --no-daemon -PmonogramAbi=arm64-v8a :T
 ```
 
 Phone acceptance should exercise keep/discard, back navigation, process restart,
-account switching, file/music/contact/history/external selections, camera preview, applied photo/video edits, missing files and conversion
+account switching, file/music/contact/history/external selections, camera preview, applied/unapplied photo/video crop and painting (including text/sticker entity editing after restart, explicit cancel, native Done with unavailable GL/bitmap, Send from grid and old GL callback racing restoration/native Done), missing files and conversion
 failure/partial batches before claiming complete attachment draft support.
 Text draft acceptance still includes formatting-only edits and reply quotes;
 the two earlier text comparison cases passed at the 0.2.119 gate.

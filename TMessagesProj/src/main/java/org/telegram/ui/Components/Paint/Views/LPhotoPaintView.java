@@ -303,6 +303,7 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
         originalBitmapRotation = originalRotation;
         undoStore = new UndoStore();
         undoStore.setDelegate(() -> {
+            notifyDraftChanged();
             boolean canUndo = undoStore.canUndo();
             undoButton.animate().cancel();
             undoButton.animate().alpha(canUndo ? 1f : 0.6f).translationY(0).setDuration(150).start();
@@ -898,6 +899,7 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
         Size paintingSize = getPaintingSize();
         PointF position = startPositionRelativeToEntity(null);
         TextPaintView view = new TextPaintView(getContext(), position, (int) (paintingSize.width / 9), "", colorSwatch, selectedTextType);
+        watchDraftText(view);
         view.setMinMaxFontSize((int) (0.5f * (paintingSize.width / 9f)), (int) (2f * (paintingSize.width / 9f)), () -> {
             if (weightChooserView != null) {
                 weightChooserView.invalidate();
@@ -1749,16 +1751,36 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
         blurredBackgroundDrawableForTools = d.setPadding(dp(4));
     }
 
+    private Runnable draftChanged;
+    private boolean restoredDraft;
+    public void setDraftChangedListener(Runnable listener,boolean restored) {
+        draftChanged=listener;restoredDraft=restored;
+    }
+    private void watchDraftText(TextPaintView view) {
+        view.getEditText().addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence text,int start,int count,int after) {}
+            public void onTextChanged(CharSequence text,int start,int before,int count) { notifyDraftChanged(); }
+            public void afterTextChanged(android.text.Editable text) {}
+        });
+    }
+    private void notifyDraftChanged() { if(draftChanged!=null) draftChanged.run(); }
+    public void snapshotDraft(java.util.function.BiConsumer<Bitmap,ArrayList<VideoEditedInfo.MediaEntity>> callback) {
+        ArrayList<VideoEditedInfo.MediaEntity> entities=new ArrayList<>();composeBitmap(entities,null,true);
+        renderView.snapshotDraft(bitmap -> callback.accept(bitmap,entities));
+    }
     @Override
     public boolean hasChanges() {
-        return undoStore.canUndo();
+        return restoredDraft || undoStore.canUndo();
     }
 
     @Override
     public Bitmap getBitmap(ArrayList<VideoEditedInfo.MediaEntity> entities, Bitmap[] thumbBitmap) {
-        Bitmap bitmap = renderView.getResultBitmap(false, false);
+        return composeBitmap(entities,thumbBitmap,false);
+    }
+    private Bitmap composeBitmap(ArrayList<VideoEditedInfo.MediaEntity> entities,Bitmap[] thumbBitmap,boolean draftOnly) {
+        Bitmap bitmap = draftOnly ? null : renderView.getResultBitmap(false, false);
         lcm = BigInteger.ONE;
-        if (bitmap != null && entitiesView.entitiesCount() > 0) {
+        if ((bitmap != null || draftOnly) && entitiesView.entitiesCount() > 0) {
             Canvas canvas;
             Canvas thumbCanvas = null;
             int count = entitiesView.getChildCount();
@@ -1889,12 +1911,13 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
                     mediaEntity.textViewHeight = mediaEntity.viewHeight / (float) entitiesView.getMeasuredHeight();
                     mediaEntity.scale = scaleX;
 
-                    if (thumbBitmap[0] == null) {
+                    if (!draftOnly && thumbBitmap[0] == null) {
                         thumbBitmap[0] = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), bitmap.getConfig());
                         thumbCanvas = new Canvas(thumbBitmap[0]);
                         thumbCanvas.drawBitmap(bitmap, 0, 0, null);
                     }
                 }
+                if(draftOnly) continue;
                 canvas = new Canvas(bitmap);
                 for (int k = 0; k < 2; k++) {
                     Canvas currentCanvas = k == 0 ? canvas : thumbCanvas;
@@ -2737,6 +2760,7 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
             entityView = newStickerView;
         } else if (currentEntityView instanceof TextPaintView) {
             TextPaintView newTextPaintView = new TextPaintView(getContext(), (TextPaintView) currentEntityView, position);
+            watchDraftText(newTextPaintView);
             newTextPaintView.setDelegate(this);
             newTextPaintView.setMaxWidth((int) (getPaintingSize().width - 20));
             entitiesView.addView(newTextPaintView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
@@ -3109,7 +3133,9 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
 //            r = entitiesView.dispatchTouchEvent(transformedEvent) || r;
 //            transformedEvent.recycle();
 //        }
-        return super.dispatchTouchEvent(ev) || r;
+        boolean handled=super.dispatchTouchEvent(ev) || r;
+        if(ev.getActionMasked()==MotionEvent.ACTION_UP || ev.getActionMasked()==MotionEvent.ACTION_CANCEL) notifyDraftChanged();
+        return handled;
     }
 
     @Override

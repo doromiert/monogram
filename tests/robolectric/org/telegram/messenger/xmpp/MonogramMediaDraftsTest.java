@@ -60,7 +60,8 @@ public class MonogramMediaDraftsTest {
         controller=Shadow.newInstanceOf(MonogramController.class);jid=UUID.randomUUID()+"@example.org";outbox=new ArrayList<>();draftReferences=null;
         MonogramMediaDrafts.deactivate();
     }
-    @After public void close() throws Exception { MonogramMediaDrafts.deactivate();awaitWrites(); }
+    @After public void close() throws Exception { MonogramMediaDrafts.deactivate();awaitEditorWrites();awaitWrites(); }
+    private void awaitEditorWrites() throws Exception { ((ExecutorService)ReflectionHelpers.getStaticField(MonogramEditorDrafts.class,"WRITER")).submit(()->{}).get(10,TimeUnit.SECONDS); }
     private void awaitWrites() throws Exception { ((ExecutorService)ReflectionHelpers.getStaticField(MonogramMediaDrafts.class,"WRITER")).submit(()->{}).get(10,TimeUnit.SECONDS); }
     private MediaController.PhotoEntry photo(int id,boolean temporary) throws Exception {
         File directory=temporary ? context.getCacheDir() : new File(context.getFilesDir(),"fixture-gallery");directory.mkdirs();
@@ -105,6 +106,74 @@ public class MonogramMediaDraftsTest {
         alice.discard();assertTrue(alice.owner.manifest().getBaseFile().isFile());
         String old=jid;jid="other-"+old;assertEquals(0,restore(MonogramMediaDrafts.bind(0,42,errors::add)).photos.size());jid=old;
         assertEquals(1,restore(MonogramMediaDrafts.bind(0,42,errors::add)).photos.size());
+    }
+    @Test public void unappliedCropSurvivesRestartWithoutChangingAppliedMedia() throws Exception {
+        MediaController.PhotoEntry photo=photo(91,false);photo.cropState=new MediaController.CropState();photo.cropState.cropScale=1.1f;
+        MonogramMediaDrafts.Session session=save(42,Collections.singletonList(photo),false);awaitWrites();
+        MonogramEditorDrafts.Token token=MonogramEditorDrafts.begin(photo,0,42,"crop");assertNotNull(token);
+        MediaController.CropState pending=new MediaController.CropState();pending.cropScale=1.7f;pending.cropRotate=13;
+        MonogramEditorDrafts.crop(token,token.revision(),pending);awaitWrites();
+        ((Map<?,?>)ReflectionHelpers.getStaticField(MonogramMediaDrafts.class,"latest")).clear();
+        ((Map<?,?>)ReflectionHelpers.getStaticField(MonogramEditorDrafts.class,"states")).clear();
+        MediaController.PhotoEntry restored=restore(session).photos.get(0);
+        assertFalse(token.current(token.revision()));
+        assertFalse(MonogramEditorDrafts.previewOnly(restored));
+        assertEquals(1.1f,restored.cropState.cropScale,0);assertFalse(restored.isCropped);
+        MonogramEditorDrafts.Pending editor=MonogramEditorDrafts.get(restored,0,42);assertNotNull(editor);assertEquals(1.7f,editor.crop().cropScale,0);assertEquals(13,editor.crop().cropRotate,0);
+        assertNull(MonogramEditorDrafts.get(restored,0,43));
+        MonogramEditorDrafts.Token replacement=MonogramEditorDrafts.begin(restored,0,42,"crop");assertNotNull(replacement);assertFalse(token.current(token.revision()));
+        MonogramEditorDrafts.clear(restored,0,42);MonogramEditorDrafts.crop(token,token.revision(),pending);awaitWrites();
+        assertNull(MonogramEditorDrafts.get(restored,0,42));assertNull(MonogramEditorDrafts.get(restore(session).photos.get(0),0,42));
+    }
+    @Test public void pendingPaintKeepsStrokeBaselineAndEditableEntitiesSeparate() throws Exception {
+        MediaController.PhotoEntry photo=photo(92,true);MonogramMediaDrafts.Session session=save(42,Collections.singletonList(photo),false);awaitWrites();
+        MonogramEditorDrafts.Token token=MonogramEditorDrafts.begin(photo,0,42,"paint");
+        android.graphics.Bitmap strokes=android.graphics.Bitmap.createBitmap(3,3,android.graphics.Bitmap.Config.ARGB_8888);strokes.setPixel(1,1,0xffff0000);
+        ArrayList<VideoEditedInfo.MediaEntity> entities=new ArrayList<>();VideoEditedInfo.MediaEntity text=new VideoEditedInfo.MediaEntity();text.type=VideoEditedInfo.MediaEntity.TYPE_TEXT;text.text="Editable caption";text.x=.2f;entities.add(text);
+        MonogramEditorDrafts.paint(token,token.revision(),strokes,entities);
+        ((ExecutorService)ReflectionHelpers.getStaticField(MonogramEditorDrafts.class,"WRITER")).submit(()->{}).get(10,TimeUnit.SECONDS);awaitWrites();
+        MediaController.PhotoEntry restored=restore(session).photos.get(0);assertNull(restored.paintPath);assertFalse(restored.isPainted);
+        MonogramEditorDrafts.Pending pending=MonogramEditorDrafts.get(restored,0,42);assertNotNull(pending);assertEquals("paint",pending.mode());
+        android.graphics.Bitmap baseline=android.graphics.BitmapFactory.decodeFile(pending.paintPath());assertEquals(0xffff0000,baseline.getPixel(1,1));baseline.recycle();
+        assertEquals("Editable caption",pending.entities().get(0).text);assertEquals(.2f,pending.entities().get(0).x,0);
+    }
+    @Test public void editorOnlySelectionAndDiscardDoNotResurrectOrReplaceOtherKinds() throws Exception {
+        MediaController.PhotoEntry photo=photo(93,true);MonogramMediaDrafts.Session session=MonogramMediaDrafts.bind(0,42,errors::add);
+        MonogramEditorDrafts.Token token=MonogramEditorDrafts.begin(photo,0,42,"crop");assertNotNull(token);
+        MediaController.CropState crop=new MediaController.CropState();crop.cropScale=2;
+        MonogramEditorDrafts.crop(token,token.revision(),crop);awaitWrites();
+        session.save(Collections.emptyMap(),Collections.emptyList(),"",false,false);awaitWrites();MonogramMediaDrafts.Restored reopened=restore(session);assertEquals(1,reopened.photos.size());assertTrue(MonogramEditorDrafts.previewOnly(reopened.photos.get(0)));
+        MonogramEditorDrafts.clear(photo,0,42);MonogramEditorDrafts.crop(token,token.revision(),crop);awaitWrites();assertFalse(session.owner.manifest().getBaseFile().exists());
+        session.saveFiles("document",Collections.singletonList(photo.path),null,"Keep documents",false,false);awaitWrites();
+        assertNull(MonogramEditorDrafts.begin(photo,0,42,"paint"));assertEquals("document",restore(session).kind);assertEquals("Keep documents",restore(session).caption);
+        session=save(43,Collections.singletonList(photo),true);awaitWrites();assertNull(MonogramEditorDrafts.begin(photo,0,43,"paint"));
+    }
+    @Test public void paintWriterRecyclesSupersededWaitingSnapshots() throws Exception {
+        MediaController.PhotoEntry photo=photo(94,false);save(42,Collections.singletonList(photo),false);awaitWrites();
+        MonogramEditorDrafts.Token token=MonogramEditorDrafts.begin(photo,0,42,"paint");
+        CountDownLatch started=new CountDownLatch(1),release=new CountDownLatch(1);
+        ((ExecutorService)ReflectionHelpers.getStaticField(MonogramEditorDrafts.class,"WRITER")).execute(() -> { started.countDown();try { release.await(); } catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); } });
+        assertTrue(started.await(10,TimeUnit.SECONDS));
+        android.graphics.Bitmap obsolete=android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888),latest=android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888);
+        try {
+            MonogramEditorDrafts.paint(token,token.revision(),obsolete,null);token.changed();MonogramEditorDrafts.paint(token,token.revision(),latest,null);
+            assertTrue(obsolete.isRecycled());assertFalse(latest.isRecycled());
+        } finally { release.countDown(); }
+        awaitEditorWrites();awaitWrites();assertTrue(latest.isRecycled());assertNotNull(MonogramEditorDrafts.get(photo,0,42));
+    }
+    @Test public void supersededPaintCleanupRetainsUncertainAndReferencedFilesUntilSafe() throws Exception {
+        MediaController.PhotoEntry photo=photo(95,false);MonogramMediaDrafts.Session session=save(42,Collections.singletonList(photo),false);awaitWrites();
+        MonogramEditorDrafts.Token token=MonogramEditorDrafts.begin(photo,0,42,"paint");
+        MonogramEditorDrafts.paint(token,token.revision(),android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888),null);awaitEditorWrites();awaitWrites();
+        String first=MonogramEditorDrafts.get(photo,0,42).paintPath();assertTrue(new File(first).isFile());
+        // A failed native reference scan cannot authorize reclamation, even after newer metadata commits.
+        draftReferences=null;token.changed();MonogramEditorDrafts.paint(token,token.revision(),android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888),null);awaitEditorWrites();awaitWrites();
+        String current=MonogramEditorDrafts.get(photo,0,42).paintPath();assertNotEquals(first,current);assertTrue(new File(first).isFile());
+        draftReferences=Collections.singleton(first);MonogramMediaDrafts.collectRetiredEditors(session.owner);awaitWrites();assertTrue(new File(first).isFile());
+        // An unreadable sibling manifest is uncertainty, not proof that a private asset is unused.
+        File sibling=new File(session.owner.directory().getParentFile(),"other-owner");sibling.mkdirs();File broken=new File(sibling,"draft.json");Files.write(broken.toPath(),new byte[]{1});
+        draftReferences=Collections.emptySet();MonogramMediaDrafts.collectRetiredEditors(session.owner);awaitWrites();assertTrue(new File(first).isFile());broken.delete();
+        MonogramMediaDrafts.collectRetiredEditors(session.owner);awaitWrites();assertFalse(new File(first).exists());assertTrue(new File(current).isFile());assertTrue(session.active());
     }
     private TLRPC.Message queued(MonogramMediaDrafts.Session session,MediaController.PhotoEntry photo,int id) {
         SendMessagesHelper.SendingMediaInfo info=new SendMessagesHelper.SendingMediaInfo();session.tag(info,photo);

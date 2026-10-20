@@ -4488,6 +4488,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         if (buttonPressed) {
             return false;
         }
+        if(currentAttachLayout==photoLayout && photoLayout!=null && photoLayout.resumePendingMediaEditor()) return true;
         if (baseFragment instanceof ChatActivity) {
             ChatActivity chatActivity = (ChatActivity) baseFragment;
             TLRPC.Chat chat = chatActivity.getCurrentChat();

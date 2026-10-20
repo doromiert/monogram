@@ -74,7 +74,7 @@ public final class MonogramMediaDrafts {
                         try {
                             if(entry.has("contact")) { restored.contacts.add(MonogramSelectionDrafts.contact(entry.getJSONObject("contact")));continue; }
                             if(entry.has("forward")) { restored.forwards.add(MonogramSelectionDrafts.message(owner.account,entry.getJSONObject("forward")));continue; }
-                            MediaController.PhotoEntry photo=decode(entry);
+                            MediaController.PhotoEntry photo=decode(entry,owner);
                             if(restored.kind.equals("document")) restored.files.add(photo.path);
                             else if(restored.kind.equals("audio")) restored.audios.add(decodeAudio(entry,photo.path));
                             else restored.photos.add(photo);
@@ -98,9 +98,13 @@ public final class MonogramMediaDrafts {
                 state.put("caption",text[0].toString()).put("entities",entities(entities));JSONArray entries=new JSONArray();
                 for(Object key:order) {
                     Object value=photos.get(key);if(!(value instanceof MediaController.PhotoEntry)) throw new IOException("This selection cannot be saved as a media draft");
-                    MediaController.PhotoEntry photo=(MediaController.PhotoEntry)value;JSONObject entry=encode(photo,owner.account).put("capture",capture);
+                    MediaController.PhotoEntry photo=(MediaController.PhotoEntry)value;JSONObject entry=encode(photo,owner).put("capture",capture);
                     if(beginSend) { String token=UUID.randomUUID().toString();itemTokens.put(photo.imageId,token);entry.put("item",token); }
                     entries.put(entry);protect(entry);
+                }
+                JSONObject previous=load(owner);if(previous!=null && !beginSend && previous.optString("kind","photo").equals("photo")) {
+                    JSONArray old=previous.optJSONArray("photos");Set<String> selected=new HashSet<>();for(int i=0;i<entries.length();i++) selected.add(entries.getJSONObject(i).optString("draftId"));
+                    if(old!=null) for(int i=0;i<old.length();i++) { JSONObject pending=old.getJSONObject(i);if(pending.optBoolean("editorOnly") && !selected.contains(pending.optString("draftId"))) entries.put(pending); }
                 }
                 for(int i=0;i<missingEntries.length();i++) entries.put(missingEntries.getJSONObject(i));
                 if(entries.length()==0 && text[0].length()==0) { discard();return; }
@@ -125,7 +129,7 @@ public final class MonogramMediaDrafts {
                 JSONArray entries=new JSONArray();int index=0;
                 for(String path:paths) {
                     MediaController.PhotoEntry nativeEntry=new MediaController.PhotoEntry(0,index++,0,path,0,0,false,0,0,new File(path).length());
-                    JSONObject entry=encode(nativeEntry,owner.account).put("capture",capture).put("originalSource",path).put("account",owner.account);
+                    JSONObject entry=encode(nativeEntry,owner).put("capture",capture).put("originalSource",path).put("account",owner.account);
                     if(audios!=null) { if(audios.get(index-1).messageObject.currentAccount!=owner.account) throw new IOException("Music selection belongs to another account");entry.put("audio",encodeAudio(audios.get(index-1))); }
                     if(beginSend) entry.put("item",UUID.randomUUID().toString());
                     entries.put(entry);protect(entry);
@@ -204,7 +208,7 @@ public final class MonogramMediaDrafts {
             }
             Session picker=active;if(picker!=null && picker.owner.key.equals(owner.key)) picker.close();
             if(previous!=null && !previous.has("batch") && kind.equals(previous.optString("kind","photo"))) { JSONArray old=previous.getJSONArray("photos");for(int i=0;i<old.length();i++) entries.put(old.getJSONObject(i)); }
-            for(MediaController.PhotoEntry photo:inputs) { JSONObject entry=encode(photo,owner.account).put("capture",capture).put("originalUri",photo.path);if(kind.equals("photo")) entry.put("resolveMedia",true);entries.put(entry);protect(entry); }
+            for(MediaController.PhotoEntry photo:inputs) { JSONObject entry=encode(photo,owner).put("capture",capture).put("originalUri",photo.path);if(kind.equals("photo")) entry.put("resolveMedia",true);entries.put(entry);protect(entry); }
             if(entries.length()==0) return false;
             JSONObject state=new JSONObject().put("kind",kind).put("version",1).put("account",owner.account).put("jid",owner.jid).put("peer",owner.peer).put("epoch",owner.epoch).put("photos",entries).put("caption","").put("entities",entities(null));
             if(previous!=null && !previous.has("batch") && kind.equals(previous.optString("kind","photo"))) state.put("caption",previous.optString("caption")).put("entities",previous.optString("entities",entities(null))).put("above",previous.optBoolean("above"));
@@ -309,6 +313,97 @@ public final class MonogramMediaDrafts {
             }
         });
     }
+    // Editor checkpoints mutate only unapplied fields on the latest selection, never applied edits.
+    static boolean ensureEditorSelection(Owner owner,MediaController.PhotoEntry photo) {
+        synchronized(gcFence) { synchronized(revision(owner)) {
+            try {
+                if(!owner.current()) return false;
+                JSONObject state=loadLocked(owner);
+                if(state!=null && (!state.optString("kind","photo").equals("photo") || state.has("batch"))) { editorError(owner,"Finish or discard the existing attachment draft before editing another attachment.");return false; }
+                if(state==null) state=new JSONObject().put("kind","photo").put("version",1).put("account",owner.account).put("jid",owner.jid).put("peer",owner.peer).put("epoch",owner.epoch).put("photos",new JSONArray());
+                JSONArray entries=state.getJSONArray("photos");String id=MonogramEditorDrafts.identity(photo);
+                for(int i=0;i<entries.length();i++) if(id.equals(entries.getJSONObject(i).optString("draftId"))) return true;
+                JSONObject entry=encode(photo,owner).put("editorOnly",true);MonogramEditorDrafts.previewOnly(photo,true);entries.put(entry);protect(entry);return publish(owner,state,null,null);
+            } catch(Exception failed) { FileLog.e("Could not retain editor selection");return false; }
+        } }
+    }
+    static void editorError(Owner owner,String message) { Session session=active;if(session!=null && session.owner.key.equals(owner.key) && owner.current()) report(session.errors,message); }
+    static boolean persistEditor(MonogramEditorDrafts.Token token,long version) {
+        synchronized(gcFence) { synchronized(revision(token.owner)) {
+            try {
+                if(!token.current(version)) return false;JSONObject state=loadLocked(token.owner);if(state==null || state.has("batch")) return false;
+                JSONArray entries=state.getJSONArray("photos");for(int i=0;i<entries.length();i++) { JSONObject entry=entries.getJSONObject(i);
+                    if(!token.id.equals(entry.optString("draftId"))) continue;
+                    JSONObject editor=MonogramEditorDrafts.encoded(token.photo(),token.owner);if(editor==null) return false;entry.put("editor",editor);return publish(token.owner,state,null,null);
+                }
+            } catch(Exception failed) { FileLog.e("Could not retain editor composition"); }
+        } }
+        return false;
+    }
+    private static final Map<String,Set<String>> retiredEditors=new ConcurrentHashMap<>();
+    static void retireEditor(Owner owner,String path) { retireEditor(owner,path,true); }
+    static void retireEditor(Owner owner,String path,boolean committed) {
+        if(path==null || path.isEmpty()) return;
+        try {
+            File file=new File(path),directory=new File(owner.directory(),"editor-assets");
+            if(!file.getCanonicalFile().getParentFile().equals(directory.getCanonicalFile()) || !file.getName().matches("[0-9a-fA-F-]{36}\\.png")) return;
+            retiredEditors.computeIfAbsent(owner.key,key -> ConcurrentHashMap.newKeySet()).add(file.getAbsolutePath());if(committed) collectRetiredEditors(owner);
+        } catch(Exception uncertain) { /* Only helper-created PNGs are eligible. */ }
+    }
+    static void collectRetiredEditors(Owner owner) {
+        final long fence=gcFence.get();
+        MessagesStorage.getInstance(owner.account).getMonogramDraftReferences(references -> {
+            if(references==null) return;
+            WRITER.execute(() -> { synchronized(gcFence) {
+                if(fence!=gcFence.get() || !owner.current()) return;
+                Set<String> candidates=retiredEditors.get(owner.key);if(candidates==null || candidates.isEmpty()) return;
+                try {
+                    ArrayList<JSONObject> manifests=new ArrayList<>();File[] owners=scopeDirectory(owner.account,owner.jid).listFiles();if(owners==null) return;
+                    for(File directory:owners) {
+                        synchronized(revisions.computeIfAbsent(directory.getName(),key -> new AtomicLong())) {
+                            JSONObject memory=latest.get(directory.getName());if(memory!=null) manifests.add(new JSONObject(memory.toString()));
+                            for(String name:Arrays.asList("draft.json","draft.json.bak")) { File file=new File(directory,name);if(!file.exists()) continue;
+                                try(InputStream input=new FileInputStream(file)) { ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] buffer=new byte[8192];int count;
+                                    while((count=input.read(buffer))>=0) { if(bytes.size()+count>16*1024*1024) return;bytes.write(buffer,0,count); }
+                                    manifests.add(new JSONObject(bytes.toString("UTF-8")));
+                                }
+                            }
+                        }
+                    }
+                    for(String path:new ArrayList<>(candidates)) {
+                        boolean used=MonogramEditorDrafts.references(path);
+                        for(String reference:references) if(reference!=null && (reference.equals(owner.key) || reference.contains(path))) used=true;
+                        for(JSONObject state:manifests) if(editorReferences(state,path)) used=true;
+                        if(!used && fence==gcFence.get() && owner.current()) { File file=new File(path);if(!file.exists() || file.delete()) candidates.remove(path); }
+                    }
+                } catch(Exception uncertain) { /* Corrupt/unreadable metadata cannot authorize deleting an editor asset. */ }
+            } });
+        });
+    }
+    static boolean editorReferences(Object value,String path) throws Exception {
+        if(value instanceof JSONObject) { JSONObject object=(JSONObject)value;
+            if(object.has("native") && object.has("fullEntities")) { VideoEditedInfo edit=readEdit(object);if(path.equals(edit.originalPath) || path.equals(edit.paintPath) || path.equals(edit.blurPath)) return true; }
+            Iterator<String> keys=object.keys();while(keys.hasNext()) if(editorReferences(object.get(keys.next()),path)) return true;
+        } else if(value instanceof JSONArray) { JSONArray array=(JSONArray)value;for(int i=0;i<array.length();i++) if(editorReferences(array.get(i),path)) return true;
+        } else if(value instanceof String) { String text=(String)value;if(text.contains(path)) return true;
+            try { if(new String(android.util.Base64.decode(text,android.util.Base64.DEFAULT),StandardCharsets.UTF_8).contains(path)) return true; } catch(IllegalArgumentException notBinary) {}
+        }
+        return false;
+    }
+    static void clearEditor(Owner owner,MediaController.PhotoEntry photo) {
+        synchronized(gcFence) { synchronized(revision(owner)) {
+            try {
+                JSONObject state=loadLocked(owner);if(state==null || state.has("batch")) return;JSONArray old=state.getJSONArray("photos"),kept=new JSONArray();String id=MonogramEditorDrafts.identity(photo);ArrayList<String> retired=new ArrayList<>();
+                for(int i=0;i<old.length();i++) { JSONObject entry=old.getJSONObject(i);if(id.equals(entry.optString("draftId"))) {
+                    JSONObject pending=entry.optJSONObject("editor");if(pending!=null && pending.has("paint")) retired.add(pending.getString("paint"));
+                    entry.remove("editor");if(entry.optBoolean("editorOnly")) continue;
+                }kept.put(entry); }
+                state.put("photos",kept);boolean committed;
+                if(kept.length()==0 && state.optString("caption").isEmpty()) { clear(owner);committed=true; }else committed=publish(owner,state,null,null);
+                for(String path:retired) retireEditor(owner,path,committed);
+            } catch(Exception failed) { FileLog.e("Could not clear editor checkpoint"); }
+        } }
+    }
     private static void deleteTree(File file) { File[] children=file.listFiles();if(children!=null) for(File child:children) deleteTree(child);file.delete(); }
     private static AtomicLong revision(Owner owner) { return revisions.computeIfAbsent(owner.key,key -> new AtomicLong()); }
     private static void publish(Owner owner,JSONObject state,Consumer<String> errors) { publish(owner,state,errors,null); }
@@ -377,7 +472,7 @@ public final class MonogramMediaDrafts {
         SerializedData data=read(in.getString("message"));try { TLRPC.Message message=TLRPC.Message.TLdeserialize(data,data.readInt32(true),true);message.attachPath=path;audio.messageObject=new MessageObject(entry.optInt("account"),message,false,false); } finally { data.cleanup(); }return audio;
     }
     private static final String[] PATHS={"path","thumbPath","imagePath","filterPath","paintPath","croppedPaintPath","fullPaintPath","coverPath"};
-    private static JSONObject encode(MediaController.PhotoEntry photo,int account) throws Exception {
+    private static JSONObject encode(MediaController.PhotoEntry photo,Owner owner) throws Exception {
         JSONObject out=new JSONObject().put("bucket",photo.bucketId).put("id",photo.imageId).put("date",photo.dateTaken).put("duration",photo.duration)
                 .put("width",photo.width).put("height",photo.height).put("size",photo.size).put("orientation",photo.orientation).put("invert",photo.invert).put("video",photo.isVideo)
                 .put("muted",photo.isMuted).put("delete",photo.canDeleteAfter).put("spoiler",photo.hasSpoiler).put("videoOrientation",photo.videoOrientation)
@@ -387,7 +482,7 @@ public final class MonogramMediaDrafts {
         String[] paths={photo.path,photo.thumbPath,photo.imagePath,photo.filterPath,photo.paintPath,photo.croppedPaintPath,photo.fullPaintPath,photo.coverPath};
         for(int i=0;i<PATHS.length;i++) if(paths[i]!=null && !paths[i].isEmpty()) out.put(PATHS[i],paths[i]);
         CharSequence[] text={photo.caption==null ? "" : new android.text.SpannableStringBuilder(photo.caption)};ArrayList<TLRPC.MessageEntity> entities=photo.entities;
-        if(photo.caption instanceof android.text.Spanned) entities=MediaDataController.getInstance(account).getEntities(text,false);
+        if(photo.caption instanceof android.text.Spanned) entities=MediaDataController.getInstance(owner.account).getEntities(text,false);
         out.put("caption",text[0].toString()).put("entities",entities(entities));
         if(photo.editedInfo!=null) out.put("edit",edit(photo.editedInfo));
         if(photo.savedFilterState!=null) out.put("filter",binary(data -> photo.savedFilterState.serializeToStream(data)));
@@ -396,9 +491,10 @@ public final class MonogramMediaDrafts {
         out.put("mediaEntities",mediaEntities(photo.mediaEntities)).put("croppedEntities",mediaEntities(photo.croppedMediaEntities));
         if(photo.stickers!=null) out.put("stickers",binary(data -> { data.writeInt32(photo.stickers.size());for(TLRPC.InputDocument document:photo.stickers) document.serializeToStream(data); }));
         File source=photo.path==null ? null : new File(photo.path);if(source!=null && source.isFile()) out.put("sourceSize",source.length()).put("sourceModified",source.lastModified());
+        out.put("draftId",MonogramEditorDrafts.identity(photo));JSONObject pending=MonogramEditorDrafts.encoded(photo,owner);if(pending!=null) out.put("editor",pending);
         return out;
     }
-    private static MediaController.PhotoEntry decode(JSONObject in) throws Exception {
+    private static MediaController.PhotoEntry decode(JSONObject in,Owner owner) throws Exception {
         String path=in.getString("path");File source=new File(path);if(!source.isFile() || !source.canRead()) throw new IOException("Draft source unavailable");
         if(in.has("sourceSize") && source.length()!=in.getLong("sourceSize") || in.has("sourceModified") && source.lastModified()!=in.getLong("sourceModified")) throw new IOException("Draft source changed");
         MediaController.PhotoEntry photo=new MediaController.PhotoEntry(in.getInt("bucket"),in.getInt("id"),in.getLong("date"),path,in.getInt("orientation"),in.getInt("duration"),in.getBoolean("video"),in.getInt("width"),in.getInt("height"),in.getLong("size"));
@@ -419,12 +515,13 @@ public final class MonogramMediaDrafts {
         photo.mediaEntities=readMediaEntities(in.optString("mediaEntities"));photo.croppedMediaEntities=readMediaEntities(in.optString("croppedEntities"));
         validateEntities(photo.mediaEntities);validateEntities(photo.croppedMediaEntities);
         if(in.has("stickers")) { SerializedData data=read(in.getString("stickers"));try { int count=data.readInt32(true);if(count<0 || count>4096) throw new IOException("Invalid masks");photo.stickers=new ArrayList<>();for(int i=0;i<count;i++) photo.stickers.add(TLRPC.InputDocument.TLdeserialize(data,data.readInt32(true),true)); } finally { data.cleanup(); } }
+        MonogramEditorDrafts.identity(photo,in.optString("draftId"));MonogramEditorDrafts.previewOnly(photo,in.optBoolean("editorOnly"));if(in.has("editor")) MonogramEditorDrafts.restore(photo,owner,in.getJSONObject("editor"));
         return photo;
     }
     private static void requireAsset(String path) throws IOException {
         if(path!=null && !path.isEmpty() && (!new File(path).isFile() || !new File(path).canRead())) throw new IOException("An edited draft asset is missing");
     }
-    private static void validateEntities(ArrayList<VideoEditedInfo.MediaEntity> entities) throws IOException {
+    static void validateEntities(ArrayList<VideoEditedInfo.MediaEntity> entities) throws IOException {
         if(entities==null) return;
         for(VideoEditedInfo.MediaEntity entity:entities) {
             if(entity.type!=VideoEditedInfo.MediaEntity.TYPE_TEXT && entity.text!=null && (entity.text.startsWith("/") || entity.text.startsWith("content:"))) requireAsset(entity.text);
@@ -441,8 +538,8 @@ public final class MonogramMediaDrafts {
     private static SerializedData read(String value) { return new SerializedData(android.util.Base64.decode(value,android.util.Base64.DEFAULT)); }
     private static String entities(ArrayList<TLRPC.MessageEntity> entities) { return binary(data -> { data.writeInt32(entities==null ? 0 : entities.size());if(entities!=null) for(TLRPC.MessageEntity entity:entities) entity.serializeToStream(data); }); }
     private static ArrayList<TLRPC.MessageEntity> readEntities(String value) throws Exception { ArrayList<TLRPC.MessageEntity> result=new ArrayList<>();if(value.isEmpty()) return result;SerializedData data=read(value);try { int count=data.readInt32(true);if(count<0 || count>4096) throw new IOException("Invalid caption entities");for(int i=0;i<count;i++) result.add(TLRPC.MessageEntity.TLdeserialize(data,data.readInt32(true),true));return result; } finally { data.cleanup(); } }
-    private static String mediaEntities(ArrayList<VideoEditedInfo.MediaEntity> entities) { if(entities==null) return "";return binary(data -> { data.writeInt32(entities.size());for(VideoEditedInfo.MediaEntity entity:entities) { entity.serializeTo(data,true);data.writeString(entity.document==null || entity.document.localPath==null ? "" : entity.document.localPath);data.writeInt32(entity.entities.size());for(VideoEditedInfo.EmojiEntity emoji:entity.entities) data.writeString(emoji.documentAbsolutePath==null ? "" : emoji.documentAbsolutePath); } }); }
-    private static ArrayList<VideoEditedInfo.MediaEntity> readMediaEntities(String value) throws Exception { if(value.isEmpty()) return null;SerializedData data=read(value);try { int count=data.readInt32(true);if(count<0 || count>4096) throw new IOException("Invalid paint entities");ArrayList<VideoEditedInfo.MediaEntity> result=new ArrayList<>();for(int i=0;i<count;i++) { VideoEditedInfo.MediaEntity entity=new VideoEditedInfo.MediaEntity(data,true,true);String local=data.readString(true);if(entity.document!=null && !local.isEmpty()) entity.document.localPath=local;int emojis=data.readInt32(true);if(emojis!=entity.entities.size()) throw new IOException("Invalid paint emoji paths");for(VideoEditedInfo.EmojiEntity emoji:entity.entities) { String path=data.readString(true);if(!path.isEmpty()) emoji.documentAbsolutePath=path; } result.add(entity); }return result; } finally { data.cleanup(); } }
+    static String mediaEntities(ArrayList<VideoEditedInfo.MediaEntity> entities) { if(entities==null) return "";return binary(data -> { data.writeInt32(entities.size());for(VideoEditedInfo.MediaEntity entity:entities) { entity.serializeTo(data,true);data.writeString(entity.document==null || entity.document.localPath==null ? "" : entity.document.localPath);data.writeInt32(entity.entities.size());for(VideoEditedInfo.EmojiEntity emoji:entity.entities) data.writeString(emoji.documentAbsolutePath==null ? "" : emoji.documentAbsolutePath); } }); }
+    static ArrayList<VideoEditedInfo.MediaEntity> readMediaEntities(String value) throws Exception { if(value.isEmpty()) return null;SerializedData data=read(value);try { int count=data.readInt32(true);if(count<0 || count>4096) throw new IOException("Invalid paint entities");ArrayList<VideoEditedInfo.MediaEntity> result=new ArrayList<>();for(int i=0;i<count;i++) { VideoEditedInfo.MediaEntity entity=new VideoEditedInfo.MediaEntity(data,true,true);String local=data.readString(true);if(entity.document!=null && !local.isEmpty()) entity.document.localPath=local;int emojis=data.readInt32(true);if(emojis!=entity.entities.size()) throw new IOException("Invalid paint emoji paths");for(VideoEditedInfo.EmojiEntity emoji:entity.entities) { String path=data.readString(true);if(!path.isEmpty()) emoji.documentAbsolutePath=path; } result.add(entity); }return result; } finally { data.cleanup(); } }
     private static void protect(JSONObject entry) { for(String key:PATHS) { String path=entry.optString(key);if(!path.isEmpty()) { protectedPaths.add(path);if(path.startsWith("content:")) try { ApplicationLoader.applicationContext.getContentResolver().takePersistableUriPermission(Uri.parse(path),Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch(SecurityException ignored) {} } } }
     private static void snapshotFiles(Owner owner,JSONObject entry) throws Exception {
         for(String key:PATHS) {
@@ -473,9 +570,10 @@ public final class MonogramMediaDrafts {
             if(info.paintPath!=null) info.paintPath=copy(owner,info.paintPath);if(info.blurPath!=null) info.blurPath=copy(owner,info.blurPath);
             snapshotEntities(owner,info.mediaEntities);entry.put("edit",edit(info));
         }
+        if(entry.has("editor")) MonogramEditorDrafts.snapshot(owner,entry.getJSONObject("editor"));
         for(String key:Arrays.asList("mediaEntities","croppedEntities")) { ArrayList<VideoEditedInfo.MediaEntity> entities=readMediaEntities(entry.optString(key));snapshotEntities(owner,entities);entry.put(key,mediaEntities(entities)); }
     }
-    private static void snapshotEntities(Owner owner,ArrayList<VideoEditedInfo.MediaEntity> entities) throws Exception {
+    static void snapshotEntities(Owner owner,ArrayList<VideoEditedInfo.MediaEntity> entities) throws Exception {
         if(entities==null) return;
         for(VideoEditedInfo.MediaEntity entity:entities) {
             if(entity.type!=VideoEditedInfo.MediaEntity.TYPE_TEXT && entity.text!=null && (entity.text.startsWith("/") || entity.text.startsWith("content:"))) entity.text=copy(owner,entity.text);
@@ -492,7 +590,7 @@ public final class MonogramMediaDrafts {
         if(name!=null && name.indexOf('.')<0) try { String mime=ApplicationLoader.applicationContext.getContentResolver().getType(uri),extension=android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);if(extension!=null) name+="."+extension; } catch(Exception ignored) {}
         return name;
     }
-    private static String copy(Owner owner,String source) throws Exception { return copy(owner,source,UUID.randomUUID().toString()); }
+    static String copy(Owner owner,String source) throws Exception { return copy(owner,source,UUID.randomUUID().toString()); }
     private static String copy(Owner owner,String source,String capture) throws Exception {
         File original=new File(source),assets=new File(owner.directory(),"assets");if(source.startsWith(assets.getAbsolutePath()+File.separator) && original.isFile()) return source;
         if(!assets.isDirectory() && !assets.mkdirs()) throw new IOException("Draft assets unavailable");
