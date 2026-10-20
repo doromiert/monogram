@@ -202,6 +202,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized java.util.Set<Integer> reconcileRetractions(long peer) { return retractions.reconcile(peer); }
     synchronized ArrayList<Integer> receipt(long peer, String wire, boolean displayed) { return receipts.receive(peer, wire, displayed); }
+    synchronized ArrayList<Integer> roomDisplayed(long peer,String wire) { return receipts.receiveRoom(peer,wire); }
     synchronized MonogramRetractions.Target retractionTarget(int id,long peer,long self) { return retractions.target(id,peer,self); }
     synchronized void deleteMessages(java.util.Collection<Integer> ids) {
         SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
@@ -552,6 +553,7 @@ final class MonogramStore extends SQLiteOpenHelper {
                 identity.put("value",roomAuthorScoped(alias.getKey()) ? message.sender+"\n"+alias.getValue() : alias.getValue()); identity.put("namespace",message.encryption.ordinal()); identity.put("message",id);
                 db.insertWithOnConflict("message_ids",null,identity,SQLiteDatabase.CONFLICT_IGNORE);
             }
+            reads.remember(id,message);
             if(message.attachment!=null) {
                 ContentValues attachment=new ContentValues(); attachment.put("message",id); attachment.put("url",message.attachment.wireUrl); attachment.put("caption",message.caption);
                 if(message.sharing!=null) attachment.put("sharing",message.sharing.xml());
@@ -888,7 +890,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static boolean roomAuthorScoped(String kind) {
         // Ciphertext aliases already bind the verified real sender and room, independent of nick changes.
-        return !kind.equals("archive") && !kind.equals("mam") && !kind.equals("legacy-cipher");
+        return !kind.equals("archive") && !kind.equals("mam") && !kind.equals("legacy-cipher") && !kind.equals("room-displayed");
     }
     static final class CorrectionChanges {
         final java.util.Set<Integer> edited = new java.util.HashSet<>(), hidden = new java.util.HashSet<>(), shown = new java.util.HashSet<>();
@@ -1221,7 +1223,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
         decorateLinkPreview(message);
         message.reactions=reactions.snapshot(id,self);
-        if (outgoing && peer > 0 && peer != self) receipts.decorate(message);
+        if (outgoing && peer != 0 && peer != self) receipts.decorate(message);
         if (!outgoing) MonogramReceipts.restoreIncoming(message, message.media_unread ? 0 : 2);
         if (!outgoing && reads.isRead(id)) MonogramReceipts.markLocalRead(message);
         message.flags|=1048576;

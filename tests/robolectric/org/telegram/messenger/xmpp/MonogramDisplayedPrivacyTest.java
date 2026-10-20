@@ -91,6 +91,23 @@ public class MonogramDisplayedPrivacyTest {
         assertTrue(store.reads.queueDisplayed(store.reads.displayedCandidate(peer,read.newlyRead)));
     }
     void flush() { ReflectionHelpers.callInstanceMethod(controller,"flushDisplayedMarkers"); }
+    @Test public void groupsRequireSeparateConsentAndDoNotDiscardUnrelatedDirectReads() throws Exception {
+        assertFalse(controller.groupReadReceiptsEnabled());
+        assertTrue(controller.setReadReceiptsEnabled(true));worker.drain();queueRead();
+        assertFalse(controller.groupReadReceiptsEnabled());
+        assertTrue(controller.setGroupReadReceiptsEnabled(true));worker.drain();
+        assertTrue(controller.readReceiptsEnabled());assertTrue(controller.groupReadReceiptsEnabled());
+        assertEquals(1,store.reads.pendingDisplayed().size());
+        long self=store.peer("alice@example.org"),room=store.room("room@conference.example.org","Alice");
+        int id=store.saveRoom(MessageFixture.roomMarkable("room@conference.example.org","Bob","room-wire",400000,false),self);
+        MonogramReads.ReadResult read=store.reads.throughWithChanges(room,Collections.singleton(id),false);
+        assertTrue(store.reads.queueDisplayed(store.reads.displayedCandidate(room,read.newlyRead)));
+        assertEquals(2,store.reads.pendingDisplayed().size());
+        assertTrue(controller.setGroupReadReceiptsEnabled(false));worker.drain();
+        assertTrue(controller.readReceiptsEnabled());assertFalse(controller.groupReadReceiptsEnabled());
+        assertEquals(peer,store.reads.pendingDisplayed().get(0).peer);
+        preferences.edit().putString("jid","other@example.org").commit();assertFalse(controller.groupReadReceiptsEnabled());
+    }
 
     @Test public void optInIsOffByDefaultScopedToAccountAndClearsOldQueueBeforeEnablingWithoutBackfill() throws Exception {
         assertFalse(controller.readReceiptsEnabled());assertFalse(network.enabled);

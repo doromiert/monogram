@@ -65,7 +65,7 @@ class XmppDisplayedMarkersIntegrationTest {
             assertThrows(IllegalArgumentException.class,() -> alice.sendDisplayed(aliceJid.toString(),id));
             assertThrows(IllegalArgumentException.class,() -> alice.sendDisplayed(bobJid.toString(),""));
             alice.rooms.remember("displayed@conference.localhost");
-            assertThrows(IllegalArgumentException.class,() -> alice.sendDisplayed("displayed@conference.localhost",id));
+            assertFalse(alice.sendDisplayed("displayed@conference.localhost",id),"A remembered room without joined/discovered support cannot disclose reads");
             assertTrue(bobMessages.isEmpty(),"A displayed marker cannot become a chat bubble");
             assertNull(markers.poll(200,TimeUnit.MILLISECONDS),"No duplicate markers");
             assertTrue(aliceReceipts.stream().noneMatch(value -> value.displayed),"Displayed markers cannot generate feedback");

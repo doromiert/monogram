@@ -31,6 +31,16 @@ public final class MessageReceipt {
         if (valid(displayedId)) result.add(new MessageReceipt(peer, displayedId, true));
         return result;
     }
+    /** Called only for a sent carbon whose wrapping stanza was authenticated as our own account. */
+    static MessageReceipt ownDisplayed(Message message,EntityBareJid own) {
+        if(own==null || message.getFrom()==null || !own.equals(message.getFrom().asEntityBareJidIfPossible())
+                || message.getTo()==null || message.getType()!=Message.Type.chat && message.getType()!=Message.Type.normal
+                || message.getBody()!=null || message.getSubject()!=null || message.hasExtension("x","http://jabber.org/protocol/muc#user")) return null;
+        EntityBareJid peer=message.getTo().asEntityBareJidIfPossible();if(peer==null || peer.equals(own)) return null;
+        java.util.List<ExtensionElement> displayed=message.getExtensions("displayed",MARKERS);
+        String id=displayed.size()==1 ? id(displayed.get(0)) : null;
+        return valid(id) ? new MessageReceipt(peer,id,true) : null;
+    }
     static boolean valid(String id) {
         if(id==null || id.trim().isEmpty() || id.length()>4096) return false;
         for(int offset=0;offset<id.length();) {
@@ -57,7 +67,7 @@ public final class MessageReceipt {
         } else if(!(request instanceof org.jivesoftware.smackx.chat_markers.element.ChatMarkersElements.MarkableExtension)) return null;
         return message.getStanzaId();
     }
-    private static String id(ExtensionElement extension) {
+    static String id(ExtensionElement extension) {
         if (extension instanceof DeliveryReceipt) return ((DeliveryReceipt) extension).getId();
         if (extension instanceof DisplayedExtension) return ((DisplayedExtension) extension).getId();
         return extension instanceof StandardExtensionElement ? ((StandardExtensionElement) extension).getAttributeValue("id") : null;

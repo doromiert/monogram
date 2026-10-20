@@ -25,6 +25,21 @@ public class MonogramDisplayedMarkersTest {
     MonogramReads.ReadResult read(Integer... ids) { return store.reads.throughWithChanges(peer,Arrays.asList(ids),false); }
     MonogramReads.DisplayedCandidate candidate(Collection<Integer> ids) { return store.reads.displayedCandidate(peer,ids); }
     void reopen() { store.close();store=new MonogramStore(context,"displayed-markers.db"); }
+    @Test public void roomMarkersUseRoomIdsAndOwnReflectionsCannotCreateFeedback() throws Exception {
+        String address="room@conference.example.org";long room=store.room(address,"Alice");
+        int sent=store.saveRoom(MessageFixture.roomMarkable(address,"Alice","sent",100000,true),self);
+        int incoming=store.saveRoom(MessageFixture.roomMarkable(address,"Bob","incoming",200000,false),self);
+        MonogramReads.ReadResult read=store.reads.throughWithChanges(room,Collections.singleton(incoming),false);
+        MonogramReads.DisplayedCandidate candidate=store.reads.displayedCandidate(room,read.newlyRead);
+        assertNotNull(candidate);assertEquals("incoming",candidate.wire);assertTrue(store.reads.queueDisplayed(candidate));
+        assertEquals(incoming,store.reads.ownMarkerAnchor(room,"incoming"));assertEquals(0,store.reads.ownMarkerAnchor(peer,"incoming"));
+        assertEquals(Collections.singletonList(sent),store.roomDisplayed(room,"incoming"));
+        assertFalse(MonogramReceipts.isUnread(store.getMessage(sent,self)));
+        assertTrue(store.roomDisplayed(room,"sender-incoming").isEmpty());assertTrue(store.roomDisplayed(room,"unknown").isEmpty());
+        assertTrue(store.reads.throughWithChanges(room,Collections.singleton(incoming),false).newlyRead.isEmpty());
+        reopen();assertFalse(MonogramReceipts.isUnread(store.getMessage(sent,self)));assertEquals(candidate.wire,store.reads.pendingDisplayed().get(0).wire);
+        store.reads.clearPendingGroupDisplayed();assertTrue(store.reads.pendingDisplayed().isEmpty());
+    }
     int rows(String table) {
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT count(*) FROM "+table,null)) { assertTrue(c.moveToFirst());return c.getInt(0); }
     }

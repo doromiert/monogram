@@ -38,6 +38,8 @@ public final class XmppSession implements AutoCloseable {
         default void debugMessageXml(boolean outgoing,Message stanza) {}
         default void sentCarbon(EntityBareJid recipient, String id, String body, boolean encrypted) {}
         default void receipt(MessageReceipt receipt) {}
+        default void roomDisplayed(RoomDisplayedMarker marker) {}
+        default void ownDisplayed(EntityBareJid peer,String id) {}
         default void profileChanged(EntityBareJid jid) {}
         default void profileChanged(org.jxmpp.jid.Jid jid) { profileChanged(jid.asEntityBareJidIfPossible()); }
         default void roomMessage(XmppRoomMessage message) {}
@@ -289,6 +291,10 @@ public final class XmppSession implements AutoCloseable {
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
                 receipt(carbon);
+                if(direction==org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.sent) {
+                    MessageReceipt read=MessageReceipt.ownDisplayed(carbon,connection.getUser().asEntityBareJid());
+                    if(read!=null) listener.ownDisplayed(read.peer,read.id);
+                }
                 if (isModern(carbon)) deliverModern(carbon,false);
                 else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false,null,false);
                 else legacyPending(carbon);
@@ -338,16 +344,22 @@ public final class XmppSession implements AutoCloseable {
         catch(Exception invalid) { throw new IllegalArgumentException("Invalid displayed-marker recipient",invalid); }
         if(!address.isEntityBareJid() || !MessageReceipt.valid(id)) throw new IllegalArgumentException("Invalid displayed-marker reference");
         EntityBareJid peer=address.asEntityBareJidOrThrow();
-        if(rooms.known(peer) || connection.getUser()!=null && peer.equals(connection.getUser().asEntityBareJid()))
-            throw new IllegalArgumentException("Displayed markers require a direct contact");
+        boolean room=rooms.known(peer);
+        if(connection.getUser()!=null && peer.equals(connection.getUser().asEntityBareJid()))
+            throw new IllegalArgumentException("Displayed markers require another conversation");
         if(closed || !displayedMarkersEnabled || !connection.isAuthenticated() || connection.getUser()==null) return false;
-        org.jivesoftware.smack.roster.RosterEntry contact=org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).getEntry(peer);
-        if(contact==null || !contact.canSeeMyPresence()) return false;
+        if(!room) {
+            org.jivesoftware.smack.roster.RosterEntry contact=org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).getEntry(peer);
+            if(contact==null || !contact.canSeeMyPresence()) return false;
+        }
         String key=peer+"\n"+id;
         if(displayedMarkersSent.contains(key)) return false;
-        Message marker=new Message(peer,Message.Type.chat);
-        marker.addExtension(new org.jivesoftware.smackx.chat_markers.element.ChatMarkersElements.DisplayedExtension(id));
-        connection.sendStanza(marker);
+        if(room) { if(!rooms.sendDisplayed(peer.toString(),id)) return false; }
+        else {
+            Message marker=new Message(peer,Message.Type.chat);
+            marker.addExtension(new org.jivesoftware.smackx.chat_markers.element.ChatMarkersElements.DisplayedExtension(id));
+            connection.sendStanza(marker);
+        }
         displayedMarkersSent.add(key);
         while(displayedMarkersSent.size()>1024) displayedMarkersSent.remove(displayedMarkersSent.iterator().next());
         return true;

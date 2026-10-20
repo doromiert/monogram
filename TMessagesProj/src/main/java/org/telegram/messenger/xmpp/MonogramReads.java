@@ -24,6 +24,20 @@ final class MonogramReads {
         if(message.outgoing || message.markableId==null || message.correction!=null || message.reactions!=null || message.retraction!=null) return;
         store.getWritableDatabase().execSQL("INSERT OR IGNORE INTO markable_messages(message,wire) VALUES(?,?)",new Object[]{id,message.markableId});
     }
+    void remember(int id,com.negzero.monogram.xmpp.XmppRoomMessage message) {
+        String wire=message.ids.get(com.negzero.monogram.xmpp.RoomDisplayedMarker.LOCAL_ID);
+        if(message.outgoing || wire==null || message.correction!=null || message.reactions!=null || message.retraction!=null) return;
+        store.getWritableDatabase().execSQL("INSERT OR IGNORE INTO markable_messages(message,wire) VALUES(?,?)",new Object[]{id,wire});
+    }
+    int ownMarkerAnchor(long peer,String wire) {
+        if(peer==0 || wire==null || wire.isEmpty()) return 0;
+        synchronized(store) {
+            try(Cursor rows=store.getReadableDatabase().rawQuery("SELECT DISTINCT m.id FROM messages m JOIN markable_messages k ON k.message=m.id WHERE m.peer=? AND m.outgoing=0 AND m.deleted=0 AND k.wire=?",
+                    new String[]{Long.toString(peer),wire})) {
+                if(!rows.moveToFirst()) return 0;int id=rows.getInt(0);return rows.moveToNext() ? 0 : id;
+            }
+        }
+    }
     private static final String THROUGH="(m.time_ms<a.time_ms OR (m.time_ms=a.time_ms AND m.archive_order<a.archive_order) OR (m.time_ms=a.time_ms AND m.archive_order=a.archive_order AND m.id<=a.id))";
     boolean isRead(int message) {
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT 1 FROM local_read_messages WHERE message=?",new String[]{Integer.toString(message)})) {
@@ -90,7 +104,7 @@ final class MonogramReads {
     }
     /** The caller supplies only this explicit read operation's newly read IDs, never cached read state. */
     DisplayedCandidate displayedCandidate(long peer,Collection<Integer> newlyRead) {
-        if(peer<=0 || newlyRead==null || newlyRead.isEmpty()) return null;
+        if(peer==0 || newlyRead==null || newlyRead.isEmpty()) return null;
         synchronized(store) {
             Set<Integer> ids=new LinkedHashSet<>();for(Integer id:newlyRead) if(id!=null && id>0) ids.add(id);
             if(ids.isEmpty()) return null;
@@ -147,6 +161,7 @@ final class MonogramReads {
         }
     }
     void clearPendingDisplayed() { synchronized(store) { store.getWritableDatabase().delete("pending_displayed",null,null); } }
+    void clearPendingGroupDisplayed() { synchronized(store) { store.getWritableDatabase().delete("pending_displayed","peer<0",null); } }
     private static boolean same(DisplayedCandidate first,DisplayedCandidate second) {
         return first!=null && second!=null && first.peer==second.peer && first.id==second.id && first.wire.equals(second.wire) && first.timeMillis==second.timeMillis && first.archiveOrder==second.archiveOrder;
     }

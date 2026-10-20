@@ -14767,7 +14767,13 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markMonogramMessagesAsRead(long dialogId,java.util.Collection<Integer> anchors,java.util.function.Consumer<java.util.Set<Integer>> callback) {
-        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).markLocalRead(dialogId,anchors,anchors.contains(Integer.MAX_VALUE),(read,remaining) -> {
+        markMonogramMessagesAsRead(dialogId,anchors,true,callback);
+    }
+    public void applyMonogramSyncedRead(long dialogId,int anchor) {
+        markMonogramMessagesAsRead(dialogId,java.util.Collections.singleton(anchor),false,null);
+    }
+    private void markMonogramMessagesAsRead(long dialogId,java.util.Collection<Integer> anchors,boolean publish,java.util.function.Consumer<java.util.Set<Integer>> callback) {
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).markLocalRead(dialogId,anchors,anchors.contains(Integer.MAX_VALUE),publish,(read,remaining) -> {
             if(read==null) { if(callback!=null) callback.accept(null);return; }
             dialogs_read_inbox_max.put(dialogId,0);
             TLRPC.Dialog dialog=dialogs_dict.get(dialogId);

@@ -64,16 +64,20 @@ public final class MonogramReceipts {
         }
     }
     ArrayList<Integer> receive(long peer, String wire, boolean displayed) {
+        return receive(peer,wire,displayed,false);
+    }
+    ArrayList<Integer> receiveRoom(long peer,String wire) { return receive(peer,wire,true,true); }
+    private ArrayList<Integer> receive(long peer,String wire,boolean displayed,boolean room) {
         ArrayList<Integer> changed = new ArrayList<>();
-        if (peer <= 0 || wire == null || wire.isEmpty() || wire.length() > 4096) return changed;
+        if ((room ? peer>=0 : peer<=0) || wire == null || wire.isEmpty() || wire.length() > 4096) return changed;
         SQLiteDatabase db = store.getWritableDatabase();
         db.beginTransaction();
         try {
             int anchor; long time, order;
             try (Cursor c = db.rawQuery("SELECT DISTINCT m.id,m.time_ms,m.archive_order FROM message_ids i JOIN messages m ON m.id=i.message "
-                    + "WHERE i.peer=? AND m.peer=i.peer AND i.outgoing=1 AND m.outgoing=1 AND m.deleted=0 "
-                    + "AND ((i.kind='stanza' AND substr(i.value,instr(i.value,char(10))+1)=?) OR (i.kind='legacy-stanza' AND i.value=?))",
-                    new String[]{Long.toString(peer),wire,wire})) {
+                    + "WHERE i.peer=? AND m.peer=i.peer AND m.deleted=0 "
+                    + (room ? "AND i.kind='room-displayed' AND i.value=?" : "AND i.outgoing=1 AND m.outgoing=1 AND ((i.kind='stanza' AND substr(i.value,instr(i.value,char(10))+1)=?) OR (i.kind='legacy-stanza' AND i.value=?))"),
+                    room ? new String[]{Long.toString(peer),wire} : new String[]{Long.toString(peer),wire,wire})) {
                 if (!c.moveToFirst()) return changed;
                 anchor = c.getInt(0); time = c.getLong(1); order = c.getLong(2);
                 if (c.moveToNext()) return changed;

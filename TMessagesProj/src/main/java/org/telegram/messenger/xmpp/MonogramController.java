@@ -130,9 +130,12 @@ public final class MonogramController {
     public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
     public String accountJid() { return preferences.getString("jid", ""); }
     public void markLocalRead(long peer,java.util.Collection<Integer> anchors,boolean all,java.util.function.BiConsumer<java.util.Set<Integer>,Integer> callback) {
+        markLocalRead(peer,anchors,all,true,callback);
+    }
+    public void markLocalRead(long peer,java.util.Collection<Integer> anchors,boolean all,boolean publish,java.util.function.BiConsumer<java.util.Set<Integer>,Integer> callback) {
         final long owner=accountEpoch;
         final long consent=displayedPrivacyEpoch;
-        final boolean share=readReceiptsEnabled();
+        final boolean share=publish && readReceiptsEnabled() && (peer>0 || groupReadReceiptsEnabled());
         ArrayList<Integer> requested=new ArrayList<>(anchors);
         worker.execute(() -> {
             java.util.Set<Integer> read;
@@ -142,7 +145,7 @@ public final class MonogramController {
                 MonogramReads.ReadResult result=store.reads.throughWithChanges(peer,requested,all);
                 if(result==null) { AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return; }
                 read=result.read;
-                candidate=share && peer>0 && peer!=self ? store.reads.displayedCandidate(peer,result.newlyRead) : null;
+                candidate=share && peer!=0 && peer!=self ? store.reads.displayedCandidate(peer,result.newlyRead) : null;
             } catch(Exception failure) {
                 if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram local read: "+failure.getClass().getSimpleName());
                 AndroidUtilities.runOnUIThread(() -> callback.accept(null,-1));return;
@@ -169,6 +172,7 @@ public final class MonogramController {
                 for(MonogramReads.DisplayedCandidate candidate:store.reads.pendingDisplayed()) {
                     if(owner!=accountEpoch || consent!=displayedPrivacyEpoch || session!=expected || !displayedReady || !readReceiptsEnabled()) break;
                     if(!store.reads.isCurrentDisplayed(candidate)) continue;
+                    if(candidate.peer<0 && !groupReadReceiptsEnabled()) continue;
                     if(expected.sendDisplayed(store.jid(candidate.peer),candidate.wire)
                             && owner==accountEpoch && consent==displayedPrivacyEpoch && session==expected && readReceiptsEnabled())
                         store.reads.acknowledgeDisplayed(candidate);
@@ -261,22 +265,31 @@ public final class MonogramController {
     public boolean readReceiptsEnabled() {
         String jid=accountJid();return !jid.isEmpty() && preferences.getBoolean("read-receipts-enabled-"+jid,false);
     }
+    public boolean groupReadReceiptsEnabled() {
+        String jid=accountJid();return !jid.isEmpty() && preferences.getBoolean("group-read-receipts-enabled-"+jid,false);
+    }
     public boolean setReadReceiptsEnabled(boolean enabled) {
+        return setReadReceiptsPreference(enabled,false);
+    }
+    public boolean setGroupReadReceiptsEnabled(boolean enabled) { return setReadReceiptsPreference(enabled,true); }
+    private boolean setReadReceiptsPreference(boolean enabled,boolean group) {
         synchronized(displayedSettingsLock) {
             String jid=accountJid();if(jid.isEmpty()) return false;
-            if(enabled==readReceiptsEnabled() && displayedReady==enabled) return true;
-            if(!preferences.edit().putBoolean("read-receipts-enabled-"+jid,enabled).commit()) return false;
+            boolean ready=readReceiptsEnabled();
+            if(enabled==(group ? groupReadReceiptsEnabled() : ready) && displayedReady==ready) return true;
+            if(!preferences.edit().putBoolean((group ? "group-read-receipts-enabled-" : "read-receipts-enabled-")+jid,enabled).commit()) return false;
+            final boolean desiredReady=group ? ready : enabled;
             final long owner=accountEpoch,consent=++displayedPrivacyEpoch;
             displayedReady=false;
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);
             worker.execute(() -> {
                 if(owner!=accountEpoch) return;
                 try {
-                    store.reads.clearPendingDisplayed();
+                    if(group) store.reads.clearPendingGroupDisplayed();else store.reads.clearPendingDisplayed();
                     synchronized(displayedSettingsLock) {
                         if(owner==accountEpoch && consent==displayedPrivacyEpoch) {
-                            displayedReady=enabled;
-                            XmppSession active=session;if(active!=null) active.setDisplayedMarkersEnabled(enabled);
+                            displayedReady=desiredReady;
+                            XmppSession active=session;if(active!=null) active.setDisplayedMarkersEnabled(desiredReady);
                         }
                     }
                 } catch(Exception failure) {
@@ -465,6 +478,14 @@ public final class MonogramController {
                         });
                     }
                     @Override public void receipt(com.negzero.monogram.xmpp.MessageReceipt receipt) { receivedReceipt(owner,details.jid.toString(),receipt); }
+                    @Override public void roomDisplayed(com.negzero.monogram.xmpp.RoomDisplayedMarker marker) {
+                        receivedRoomDisplayed(owner,details.jid.toString(),marker);
+                    }
+                    @Override public void ownDisplayed(org.jxmpp.jid.EntityBareJid peer,String id) {
+                        worker.execute(() -> {
+                            if(sameAccount(owner,details.jid.toString())) applyOwnDisplayed(owner,details.jid.toString(),store.knownPeer(peer.toString()),id);
+                        });
+                    }
                     @Override public void roomMessage(com.negzero.monogram.xmpp.XmppRoomMessage message) {
                         receivedRoom(owner,details.jid.toString(),message,null);
                     }
@@ -1870,7 +1891,31 @@ public final class MonogramController {
             ArrayList<TLRPC.Message> messages = new ArrayList<>();
             for (int id : store.receipt(peer,receipt.id,receipt.displayed))
                 if (!store.hiddenMessage(id)) messages.add(store.getMessage(id,self));
-            if (messages.isEmpty()) return;
+            publishReceiptMessages(owner,own,peer,messages);
+        }));
+    }
+    private void receivedRoomDisplayed(long owner,String own,com.negzero.monogram.xmpp.RoomDisplayedMarker marker) {
+        worker.execute(() -> {
+            if(!sameAccount(owner,own)) return;
+            long peer=store.knownRoom(marker.room.toString());if(peer==0) return;
+            if(marker.own) {
+                applyOwnDisplayed(owner,own,peer,marker.id);
+                return;
+            }
+            ArrayList<TLRPC.Message> messages=new ArrayList<>();
+            for(int id:store.roomDisplayed(peer,marker.id)) if(!store.hiddenMessage(id)) messages.add(store.getMessage(id,self));
+            publishReceiptMessages(owner,own,peer,messages);
+        });
+    }
+    private void applyOwnDisplayed(long owner,String own,long peer,String wire) {
+        if(peer==0 || !sameAccount(owner,own)) return;
+        int anchor=store.reads.ownMarkerAnchor(peer,wire);if(anchor==0) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            if(sameAccount(owner,own)) MessagesController.getInstance(account).applyMonogramSyncedRead(peer,anchor);
+        });
+    }
+    private void publishReceiptMessages(long owner,String own,long peer,ArrayList<TLRPC.Message> messages) {
+            if (messages.isEmpty() || !sameAccount(owner,own)) return;
             MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
             Utilities.stageQueue.postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
                 if (!sameAccount(owner,own)) return;
@@ -1886,7 +1931,6 @@ public final class MonogramController {
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,peer,objects);
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_READ_DIALOG_MESSAGE);
             }));
-        }));
     }
     private ArrayList<TLRPC.Update> correctionUpdates(MonogramStore.CorrectionChanges changes, int arriving) {
         ArrayList<TLRPC.Update> updates = new ArrayList<>();

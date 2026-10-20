@@ -11555,6 +11555,8 @@
     <string name="MonogramTypingSaveFailed">Could not save the typing preference.</string>
     <string name="MonogramReadReceipts">Send read receipts</string>
     <string name="MonogramReadReceiptsInfo">Let authorized contacts in direct chats see when you have read their messages. Read markers are sent outside OMEMO encryption.</string>
+    <string name="MonogramGroupReadReceipts">Include group read receipts</string>
+    <string name="MonogramGroupReadReceiptsInfo">When Send read receipts is enabled, also let participants in supported groups see when you have read messages. Group read markers are sent outside OMEMO encryption.</string>
     <string name="MonogramReadReceiptsSaveFailed">Could not save the read receipt preference.</string>
     <string name="MonogramJabberAddress">Jabber profile</string>
     <string name="MonogramProfilePublished">Published in your Jabber profile. Other profile fields are preserved when you save.</string>

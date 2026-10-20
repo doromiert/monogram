@@ -9,6 +9,14 @@ public final class MessageFixture {
     public static XmppRoomMessage withRoomAliases(XmppRoomMessage message,java.util.Map<String,String> aliases) {
         return message.withAliases(aliases);
     }
+    public static XmppRoomMessage roomMarkable(String room,String nickname,String id,long time,boolean own) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
+        wire.setFrom(JidCreate.entityFullFrom(room+"/"+nickname));wire.setStanzaId("sender-"+id);wire.setBody(id);
+        wire.addExtension(new org.jivesoftware.smackx.sid.element.StanzaIdElement(id,room));
+        XmppRoomMessage model=RoomDisplayedMarker.tag(XmppRoomMessage.from(wire,JidCreate.entityBareFrom(room),JidCreate.entityBareFrom("alice@example.org"),
+                own ? nickname : "Alice",id,false,true),wire,true);
+        return model.canonical(model.ids,time,false,model.outgoing,model.realSender,model.realSenderVerified,model.occupantId);
+    }
     public static XmppMessage markable(String stanza,String origin,String archive,String body,boolean outgoing,boolean readable,long time,String resource) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom(outgoing ? "bob@example.org" : "alice@example.org"),Message.Type.chat);
         wire.setFrom(JidCreate.entityFullFrom((outgoing ? "alice@example.org" : "bob@example.org")+"/"+resource));
