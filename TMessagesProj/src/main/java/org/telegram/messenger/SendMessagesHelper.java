@@ -2180,16 +2180,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             String rank = null;
             long linkedToGroup = 0;
             TLRPC.Chat chat;
-            long currentPayStars = getMessagesController().getSendPaidMessagesStars(peer);
-            if (currentPayStars <= 0) {
-                currentPayStars = DialogObject.getMessagesStarsPrice(getMessagesController().isUserContactBlocked(peer));
-            }
-            if (currentPayStars != payStars) {
-                AlertsCreator.ensurePaidMessageConfirmation(currentAccount, peer, Math.max(1, messages.size()), newPayStars -> {
-                    sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, newPayStars, monoForumPeerId, suggestionParams);
-                });
-                return 0;
-            }
+
+
             if (DialogObject.isUserDialog(peer)) {
                 TLRPC.User sendToUser = getMessagesController().getUser(peer);
                 if (sendToUser == null) {
@@ -2564,10 +2556,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         newMsg.reply_to = msgObj.messageOwner.reply_to;
                     }
                 }
-                if (payStars > 0) {
-                    newMsg.flags2 |= 64;
-                    newMsg.paid_message_stars = payStars;
-                }
+
                 if (monoForumPeerId != 0) {
                     newMsg.saved_peer_id = getMessagesController().getPeer(monoForumPeerId);
                     newMsg.flags |= 268435456;
@@ -2653,10 +2642,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         req.flags |= 1048576;
                         req.video_timestamp = video_timestamp;
                     }
-                    if (payStars > 0) {
-                        req.flags |= 2097152;
-                        req.allow_paid_stars = req.id.size() * payStars;
-                    }
+
                     if (suggestionParams != null) {
                         req.suggested_post = suggestionParams.toTl();
                         if (replyToTopMsg != null) {
@@ -4276,14 +4262,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (fromId != UserConfig.getInstance(currentAccount).getClientUserId()) {
             request.send_as = getMessagesController().getInputPeer(fromId);
         }
-        long payStars = getMessagesController().getSendPaidMessagesStars(DialogObject.getPeerDialogId(peer));
-        if (payStars <= 0) {
-            payStars = DialogObject.getMessagesStarsPrice(getMessagesController().isUserContactBlocked(DialogObject.getPeerDialogId(peer)));
-        }
-        if (payStars > 0) {
-            request.flags |= 2097152;
-            request.allow_paid_stars = payStars;
-        }
+
+
         final long newTaskId;
         if (taskId == 0) {
             NativeByteBuffer data = null;
@@ -4386,10 +4366,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             caption = "";
         }
 
-        long _payStars = getMessagesController().getSendPaidMessagesStars(peer);
-        if (_payStars <= 0) {
-            _payStars = DialogObject.getMessagesStarsPrice(getMessagesController().isUserContactBlocked(peer));
-        }
+
         final boolean isGroup = params != null && params.containsKey("groupId") && !"0".equalsIgnoreCase(params.get("groupId"));
 
         final boolean isWelcomeMessageTemplate = sendMessageChatArguments.welcomeMessageChatId != 0;
@@ -4406,14 +4383,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 );
         }
 
-        final long payStars = ephemeralReceiverBotId != 0 ? 0 : _payStars;
-        if (payStars != sendMessageParams.payStars && !isGroup && ephemeralReceiverBotId == 0) {
-            AlertsCreator.ensurePaidMessageConfirmation(currentAccount, peer, 1, newPayStars -> {
-                sendMessageParams.payStars = newPayStars;
-                sendMessage(sendMessageParams);
-            });
-            return;
-        }
+
 
         if (replyQuote != null && replyQuote.message != null && replyToMsg != null) {
             replyToMsg = replyQuote.message;
@@ -5146,10 +5116,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             newMsg.send_state = MessageObject.MESSAGE_SEND_STATE_SENDING;
             newMsg.errorAllowedPriceStars = 0;
             newMsg.errorNewPriceStars = 0;
-            if (payStars > 0) {
-                newMsg.flags2 |= 64;
-                newMsg.paid_message_stars = payStars;
-            }
+
 
             long groupId = 0;
             boolean isFinalGroupMedia = false;
@@ -5355,10 +5322,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         reqSend.silent = newMsg.silent;
                         reqSend.peer = sendToPeer;
                         reqSend.random_id = newMsg.random_id;
-                        if (payStars > 0) {
-                            reqSend.flags |= 2097152;
-                            reqSend.allow_paid_stars = payStars;
-                        }
+
                         TLRPC.TL_inputMediaWebPage inputWebPage = new TLRPC.TL_inputMediaWebPage();
                         inputWebPage.url = mediaWebPage.webpage.url;
                         inputWebPage.force_large_media = mediaWebPage.force_large_media;
@@ -5420,10 +5384,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         reqSend.silent = newMsg.silent;
                         reqSend.peer = sendToPeer;
                         reqSend.random_id = newMsg.random_id;
-                        if (payStars > 0) {
-                            reqSend.flags |= 2097152;
-                            reqSend.allow_paid_stars = payStars;
-                        }
+
                         if (replyToStoryItem != null) {
                             reqSend.reply_to = createReplyInput(replyToStoryItem);
                             reqSend.flags |= 1;
@@ -5517,10 +5478,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 reqSend.random_id = newMsg.random_id;
                 reqSend.no_webpage = true;
                 reqSend.rich_message = richMessageToInputRichMessage(newMsg.rich_message, sendMessageParams.richMessageInputUsers);
-                if (payStars > 0) {
-                    reqSend.flags |= 2097152;
-                    reqSend.allow_paid_stars = payStars;
-                }
+
                 if (replyToStoryItem != null) {
                     reqSend.reply_to = createReplyInput(replyToStoryItem);
                     reqSend.flags |= 1;
@@ -5864,10 +5822,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 req.entities = pollSendParams.entities;
                                 req.flags |= 8;
                             }
-                            if (payStars > 0) {
-                                req.flags |= 2097152;
-                                req.allow_paid_stars = payStars;
-                            }
+
 
                             if (newMsg.replyStory != null) {
                                 req.flags |= 1;
@@ -5915,10 +5870,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 req.entities = entities;
                                 req.flags |= 8;
                             }
-                            if (payStars > 0) {
-                                req.flags |= 2097152;
-                                req.allow_paid_stars = payStars;
-                            }
+
 
                             if (newMsg.replyStory != null) {
                                 req.flags |= 1;
@@ -6032,10 +5984,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 inputSingleMedia.flags |= 1;
                             }
                             ((TLRPC.TL_messages_sendMultiMedia) request).multi_media.add(inputSingleMedia);
-                            if (payStars > 0) {
-                                ((TLRPC.TL_messages_sendMultiMedia) request).flags |= 2097152;
-                                ((TLRPC.TL_messages_sendMultiMedia) request).allow_paid_stars += payStars;
-                            }
+
                         } else if (request instanceof TLRPC.TL_messages_sendMedia && ((TLRPC.TL_messages_sendMedia) request).media instanceof TLRPC.TL_inputMediaPaidMedia) {
                             ((TLRPC.TL_inputMediaPaidMedia) ((TLRPC.TL_messages_sendMedia) request).media).extended_media.add(inputMedia);
                         } else if (request instanceof TLRPC.TL_messages_sendMedia && ((TLRPC.TL_messages_sendMedia) request).media instanceof TLRPC.TL_inputMediaPoll) {
@@ -6059,10 +6008,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             request.flags |= 1;
                             request.reply_to = createReplyInput((TLRPC.TL_messageReplyHeader) newMsg.reply_to);
                         }
-                        if (payStars > 0) {
-                            request.flags |= 2097152;
-                            request.allow_paid_stars = payStars;
-                        }
+
                         request.random_id = newMsg.random_id;
                         if (newMsg.from_id != null) {
                             request.send_as = getMessagesController().getInputPeer(newMsg.from_id);
@@ -6481,10 +6427,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         reqSend.id.add(retryMessageObject.messageOwner.fwd_from.channel_post);
                     }
                 }
-                if (payStars > 0) {
-                    reqSend.flags |= 2097152;
-                    reqSend.allow_paid_stars = payStars;
-                }
+
                 applyMonoForumPeerId(reqSend, sendMessageParams.monoForumPeer);
                 performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
             } else if (type == 9) {
@@ -6518,10 +6461,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     reqSend.clear_draft = true;
                     getMediaDataController().cleanDraft(peer, replyToTopMsg != null ? replyToTopMsg.getId() : 0, false);
                 }
-                if (payStars > 0) {
-                    reqSend.flags |= 2097152;
-                    reqSend.allow_paid_stars = payStars;
-                }
+
                 applyMonoForumPeerId(reqSend, sendMessageParams.monoForumPeer);
                 performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
             }

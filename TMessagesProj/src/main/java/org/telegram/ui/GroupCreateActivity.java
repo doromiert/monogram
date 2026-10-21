@@ -44,7 +44,6 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DialogObject;
@@ -70,7 +69,6 @@ import org.telegram.ui.Cells.GraySectionCell;
 import org.telegram.ui.Cells.GroupCreateSectionCell;
 import org.telegram.ui.Cells.GroupCreateUserCell;
 import org.telegram.ui.Cells.TextCell;
-import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -565,10 +563,7 @@ public class GroupCreateActivity extends BaseFragment implements NotificationCen
                 if (ignoreUsers != null && ignoreUsers.indexOfKey(id) >= 0) {
                     return;
                 }
-                if (cell.isBlocked()) {
-                    showPremiumBlockedToast(cell, id);
-                    return;
-                }
+
                 final GroupCreateSpan selectedSpan = selectedContacts.get(id);
                 if (selectedSpan != null) {
                     spansContainer.removeSpan(selectedSpan);
@@ -791,22 +786,7 @@ public class GroupCreateActivity extends BaseFragment implements NotificationCen
         animatorCallButtonsVisible.setValue(show, true);
     }
 
-    private int shiftDp = -4;
-    private void showPremiumBlockedToast(View view, long dialogId) {
-        AndroidUtilities.shakeViewSpring(view, shiftDp = -shiftDp);
-        BotWebViewVibrationEffect.APP_ERROR.vibrate();
-        String username = "";
-        if (dialogId >= 0) {
-            username = UserObject.getUserName(MessagesController.getInstance(currentAccount).getUser(dialogId));
-        }
-        Bulletin bulletin;
-        if (MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-            bulletin = BulletinFactory.of(this).createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBlockedNonPremium, username)));
-        } else {
-            bulletin = BulletinFactory.of(this).createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBlockedNonPremium, username)), getString(R.string.UserBlockedNonPremiumButton), () -> presentFragment(new PremiumPreviewFragment("noncontacts")));
-        }
-        bulletin.show();
-    }
+
 
     private void updateEditTextHint() {
         if (searchField.editText == null) {

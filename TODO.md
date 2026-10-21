@@ -849,3 +849,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [o] Round-video watermark: replace baked TELEGRAM wordmark with shared curved MONOGRAM alpha mask in both encoder paths, retaining plane logo. Source fix complete and obsolete PNG removed; verify new recordings visually at APK delivery. See `MONETIZATION_CHANGES.md`.
 
 - [x] Source cleanup: remove native recent-GIF count eviction and persistence truncation, unused sticker favorite-cap lookup, and favorite-sticker/GIF replacement-limit upgrade bulletins. Migrate addRecentGif callers after deleting its eviction-bulletin flag. Source-only, unshipped; large-library/restart verification pending. See `MONETIZATION_CHANGES.md`.
+
+- [x] Source cleanup: remove Share/Group Create paid-contact rejection/upgrade prompts, share pricing/confirmation, and native SendMessagesHelper contact-fee lookup/reconfirmation/Stars authorization and sent-message price writes. Preserve real send/room permissions and share callbacks. Source-only, unshipped; shared-cell badges/controller requirement queries and inert fee signature fields remain. See `MONETIZATION_CHANGES.md`.
