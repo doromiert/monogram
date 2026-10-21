@@ -223,7 +223,7 @@ public class StarsReactionsSheet extends BottomSheet implements NotificationCent
             }
             peer = sendAs; // myReactor != null ? DialogObject.getPeerDialogId(myReactor.peer_id) : UserConfig.getInstance(currentAccount).getClientUserId();
         } else {
-            peer = StarsController.getInstance(currentAccount).getPaidReactionsDialogId(messageObject);
+            peer = 0;
         }
         lastSelectedPeer = peer == UserObject.ANONYMOUS ? selfId : peer;
 
@@ -547,16 +547,6 @@ public class StarsReactionsSheet extends BottomSheet implements NotificationCent
                             });
                         }
                         return;
-                    } else {
-                        StarsController.PendingPaidReactions pending = starsController.sendPaidReaction(messageObject, chatActivity, totalStars, false, true, peer);
-                        if (pending == null) {
-                            return;
-                        }
-                        AndroidUtilities.runOnUIThread(() -> {
-                            sending = true;
-                            animate3dIcon(pending::apply);
-                            AndroidUtilities.runOnUIThread(this::dismiss, 240);
-                        });
                     }
                 };
 
@@ -769,40 +759,10 @@ public class StarsReactionsSheet extends BottomSheet implements NotificationCent
     }
 
     private boolean sending;
-    private boolean checkedVisiblity = false;
-    private void checkVisibility() {
-        if (checkedVisiblity) return;
-        checkedVisiblity = true;
-        if (messageObject == null) return;
-        final Long currentPeer = messageObject.getMyPaidReactionPeer();
-        if (currentPeer == null || currentPeer != peer) {
-            messageObject.setMyPaidReactionDialogId(peer);
 
-            final StarsController.MessageId key = StarsController.MessageId.from(messageObject);
-            TLRPC.TL_messages_togglePaidReactionPrivacy req = new TLRPC.TL_messages_togglePaidReactionPrivacy();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(key.did);
-            req.msg_id = key.mid;
-            if (peer == 0) {
-                req.privacy = new TL_stars.paidReactionPrivacyDefault();
-            } else if (peer == UserObject.ANONYMOUS) {
-                req.privacy = new TL_stars.paidReactionPrivacyAnonymous();
-            } else {
-                req.privacy = new TL_stars.paidReactionPrivacyPeer();
-                req.privacy.peer = MessagesController.getInstance(currentAccount).getInputPeer(peer);
-            }
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starReactionAnonymousUpdate, key.did, key.mid, peer);
-
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
-                if (res instanceof TLRPC.TL_boolTrue) {
-                    MessagesStorage.getInstance(currentAccount).putMessages(new ArrayList<>(Arrays.asList(messageObject.messageOwner)), true, true, true, 0, 0, 0);
-                }
-            });
-        }
-    }
 
     @Override
     public void dismiss() {
-        if (!sending) checkVisibility();
         super.dismiss();
     }
 

@@ -305,10 +305,8 @@ import org.telegram.ui.Components.voip.CellFlickerDrawable;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Delegates.ChatActivityMemberRequestsDelegate;
 import org.telegram.ui.Gifts.GiftSheet;
-import org.telegram.ui.Stars.StarReactionsOverlay;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 import org.telegram.ui.Stars.MessageSuggestionOfferSheet;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.ui.Stories.StoriesListPlaceProvider;
@@ -3610,11 +3608,7 @@ public class ChatActivity extends BaseFragment implements
             birthdayAssetsFetcher.detach(true);
             birthdayAssetsFetcher = null;
         }
-        if (starReactionsOverlay != null) {
-            starReactionsOverlay.setMessageCell(null);
-            AndroidUtilities.removeFromParent(starReactionsOverlay);
-            starReactionsOverlay = null;
-        }
+
     }
 
     private static class ChatActivityTextSelectionHelper extends TextSelectionHelper.ChatListTextSelectionHelper {
@@ -6925,9 +6919,7 @@ public class ChatActivity extends BaseFragment implements
                 if (chatActivityEnterView != null) {
                     chatActivityEnterView.hideHints();
                 }
-                if (starReactionsOverlay != null) {
-                    starReactionsOverlay.invalidate();
-                }
+
                 if (botDraftHeightController != null) {
                     botDraftHeightController.onScroll();
                 }
@@ -13754,11 +13746,7 @@ public class ChatActivity extends BaseFragment implements
         } else {
             MediaController.getInstance().setTextureView(videoTextureView, null, null, false);
         }
-        if (starReactionsOverlay != null) {
-            starReactionsOverlay.setMessageCell(null);
-            AndroidUtilities.removeFromParent(starReactionsOverlay);
-            starReactionsOverlay = null;
-        }
+
         super.onRemoveFromParent();
     }
 
@@ -29854,9 +29842,7 @@ public class ChatActivity extends BaseFragment implements
 
         flagSecure.attach();
 
-        if (starReactionsOverlay != null) {
-            starReactionsOverlay.bringToFront();
-        }
+
     }
 
     public float getPullingDownOffset() {
@@ -32143,9 +32129,8 @@ public class ChatActivity extends BaseFragment implements
                                     y = actionCell.reactionsLayoutInBubble.y + btn.y + btn.height / 2f;
                                 }
                             }
-                            if (visibleReaction != null && visibleReaction.isStar) {
-                                longpress = true;
-                            }
+                            if (visibleReaction != null && visibleReaction.isStar) return;
+
                             selectReaction(cell, primaryMessage, finalReactionsLayout, v, x, y, visibleReaction,false, longpress, addToRecent, false);
                         }
 
@@ -32834,64 +32819,10 @@ public class ChatActivity extends BaseFragment implements
             AccountFrozenAlert.show(currentAccount);
             return;
         }
-        if (visibleReaction != null && visibleReaction.isStar) {
-            closeMenu();
-            if (cell == null) {
-                cell = findMessageCell(primaryMessage.getId(), true);
-            }
-            if (bigEmoji) {
-                if (cell != null) {
-                    try {
-                        cell.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                    } catch (Exception ignored) {}
-                }
-                ArrayList<TLRPC.MessageReactor> reactors = null;
-                if (primaryMessage != null && primaryMessage.messageOwner != null && primaryMessage.messageOwner.reactions != null) {
-                    reactors = primaryMessage.messageOwner.reactions.top_reactors;
-                }
-                final long chatId = -StarsController.MessageId.from(primaryMessage).did;
-                final TLRPC.ChatFull chatFull = getMessagesController().getChatFull(chatId);
-                if (chatFull != null && !chatFull.paid_reactions_available && !(reactors != null && !reactors.isEmpty())) {
-                    final TLRPC.Chat chat = getMessagesController().getChat(chatId);
-                    BulletinFactory.of(this).createSimpleBulletin(R.raw.stars_topup, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.StarsReactionsDisabled, (chat != null ? chat.title : "")))).show(true);
-                    return;
-                }
-                StarsController.getInstance(currentAccount).commitPaidReaction();
-                final StarsReactionsSheet sheet = new StarsReactionsSheet(getContext(), currentAccount, dialog_id, ChatActivity.this, primaryMessage, reactors, chatFull == null || chatFull.paid_reactions_available, false, 0, themeDelegate);
-                sheet.setMessageCell(ChatActivity.this, primaryMessage.getId(), cell);
-                sheet.show();
-                return;
-            }
-            if (fragmentView != null) {
-                try {
-                    fragmentView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
-                } catch (Exception ignore) {}
-            }
-            final long chatId = -StarsController.MessageId.from(primaryMessage).did;
-            final TLRPC.ChatFull chatFull = getMessagesController().getChatFull(chatId);
-            if (chatFull != null && !chatFull.paid_reactions_available) {
-                final TLRPC.Chat chat = getMessagesController().getChat(chatId);
-                BulletinFactory.of(this).createSimpleBulletin(R.raw.stars_topup, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.StarsReactionsDisabled, (chat != null ? chat.title : "")))).show(true);
-                return;
-            }
-            StarsController.PendingPaidReactions pending = StarsController.getInstance(currentAccount).sendPaidReaction(primaryMessage, ChatActivity.this, +1, true, true, null);
-            if (pending != null && cell instanceof BaseCell) {
-                final StarReactionsOverlay overlay = getStarReactionsOverlay();
-                overlay.setMessageCell((BaseCell) cell);
-                pending.setOverlay(overlay);
-                overlay.show();
-                final int[] loc = new int[2], loc2 = new int[2];
-                cell.getLocationInWindow(loc);
-                overlay.getLocationInWindow(loc2);
-                overlay.tap(loc[0] - loc2[0] + x, loc[1] - loc2[1] + y + (cell instanceof ChatMessageCell ? ((ChatMessageCell) cell).starsPriceTopPadding : 0), false, true);
-            }
-            return;
-        }
+        if (visibleReaction != null && visibleReaction.isStar) return;
 
-        if (getDialogId() == getUserConfig().getClientUserId() && !getUserConfig().isPremium() && primaryMessage.messageOwner != null && (primaryMessage.messageOwner.reactions == null || (primaryMessage.messageOwner.reactions.reactions_as_tags || primaryMessage.messageOwner.reactions.results.isEmpty()))) {
-            new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true).show();
-            return;
-        }
+
+
 
         if (!primaryMessage.hasChosenReaction(visibleReaction) && (!(currentChat == null || ChatObject.isChannelAndNotMegaGroup(currentChat) || ChatObject.canUserDoAction(currentChat, ChatObject.ACTION_SEND_REACTIONS)))) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.e_hand_2, getString(R.string.SendReactionsIsRestrictedInThisChat)).show();
@@ -44372,26 +44303,7 @@ public class ChatActivity extends BaseFragment implements
         return chatListThanosEffect;
     }
 
-    private StarReactionsOverlay starReactionsOverlay;
-    public StarReactionsOverlay getStarReactionsOverlay() {
-        if (starReactionsOverlay == null) {
-            starReactionsOverlay = new StarReactionsOverlay(ChatActivity.this);
-        }
-        FrameLayout starReactionsOverlayParent = getLayoutContainer();
-//        if (LaunchActivity.instance != null) {
-//            starReactionsOverlayParent = LaunchActivity.instance.frameLayout;
-//        }
-        if (starReactionsOverlayParent == null) {
-            return null;
-        }
-        if (starReactionsOverlay.getParent() != starReactionsOverlayParent) {
-            AndroidUtilities.removeFromParent(starReactionsOverlay);
-            starReactionsOverlayParent.addView(starReactionsOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        } else if (starReactionsOverlayParent.indexOfChild(starReactionsOverlay) < starReactionsOverlayParent.indexOfChild(fragmentView)) {
-            starReactionsOverlay.bringToFront();
-        }
-        return starReactionsOverlay;
-    }
+
 
     private void checkGroupMessagesOrder() {
         if (!reversed) return;
@@ -45158,12 +45070,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void gotChatInfo() {
-        if (chatInfo != null && chatInfo.paid_reactions_available) {
-            getMessagesController().getPaidReactionsDialogId();
-            if (!StarsController.getInstance(currentAccount).balanceAvailable()) {
-                StarsController.getInstance(currentAccount).getBalance();
-            }
-        }
+
         if (chatInfo != null && chatInfo.bot_verification != null) {
             updateTopPanel(true);
         }
@@ -45211,24 +45118,9 @@ public class ChatActivity extends BaseFragment implements
             return;
         }
         if (messageObject == null) return;
-        if (getUserConfig().getClientUserId() == getDialogId() && messageObject.areTags() && !getUserConfig().isPremium()) {
-            if (longpress) return;
-            new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true).show();
-            return;
-        }
-        if (longpress && reaction.reaction instanceof TLRPC.TL_reactionPaid) {
-            cell.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-            ArrayList<TLRPC.MessageReactor> reactors = null;
-            if (messageObject.messageOwner != null && messageObject.messageOwner.reactions != null) {
-                reactors = messageObject.messageOwner.reactions.top_reactors;
-            }
-            StarsController.getInstance(currentAccount).commitPaidReaction();
-            TLRPC.ChatFull chatFull = getMessagesController().getChatFull(-StarsController.MessageId.from(messageObject).did);
-            final StarsReactionsSheet sheet = new StarsReactionsSheet(getContext(), currentAccount, dialog_id, ChatActivity.this, messageObject, reactors, chatFull == null || chatFull.paid_reactions_available, false, 0, themeDelegate);
-            sheet.setMessageCell(ChatActivity.this, messageObject.getId(), findMessageCell(messageObject.getId(), true));
-            sheet.show();
-            return;
-        }
+
+        if (reaction.reaction instanceof TLRPC.TL_reactionPaid) return;
+
         if (longpress || messageObject.areTags() && (isInsideContainer || searchingReaction != null && searchingReaction.isSame(reaction.reaction))) {
             cell.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             FrameLayout scrimPopupContainerLayout = new FrameLayout(getParentActivity()) {

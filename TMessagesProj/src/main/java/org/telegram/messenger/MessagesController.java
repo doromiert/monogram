@@ -690,8 +690,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public int starrefMinCommissionPermille;
     public int starrefMaxCommissionPermille;
     public int botVerificationDescriptionLengthLimit;
-    public long paidReactionsPrivacyTime;
-    public Long paidReactionsPrivacy;
     public int savedDialogsPinnedLimitDefault;
     public int savedDialogsPinnedLimitPremium;
     public boolean savedViewAsChats;
@@ -1814,7 +1812,6 @@ public class MessagesController extends BaseController implements NotificationCe
         starrefMinCommissionPermille = mainPreferences.getInt("starrefMinCommissionPermille", 1);
         starrefMaxCommissionPermille = mainPreferences.getInt("starrefMaxCommissionPermille", 400);
         botVerificationDescriptionLengthLimit = mainPreferences.getInt("botVerificationDescriptionLengthLimit", 70);
-        paidReactionsPrivacyTime = mainPreferences.getLong("paidReactionsAnonymousTime", 0);
         tonStakeddiceStakeAmountMin = mainPreferences.getLong("tonStakeddiceStakeAmountMin", 100000000L);
         tonStakeddiceStakeAmountMax = mainPreferences.getLong("tonStakeddiceStakeAmountMax", 50000000000L);
         tonStakediceStakeSuggestedAmounts = Arrays.stream(mainPreferences.getString("tonStakediceStakeSuggestedAmounts", "100000000,1000000000,2000000000,5000000000,10000000000,20000000000").split(",")).mapToLong(Long::parseLong).toArray();
@@ -1825,15 +1822,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 .toArray(int[][]::new);
         config.load(mainPreferences);
 
-        final boolean paidReactionsActual = (System.currentTimeMillis() - paidReactionsPrivacyTime) < 1000 * 60 * 60 * 2;
-        paidReactionsPrivacy = null;
-        if ((System.currentTimeMillis() - paidReactionsPrivacyTime) < 1000 * 60 * 60 * 2) {
-            if (mainPreferences.contains("paidReactionsDialogId")) {
-                paidReactionsPrivacy = mainPreferences.getLong("paidReactionsDialogId", 0);
-            } else {
-                paidReactionsPrivacy = mainPreferences.getBoolean("paidReactionsAnonymous", false) ? UserObject.ANONYMOUS : 0;
-            }
-        }
         scheduleTranscriptionUpdate();
         BuildVars.GOOGLE_AUTH_CLIENT_ID = mainPreferences.getString("googleAuthClientId", BuildVars.GOOGLE_AUTH_CLIENT_ID);
         if (mainPreferences.contains("dcDomainName2")) {
@@ -20725,11 +20713,6 @@ public class MessagesController extends BaseController implements NotificationCe
                     } else if (baseUpdate instanceof TL_update.TL_updateMessageReactions) {
                         TL_update.TL_updateMessageReactions update = (TL_update.TL_updateMessageReactions) baseUpdate;
                         long dialogId = MessageObject.getPeerId(update.peer);
-                        long pendingPaid = StarsController.getInstance(currentAccount).getPendingPaidReactions(dialogId, update.msg_id);
-                        if (pendingPaid != 0) {
-                            final StarsController starsController = StarsController.getInstance(currentAccount);
-                            MessageObject.addPaidReactions(currentAccount, update.reactions, (int) pendingPaid, starsController.getPaidReactionsDialogId(StarsController.MessageId.from(dialogId, update.msg_id), update.reactions), true);
-                        }
                         getNotificationCenter().postNotificationName(NotificationCenter.didUpdateReactions, dialogId, update.msg_id, update.reactions);
                     } else if (baseUpdate instanceof TL_update.TL_updateMessageExtendedMedia) {
                         TL_update.TL_updateMessageExtendedMedia extendedMedia = (TL_update.TL_updateMessageExtendedMedia) baseUpdate;
@@ -20875,13 +20858,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         getSavedMessagesController().processUpdate(baseUpdate);
                     } else if (QuickRepliesController.getInstance(currentAccount).processUpdate(baseUpdate, null, 0)) {
 
-                    } else if (baseUpdate instanceof TL_update.TL_updatePaidReactionPrivacy) {
-                        TL_update.TL_updatePaidReactionPrivacy upd = (TL_update.TL_updatePaidReactionPrivacy) baseUpdate;
-                        mainPreferences.edit()
-                            .putLong("paidReactionsAnonymousTime", paidReactionsPrivacyTime = System.currentTimeMillis())
-                            .putLong("paidReactionsDialogId", paidReactionsPrivacy = upd.privacy.getDialogId())
-                            .apply();
-                        loadingArePaidReactionsAnonymous = false;
                     } else if (baseUpdate instanceof TL_update.TL_updateGroupCallChainBlocks) {
                         final VoIPService service = VoIPService.getSharedInstance();
                         if (service != null && service.conference != null) {
@@ -24747,14 +24723,7 @@ public class MessagesController extends BaseController implements NotificationCe
         return ignoreRestrictionReasons == null || ignoreRestrictionReasons.contains("sensitive");
     }
 
-    private boolean loadingArePaidReactionsAnonymous;
-    public Long getPaidReactionsDialogId() {
-        if (paidReactionsPrivacy == null && !loadingArePaidReactionsAnonymous) {
-            loadingArePaidReactionsAnonymous = true;
-            getConnectionsManager().sendRequest(new TLRPC.TL_messages_getPaidReactionPrivacy(), null);
-        }
-        return paidReactionsPrivacy;
-    }
+
 
     public boolean shouldShowMoveCaptionHint() {
         return getMainSettings().getInt("movecaptionhint", 0) < 24 || BuildVars.DEBUG_PRIVATE_VERSION;
@@ -24764,11 +24733,24 @@ public class MessagesController extends BaseController implements NotificationCe
         getMainSettings().edit().putInt("movecaptionhint", getMainSettings().getInt("movecaptionhint", 0) + 1).apply();
     }
 
-    private final HashSet<StarsController.MessageId> reportedMessageDelivery = new HashSet<>();
-    private final HashSet<Pair<StarsController.MessageId, AtomicBoolean>> pendingReportMessageDelivery = new HashSet<>();
+    private static final class DeliveryMessageId {
+        final long did;
+        final int mid;
+        private DeliveryMessageId(long did, int mid) { this.did = did; this.mid = mid; }
+        static DeliveryMessageId from(long did, int mid) { return new DeliveryMessageId(did, mid); }
+        @Override public int hashCode() { return java.util.Objects.hash(did, mid); }
+        @Override public boolean equals(Object other) {
+            if (!(other instanceof DeliveryMessageId)) return false;
+            DeliveryMessageId id = (DeliveryMessageId) other;
+            return did == id.did && mid == id.mid;
+        }
+    }
+
+    private final HashSet<DeliveryMessageId> reportedMessageDelivery = new HashSet<>();
+    private final HashSet<Pair<DeliveryMessageId, AtomicBoolean>> pendingReportMessageDelivery = new HashSet<>();
     private final Runnable sendReportMessageDeliver = () -> {
         final LongSparseArray<Pair<HashSet<Integer>, AtomicBoolean>> arr = new LongSparseArray<>();
-        for (Pair<StarsController.MessageId, AtomicBoolean> id : pendingReportMessageDelivery) {
+        for (Pair<DeliveryMessageId, AtomicBoolean> id : pendingReportMessageDelivery) {
             Pair<HashSet<Integer>, AtomicBoolean> darr = arr.get(id.first.did);
             if (darr == null) {
                 arr.put(id.first.did, darr = new Pair<>(new HashSet<>(), id.second));
@@ -24794,7 +24776,7 @@ public class MessagesController extends BaseController implements NotificationCe
     };
 
     public void reportMessageDelivery(long dialogId, int messageId, boolean push) {
-        final StarsController.MessageId key = StarsController.MessageId.from(dialogId, messageId);
+        final DeliveryMessageId key = DeliveryMessageId.from(dialogId, messageId);
         if (reportedMessageDelivery.contains(key)) return;
         reportedMessageDelivery.add(key);
         pendingReportMessageDelivery.add(new Pair<>(key, new AtomicBoolean(push)));
