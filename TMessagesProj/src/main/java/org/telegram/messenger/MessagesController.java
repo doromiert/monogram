@@ -917,7 +917,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int getCaptionMaxLengthLimit() {
-        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(captionLengthLimitPremium,captionLengthLimitDefault) : captionLengthLimitDefault;
+        return Math.max(captionLengthLimitPremium, captionLengthLimitDefault);
     }
 
     public int getAboutLimit() {

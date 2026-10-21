@@ -3502,46 +3502,10 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
 
             @Override
             public void onAnimatedEmojiUnlockClick() {
-//                BaseFragment fragment = parentFragment;
-//                if (fragment == null) {
-//                    fragment = new BaseFragment() {
-//                        @Override
-//                        public int getCurrentAccount() {
-//                            return currentAccount;
-//                        }
-//
-//                        @Override
-//                        public Context getContext() {
-//                            return EditTextEmoji.this.getContext();
-//                        }
-//
-//                        @Override
-//                        public Activity getParentActivity() {
-//                            Context context = getContext();
-//                            while (context instanceof ContextWrapper) {
-//                                if (context instanceof Activity) {
-//                                    return (Activity) context;
-//                                }
-//                                context = ((ContextWrapper) context).getBaseContext();
-//                            }
-//                            return null;
-//                        }
-//
-//                        @Override
-//                        public Dialog getVisibleDialog() {
-//                            return new Dialog(getContext()) {
-//                                @Override
-//                                public void dismiss() {
-//                                    hidePopup(false);
-//                                    closeParent();
-//                                }
-//                            };
-//                        }
-//                    };
-//                    new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false).show();
-//                } else {
-//                    fragment.showDialog(new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
-//                }
+                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if (fragment != null) {
+                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
+                }
             }
 
             @Override

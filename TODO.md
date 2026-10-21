@@ -792,3 +792,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 
 - [x] Source cleanup: free rich-draft sends, emoji/sticker selection/status and pack layouts; remove reaction/effect/pack locks in SelectAnimatedEmojiDialog and upgrade UI in StickersAlert. Delete paid sticker filtering and migrate all callers. Preserve emoji import validation; unbuilt/unshipped. See MONETIZATION_CHANGES.md.
 - [ ] Continue emoji/media monetization cleanup: obsolete EmojiView header/upgrade widgets, editor/caption/paint purchase callbacks, catalogue-only paths and remaining subscription checks outside the edited components.
+
+- [x] Source cleanup: free configured larger captions and story-editor link/reaction controls; replace media/caption upgrade flows with neutral limit feedback and native pack settings. Remove viewer ad menu/caption/button and attachment checklist entry/creation path. See MONETIZATION_CHANGES.md; no build/tests/install this pass.

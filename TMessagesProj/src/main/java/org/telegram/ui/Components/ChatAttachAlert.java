@@ -131,7 +131,6 @@ import org.telegram.ui.BasePermissionsActivity;
 import org.telegram.ui.Business.ChatAttachAlertQuickRepliesLayout;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.ChatActivity;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.BlurredBackgroundWithFadeDrawable;
 import org.telegram.ui.Components.blur3.DownscaleScrollableNoiseSuppressor;
@@ -156,7 +155,6 @@ import org.telegram.ui.PassportActivity;
 import org.telegram.ui.PhotoPickerActivity;
 import org.telegram.ui.PhotoPickerSearchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.StoryEntry;
@@ -1116,7 +1114,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     private final boolean forceDarkTheme;
     private final boolean showingFromDialog;
 
-    protected boolean captionLimitBulletinShown = false;
 
     private abstract static class AttachButtonBase extends FrameLayout {
         protected GlassTabView glassTabView;
@@ -2810,22 +2807,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     }
                 } else if (num == 11) {
                     openQuickRepliesLayout();
-                } else if (num == 12) {
-                    if (!todoEnabled && checkCanRemoveRestrictionsByBoosts()) {
-                        return;
-                    }
-                    if (!todoEnabled) {
-                        restrictedLayout = new ChatAttachRestrictedLayout(9, this, getContext(), resourcesProvider);
-                        showLayout(restrictedLayout);
-                    } else {
-                        if (todoLayout == null) {
-                            layouts[1] = todoLayout = new ChatAttachAlertPollLayout(this, getContext(), true, resourcesProvider, null);
-                            todoLayout.setDelegate((poll, caption, media, params, notify, scheduleDate, payStars) ->
-                                ((ChatActivity) baseFragment).sendTodo((TLRPC.TL_messageMediaToDo) poll, notify, scheduleDate, payStars)
-                            );
-                        }
-                        showLayout(todoLayout);
-                    }
                 } else if (num == LAYOUT_TYPE_STICKERS) {
                     if (stickersLayout == null) {
                         layouts[8] = stickersLayout = new ChatAttachAlertEmojiLayout(this, getContext(), resourcesProvider, true);
@@ -3409,10 +3390,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     writeButton.invalidate();
                 }
 
-                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codepointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codepointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
-                    captionLimitBulletinShown = true;
-                    showCaptionLimitBulletin(parentFragment);
-                }
+
 
                 if (captionAbove) {
                     showAiButton(topCommentTextView.getEditText().getLineCount() > 2 && !TextUtils.isEmpty(topCommentTextView.getText().toString().trim()));
@@ -3591,9 +3569,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     try {
                         writeButton.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
                     } catch (Exception ignored) {}
-                    if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codepointCount) {
-                        showCaptionLimitBulletin(parentFragment);
-                    }
+
+                    showCaptionLimitBulletin(parentFragment);
+
                     if (messageSendPreview != null) {
                         messageSendPreview.dismiss(false);
                         messageSendPreview = null;
@@ -4199,9 +4177,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 writeButton.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
             } catch (Exception ignored) {}
 
-            if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codepointCount) {
-                showCaptionLimitBulletin(baseFragment);
-            }
+
+            showCaptionLimitBulletin(baseFragment);
+
             return;
         }
         if (editingMessageObject == null && baseFragment instanceof ChatActivity && ((ChatActivity) baseFragment).isInScheduleMode()) {
@@ -4266,16 +4244,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     private void showCaptionLimitBulletin(BaseFragment parentFragment) {
-        if (!(parentFragment instanceof ChatActivity) || !ChatObject.isChannelAndNotMegaGroup(((ChatActivity) parentFragment).getCurrentChat())) {
-            return;
-        }
-
-        BulletinFactory.of(sizeNotifierFrameLayout, resourcesProvider).createCaptionLimitBulletin(MessagesController.getInstance(currentAccount).captionLengthLimitPremium, () -> {
-            dismiss(true);
-            if (parentFragment != null) {
-                parentFragment.presentFragment(new PremiumPreviewFragment("caption_limit"));
-            }
-        }).show();
+        BulletinFactory.of(sizeNotifierFrameLayout, resourcesProvider)
+                .createCaptionLimitBulletin(MessagesController.getInstance(currentAccount).getCaptionMaxLengthLimit())
+                .show();
     }
 
     @Override
@@ -4531,10 +4502,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             currentAttachLayout.scrollToTop();
             return;
         }
-        if (layout == todoLayout && !UserConfig.getInstance(currentAccount).isPremium()) {
-            new PremiumFeatureBottomSheet(baseFragment, PremiumPreviewFragment.PREMIUM_FEATURE_TODO, false).show();
-            return;
-        }
+
 
         saveMediaDraftNow(false);
         animatorToggleCaptionSupported.setValue(newId == LAYOUT_TYPE_PHOTO, animated);
@@ -6572,7 +6540,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         private int documentButton;
         private int musicButton;
         private int pollButton;
-        private int todoButton;
         private int contactButton;
         private int quickRepliesButton;
         private int locationButton;
@@ -6612,7 +6579,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     AttachButton attachButton = (AttachButton) holder.itemView;
                     attachButton.glassTabView.onPreBind();
                     boolean err = false;
-                    boolean needPremium = false;
                     if (position == galleryButton) {
                         attachButton.setTextAndIcon(1, getString(R.string.ChatGallery), GlassTabView.TabAnimation.GALLERY);
                         attachButton.setTag(1);
@@ -6638,11 +6604,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     } else if (position == quickRepliesButton) {
                         attachButton.setTextAndIcon(11, getString(R.string.AttachQuickReplies), GlassTabView.TabAnimation.REPLIES);
                         attachButton.setTag(11);
-                        needPremium = true;
-                    } else if (position == todoButton) {
-                        attachButton.setTextAndIcon(12, getString(R.string.Todo), GlassTabView.TabAnimation.CHECKLIST);
-                        attachButton.setTag(12);
-                        needPremium = true;
                     } else if (position == stickerButton) {
                         attachButton.setTextAndIcon(LAYOUT_TYPE_STICKERS, getString(R.string.ChatSticker), GlassTabView.TabAnimation.STICKER);
                         attachButton.setTag(LAYOUT_TYPE_STICKERS);
@@ -6655,10 +6616,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     } else if (position == richButton) {
                         attachButton.setTextAndIcon(LAYOUT_TYPE_RICH, getString(R.string.AttachArticle), GlassTabView.TabAnimation.ARTICLE);
                         attachButton.setTag(LAYOUT_TYPE_RICH);
-                        needPremium = !MessagesController.getInstance(currentAccount).storyEntitiesAllowed();
                     }
                     attachButton.glassTabView.setCounter(err ? "!" : null, err, false);
-                    attachButton.glassTabView.setPremiumBadge(needPremium && !UserConfig.getInstance(currentAccount).isPremium());
+                    attachButton.glassTabView.setPremiumBadge(false);
                     break;
                 case VIEW_TYPE_BOT_BUTTON:
                     AttachBotButton child = (AttachBotButton) holder.itemView;
@@ -6704,7 +6664,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             documentButton = -1;
             musicButton = -1;
             pollButton = -1;
-            todoButton = -1;
             contactButton = -1;
             quickRepliesButton = -1;
             locationButton = -1;
@@ -6778,9 +6737,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     contactButton = buttonsCount++;
                 }
                 musicButton = buttonsCount++;
-                if (todoEnabled) {
-                    todoButton = buttonsCount++;
-                }
+
                 if (baseFragment instanceof ChatActivity && ((ChatActivity) baseFragment).getChatMode() == 0 && user != null && !paidUser && !user.bot && QuickRepliesController.getInstance(currentAccount).hasReplies()) {
                     quickRepliesButton = buttonsCount++;
                 }
@@ -6980,7 +6937,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             AndroidUtilities.setLightStatusBar(this, baseFragment.isLightStatusBar());
         }
         saveMediaDraftNow(false);
-        captionLimitBulletinShown = false;
         super.dismiss();
         if(mediaDraft!=null) mediaDraft.pickerClosed();
         allowPassConfirmationAlert = false;

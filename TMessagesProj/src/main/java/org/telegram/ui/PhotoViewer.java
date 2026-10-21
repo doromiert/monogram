@@ -74,7 +74,6 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.LineHeightSpan;
 import android.text.style.URLSpan;
 import android.text.util.Linkify;
 import android.transition.ChangeBounds;
@@ -179,7 +178,6 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.MessageSuggestionParams;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
@@ -278,8 +276,6 @@ import org.telegram.ui.Components.PhotoViewerWebView;
 import org.telegram.ui.Components.PickerBottomLayoutViewer;
 import org.telegram.ui.Components.PipVideoOverlay;
 import org.telegram.ui.Components.PlayPauseDrawable;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.QuoteSpan;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RadialProgressView;
@@ -296,7 +292,6 @@ import org.telegram.ui.Components.TextViewSwitcher;
 import org.telegram.ui.Components.ThanosEffect;
 import org.telegram.ui.Components.Tooltip;
 import org.telegram.ui.Components.TranslateAlert2;
-import org.telegram.ui.Components.TypefaceSpan;
 import org.telegram.ui.Components.URLSpanReplacement;
 import org.telegram.ui.Components.UndoView;
 import org.telegram.ui.Components.VideoCompressButton;
@@ -319,7 +314,6 @@ import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.spoilers.SpoilersTextView;
 import org.telegram.ui.Components.voip.AnimatedFileInfo;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.ui.Stories.recorder.CaptionContainerView;
 import org.telegram.ui.Stories.recorder.HintView2;
@@ -984,8 +978,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private boolean maskPaintViewShuttingDown;
     private AlertDialog visibleDialog;
     private CaptionTextViewSwitcher captionTextViewSwitcher;
-    private FrameLayout adButtonView;
-    private TextView adButtonTextView;
     private CaptionScrollView captionScrollView;
     private CaptionPhotoViewer captionEdit;
     private CaptionPhotoViewer topCaptionEdit;
@@ -5849,9 +5841,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         menuItem = menu.addItem(0, R.drawable.media_more);
         menuItem.setContentDescription(getString(R.string.AccDescrMoreOptions));
         menuItem.setOnClickListener(v -> {
-            if (currentMessageObject != null && currentMessageObject.isSponsored()) {
-                openAdsMenu();
-            } else if (actionBar.actionBarMenuOnItemClick.canOpenMenu()) {
+            if (actionBar.actionBarMenuOnItemClick.canOpenMenu()) {
                 menuItem.toggleSubMenu();
             }
         });
@@ -7383,9 +7373,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (captionEdit.isCaptionOverLimit()) {
                 AndroidUtilities.shakeViewSpring(captionEdit.limitTextView, shiftDp = -shiftDp);
                 BotWebViewVibrationEffect.APP_ERROR.vibrate();
-                if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > captionEdit.getCodePointCount()) {
-                    showCaptionLimitBulletin(containerView);
-                }
+                showCaptionLimitBulletin(containerView);
                 return;
             }
             if (parentChatActivity != null && parentChatActivity.isInScheduleMode() && !parentChatActivity.isEditingMessageMedia()) {
@@ -7900,20 +7888,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private Bulletin limitBulletin;
     public boolean showCaptionLimitBulletin(FrameLayout view) {
-        if (!(parentFragment instanceof ChatActivity) || !ChatObject.isChannelAndNotMegaGroup(((ChatActivity) parentFragment).getCurrentChat())) {
-            return false;
-        }
-        limitBulletin = BulletinFactory.of(view, resourcesProvider).createCaptionLimitBulletin(MessagesController.getInstance(currentAccount).captionLengthLimitPremium, ()->{
-            closePhoto(false, false);
-            if (parentAlert != null) {
-                parentAlert.dismiss(true);
-            }
-            if (parentFragment != null) {
-                parentFragment.presentFragment(new PremiumPreviewFragment("caption_limit"));
-            }
-        }).setOnHideListener(() -> {
-            limitBulletin = null;
-        }).show();
+        limitBulletin = BulletinFactory.of(view, resourcesProvider)
+                .createCaptionLimitBulletin(MessagesController.getInstance(currentAccount).getCaptionMaxLengthLimit())
+                .setOnHideListener(() -> limitBulletin = null).show();
         return true;
     }
 
@@ -16144,17 +16121,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 captionContainer.addView(captionTextViewSwitcher, LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT);
                 videoPreviewFrame.bringToFront();
             }
-            if (messageObject != null && messageObject.isSponsored()) {
-                createAdButtonView();
-                AndroidUtilities.removeFromParent(adButtonView);
-                adButtonTextView.setText(messageObject.sponsoredButtonText);
-                captionContainer.addView(adButtonView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 44, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL, 16, 0, 16, 12));
-                captionTextViewSwitcher.setPadding(0, 0, 0, dp(64));
-                adButtonView.bringToFront();
-            } else if (adButtonView != null) {
-                AndroidUtilities.removeFromParent(adButtonView);
-                captionTextViewSwitcher.setPadding(0, 0, 0, 0);
-            }
+
         }
 
         final boolean isCaptionEmpty = TextUtils.isEmpty(caption);
@@ -16337,9 +16304,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             } else {
                 str = Emoji.replaceEmoji(new SpannableStringBuilder(caption), captionTextView.getPaint().getFontMetricsInt(), false);
             }
-            if (messageObject != null && messageObject.isSponsored()) {
-                str = sponsoredCaption(messageObject, str);
-            }
+
             captionTextViewSwitcher.setTag(str);
             try {
                 switchedToNext = captionTextViewSwitcher.setText(str, animated, lastCaptionTranslating != translating);
@@ -23019,256 +22984,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
     }
 
-    public void openAdsMenu() {
-        if (currentMessageObject == null || !currentMessageObject.isSponsored() || menuItem.getAlpha() <= 0.5f) return;
 
-        final int account = currentMessageObject.currentAccount;
-        final Theme.ResourcesProvider resourcesProvider = new DarkThemeResourceProvider();
 
-        final ItemOptions o = ItemOptions.makeOptions(containerView, resourcesProvider, menuItem, true);
-        o.translate(0, -dp(46));
-        o.setGravity(Gravity.RIGHT);
 
-//        if (!currentMessageObject.sponsoredCanReport) {
-//            FrameLayout sponsoredAbout = new FrameLayout(activityContext);
-//            sponsoredAbout.setMinimumHeight(AndroidUtilities.dp(56));
-//            sponsoredAbout.setBackground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_dialogButtonSelector, resourcesProvider), 6, 0));
-//            sponsoredAbout.setPadding(AndroidUtilities.dp(18), 0, AndroidUtilities.dp(18), 0);
-//
-//            ImageView infoImage = new ImageView(activityContext);
-//            infoImage.setScaleType(ImageView.ScaleType.CENTER);
-//            infoImage.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider), PorterDuff.Mode.MULTIPLY));
-//            infoImage.setImageResource(R.drawable.msg_info);
-//            sponsoredAbout.addView(infoImage, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 40, Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)));
-//
-//            TextView infoText = new TextView(activityContext) {
-//                @Override
-//                protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-//                    if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.AT_MOST && getLayout() != null) {
-//                        Layout layout = getLayout();
-//                        int width = 0;
-//                        for (int i = 0; i < layout.getLineCount(); ++i) {
-//                            width = Math.max(width, (int) Math.ceil(layout.getLineWidth(i)));
-//                        }
-//                        widthMeasureSpec = MeasureSpec.makeMeasureSpec(getPaddingLeft() + width + getPaddingRight(), MeasureSpec.EXACTLY);
-//                    }
-//                    super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-//                }
-//            };
-//            infoText.setMaxLines(3);
-//            infoText.setGravity(Gravity.LEFT);
-//            infoText.setEllipsize(TextUtils.TruncateAt.END);
-//            infoText.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider));
-//            infoText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-//            infoText.setMaxWidth(AndroidUtilities.dp(240));
-//            infoText.setText(LocaleController.getString(R.string.SponsoredMessageInfo));
-//            infoText.setPadding(LocaleController.isRTL ? 0 : AndroidUtilities.dp(43), 0, LocaleController.isRTL ? AndroidUtilities.dp(43) : 0, 0);
-//            sponsoredAbout.addView(infoText, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL));
-//
-//            o.addView(sponsoredAbout);
-//            sponsoredAbout.setOnClickListener(v1 -> {
-//                if (activityContext == null) {
-//                    return;
-//                }
-//                BottomSheet.Builder builder = new BottomSheet.Builder(activityContext, false, resourcesProvider);
-//                BottomSheet[] sheet = new BottomSheet[1];
-//                builder.setCustomView(new SponsoredMessageInfoView(activityContext, () -> {
-//                    sheet[0].dismiss();
-//                    closePhoto(true, false);
-//                }, resourcesProvider));
-//                sheet[0] = builder.show();
-//                o.dismiss();
-//            });
-//            o.addGap();
-//        }
 
-        if (currentMessageObject.sponsoredInfo != null || currentMessageObject.sponsoredAdditionalInfo != null || currentMessageObject.sponsoredUrl != null && !currentMessageObject.sponsoredUrl.startsWith("https://" + MessagesController.getInstance(currentAccount).linkPrefix)) {
-            ItemOptions info = o.makeSwipeback();
 
-            ActionBarMenuSubItem backCell = new ActionBarMenuSubItem(activityContext, true, false, resourcesProvider);
-            backCell.setItemHeight(44);
-            backCell.setTextAndIcon(getString(R.string.Back), R.drawable.msg_arrow_back);
-            backCell.getTextView().setPadding(LocaleController.isRTL ? 0 : AndroidUtilities.dp(40), 0, LocaleController.isRTL ? AndroidUtilities.dp(40) : 0, 0);
-            backCell.setOnClickListener(v1 -> o.closeSwipeback());
-            info.addView(backCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-            info.addView(new ActionBarPopupWindow.GapView(activityContext, resourcesProvider), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
-
-            ArrayList<View> sections = new ArrayList<>();
-
-            if (currentMessageObject.sponsoredUrl != null && !TextUtils.equals(AndroidUtilities.getHostAuthority(currentMessageObject.sponsoredUrl), MessagesController.getInstance(currentAccount).linkPrefix)) {
-                TextView textView = new TextView(activityContext);
-                textView.setTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                textView.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(10));
-                textView.setMaxWidth(AndroidUtilities.dp(300));
-                Uri uri = Uri.parse(currentMessageObject.sponsoredUrl);
-                textView.setText(Browser.replaceHostname(uri, Browser.IDN_toUnicode(uri.getHost()), null));
-                textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_dialogButtonSelector), 0, currentMessageObject.sponsoredAdditionalInfo == null ? 6 : 0));
-                textView.setOnClickListener(e -> {
-                    if (currentMessageObject == null) {
-                        return;
-                    }
-                    o.dismiss();
-                    if (parentFragment instanceof ChatActivity) {
-                    }
-                    Browser.openUrl(activityContext, Uri.parse(currentMessageObject.sponsoredUrl), true, false, false, null, null, false, MessagesController.getInstance(currentAccount).sponsoredLinksInappAllow, false);
-                });
-                textView.setOnLongClickListener(e -> {
-                    if (currentMessageObject == null) {
-                        return false;
-                    }
-                    if (AndroidUtilities.addToClipboard(currentMessageObject.sponsoredUrl)) {
-                        BulletinFactory.of(Bulletin.BulletinWindow.make(activityContext), resourcesProvider).createCopyLinkBulletin().show();
-                    }
-                    return true;
-                });
-                sections.add(textView);
-            }
-
-            if (currentMessageObject.sponsoredInfo != null) {
-                TextView textView = new TextView(activityContext);
-                textView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider));
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                textView.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(10));
-                textView.setMaxWidth(AndroidUtilities.dp(300));
-                textView.setText(currentMessageObject.sponsoredInfo);
-                textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_dialogButtonSelector), 0, currentMessageObject.sponsoredAdditionalInfo == null ? 6 : 0));
-                textView.setOnClickListener(e -> {
-                    if (AndroidUtilities.addToClipboard(currentMessageObject.sponsoredInfo)) {
-                        BulletinFactory.of(Bulletin.BulletinWindow.make(activityContext), resourcesProvider).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
-                    }
-                });
-                sections.add(textView);
-            }
-
-            if (currentMessageObject.sponsoredAdditionalInfo != null) {
-                TextView textView = new TextView(activityContext);
-                textView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider));
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                textView.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(10));
-                textView.setMaxWidth(AndroidUtilities.dp(300));
-                textView.setText(currentMessageObject.sponsoredAdditionalInfo);
-                textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_dialogButtonSelector), 0, 6));
-                textView.setOnClickListener(e -> {
-                    if (AndroidUtilities.addToClipboard(currentMessageObject.sponsoredAdditionalInfo)) {
-                        BulletinFactory.of(Bulletin.BulletinWindow.make(activityContext), resourcesProvider).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
-                    }
-                });
-                sections.add(textView);
-            }
-
-            for (int i = 0; i < sections.size(); ++i) {
-                View section = sections.get(i);
-                if (i > 0) {
-                    FrameLayout separator = new FrameLayout(activityContext);
-                    separator.setBackgroundColor(Theme.getColor(Theme.key_divider, resourcesProvider));
-                    LinearLayout.LayoutParams params = LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1);
-                    params.height = 1;
-                    info.addView(separator, params);
-                }
-                info.addView(section, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            }
-            o.add(R.drawable.msg_channel, getString(R.string.SponsoredMessageSponsorReportable), () -> o.openSwipeback(info));
-        }
-
-        if (!UserConfig.getInstance(account).isPremium() && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !currentMessageObject.sponsoredCanReport) {
-            o.add(R.drawable.msg_block2, getString(R.string.HideAd), () -> {
-                if (UserConfig.getInstance(account).isPremium()) {
-                    BulletinFactory.of(containerView, resourcesProvider)
-                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                            .show();
-                    MessagesController.getInstance(account).disableAds(true);
-                    if (parentFragment instanceof ChatActivity) {
-                        ChatActivity chatActivity = (ChatActivity) parentFragment;
-                        chatActivity.removeMessageWithThanos(currentMessageObject);
-                    }
-                } else {
-                    new PremiumFeatureBottomSheet(parentFragment, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true).show();
-                }
-            });
-        }
-        if (currentMessageObject.sponsoredCanReport) {
-            o.add(R.drawable.msg_info, getString(R.string.AboutRevenueSharingAds), () -> {
-                RevenueSharingAdsInfoBottomSheet.showAlert(activityContext, parentFragment, false, resourcesProvider);
-            });
-            if (parentFragment instanceof ChatActivity && !MessagesController.getInstance(account).premiumFeaturesBlocked()) {
-                o.addGap();
-                o.add(R.drawable.msg_cancel, getString(R.string.RemoveAds), () -> {
-                    if (UserConfig.getInstance(account).isPremium()) {
-                        BulletinFactory.of(containerView, resourcesProvider)
-                                .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                                .show();
-                        MessagesController.getInstance(account).disableAds(true);
-                        if (parentFragment instanceof ChatActivity) {
-                            ChatActivity chatActivity = (ChatActivity) parentFragment;
-                            chatActivity.removeMessageWithThanos(currentMessageObject);
-                        }
-                    } else {
-                        new PremiumFeatureBottomSheet(parentFragment, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true).show();
-                    }
-                });
-            }
-        }
-
-        if (o.getItemsCount() <= 0) return;
-        o.show();
-    }
-
-    private static CharSequence sponsoredCaption(MessageObject messageObject, CharSequence str) {
-        SpannableStringBuilder sb = new SpannableStringBuilder();
-        if (!TextUtils.isEmpty(messageObject.sponsoredTitle)) {
-            sb.append(messageObject.sponsoredTitle);
-            sb.setSpan(new TypefaceSpan(AndroidUtilities.bold()), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            sb.setSpan(new LineHeightSpan() {
-                @Override
-                public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight, Paint.FontMetricsInt fm) {
-                    fm.descent += dp(4);
-                    fm.ascent = fm.ascent;
-                }
-            }, 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            sb.append("\n");
-        }
-        sb.append(str);
-//        sb.append("\n");
-//        sb.setSpan(new LineHeightSpan() {
-//            @Override
-//            public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight, Paint.FontMetricsInt fm) {
-//                final int originHeight = fm.descent - fm.ascent;
-//                if (originHeight <= 0) {
-//                    return;
-//                }
-//                final float ratio = dp(72) * 1.0f / originHeight;
-//                fm.descent = Math.round(fm.descent * ratio);
-//                fm.ascent = fm.descent - dp(72);
-//            }
-//        }, sb.length() - 1, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        return sb;
-    }
-
-    private void createAdButtonView() {
-        if (adButtonView != null) return;
-
-        adButtonView = new FrameLayout(activityContext);
-        adButtonView.setBackground(Theme.createRadSelectorDrawable(0x24FFFFFF, 0x15FFFFFF, 8, 8));
-        ScaleStateListAnimator.apply(adButtonView, .05f, 1.25f);
-
-        adButtonTextView = new TextView(activityContext);
-        adButtonTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        adButtonTextView.setTextColor(0xFFFFFFFF);
-        adButtonTextView.setTypeface(AndroidUtilities.bold());
-        adButtonView.addView(adButtonTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
-
-        adButtonView.setOnClickListener(v -> {
-            if (currentMessageObject == null || !currentMessageObject.isSponsored()) return;
-            if (parentFragment instanceof ChatActivity) {
-            }
-            closePhoto(true, false);
-            if (currentMessageObject.sponsoredUrl != null) {
-                Browser.openUrl(LaunchActivity.instance != null ? LaunchActivity.instance : activityContext, Uri.parse(currentMessageObject.sponsoredUrl), true, false, false, null, null, false, MessagesController.getInstance(currentAccount).sponsoredLinksInappAllow, false);
-            }
-        });
-    }
 
     private void chooseSpeed(float speed, boolean isFinal, boolean closeMenu) {
         if (speed != currentVideoSpeed) {

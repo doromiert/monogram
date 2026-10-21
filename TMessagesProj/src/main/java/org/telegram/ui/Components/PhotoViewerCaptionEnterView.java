@@ -11,10 +11,7 @@ package org.telegram.ui.Components;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
-import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -57,10 +54,8 @@ import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.FloatingToolbar;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PremiumPreviewFragment;
 
 public class PhotoViewerCaptionEnterView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, SizeNotifierFrameLayout.SizeNotifierFrameLayoutDelegate {
 
@@ -362,14 +357,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
                     sendButtonColorAnimator.setDuration(150).start();
                 }
 
-                if (photoViewer.getParentAlert() != null && !photoViewer.getParentAlert().captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
-                    photoViewer.getParentAlert().captionLimitBulletinShown = true;
-                    if (heightShouldBeChanged) {
-                        AndroidUtilities.runOnUIThread(()->photoViewer.showCaptionLimitBulletin(parent), 300);
-                    } else {
-                        photoViewer.showCaptionLimitBulletin(parent);
-                    }
-                }
+
             }
         });
 
@@ -389,9 +377,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
                     captionLimitView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
                 } catch (Exception ignored) {}
 
-                if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codePointCount) {
-                    photoViewer.showCaptionLimitBulletin(parent);
-                }
+                photoViewer.showCaptionLimitBulletin(parent);
                 return;
             }
             delegate.onCaptionEnter();
@@ -651,50 +637,10 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
 
             @Override
             public void onAnimatedEmojiUnlockClick() {
-                new PremiumFeatureBottomSheet(new BaseFragment() {
-                    @Override
-                    public int getCurrentAccount() {
-                        return currentAccount;
-                    }
-
-                    @Override
-                    public Context getContext() {
-                        return PhotoViewerCaptionEnterView.this.getContext();
-                    }
-
-                    @Override
-                    public Activity getParentActivity() {
-                        Context context = getContext();
-                        while (context instanceof ContextWrapper) {
-                            if (context instanceof Activity) {
-                                return (Activity) context;
-                            }
-                            context = ((ContextWrapper) context).getBaseContext();
-                        }
-                        return null;
-                    }
-
-                    @Override
-                    public Dialog getVisibleDialog() {
-                        return new Dialog(PhotoViewerCaptionEnterView.this.getContext()) {
-                            @Override
-                            public void dismiss() {
-                                if (getParentActivity() instanceof LaunchActivity && ((LaunchActivity) getParentActivity()).getActionBarLayout() != null) {
-                                    parentLayout = ((LaunchActivity) getParentActivity()).getActionBarLayout();
-                                    if (parentLayout != null && parentLayout.getLastFragment() != null && parentLayout.getLastFragment().getVisibleDialog() != null) {
-                                        Dialog dialog = parentLayout.getLastFragment().getVisibleDialog();
-                                        if (dialog instanceof ChatAttachAlert) {
-                                            ((ChatAttachAlert) dialog).dismiss(true);
-                                        } else {
-                                            dialog.dismiss();
-                                        }
-                                    }
-                                }
-                                PhotoViewer.getInstance().closePhoto(false, false);
-                            }
-                        };
-                    }
-                }, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false).show();
+                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if (fragment != null) {
+                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
+                }
             }
 
             @Override

@@ -5,10 +5,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
-import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
@@ -48,8 +45,6 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.FloatingToolbar;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
-import org.telegram.ui.PremiumPreviewFragment;
 
 public class EditTextEmoji extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, SizeNotifierFrameLayout.SizeNotifierFrameLayoutDelegate {
 
@@ -850,45 +845,9 @@ public class EditTextEmoji extends FrameLayout implements NotificationCenter.Not
 
             @Override
             public void onAnimatedEmojiUnlockClick() {
-                BaseFragment fragment = parentFragment;
-                if (fragment == null) {
-                    fragment = new BaseFragment() {
-                        @Override
-                        public int getCurrentAccount() {
-                            return currentAccount;
-                        }
-
-                        @Override
-                        public Context getContext() {
-                            return EditTextEmoji.this.getContext();
-                        }
-
-                        @Override
-                        public Activity getParentActivity() {
-                            Context context = getContext();
-                            while (context instanceof ContextWrapper) {
-                                if (context instanceof Activity) {
-                                    return (Activity) context;
-                                }
-                                context = ((ContextWrapper) context).getBaseContext();
-                            }
-                            return null;
-                        }
-
-                        @Override
-                        public Dialog getVisibleDialog() {
-                            return new Dialog(EditTextEmoji.this.getContext()) {
-                                @Override
-                                public void dismiss() {
-                                    hidePopup(false);
-                                    closeParent();
-                                }
-                            };
-                        }
-                    };
-                    new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false).show();
-                } else {
-                    fragment.showDialog(new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
+                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if (fragment != null) {
+                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
                 }
             }
 

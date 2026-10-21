@@ -138,7 +138,6 @@ import org.telegram.ui.Components.Paint.Views.RoundView;
 import org.telegram.ui.Components.Paint.Views.StickerView;
 import org.telegram.ui.Components.Paint.Views.TextPaintView;
 import org.telegram.ui.Components.Paint.Views.WeatherView;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.Reactions.ReactionsUtils;
@@ -148,7 +147,6 @@ import org.telegram.ui.Components.SizeNotifierFrameLayout;
 import org.telegram.ui.Components.SizeNotifierFrameLayoutPhoto;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.ui.WrappedResourceProvider;
 
@@ -1946,10 +1944,7 @@ public class PaintView extends SizeNotifierFrameLayoutPhoto implements IPhotoPai
                             widgetsCount++;
                         }
                     }
-                    if (widgetsCount >= MessagesController.getInstance(currentAccount).storiesSuggestedReactionsLimitDefault && !UserConfig.getInstance(currentAccount).isPremium()) {
-                        showPremiumBulletin(LocaleController.formatPluralString("StoryPremiumWidgets2", MessagesController.getInstance(currentAccount).storiesSuggestedReactionsLimitPremium));
-                        return false;
-                    }
+
                     if (widgetsCount >= MessagesController.getInstance(currentAccount).storiesSuggestedReactionsLimitPremium) {
                         try {
                             container.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
@@ -2017,47 +2012,7 @@ public class PaintView extends SizeNotifierFrameLayoutPhoto implements IPhotoPai
                 appearAnimation(reactionWidget);
                 return true;
             } else if (widgetId == EmojiBottomSheet.WIDGET_LINK) {
-                if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                    try {
-                        alert.container.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                    } catch (Exception ignored) {}
-                    BulletinFactory.of(alert.container, resourcesProvider).createSimpleBulletin(R.raw.star_premium_2,
-                        AndroidUtilities.premiumText(getString(R.string.StoryLinkPremium), () -> {
-                            BaseFragment fragment = new BaseFragment() {
-                                @Override
-                                public int getCurrentAccount() {
-                                    return currentAccount;
-                                }
-                                @Override
-                                public Context getContext() {
-                                    return PaintView.this.getContext();
-                                }
-                                @Override
-                                public Activity getParentActivity() {
-                                    return AndroidUtilities.findActivity(PaintView.this.getContext());
-                                }
 
-                                @Override
-                                public Theme.ResourcesProvider getResourceProvider() {
-                                    return PaintView.this.resourcesProvider;
-                                }
-
-                                @Override
-                                public boolean presentFragment(BaseFragment fragment) {
-                                    BaseFragment fragment1 = LaunchActivity.getLastFragment();
-                                    if (fragment1 == null) return false;
-                                    BaseFragment.BottomSheetParams bottomSheetParams = new BaseFragment.BottomSheetParams();
-                                    bottomSheetParams.transitionFromLeft = true;
-                                    bottomSheetParams.allowNestedScroll = false;
-                                    fragment1.showAsSheet(fragment, bottomSheetParams);
-                                    return true;
-                                }
-                            };
-                            new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, true).show();
-                        })
-                    ).show(true);
-                    return false;
-                }
 
                 int linksCount = 0;
                 for (int i = 0; i < entitiesView.getChildCount(); ++i) {
@@ -5282,46 +5237,10 @@ public class PaintView extends SizeNotifierFrameLayoutPhoto implements IPhotoPai
 
             @Override
             public void onAnimatedEmojiUnlockClick() {
-//                BaseFragment fragment = parentFragment;
-//                if (fragment == null) {
-//                    fragment = new BaseFragment() {
-//                        @Override
-//                        public int getCurrentAccount() {
-//                            return currentAccount;
-//                        }
-//
-//                        @Override
-//                        public Context getContext() {
-//                            return EditTextEmoji.this.getContext();
-//                        }
-//
-//                        @Override
-//                        public Activity getParentActivity() {
-//                            Context context = getContext();
-//                            while (context instanceof ContextWrapper) {
-//                                if (context instanceof Activity) {
-//                                    return (Activity) context;
-//                                }
-//                                context = ((ContextWrapper) context).getBaseContext();
-//                            }
-//                            return null;
-//                        }
-//
-//                        @Override
-//                        public Dialog getVisibleDialog() {
-//                            return new Dialog(getContext()) {
-//                                @Override
-//                                public void dismiss() {
-//                                    hidePopup(false);
-//                                    closeParent();
-//                                }
-//                            };
-//                        }
-//                    };
-//                    new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false).show();
-//                } else {
-//                    fragment.showDialog(new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
-//                }
+                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
+                if (fragment != null) {
+                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
+                }
             }
 
             @Override
