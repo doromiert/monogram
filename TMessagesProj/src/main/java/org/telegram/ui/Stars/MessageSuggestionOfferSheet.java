@@ -46,7 +46,6 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.OutlineTextContainerView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
-import org.telegram.ui.TON.TONIntroActivity;
 
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
@@ -322,8 +321,6 @@ public class MessageSuggestionOfferSheet extends BottomSheet {
             if (!isMonoForumAdmin && (balance == null || balance.asNano() < inputAmount.asNano())) {
                 if (inputAmount.currency == AmountUtils.Currency.STARS) {
                     new StarsIntroActivity.StarsNeededSheet(context, resourcesProvider, inputAmount.asDecimal(), StarsIntroActivity.StarsNeededSheet.TYPE_PRIVATE_MESSAGE, ForumUtilities.getMonoForumTitle(currentAccount, dialogId, true), null, dialogId).show();
-                } else if (inputAmount.currency == AmountUtils.Currency.TON){
-                    new TONIntroActivity.StarsNeededSheet(context, resourcesProvider, inputAmount, true, null).show();
                 }
             } else {
                 callback.run(MessageSuggestionParams.of(inputAmount, selectedTime));
@@ -410,13 +407,7 @@ public class MessageSuggestionOfferSheet extends BottomSheet {
             inputAmountError |= ERROR_FLAG_AMOUNT_TOO_SMALL;
         }
 
-        /*if (!isMonoForumAdmin && !TONIntroActivity.allowTopUp() && inputAmount.currency == AmountUtils.Currency.TON) {
-            if (StarsController.getTonInstance(currentAccount).balanceAvailable()) {
-                if (inputAmount.asNano() > StarsController.getTonInstance(currentAccount).getBalanceAmount().asNano()) {
-                    inputAmountError |= ERROR_FLAG_AMOUNT_NOT_ENOUGH;
-                }
-            }
-        }*/
+
 
 
 

@@ -4431,7 +4431,7 @@ public class EmojiView extends FrameLayout implements
                 outRect.left = AndroidUtilities.dp(5);
                 outRect.right = AndroidUtilities.dp(5);
                 int position = parent.getChildAdapterPosition(view);
-                if (position + 1 > emojiAdapter.plainEmojisCount && !UserConfig.getInstance(currentAccount).isPremium() && !allowEmojisForNonPremium) {
+                if (position + 1 > emojiAdapter.plainEmojisCount && !UserConfig.getInstance(currentAccount).isPremium() && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !allowEmojisForNonPremium) {
                     outRect.top = AndroidUtilities.dp(10);
                 }
             } else if (view instanceof RecyclerListView || view instanceof EmojiPackHeader) {
@@ -6242,7 +6242,7 @@ public class EmojiView extends FrameLayout implements
             int previousCount2 = favouriteStickers.size();
             recentStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_IMAGE, true);
             favouriteStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_FAVE);
-            if (UserConfig.getInstance(currentAccount).isPremium()) {
+            if (UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
                 premiumStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_PREMIUM_STICKERS);
             } else {
                 premiumStickers = new ArrayList<>();
@@ -7462,7 +7462,7 @@ public class EmojiView extends FrameLayout implements
                                 count += size;
                             }
                             if (code == null) {
-                                final boolean isPremium = UserConfig.getInstance(currentAccount).isPremium();
+                                final boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount);
                                 final int maxlen = emojiLayoutManager.getSpanCount() * 3;
                                 for (int b = 0; b < packStartPosition.size(); ++b) {
                                     EmojiPack pack = emojipacksProcessed.get(b);
@@ -7623,7 +7623,7 @@ public class EmojiView extends FrameLayout implements
                 frozenEmojiPacks = new ArrayList<>(mediaDataController.getStickerSets(MediaDataController.TYPE_EMOJIPACKS));
             }
             ArrayList<TLRPC.TL_messages_stickerSet> installedEmojipacks = frozenEmojiPacks;
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || allowEmojisForNonPremium;
+            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium;
             int index = 0;
 
             if (info != null && info.emojiset != null) {
@@ -7764,7 +7764,7 @@ public class EmojiView extends FrameLayout implements
             int start = packStartPosition.get(index);
             expandedEmojiSets.add(pack.set.id);
 
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || allowEmojisForNonPremium;
+            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium;
             int maxlen = emojiLayoutManager.getSpanCount() * 3;
             int fromCount = ((pack.installed && !pack.featured) && (pack.free || isPremium) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
             Integer from = null, count = null;
@@ -7815,7 +7815,7 @@ public class EmojiView extends FrameLayout implements
             packStartPosition.clear();
             rowHashCodes.clear();
             itemCount = 0;
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || allowEmojisForNonPremium;
+            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium;
             if (needEmojiSearch) {
                 itemCount++;
                 rowHashCodes.add(-1);
@@ -8487,10 +8487,10 @@ public class EmojiView extends FrameLayout implements
                                             resultPre.addAll(param);
 
                                             next.run();
-                                        }, null, SharedConfig.suggestAnimatedEmoji || UserConfig.getInstance(currentAccount).isPremium(), false, true, 25);
+                                        }, null, SharedConfig.suggestAnimatedEmoji || UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount), false, true, 25);
                                 },
                                 next -> {
-                                    if (SharedConfig.suggestAnimatedEmoji || UserConfig.getInstance(currentAccount).isPremium()) {
+                                    if (SharedConfig.suggestAnimatedEmoji || UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
                                         final String q = translitSafe((query + "").toLowerCase());
                                         final ArrayList<TLRPC.TL_messages_stickerSet> sets = MediaDataController.getInstance(currentAccount).getStickerSets(MediaDataController.TYPE_EMOJIPACKS);
 

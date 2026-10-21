@@ -76,7 +76,6 @@ import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.HintView2;
-import org.telegram.ui.TON.TONIntroActivity;
 
 import java.util.ArrayList;
 
@@ -342,8 +341,6 @@ public class GiftOfferSheet extends BottomSheetWithRecyclerListView {
             if ((balance == null || balance.asNano() < inputAmount.asNano())) {
                 if (inputAmount.currency == AmountUtils.Currency.STARS) {
                     new StarsIntroActivity.StarsNeededSheet(context, resourcesProvider, inputAmount.asDecimal(), StarsIntroActivity.StarsNeededSheet.TYPE_STAR_GIFT_BUY_RESALE, null, null, dialogId).show();
-                } else if (inputAmount.currency == AmountUtils.Currency.TON){
-                    new TONIntroActivity.StarsNeededSheet(context, resourcesProvider, inputAmount, true, null).show();
                 }
             } else {
                 openConfirmAlert();

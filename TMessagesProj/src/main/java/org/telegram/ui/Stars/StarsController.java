@@ -72,7 +72,6 @@ import org.telegram.ui.Components.SharedMediaLayout;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PaymentFormActivity;
 import org.telegram.ui.ProfileActivity;
-import org.telegram.ui.TON.TONIntroActivity;
 import org.telegram.ui.bots.BotWebViewSheet;
 
 import java.util.ArrayList;
@@ -240,14 +239,7 @@ public class StarsController {
     }
 
     public boolean canUseTon() {
-        if (!ton) {
-            return false;
-        }
-        if (TONIntroActivity.allowTopUp()) {
-            return true;
-        }
-        TL_stars.StarsAmount amount = getBalance();
-        return amount.nanos != 0 || amount.amount != 0;
+        return false;
     }
 
     public void invalidateBalance() {

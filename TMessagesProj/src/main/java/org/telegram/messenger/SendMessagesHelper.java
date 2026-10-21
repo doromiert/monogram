@@ -94,7 +94,6 @@ import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.OAuthSheet;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.TON.TONIntroActivity;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.LayoutHelper;
@@ -8172,39 +8171,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     return;
                 }
             }
-            if (error != null && req instanceof TLRPC.TL_messages_sendMedia && ((TLRPC.TL_messages_sendMedia) req).media instanceof TLRPC.TL_inputMediaStakeDice) {
-                if ("GAME_HASH_INVALID".equalsIgnoreCase(error.text)) {
-                    getConnectionsManager().sendRequestTyped(new TLRPC.TL_messages_getEmojiGameInfo(), AndroidUtilities::runOnUIThread, (res, err) -> {
-                        if (res instanceof TLRPC.TL_emojiGameDiceInfo) {
-                            final String game_hash = ((TLRPC.TL_emojiGameDiceInfo) res).game_hash;
-                            final TLRPC.TL_messages_sendMedia r = (TLRPC.TL_messages_sendMedia) req;
-                            if (r.media instanceof TLRPC.TL_inputMediaStakeDice) {
-                                ((TLRPC.TL_inputMediaStakeDice) r.media).game_hash = game_hash;
-                            }
-                            performSendMessageRequest(r, msgObj, originalPath, parentMessage, check, delayedMessage, parentObject, params, scheduled);
-                        }
-                    });
-                    return;
-                } else if ("BALANCE_TOO_LOW".equalsIgnoreCase(error.text)) {
-                    final TLRPC.TL_inputMediaStakeDice media = (TLRPC.TL_inputMediaStakeDice) ((TLRPC.TL_messages_sendMedia) req).media;
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        AndroidUtilities.runOnUIThread(() -> {
-                            new TONIntroActivity.StarsNeededSheet(
-                                lastFragment.getContext(),
-                                lastFragment.getResourceProvider(),
-                                AmountUtils.Amount.fromNano(media.ton_amount, AmountUtils.Currency.TON),
-                                false,
-                                () -> performSendMessageRequest(req, msgObj, originalPath, parentMessage, check, delayedMessage, parentObject, params, scheduled)
-                            ).show();
-                            final ArrayList<MessageObject> arrayList = new ArrayList<>();
-                            arrayList.add(msgObj);
-                            cancelSendingMessage(arrayList);
-                        });
-                        return;
-                    }
-                }
-            }
+
             if (req instanceof TLRPC.TL_messages_addPollAnswer) {
                 AndroidUtilities.runOnUIThread(() -> {
                     if (error == null) {

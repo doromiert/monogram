@@ -50,7 +50,6 @@ import org.telegram.ui.Stars.BotStarsActivity;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
-import org.telegram.ui.TON.TONIntroActivity;
 import org.telegram.ui.bots.ChannelAffiliateProgramsFragment;
 import org.telegram.ui.web.WebBrowserSettings;
 
@@ -1224,7 +1223,6 @@ public class LinkManager {
         }
 
         if ("ton".equalsIgnoreCase(first)) {
-            presentFragment(new TONIntroActivity());
             return true;
         }
 

@@ -204,7 +204,6 @@ import org.telegram.messenger.pip.PipSource;
 import org.telegram.messenger.pip.utils.PipUtils;
 import org.telegram.messenger.utils.WindowVisibilityManager;
 import org.telegram.messenger.video.OldVideoPlayerRewinder;
-import org.telegram.messenger.video.VideoAds;
 import org.telegram.messenger.video.VideoFramesRewinder;
 import org.telegram.messenger.video.VideoPlayerRewinder;
 import org.telegram.tgnet.ConnectionsManager;
@@ -2025,7 +2024,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private boolean editing;
     private boolean fancyShadows;
     private MessageObject currentMessageObject;
-    private VideoAds ads;
     private ArrayList<VideoPlayer.Quality> currentPlayingVideoQualityFiles;
     private Uri currentPlayingVideoFile;
     private EditState editState = new EditState();
@@ -5163,10 +5161,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                     closePhoto(false, false);
                     currentMessageObject = null;
-                    if (ads != null) {
-                        ads.stop();
-                        ads = null;
-                    }
+                    
                 } else if (id == gallery_menu_create_sticker) {
                     if (parentFragment == null || placeProvider == null) return;
                     if (currentMessageObject == null || currentMessageObject.messageOwner == null) return;
@@ -10154,9 +10149,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (videoPlayer == null && (photoViewerWebView == null || !photoViewerWebView.isControllable())) {
             return;
         }
-        if (ads != null) {
-            ads.setWaitingPaused(!playWhenReady || playbackState != ExoPlayer.STATE_READY);
-        }
+        
         if (photoViewerWebView != null && photoViewerWebView.isControllable() && !playWhenReady) {
             toggleActionBar(true, true);
         }
@@ -13971,10 +13964,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         avatarsArr.clear();
         secureDocuments.clear();
         imagesArrLocals.clear();
-        if (ads != null) {
-            ads.stop();
-            ads = null;
-        }
+        
         if (blurManager != null) {
             blurManager.resetBitmap();
         }
@@ -15707,28 +15697,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (sameImage) {
                 newMessageObject.putInDownloadsStore = currentMessageObject.putInDownloadsStore;
             }
-            if (ads == null || newMessageObject == null || currentMessageObject != null && currentMessageObject.getDialogId() != newMessageObject.getDialogId()) {
-                if (ads != null) {
-                    ads.stop();
-                    ads = null;
-                }
-                if (newMessageObject != null) {
-                    ads = VideoAds.make(newMessageObject.currentAccount, newMessageObject.getDialogId(), newMessageObject.getId(), BulletinFactory.of(containerView, resourcesProvider));
-                    ads.setWaitingPaused(videoPlayer == null || videoPlayer.isPlaying() && videoPlayer.getPlaybackState() == ExoPlayer.STATE_READY);
-                    ads.setPauseOnPopupCallback(() -> {
-                        if (ads.isPopupShown()) {
-                            ads.videoWasPlaying = videoPlayer == null ? true : videoPlayer.isPlaying();
-                            if (videoPlayer != null) {
-                                videoPlayer.pause();
-                            }
-                        } else {
-                            if (videoPlayer != null && ads.videoWasPlaying) {
-                                videoPlayer.play();
-                            }
-                        }
-                    });
-                }
-            }
+
             currentMessageObject = newMessageObject;
             if (newMessageObject != null) {
                 newMessageObject.openedInViewer = true;
@@ -18717,10 +18686,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         currentPageBlock = null;
         currentPathObject = null;
         dialogPhotos = null;
-        if (ads != null) {
-            ads.stop();
-            ads = null;
-        }
+        
         if (videoPlayerControlFrameLayout != null) {
             setVideoPlayerControlVisible(false, false);
         }
@@ -20933,7 +20899,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (x >= (getContainerViewWidth() - centerImage.getImageWidth()) / 2.0f && x <= (getContainerViewWidth() + centerImage.getImageWidth()) / 2.0f &&
                 y >= (getContainerViewHeight() - centerImage.getImageHeight()) / 2.0f && y <= (getContainerViewHeight() + centerImage.getImageHeight()) / 2.0f) {
                 if (parentFragment instanceof ChatActivity) {
-                    ((ChatActivity) parentFragment).logSponsoredClicked(currentMessageObject, true, true);
                 }
                 closePhoto(true, false);
                 if (currentMessageObject.sponsoredUrl != null) {
@@ -23158,7 +23123,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                     o.dismiss();
                     if (parentFragment instanceof ChatActivity) {
-                        ((ChatActivity) parentFragment).logSponsoredClicked(currentMessageObject, false, true);
                     }
                     Browser.openUrl(activityContext, Uri.parse(currentMessageObject.sponsoredUrl), true, false, false, null, null, false, MessagesController.getInstance(currentAccount).sponsoredLinksInappAllow, false);
                 });
@@ -23229,7 +23193,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     MessagesController.getInstance(account).disableAds(true);
                     if (parentFragment instanceof ChatActivity) {
                         ChatActivity chatActivity = (ChatActivity) parentFragment;
-                        chatActivity.removeFromSponsored(currentMessageObject);
                         chatActivity.removeMessageWithThanos(currentMessageObject);
                     }
                 } else {
@@ -23251,7 +23214,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         MessagesController.getInstance(account).disableAds(true);
                         if (parentFragment instanceof ChatActivity) {
                             ChatActivity chatActivity = (ChatActivity) parentFragment;
-                            chatActivity.removeFromSponsored(currentMessageObject);
                             chatActivity.removeMessageWithThanos(currentMessageObject);
                         }
                     } else {
@@ -23312,7 +23274,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         adButtonView.setOnClickListener(v -> {
             if (currentMessageObject == null || !currentMessageObject.isSponsored()) return;
             if (parentFragment instanceof ChatActivity) {
-                ((ChatActivity) parentFragment).logSponsoredClicked(currentMessageObject, false, true);
             }
             closePhoto(true, false);
             if (currentMessageObject.sponsoredUrl != null) {

@@ -318,8 +318,6 @@ import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.PreviewView;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
-import org.telegram.ui.TON.TONIntroActivity;
-import org.telegram.ui.bots.BotAdView;
 import org.telegram.ui.bots.BotCommandsMenuContainer;
 import org.telegram.ui.bots.BotCommandsMenuView;
 import org.telegram.ui.bots.BotWebViewSheet;
@@ -556,7 +554,6 @@ public class ChatActivity extends BaseFragment implements
     private LinkSpanDrawable.LinksTextView emojiStatusSpamHint;
     @Nullable
     private ImageView closeReportSpam;
-    private BotAdView botAdView;
     private TextView chatWithAdminTextView;
     private FragmentContextView fragmentContextView;
     private FrameLayout fragmentContextViewWrapper;
@@ -3081,7 +3078,6 @@ public class ChatActivity extends BaseFragment implements
             observersGroup.add(NotificationCenter.didReceiveNewMessages);
         }
         if (chatMode == 0) {
-            observersGroup.add(NotificationCenter.didLoadSponsoredMessages);
         }
         observersGroup
             .add(NotificationCenter.updatedChatRanks)
@@ -7111,7 +7107,6 @@ public class ChatActivity extends BaseFragment implements
         translateButton = null;
         addProfilePictureButton = null;
         topicsTabs = null;
-        botAdView = null;
         bizBotButton = null;
 
         // topButtonsLayout = new ChatActivitySideControlsButtonsLayout(context, resourceProvider, blurredBackgroundColorProvider, glassBackgroundDrawableFactory);
@@ -9803,12 +9798,7 @@ public class ChatActivity extends BaseFragment implements
         translateButton = new TranslateButton(getContext(), this, themeDelegate) {
             @Override
             protected void onButtonClick() {
-                if (getUserConfig().isPremium() || currentChat != null && currentChat.autotranslation) {
-                    getMessagesController().getTranslateController().toggleTranslatingDialog(getDialogId());
-                } else {
-                    MessagesController.getNotificationsSettings(currentAccount).edit().putInt("dialog_show_translate_count" + getDialogId(), 14).commit();
-                    showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_TRANSLATIONS, false));
-                }
+                getMessagesController().getTranslateController().toggleTranslatingDialog(getDialogId());
                 updateTopPanel(true);
             }
 
@@ -10202,16 +10192,7 @@ public class ChatActivity extends BaseFragment implements
         });
     }
 
-    private void createBotAdView() {
-        if (topPanelLayout == null || botAdView != null || getContext() == null) {
-            return;
-        }
 
-        botAdView = new BotAdView(getContext(), themeDelegate);
-        topPanelLayout.addView(botAdView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        topPanelLayout.setPriority(botAdView, 10);
-        topPanelLayout.setDebugName(botAdView, "bot add view");
-    }
 
     private void createBizBotButton() {
         if (bizBotButton != null || getContext() == null) {
@@ -16113,7 +16094,7 @@ public class ChatActivity extends BaseFragment implements
                     final boolean isVisible = messageObject.viewsReloaded || rTop < contentView.getMeasuredHeight() - dp(9 + 32) - windowInsetsStateHolder.getAnimatedMaxBottomInset() - getTopicTabsSideSize(TopicsTabsView.Position.BOTTOM) - inputIslandHeightCurrent;
                     messageCell.setSponsoredMessageVisible(isVisible, isVisible);
                     if (isVisible) {
-                        markSponsoredAsRead(messageObject);
+
                     }
                 }
 
@@ -21589,7 +21570,7 @@ public class ChatActivity extends BaseFragment implements
                         scrollToMessage = messages.get(messArr.size() - 1);
                     }
                     if (scrollToMessage != null) {
-                        addSponsoredMessages(!isFirstLoading);
+
                         int yOffset;
                         boolean opt = false;
                         boolean bottom = true;
@@ -21639,7 +21620,7 @@ public class ChatActivity extends BaseFragment implements
                         scrollToMessagePosition = -10000;
                         scrollToMessage = null;
                     } else if (!fakePostponedScroll) {
-                        addSponsoredMessages(!isFirstLoading);
+
                         moveScrollToLastMessage(true);
                     }
                     if (loaded_mentions_count != 0) {
@@ -21796,7 +21777,7 @@ public class ChatActivity extends BaseFragment implements
             showFloatingDateView(false);
             showFloatingTopicView(false);
         }
-        addSponsoredMessages(!isFirstLoading);
+
         checkScrollForLoad(false);
 
         if (postponedScroll && !fakePostponedScroll) {
@@ -22125,8 +22106,6 @@ public class ChatActivity extends BaseFragment implements
             FileLog.d("ChatActivity didReceiveNewMessages return: done");
         } else if (id == NotificationCenter.didLoadSendAsPeers) {
             loadSendAsPeers(true);
-        } else if (id == NotificationCenter.didLoadSponsoredMessages) {
-            addSponsoredMessages(true);
         } else if (id == NotificationCenter.closeChats) {
             if (args != null && args.length > 0) {
                 long did = (Long) args[0];
@@ -25067,73 +25046,9 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private int sponsoredMessagesPostsBetween;
-    private boolean sponsoredMessagesAdded;
-    private Pattern sponsoredUrlPattern;
-    private MessageObject botSponsoredMessage;
-    private void addSponsoredMessages(boolean animated) {
-        if (sponsoredMessagesAdded || chatMode != 0 || !ChatObject.isChannel(currentChat) && !UserObject.isBot(currentUser) || !forwardEndReached[0] || getUserConfig().isPremium() && getMessagesController().isSponsoredDisabled() || isReport()) {
-            return;
-        }
-        MessagesController.SponsoredMessagesInfo res = getMessagesController().getSponsoredMessages(dialog_id);
-        if (res == null || res.messages == null) {
-            return;
-        }
-        for (int i = 0; i < res.messages.size(); i++) {
-            MessageObject messageObject = res.messages.get(i);
-            messageObject.resetLayout();
-            if (messageObject.sponsoredUrl != null) {
-                try {
-                    if (sponsoredUrlPattern == null) {
-                        sponsoredUrlPattern = Pattern.compile("https://t\\.me/(\\w+)(?:/(\\d+))?");
-                    }
-                    Matcher matcher = sponsoredUrlPattern.matcher(messageObject.sponsoredUrl);
-                    if (matcher.matches()) {
-                        String username = matcher.group(1);
-                        int postId = 0;
-                        try {
-                            postId = matcher.groupCount() >= 2 ? Integer.parseInt(matcher.group(2)) : 0;
-                        } catch (Exception e2) {}
-                        TLObject obj = getMessagesController().getUserOrChat(username);
-                        long did;
-                        if (obj instanceof TLRPC.User) {
-                            did = ((TLRPC.User) obj).id;
-                        } else if (obj instanceof TLRPC.Chat) {
-                            did = -((TLRPC.Chat) obj).id;
-                        } else {
-                            continue;
-                        }
-                        if (postId < 0) continue;
-                        getMessagesController().ensureMessagesLoaded(did, postId, null);
-                    }
-                } catch (Exception e) {
-                    FileLog.e(e, false);
-                }
-            }
-        }
-        sponsoredMessagesAdded = true;
-        if (UserObject.isBot(currentUser)) {
-            botSponsoredMessage = res == null || res.messages == null || res.messages.isEmpty() ? null : res.messages.get(0);
-            updateTopPanel(true);
-        } else {
-            sponsoredMessagesPostsBetween = res.posts_between != null ? res.posts_between : 0;
-            if (notPushedSponsoredMessages != null) {
-                notPushedSponsoredMessages.clear();
-            }
-            processNewMessages(res.messages, false);
-        }
-    }
 
-    public void removeFromSponsored(MessageObject message) {
-        if (message == botSponsoredMessage) {
-            botSponsoredMessage = null;
-            updateTopPanel(true);
-            return;
-        }
-        MessagesController.SponsoredMessagesInfo sponsoredMessagesInfo = getMessagesController().getSponsoredMessages(dialog_id);
-        if (sponsoredMessagesInfo != null) {
-            sponsoredMessagesInfo.messages.remove(message);
-        }
-    }
+
+
 
     private void checkGroupCallJoin(boolean fromServer) {
         if (groupCall == null || voiceChatHash == null && !openVideoChat || !openAnimationEnded) {
@@ -25606,7 +25521,7 @@ public class ChatActivity extends BaseFragment implements
                         }
                     }
                 }
-                if (messageObject.wasJustSent && (getUserConfig().isPremium() || messageObject.isAnimatedAnimatedEmoji() || messageObject.getEffect() != null) && !(SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_LOW || !LiteMode.isEnabled(messageObject.isAnimatedAnimatedEmoji() ? LiteMode.FLAG_ANIMATED_EMOJI_CHAT : LiteMode.FLAG_ANIMATED_STICKERS_CHAT))) {
+                if (messageObject.wasJustSent && (messageObject.isPremiumSticker() || messageObject.isAnimatedAnimatedEmoji() || messageObject.getEffect() != null) && !(SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_LOW || !LiteMode.isEnabled(messageObject.isAnimatedAnimatedEmoji() ? LiteMode.FLAG_ANIMATED_EMOJI_CHAT : LiteMode.FLAG_ANIMATED_STICKERS_CHAT))) {
                     messageObject.forcePlayEffect = true;
                 }
             }
@@ -29281,14 +29196,11 @@ public class ChatActivity extends BaseFragment implements
         }
 
         boolean showRestartTopic = !isInPreviewMode() && forumTopic != null && forumTopic.closed && !forumTopic.hidden && ChatObject.canManageTopic(currentAccount, currentChat, forumTopic);
-        boolean showTranslate = (
-            getUserConfig().isPremium() || currentChat != null && currentChat.autotranslation ?
-                getMessagesController().getTranslateController().isDialogTranslatable(getDialogId()) && !getMessagesController().getTranslateController().isTranslateDialogHidden(getDialogId()) :
-                !getMessagesController().premiumFeaturesBlocked() && preferences.getInt("dialog_show_translate_count" + did, 5) <= 0
-        ) || DEBUG_TOP_PANELS;
+        boolean showTranslate = getMessagesController().getTranslateController().isDialogTranslatable(getDialogId())
+                && !getMessagesController().getTranslateController().isTranslateDialogHidden(getDialogId())
+                || DEBUG_TOP_PANELS;
         boolean showAddProfilePicture = UserObject.isBot(currentUser) && currentUser.bot_can_edit && currentUser.photo == null;
         boolean showBizBot = currentEncryptedChat == null && getUserConfig().isPremium() && preferences.getLong("dialog_botid" + did, 0) != 0 || DEBUG_TOP_PANELS;
-        boolean showBotAd = currentUser != null && currentUser.bot && messages.size() >= 2 && botSponsoredMessage != null;
         if (showRestartTopic) {
             shownRestartTopic = true;
         }
@@ -29322,135 +29234,7 @@ public class ChatActivity extends BaseFragment implements
         if (showAddProfilePicture) {
             createAddProfilePictureButton();
         }
-        if (showBotAd) {
-            createBotAdView();
-            if (botAdView != null) {
-                markSponsoredAsRead(botSponsoredMessage);
-                botAdView.set(this, botSponsoredMessage, () -> {
-                    if (botSponsoredMessage == null) return;
-                    RevenueSharingAdsInfoBottomSheet[] sheet = new RevenueSharingAdsInfoBottomSheet[1];
-                    sheet[0] = RevenueSharingAdsInfoBottomSheet.showAlert(getContext(), ChatActivity.this, true, resourceProvider, o -> {
-                        if (botSponsoredMessage == null) return;
-                        if (botSponsoredMessage.sponsoredInfo != null || botSponsoredMessage.sponsoredAdditionalInfo != null || botSponsoredMessage.sponsoredUrl != null && !botSponsoredMessage.sponsoredUrl.startsWith("https://" + MessagesController.getInstance(currentAccount).linkPrefix)) {
-                            ItemOptions info = o.makeSwipeback();
 
-                            ActionBarMenuSubItem backCell = new ActionBarMenuSubItem(getContext(), true, false, resourceProvider);
-                            backCell.setItemHeight(44);
-                            backCell.setTextAndIcon(getString(R.string.Back), R.drawable.msg_arrow_back);
-                            backCell.getTextView().setPadding(LocaleController.isRTL ? 0 : AndroidUtilities.dp(40), 0, LocaleController.isRTL ? AndroidUtilities.dp(40) : 0, 0);
-                            backCell.setOnClickListener(v1 -> o.closeSwipeback());
-                            info.addView(backCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-                            info.addView(new ActionBarPopupWindow.GapView(getContext(), resourceProvider), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
-
-                            ArrayList<View> sections = new ArrayList<>();
-
-                            if (botSponsoredMessage.sponsoredUrl != null && !TextUtils.equals(AndroidUtilities.getHostAuthority(botSponsoredMessage.sponsoredUrl), MessagesController.getInstance(currentAccount).linkPrefix)) {
-                                TextView textView = new TextView(getContext());
-                                textView.setTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourceProvider));
-                                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                                textView.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(10));
-                                textView.setMaxWidth(AndroidUtilities.dp(300));
-                                Uri uri = Uri.parse(botSponsoredMessage.sponsoredUrl);
-                                textView.setText(Browser.replaceHostname(uri, Browser.IDN_toUnicode(uri.getHost()), null));
-                                textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_dialogButtonSelector), 0, botSponsoredMessage.sponsoredAdditionalInfo == null ? 6 : 0));
-                                textView.setOnClickListener(e -> {
-                                    if (botSponsoredMessage == null) return;
-                                    o.dismiss();
-                                    logSponsoredClicked(botSponsoredMessage, false, true);
-                                    Browser.openUrl(getContext(), Uri.parse(botSponsoredMessage.sponsoredUrl), true, false, false, null, null, false, MessagesController.getInstance(currentAccount).sponsoredLinksInappAllow, false);
-                                });
-                                textView.setOnLongClickListener(e -> {
-                                    if (botSponsoredMessage == null) return false;
-                                    if (AndroidUtilities.addToClipboard(botSponsoredMessage.sponsoredUrl)) {
-                                        BulletinFactory.of(Bulletin.BulletinWindow.make(getContext()), resourceProvider).createCopyLinkBulletin().show();
-                                    }
-                                    return true;
-                                });
-                                sections.add(textView);
-                            }
-
-                            if (botSponsoredMessage.sponsoredInfo != null) {
-                                TextView textView = new TextView(getContext());
-                                textView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourceProvider));
-                                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                                textView.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(10));
-                                textView.setMaxWidth(AndroidUtilities.dp(300));
-                                textView.setText(botSponsoredMessage.sponsoredInfo);
-                                textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_dialogButtonSelector), 0, botSponsoredMessage.sponsoredAdditionalInfo == null ? 6 : 0));
-                                textView.setOnClickListener(e -> {
-                                    if (AndroidUtilities.addToClipboard(botSponsoredMessage.sponsoredInfo)) {
-                                        BulletinFactory.of(Bulletin.BulletinWindow.make(getContext()), resourceProvider).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
-                                    }
-                                });
-                                sections.add(textView);
-                            }
-
-                            if (botSponsoredMessage.sponsoredAdditionalInfo != null) {
-                                TextView textView = new TextView(getContext());
-                                textView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourceProvider));
-                                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                                textView.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(10));
-                                textView.setMaxWidth(AndroidUtilities.dp(300));
-                                textView.setText(botSponsoredMessage.sponsoredAdditionalInfo);
-                                textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_dialogButtonSelector), 0, 6));
-                                textView.setOnClickListener(e -> {
-                                    if (AndroidUtilities.addToClipboard(botSponsoredMessage.sponsoredAdditionalInfo)) {
-                                        BulletinFactory.of(Bulletin.BulletinWindow.make(getContext()), resourceProvider).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
-                                    }
-                                });
-                                sections.add(textView);
-                            }
-
-                            for (int i = 0; i < sections.size(); ++i) {
-                                View section = sections.get(i);
-                                if (i > 0) {
-                                    FrameLayout separator = new FrameLayout(getContext());
-                                    separator.setBackgroundColor(Theme.getColor(Theme.key_divider, resourceProvider));
-                                    LinearLayout.LayoutParams params = LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1);
-                                    params.height = 1;
-                                    info.addView(separator, params);
-                                }
-                                info.addView(section, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-                            }
-                            o.add(R.drawable.msg_channel, getString(R.string.SponsoredMessageSponsorReportable), () -> o.openSwipeback(info));
-                            o.addGap();
-                        }
-                        o.add(R.drawable.msg_block2, getString(R.string.ReportAd), () -> {
-                            o.dismiss();
-                            if (sheet[0] != null) sheet[0].dismiss();
-                            ReportBottomSheet.openSponsored(ChatActivity.this, botSponsoredMessage, themeDelegate);
-                        });
-                        o.add(R.drawable.msg_cancel, getString(R.string.HideAd), () -> {
-                            o.dismiss();
-                            if (sheet[0] != null) sheet[0].dismiss();
-                            if (getUserConfig().isPremium()) {
-                                botSponsoredMessage = null;
-                                updateTopPanel(true);
-                                BulletinFactory.of(this)
-                                        .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                                        .show();
-                                getMessagesController().disableAds(true);
-                            } else {
-                                showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true));
-                            }
-                        });
-                        o.setGravity(Gravity.RIGHT).show();
-                    });
-                }, () -> {
-                    if (getUserConfig().isPremium()) {
-                        botSponsoredMessage = null;
-                        updateTopPanel(true);
-                        BulletinFactory.of(this)
-                                .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                                .show();
-                        getMessagesController().disableAds(true);
-                    } else {
-                        showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true));
-                    }
-                });
-            }
-        }
         if ((shownTranslateTopic || shownRestartTopic) && !show) {
             showReport = showGeo = showShare = showBlock = showAdd = showArchive = showAddMembersToGroup = false;
             showEmojiStatusReport = null;
@@ -29467,7 +29251,6 @@ public class ChatActivity extends BaseFragment implements
             topPanelLayout.setViewVisible(restartTopicButton, showRestartTopic1, animated);
             topPanelLayout.setViewVisible(translateButton, showTranslate, animated);
             topPanelLayout.setViewVisible(bizBotButton, showBizBot, animated);
-            topPanelLayout.setViewVisible(botAdView, showBotAd, animated);
             topPanelLayout.setViewVisible(addProfilePictureButton, showAddProfilePicture, animated);
         }
 
@@ -31870,7 +31653,7 @@ public class ChatActivity extends BaseFragment implements
                                 if (selectedObject == null) {
                                     return;
                                 }
-                                logSponsoredClicked(selectedObject, false, false);
+
                                 Browser.openUrl(getContext(), Uri.parse(selectedObject.sponsoredUrl), true, false, false, null, null, false, getMessagesController().sponsoredLinksInappAllow, false);
                             });
                             textView.setOnLongClickListener(e -> {
@@ -34613,8 +34396,6 @@ public class ChatActivity extends BaseFragment implements
                     new StarsIntroActivity.StarsNeededSheet(getContext(), getResourceProvider(), amountRequired.asDecimal(),
                         StarsIntroActivity.StarsNeededSheet.TYPE_PRIVATE_MESSAGE,
                         ForumUtilities.getMonoForumTitle(currentAccount, getDialogId(), true), null, getDialogId()).show();
-                } else if (amountRequired.currency == AmountUtils.Currency.TON) {
-                    new TONIntroActivity.StarsNeededSheet(getContext(), getResourceProvider(), amountRequired, true, null).show();
                 }
             } else {
                 runnable.run();
@@ -34630,16 +34411,8 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void hideAds() {
-        if (getUserConfig().isPremium()) {
-            BulletinFactory.of(ChatActivity.this)
-                    .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                    .show();
-            getMessagesController().disableAds(true);
-            removeFromSponsored(selectedObject);
-            removeMessageWithThanos(selectedObject);
-        } else {
-            showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true));
-        }
+        // Discard any historical sponsored entry locally, without a subscription or ad RPC.
+        if (selectedObject != null) removeMessageWithThanos(selectedObject);
     }
 
     @Override
@@ -36453,7 +36226,7 @@ public class ChatActivity extends BaseFragment implements
                         if (str.startsWith("video?")) {
                             didPressMessageUrl(url, false, messageObject, cell);
                         } else {
-                            logSponsoredClicked(messageObject, false, false);
+
                             openClickableLink(url, str, false, cell, messageObject, true);
                         }
                     } else if (which == 1) {
@@ -36523,7 +36296,7 @@ public class ChatActivity extends BaseFragment implements
                 didLongPressLink(cell, messageObject, url, str);
             }
         } else {
-            logSponsoredClicked(messageObject, false, false);
+
             String username = Browser.extractUsername(str);
             if (username != null) {
                 username = username.toLowerCase();
@@ -36805,16 +36578,7 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
-    public void logSponsoredClicked(MessageObject messageObject, boolean media, boolean fullscreen) {
-        if (messageObject == null || !messageObject.isSponsored()) {
-            return;
-        }
-        TLRPC.TL_messages_clickSponsoredMessage req = new TLRPC.TL_messages_clickSponsoredMessage();
-        req.random_id = messageObject.sponsoredId;
-        req.media = media;
-        req.fullscreen = fullscreen;
-        getConnectionsManager().sendRequest(req, null);
-    }
+
 
     private void didPressMessageUrl(CharacterStyle url, boolean longPress, MessageObject messageObject, ChatMessageCell cell) {
         if (url == null || getParentActivity() == null) {
@@ -36840,7 +36604,7 @@ public class ChatActivity extends BaseFragment implements
             if (longPress && cell != null) {
                 cell.resetPressedLink(-1);
             }
-            logSponsoredClicked(messageObject, false, false);
+
         } else if (url instanceof FormattedDateSpan) {
             FormattedDateSpan formattedDateSpan = (FormattedDateSpan) url;
             didLongPressFormattedDate(cell, url, formattedDateSpan.originalText, formattedDateSpan.entity);
@@ -36937,7 +36701,7 @@ public class ChatActivity extends BaseFragment implements
                     cell.resetPressedLink(-1);
                 }
             } else {
-                logSponsoredClicked(messageObject, false, false);
+
                 boolean forceAlert = url instanceof URLSpanReplacement;
                 if (url instanceof URLSpanReplacement && (urlFinal == null || !urlFinal.startsWith("mailto:")) || AndroidUtilities.shouldShowUrlInAlert(urlFinal)) {
                     if (openLinkInternally(urlFinal, cell, url, messageObject != null ? messageObject.getId() : 0)) {
@@ -37031,19 +36795,7 @@ public class ChatActivity extends BaseFragment implements
         chatListView.setImportantForAccessibility(mentionContainer != null && mentionContainer.isOpen() || (scrimPopupWindow != null && scrimPopupWindow.isShowing()) ? View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS : View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
     }
 
-    private void markSponsoredAsRead(MessageObject object) {
-        if (object == null) {
-            return;
-        }
-        if (!object.isSponsored() || object.viewsReloaded) {
-            return;
-        }
-        object.viewsReloaded = true;
-        TLRPC.TL_messages_viewSponsoredMessage req = new TLRPC.TL_messages_viewSponsoredMessage();
-        req.random_id = object.sponsoredId;
-        getConnectionsManager().sendRequest(req, null);
-        getMessagesController().markSponsoredAsRead(dialog_id, object);
-    }
+
 
     @Override
     public boolean canBeginSlide() {
@@ -41748,24 +41500,7 @@ public class ChatActivity extends BaseFragment implements
                     });
                 };
 
-                if (message.isStakeableDice()) {
-                    getMessagesController().loadStakeDiceInfo(available -> {
-                        if (available) {
-                            StakedDiceSheet.showStakeToast(ChatActivity.this, message.getDiceValue(), message.getStakedDiceAmount(), stake -> {
-                                if (checkSlowModeAlert()) {
-                                    SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(message.getDiceEmoji(), dialog_id, replyingMessageObject, getThreadMessage(), null, false, null, null, null, true, 0, 0, null, false);
-                                    params.sendMessageChatArguments = getMessageChatSendParams();
-                                    params.dice_stake = stake;
-                                    getSendMessagesHelper().sendMessage(params);
-                                }
-                            });
-                        } else {
-                            toastForNotStackedDice.run();
-                        }
-                    });
-                } else {
-                    toastForNotStackedDice.run();
-                }
+                toastForNotStackedDice.run();
             } else if (message.isAnimatedEmoji() && (!message.isAnimatedAnimatedEmoji() || emojiAnimationsOverlay.supports(MessageObject.findAnimatedEmojiEmoticon(message.getDocument())) && currentUser != null) || message.isPremiumSticker()) {
                 restartSticker(cell);
                 emojiAnimationsOverlay.onTapItem(cell, ChatActivity.this, true);
@@ -41789,7 +41524,7 @@ public class ChatActivity extends BaseFragment implements
             } else if (message.isVideo() || message.type == MessageObject.TYPE_PHOTO || message.type == MessageObject.TYPE_TEXT && !message.isWebpageDocument() || message.isGif()) {
                 if (message.isSponsored()) {
                     if (message.isGif() || message.isPhoto()) {
-                        logSponsoredClicked(message, true, false);
+
                         if (message.sponsoredUrl != null) {
                             if (progressDialogCurrent != null) {
                                 progressDialogCurrent.cancel(true);
@@ -41814,7 +41549,7 @@ public class ChatActivity extends BaseFragment implements
                         }
                         return;
                     } else if (message.isVideo()) {
-                        logSponsoredClicked(message, true, false);
+
                     }
                 }
                 if (message.getDuration() > 0 && message.getVideoStartsTimestamp() > 0 && !message.openedInViewer) {
@@ -42089,7 +41824,7 @@ public class ChatActivity extends BaseFragment implements
                 Browser.openUrl(getParentActivity(), Uri.parse(webPage.url), true, true, false, progressDialogCurrent, null, false, true, false);
             } else {
                 if (messageObject.isSponsored()) {
-                    logSponsoredClicked(messageObject, false, false);
+
                     if (messageObject.sponsoredUrl != null) {
                         if (progressDialogCurrent != null) {
                             progressDialogCurrent.cancel(true);
@@ -44788,7 +44523,7 @@ public class ChatActivity extends BaseFragment implements
                 } else if (customTabs && !isHashtag) {
                     Browser.openInTelegramBrowser(getParentActivity(), str, null);
                 } else {
-                    logSponsoredClicked(messageObject, false, false);
+
                     openClickableLink(span, str, false, cell, messageObject, false);
                 }
             });

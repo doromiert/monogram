@@ -9340,7 +9340,7 @@ public class MediaDataController extends BaseController {
             ArrayList<TLRPC.Document> animatedEmoji = new ArrayList<>();
             final int maxAnimatedPerEmoji = maxAnimatedPerEmojiInput == null ? (result.size() > 5 ? 1 : (result.size() > 2 ? 2 : 3)) : maxAnimatedPerEmojiInput;
             int len = maxAnimatedPerEmojiInput == null ? Math.min(15, result.size()) : result.size();
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || forcePremium;
+            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || forcePremium;
             String topicIconsName = null;
             if (allowTopicIcons) {
                 topicIconsName = UserConfig.getInstance(currentAccount).defaultTopicIcons;

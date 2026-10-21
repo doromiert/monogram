@@ -176,7 +176,6 @@ import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
-import org.telegram.ui.TON.TONIntroActivity;
 import org.telegram.ui.TwoStepVerificationActivity;
 import org.telegram.ui.TwoStepVerificationSetupActivity;
 import org.telegram.ui.bots.AffiliateProgramFragment;
@@ -7939,8 +7938,6 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                     if (balance != null && state.amount.asNano() > balance.asNano()) {
                         if (selectedCurrency == AmountUtils.Currency.STARS) {
                             new StarsIntroActivity.StarsNeededSheet(context, resourcesProvider, state.amount.asDecimal(), StarsIntroActivity.StarsNeededSheet.TYPE_STAR_GIFT_BUY_RESALE, null, null, 0).show();
-                        } else if (selectedCurrency == AmountUtils.Currency.TON){
-                            new TONIntroActivity.StarsNeededSheet(context, resourcesProvider, state.amount, true, null).show();
                         }
                         return;
                     }
