@@ -30,6 +30,9 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asCheck(9,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceEmoji)).setChecked(MonogramChatBehavior.replyEmoji(currentAccount)));
         items.add(UItem.asCheck(10,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceBackground)).setChecked(MonogramChatBehavior.replyBackground(currentAccount)));
         items.add(UItem.asShadow(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramReplyAppearanceInfo)));
+        items.add(UItem.asHeader(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.VoipCamera)));
+        items.add(UItem.asCheck(13,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramUseSystemCamera)).setChecked(!org.telegram.messenger.SharedConfig.inappCamera));
+        items.add(UItem.asShadow(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramUseSystemCameraInfo)));
         items.add(UItem.asHeader(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramMapsTitle)));
         android.content.Context context = org.telegram.messenger.ApplicationLoader.applicationContext;
         int provider = org.telegram.messenger.MonogramMaps.selected(context);
@@ -50,6 +53,7 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         else if(item.id==8) MonogramChatBehavior.replyColors(currentAccount,!MonogramChatBehavior.replyColors(currentAccount));
         else if(item.id==9) MonogramChatBehavior.replyEmoji(currentAccount,!MonogramChatBehavior.replyEmoji(currentAccount));
         else if(item.id==10) MonogramChatBehavior.replyBackground(currentAccount,!MonogramChatBehavior.replyBackground(currentAccount));
+        else if(item.id==13) org.telegram.messenger.SharedConfig.toggleInappCamera();
         else if(item.id==11 || item.id==12) {
             if (!org.telegram.messenger.MonogramMaps.select(org.telegram.messenger.ApplicationLoader.applicationContext,
                     item.id == 12 ? org.telegram.messenger.MonogramMaps.GOOGLE : org.telegram.messenger.MonogramMaps.OPEN_STREET_MAP)) {

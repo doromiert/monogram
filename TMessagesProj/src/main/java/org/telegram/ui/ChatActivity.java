@@ -10341,7 +10341,7 @@ public class ChatActivity extends BaseFragment implements
             if (isSavedMessages) {
                 actionModeViews.add(actionMode.addItemWithWidth(tag_message, R.drawable.menu_tag_edit, dp(48), LocaleController.getString(R.string.AccDescrTagMessage)));
             }
-            actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, dp(48), LocaleController.getString(R.string.AddToFavorites)));
+            actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, dp(48), LocaleController.getString(R.string.MonogramMenuFavorite)));
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             if (!isSavedMessages && getDialogId() != UserObject.VERIFY) {
                 actionModeViews.add(actionMode.addItemWithWidth(forward, R.drawable.msg_forward, dp(48), LocaleController.getString(R.string.Forward)));
@@ -10350,7 +10350,7 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete)));
         } else {
             actionModeViews.add(actionMode.addItemWithWidth(edit, R.drawable.msg_edit, dp(48), LocaleController.getString(R.string.Edit)));
-            actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, dp(48), LocaleController.getString(R.string.AddToFavorites)));
+            actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, dp(48), LocaleController.getString(R.string.MonogramMenuFavorite)));
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete)));
         }
@@ -31123,7 +31123,7 @@ public class ChatActivity extends BaseFragment implements
             final ArrayList<Integer> options = new ArrayList<>();
             View optionsView = null;
             if(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).debugLog.enabled()) {
-                items.add("Message diagnostics");options.add(OPTION_MONOGRAM_DIAGNOSTICS);icons.add(R.drawable.msg_info);
+                items.add(LocaleController.getString(R.string.MonogramMenuDiagnostics));options.add(OPTION_MONOGRAM_DIAGNOSTICS);icons.add(R.drawable.msg_info);
             }
 
 
@@ -46428,7 +46428,7 @@ public class ChatActivity extends BaseFragment implements
                 } else if (type == 3 && !noforwardsOrPaidMedia) {
                     if (selectedObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage && MessageObject.isGifDocument(selectedObject.messageOwner.media.webpage.document)) {
                         boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, selectedObject.messageOwner.media.webpage.document);
-                        items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
+                        items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.MonogramMenuFavorite));
                         options.add(OPTION_ADD_TO_GIFS);
                         icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);
                     }
@@ -46436,7 +46436,7 @@ public class ChatActivity extends BaseFragment implements
                     if (!noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia()) {
                         if (selectedObject.isVideo()) {
                             if (!selectedObject.needDrawBluredPreview()) {
-                                items.add(LocaleController.getString(R.string.SaveToGallery));
+                                items.add(LocaleController.getString(R.string.Save));
                                 options.add(OPTION_SAVE_TO_GALLERY);
                                 icons.add(R.drawable.msg_gallery);
                                 items.add(LocaleController.getString(R.string.ShareFile));
@@ -46453,7 +46453,7 @@ public class ChatActivity extends BaseFragment implements
                         } else if (selectedObject.getDocument() != null && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce()) {
                             if (MessageObject.isGifDocument(selectedObject.getDocument())) {
                                 boolean favorite = org.telegram.messenger.xmpp.MonogramGiphy.isFavorite(currentAccount, selectedObject.getDocument());
-                                items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.AddToFavorites));
+                                items.add(LocaleController.getString(favorite ? R.string.DeleteFromFavorites : R.string.MonogramMenuFavorite));
                                 options.add(OPTION_ADD_TO_GIFS);
                                 icons.add(favorite ? R.drawable.msg_unfave : R.drawable.msg_fave);
                             }
@@ -46465,7 +46465,7 @@ public class ChatActivity extends BaseFragment implements
                             icons.add(R.drawable.msg_shareout);
                         } else {
                             if (!selectedObject.needDrawBluredPreview()) {
-                                items.add(LocaleController.getString(R.string.SaveToGallery));
+                                items.add(LocaleController.getString(R.string.Save));
                                 options.add(OPTION_SAVE_TO_GALLERY);
                                 icons.add(R.drawable.msg_gallery);
                             }
@@ -46497,7 +46497,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 } else if (type == 6 && !noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia()) {
                     if (!selectedObject.needDrawBluredPreview() && !selectedObject.isVoiceOnce() && !selectedObject.isRoundOnce()) {
-                        items.add(LocaleController.getString(R.string.SaveToGallery));
+                        items.add(LocaleController.getString(R.string.Save));
                         options.add(OPTION_SAVE_TO_GALLERY2);
                         icons.add(R.drawable.msg_gallery);
                         items.add(LocaleController.getString(R.string.SaveToDownloads));
@@ -46519,7 +46519,7 @@ public class ChatActivity extends BaseFragment implements
                         TLRPC.Document document = selectedObject.getDocument();
                         if (!getMediaDataController().isStickerInFavorites(document)) {
                             if (getMediaDataController().canAddStickerToFavorites()) {
-                                items.add(LocaleController.getString(R.string.AddToFavorites));
+                                items.add(LocaleController.getString(R.string.MonogramMenuFavorite));
                                 options.add(OPTION_ADD_STICKER_TO_FAVORITES);
                                 icons.add(R.drawable.msg_fave);
                             }
@@ -46554,7 +46554,7 @@ public class ChatActivity extends BaseFragment implements
                     TLRPC.Document document = selectedObject.getDocument();
                     if (!getMediaDataController().isStickerInFavorites(document)) {
                         if (getMediaDataController().canAddStickerToFavorites()) {
-                            items.add(LocaleController.getString(R.string.AddToFavorites));
+                            items.add(LocaleController.getString(R.string.MonogramMenuFavorite));
                             options.add(OPTION_ADD_STICKER_TO_FAVORITES);
                             icons.add(R.drawable.msg_fave);
                         }
@@ -46596,7 +46596,7 @@ public class ChatActivity extends BaseFragment implements
                     icons.add(R.drawable.msg_forward);
                     if (selectedObject.getDialogId() != getUserConfig().getClientUserId()
                             && org.telegram.messenger.xmpp.MonogramChatBehavior.showSaveButton(currentAccount)) {
-                        items.add(LocaleController.getString(R.string.SavedMessages));
+                        items.add(LocaleController.getString(R.string.MonogramMenuBookmark));
                         options.add(OPTION_MONOGRAM_SAVE);
                         icons.add(R.drawable.msg_saved);
                     }
@@ -46686,7 +46686,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 if (type == 4 && !noforwardsOrPaidMedia && !selectedObject.hasRevealedExtendedMedia() && !selectedObject.needDrawBluredPreview()) {
                     if (selectedObject.isVideo()) {
-                        items.add(LocaleController.getString(R.string.SaveToGallery));
+                        items.add(LocaleController.getString(R.string.Save));
                         options.add(OPTION_SAVE_TO_GALLERY);
                         icons.add(R.drawable.msg_gallery);
                         items.add(LocaleController.getString(R.string.ShareFile));
@@ -46707,7 +46707,7 @@ public class ChatActivity extends BaseFragment implements
                         options.add(OPTION_SHARE);
                         icons.add(R.drawable.msg_shareout);
                     } else {
-                        items.add(LocaleController.getString(R.string.SaveToGallery));
+                        items.add(LocaleController.getString(R.string.Save));
                         options.add(OPTION_SAVE_TO_GALLERY);
                         icons.add(R.drawable.msg_gallery);
                     }

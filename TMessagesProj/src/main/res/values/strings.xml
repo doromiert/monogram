@@ -11685,4 +11685,9 @@
     <string name="MonogramMapsNoKey">Google Maps is not configured in this build. Maps will use OpenStreetMap. Your Google preference is saved for builds with a configured key.</string>
     <string name="MonogramMapsNoServices">Google Play services are unavailable or need updating. Maps will use OpenStreetMap. You can keep this preference; Google Maps will be checked again after an app restart.</string>
     <string name="MonogramMapsGoogleInfo">Use Google Maps when available, with OpenStreetMap as a fallback. This choice applies to all accounts and takes effect the next time you open a map. Place search uses Photon; device location uses Android.</string>
+    <string name="MonogramMenuDiagnostics">Diagnostics</string>
+    <string name="MonogramMenuFavorite">Favorite</string>
+    <string name="MonogramMenuBookmark">Bookmark</string>
+    <string name="MonogramUseSystemCamera">Use system camera</string>
+    <string name="MonogramUseSystemCameraInfo">Open your device’s camera app from the media picker instead of Monogram’s camera. Applies to all accounts.</string>
 </resources>

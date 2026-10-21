@@ -62,6 +62,18 @@ public class MonogramRetractionsTest {
             assertEquals(Collections.singleton(original),store.reconcileRetractions(peer)); assertTrue(store.history(peer,self,0,50).isEmpty());
         } finally { context.deleteDatabase(file); }
     }
+    @Test public void plaintextRoomRetractionFromTheSameOccupantRemovesAnEncryptedOriginal() throws Exception {
+        android.content.Context context=RuntimeEnvironment.getApplication();String file="retract-room-interop.db";context.deleteDatabase(file);
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            String room="room@conference.example.org";long self=store.peer("alice@example.org"),peer=store.room(room,"Alice");
+            int id=store.saveRoom(MessageFixture.roomText(room,"Alice","wire","server-id","Secret","alice@example.org","own-stable",100000,true,null,null).withSenderFingerprint(KEY),self);
+            store.saveRoom(MessageFixture.roomRetraction(room,"Mallory","mallory@example.org","wrong-stable","server-id",false),self);
+            assertTrue(store.reconcileRetractions(peer).isEmpty());
+            store.saveRoom(MessageFixture.roomRetraction(room,"Alice","alice@example.org","own-stable","server-id",false),self);
+            assertEquals(Collections.singleton(id),store.reconcileRetractions(peer));
+            assertTrue(store.history(peer,self,0,50).isEmpty());
+        } finally {context.deleteDatabase(file);}
+    }
     @Test public void encryptedOriginalRejectsPlaintextAndOtherDevicesButAcceptsItsAuthenticatedKey() throws Exception {
         android.content.Context context=RuntimeEnvironment.getApplication(); String file="retract-fingerprint.db"; context.deleteDatabase(file);
         try(MonogramStore store=new MonogramStore(context,file)) {
@@ -85,12 +97,11 @@ public class MonogramRetractionsTest {
             assertEquals(Collections.singleton(id),store.reconcileRetractions(peer));
         } finally { context.deleteDatabase(file); }
     }
-    @Test public void encryptedRoomRetractionNeedsOriginalFingerprintAsWellAsOccupantIdentity() throws Exception {
+    @Test public void encryptedRoomControlStillNeedsOriginalFingerprintAsWellAsOccupantIdentity() throws Exception {
         android.content.Context context=RuntimeEnvironment.getApplication(); String file="retract-room-key.db"; context.deleteDatabase(file); String room="room@conference.example.org";
         try(MonogramStore store=new MonogramStore(context,file)) {
             long self=store.peer("alice@example.org"),peer=store.room(room,"Alice");
             int id=store.saveRoom(MessageFixture.roomText(room,"Bob","wire","sid","Secret","bob@example.org","bob-id",100000,true,null,null).withSenderFingerprint(KEY),self);
-            store.saveRoom(MessageFixture.roomRetraction(room,"Bob","bob@example.org","bob-id","sid",false),self);
             store.saveRoom(MessageFixture.roomRetraction(room,"Bob","bob@example.org","bob-id","sid",false,OTHER),self);
             assertTrue(store.reconcileRetractions(peer).isEmpty());
             store.saveRoom(MessageFixture.roomRetraction(room,"Bob","bob@example.org","bob-id","sid",false,KEY),self);

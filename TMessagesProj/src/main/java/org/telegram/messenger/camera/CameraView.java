@@ -686,6 +686,7 @@ public class CameraView extends FrameLayout implements TextureView.SurfaceTextur
     protected CameraGLThread cameraThread;
     @Override
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+        if (disposed) return;
         updateCameraInfoSize(0);
         if (dual) {
             updateCameraInfoSize(1);
@@ -801,12 +802,8 @@ public class CameraView extends FrameLayout implements TextureView.SurfaceTextur
             cameraThread.shutdown(0);
             cameraThread.postRunnable(() -> this.cameraThread = null);
         }
-        if (cameraSession[0] != null) {
-            cameraSession[0].destroy(true, null, null);
-        }
-        if (cameraSession[1] != null) {
-            cameraSession[1].destroy(true, null, null);
-        }
+        releaseSession(cameraSession[0], true, null);
+        releaseSession(cameraSession[1], true, null);
         return false;
     }
 
@@ -995,11 +992,20 @@ public class CameraView extends FrameLayout implements TextureView.SurfaceTextur
         return cameraSessionRecording;
     }
 
+    private final java.util.Set<CameraSessionWrapper> releasedSessions = java.util.Collections.synchronizedSet(
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
+    private volatile boolean disposed;
+
+    private void releaseSession(CameraSessionWrapper session, boolean async, Runnable before) {
+        // Explicit destruction and TextureView detachment both run during picker close.
+        // A second queued close could otherwise release a newly opened shared CameraInfo.
+        if (session != null && releasedSessions.add(session)) session.destroy(async, before, null);
+    }
+
     public void destroy(boolean async, final Runnable beforeDestroyRunnable) {
+        disposed = true;
         for (int i = 0; i < 2; ++i) {
-            if (cameraSession[i] != null) {
-                cameraSession[i].destroy(async, beforeDestroyRunnable, null);
-            }
+            releaseSession(cameraSession[i], async, beforeDestroyRunnable);
         }
         CameraController.getInstance().removeOnErrorListener(this);
     }
@@ -2282,7 +2288,7 @@ public class CameraView extends FrameLayout implements TextureView.SurfaceTextur
     private void createCamera(final SurfaceTexture surfaceTexture, int i) {
         AndroidUtilities.runOnUIThread(() -> {
             CameraGLThread cameraThread = this.cameraThread;
-            if (cameraThread == null) {
+            if (disposed || cameraThread == null) {
                 return;
             }
             if (BuildVars.LOGS_ENABLED) {

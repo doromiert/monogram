@@ -157,6 +157,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     private boolean isHidden;
 
     private AnimatorSet cameraInitAnimation;
+    private AnimatorSet cameraTransitionAnimation;
     protected CameraViewInternal cameraView;
     private final CameraViewItemDecoration cameraViewItemDecoration;
     private TextView recordTime;
@@ -1284,7 +1285,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
             @Override
             public boolean shutterLongPressed() {
-                if (parentAlert.avatarPicker != 2 && !(parentAlert.baseFragment instanceof ChatActivity) || takingPhoto || parentAlert.destroyed || cameraView == null) {
+                if (parentAlert.avatarPicker != 2 && !(parentAlert.baseFragment instanceof ChatActivity) || takingPhoto || parentAlert.destroyed || cameraView == null || !cameraView.isInited()) {
                     return false;
                 }
                 if (parentAlert.isStickerMode) {
@@ -1367,7 +1368,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
             @Override
             public void shutterReleased() {
-                if (takingPhoto || cameraView == null || cameraView.getCameraSession() == null) {
+                if (takingPhoto || cameraView == null || !cameraView.isInited() || cameraView.getCameraSession() == null) {
                     return;
                 }
                 if (shutterButton.getState() == ShutterButton.State.RECORDING) {
@@ -1549,7 +1550,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     }
 
     private void openCameraWithPermissionCheck() {
-        if (!mediaEnabled || parentAlert.destroyed || cameraOpened) return;
+        if (!mediaEnabled || parentAlert.destroyed || parentAlert.paused || cameraOpened || cameraAnimationInProgress
+                || cameraRequested && cameraView != null) return;
         cameraRequested = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (ContextCompat.checkSelfPermission(parentAlert.baseFragment.getParentActivity(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -2491,12 +2493,12 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
     boolean cameraExpanded;
     private void openCamera(boolean animated) {
-        if (cameraView == null || cameraInitAnimation != null || parentAlert.isDismissed()) {
+        if (cameraView == null || cameraOpened || cameraAnimationInProgress || cameraInitAnimation != null || parentAlert.isDismissed()) {
             return;
         }
         cameraView.initTexture();
-        // The first camera frame can take longer than the entire expansion animation.
-        if (cameraButton != null && !cameraView.isInited()) return;
+        // Expand immediately; camera startup runs alongside the native transition.
+        final CameraViewInternal openingView = cameraView;
         checkCameraViewPosition();
         if (shouldLoadAllMedia()) {
             tooltipTextView.setVisibility(VISIBLE);
@@ -2528,6 +2530,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         AndroidUtilities.hideKeyboard(this);
         AndroidUtilities.setLightNavigationBar(parentAlert, false);
         parentAlert.getWindow().addFlags(FLAG_KEEP_SCREEN_ON);
+        cameraOpened = true;
+        if (cameraButton != null) cameraButton.setVisibility(INVISIBLE);
         if (animated) {
             setCameraOpenProgress(0);
             cameraAnimationInProgress = true;
@@ -2553,6 +2557,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             animatorSet.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animator) {
+                    if (cameraTransitionAnimation != animator || cameraView != openingView) return;
+                    cameraTransitionAnimation = null;
                     notificationsLocker.unlock();
                     cameraAnimationInProgress = false;
                     if (cameraView != null) {
@@ -2570,6 +2576,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     }
                 }
             });
+            cameraTransitionAnimation = animatorSet;
             animatorSet.start();
         } else {
             setCameraOpenProgress(1.0f);
@@ -2587,8 +2594,6 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 cameraView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_FULLSCREEN);
             }
         }
-        cameraOpened = true;
-        if (cameraButton != null) cameraButton.setVisibility(INVISIBLE);
         if (cameraView != null) {
             cameraView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
@@ -2740,7 +2745,18 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     }
 
     public void hideCamera(boolean async) {
-        if (!deviceHasGoodCamera || cameraView == null) {
+        cancelCameraTransition();
+        cameraRequested = false;
+        cameraOpened = false;
+        cameraExpanded = false;
+        cameraOpenProgress = 0;
+        parentAlert.getWindow().clearFlags(FLAG_KEEP_SCREEN_ON);
+        if (cameraButton != null) cameraButton.setVisibility(mediaEnabled ? VISIBLE : GONE);
+        if (cameraPanel != null) cameraPanel.setVisibility(GONE);
+        if (zoomControlView != null) zoomControlView.setVisibility(GONE);
+        if (cameraPhotoRecyclerView != null) cameraPhotoRecyclerView.setVisibility(GONE);
+        gridView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        if (cameraView == null) {
             return;
         }
         saveLastCameraBitmap();
@@ -2755,7 +2771,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         // The old TextureView may remain attached while its camera closes asynchronously.
         // Stop it drawing (or intercepting touches) as soon as this layout relinquishes it.
         releasedView.setVisibility(GONE);
-        AndroidUtilities.runOnUIThread(() -> parentAlert.getContainer().removeView(releasedView), 300);
+        parentAlert.getContainer().removeView(releasedView);
         canSaveCameraPreview = false;
     }
 
@@ -2886,6 +2902,16 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
     float additionCloseCameraY;
 
+    private void cancelCameraTransition() {
+        if (cameraTransitionAnimation != null) {
+            cameraTransitionAnimation.removeAllListeners();
+            cameraTransitionAnimation.cancel();
+            cameraTransitionAnimation = null;
+            notificationsLocker.unlock();
+        }
+        cameraAnimationInProgress = false;
+    }
+
     private void releaseFloatingCamera() {
         cameraRequested = false;
         hideCamera(true);
@@ -2896,6 +2922,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         if (takingPhoto || cameraView == null) {
             return;
         }
+        cancelCameraTransition();
+        final CameraViewInternal closingView = cameraView;
         animateCameraValues[1] = cameraButton != null ? dp(56) : itemSize;
         animateCameraValues[2] = cameraButton != null ? dp(56) : itemSize * 2 + dp(GAP);
         if (zoomControlHideRunnable != null) {
@@ -2931,6 +2959,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             animatorSet.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animator) {
+                    if (cameraTransitionAnimation != animator || cameraView != closingView) return;
+                    cameraTransitionAnimation = null;
                     notificationsLocker.unlock();
                     cameraExpanded = false;
                     parentAlert.getWindow().clearFlags(FLAG_KEEP_SCREEN_ON);
@@ -2962,6 +2992,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     }
                 }
             });
+            cameraTransitionAnimation = animatorSet;
             animatorSet.start();
         } else {
             cameraExpanded = false;

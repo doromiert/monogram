@@ -302,7 +302,8 @@ public class MonogramRoomStoreTest {
                 assertNull(store.getMessage(id,self).reply_to);
             }
             int noRoomId=store.saveRoom(event("Bob","no-room-id",null,"No room ID",false,true),self);
-            ReplyReference fallback=store.replyTo(noRoomId,dialog,self,false,null,0);
+            assertThrows(IllegalArgumentException.class,() -> store.replyTo(noRoomId,dialog,self,false,null,0));
+            ReplyReference fallback=store.replyTo(noRoomId,dialog,self,false,null,0,true);
             assertEquals("",fallback.id); assertNull(fallback.to);
             assertTrue(fallback.wireBody("Answer").startsWith("> No room ID\n"));
         } finally { context.deleteDatabase(file); }

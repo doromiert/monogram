@@ -71,7 +71,8 @@ final class MonogramRetractions {
                         target=candidate;
                     }
                 }
-                if(ambiguous || target==0 || !encryptionMatches(target,events.getInt(7),events.getString(8)) || peer<0 && !roomAuthor(target,actor,events.getString(3),events.getString(4),events.getInt(5)!=0)) continue;
+                if(ambiguous || target==0 || peer<0 && !roomAuthor(target,actor,events.getString(3),events.getString(4),events.getInt(5)!=0)
+                        || !(peer<0 && events.getInt(7)==0) && !encryptionMatches(target,events.getInt(7),events.getString(8))) continue;
                 if(!store.hiddenCorrection(target)) removed.add(target);
                 db.execSQL("UPDATE message_retractions SET resolved=? WHERE rowid=?",new Object[]{target,events.getLong(6)});
             }

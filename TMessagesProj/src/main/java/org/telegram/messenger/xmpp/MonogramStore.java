@@ -1294,13 +1294,16 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
     }
     synchronized ReplyReference replyTo(int target, long peer, long self, boolean encrypted, String quote, int quoteOffset) {
+        return replyTo(target,peer,self,encrypted,quote,quoteOffset,peer>0);
+    }
+    synchronized ReplyReference replyTo(int target, long peer, long self, boolean encrypted, String quote, int quoteOffset, boolean quoteFallbackAllowed) {
         if(hiddenCorrection(target)) throw new IllegalArgumentException("Reply target is unavailable");
         TLRPC.Message original = getMessage(target, self, false);
         if(original.action instanceof TLRPC.TL_messageActionPhoneCall) throw new IllegalArgumentException("Local call summaries cannot be replied to");
         if (original.dialog_id != peer) throw new IllegalArgumentException("Reply target belongs to another conversation");
         String author = null, id = null;
         if(peer<0) {
-            try(Cursor c=getReadableDatabase().rawQuery("SELECT i.value,a.occupant FROM message_ids i JOIN room_message_actors a ON a.message=i.message WHERE i.message=? AND i.kind='archive' ORDER BY i.rowid LIMIT 1",new String[]{Integer.toString(target)})) {
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT i.value,a.occupant FROM message_ids i LEFT JOIN room_message_actors a ON a.message=i.message WHERE i.message=? AND i.kind='archive' ORDER BY i.rowid LIMIT 1",new String[]{Integer.toString(target)})) {
                 if(c.moveToFirst()) { id=c.getString(0); author=c.getString(1); }
             }
         } else {
@@ -1321,6 +1324,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             }
         }
         if (author == null) author = jid(original.out ? self : peer);
+        if(id==null && !quoteFallbackAllowed) throw new IllegalArgumentException("The original room-assigned message ID has not synced yet");
         ReplyReference reference = id==null ? ReplyReference.quoteOnly("") : new ReplyReference(author,id);
         // An encrypted original must never be quoted into a plaintext reply.
         try (Cursor c = getReadableDatabase().rawQuery("SELECT max(encrypted),min(readable) FROM messages WHERE id IN (?,?)", new String[]{Integer.toString(target),Integer.toString(payload(target))})) {

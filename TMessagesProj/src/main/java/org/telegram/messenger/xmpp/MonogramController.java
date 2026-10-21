@@ -2192,13 +2192,16 @@ public final class MonogramController {
                     String reference=old ? target.legacy : target.current;
                     if(reference==null) throw new IllegalArgumentException("This client or room needs an unavailable original message reference");
                     com.negzero.monogram.xmpp.MessageRetraction request=new com.negzero.monogram.xmpp.MessageRetraction(reference,old);
-                    String own=MonogramRetractions.fingerprint(expected.senderFingerprint(target.encryption));
-                    if(target.encryption!=XmppMessage.Encryption.PLAIN && (own==null || target.fingerprint!=null && !target.fingerprint.equals(own)))
-                        throw new IllegalArgumentException("Retract this encrypted message from the device that originally sent it.");
                     if(peer<0) {
-                        if(target.encryption==XmppMessage.Encryption.OMEMO2) throw new UnsupportedOperationException("Modern OMEMO room retractions are not supported");
-                        expected.rooms.sendRetraction(jid,request,target.sender,target.stable,target.encryption!=XmppMessage.Encryption.PLAIN,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
-                    } else expected.sendRetraction(jid,request,target.encryption);
+                        // Room retractions are author-bound control metadata, as sent by Monocles.
+                        // They contain no original content and must not depend on OMEMO device availability.
+                        expected.rooms.sendRetraction(jid,request,target.sender,target.stable,false,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
+                    } else {
+                        String own=MonogramRetractions.fingerprint(expected.senderFingerprint(target.encryption));
+                        if(target.encryption!=XmppMessage.Encryption.PLAIN && (own==null || target.fingerprint!=null && !target.fingerprint.equals(own)))
+                            throw new IllegalArgumentException("Retract this encrypted message from the device that originally sent it.");
+                        expected.sendRetraction(jid,request,target.encryption);
+                    }
                     sent++;
                     worker.execute(() -> {
                         if(owner!=accountEpoch) return;
@@ -2259,7 +2262,11 @@ public final class MonogramController {
         ReplyUnavailable(Exception cause) { super("Original reply message is unavailable", cause); }
     }
     private ReplyReference replyTo(int target, long peer, boolean encrypted, String quote, int offset) {
-        try { return store.replyTo(target, peer, self, encrypted, quote, offset); }
+        try {
+            XmppSession current=session;
+            boolean fallbackAllowed=peer>0 || current!=null && Boolean.FALSE.equals(current.rooms.supportsReplies(store.jid(peer)));
+            return store.replyTo(target, peer, self, encrypted, quote, offset, fallbackAllowed);
+        }
         catch (IllegalArgumentException invalid) { throw new ReplyUnavailable(invalid); }
     }
     private ReplyReference outgoingReply(TLRPC.InputReplyTo reply, long peer, boolean encrypted) {

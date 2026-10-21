@@ -53,6 +53,7 @@ public final class XmppRooms implements AutoCloseable {
     private static final String OCCUPANT_ID="urn:xmpp:occupant-id:0";
     private final Set<EntityBareJid> stableOccupants=ConcurrentHashMap.newKeySet();
     private final Set<EntityBareJid> assignedIds=ConcurrentHashMap.newKeySet();
+    private final Set<EntityBareJid> replyCapabilitiesKnown=ConcurrentHashMap.newKeySet();
     private final Set<EntityBareJid> nonAnonymousRooms=ConcurrentHashMap.newKeySet();
     private final Map<EntityBareJid,Boolean> legacyRetractions=new ConcurrentHashMap<>();
     private final java.util.concurrent.ScheduledExecutorService presenceUpdates=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
@@ -73,7 +74,7 @@ public final class XmppRooms implements AutoCloseable {
     private void changedMetadata(Message message) {
         if(closed || connection.getUser()==null || !metadataHint(message,connection.getUser().asBareJid())) return;
         MultiUserChat chat=chats.get(message.getFrom().asEntityBareJidIfPossible());
-        if(chat!=null && chat.isJoined()) { nonAnonymousRooms.remove(chat.getRoom());assignedIds.remove(chat.getRoom());listener.roomMetadataChanged(chat.getRoom().toString()); }
+        if(chat!=null && chat.isJoined()) { nonAnonymousRooms.remove(chat.getRoom());assignedIds.remove(chat.getRoom());replyCapabilitiesKnown.remove(chat.getRoom());listener.roomMetadataChanged(chat.getRoom().toString()); }
     }
     private void rejectInvitation(Message error) {
         RoomInvitations.Pending invitation=outgoingInvitations.rejected(error);
@@ -249,6 +250,7 @@ public final class XmppRooms implements AutoCloseable {
         if(features.containsFeature(OCCUPANT_ID)) stableOccupants.add(chat.getRoom());
         else stableOccupants.remove(chat.getRoom());
         if(features.containsFeature("urn:xmpp:sid:0")) assignedIds.add(chat.getRoom());else assignedIds.remove(chat.getRoom());
+        replyCapabilitiesKnown.add(chat.getRoom());
         if (!chat.isJoined()) {
             if(chatStates!=null) chatStates.roomLeft(chat.getRoom());
             chat.join(chat.getEnterConfigurationBuilder(Resourcepart.from(nickname))
@@ -1038,6 +1040,14 @@ public final class XmppRooms implements AutoCloseable {
     }
     /** Explicit plaintext metadata, matching XEP-0444 clients that use legacy OMEMO for text. */
     public boolean legacyRetractions(String jid) throws Exception { return legacyRetractions.getOrDefault(chat(jid).getRoom(),false); }
+    /** Null means unknown; lack of a completed capability lookup must never force quote-only replies. */
+    public Boolean supportsReplies(String jid) {
+        try {
+            EntityBareJid room=JidCreate.entityBareFrom(jid);
+            if(closed || !replyCapabilitiesKnown.contains(room)) return null;
+            return assignedIds.contains(room);
+        } catch(Exception invalid) { return null; }
+    }
     public void sendRetraction(String jid,MessageRetraction request,String originalSender,String originalStable,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
@@ -1074,5 +1084,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { closed=true;cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); assignedIds.clear(); nonAnonymousRooms.clear(); }
+    @Override public void close() { closed=true;cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); assignedIds.clear(); replyCapabilitiesKnown.clear(); nonAnonymousRooms.clear(); }
 }
