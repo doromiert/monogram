@@ -256,7 +256,7 @@ import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumPreviewBottomSheet;
+import org.telegram.ui.Components.EmojiStatusPreviewSheet;
 import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
 import org.telegram.ui.Components.Reactions.ChatSelectionReactionMenuOverlay;
 import org.telegram.ui.Components.Reactions.ReactionsEffectOverlay;
@@ -29197,7 +29197,7 @@ public class ChatActivity extends BaseFragment implements
             if (showEmojiStatusReport != null && show) {
                 final TLRPC.EmojiStatus status = showEmojiStatusReport;
                 final Runnable openStatus = () -> {
-                    PremiumPreviewBottomSheet sheet = new PremiumPreviewBottomSheet(this, currentAccount, user, getResourceProvider());
+                    EmojiStatusPreviewSheet sheet = new EmojiStatusPreviewSheet(this, currentAccount, user, getResourceProvider());
 
                     long document_id;
                     if (status instanceof TLRPC.TL_emojiStatus) {
@@ -29206,7 +29206,6 @@ public class ChatActivity extends BaseFragment implements
                     } else if (status instanceof TLRPC.TL_emojiStatusCollectible) {
                         TLRPC.TL_emojiStatusCollectible s = (TLRPC.TL_emojiStatusCollectible) status;
                         document_id = s.document_id;
-                        sheet.emojiStatusCollectible = s;
                     } else return;
 
                     BackupImageView icon = new BackupImageView(getContext());
@@ -29224,7 +29223,6 @@ public class ChatActivity extends BaseFragment implements
                     });
                     drawable.set(document_id, false);
 
-                    sheet.isEmojiStatus = true;
                     sheet.overrideTitleIcon = icon;
                     showDialog(sheet);
                 };
@@ -29239,7 +29237,7 @@ public class ChatActivity extends BaseFragment implements
                     span.full = false;
                     emoji.setSpan(span, 0, emoji.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
-                SpannableString link = new SpannableString(LocaleController.getString(R.string.TelegramPremium));
+                SpannableString link = new SpannableString(LocaleController.getString(R.string.MonogramEmojiStatus));
                 link.setSpan(new ClickableSpan() {
                     @Override
                     public void onClick(@NonNull View view) {
@@ -39043,11 +39041,9 @@ public class ChatActivity extends BaseFragment implements
             if (cell == null) {
                 return;
             }
-            if (!TextUtils.isEmpty(giftSlug)) {
-                Browser.openUrl(getContext(), "https://" + getMessagesController().linkPrefix + "/nft/" + giftSlug);
-                return;
-            }
-            PremiumPreviewBottomSheet premiumPreviewBottomSheet = new PremiumPreviewBottomSheet(ChatActivity.this, currentAccount, user, themeDelegate);
+            if (!TextUtils.isEmpty(giftSlug) || document == null) return;
+
+            EmojiStatusPreviewSheet premiumPreviewBottomSheet = new EmojiStatusPreviewSheet(ChatActivity.this, currentAccount, user, themeDelegate);
             int[] coords = new int[2];
             cell.getLocationOnScreen(coords);
             premiumPreviewBottomSheet.startEnterFromX = cell.getNameStatusX();
@@ -39091,12 +39087,8 @@ public class ChatActivity extends BaseFragment implements
                     icon.setImage(mediaLocation, mediaFilter, ImageLocation.getForDocument(thumb, document), "140_140", thumbDrawable, document);
                     if (MessageObject.isTextColorEmoji(document)) {
                         icon.setColorFilter(new PorterDuffColorFilter(premiumPreviewBottomSheet.accentColor != null ? premiumPreviewBottomSheet.accentColor : getThemedColor(Theme.key_windowBackgroundWhiteBlueIcon), PorterDuff.Mode.SRC_IN));
-                        premiumPreviewBottomSheet.statusStickerSet = MessageObject.getInputStickerSet(document);
-                    } else {
-                        premiumPreviewBottomSheet.statusStickerSet = MessageObject.getInputStickerSet(document);
                     }
                     premiumPreviewBottomSheet.overrideTitleIcon = icon;
-                    premiumPreviewBottomSheet.isEmojiStatus = true;
                 }
             }
             showDialog(premiumPreviewBottomSheet);
