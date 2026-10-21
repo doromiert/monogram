@@ -8727,18 +8727,17 @@ public class ChatActivity extends BaseFragment implements
 			savedMessagesSearchHint.setText(LocaleController.getString(R.string.SavedTagSearchTooltipHint));
 			contentView.addView(savedMessagesSearchHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 120, Gravity.TOP | Gravity.FILL_HORIZONTAL, 16, -8, 16, 0));
 
-            if (getUserConfig().isPremium()) {
-                savedMessagesTagHint = new HintView2(context, HintView2.DIRECTION_BOTTOM)
-                        .setMultilineText(true)
-                        .setTextAlign(Layout.Alignment.ALIGN_CENTER)
-                        .setDuration(-1)
-                        .setHideByTouch(true)
-                        .useScale(true)
-                        .setCloseButton(true)
-                        .setRounding(8);
-                savedMessagesTagHint.setText(LocaleController.getString(R.string.SavedTagLongpressHint));
-                contentView.addView(savedMessagesTagHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 120, Gravity.TOP | Gravity.FILL_HORIZONTAL, 16, 0, 16, 0));
-            }
+            savedMessagesTagHint = new HintView2(context, HintView2.DIRECTION_BOTTOM)
+                    .setMultilineText(true)
+                    .setTextAlign(Layout.Alignment.ALIGN_CENTER)
+                    .setDuration(-1)
+                    .setHideByTouch(true)
+                    .useScale(true)
+                    .setCloseButton(true)
+                    .setRounding(8);
+            savedMessagesTagHint.setText(LocaleController.getString(R.string.SavedTagLongpressHint));
+            contentView.addView(savedMessagesTagHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 120, Gravity.TOP | Gravity.FILL_HORIZONTAL, 16, 0, 16, 0));
+
         }
 
         if (getDialogId() == getUserConfig().getClientUserId()) {
@@ -10174,7 +10173,7 @@ public class ChatActivity extends BaseFragment implements
         actionMode.setItemVisibility(copy, !isPeerNoForwards() && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(star, selectedMessagesCanStarIds[0].size() + selectedMessagesCanStarIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(delete, cantDeleteMessagesCount == 0 ? View.VISIBLE : View.GONE);
-        actionMode.setItemVisibility(tag_message, getUserConfig().isPremium() ? View.VISIBLE : View.GONE);
+        actionMode.setItemVisibility(tag_message, getDialogId() == getUserConfig().getClientUserId() ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(share, View.GONE);
     }
 
@@ -10193,7 +10192,7 @@ public class ChatActivity extends BaseFragment implements
 
     private ReactionsContainerLayout tagSelector;
     private void showTagSelector() {
-        if (getDialogId() != getUserConfig().getClientUserId() || !getUserConfig().isPremium()) return;
+        if (getDialogId() != getUserConfig().getClientUserId()) return;
         if (tagSelector != null) return;
         tagSelector = new ReactionsContainerLayout(ReactionsContainerLayout.TYPE_TAGS, this, getContext(), currentAccount, themeDelegate) {
 
@@ -10246,11 +10245,7 @@ public class ChatActivity extends BaseFragment implements
             @Override
             public void onReactionClicked(View view, ReactionsLayoutInBubble.VisibleReaction visibleReaction, boolean longpress, boolean addToRecent) {
                 if (tagSelector == null) return;
-                if (getDialogId() == getUserConfig().getClientUserId() && !getUserConfig().isPremium()) {
-                    new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true).show();
-                    clearSelectionMode(false);
-                    return;
-                }
+
                 boolean updateFilteredMessages = false;
                 boolean notifyFilteredMessages = false;
                 boolean remove = tagSelector.getSelectedReactions().contains(visibleReaction);
@@ -19259,7 +19254,7 @@ public class ChatActivity extends BaseFragment implements
                 }
 
                 if (tagItem != null) {
-                    tagItem.setVisibility(getUserConfig().isPremium() && (
+                    tagItem.setVisibility((
                         (editItem != null && editItem.getVisibility() == View.VISIBLE ? 1 : 0) +
                         (forwardItem != null && forwardItem.getVisibility() == View.VISIBLE ? 1 : 0) +
                         (saveItem != null && saveItem.getVisibility() == View.VISIBLE ? 1 : 0) +
@@ -31796,17 +31791,9 @@ public class ChatActivity extends BaseFragment implements
                 reactionsLayout = new ReactionsContainerLayout(tags ? ReactionsContainerLayout.TYPE_TAGS : ReactionsContainerLayout.TYPE_DEFAULT, ChatActivity.this, contentView.getContext(), currentAccount, getResourceProvider());
                 reactionsLayout.setBackgroundFactory(scrimBlur3Factory, BlurredBackgroundProviderImpl.messageMenuReactionsBackground(resourceProvider));
                 if (tags) {
-                    reactionsLayout.setHint(getUserConfig().isPremium() ? LocaleController.getString(R.string.SavedTagReactionsHint2) : AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.SavedTagReactionsPremiumHint), Theme.key_windowBackgroundWhiteBlueText2, 0, () -> {
-                        closeMenu(false);
-                        PremiumFeatureBottomSheet sheet = new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true);
-                        sheet.setDimBehind(false);
-                        sheet.setOnHideListener(d -> {
-                            dimBehindView(false);
-                        });
-                        sheet.show();
-                    }));
+                    reactionsLayout.setHint(LocaleController.getString(R.string.SavedTagReactionsHint2));
                 }
-                if (isReactionsAvailable && (!tags || !getMessagesController().premiumFeaturesBlocked())) {
+                if (isReactionsAvailable) {
                     int pad = 22;
                     int sPad = 24;
                     reactionsLayout.setPadding(dp(4) + (LocaleController.isRTL ? 0 : sPad), dp(4), dp(4) + (LocaleController.isRTL ? sPad : 0), dp(pad));
@@ -38281,7 +38268,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
 	private boolean isSupportedTags() {
-		return getUserConfig().getClientUserId() == getDialogId() && !getMessagesController().getSavedMessagesController().unsupported && getUserConfig().isPremium();
+		return getUserConfig().getClientUserId() == getDialogId();
 	}
 
     private ChatMessageCellDelegate chatMessageCellDelegate;

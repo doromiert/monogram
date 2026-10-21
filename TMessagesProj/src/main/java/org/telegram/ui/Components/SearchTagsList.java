@@ -12,14 +12,10 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.text.InputType;
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -47,20 +43,16 @@ import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.AlertDialogDecor;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundProvider;
-import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -73,12 +65,10 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
     public final RecyclerListView listView;
     private final Adapter adapter;
 
-    private LinearLayout premiumLayout;
 
     private long chosen;
     private final ArrayList<Item> oldItems = new ArrayList<>();
     private final ArrayList<Item> items = new ArrayList<>();
-    private boolean shownPremiumLayout;
 
     private static class Item {
         ReactionsLayoutInBubble.VisibleReaction reaction;
@@ -120,14 +110,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         strokePaint.setStrokeWidth(dpf2(1));
         strokePaint.setStyle(Paint.Style.STROKE);
 
-        if (premiumLayout != null) {
-            premiumLayout.setBackground(blurredFactory.create(premiumLayout)
-                .setColorProvider(BlurredBackgroundProviderImpl.topPanelChatActivity(resourcesProvider))
-                .setRadius(dp(9), dp(15), dp(15), dp(9))
-                .setThickness(dp(5f))
-                .setPadding(dp(4))
-            );
-        }
+
     }
 
     public void setChosen(ReactionsLayoutInBubble.VisibleReaction visibleReaction, boolean notify) {
@@ -153,84 +136,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         }
     }
 
-    private void createPremiumLayout() {
-        if (premiumLayout != null) {
-            return;
-        }
 
-        premiumLayout = new LinearLayout(getContext());
-        premiumLayout.setOnClickListener(v -> {
-            new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true).show();
-        });
-        premiumLayout.setOrientation(LinearLayout.HORIZONTAL);
-        ScaleStateListAnimator.apply(premiumLayout, 0.03f, 1.25f);
-
-        TextView tagView = new TextView(getContext()) {
-            private final Path path = new Path();
-            private final RectF bounds = new RectF();
-            private final Paint paint = new Paint();
-            @Override
-            protected void dispatchDraw(Canvas canvas) {
-                paint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourcesProvider), 0.15f));
-                bounds.set(0, 0, getWidth(), getHeight());
-                ReactionsLayoutInBubble.fillTagPath(bounds, path);
-                canvas.drawPath(path, paint);
-                super.dispatchDraw(canvas);
-            }
-
-            @Override
-            protected void onLayout(boolean changed, int l, int t, int r, int b) {
-                super.onLayout(changed, l, t, r, b);
-                int left = getWidth(), right = 0;
-                for (int i = 0; i < getChildCount(); ++i) {
-                    left = Math.min(left, getChildAt(i).getLeft());
-                    right = Math.max(right, getChildAt(i).getRight());
-                }
-                setPivotX((left + right) / 2f);
-            }
-        };
-        tagView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourcesProvider));
-        tagView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-        tagView.setTypeface(AndroidUtilities.bold());
-        SpannableStringBuilder ssb = new SpannableStringBuilder();
-        Drawable lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock3).mutate();
-        lockDrawable.setColorFilter(new PorterDuffColorFilter(Theme.key_chat_messageLinkIn, PorterDuff.Mode.SRC_IN));
-        ColoredImageSpan span = new ColoredImageSpan(lockDrawable);
-        span.setTranslateY(0);
-        span.setTranslateX(0);
-        span.setScale(.94f, .94f);
-        SpannableString lock = new SpannableString("l");
-        lock.setSpan(span, 0, lock.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-        ssb.append(lock);
-        ssb.append(" ").append(LocaleController.getString(R.string.AddTagsToYourSavedMessages1));
-        tagView.setText(ssb);
-        tagView.setPadding(dp(4), dp(4), dp(9), dp(4));
-
-        TextView textView = new TextView(getContext());
-        textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourcesProvider));
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-        textView.setTypeface(AndroidUtilities.bold());
-        ssb = new SpannableStringBuilder(LocaleController.getString(R.string.AddTagsToYourSavedMessages2));
-        SpannableString arrow = new SpannableString(">");
-        Drawable imageDrawable = getContext().getResources().getDrawable(R.drawable.msg_arrowright).mutate();
-        imageDrawable.setColorFilter(new PorterDuffColorFilter(Theme.key_chat_messageLinkIn, PorterDuff.Mode.SRC_IN));
-        span = new ColoredImageSpan(imageDrawable);
-        span.setScale(.76f, .76f);
-        span.setTranslateX(-dp(1));
-        span.setTranslateY(dp(1));
-        arrow.setSpan(span, 0, arrow.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-        ssb.append(arrow);
-        textView.setText(ssb);
-        textView.setPadding(dp(5.66f), dp(4), dp(9), dp(4));
-
-        premiumLayout.addView(tagView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
-        premiumLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
-        premiumLayout.setPadding(dp(7), 0, 0, 0);
-        premiumLayout.setClipToPadding(false);
-        // premiumLayout.setTranslationY(dp(1));
-
-        addView(premiumLayout, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER_VERTICAL | Gravity.LEFT, 5, 0, 5, 0));
-    }
 
     private long topicId;
 
@@ -246,9 +152,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         listView = new RecyclerListView(context, resourcesProvider) {
             @Override
             public boolean dispatchTouchEvent(MotionEvent ev) {
-                if (premiumLayout != null && premiumLayout.getAlpha() > 0.5f) {
-                    return false;
-                }
+
                 return super.dispatchTouchEvent(ev);
             }
 
@@ -269,10 +173,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
             if (position < 0 || position >= items.size()) {
                 return;
             }
-            if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true).show();
-                return;
-            }
+
             long hash = items.get(position).hash();
             if (!setFilter(chosen == hash ? null : items.get(position).reaction)) {
                 return;
@@ -300,12 +201,9 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
             }
         });
         listView.setOnItemLongClickListener((view, position) -> {
-            if (position < 0 || position >= items.size() || !UserConfig.getInstance(currentAccount).isPremium())
+            if (position < 0 || position >= items.size())
                 return false;
-            if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_SAVED_TAGS, true).show();
-                return true;
-            }
+
             TagButton btn = (TagButton) view;
             if (btn.reactionButton != null) {
                 btn.reactionButton.startAnimation();
@@ -359,18 +257,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         updateTags(false);
     }
 
-    @Override
-    protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
-        if (child == listView && premiumLayout != null) {
-            if (premiumLayout.getAlpha() >= 1f)
-                return false;
-            canvas.saveLayerAlpha(0, 0, getWidth(), getHeight(), (int) (0xFF * (1f - premiumLayout.getAlpha())), Canvas.ALL_SAVE_FLAG);
-            boolean r = super.drawChild(canvas, child, drawingTime);
-            canvas.restore();
-            return r;
-        }
-        return super.drawChild(canvas, child, drawingTime);
-    }
+
 
     private static AlertDialog currentDialog;
     public static boolean onBackPressedRenameTagAlert(boolean invoked) {
@@ -550,7 +437,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
     }
 
     public boolean hasFilters() {
-        return !items.isEmpty() || shownPremiumLayout;
+        return !items.isEmpty();
     }
 
     public void clear() {
@@ -652,23 +539,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
             adapter.notifyDataSetChanged();
         }
 
-        if (shownPremiumLayout = !UserConfig.getInstance(currentAccount).isPremium()) {
-            createPremiumLayout();
-            if (!notify) {
-                premiumLayout.setVisibility(View.VISIBLE);
-                premiumLayout.setAlpha(0f);
-                premiumLayout.animate().alpha(1f).start();
-            }
-        } else if (premiumLayout != null) {
-            if (notify) {
-                premiumLayout.animate().alpha(0f).withEndAction(() -> {
-                    premiumLayout.setVisibility(View.GONE);
-                }).start();
-            } else {
-                premiumLayout.setAlpha(1f);
-                premiumLayout.setVisibility(View.VISIBLE);
-            }
-        }
+
     }
 
     @Override

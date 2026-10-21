@@ -3101,7 +3101,10 @@ public final class MonogramController {
         if (request instanceof MonogramFileRequest) {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
-        boolean cached = MonogramLocalFilters.supports(request) || request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
+        boolean cached = MonogramLocalFilters.supports(request)
+                || request instanceof TLRPC.TL_messages_sendReaction && ((TLRPC.TL_messages_sendReaction)request).peer!=null && ((TLRPC.TL_messages_sendReaction)request).peer.user_id==self
+                || request instanceof TLRPC.TL_messages_getDefaultTagReactions || request instanceof TLRPC.TL_messages_getSavedReactionTags || request instanceof TLRPC.TL_messages_updateSavedReactionTag
+                || request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
                 || request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
@@ -3454,7 +3457,7 @@ public final class MonogramController {
             if(request instanceof TLRPC.TL_messages_search) {
                 TLRPC.TL_messages_search query=(TLRPC.TL_messages_search)request;
                 result=store.search(self,searchPeer(query.peer),query.q,query.offset_id,query.add_offset,query.limit,
-                        searchPeer(query.from_id),query.min_date,query.max_date,query.filter,false,false);
+                        searchPeer(query.from_id),query.min_date,query.max_date,query.filter,false,false,query.saved_reaction==null ? java.util.Collections.emptyList() : query.saved_reaction);
             } else {
                 TLRPC.TL_messages_searchGlobal query=(TLRPC.TL_messages_searchGlobal)request;
                 result=query.broadcasts_only ? new TLRPC.TL_messages_messagesSlice() : store.search(self,0,query.q,query.offset_id,0,query.limit,
@@ -3496,10 +3499,25 @@ public final class MonogramController {
             java.util.Set<Long> users=new java.util.LinkedHashSet<>(); for(TLRPC.MessagePeerReaction reaction:result.reactions) users.add(reaction.peer_id.user_id);
             for(long user:users) result.users.add(store.user(user,self)); return result;
         }
+        if(request instanceof TLRPC.TL_messages_getDefaultTagReactions) return store.savedTags.defaults(self);
+        if(request instanceof TLRPC.TL_messages_getSavedReactionTags) {
+            TLRPC.TL_messages_getSavedReactionTags query=(TLRPC.TL_messages_getSavedReactionTags)request;
+            if(query.peer!=null && searchPeer(query.peer)!=self) return new TLRPC.TL_messages_savedReactionsTags();
+            return store.savedTags.list(self);
+        }
+        if(request instanceof TLRPC.TL_messages_updateSavedReactionTag) {
+            TLRPC.TL_messages_updateSavedReactionTag rename=(TLRPC.TL_messages_updateSavedReactionTag)request;
+            store.savedTags.rename(rename.reaction,(rename.flags & 1)!=0 ? rename.title : null);
+            return new TLRPC.TL_boolTrue();
+        }
         if(request instanceof TLRPC.TL_messages_sendReaction) {
             TLRPC.TL_messages_sendReaction send=(TLRPC.TL_messages_sendReaction)request;
             if(send.peer==null || send.peer.channel_id!=0) throw new IllegalArgumentException("Unsupported conversation");
             long peer=send.peer.chat_id!=0 ? -send.peer.chat_id : send.peer.user_id;
+            if(peer==self) {
+                store.savedTags.set(send.msg_id,self,send.reaction);
+                return reactionUpdates(peer,java.util.Collections.singleton(send.msg_id));
+            }
             String target=store.reactions.target(send.msg_id,peer,self);
             java.util.List<String> emojis=new java.util.ArrayList<>();
             for(TLRPC.Reaction reaction:send.reaction) {

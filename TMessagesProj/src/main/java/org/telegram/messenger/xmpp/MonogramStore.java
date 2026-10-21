@@ -20,6 +20,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final Context storeContext;
     private final String database;
     final MonogramReactions reactions=new MonogramReactions(this);
+    final MonogramSavedTags savedTags=new MonogramSavedTags(this);
     final MonogramReads reads=new MonogramReads(this);
     private final MonogramRetractions retractions=new MonogramRetractions(this);
     private final MonogramReceipts receipts=new MonogramReceipts(this);
@@ -32,7 +33,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final java.util.Map<Long,java.util.Map<Long,String>> mentionNamesCache=new java.util.HashMap<>();
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
-    MonogramStore(Context context, String name) { super(context, name, null, 28); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 29); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -46,6 +47,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         addLocalNames(db);
         addStickerHints(db);
         addLinkPreviews(db);
+        MonogramSavedTags.create(db);
     }
     private static void addLinkPreviews(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS link_previews(url TEXT PRIMARY KEY,expires INTEGER NOT NULL,media BLOB)");
@@ -147,7 +149,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 28 || oldVersion < 1 || oldVersion > 27) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 29 || oldVersion < 1 || oldVersion > 28) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -174,6 +176,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<26) addLocalNames(db);
         if(oldVersion<27) addStickerHints(db);
         if(oldVersion<28) addLinkPreviews(db);
+        if(oldVersion<29) MonogramSavedTags.create(db);
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -269,7 +272,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();mentionNamesCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("saved_message_tags",null,null); db.delete("saved_tag_names",null,null); db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -1231,7 +1234,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
         MonogramLocation.decorate(message);
         decorateLinkPreview(message);
-        message.reactions=reactions.snapshot(id,self);
+        message.reactions=peer==self ? savedTags.snapshot(id) : reactions.snapshot(id,self);
         if (outgoing && peer != 0 && peer != self) receipts.decorate(message);
         if (!outgoing) MonogramReceipts.restoreIncoming(message, message.media_unread ? 0 : 2);
         if (!outgoing && reads.isRead(id)) MonogramReceipts.markLocalRead(message);
@@ -1594,6 +1597,11 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {
+        return search(self,peer,query,offset,skip,limit,sender,minDate,maxDate,filter,groups,users,java.util.Collections.emptyList());
+    }
+    synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
+            int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users,
+            java.util.List<TLRPC.Reaction> tags) {
         TLRPC.TL_messages_messagesSlice result=new TLRPC.TL_messages_messagesSlice();
         String needle=query==null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
         boolean phoneCalls=filter instanceof TLRPC.TL_inputMessagesFilterPhoneCalls;
@@ -1609,6 +1617,10 @@ final class MonogramStore extends SQLiteOpenHelper {
                 +"AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) "
                 +"AND NOT EXISTS(SELECT 1 FROM reaction_sources x WHERE x.message=m.id) "
                 +"AND NOT EXISTS(SELECT 1 FROM retraction_sources x WHERE x.message=m.id AND x.hidden=1)";
+        if(!tags.isEmpty()) {
+            sql+=" AND m.peer=?";args.add(Long.toString(self));
+            sql+=MonogramSavedTags.searchClause(tags,args);
+        }
         if(phoneCalls && filter.missed) sql+=" AND ce.reason IN ('missed','busy')";
         if(peer!=0) { sql+=" AND m.peer=?"; args.add(Long.toString(peer)); }
         if(groups) sql+=" AND m.peer<0";
