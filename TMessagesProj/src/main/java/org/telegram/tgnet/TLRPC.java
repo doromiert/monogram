@@ -35,7 +35,6 @@ import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.tgnet.json.TLJsonBuilder;
 import org.telegram.tgnet.json.TLJsonParser;
 import org.telegram.tgnet.tl.TL_account;
-import org.telegram.tgnet.tl.TL_aicompose;
 import org.telegram.tgnet.tl.TL_bots;
 import org.telegram.tgnet.tl.TL_keyboard;
 import org.telegram.tgnet.tl.TL_communities;
@@ -10290,7 +10289,6 @@ public class TLRPC {
                 case TL_webPageAttributeStarGiftCollection.constructor: return new TL_webPageAttributeStarGiftCollection();
                 case TL_webPageAttributeStarGiftAuction.constructor:    return new TL_webPageAttributeStarGiftAuction();
                 case TL_webPageAttributeStarGiftAuction_layer219.constructor: return new TL_webPageAttributeStarGiftAuction_layer219();
-                case TL_webPageAttributeAiComposeTone.constructor:      return new TL_webPageAttributeAiComposeTone();
             }
             return null;
         }
@@ -10335,22 +10333,7 @@ public class TLRPC {
         }
     }
 
-    public static class TL_webPageAttributeAiComposeTone extends WebPageAttribute {
-        public final static int constructor = 0x7781fe18;
 
-        public long emoji_id;
-
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            emoji_id = stream.readInt64(exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt64(emoji_id);
-        }
-    }
 
     public static class TL_webPageAttributeStarGiftAuction_layer219 extends TL_webPageAttributeStarGiftAuction {
         public final static int constructor = 0x34986ab;
@@ -69876,127 +69859,13 @@ public class TLRPC {
         }
     }
 
-    public static class TL_composedMessageWithAI extends TLObject {
-        public static final int constructor = 0x90d7adfa;         
-        
-        public int flags;
-        public TL_textWithEntities result_text;
-        public TL_textWithEntities diff_text;
 
-        public static TL_composedMessageWithAI TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final TL_composedMessageWithAI result = constructor != TL_composedMessageWithAI.constructor ? null : new TL_composedMessageWithAI();
-            return TLdeserialize(TL_composedMessageWithAI.class, result, stream, constructor, exception);
-        }
 
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            result_text.serializeToStream(stream);
-            if (hasFlag(flags, FLAG_0)) {
-                diff_text.serializeToStream(stream);
-            }
-        }
 
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            flags = stream.readInt32(exception);
-            result_text = TL_textWithEntities.TLdeserialize(stream, stream.readInt32(exception), exception);
-            if (hasFlag(flags, FLAG_0)) {
-                diff_text = TL_textWithEntities.TLdeserialize(stream, stream.readInt32(exception), exception);
-            }
-        }
-    }
 
-    public static class TL_composedRichMessageWithAI extends TLObject {
-        public static final int constructor = 0x4c4537c8;
 
-        public TL_iv.RichMessage result;
 
-        public static TL_composedRichMessageWithAI TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final TL_composedRichMessageWithAI result = constructor != TL_composedRichMessageWithAI.constructor ? null : new TL_composedRichMessageWithAI();
-            return TLdeserialize(TL_composedRichMessageWithAI.class, result, stream, constructor, exception);
-        }
 
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            result.serializeToStream(stream);
-        }
-
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            result = TL_iv.RichMessage.TLdeserialize(stream, stream.readInt32(exception), exception);
-        }
-    }
-
-    public static class TL_messages_composeMessageWithAI extends TLMethod<TL_composedMessageWithAI> {
-        public static final int constructor = 0xdaecc589;
-
-        public boolean proofread;
-        public boolean emojify;
-        public TL_textWithEntities text;
-        public String translate_to_lang;
-        public TL_aicompose.InputAiComposeTone tone;
-
-        @Override
-        public TL_composedMessageWithAI deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_composedMessageWithAI.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            int flags = setFlag(0, FLAG_0, proofread);
-            flags = setFlag(flags, FLAG_1, translate_to_lang != null);
-            flags = setFlag(flags, FLAG_2, tone != null);
-            flags = setFlag(flags, FLAG_3, emojify);
-            stream.writeInt32(flags);
-            text.serializeToStream(stream);
-            if (hasFlag(flags, FLAG_1)) {
-                stream.writeString(translate_to_lang);
-            }
-            if (hasFlag(flags, FLAG_2)) {
-                tone.serializeToStream(stream);
-            }
-        }
-    }
-
-    public static class TL_messages_composeRichMessageWithAI extends TLMethod<TL_composedRichMessageWithAI> {
-        public static final int constructor = 0x8d7ae6af;
-
-        public int flags;
-        public boolean proofread;
-        public boolean emojify;
-        public TL_iv.TL_inputRichMessage text;
-        public String translate_to_lang;
-        public TL_aicompose.InputAiComposeTone tone;
-
-        @Override
-        public TL_composedRichMessageWithAI deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_composedRichMessageWithAI.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            int flags = setFlag(0, FLAG_0, proofread);
-            flags = setFlag(flags, FLAG_1, translate_to_lang != null);
-            flags = setFlag(flags, FLAG_2, tone != null);
-            flags = setFlag(flags, FLAG_3, emojify);
-            flags = setFlag(flags, FLAG_4, text != null);
-            stream.writeInt32(flags);
-            if (hasFlag(flags, FLAG_4)) {
-                text.serializeToStream(stream);
-            }
-            if (hasFlag(flags, FLAG_1)) {
-                stream.writeString(translate_to_lang);
-            }
-            if (hasFlag(flags, FLAG_2)) {
-                tone.serializeToStream(stream);
-            }
-        }
-    }
 
     public static class TL_messages_addPollAnswer extends TLMethod<TLRPC.Updates> {
         public static final int constructor = 0x19bc4b6d;

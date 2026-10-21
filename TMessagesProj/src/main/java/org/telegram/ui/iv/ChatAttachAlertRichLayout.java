@@ -51,7 +51,6 @@ import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
-import org.telegram.ui.Components.AIEditorAlert;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.ChatActivityEnterView;
 import org.telegram.ui.Components.ChatAttachAlert;
@@ -172,9 +171,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         @Override public void onUndo() { listView.undo(); }
         @Override public void onRedo() { listView.redo(); }
         @Override public void onEmoji() { toggleEmojiPopup(); }
-        @Override public void onAi() {
-            new RichAIComposeSheet(getContext(), currentAccount, resourcesProvider, richMessage -> listView.addRichMessage(richMessage)).show();
-        }
+
         @Override public void onAttach() { listView.pendingMediaRow = null; openAttach(DEFAULT_ATTACH_LAYOUTS, 0); }
         @Override public void onSend() { sendSelectedItems(true, 0, 0, 0, false); }
         @Override public boolean onSendLongClick(View anchor) { return showSendPreview(anchor); }
@@ -185,16 +182,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         @Override public void onDate() { listView.onDateClicked(); }
         @Override public void onMath() { listView.onMathClicked(); }
         @Override public void onQuote() { listView.toggleQuoteOnSelection(); updateFormattingButtons(); }
-        @Override public void onAiStyle() {
-            final RichEditorListView.SelectionEdit edit = listView.beginSelectionEdit();
-            if (edit == null) return;
-            final TL_iv.RichMessage rich = edit.extractRichMessage();
-            if (rich == null || rich.blocks.isEmpty()) return;
-            new AIEditorAlert(getContext(), resourcesProvider)
-                .setText(rich)
-                .setOnUseRich(edit::replaceWith)
-                .show();
-        }
+
     };
 
     private void updateToolbarTopOffset() {

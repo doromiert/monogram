@@ -759,7 +759,6 @@ public class MessagesController extends BaseController implements NotificationCe
     private TopicsController topicsController;
     private CacheByChatsController cacheByChatsController;
     private TranslateController translateController;
-    private AiTonesController tonesController;
     public boolean uploadMarkupVideo;
     public boolean giftAttachMenuIcon;
     public boolean giftTextFieldIcon;
@@ -928,12 +927,7 @@ public class MessagesController extends BaseController implements NotificationCe
         return translateController;
     }
 
-    public AiTonesController getTonesController() {
-        if (tonesController == null) {
-            tonesController = new AiTonesController(currentAccount);
-        }
-        return tonesController;
-    }
+
 
     public boolean isCommunity(long dialogId) {
         if (dialogId < 0) {

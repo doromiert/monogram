@@ -80,11 +80,6 @@ public class AppGlobalConfig {
 
     public final ConfigString phoneCountryIso2 = ofString("phone_country_iso2", "en");
 
-    public final ConfigInt aicomposeToneExamplesNum = ofInt("aicompose_tone_examples_num", 3);
-    public final ConfigInt aicomposeToneTitleLengthMax = ofInt("aicompose_tone_title_length_max", 12);
-    public final ConfigInt aicomposeTonePromptLengthMax = ofInt("aicompose_tone_prompt_length_max", 1024);
-    public final ConfigInt aicomposeToneSavedLimitDefault = ofInt("aicompose_tone_saved_limit_default", 5);
-    public final ConfigInt aicomposeToneSavedLimitPremium = ofInt("aicompose_tone_saved_limit_premium", 20);
 
     public final ConfigBoolean messagePrimaryEditedDate = ofBoolean("message_primary_edited_date", false);
 

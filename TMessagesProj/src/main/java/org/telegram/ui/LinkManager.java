@@ -1,6 +1,5 @@
 package org.telegram.ui;
 
-import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.messenger.MessagesController.findUpdatesAndRemove;
 
@@ -23,20 +22,17 @@ import org.telegram.messenger.NotificationsController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
-import org.telegram.tgnet.tl.TL_aicompose;
 import org.telegram.tgnet.tl.TL_phone;
 import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.INavigationLayout;
-import org.telegram.ui.Components.AIEditorAlert;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.SharedMediaLayout;
@@ -135,7 +131,7 @@ public class LinkManager {
             return true;
 
         if ("addstyle".equalsIgnoreCase(first))
-            return handleAiStyle(second);
+            return true;
 
         if ("oauth".equalsIgnoreCase(first))
             return handleOAuth(uri, uri.getQueryParameter("startapp"));
@@ -267,7 +263,7 @@ public class LinkManager {
         }
 
         if ("addstyle".equalsIgnoreCase(first))
-            return handleAiStyle(uri.getQueryParameter("slug"));
+            return true;
 
         return false;
     }
@@ -1239,39 +1235,7 @@ public class LinkManager {
 
 
 
-    private boolean handleAiStyle(String slug) {
-        if (TextUtils.isEmpty(slug)) return false;
-        final TL_aicompose.getTone req = new TL_aicompose.getTone();
-        final TL_aicompose.inputAiComposeToneSlug input = new TL_aicompose.inputAiComposeToneSlug();
-        input.slug = slug;
-        req.tone = input;
-        init();
-        ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, AndroidUtilities::runOnUIThread, (tones, err) -> {
-            done();
 
-            if (tones instanceof TL_aicompose.TL_tones) {
-                final TL_aicompose.TL_tones t = (TL_aicompose.TL_tones) tones;
-                MessagesController.getInstance(currentAccount).putUsers(t.users, false);
-
-                final BaseFragment fragment = LaunchActivity.getSafeLastFragment();
-                if (fragment == null) return;
-                if (t.tones.isEmpty()) return;
-                final TL_aicompose.AiComposeTone tone = t.tones.get(0);
-
-                new AIEditorAlert.AiStyleAlert(fragment.getContext(), tone, fragment.getResourceProvider())
-                    .show();
-            } else if (err != null) {
-                if ("AICOMPOSE_TONE_SLUG_INVALID".equalsIgnoreCase(err.text)) {
-                    getBulletinFactory()
-                        .createSimpleBulletin(R.raw.error, getString(R.string.AIEditorStyleNotFound))
-                        .show();
-                } else {
-                    getBulletinFactory().showForError(err);
-                }
-            }
-        });
-        return true;
-    }
 
     private void setRequestId(int requestId) {
         currentRequestId = requestId;

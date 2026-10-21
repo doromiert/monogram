@@ -218,10 +218,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
     private final AnimatedTextView captionLimitView;
     private final AnimatedTextView topCaptionLimitView;
-    private final ImageView aiButton;
-    private final AiButtonDrawable aiButtonIcon;
-    private final ImageView topAiButton;
-    private final AiButtonDrawable topAiButtonIcon;
     public boolean forUser;
     public boolean isPhotoPicker;
     public boolean isStickerMode;
@@ -2970,13 +2966,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             private int lastHeight;
             @Override
             protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-                final int aiButtonWasTop = lastHeight - aiButton.getTop();
                 super.onLayout(changed, left, top, right, bottom);
                 lastHeight = getHeight();
-                if (aiButton.getVisibility() == View.VISIBLE && getHeight() - aiButton.getTop() != aiButtonWasTop) {
-                    aiButton.setTranslationY((getHeight() - aiButton.getTop()) - aiButtonWasTop + aiButton.getTranslationY());
-                    aiButton.animate().translationY(0).setDuration(320).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
-                }
+
             }
         };
         frameLayout2.addView(captionContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
@@ -3008,34 +3000,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         captionLimitView.setGravity(Gravity.CENTER);
         captionContainer.addView(captionLimitView, LayoutHelper.createFrame(56, 20, Gravity.BOTTOM | Gravity.RIGHT, 3, 0, 3, 50));
 
-        aiButton = new ImageView(context);
-        aiButton.setImageDrawable(aiButtonIcon = new AiButtonDrawable(context));
-        aiButton.setScaleType(ImageView.ScaleType.CENTER);
-        aiButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_glass_defaultIcon), PorterDuff.Mode.MULTIPLY));
-        aiButton.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP, dp(16)));
-        captionContainer.addView(aiButton, LayoutHelper.createFrame(44, 44, Gravity.TOP | Gravity.RIGHT, 0, 1, 0, 0));
-        aiButton.setContentDescription(getString(R.string.AIEditor));
-        ScaleStateListAnimator.apply(aiButton);
-        aiButton.setOnClickListener(v -> {
-            if (commentTextView == null) return;
-            MessagesController.getGlobalMainSettings().edit().putInt("aihintshown", 3).apply();
-            new AIEditorAlert(getContext(), resourcesProvider)
-                .setText(commentTextView.getText())
-                .setOnUse(text -> {
-                    commentTextView.setText(text);
-                    commentTextView.setSelection(text.length(), text.length());
-                })
-                .setOnSend(dialogId, editingMessageObject != null, (text, scheduleDate, scheduleRepeatPeriod, notify) -> {
-                    commentTextView.setText(text);
-                    commentTextView.setSelection(text.length(), text.length());
-                    onWriteButtonPressed();
-                })
-                .show();
-        });
-        aiButton.setVisibility(View.GONE);
-        aiButton.setAlpha(0.0f);
-        aiButton.setScaleX(0.6f);
-        aiButton.setScaleY(0.6f);
+
 
         currentLimit = MessagesController.getInstance(UserConfig.selectedAccount).getCaptionMaxLengthLimit();
 
@@ -3098,7 +3063,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     shouldAnimateEditTextWithBounds = false;
                 }
                 if (!captionAbove) {
-                    showAiButton(newLineCount > 2 && !TextUtils.isEmpty(getEditText().getText().toString().trim()));
+
                 }
                 chatActivityEnterViewAnimateFromTop = frameLayout2.getTop() + captionEditTextTopOffset;
                 frameLayout2.invalidate();
@@ -3232,7 +3197,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 }
 
                 if (!captionAbove) {
-                    showAiButton(commentTextView.getEditText().getLineCount() > 2 && !TextUtils.isEmpty(commentTextView.getText().toString().trim()));
+
                 }
                 checkIsEphemeralMessage(true);
             }
@@ -3263,7 +3228,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 super.onLineCountChanged(oldLineCount, newLineCount);
                 updatedTopCaptionHeight();
                 if (captionAbove) {
-                    showAiButton(newLineCount > 2 && !TextUtils.isEmpty(getEditText().getText().toString().trim()));
+
                 }
             }
 
@@ -3379,7 +3344,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
 
                 if (captionAbove) {
-                    showAiButton(topCommentTextView.getEditText().getLineCount() > 2 && !TextUtils.isEmpty(topCommentTextView.getText().toString().trim()));
+
                 }
                 checkIsEphemeralMessage(true);
             }
@@ -3422,34 +3387,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             }
         });
 
-        topAiButton = new ImageView(context);
-        topAiButton.setImageDrawable(topAiButtonIcon = new AiButtonDrawable(context));
-        topAiButton.setScaleType(ImageView.ScaleType.CENTER);
-        topAiButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_glass_defaultIcon), PorterDuff.Mode.MULTIPLY));
-        topAiButton.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP, dp(16)));
-        topCommentContainer.addView(topAiButton, LayoutHelper.createFrame(44, 44, Gravity.BOTTOM | Gravity.RIGHT, 0, 1, 0, 0));
-        topAiButton.setContentDescription(getString(R.string.AIEditor));
-        ScaleStateListAnimator.apply(topAiButton);
-        topAiButton.setOnClickListener(v -> {
-            if (topCommentTextView == null) return;
-            MessagesController.getGlobalMainSettings().edit().putInt("aihintshown", 3).apply();
-            new AIEditorAlert(getContext(), resourcesProvider)
-                .setText(topCommentTextView.getText())
-                .setOnUse(text -> {
-                    topCommentTextView.setText(text);
-                    topCommentTextView.setSelection(text.length(), text.length());
-                })
-                .setOnSend(dialogId, editingMessageObject != null, (text, scheduleDate, scheduleRepeatPeriod, notify) -> {
-                    topCommentTextView.setText(text);
-                    topCommentTextView.setSelection(text.length(), text.length());
-                    onWriteButtonPressed();
-                })
-                .show();
-        });
-        topAiButton.setVisibility(View.GONE);
-        topAiButton.setAlpha(0.0f);
-        topAiButton.setScaleX(0.6f);
-        topAiButton.setScaleY(0.6f);
+
 
         writeButtonContainer = new FrameLayout(context) {
             @Override
@@ -6402,72 +6340,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
 
-    private boolean shownAiButton;
-    private void showAiButton(boolean show_) {
-        final boolean show = show_ && (baseFragment instanceof ChatActivity && !((ChatActivity) baseFragment).isSecretChat());
 
-        if (shownAiButton == show) return;
-        if (show) {
-            MessagesController.getInstance(currentAccount).getTonesController().load();
-        }
-        shownAiButton = show;
-        aiButton.setVisibility(View.VISIBLE);
-        topAiButton.setVisibility(View.VISIBLE);
-        aiButton.animate()
-            .alpha(show ? 1.0f : 0.0f)
-            .scaleX(show ? 1.0f : 0.6f)
-            .scaleY(show ? 1.0f : 0.6f)
-            .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-            .setDuration(420)
-            .withEndAction(() -> {
-                if (!show) {
-                    aiButton.setVisibility(View.GONE);
-                }
-            })
-            .start();
-        topAiButton.animate()
-            .alpha(show ? 1.0f : 0.0f)
-            .scaleX(show ? 1.0f : 0.6f)
-            .scaleY(show ? 1.0f : 0.6f)
-            .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-            .setDuration(420)
-            .withEndAction(() -> {
-                if (!show) {
-                    topAiButton.setVisibility(View.GONE);
-                }
-            })
-            .start();
-        if (show) {
-            aiButton.postDelayed(aiButtonIcon::animate, 220);
-            topAiButton.postDelayed(topAiButtonIcon::animate, 220);
-        }
-//
-//            if (aiHint != null) {
-//                aiHint.hide();
-//                aiHint = null;
-//            }
-//
-//            if (
-//                MessagesController.getGlobalMainSettings().getInt("aihintshown", 0) < 3
-//            ) {
-//                final HintView2 thisHint = aiHint = new HintView2(getContext(), HintView2.DIRECTION_BOTTOM);
-//                aiHint.setText(getString(R.string.AIEditorHint));
-//                aiHint.setJointPx(1f, -aiButton.getWidth() / 2f + dp(4));
-//                addView(aiHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 200, Gravity.TOP, 0, -200 + 4, 0, 0));
-//                aiHint.setOnHiddenListener(() -> removeView(thisHint));
-//                aiHint.setDuration(4000L);
-//                aiHint.show();
-//                MessagesController.getGlobalMainSettings().edit().putInt("aihintshown",
-//                        MessagesController.getGlobalMainSettings().getInt("aihintshown", 0) + 1
-//                ).apply();
-//            }
-//        } else {
-//            if (aiHint != null) {
-//                aiHint.hide();
-//                aiHint = null;
-//            }
-//        }
-    }
 
     private static boolean checkContactsPermission(Context context) {
         return Build.VERSION.SDK_INT < 23 || ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
@@ -7068,7 +6941,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
         AndroidUtilities.runOnUIThread(() -> {
             final EditTextEmoji editText = captionAbove ? topCommentTextView : commentTextView;
-            showAiButton(editText.getEditText().getLineCount() > 2 && !TextUtils.isEmpty(editText.getText().toString().trim()));
+
         });
     }
 

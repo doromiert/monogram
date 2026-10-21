@@ -73,8 +73,6 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
 import org.telegram.ui.MessageSendPreview;
-import org.telegram.ui.Components.AIEditorAlert;
-import org.telegram.ui.Components.AiButtonDrawable;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
@@ -312,7 +310,6 @@ public class RichEditor extends BaseFragment {
     private LinearLayout bottomPanel;
 
     private ChatActivityEnterViewAnimatedIconView emojiButton;
-    private ImageView aiButton;
     private HorizontalScrollView blocksScrollView;
     private LinearLayout blocksLayout;
     private final ArrayList<Button> blockButtons = new ArrayList<>();
@@ -326,7 +323,6 @@ public class RichEditor extends BaseFragment {
     private LinearLayout formattingLayout1;
     private LinearLayout formattingLayout2;
     private LinearLayout formattingLayout3;
-    private Button aiStyleButton;
     private Button linkButton;
     private Button inlineButton;
     private Button dateButton;
@@ -608,21 +604,7 @@ public class RichEditor extends BaseFragment {
         bulletinContainer = new FrameLayout(context);
         bottomInnerContainer.addView(bulletinContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 100, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL, 0, 0, 0, 8 + 44 + 8));
 
-        aiButton = new ImageView(context);
-        aiButton.setImageDrawable(new AiButtonDrawable(context));
-        aiButton.setScaleType(ImageView.ScaleType.CENTER);
-        aiButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
-        aiButton.setBackground(withShadow(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_windowBackgroundWhite), Theme.blendOver(getThemedColor(Theme.key_windowBackgroundWhite), getThemedColor(Theme.key_listSelector)), dp(22), dp(22))));
-        bottomPanel.addView(aiButton, LayoutHelper.createLinear(44, 44, 0, Gravity.LEFT | Gravity.CENTER_VERTICAL, 0, 0, 8, 0));
-        ScaleStateListAnimator.apply(aiButton);
-        aiButton.setContentDescription(getString(R.string.AIEditor));
-        aiButton.setOnClickListener(v -> {
-            if (listView.isInSelectionMode()) {
-                onAiStyleSelection();
-            } else {
-                new RichAIComposeSheet(getContext(), currentAccount, getResourceProvider(), richMessage -> listView.addRichMessage(richMessage)).show();
-            }
-        });
+
 
         final FrameLayout blocksContainer2 = new FrameLayout(context);
         blocksContainer2.setClipToPadding(false);
@@ -968,11 +950,7 @@ public class RichEditor extends BaseFragment {
         formattingLayout1.setBackground(withShadow(Theme.createRoundRectDrawable(dp(22), getThemedColor(Theme.key_windowBackgroundWhite))));
         formattingPanel.addView(formattingLayout1, 0, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 44, Gravity.BOTTOM, 0, 0, 8, 0));
 
-        aiStyleButton = new Button(context, 0, getResourceProvider());
-        aiStyleButton.setImageDrawable(new AiButtonDrawable(context));
-        aiStyleButton.setContentDescription(getString(R.string.AIEditor));
-        aiStyleButton.setOnClickListener(v -> onAiStyleSelection());
-        formattingLayout1.addView(aiStyleButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL));
+
 
         final int sendIcon = editingMessageObject != null ? R.drawable.input_done : (isInScheduleMode() ? R.drawable.input_schedule : R.drawable.send_plane_24);
         sendButton = new ChatActivityEnterView.SendButton(context, sendIcon, getResourceProvider(), true) {
@@ -1352,16 +1330,7 @@ public class RichEditor extends BaseFragment {
         if (mathButton != null) mathButton.setEnabled(enabled);
     }
 
-    private void onAiStyleSelection() {
-        final RichEditorListView.SelectionEdit edit = listView.beginSelectionEdit();
-        if (edit == null) return;
-        final TL_iv.RichMessage rich = edit.extractRichMessage();
-        if (rich == null || rich.blocks.isEmpty()) return;
-        new AIEditorAlert(getContext(), getResourceProvider())
-            .setText(rich)
-            .setOnUseRich(edit::replaceWith)
-            .show();
-    }
+
 
     private void updateFormattingButtonsTable() {
         final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = listView.getTextSelectionHelper();

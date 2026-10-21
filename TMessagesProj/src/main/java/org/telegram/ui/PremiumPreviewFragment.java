@@ -182,7 +182,6 @@ public class PremiumPreviewFragment extends BaseFragment {
     public final static int PREMIUM_FEATURE_TODO = 39;
     public final static int FEATURE_GIFTS = 40;
     public final static int PREMIUM_FEATURE_SHARING_DISABLE = 41;
-    public final static int PREMIUM_FEATURE_AI_EDITOR = 42;
     public final static int PREMIUM_FEATURE_RICH_EDITOR = 43;
 
     private int statusBarHeight;
@@ -274,8 +273,6 @@ public class PremiumPreviewFragment extends BaseFragment {
                 return PREMIUM_FEATURE_FOLDER_TAGS;
             case "pm_noforwards":
                 return PREMIUM_FEATURE_SHARING_DISABLE;
-            case "ai_compose":
-                return PREMIUM_FEATURE_AI_EDITOR;
             case "rich_formatting":
                 return PREMIUM_FEATURE_RICH_EDITOR;
 
@@ -367,8 +364,6 @@ public class PremiumPreviewFragment extends BaseFragment {
                 return "folder_tags";
             case PREMIUM_FEATURE_SHARING_DISABLE:
                 return "pm_noforwards";
-            case PREMIUM_FEATURE_AI_EDITOR:
-                return "ai_compose";
             case PREMIUM_FEATURE_RICH_EDITOR:
                 return "rich_formatting";
 
@@ -819,7 +814,6 @@ public class PremiumPreviewFragment extends BaseFragment {
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_MESSAGE_EFFECTS, R.drawable.menu_premium_effects, getString(R.string.PremiumPreviewEffects), getString(R.string.PremiumPreviewEffectsDescription)));
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_TODO, R.drawable.msg_premium_icons, getString(R.string.PremiumPreviewTodo), getString(R.string.PremiumPreviewTodoDescription)));
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_SHARING_DISABLE, R.drawable.filled_sharing_off2_24, getString(R.string.PremiumPreviewSharingDisable), getString(R.string.PremiumPreviewSharingDisableDescription)));
-        premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_AI_EDITOR, R.drawable.premium_ai_editor, getString(R.string.PremiumPreviewAIEditor), getString(R.string.PremiumPreviewAIEditorDescription)));
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_RICH_EDITOR, R.drawable.premium_rich_editor, getString(R.string.PremiumPreviewRichEditor), getString(R.string.PremiumPreviewRichEditorDescription)));
 
         if (messagesController.premiumFeaturesTypesToPosition.size() > 0) {

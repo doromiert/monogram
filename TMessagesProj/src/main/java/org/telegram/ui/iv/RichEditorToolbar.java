@@ -19,7 +19,6 @@ import android.widget.LinearLayout;
 
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AiButtonDrawable;
 import org.telegram.ui.Components.ChatActivityEnterView;
 import org.telegram.ui.Components.ChatActivityEnterViewAnimatedIconView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -44,7 +43,6 @@ public class RichEditorToolbar extends FrameLayout {
         void onUndo();
         void onRedo();
         void onEmoji();
-        void onAi();
         void onAttach();
         void onSend();
         boolean onSendLongClick(View anchor);
@@ -55,7 +53,6 @@ public class RichEditorToolbar extends FrameLayout {
         void onDate();
         void onMath();
         void onQuote();
-        void onAiStyle();
     }
 
     private final Delegate delegate;
@@ -71,7 +68,6 @@ public class RichEditorToolbar extends FrameLayout {
     private final FrameLayout bottomInnerContainer;
     private final LinearLayout bottomPanel;
     private final ChatActivityEnterViewAnimatedIconView emojiButton;
-    private final ImageView aiButton;
     private final HorizontalScrollView blocksScrollView;
     private final LinearLayout blocksLayout;
     private final ImageView addButton;
@@ -86,7 +82,6 @@ public class RichEditorToolbar extends FrameLayout {
     private LinearLayout formattingLayout1;
     private LinearLayout formattingLayout2;
     private LinearLayout formattingLayout3;
-    private final RichEditor.Button aiStyleButton;
     private final RichEditor.Button linkButton, inlineButton, dateButton, mathButton, quoteButton;
 
     private final ArrayList<RichEditor.Button> blockButtons = new ArrayList<>();
@@ -172,15 +167,7 @@ public class RichEditorToolbar extends FrameLayout {
         bottomPanel.setPadding(dp(8), dp(8), dp(8), dp(8));
         bottomInnerContainer.addView(bottomPanel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 8 + 44 + 8, Gravity.FILL_HORIZONTAL | Gravity.BOTTOM));
 
-        aiButton = new ImageView(context);
-        aiButton.setImageDrawable(new AiButtonDrawable(context));
-        aiButton.setScaleType(ImageView.ScaleType.CENTER);
-        aiButton.setColorFilter(new PorterDuffColorFilter(color(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
-        aiButton.setBackground(RichEditor.withShadow(Theme.createRadSelectorDrawable(color(Theme.key_glass_targetMainTabs), Theme.blendOver(color(Theme.key_glass_targetMainTabs), color(Theme.key_listSelector)), dp(22), dp(22))));
-        bottomPanel.addView(aiButton, LayoutHelper.createLinear(44, 44, 0, Gravity.LEFT | Gravity.CENTER_VERTICAL, 0, 0, 8, 0));
-        ScaleStateListAnimator.apply(aiButton);
-        aiButton.setContentDescription("AI");
-        aiButton.setOnClickListener(v -> delegate.onAi());
+
 
         final FrameLayout blocksContainer2 = new FrameLayout(context);
         blocksContainer2.setClipToPadding(false);
@@ -392,12 +379,7 @@ public class RichEditorToolbar extends FrameLayout {
         formattingLayout1.setBackground(RichEditor.withShadow(Theme.createRoundRectDrawable(dp(22), color(Theme.key_glass_targetMainTabs))));
         formattingPanel.addView(formattingLayout1, 0, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 44, Gravity.BOTTOM, 0, 0, 8, 0));
 
-        aiStyleButton = new RichEditor.Button(context, R.drawable.input_ai, resourcesProvider);
-        aiStyleButton.setImageDrawable(new AiButtonDrawable(context));
-        aiStyleButton.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
-        aiStyleButton.setContentDescription(getString(R.string.AIEditor));
-        aiStyleButton.setOnClickListener(v -> delegate.onAiStyle());
-        formattingLayout1.addView(aiStyleButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL));
+
 
         sendButton = new ChatActivityEnterView.SendButton(context, R.drawable.send_plane_24, resourcesProvider, true) {
             @Override
