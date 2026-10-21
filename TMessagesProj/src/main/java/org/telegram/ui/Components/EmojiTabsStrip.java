@@ -546,7 +546,6 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
         }
         appearCount = emojiPacks.size();
         final boolean includeFeatured = doIncludeFeatured();
-        final boolean isPremium = UserConfig.getInstance(UserConfig.selectedAccount).isPremium() || allowEmojisForNonPremium();
 
         ArrayList<EmojiTabButton> attachedEmojiPacks = new ArrayList<>();
 
@@ -575,10 +574,9 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                     currentPackButton.setLock(null, false);
                 }
             } else {
-                final boolean free = newPack.free;
                 if (newPack.thumbDocumentId != null) {
                     if (currentPackButton == null) {
-                        currentPackButton = new EmojiTabButton(getContext(), newPack.thumbDocumentId, free, false, false);
+                        currentPackButton = new EmojiTabButton(getContext(), newPack.thumbDocumentId, true, false, false);
                         onTabCreate(currentPackButton);
                         contentView.addView(currentPackButton, packsIndexStart + i);
                     } else {
@@ -587,7 +585,7 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                 } else {
                     TLRPC.Document thumbDocument = getThumbDocument(newPack.set, newPack.documents);
                     if (currentPackButton == null) {
-                        currentPackButton = new EmojiTabButton(getContext(), thumbDocument, free, false, false);
+                        currentPackButton = new EmojiTabButton(getContext(), thumbDocument, true, false, false);
                         onTabCreate(currentPackButton);
                         contentView.addView(currentPackButton, packsIndexStart + i);
                     } else {
@@ -600,11 +598,9 @@ public class EmojiTabsStrip extends ScrollableHorizontalScrollView {
                 currentPackButton.id = newPack.forGroup ? (long) "forGroup".hashCode() : null;
                 currentPackButton.updateSelect(selected == i, false);
                 if (currentType == SelectAnimatedEmojiDialog.TYPE_AVATAR_CONSTRUCTOR) {
-                    currentPackButton.setLock(!isPremium && !free ? true : null, false);
+                    currentPackButton.setLock(null, false);
                 } else if (currentType == SelectAnimatedEmojiDialog.TYPE_CHAT_REACTIONS || currentType == SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON || currentType == SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON_BOTTOM) {
                     currentPackButton.setLock(null, false);
-                } else if (!isPremium && !free) {
-                    currentPackButton.setLock(true, false);
                 } else if (!this.isInstalled(newPack)) {
                     currentPackButton.setLock(false, false);
                 } else {

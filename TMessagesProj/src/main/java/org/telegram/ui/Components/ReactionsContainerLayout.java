@@ -65,7 +65,6 @@ import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
@@ -73,7 +72,6 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
-import org.telegram.ui.Components.Premium.PremiumLockIconView;
 import org.telegram.ui.Components.Reactions.CustomEmojiReactionsWindow;
 import org.telegram.ui.Components.Reactions.HwEmojis;
 import org.telegram.ui.Components.Reactions.ReactionsEffectOverlay;
@@ -1798,7 +1796,6 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
         public BackupImageView pressedBackupImageView;
         private ImageReceiver preloadImageReceiver = new ImageReceiver();
         public ReactionsLayoutInBubble.VisibleReaction currentReaction;
-        public PremiumLockIconView lockIconView;
         public float sideScale = 1f;
         private boolean isEnter;
         public boolean hasEnterAnimation;
@@ -2028,9 +2025,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 if (enterImageView.getImageReceiver().getLottieAnimation() != null) {
                     enterImageView.getImageReceiver().getLottieAnimation().setCurrentFrame(0, false);
                 }
-                if (lockIconView != null) {
-                    lockIconView.setAnimatedEmojiDrawable(null);
-                }
+
             } else {
                 pressedBackupImageView.getImageReceiver().clearImage();
                 loopImageView.getImageReceiver().clearImage();
@@ -2045,9 +2040,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                 }
                 pressedBackupImageView.setAnimatedEmojiDrawable(pressedDrawable);
                 loopImageView.setAnimatedEmojiDrawable(loopDrawable);
-                if (lockIconView != null) {
-                    lockIconView.setAnimatedEmojiDrawable(loopDrawable);
-                }
+
             }
             setFocusable(true);
             shouldSwitchToLoopView = hasEnterAnimation;// && !allReactionsIsDefault;
@@ -2116,9 +2109,7 @@ public class ReactionsContainerLayout extends FrameLayout implements Notificatio
                     preloadImageReceiver.setAllowStartLottieAnimation(false);
                     MediaDataController.getInstance(currentAccount).preloadImage(preloadImageReceiver, ImageLocation.getForDocument(defaultReaction.around_animation), ReactionsEffectOverlay.getFilterForAroundAnimation());
                 }
-                if (lockIconView != null) {
-                    lockIconView.setImageReceiver(loopImageView.getImageReceiver());
-                }
+
             }
         }
 

@@ -973,7 +973,6 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
                     pack.installed = true;
                     pack.featured = false;
                     pack.expanded = true;
-                    pack.free = true;
                     if (set == faveSet) {
                         pack.resId = R.drawable.emoji_tabs_faves;
                     } else if (set == recentSet) {
@@ -1069,7 +1068,6 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
                             pack.installed = false;
                             pack.featured = true;
                             pack.expanded = true;
-                            pack.free = true;
                             packs.add(pack);
                         }
                     }

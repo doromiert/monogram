@@ -17,7 +17,6 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.os.Vibrator;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -36,7 +35,6 @@ import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SvgHelper;
@@ -46,12 +44,10 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ListView.RecyclerListViewWithOverlayDraw;
-import org.telegram.ui.Components.Premium.PremiumLockIconView;
 
-public class StickerEmojiCell extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, RecyclerListViewWithOverlayDraw.OverlayView {
+public class StickerEmojiCell extends FrameLayout implements RecyclerListViewWithOverlayDraw.OverlayView {
 
     private ImageReceiver imageView;
-    private PremiumLockIconView premiumIconView;
     private TLRPC.Document sticker;
     private SendMessagesHelper.ImportingSticker stickerPath;
     private Object parentObject;
@@ -67,9 +63,6 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
     private static AccelerateInterpolator interpolator = new AccelerateInterpolator(0.5f);
     private int currentAccount = UserConfig.selectedAccount;
     private boolean fromEmojiPanel;
-    private boolean isPremiumSticker;
-    private float premiumAlpha = 1f;
-    private boolean showPremiumLock;
     public ImageView editModeIcon;
     private int editModeIconColor;
 
@@ -109,11 +102,6 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton));
 
-        premiumIconView = new PremiumLockIconView(context, PremiumLockIconView.TYPE_STICKERS_PREMIUM_LOCKED);
-        premiumIconView.setImageReceiver(imageView);
-        premiumIconView.setPadding(AndroidUtilities.dp(4), AndroidUtilities.dp(4), AndroidUtilities.dp(4), AndroidUtilities.dp(4));
-        premiumIconView.setImageReceiver(imageView);
-        addView(premiumIconView, LayoutHelper.createFrame(24, 24, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, 0));
 
         editModeIcon = new ImageView(context);
         editModeIcon.setImageResource(R.drawable.mini_more_dots);
@@ -198,7 +186,6 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
 
     public void setSticker(TLRPC.Document document, SendMessagesHelper.ImportingSticker path, Object parent, String emoji, boolean showEmoji, boolean editModeEnabled) {
         currentEmoji = emoji;
-        isPremiumSticker = MessageObject.isPremiumSticker(document) && !org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,document);
         drawInParentView = false;
         imageView.setColorFilter(null);
         editModeIconColor = 0;
@@ -208,10 +195,7 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
         } else {
             disableEditMode(false);
         }
-        if (isPremiumSticker) {
-            premiumIconView.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-            premiumIconView.setWaitingImage();
-        }
+
         if (path != null) {
             stickerPath = path;
             if (path.validated) {
@@ -284,8 +268,7 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
                 emojiTextView.setVisibility(INVISIBLE);
             }
         }
-        updatePremiumStatus(false);
-        imageView.setAlpha(alpha * premiumAlpha);
+        imageView.setAlpha(alpha);
         if (drawInParentView) {
             imageView.setInvalidateAll(true);
             imageView.setParentView((View) getParent());
@@ -294,36 +277,13 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
         }
     }
 
-    private void updatePremiumStatus(boolean animated) {
-        if (isPremiumSticker) {
-            showPremiumLock = true;
-        } else {
-            showPremiumLock = false;
-        }
-        FrameLayout.LayoutParams layoutParams = (LayoutParams) premiumIconView.getLayoutParams();
-        if (!UserConfig.getInstance(currentAccount).isPremium()) {
-            layoutParams.height = layoutParams.width = AndroidUtilities.dp(24);
-            layoutParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            layoutParams.rightMargin = 0;
-            layoutParams.bottomMargin = AndroidUtilities.dp(8);
-            premiumIconView.setPadding(AndroidUtilities.dp(4), AndroidUtilities.dp(4), AndroidUtilities.dp(4), AndroidUtilities.dp(4));
-        } else {
-            layoutParams.height = layoutParams.width = AndroidUtilities.dp(16);
-            layoutParams.gravity = Gravity.BOTTOM | Gravity.RIGHT;
-            layoutParams.bottomMargin = AndroidUtilities.dp(8);
-            layoutParams.rightMargin = AndroidUtilities.dp(8);
-            premiumIconView.setPadding(AndroidUtilities.dp(1), AndroidUtilities.dp(1), AndroidUtilities.dp(1), AndroidUtilities.dp(1));
-        }
-        premiumIconView.setLocked(!UserConfig.getInstance(currentAccount).isPremium());
-        AndroidUtilities.updateViewVisibilityAnimated(premiumIconView, showPremiumLock, 0.9f, animated);
-        invalidate();
-    }
+
 
     public void disable() {
         changingAlpha = true;
         alpha = 0.5f;
         time = 0;
-        imageView.setAlpha(alpha * premiumAlpha);
+        imageView.setAlpha(alpha);
         imageView.invalidate();
         lastUpdateTime = System.currentTimeMillis();
         invalidate();
@@ -377,15 +337,7 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
         info.setEnabled(true);
     }
 
-    public void showRequirePremiumAnimation() {
-        if (premiumIconView != null) {
-            Vibrator v = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
-            if (v != null) {
-                v.vibrate(200);
-            }
-            AndroidUtilities.shakeView(premiumIconView);
-        }
-    }
+
 
     @Override
     protected void onAttachedToWindow() {
@@ -397,22 +349,15 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
             imageView.setParentView(this);
         }
         imageView.onAttachedToWindow();
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         imageView.onDetachedFromWindow();
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
     }
 
-    @Override
-    public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.currentUserPremiumStatusChanged) {
-            updatePremiumStatus(true);
-        }
-    }
+
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
@@ -444,7 +389,7 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
                     changingAlpha = false;
                     alpha = 1.0f;
                 }
-                imageView.setAlpha(alpha * premiumAlpha);
+                imageView.setAlpha(alpha);
             } else if (scaled && scale != 0.8f) {
                 scale -= dt / 400.0f;
                 if (scale < 0.8f) {
@@ -462,7 +407,7 @@ public class StickerEmojiCell extends FrameLayout implements NotificationCenter.
         int cX = getMeasuredWidth() >> 1;
         int cY = getMeasuredHeight() >> 1;
         imageView.setImageCoords(cX - size / 2f, cY - size / 2f, size, size);
-        imageView.setAlpha(alpha * premiumAlpha);
+        imageView.setAlpha(alpha);
 
         if (scale != 1f) {
             canvas.save();

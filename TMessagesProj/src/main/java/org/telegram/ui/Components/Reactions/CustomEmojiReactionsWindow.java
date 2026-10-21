@@ -936,9 +936,7 @@ public class CustomEmojiReactionsWindow {
 
                     if (child instanceof ReactionsContainerLayout.ReactionHolderView) {
                         ReactionsContainerLayout.ReactionHolderView holderView = (ReactionsContainerLayout.ReactionHolderView) child;
-                        if (holderView.lockIconView != null) {
-                            holderView.lockIconView.setAlpha(1f - enterTransitionProgress);
-                        }
+
                         SelectAnimatedEmojiDialog.ImageViewEmoji toImageView = transitionReactions.get(holderView.currentReaction);
                         float fromRoundRadiusLt = 0f;
                         float fromRoundRadiusRt = 0f;

@@ -10773,35 +10773,10 @@ public class MessageObject {
         return MessageObject.isTextColorEmoji(set.documents.get(0));
     }
 
-    public static boolean isPremiumEmojiPack(TLRPC.TL_messages_stickerSet set) {
-        if (set != null && set.set != null && !set.set.emojis) {
-            return false;
-        }
-        if (set != null && set.documents != null) {
-            for (int i = 0; i < set.documents.size(); ++i) {
-                if (!MessageObject.isFreeEmoji(set.documents.get(i))) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 
 
-    public static boolean isPremiumEmojiPack(TLRPC.StickerSetCovered covered) {
-        if (covered != null && covered.set != null && !covered.set.emojis) {
-            return false;
-        }
-        ArrayList<TLRPC.Document> documents = covered instanceof TLRPC.TL_stickerSetFullCovered ? ((TLRPC.TL_stickerSetFullCovered) covered).documents : covered.covers;
-        if (covered != null && documents != null) {
-            for (int i = 0; i < documents.size(); ++i) {
-                if (!MessageObject.isFreeEmoji(documents.get(i))) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+
+
 
     public static long getStickerSetId(TLRPC.Document document) {
         if (document == null) {

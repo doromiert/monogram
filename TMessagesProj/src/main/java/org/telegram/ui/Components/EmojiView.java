@@ -6879,7 +6879,6 @@ public class EmojiView extends FrameLayout implements
         public TLRPC.StickerSet set;
         public ArrayList<TLRPC.Document> documents = new ArrayList<>();
         public TLRPC.InputStickerSet needLoadSet;
-        public boolean free;
         public boolean installed;
         public boolean featured;
         public boolean expanded;
@@ -7201,7 +7200,6 @@ public class EmojiView extends FrameLayout implements
                     pack.index = index++;
                     pack.set = info.emojiset;
                     pack.documents = new ArrayList<>(stickerSet.documents);
-                    pack.free = true;
                     pack.installed = true;
                     pack.featured = false;
                     pack.expanded = true;
@@ -7220,7 +7218,6 @@ public class EmojiView extends FrameLayout implements
                 pack.index = index++;
                 pack.set = set.set;
                 pack.documents = set.documents;
-                pack.free = true;
                 pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
                 pack.featured = false;
                 pack.expanded = true;
@@ -7250,14 +7247,6 @@ public class EmojiView extends FrameLayout implements
                     continue;
                 }
                 pack.index = index++;
-                boolean premium = false;
-                for (int j = 0; j < pack.documents.size(); ++j) {
-                    if (!MessageObject.isFreeEmoji(pack.documents.get(j))) {
-                        premium = true;
-                        break;
-                    }
-                }
-                pack.free = !premium;
                 pack.expanded = expandedEmojiSets.contains(pack.set.id);
                 pack.featured = true;
                 emojipacksProcessed.add(pack);
