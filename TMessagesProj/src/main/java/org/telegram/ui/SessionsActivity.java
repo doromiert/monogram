@@ -9,7 +9,6 @@
 package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.LocaleController.formatSpannable;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.Manifest;
@@ -20,11 +19,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.net.Uri;
 import android.os.Build;
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.TextUtils;
-import android.text.style.URLSpan;
 import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -61,12 +57,9 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
-import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
-import org.telegram.ui.Business.BusinessChatbotController;
-import org.telegram.ui.Business.ChatbotSheet;
 import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.RadioColorCell;
@@ -103,7 +96,6 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
 
     private ArrayList<TLObject> sessions = new ArrayList<>();
     private ArrayList<TLObject> passwordSessions = new ArrayList<>();
-    private ArrayList<TL_account.TL_connectedBot> bots = new ArrayList<>();
     private TLRPC.TL_authorization currentSession;
     private boolean loading;
     private UndoView undoView;
@@ -124,8 +116,6 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
     private int otherSessionsSectionRow;
     private int otherSessionsStartRow;
     private int otherSessionsEndRow;
-    private int botSessionsStartRow;
-    private int botSessionsEndRow;
     private int otherSessionsTerminateDetail;
     private int noOtherSessionsRow;
     private int qrCodeRow;
@@ -156,16 +146,7 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
         super.onFragmentCreate();
         updateRows();
         loadSessions(false);
-        if (currentType == 0) {
-            BusinessChatbotController.getInstance(currentAccount).load(bots -> {
-                if (bots == null) return;
-                this.bots = bots.connected_bots;
-                if (listAdapter != null) {
-                    updateRows();
-                    listAdapter.notifyDataSetChanged();
-                }
-            });
-        }
+
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.newSessionReceived);
         return true;
     }
@@ -319,67 +300,7 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
                 if (getParentActivity() == null) {
                     return;
                 }
-                if (bots != null && !bots.isEmpty()) {
-                    SpannableStringBuilder chatbots = new SpannableStringBuilder();
-                    for (final TL_account.TL_connectedBot bot : bots) {
-                        final TLRPC.User botUser = MessagesController.getInstance(currentAccount).getUser(bot.bot_id);
-                        if (botUser == null) continue;
-                        final String username = UserObject.getPublicUsername(botUser);
-                        if (!TextUtils.isEmpty(username)) {
-                            if (chatbots.length() > 0) chatbots.append(", ");
-                            SpannableStringBuilder link = new SpannableStringBuilder("@").append(username);
-                            link.setSpan(new URLSpanNoUnderline("https://t.me/" + username), 0, link.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                            chatbots.append(link);
-                        } else {
-                            chatbots.append(UserObject.getUserName(botUser));
-                        }
-                    }
 
-                    AlertsCreator.showAlertWithCheckbox(
-                        getContext(),
-                        getString(R.string.AreYouSureSessionsTitle),
-                        getString(R.string.AreYouSureSessions),
-                        formatSpannable(R.string.AlsoTerminateChatbot, chatbots),
-                        getString(R.string.Terminate),
-                        alsoTerminate -> {
-                            if (alsoTerminate != null && alsoTerminate && bots != null && !bots.isEmpty()) {
-                                final TL_account.updateConnectedBot req = new TL_account.updateConnectedBot();
-                                req.bot = MessagesController.getInstance(currentAccount).getInputUser(bots.get(0).bot_id);
-                                req.deleted = true;
-                                req.recipients = new TL_account.TL_inputBusinessBotRecipients();
-                                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        BusinessChatbotController.getInstance(currentAccount).invalidate(true);
-                                    });
-                                });
-                            }
-                            ConnectionsManager.getInstance(currentAccount).sendRequest(new TLRPC.TL_auth_resetAuthorizations(), (response, error) -> {
-                                AndroidUtilities.runOnUIThread(() -> {
-                                    if (getParentActivity() == null) {
-                                        return;
-                                    }
-                                    if (error == null && response instanceof TLRPC.TL_boolTrue) {
-                                        BulletinFactory.of(SessionsActivity.this).createSimpleBulletin(R.raw.contact_check, getString(R.string.AllSessionsTerminated)).show();
-                                        loadSessions(false);
-                                    }
-                                });
-
-                                for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-                                    UserConfig userConfig = UserConfig.getInstance(a);
-                                    if (!userConfig.isClientActivated()) {
-                                        continue;
-                                    }
-                                    userConfig.registeredForPush = false;
-                                    userConfig.saveConfig(false);
-                                    MessagesController.getInstance(a).registerForPush(SharedConfig.pushType, SharedConfig.pushString);
-                                    ConnectionsManager.getInstance(a).setUserId(userConfig.getClientUserId());
-                                }
-                            });
-                        },
-                        resourceProvider
-                    );
-                    return;
-                }
                 AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
                 String buttonText;
                 if (currentType == 0) {
@@ -437,18 +358,6 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
                 if (button != null) {
                     button.setTextColor(Theme.getColor(Theme.key_text_RedBold));
                 }
-            } else if (position >= botSessionsStartRow && position < botSessionsEndRow) {
-                if (getParentActivity() == null) return;
-                if (bots == null || bots.isEmpty()) return;
-                final int index = position - botSessionsStartRow;
-                final TL_account.TL_connectedBot bot = bots.get(index);
-                new ChatbotSheet(getContext(), bot, () -> {
-                    bots.remove(index);
-                    updateRows();
-                    if (listAdapter != null) {
-                        listAdapter.notifyDataSetChanged();
-                    }
-                }, resourceProvider).show();
             } else if (position >= otherSessionsStartRow && position < otherSessionsEndRow || position >= passwordSessionsStartRow && position < passwordSessionsEndRow || position == currentSessionRow) {
                 if (getParentActivity() == null) {
                     return;
@@ -750,8 +659,6 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
         otherSessionsSectionRow = -1;
         otherSessionsStartRow = -1;
         otherSessionsEndRow = -1;
-        botSessionsStartRow = -1;
-        botSessionsEndRow = -1;
         otherSessionsTerminateDetail = -1;
         noOtherSessionsRow = -1;
         qrCodeRow = -1;
@@ -799,20 +706,10 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
         }
         if (!sessions.isEmpty()) {
             otherSessionsSectionRow = rowCount++;
-            if (bots != null && !bots.isEmpty()) {
-                botSessionsStartRow = rowCount;
-                rowCount += bots.size();
-                botSessionsEndRow = rowCount;
-            }
+
             otherSessionsStartRow = rowCount;
             otherSessionsEndRow = rowCount + sessions.size();
             rowCount += sessions.size();
-            otherSessionsTerminateDetail = rowCount++;
-        } else if (bots != null && !bots.isEmpty()) {
-            otherSessionsSectionRow = rowCount++;
-            botSessionsStartRow = rowCount;
-            rowCount += bots.size();
-            botSessionsEndRow = rowCount;
             otherSessionsTerminateDetail = rowCount++;
         }
 
@@ -842,7 +739,7 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == terminateAllSessionsRow || position >= otherSessionsStartRow && position < otherSessionsEndRow || position >= botSessionsStartRow && position < botSessionsEndRow || position >= passwordSessionsStartRow && position < passwordSessionsEndRow || position == currentSessionRow || position == ttlRow;
+            return position == terminateAllSessionsRow || position >= otherSessionsStartRow && position < otherSessionsEndRow || position >= passwordSessionsStartRow && position < passwordSessionsEndRow || position == currentSessionRow || position == ttlRow;
         }
 
         @Override
@@ -964,11 +861,6 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
                         }
                     } else if (position >= otherSessionsStartRow && position < otherSessionsEndRow) {
                         sessionCell.setSession(sessions.get(position - otherSessionsStartRow), position != otherSessionsEndRow - 1);
-                    } else if (position >= botSessionsStartRow && position < botSessionsEndRow) {
-                        final int index = position - botSessionsStartRow;
-                        if (bots == null || index < 0 || index >= bots.size()) return;
-                        final TL_account.TL_connectedBot bot = bots.get(index);
-                        sessionCell.setSession(bot, position != botSessionsEndRow - 1 && position != otherSessionsEndRow - 1);
                     } else if (position >= passwordSessionsStartRow && position < passwordSessionsEndRow) {
                         sessionCell.setSession(passwordSessions.get(position - passwordSessionsStartRow), position != passwordSessionsEndRow - 1);
                     }
@@ -1009,9 +901,6 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
                 } else if (session instanceof TLRPC.TL_webAuthorization) {
                     return Objects.hash(1, ((TLRPC.TL_webAuthorization) session).hash);
                 }
-            } else if (position >= botSessionsStartRow && position < botSessionsEndRow) {
-                TL_account.TL_connectedBot bot = bots.get(position - botSessionsStartRow);
-                return Objects.hash(3, bot.bot_id);
             } else if (position >= passwordSessionsStartRow && position < passwordSessionsEndRow) {
                 TLObject session = passwordSessions.get(position - passwordSessionsStartRow);
                 if (session instanceof TLRPC.TL_authorization) {
@@ -1035,7 +924,7 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
                 return VIEW_TYPE_INFO;
             } else if (position == currentSessionSectionRow || position == otherSessionsSectionRow || position == passwordSessionsSectionRow || position == ttlHeaderRow) {
                 return VIEW_TYPE_HEADER;
-            } else if (position == currentSessionRow || position >= otherSessionsStartRow && position < otherSessionsEndRow || position >= botSessionsStartRow && position < botSessionsEndRow || position >= passwordSessionsStartRow && position < passwordSessionsEndRow) {
+            } else if (position == currentSessionRow || position >= otherSessionsStartRow && position < otherSessionsEndRow || position >= passwordSessionsStartRow && position < passwordSessionsEndRow) {
                 return VIEW_TYPE_SESSION;
             } else if (position == qrCodeRow) {
                 return VIEW_TYPE_SCANQR;

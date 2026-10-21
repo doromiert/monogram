@@ -2935,176 +2935,19 @@ public class TL_account {
         }
     }
 
-    public static class TL_connectedBot extends TLObject {
-        public static final int constructor = 0x33ed001;
 
-        public int flags;
-        public long bot_id;
-        public TL_businessBotRecipients recipients;
-        public TL_businessBotRights rights;
-        public String device;
-        public int date;
-        public String location;
 
-        public static TL_connectedBot TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final TL_connectedBot result = constructor != TL_connectedBot.constructor ? null : new TL_connectedBot();
-            return TLdeserialize(TL_connectedBot.class, result, stream, constructor, exception);
-        }
 
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            flags = stream.readInt32(exception);
-            bot_id = stream.readInt64(exception);
-            recipients = TL_businessBotRecipients.TLdeserialize(stream, stream.readInt32(exception), exception);
-            rights = TL_businessBotRights.TLdeserialize(stream, stream.readInt32(exception), exception);
-            if (hasFlag(flags, FLAG_0)) {
-                device = stream.readString(exception);
-            }
-            if (hasFlag(flags, FLAG_1)) {
-                date = stream.readInt32(exception);
-            }
-            if (hasFlag(flags, FLAG_2)) {
-                location = stream.readString(exception);
-            }
-        }
 
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            stream.writeInt64(bot_id);
-            recipients.serializeToStream(stream);
-            rights.serializeToStream(stream);
-            if (hasFlag(flags, FLAG_0)) {
-                stream.writeString(device);
-            }
-            if (hasFlag(flags, FLAG_1)) {
-                stream.writeInt32(date);
-            }
-            if (hasFlag(flags, FLAG_2)) {
-                stream.writeString(location);
-            }
-        }
-    }
 
-    public static class confirmBotConnection extends TLMethod<TLRPC.Bool> {
-        public static final int constructor = 0x67ed1f68;
 
-        public TLRPC.InputUser bot_id;
 
-        @Override
-        public TLRPC.Bool deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
 
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            bot_id.serializeToStream(stream);
-        }
-    }
 
-    public static class connectedBots extends TLObject {
-        public static final int constructor = 0x17d7f87b;
 
-        public ArrayList<TL_connectedBot> connected_bots = new ArrayList<>();
-        public ArrayList<TLRPC.User> users = new ArrayList<>();
 
-        public static connectedBots TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final connectedBots result = constructor != connectedBots.constructor ? null : new connectedBots();
-            return TLdeserialize(connectedBots.class, result, stream, constructor, exception);
-        }
 
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            connected_bots = Vector.deserialize(stream, TL_connectedBot::TLdeserialize, exception);
-            users = Vector.deserialize(stream, TLRPC.User::TLdeserialize, exception);
-        }
 
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            Vector.serialize(stream, connected_bots);
-            Vector.serialize(stream, users);
-        }
-    }
-
-    public static class updateConnectedBot extends TLObject {
-        public static final int constructor = 0x66a08c7e;
-
-        public int flags;
-        public boolean deleted;
-        public TL_businessBotRights rights;
-        public TLRPC.InputUser bot;
-        public TL_inputBusinessBotRecipients recipients;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Updates.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            flags = setFlag(flags, 2, deleted);
-            flags = setFlag(flags, 1, rights != null);
-            stream.writeInt32(flags);
-            if (hasFlag(flags, 1)) {
-                rights.serializeToStream(stream);
-            }
-            bot.serializeToStream(stream);
-            recipients.serializeToStream(stream);
-        }
-    }
-
-    public static class getConnectedBots extends TLObject {
-        public static final int constructor = 0x4ea4c80f;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return connectedBots.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-        }
-    }
-
-    public static class toggleConnectedBotPaused extends TLObject {
-        public static final int constructor = 0x646E1097;
-
-        public TLRPC.InputPeer peer;
-        public boolean paused;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-            stream.writeBool(paused);
-        }
-    }
-
-    public static class disablePeerConnectedBot extends TLObject {
-        public static final int constructor = 0x5e437ed9;
-
-        public TLRPC.InputPeer peer;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-        }
-    }
 
     public static class TL_birthday extends TLObject {
         public static final int constructor = 0x6c8e1e06;

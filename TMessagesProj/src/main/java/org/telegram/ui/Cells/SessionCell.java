@@ -9,7 +9,6 @@
 package org.telegram.ui.Cells;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
@@ -44,7 +43,6 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AvatarDrawable;
@@ -192,20 +190,7 @@ public class SessionCell extends FrameLayout {
 
         imageView.setRoundRadius(dp(10));
 
-        if (object instanceof TL_account.TL_connectedBot) {
-            final TL_account.TL_connectedBot bot = (TL_account.TL_connectedBot) object;
-            final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(bot.bot_id);
-
-            avatarDrawable.setInfo(user);
-            imageView.setRoundRadius(dp(21));
-            imageView.setForUserOrChat(user, avatarDrawable);
-
-            nameTextView.setText(UserObject.getUserName(user));
-            detailTextView.setText(getString(R.string.SessionBot));
-            if (TLObject.hasFlag(bot.flags, TLObject.FLAG_1)) {
-                detailExTextView.setText(formatString(R.string.SessionBotConnectedOn, LocaleController.formatDateTime(bot.date, false)));
-            }
-        } else if (object instanceof TLRPC.TL_authorization) {
+        if (object instanceof TLRPC.TL_authorization) {
             final TLRPC.TL_authorization session = (TLRPC.TL_authorization) object;
             imageView.setImageDrawable(createDrawable(42, session));
 

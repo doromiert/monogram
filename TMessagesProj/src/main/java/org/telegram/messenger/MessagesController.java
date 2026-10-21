@@ -7918,13 +7918,7 @@ public class MessagesController extends BaseController implements NotificationCe
             return;
         }
         final SharedPreferences.Editor editor = notificationsPreferences.edit();
-        if (settings.business_bot_id != 0) {
-            editor.putLong("dialog_botid" + dialogId, settings.business_bot_id);
-            editor.putString("dialog_boturl" + dialogId, settings.business_bot_manage_url);
-            editor.putInt("dialog_botflags" + dialogId, (settings.business_bot_paused ? 1 : 0) + (settings.business_bot_can_reply ? 2 : 0));
-        } else {
-            editor.remove("dialog_botid" + dialogId).remove("dialog_boturl" + dialogId).remove("dialog_botflags" + dialogId);
-        }
+
         editor.putLong("dialog_bar_paying_" + dialogId, settings.charge_paid_message_stars);
         if (notificationsPreferences.getInt("dialog_bar_vis3" + dialogId, 0) == 3) {
             editor.apply();
@@ -20217,8 +20211,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         }
                     } else if (baseUpdate instanceof TL_update.TL_updateNewAuthorization) {
                         getUnconfirmedAuthController().processUpdate((TL_update.TL_updateNewAuthorization) baseUpdate);
-                    } else if (baseUpdate instanceof TL_update.TL_updateNewBotConnection) {
-                        getUnconfirmedAuthController().processUpdate((TL_update.TL_updateNewBotConnection) baseUpdate);
                     } else if (baseUpdate instanceof TL_update.TL_updateChannel) {
                         TL_update.TL_updateChannel update = (TL_update.TL_updateChannel) baseUpdate;
                         TLRPC.Dialog dialog = dialogs_dict.get(-update.channel_id);

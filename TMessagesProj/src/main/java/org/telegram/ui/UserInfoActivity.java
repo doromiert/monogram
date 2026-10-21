@@ -1,11 +1,7 @@
 package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.AndroidUtilities.replaceArrows;
-import static org.telegram.messenger.AndroidUtilities.replaceSingleLink;
-import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.ui.Cells.TextCell.applyNewSpan;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -35,7 +31,6 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
@@ -44,10 +39,7 @@ import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.AlertDialog;
-import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Business.BusinessChatbotController;
-import org.telegram.ui.Business.ChatbotsActivity;
 import org.telegram.ui.Business.LocationActivity;
 import org.telegram.ui.Business.OpeningHoursActivity;
 import org.telegram.ui.Cells.EditTextCell;
@@ -55,7 +47,6 @@ import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CircularProgressDrawable;
 import org.telegram.ui.Components.CrossfadeDrawable;
-import org.telegram.ui.Components.IconBackgroundColors;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
@@ -66,7 +57,6 @@ import org.telegram.ui.Components.UniversalRecyclerView;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Objects;
 
 public class UserInfoActivity extends UniversalFragment implements NotificationCenter.NotificationCenterDelegate {
 
@@ -78,7 +68,6 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
     private CharSequence bioInfo;
     private CharSequence birthdayInfo;
 
-    private ArrayList<TL_account.TL_connectedBot> bots = new ArrayList<>();
 
     @Override
     protected CharSequence getTitle() {
@@ -96,7 +85,6 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         getNotificationCenter().addObserver(this, NotificationCenter.userInfoDidLoad);
         getNotificationCenter().addObserver(this, NotificationCenter.privacyRulesUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
-        getNotificationCenter().addObserver(this, NotificationCenter.updatedChatbot);
         org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshProfile(getUserConfig().getClientUserId());
         return super.onFragmentCreate();
     }
@@ -106,7 +94,6 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         getNotificationCenter().removeObserver(this, NotificationCenter.userInfoDidLoad);
         getNotificationCenter().removeObserver(this, NotificationCenter.privacyRulesUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
-        getNotificationCenter().removeObserver(this, NotificationCenter.updatedChatbot);
         super.onFragmentDestroy();
         if (!wasSaved) {
             processDone(false);
@@ -189,7 +176,6 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
     private static final int BUTTON_CHANNEL = 3;
     private static final int BUTTON_HOURS = 4;
     private static final int BUTTON_LOCATION = 5;
-    private static final int BUTTON_AI = 6;
     private static final int INFO_PHONE = 7;
     private static final int INFO_USERNAME = 8;
     private static final int INFO_BIRTHDAY = 9;
@@ -354,8 +340,6 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             presentFragment(new LocationActivity());
         } else if (item.id == BUTTON_HOURS) {
             presentFragment(new OpeningHoursActivity());
-        } else if (item.id == BUTTON_AI) {
-            presentFragment(new ChatbotsActivity());
         } else if (item.id == INFO_PHONE) {
             presentFragment(new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER));
         } else if (item.id == INFO_USERNAME) {
@@ -381,12 +365,6 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             }
         } else if (id == NotificationCenter.privacyRulesUpdated) {
             updateBioInfo();
-            if (listView != null) {
-                listView.adapter.update(true);
-            }
-        } else if (id == NotificationCenter.updatedChatbot) {
-            final TL_account.connectedBots bots = BusinessChatbotController.getInstance(currentAccount).getValue();
-            this.bots = bots != null && bots.connected_bots != null ? bots.connected_bots : new ArrayList<>();
             if (listView != null) {
                 listView.adapter.update(true);
             }

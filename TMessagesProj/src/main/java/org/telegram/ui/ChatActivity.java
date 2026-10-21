@@ -225,7 +225,6 @@ import org.telegram.ui.ActionBar.theme.ThemeKey;
 import org.telegram.ui.Adapters.FiltersView;
 import org.telegram.ui.Adapters.MentionsAdapter;
 import org.telegram.ui.Adapters.MessagesSearchAdapter;
-import org.telegram.ui.Business.BusinessBotButton;
 import org.telegram.ui.Business.BusinessLinksActivity;
 import org.telegram.ui.Business.BusinessLinksController;
 import org.telegram.ui.Business.BusinessLinksEmptyView;
@@ -531,7 +530,6 @@ public class ChatActivity extends BaseFragment implements
     private TextView addProfilePictureButton;
     public TopicsTabsView topicsTabs;
     @Nullable
-    private BusinessBotButton bizBotButton;
     @Nullable
     private LinkSpanDrawable.LinksTextView emojiStatusSpamHint;
     @Nullable
@@ -7008,7 +7006,6 @@ public class ChatActivity extends BaseFragment implements
         translateButton = null;
         addProfilePictureButton = null;
         topicsTabs = null;
-        bizBotButton = null;
 
         // topButtonsLayout = new ChatActivitySideControlsButtonsLayout(context, resourceProvider, blurredBackgroundColorProvider, glassBackgroundDrawableFactory);
         // topButtonsLayout.setOnClickListener(this::onSideControlButtonOnClick);
@@ -10069,20 +10066,7 @@ public class ChatActivity extends BaseFragment implements
 
 
 
-    private void createBizBotButton() {
-        if (bizBotButton != null || getContext() == null) {
-            return;
-        }
 
-        createTopPanel();
-        if (topChatPanelView == null || topPanelLayout == null) {
-            return;
-        }
-        bizBotButton = new BusinessBotButton(getContext(), this, themeDelegate);
-        topPanelLayout.addView(bizBotButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-        topPanelLayout.setPriority(bizBotButton, 7);
-        topPanelLayout.setDebugName(bizBotButton, "bot biz");
-    }
 
     private void createUndoView() {
         if (undoView != null || getContext() == null) {
@@ -28960,31 +28944,20 @@ public class ChatActivity extends BaseFragment implements
                 && !getMessagesController().getTranslateController().isTranslateDialogHidden(getDialogId())
                 || DEBUG_TOP_PANELS;
         boolean showAddProfilePicture = UserObject.isBot(currentUser) && currentUser.bot_can_edit && currentUser.photo == null;
-        boolean showBizBot = currentEncryptedChat == null && getUserConfig().isPremium() && preferences.getLong("dialog_botid" + did, 0) != 0 || DEBUG_TOP_PANELS;
         if (showRestartTopic) {
             shownRestartTopic = true;
         }
-        if (showTranslate || showBizBot || showEmojiStatusReport != null) {
+        if (showTranslate || showEmojiStatusReport != null) {
             shownTranslateTopic = true;
         }
         boolean showRestartTopic1 = (showRestartTopic || shownRestartTopic) && !(showReport || showBlock || showGeo);
-        if (show || showReport || showBlock || showGeo || showTranslate || showBizBot || showRestartTopic1) {
+        if (show || showReport || showBlock || showGeo || showTranslate || showRestartTopic1) {
             createTopPanel();
             if (topChatPanelView == null) {
                 return;
             }
         }
-        if (showBizBot) {
-            createBizBotButton();
-            if (bizBotButton != null) {
-                bizBotButton.set(
-                    did,
-                    preferences.getLong("dialog_botid" + did, 0),
-                    preferences.getString("dialog_boturl" + did, null),
-                    preferences.getInt("dialog_botflags" + did, 0)
-                );
-            }
-        }
+
         if (showTranslate) {
             createTranslateButton();
             if (translateButton != null) {
@@ -29005,19 +28978,18 @@ public class ChatActivity extends BaseFragment implements
             reportSpamButton.setVisibility(showReport || showBlock || showGeo ? View.VISIBLE : View.GONE);
         }
         if (closeReportSpam != null) {
-            closeReportSpam.setVisibility(showRestartTopic1 || (showTranslate || showBizBot) && !(showReport || showBlock || showGeo) ? View.GONE : View.VISIBLE);
+            closeReportSpam.setVisibility(showRestartTopic1 || showTranslate && !(showReport || showBlock || showGeo) ? View.GONE : View.VISIBLE);
         }
         if (topPanelLayout != null) {
             topPanelLayout.setViewVisible(restartTopicButton, showRestartTopic1, animated);
             topPanelLayout.setViewVisible(translateButton, showTranslate, animated);
-            topPanelLayout.setViewVisible(bizBotButton, showBizBot, animated);
             topPanelLayout.setViewVisible(addProfilePictureButton, showAddProfilePicture, animated);
         }
 
         if (!showRestartTopic) {
             shownRestartTopic = false;
         }
-        if (!showTranslate && !showBizBot) {
+        if (!showTranslate) {
             shownTranslateTopic = false;
         }
 
@@ -29287,7 +29259,7 @@ public class ChatActivity extends BaseFragment implements
         } else {
             topPanelLayout.setViewVisible(emojiStatusSpamHint, false, animated);
         }
-        if (showTranslate || showBizBot) {
+        if (showTranslate) {
             createTopPanel();
             if (topChatPanelView == null) {
                 return;

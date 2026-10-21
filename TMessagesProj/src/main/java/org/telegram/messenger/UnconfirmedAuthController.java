@@ -12,7 +12,6 @@ import org.telegram.tgnet.TLParseException;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_update;
-import org.telegram.ui.Business.BusinessChatbotController;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -38,8 +37,6 @@ public class UnconfirmedAuthController {
         }
         fetchingCache = true;
         MessagesStorage.getInstance(currentAccount).getStorageQueue().postRunnable(() -> {
-            final ArrayList<TLRPC.User> users = new ArrayList<>();
-            final ArrayList<Long> usersToLoad = new ArrayList<>();
             final HashSet<Long> hashes = new HashSet<>();
             final ArrayList<UnconfirmedAuth> result = new ArrayList<>();
             SQLiteDatabase database = MessagesStorage.getInstance(currentAccount).getDatabase();
@@ -51,19 +48,16 @@ public class UnconfirmedAuthController {
                     if (data != null) {
                         try {
                             UnconfirmedAuth auth = new UnconfirmedAuth(data);
+                            if (auth.bot) continue; // Retired Telegram Business delegation record.
                             result.add(auth);
                             hashes.add(auth.hash);
 
-                            if (auth.bot && !usersToLoad.contains(auth.bot_id)) {
-                                usersToLoad.add(auth.bot_id);
-                            }
                         } catch (Exception e) {
                             FileLog.e(e);
                         }
                     }
                 }
 
-                MessagesStorage.getInstance(currentAccount).getUsersInternal(usersToLoad, users);
             } catch (Exception e) {
                 FileLog.e(e);
             } finally {
@@ -74,7 +68,6 @@ public class UnconfirmedAuthController {
             }
 
             AndroidUtilities.runOnUIThread(() -> {
-                MessagesController.getInstance(currentAccount).putUsers(users, true);
 
                 boolean wasEmpty = auths.isEmpty();
                 for (int i = 0; i < auths.size(); ++i) {
@@ -152,20 +145,6 @@ public class UnconfirmedAuthController {
         if (update.unconfirmed) {
             auths.add(new UnconfirmedAuth(update));
         }
-        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.unconfirmedAuthUpdate);
-        scheduleAuthExpireCheck();
-        saveCache();
-    }
-
-    public void processUpdate(TL_update.TL_updateNewBotConnection update) {
-        for (int i = 0; i < auths.size(); ++i) {
-            UnconfirmedAuth auth = auths.get(i);
-            if (auth != null && auth.bot && auth.bot_id == update.bot_id) {
-                auths.remove(i);
-                i--;
-            }
-        }
-        auths.add(new UnconfirmedAuth(update));
         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.unconfirmedAuthUpdate);
         scheduleAuthExpireCheck();
         saveCache();
@@ -319,15 +298,6 @@ public class UnconfirmedAuthController {
             location = update.location;
         }
 
-        public UnconfirmedAuth(TL_update.TL_updateNewBotConnection update) {
-            bot = true;
-            bot_id = update.bot_id;
-            hash = bot_id;
-            date = update.date;
-            device = update.device;
-            location = update.location;
-        }
-
         @Override
         public void serializeToStream(OutputSerializedData stream) {
             if (bot) {
@@ -354,60 +324,32 @@ public class UnconfirmedAuthController {
         }
 
         public void confirm(Utilities.Callback<Boolean> whenDone) {
-            if (bot) {
-                final TL_account.confirmBotConnection req = new TL_account.confirmBotConnection();
-                req.bot_id = MessagesController.getInstance(currentAccount).getInputUser(bot_id);
-                ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, (res, err) -> {
+            TL_account.changeAuthorizationSettings req = new TL_account.changeAuthorizationSettings();
+            req.hash = hash;
+            req.confirmed = true;
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
+                AndroidUtilities.runOnUIThread(() -> {
                     if (whenDone != null) {
                         whenDone.run(res instanceof TLRPC.TL_boolTrue && err == null || debug);
                         debug = false;
                     }
                 });
-            } else {
-                TL_account.changeAuthorizationSettings req = new TL_account.changeAuthorizationSettings();
-                req.hash = hash;
-                req.confirmed = true;
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (whenDone != null) {
-                            whenDone.run(res instanceof TLRPC.TL_boolTrue && err == null || debug);
-                            debug = false;
-                        }
-                    });
-                });
-            }
+            });
+
         }
 
         public void deny(Utilities.Callback<Boolean> whenDone) {
-            if (bot) {
-                final TL_account.updateConnectedBot req = new TL_account.updateConnectedBot();
-                req.deleted = true;
-                req.bot = MessagesController.getInstance(currentAccount).getInputUser(bot_id);
-                req.recipients = new TL_account.TL_inputBusinessBotRecipients();
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (res instanceof TLRPC.Updates) {
-                            MessagesController.getInstance(currentAccount).processUpdates((TLRPC.Updates) res, false);
-                        }
-                        BusinessChatbotController.getInstance(currentAccount).invalidate(true);
-                        if (whenDone != null) {
-                            whenDone.run(res instanceof TLRPC.Updates && err == null || debug);
-                            debug = false;
-                        }
-                    });
+            TL_account.resetAuthorization req = new TL_account.resetAuthorization();
+            req.hash = hash;
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (whenDone != null) {
+                        whenDone.run(res instanceof TLRPC.TL_boolTrue && err == null || debug);
+                        debug = false;
+                    }
                 });
-            } else {
-                TL_account.resetAuthorization req = new TL_account.resetAuthorization();
-                req.hash = hash;
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (whenDone != null) {
-                            whenDone.run(res instanceof TLRPC.TL_boolTrue && err == null || debug);
-                            debug = false;
-                        }
-                    });
-                });
-            }
+            });
+
         }
     }
 }
