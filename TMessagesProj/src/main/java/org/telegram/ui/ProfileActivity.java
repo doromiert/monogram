@@ -18,7 +18,6 @@ import static org.telegram.messenger.LocaleController.formatPluralString;
 import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.ui.Stars.StarGiftSheet.replaceUnderstood;
 
 import android.Manifest;
 import android.animation.Animator;
@@ -178,7 +177,6 @@ import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.OKLCH;
 import org.telegram.ui.ActionBar.SimpleTextView;
@@ -247,7 +245,6 @@ import org.telegram.ui.Components.MediaActivity;
 import org.telegram.ui.Components.ProfileActionsView;
 import org.telegram.ui.Components.ProfileGalleryBlurView;
 import org.telegram.ui.Components.Paint.PersistColorPalette;
-import org.telegram.ui.Components.Premium.LimitPreviewView;
 import org.telegram.ui.Components.Premium.ProfilePremiumCell;
 import org.telegram.ui.Components.ProfileGalleryView;
 import org.telegram.ui.Components.ProfileGooeyView;
@@ -262,7 +259,6 @@ import org.telegram.ui.Components.ScamDrawable;
 import org.telegram.ui.Components.ShareAlert;
 import org.telegram.ui.Components.SharedMediaLayout;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
-import org.telegram.ui.Components.StarRatingView;
 import org.telegram.ui.Components.StickerEmptyView;
 import org.telegram.ui.Components.TagEditCell;
 import org.telegram.ui.Components.TimerDrawable;
@@ -350,7 +346,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private boolean sharedMediaLayoutAttached;
     private SharedMediaLayout.SharedMediaPreloader sharedMediaPreloader;
     private boolean preloadedChannelEmojiStatuses;
-    private StarRatingView ratingView;
 
     private View blurredView;
 
@@ -3094,9 +3089,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         if (musicView != null) {
                             musicView.setParentExpanded(1f);
                         }
-                        if (ratingView != null) {
-                            ratingView.setParentExpanded(1f);
-                        }
+
                         expandPhoto = false;
 
                     }
@@ -5161,7 +5154,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (hasFallbackPhoto && photoDescriptionProgress != 0 && customAvatarProgress != 1f) {
                     float cy = onlineTextView[1].getY() + onlineTextView[1].getMeasuredHeight() / 2f;
                     float size = dp(22);
-                    float x = dp(28) - customPhotoOffset + onlineTextView[1].getX() - size - getRatingViewTranslationXOffset();
+                    float x = dp(28) - customPhotoOffset + onlineTextView[1].getX() - size;
 
                     fallbackImage.setImageCoords(x, cy - size / 2f, size, size);
                     fallbackImage.setAlpha(photoDescriptionProgress);
@@ -5183,12 +5176,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         float cbX = x;
                         float cbW = AndroidUtilities.dp(28) * (1f - customAvatarProgress);
 
-                        float cbW1 = onlineTextView[2].getTextWidth();
-                        float cbW2 = 0;
-                        if (ratingView != null) {
-                            cbW2 = (dp(24) + cbW1 + dp(4)) * ratingView.getVisibilityFactor();
-                        }
-                        cbW += Math.max(cbW1, cbW2);
+                        cbW += onlineTextView[2].getTextWidth();
 
                         AndroidUtilities.rectTmp.set(cbX - AndroidUtilities.dp(4), cy - AndroidUtilities.dp(14), x + cbW + AndroidUtilities.dp(4), cy + AndroidUtilities.dp(14));
                         canvasButton.setRect(AndroidUtilities.rectTmp);
@@ -5482,23 +5470,17 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     @Override
                     public void setTranslationY(float translationY) {
                         super.setTranslationY(translationY);
-                        lastRatingViewTranslationYOffset = getRatingViewTranslationYOffset();
                         onlineTextView[2].setTranslationY(translationY);
                         onlineTextView[3].setTranslationY(translationY);
-                        if (ratingView != null) {
-                            ratingView.setTranslationY(translationY - dp(5));
-                        }
+
                     }
 
                     @Override
                     public void setTranslationX(float translationX) {
                         super.setTranslationX(translationX);
-                        lastRatingViewTranslationXOffset = getRatingViewTranslationXOffset();
                         onlineTextView[2].setTranslationX(translationX);
                         onlineTextView[3].setTranslationX(translationX);
-                        if (ratingView != null) {
-                            ratingView.setTranslationX(translationX - getRatingViewTranslationXOffset());
-                        }
+
                     }
 
                     @Override
@@ -5534,20 +5516,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         checkPhotoDescriptionAlpha();
         avatarContainer2.addView(animatedStatusView);
 
-        ratingView = new StarRatingView(context);
-        ratingView.setLayoutParams(LayoutHelper.createFrame(32, 32, Gravity.LEFT, 109 - 6, -2, 0, 0));
-        ratingView.setResourcesProvider(resourcesProvider);
-        checkStarRatingVisible();
-        ratingView.setDelegate(visibility -> {
-            onlineTextView[1].setTranslationX(getOnlineTextViewTranslationXWithOffsets(lastOnlineTextViewX));
-            onlineTextView[1].setTranslationY(getOnlineTextViewTranslationYWithOffsets(lastOnlineTextViewY));
-        });
-        ratingView.setOnClickListener(this::showStarRatingBottomSheet);
-        if (userInfo != null) {
-            ratingView.set(userInfo.stars_rating);
-        }
 
-        avatarContainer2.addView(ratingView);
 
         mediaCounterTextView = new AudioPlayerAlert.ClippingTextViewSwitcher(context) {
             @Override
@@ -6134,9 +6103,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (giftsView != null) {
             giftsView.setExpandProgress(value);
         }
-        if (ratingView != null) {
-            ratingView.setParentExpanded(value);
-        }
+
         if (actionsView != null) {
             actionsView.setParentExpanded(value);
         }
@@ -7624,7 +7591,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             animators.add(va);
         }
 
-        checkStarRatingVisible();
 
         headerAnimatorSet = new AnimatorSet();
         headerAnimatorSet.playTogether(animators);
@@ -7872,13 +7838,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
         }
     }
-    private boolean isStarRatingVisible1;
 
-    private void checkStarRatingVisible() {
-        if (ratingView != null) {
-            ratingView.setVisibility(!mediaHeaderVisible && isStarRatingVisible1);
-        }
-    }
+
 
     private Animator.AnimatorListener resetListener = new AnimatorListenerAdapter() {
         @Override
@@ -7950,9 +7911,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         avatarContainer.setScaleY(avatarScale);
         avatarContainer.setTranslationX(avatarX);
         avatarContainer.setTranslationY(avatarY);
-        if (ratingView != null) {
-            ratingView.setAlpha(backwardDiff);
-        }
+
 
 //        if (metaball != null && metaball.isBackward) {
 //            metaball.updateBackward(backwardDiff);
@@ -8031,8 +7990,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         float diff = calculateHeaderExtraDiff();
         boolean writeButtonVisible = false;
 
-        isStarRatingVisible1 = diff > 0.2f && !searchMode && (imageUpdater == null || setAvatarRow == -1);
-        checkStarRatingVisible();
         if (writeButtonVisible && chatId != 0) {
             writeButtonVisible = ChatObject.isChannel(currentChat) && !currentChat.megagroup && chatInfo != null && chatInfo.linked_chat_id != 0 && infoHeaderRow != -1;
         }
@@ -8951,9 +8908,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             final long uid = (Long) args[0];
             if (uid == userId) {
                 userInfo = (TLRPC.UserFull) args[1];
-                if (ratingView != null) {
-                    ratingView.set(userInfo.stars_rating);
-                }
+
                 if (storyView != null) {
                     storyView.setStories(userInfo.stories);
                 }
@@ -9457,9 +9412,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (playProfileAnimation != 0 && allowProfileAnimation) {
                     if (playProfileAnimation == 1) {
                         currentExpandAnimatorValue = 0f;
-                        if (ratingView != null) {
-                            ratingView.setParentExpanded(0);
-                        }
+
                         if (actionsView != null) {
                             actionsView.setParentExpanded(0);
                         }
@@ -9509,9 +9462,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (musicView != null) {
                 musicView.setParentExpanded(progress);
             }
-            if (ratingView != null) {
-                ratingView.setParentExpanded(progress);
-            }
+
             updateActionsPosition();
             updateMusicPosition();
         }
@@ -10051,9 +10002,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             ProfileBirthdayEffect.BirthdayEffectFetcher birthdayAssetsFetcher
     ) {
         userInfo = value;
-        if (ratingView != null) {
-            ratingView.set(userInfo.stars_rating);
-        }
+
         if (storyView != null) {
             storyView.setStories(userInfo.stories);
         }
@@ -10947,9 +10896,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (topView != null) {
                 topView.setBackgroundEmojiId(UserObject.getProfileEmojiId(user), user != null && user.emoji_status instanceof TLRPC.TL_emojiStatusCollectible, true);
             }
-            if (ratingView != null) {
-                ratingView.updateColors(peerColor);
-            }
+
 
 
 
@@ -10999,11 +10946,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         fallbackImage.setImage(ImageLocation.getForPhoto(smallSize, getUserInfo().fallback_photo), "50_50", (Drawable) null, 0, null, UserConfig.getInstance(currentAccount).getCurrentUser(), 0);
                     }
                 } else {
-                    if (userInfo != null && userInfo.stars_rating != null && userInfo.stars_rating.stars < 0) {
-                        newString2 = getString(R.string.StarRatingLevelNegative).toLowerCase(Locale.ROOT);
-                    } else {
-                        newString2 = LocaleController.getString(R.string.Online);
-                    }
+                    newString2 = LocaleController.getString(R.string.Online);
+
                 }
             } else if (user.id == UserObject.VERIFY) {
                 newString2 = LocaleController.getString(R.string.VerifyCodesNotifications);
@@ -11145,11 +11089,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
             if (userId == UserConfig.getInstance(currentAccount).clientUserId) {
                 onlineTextView[2].setText(LocaleController.getString(R.string.FallbackTooltip));
-                if (userInfo != null && userInfo.stars_rating != null && userInfo.stars_rating.stars < 0) {
-                    onlineTextView[3].setText(newString2 = getString(R.string.StarRatingLevelNegative).toLowerCase(Locale.ROOT));
-                } else {
-                    onlineTextView[3].setText(LocaleController.getString(R.string.Online));
-                }
+                onlineTextView[3].setText(LocaleController.getString(R.string.Online));
+
             } else {
                 if (user.photo != null && user.photo.personal && user.photo.has_video) {
                     SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder(newString2);
@@ -15227,29 +15168,18 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    private float lastOnlineTextViewX;
     private float getOnlineTextViewTranslationXWithOffsets(float onlineX) {
-        lastOnlineTextViewX = onlineX;
         final float expanded = Utilities.clamp01(playProfileAnimation == 2 ? 1 : avatarAnimationProgress >= 1 || playProfileAnimation == 0 ? currentExpandAnimatorValue : 0);
-        return onlineX + Math.max(0, (customPhotoOffset + getRatingViewTranslationXOffset()) * expanded);
+        return onlineX + Math.max(0, customPhotoOffset * expanded);
     }
 
-    private float lastOnlineTextViewY;
     private float getOnlineTextViewTranslationYWithOffsets(float onlineY) {
-        lastOnlineTextViewY = onlineY;
-        final float expanded = Utilities.clamp01(playProfileAnimation == 2 ? 1 : avatarAnimationProgress >= 1 || playProfileAnimation == 0 ? currentExpandAnimatorValue : 0);
-        return onlineY + getRatingViewTranslationYOffset() * (1.0f - expanded);
+        return onlineY;
     }
 
-    private float lastRatingViewTranslationXOffset;
-    private float getRatingViewTranslationXOffset() {
-        return (ratingView != null) ? dp(22) * ratingView.getVisibilityFactor() : 0;
-    }
 
-    private float lastRatingViewTranslationYOffset;
-    private float getRatingViewTranslationYOffset() {
-        return (ratingView != null) ? dp(3) * ratingView.getVisibilityFactor() : 0;
-    }
+
+
 
 
     private void updateStoriesViewBounds(boolean animated) {
@@ -15953,194 +15883,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    private void showStarRatingBottomSheet(View ignoreView) {
-        final Context context = getContext();
-        final TLRPC.UserFull userFull = getUserInfo();
-        if (userFull == null || userFull.stars_rating == null) {
-            return;
-        }
 
-        BottomSheet.Builder b = new BottomSheet.Builder(getContext());
-        Runnable dismiss = b.getDismissRunnable();
 
-        final LinearLayout linearLayout = new LinearLayout(context);
-        linearLayout.setOrientation(LinearLayout.VERTICAL);
-        linearLayout.setClipChildren(false);
-        linearLayout.setClipToPadding(false);
 
-        final LimitPreviewView limitPreviewView;
-        {
-            limitPreviewView = new LimitPreviewView(getContext(), R.drawable.filled_rating_crown, 0, 0, resourcesProvider);
-            limitPreviewView.setHideNegativeValues(getDialogId() != UserConfig.getInstance(currentAccount).getClientUserId());
-            limitPreviewView.setStarRating(userFull.stars_rating);
-            limitPreviewView.setTranslationY(-dp(14));
-            linearLayout.addView(limitPreviewView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 0, 20, 0, 10));
-        }
-
-        if (userFull.stars_my_pending_rating != null) {
-            final FrameLayout textLayout = new FrameLayout(context);
-            linearLayout.addView(textLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 40, -12, 40, 20));
-
-            final LinkSpanDrawable.LinksTextView[] textView = new LinkSpanDrawable.LinksTextView[2];
-            for (int i = 0; i < 2; ++i) {
-                textView[i] = new LinkSpanDrawable.LinksTextView(context) {
-                    @Override
-                    public boolean dispatchTouchEvent(MotionEvent event) {
-                        if (this.getAlpha() < 0.9f)
-                            return false;
-                        return super.dispatchTouchEvent(event);
-                    }
-                };
-                textView[i].setGravity(Gravity.CENTER);
-                textView[i].setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-                textView[i].setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-                textView[i].setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn));
-                textLayout.addView(textView[i], LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
-                textView[i].setAlpha(i == 0 ? 1.0f : 0.0f);
-                textView[i].setScaleX(i == 0 ? 1.0f : 0.8f);
-                textView[i].setScaleY(i == 0 ? 1.0f : 0.8f);
-            }
-
-            final Utilities.Callback<Boolean> update = preview -> {
-                textView[0].animate()
-                    .alpha(preview ? 0.0f : 1.0f)
-                    .scaleX(preview ? 0.8f : 1.0f)
-                    .scaleY(preview ? 0.8f : 1.0f)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .setDuration(600)
-                    .start();
-                textView[1].animate()
-                    .alpha(!preview ? 0.0f : 1.0f)
-                    .scaleX(!preview ? 0.8f : 1.0f)
-                    .scaleY(!preview ? 0.8f : 1.0f)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .setDuration(600)
-                    .start();
-            };
-
-            final boolean isSelf = getDialogId() == UserConfig.getInstance(currentAccount).getClientUserId();
-
-            final long dcurrent = userFull.stars_rating.stars;
-            final long dpoints = userFull.stars_my_pending_rating != null ? userFull.stars_my_pending_rating.stars - userFull.stars_rating.stars : 0;
-            final long debt = -dcurrent - dpoints;
-            final int days = Math.max(1, (userFull.stars_my_pending_rating_date - ConnectionsManager.getInstance(currentAccount).getCurrentTime()) / (24 * 60 * 60));
-            final long points = userFull.stars_my_pending_rating.stars - userFull.stars_rating.stars;
-
-            SpannableStringBuilder sb;
-            if (userFull.stars_rating.stars < 0 && !isSelf || isSelf && debt > 0) {
-                textView[0].setTextColor(Theme.getColor(Theme.key_text_RedBold));
-                if (isSelf) {
-                    textView[0].setText(AndroidUtilities.replaceTags(formatPluralStringComma("StarRatingLevelNegativeYou", (int) debt)));
-                } else {
-                    textView[0].setText(AndroidUtilities.replaceTags(formatString(R.string.StarRatingLevelNegativeOther, DialogObject.getName(getDialogId()))));
-                }
-            } else {
-                sb = new SpannableStringBuilder();
-                sb.append(TextUtils.concat(
-                    formatPluralStringComma("StarRatingFuture", days), "\n",
-                    formatPluralStringComma("StarRatingFuturePendingPoints", (int) points)
-                ));
-                sb.append(" ");
-                sb.append(AndroidUtilities.replaceArrows(AndroidUtilities.premiumText(getString(R.string.StarRatingFuturePendingPointsPreview), () -> {
-                    limitPreviewView.animateStarRating(userFull.stars_rating, userFull.stars_my_pending_rating);
-                    update.run(true);
-                }), true));
-                textView[0].setOnClickListener(v -> {
-                    limitPreviewView.animateStarRating(userFull.stars_rating, userFull.stars_my_pending_rating);
-                    update.run(true);
-                });
-                textView[0].setText(sb);
-            }
-
-            sb = new SpannableStringBuilder();
-            sb.append(TextUtils.concat(
-                formatPluralStringComma("StarRatingFuturePreview1", days), "\n",
-                formatPluralStringComma("StarRatingFuturePreview2", (int) points)
-            ));
-            sb.append(" ");
-            sb.append(AndroidUtilities.replaceArrows(AndroidUtilities.premiumText(getString(R.string.StarRatingFuturePendingPointsPreviewBack), () -> {
-                limitPreviewView.animateStarRating(userFull.stars_my_pending_rating, userFull.stars_rating);
-                update.run(false);
-            }), true));
-            textView[1].setOnClickListener(v -> {
-                limitPreviewView.animateStarRating(userFull.stars_my_pending_rating, userFull.stars_rating);
-                update.run(false);
-            });
-            textView[1].setText(sb);
-        }
-
-        final TextView titleView = new TextView(context);
-        titleView.setTypeface(AndroidUtilities.bold());
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setText(getString(R.string.StarRatingTitle));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        linearLayout.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 20, 0, 20, 6));
-
-        final TextView titleView2 = new TextView(context);
-        titleView2.setGravity(Gravity.CENTER);
-        if (userFull.id == UserConfig.getInstance(currentAccount).getClientUserId()) {
-            titleView2.setText(AndroidUtilities.replaceTags(LocaleController.getString(R.string.StarRatingSelfDescription)));
-        } else {
-            titleView2.setText(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.StarRatingDescription, DialogObject.getName(getDialogId()))));
-        }
-        titleView2.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        titleView2.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        linearLayout.addView(titleView2, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 20, 0, 20, 12));
-
-        {
-            PremiumFeatureCell cell = new PremiumFeatureCell(context, resourcesProvider);
-            cell.title.setText(getString(R.string.StarRatingTitle1));
-            cell.description.setText(LocaleController.formatSpannable(R.string.StarRatingDescription1, createNewSpan(getString(R.string.StarRatingAdded), Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider))));
-            cell.nextIcon.setVisibility(View.GONE);
-            cell.imageView.setImageResource(R.drawable.menu_gift);
-            cell.imageView.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, -2));
-        }
-        {
-            PremiumFeatureCell cell = new PremiumFeatureCell(context, resourcesProvider);
-            cell.title.setText(getString(R.string.StarRatingTitle2));
-            cell.description.setText(LocaleController.formatSpannable(R.string.StarRatingDescription2, createNewSpan(getString(R.string.StarRatingAdded), Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider))));
-            cell.nextIcon.setVisibility(View.GONE);
-            cell.imageView.setImageResource(R.drawable.menu_stars_gift);
-            cell.imageView.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, -2));
-        }
-        {
-            PremiumFeatureCell cell = new PremiumFeatureCell(context, resourcesProvider);
-            cell.title.setText(getString(R.string.StarRatingTitle3));
-            cell.description.setText(LocaleController.formatSpannable(R.string.StarRatingDescription3, createNewSpan(getString(R.string.StarRatingDeduces), Theme.isCurrentThemeDark() ? ColorUtils.blendARGB(Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon, resourcesProvider), Color.BLACK, 0.25f): Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider))));
-            cell.nextIcon.setVisibility(View.GONE);
-            cell.imageView.setImageResource(R.drawable.menu_refund);
-            cell.imageView.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, 8));
-        }
-        {
-            ButtonWithCounterView button = new ButtonWithCounterView(context, resourcesProvider);
-            button.setOnClickListener(v -> dismiss.run());
-            button.setText(replaceUnderstood(getString(R.string.Understood)), false);
-            linearLayout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 16, 10, 16, 8));
-        }
-        b.setCustomView(linearLayout);
-        b.show();
-    }
-
-    private static CharSequence createNewSpan(String str, int color) {
-        SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder(str);
-        FilterCreateActivity.NewSpan span = new FilterCreateActivity.NewSpan(false, 9) {
-            @Override
-            public void draw(@NonNull Canvas canvas, CharSequence text, int start, int end, float _x, int top, int _y, int bottom, @NonNull Paint paint) {
-                canvas.save();
-                canvas.translate(dp(2), 0);
-                super.draw(canvas, text, start, end, _x, top, _y, bottom, paint);
-                canvas.restore();
-            }
-        };
-        span.setText(str);
-        span.setColor(color);
-        spannableStringBuilder.setSpan(span, 0, spannableStringBuilder.length(), 0);
-        return spannableStringBuilder;
-    }
 
     public boolean isPeerNoForwards() {
         return currentChat != null ?

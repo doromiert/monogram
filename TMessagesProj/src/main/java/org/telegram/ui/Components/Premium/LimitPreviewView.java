@@ -41,7 +41,6 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
-import org.telegram.tgnet.tl.TL_stars;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedTextView;
@@ -84,14 +83,10 @@ public class LimitPreviewView extends LinearLayout {
     boolean animationCanPlay = true;
     FrameLayout limitsContainer;
     private boolean premiumLocked;
-    private final Paint ratingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private boolean isRatingNegative;
-    private boolean drawFromRight;
     private final AnimatedTextView defaultText;
     private final TextView premiumText;
     private boolean isBoostsStyle;
     private boolean isSimpleStyle;
-    private boolean isRatingStyle;
 
     Theme.ResourcesProvider resourcesProvider;
     private boolean animate;
@@ -189,7 +184,7 @@ public class LimitPreviewView extends LinearLayout {
             @Override
             protected void dispatchDraw(Canvas canvas) {
                 if (isBoostsStyle) {
-                    if (isStatistic || isRatingStyle) {
+                    if (isStatistic) {
                         grayPaint.setColor(Theme.getColor(Theme.key_listSelector, resourcesProvider));
                     } else {
                         grayPaint.setColor(Theme.getColor(Theme.key_graySection, resourcesProvider));
@@ -210,7 +205,7 @@ public class LimitPreviewView extends LinearLayout {
                 if (!isBoostsStyle) {
                     canvas.clipRect(width1, 0, getMeasuredWidth(), getMeasuredHeight());
                 }
-                Paint paint = isRatingStyle ? ratingPaint : hasDarkGradientProvider() ? whitePaint : PremiumGradient.getInstance().getMainGradientPaint();
+                Paint paint = hasDarkGradientProvider() ? whitePaint : PremiumGradient.getInstance().getMainGradientPaint();
                 if (parentVideForGradient != null) {
                     View parent = parentVideForGradient;
                     if (staticGradient != null) {
@@ -236,11 +231,8 @@ public class LimitPreviewView extends LinearLayout {
                     paint.setAlpha((int) (wasAlpha * (float) arrowAnimator.getAnimatedValue()));
                 }
                 if (isBoostsStyle) {
-                    if (isRatingNegative || drawFromRight) {
-                        AndroidUtilities.rectTmp.set(width1, 0, getMeasuredWidth(), getMeasuredHeight());
-                    } else {
-                        AndroidUtilities.rectTmp.set(0, 0, width1, getMeasuredHeight());
-                    }
+                    AndroidUtilities.rectTmp.set(0, 0, width1, getMeasuredHeight());
+
                 }
                 canvas.drawRoundRect(AndroidUtilities.rectTmp, dp(6), dp(6), paint);
                 paint.setAlpha(wasAlpha);
@@ -269,16 +261,16 @@ public class LimitPreviewView extends LinearLayout {
                         if (percent == 0) {
                             width1 = 0;
                             if (!animateArrowFadeIn && !animateArrowFadeOut) {
-                                premiumCount.setTextColor(isRatingNegative ? Color.WHITE : hasDarkGradientProvider() ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+                                premiumCount.setTextColor(hasDarkGradientProvider() ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
                                 defaultText.setTextColor(hasDarkGradientProvider() ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
                             }
                         } else if (percent < 1f) {
-                            float leftWidth = isRatingNegative ? 0: defaultLayout.getMeasuredWidth() - dp(8);
-                            float rightWidth = isRatingNegative ? 0: premiumLayout.getMeasuredWidth() - dp(8);
+                            float leftWidth = defaultLayout.getMeasuredWidth() - dp(8);
+                            float rightWidth = premiumLayout.getMeasuredWidth() - dp(8);
                             float availableWidth = width - leftWidth - rightWidth;
                             width1 = (int) (leftWidth + availableWidth * percent);
                             if (!animateArrowFadeIn && !animateArrowFadeOut) {
-                                premiumCount.setTextColor(isRatingNegative ? Color.WHITE : hasDarkGradientProvider() ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+                                premiumCount.setTextColor(hasDarkGradientProvider() ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
                                 defaultText.setTextColor(Color.WHITE);
                             }
                         } else {
@@ -510,10 +502,7 @@ public class LimitPreviewView extends LinearLayout {
                     if (animatingRotate) {
                         animatingRotation = false;
                     }
-                    if (animateStarRatingRunnable != null) {
-                        AndroidUtilities.cancelRunOnUIThread(animateStarRatingRunnable);
-                        animateStarRatingRunnable.run();
-                    }
+
                 }
             });
 
@@ -649,289 +638,11 @@ public class LimitPreviewView extends LinearLayout {
         isBoostsStyle = true;
     }
 
-    public void setStarsUpgradePrice(
-        TL_stars.StarGiftUpgradePrice from,
-        long current_stars,
-        TL_stars.StarGiftUpgradePrice to
-    ) {
-        drawFromRight = true;
-        ratingPaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider));
-        percent = AndroidUtilities.ilerp(current_stars, from.upgrade_stars, to.upgrade_stars);
-        defaultText.setText(LocaleController.formatPluralStringComma("Stars", (int) from.upgrade_stars));
-        premiumCount.setText(LocaleController.formatPluralStringComma("Stars", (int) to.upgrade_stars));
-        ((FrameLayout.LayoutParams) premiumCount.getLayoutParams()).gravity = Gravity.RIGHT;
-        setType(LimitReachedBottomSheet.TYPE_BOOSTS);
-        defaultCount.setVisibility(View.GONE);
-        premiumText.setVisibility(View.GONE);
 
-        premiumCount.setTextColor(isRatingNegative ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        defaultText.setTextColor(Color.WHITE);
 
-        setIconValue((int) current_stars, false);
-        isBoostsStyle = true;
-        isSimpleStyle = true;
-        isRatingStyle = true;
-    }
 
-    public void setStarRating(TL_stars.Tl_starsRating rating) {
-        isRatingNegative = false;
-        ratingPaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider));
-        long k = rating.current_level_stars;
-        if (rating.stars <= 0) {
-            percent = 0.5f;
-            defaultText.setText("");
-            premiumCount.setText(LocaleController.getString(R.string.StarRatingLevelNegative));
-            ratingPaint.setColor(Theme.getColor(Theme.key_color_red, resourcesProvider));
-            isRatingNegative = true;
-        } else if (rating.next_level_stars == 0) {
-            percent = 1f;
-            defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, rating.level - 1));
-            premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, rating.level));
-        } else {
-            percent = MathUtils.clamp((rating.stars - k) / (float) (rating.next_level_stars - k), 0, 1f);
-            defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, rating.level));
-            premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, rating.level + 1));
-        }
-        ((FrameLayout.LayoutParams) premiumCount.getLayoutParams()).gravity = Gravity.RIGHT;
-        setType(LimitReachedBottomSheet.TYPE_BOOSTS);
-        defaultCount.setVisibility(View.GONE);
-        premiumText.setVisibility(View.GONE);
 
-        premiumCount.setTextColor(isRatingNegative ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        defaultText.setTextColor(Color.WHITE);
 
-        setIconValue((int) rating.stars, (int) rating.next_level_stars, true, false);
-        isBoostsStyle = true;
-        isSimpleStyle = true;
-        isRatingStyle = true;
-    }
-
-    private Runnable animateStarRatingRunnable;
-    public void animateStarRating(TL_stars.Tl_starsRating from, TL_stars.Tl_starsRating to) {
-        AndroidUtilities.cancelRunOnUIThread(animateStarRatingRunnable);
-        animateStarRatingRunnable = null;
-        ratingPaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider));
-        isRatingNegative = false;
-        if (from.level == to.level) {
-            if (to.stars <= 0) {
-                percent = 0;
-                defaultText.setText("");
-                premiumCount.setText(LocaleController.getString(R.string.StarRatingLevelNegative));
-                ratingPaint.setColor(Theme.getColor(Theme.key_color_red, resourcesProvider));
-                isRatingNegative = true;
-            } else if (to.next_level_stars == 0) {
-                percent = 1f;
-                defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level - 1));
-                premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level));
-            } else {
-                percent = MathUtils.clamp((to.stars - to.current_level_stars) / (float) (to.next_level_stars - to.current_level_stars), 0, 1f);
-                defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level));
-                premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level + 1));
-            }
-
-            animate = true;
-            animateArrowFadeIn = false;
-            animateArrowFadeOut = false;
-            animateBackgroundFade = false;
-            animateIncreaseWidth = width1;
-            limitsContainer.requestLayout();
-            requestLayout();
-
-            premiumCount.setTextColor(isRatingNegative ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            defaultText.setTextColor(Color.WHITE);
-
-            setIconValue((int) to.stars, (int) to.next_level_stars, true, false);
-        } else if (to.level > from.level) {
-            if (from.stars <= 0) {
-//                defaultText.setText("");
-//                premiumCount.setText(LocaleController.getString(R.string.StarRatingLevelNegative));
-//                ratingPaint.setColor(Theme.getColor(Theme.key_color_red, resourcesProvider));
-                isRatingNegative = true;
-            }// else if (from.next_level_stars == 0) {
-//                defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level - 1));
-//                premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level));
-//            } else {
-//                defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level));
-//                premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level + 1));
-//            }
-
-//            final float rightWidth = premiumLayout.getMeasuredWidth() - dp(8);
-//            percent = (float) (limitsContainer.getMeasuredWidth() - rightWidth) / limitsContainer.getMeasuredWidth();
-            percent = 1.0f;
-
-            animate = true;
-            animateArrowFadeIn = false;
-            animateArrowFadeOut = true;
-            animateBackgroundFade = (from.stars <= 0) == (to.stars <= 0);
-            animateIncreaseWidth = width1;
-            limitsContainer.requestLayout();
-            requestLayout();
-
-            premiumCount.setTextColor(isRatingNegative ? Color.WHITE: Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            defaultText.setTextColor(Color.WHITE);
-            defaultText.animate()
-                .alpha(0).scaleX(0.7f).scaleY(0.7f)
-                .setDuration(320)
-                .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                .start();
-            premiumCount.animate()
-                .alpha(0).scaleX(0.7f).scaleY(0.7f)
-                .setDuration(320)
-                .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                .start();
-
-            setIconValue((int) from.stars, (int) from.next_level_stars, true, false);
-
-            AndroidUtilities.runOnUIThread(animateStarRatingRunnable = () -> {
-                animateStarRatingRunnable = null;
-                if (!isAttachedToWindow()) return;
-                if (arrowAnimator != null) {
-                    arrowAnimator.cancel();
-                }
-
-                isRatingNegative = false;
-                ratingPaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider));
-                if (to.stars <= 0) {
-                    percent = 0;
-                    defaultText.setText("");
-                    premiumCount.setText(LocaleController.getString(R.string.StarRatingLevelNegative));
-                    ratingPaint.setColor(Theme.getColor(Theme.key_color_red, resourcesProvider));
-                    isRatingNegative = true;
-                } else if (to.next_level_stars == 0) {
-                    percent = 1f;
-                    defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level - 1));
-                    premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level));
-                } else {
-                    percent = MathUtils.clamp((to.stars - to.current_level_stars) / (float) (to.next_level_stars - to.current_level_stars), 0, 1f);
-                    defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level));
-                    premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level + 1));
-                }
-
-                setArrowX(0.0f);
-                limitIcon.setScaleX(0.6f);
-                limitIcon.setScaleY(0.6f);
-                limitIcon.setAlpha(0.0f);
-
-                animate = true;
-                animateArrowFadeIn = true;
-                animateArrowFadeOut = false;
-                animateBackgroundFade = false;
-                animateIncreaseWidth = width1;
-                limitsContainer.requestLayout();
-                requestLayout();
-
-                defaultText.animate()
-                    .alpha(1).scaleX(1).scaleY(1)
-                    .setDuration(320)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .start();
-                premiumCount.animate()
-                    .alpha(1).scaleX(1).scaleY(1)
-                    .setDuration(320)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .start();
-
-                premiumCount.setTextColor(isRatingNegative ? Color.WHITE: Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-                defaultText.setTextColor(Color.WHITE);
-
-                setIconValue((int) to.stars, (int) to.next_level_stars, true, false);
-            }, 600);
-        } else if (to.level < from.level) {
-            ratingPaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider));
-            isRatingNegative = false;
-            if (from.stars <= 0) {
-//                defaultText.setText("");
-//                premiumCount.setText(LocaleController.getString(R.string.StarRatingLevelNegative));
-//                ratingPaint.setColor(Theme.getColor(Theme.key_color_red, resourcesProvider));
-                isRatingNegative = true;
-            }// else if (from.next_level_stars == 0) {
-//                defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level - 1));
-//                premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level));
-//            } else {
-//                defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level));
-//                premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, from.level + 1));
-//            }
-            percent = 0f;
-
-            animate = true;
-            animateArrowFadeIn = false;
-            animateArrowFadeOut = true;
-            animateBackgroundFade = (from.stars <= 0) == (to.stars <= 0);
-            animateIncreaseWidth = width1;
-            limitsContainer.requestLayout();
-            requestLayout();
-
-            defaultText.animate()
-                .alpha(0).scaleX(0.7f).scaleY(0.7f)
-                .setDuration(320)
-                .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                .start();
-            premiumCount.animate()
-                .alpha(0).scaleX(0.7f).scaleY(0.7f)
-                .setDuration(320)
-                .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                .start();
-
-            premiumCount.setTextColor(isRatingNegative ? Color.WHITE: Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            defaultText.setTextColor(Color.WHITE);
-
-            setIconValue((int) from.stars, (int) from.next_level_stars, true, false);
-
-            AndroidUtilities.runOnUIThread(animateStarRatingRunnable = () -> {
-                animateStarRatingRunnable = null;
-                if (!isAttachedToWindow()) return;
-                if (arrowAnimator != null) {
-                    arrowAnimator.cancel();
-                }
-                isRatingNegative = false;
-                ratingPaint.setColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider));
-                if (to.stars <= 0) {
-                    percent = 0.5f;
-                    defaultText.setText("");
-                    premiumCount.setText(LocaleController.getString(R.string.StarRatingLevelNegative));
-                    ratingPaint.setColor(Theme.getColor(Theme.key_color_red, resourcesProvider));
-                    isRatingNegative = true;
-                } else if (to.next_level_stars == 0) {
-                    percent = 1f;
-                    defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level - 1));
-                    premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level));
-                } else {
-                    percent = MathUtils.clamp((to.stars - to.current_level_stars) / (float) (to.next_level_stars - to.current_level_stars), 0, 1f);
-                    defaultText.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level));
-                    premiumCount.setText(LocaleController.formatString(R.string.StarRatingLevel, to.level + 1));
-                }
-
-                setArrowX(1.0f);
-                limitIcon.setScaleX(0.6f);
-                limitIcon.setScaleY(0.6f);
-                limitIcon.setAlpha(0.0f);
-
-                animate = true;
-                animateArrowFadeIn = true;
-                animateArrowFadeOut = false;
-                animateBackgroundFade = false;
-                animateIncreaseWidth = width1;
-                limitsContainer.requestLayout();
-                requestLayout();
-
-                defaultText.animate()
-                    .alpha(1).scaleX(1).scaleY(1)
-                    .setDuration(320)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .start();
-                premiumCount.animate()
-                    .alpha(1).scaleX(1).scaleY(1)
-                    .setDuration(320)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .start();
-
-                premiumCount.setTextColor(isRatingNegative ? Color.WHITE : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-                defaultText.setTextColor(Color.WHITE);
-
-                setIconValue((int) to.stars, (int) to.next_level_stars, true, false);
-            }, 600);
-        }
-    }
 
     @Keep
     public void setStatus(int currentLevel, int maxLevel, boolean animated) {
@@ -1076,12 +787,12 @@ public class LimitPreviewView extends LinearLayout {
                 }
                 PremiumGradient.getInstance().updateMainGradientMatrix(0, 0, LimitPreviewView.this.getMeasuredWidth(), LimitPreviewView.this.getMeasuredHeight(), getGlobalXOffset() - getX(), -getTop());
                 AndroidUtilities.rectTmp.set(0, 0, getMeasuredWidth(), h);
-                canvas.drawRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, isRatingStyle ? ratingPaint : hasDarkGradientProvider() ? textPaint : PremiumGradient.getInstance().getMainGradientPaint());
+                canvas.drawRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, hasDarkGradientProvider() ? textPaint : PremiumGradient.getInstance().getMainGradientPaint());
                 PremiumGradient.getInstance().getMainGradientPaint().setPathEffect(pathEffect);
                 if (hasDarkGradientProvider()) {
                     textPaint.setPathEffect(pathEffect);
                 }
-                canvas.drawPath(path, isRatingStyle ? ratingPaint : hasDarkGradientProvider() ? textPaint : PremiumGradient.getInstance().getMainGradientPaint());
+                canvas.drawPath(path, hasDarkGradientProvider() ? textPaint : PremiumGradient.getInstance().getMainGradientPaint());
                 PremiumGradient.getInstance().getMainGradientPaint().setPathEffect(null);
                 if (hasDarkGradientProvider()) {
                     textPaint.setPathEffect(null);
