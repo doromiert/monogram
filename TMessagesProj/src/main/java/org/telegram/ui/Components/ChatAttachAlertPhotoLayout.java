@@ -111,7 +111,6 @@ import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.capture.IBlur3Hash;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.AlbumButton;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
@@ -242,12 +241,10 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
     public final static int media_gap = 6;
     public final static int preview = 7;
     public final static int caption = 8;
-    public final static int stars = 9;
 
     private ActionBarMenuSubItem spoilerItem;
     private ActionBarMenuSubItem compressItem;
     private ActionBarMenuSubItem qualityItem;
-    private ActionBarMenuSubItem starsItem;
     protected ActionBarMenuSubItem previewItem;
     public MessagePreviewView.ToggleButton captionItem;
 
@@ -374,7 +371,6 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                     PhotoAttachPhotoCell cell = (PhotoAttachPhotoCell) view;
                     if (cell.getPhotoEntry() == entry) {
                         cell.setHasSpoiler(visible, 250f);
-                        cell.setStarsPrice(getStarsPrice(), selectedPhotos.size() > 1);
                     }
                 }
             });
@@ -809,7 +805,6 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         spoilerItem = parentAlert.selectedMenuItem.addSubItem(spoiler, R.drawable.msg_spoiler, LocaleController.getString(R.string.EnablePhotoSpoiler));
         qualityItem = parentAlert.selectedMenuItem.addSubItem(quality, R.drawable.menu_quality_hd, getString(R.string.SendInHighQuality));
         parentAlert.selectedMenuItem.addSubItem(caption, captionItem);
-        starsItem = parentAlert.selectedMenuItem.addSubItem(stars, R.drawable.menu_feature_paid, getString(R.string.PaidMediaButton));
         parentAlert.selectedMenuItem.setFitSubItems(true);
 
         gridView = new RecyclerListView(context, resourcesProvider) {
@@ -1823,8 +1818,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             }
             return position;
         } else {
-            object.starsAmount = getStarsPrice();
-            object.hasSpoiler = getStarsPrice() > 0;
+            object.starsAmount = 0;
+            object.hasSpoiler = false;
             object.isChatPreviewSpoilerRevealed = false;
             object.isAttachSpoilerRevealed = false;
             if (hasLivePhotos()) {
@@ -1832,68 +1827,20 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             }
             object.highQuality = object.isHighQuality();
 
-            boolean changed = checkSelectedCount(true);
             selectedPhotos.put(key, object);
             selectedPhotosOrder.add(key);
-            if (changed) {
-                updateCheckedPhotos();
-            } else {
-                updatePhotosCounter(true);
-            }
+            updatePhotosCounter(true);
             return -1;
         }
     }
 
-    private boolean checkSelectedCount(boolean beforeAdding) {
-        boolean changed = false;
-        if (getStarsPrice() > 0) {
-            while (selectedPhotos.size() > 10 - (beforeAdding ? 1 : 0) && !selectedPhotosOrder.isEmpty()) {
-                Object key = selectedPhotosOrder.get(0);
-                Object firstPhoto = selectedPhotos.get(key);
-                if (!(firstPhoto instanceof MediaController.PhotoEntry)) {
-                    break;
-                }
-                addToSelectedPhotos((MediaController.PhotoEntry) firstPhoto, -1);
-                changed = true;
-            }
-        }
-        return changed;
-    }
 
-    public long getStarsPrice() {
-        for (HashMap.Entry<Object, Object> entry : selectedPhotos.entrySet()) {
-            MediaController.PhotoEntry photoEntry = (MediaController.PhotoEntry) entry.getValue();
-            return photoEntry.starsAmount;
-        }
-        return 0;
-    }
 
-    public void setStarsPrice(long stars) {
-        if (!selectedPhotos.isEmpty()) {
-            for (HashMap.Entry<Object, Object> entry : selectedPhotos.entrySet()) {
-                MediaController.PhotoEntry photoEntry = (MediaController.PhotoEntry) entry.getValue();
-                photoEntry.starsAmount = stars;
-                photoEntry.hasSpoiler = stars > 0;
-                photoEntry.isChatPreviewSpoilerRevealed = false;
-                photoEntry.isAttachSpoilerRevealed = false;
-            }
-        }
-        onSelectedItemsCountChanged(getSelectedItemsCount());
-        if (checkSelectedCount(false)) {
-            updateCheckedPhotos();
-        }
-    }
 
-    private void updatePhotoStarsPrice() {
-        gridView.forAllChild(view -> {
-            if (view instanceof PhotoAttachPhotoCell) {
-                PhotoAttachPhotoCell cell = (PhotoAttachPhotoCell) view;
-                cell.setHasSpoiler(cell.getPhotoEntry() != null && cell.getPhotoEntry().hasSpoiler, 250f);
-                cell.setHighQuality(cell.getPhotoEntry() != null && cell.getPhotoEntry().isHighQuality());
-                cell.setStarsPrice(cell.getPhotoEntry() != null ? cell.getPhotoEntry().starsAmount : 0, selectedPhotos.size() > 1);
-            }
-        });
-    }
+
+
+
+
 
     public void clearSelectedPhotos() {
         spoilerItem.setText(LocaleController.getString(R.string.EnablePhotoSpoiler));
@@ -3528,11 +3475,6 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
             }
         } else if (id == preview) {
             parentAlert.updatePhotoPreview(parentAlert.getCurrentAttachLayout() != parentAlert.getPhotoPreviewLayout());
-        } else if (id == stars) {
-            StarsIntroActivity.showMediaPriceSheet(getContext(), getStarsPrice(), true, (price, done) -> {
-                done.run();
-                setStarsPrice(price);
-            }, resourcesProvider);
         } else if (id >= 10) {
             selectedAlbumEntry = dropDownAlbums.get(id - 10);
             if (selectedAlbumEntry == galleryAlbumEntry) {
@@ -3592,7 +3534,7 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 parentAlert.selectedMenuItem.showSubItem(open_in);
                 hasCompress = false;
                 parentAlert.selectedMenuItem.hideSubItem(compress);
-            } else if (documentsEnabled && getStarsPrice() <= 0 && parentAlert.editingMessageObject == null) {
+            } else if (documentsEnabled && parentAlert.editingMessageObject == null) {
                 hasCompress = true;
                 parentAlert.selectedMenuItem.showSubItem(compress);
             } else {
@@ -3600,14 +3542,9 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 parentAlert.selectedMenuItem.hideSubItem(compress);
             }
         } else {
-            if (getStarsPrice() <= 0) {
-                hasGroup = true;
-                parentAlert.selectedMenuItem.showSubItem(group);
-            } else {
-                hasGroup = false;
-                parentAlert.selectedMenuItem.hideSubItem(group);
-            }
-            if (documentsEnabled && getStarsPrice() <= 0) {
+            hasGroup = true;
+            parentAlert.selectedMenuItem.showSubItem(group);
+            if (documentsEnabled) {
                 hasCompress = true;
                 parentAlert.selectedMenuItem.showSubItem(compress);
             } else {
@@ -3629,9 +3566,8 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 compressItem.setText(LocaleController.getString(R.string.SendAsFile));
             }
         }
-        final boolean hasSpoiler = count > 0 && getStarsPrice() <= 0 && (parentAlert == null || parentAlert.baseFragment instanceof ChatActivity && !((ChatActivity) parentAlert.baseFragment).isSecretChat());
+        final boolean hasSpoiler = count > 0 && (parentAlert == null || parentAlert.baseFragment instanceof ChatActivity && !((ChatActivity) parentAlert.baseFragment).isSecretChat());
         final boolean hasCaption = count > 0 && parentAlert != null && parentAlert.hasCaption() && parentAlert.baseFragment instanceof ChatActivity;
-        final boolean hasStars = count > 0 && (parentAlert != null && parentAlert.baseFragment instanceof ChatActivity && ChatObject.isChannelAndNotMegaGroup(((ChatActivity) parentAlert.baseFragment).getCurrentChat()) && ((ChatActivity) parentAlert.baseFragment).getCurrentChatInfo() != null && ((ChatActivity) parentAlert.baseFragment).getCurrentChatInfo().paid_media_allowed);
         if (!hasSpoiler) {
             spoilerItem.setText(LocaleController.getString(R.string.EnablePhotoSpoiler));
             spoilerItem.setAnimatedIcon(R.raw.photo_spoiler);
@@ -3663,26 +3599,10 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
         } else {
             parentAlert.selectedMenuItem.hideSubItem(media_gap);
         }
-        if (hasStars) {
-            updateStarsItem();
-            updatePhotoStarsPrice();
-            parentAlert.selectedMenuItem.showSubItem(stars);
-        } else {
-            parentAlert.selectedMenuItem.hideSubItem(stars);
-        }
+
     }
 
-    private void updateStarsItem() {
-        if (starsItem == null) return;
-        long amount = getStarsPrice();
-        if (amount > 0) {
-            starsItem.setText(getString(R.string.PaidMediaPriceButton));
-            starsItem.setSubtext(formatPluralString("Stars", (int) amount));
-        } else {
-            starsItem.setText(getString(R.string.PaidMediaButton));
-            starsItem.setSubtext(null);
-        }
-    }
+
 
     @Override
     public void applyCaption(CharSequence text) {
@@ -4535,7 +4455,6 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
                 parentAlert.updateCountButton(added ? 1 : 2);
                 cell.setHasSpoiler(photoEntry.hasSpoiler);
                 cell.setHighQuality(photoEntry.isHighQuality());
-                cell.setStarsPrice(photoEntry.starsAmount, selectedPhotos.size() > 1);
             });
             return new RecyclerListView.Holder(cell);
         }

@@ -118,7 +118,6 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
-import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
@@ -155,7 +154,6 @@ import org.telegram.ui.PassportActivity;
 import org.telegram.ui.PhotoPickerActivity;
 import org.telegram.ui.PhotoPickerSearchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.WebAppDisclaimerAlert;
@@ -3615,7 +3613,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             boolean hasMessageToEffect = false;
             MessageObject messageWithCaption = null;
 
-            boolean canHaveStars = false;
             ArrayList<MessageObject> messageObjects = new ArrayList<>();
             int id = 0;
             if (currentAttachLayout == photoLayout || currentAttachLayout == photoPreviewLayout) {
@@ -3753,7 +3750,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                             if (messageWithCaption == null && !TextUtils.isEmpty(msg.message)) {
                                 messageWithCaption = messageObject;
                             }
-                            canHaveStars = true;
                         }
                     }
                 }
@@ -3934,34 +3930,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     }
                 });
             }
-            if (editingMessageObject == null && canHaveStars && chatActivity != null && ChatObject.isChannelAndNotMegaGroup(chatActivity.getCurrentChat()) && chatActivity.getCurrentChatInfo() != null && chatActivity.getCurrentChatInfo().paid_media_allowed) {
-                ActionBarMenuSubItem item = options.add(R.drawable.menu_feature_paid, getString(R.string.PaidMediaButton), null).getLast();
-                item.setOnClickListener(v -> {
-                    if (photoLayout == null) return;
-                    StarsIntroActivity.showMediaPriceSheet(context, photoLayout.getStarsPrice(), true, (amount, done) -> {
-                        done.run();
-                        photoLayout.setStarsPrice(amount);
-                        if (amount != null && amount > 0) {
-                            item.setText(getString(R.string.PaidMediaPriceButton));
-                            item.setSubtext(formatPluralString("Stars", (int) (long) amount));
-                            messageSendPreview.setStars(amount);
-                        } else {
-                            item.setText(getString(R.string.PaidMediaButton));
-                            item.setSubtext(null);
-                            messageSendPreview.setStars(0);
-                        }
-                    }, resourcesProvider);
-                });
-                long amount = photoLayout.getStarsPrice();
-                if (amount > 0) {
-                    item.setText(getString(R.string.PaidMediaPriceButton));
-                    item.setSubtext(formatPluralString("Stars", (int) amount));
-                } else {
-                    item.setText(getString(R.string.PaidMediaButton));
-                    item.setSubtext(null);
-                }
-                messageSendPreview.setStars(amount);
-            }
+
             options.setupSelectors();
             messageSendPreview.setItemOptions(options);
 

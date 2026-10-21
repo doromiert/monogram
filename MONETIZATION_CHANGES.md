@@ -329,3 +329,11 @@ Removed the chat-home folder membership tier check and its upgrade sheet. Remove
 Removed TopicCreateFragment's paid emoji rejection/upgrade bulletin and simplified its private selectEmoji signature/callers. Existing topic icon rendering and selection continue through the same native emoji picker; this is frontend functionality available without a subscription, not an implementation of XMPP topic synchronization.
 
 Source-only inspection covers the retained pin action callbacks/order handling, surviving folder operations, topic selection callers and imports, edited class boundaries and whitespace. No tests, compilation, APK or phone interaction. These changes remain unshipped. Other story/Business/Premium/Stars/boost controls and legacy limit metadata remain outstanding.
+
+### Paid-media composition and dialog balance overlay
+
+Removed paid-media entries from attachment send-preview options and the gallery menu. Deleted the media-price input sheet in StarsIntroActivity, gallery pricing setters/readers and paid-media selection cap/refresh code. Gallery selection clears outgoing Stars metadata and retains ordinary selection counters, grouping, compression and spoiler controls; normal spoiler behavior is no longer conditioned on a sale price. Other historical paid-message/media representations outside the picker remain for later cleanup.
+
+Deleted the unused BalanceCloud Stars/TON top-up widget and its only host integration in AlertDialog: balance setter/getters, special fullscreen wrapper, purchase click action and fullscreen window branch. Repository reference inspection found no callers of those host APIs. Ordinary dialog custom-width, spinner and standard content/window paths remain.
+
+Source-only inspection covers deleted pricing/overlay APIs across Java/XML, surviving gallery selection/menu conditions, edited class boundaries, dialog content/window branches and whitespace. No tests, build, APK or phone interaction. These changes are unshipped; Stars top-ups elsewhere, paid transaction history/schema, Business/Premium/boost code and other monetization resources remain in scope.

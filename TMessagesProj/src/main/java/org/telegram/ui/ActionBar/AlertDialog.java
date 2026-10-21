@@ -64,7 +64,6 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.utils.ViewOutlineProviderImpl;
@@ -77,11 +76,8 @@ import org.telegram.ui.Components.LineProgressView;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RadialProgressView;
-import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.Components.spoilers.SpoilersTextView;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.Stars.BalanceCloud;
-import org.telegram.ui.Stars.StarsIntroActivity;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -618,23 +614,13 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         }
     }
 
-    private boolean needStarsBalance;
-    public AlertDialog setShowStarsBalance(boolean show) {
-        needStarsBalance = show;
-        return this;
-    }
 
-    public FrameLayout getFullscreenContainerView() {
-        return fullscreenContainerView;
-    }
 
-    private FrameLayout fullscreenContainerView;
 
-    public BalanceCloud getStarsBalanceCloud() {
-        return starsBalanceCloud;
-    }
 
-    private BalanceCloud starsBalanceCloud;
+
+
+
 
     private AlertDialogView containerView;
     public AlertDialogView getContainerView() {
@@ -669,32 +655,9 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             }
         }
         View rootView = containerView;
-        if (needStarsBalance) {
-            if (fullscreenContainerView == null) {
-                fullscreenContainerView = new FrameLayout(getContext());
-                fullscreenContainerView.setOnClickListener(v -> {
-                    dismiss();
-                });
-            }
-            if (starsBalanceCloud == null) {
-                starsBalanceCloud = new BalanceCloud(getContext(), UserConfig.selectedAccount, resourcesProvider);
-                ScaleStateListAnimator.apply(starsBalanceCloud);
-                starsBalanceCloud.setOnClickListener(v -> {
-                    new StarsIntroActivity.StarsOptionsSheet(getContext(), resourcesProvider).show();
-                });
-            }
-            AndroidUtilities.removeFromParent(containerView);
-            AndroidUtilities.removeFromParent(starsBalanceCloud);
-            fullscreenContainerView.addView(containerView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
-            fullscreenContainerView.addView(starsBalanceCloud, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 48, 0, 0));
-            rootView = fullscreenContainerView;
-        }
+
         if (setContent) {
-            if (needStarsBalance) {
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-                lp.gravity = Gravity.FILL;
-                setContentView(rootView, lp);
-            } else if (customWidth > 0) {
+            if (customWidth > 0) {
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 lp.gravity = Gravity.CENTER;
                 setContentView(rootView, lp);
@@ -1281,13 +1244,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
         Window window = getWindow();
         WindowManager.LayoutParams params = new WindowManager.LayoutParams();
         params.copyFrom(window.getAttributes());
-        if (needStarsBalance) {
-//            params.width = WindowManager.LayoutParams.MATCH_PARENT;
-            params.height = WindowManager.LayoutParams.MATCH_PARENT;
-            params.flags |= WindowManager.LayoutParams.FLAG_FULLSCREEN;
-
-            window.setWindowAnimations(R.style.DialogNoAnimation);
-        } else if (progressViewStyle == ALERT_TYPE_SPINNER) {
+        if (progressViewStyle == ALERT_TYPE_SPINNER) {
             params.width = WindowManager.LayoutParams.MATCH_PARENT;
         } else {
             if (dimEnabled && !dimCustom) {

@@ -25,18 +25,14 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
-import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.InputType;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
-import android.text.TextWatcher;
 import android.text.style.ClickableSpan;
 import android.text.style.ImageSpan;
 import android.text.style.RelativeSizeSpan;
@@ -47,7 +43,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.OvershootInterpolator;
-import android.view.inputmethod.EditorInfo;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -115,13 +110,11 @@ import org.telegram.ui.Components.ButtonSpan;
 import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CombinedDrawable;
 import org.telegram.ui.Components.CubicBezierInterpolator;
-import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.FireworksOverlay;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.LoadingSpan;
-import org.telegram.ui.Components.OutlineTextContainerView;
 import org.telegram.ui.Components.Premium.GLIcon.GLIconRenderer;
 import org.telegram.ui.Components.Premium.GLIcon.GLIconTextureView;
 import org.telegram.ui.Components.Premium.GLIcon.Icon3D;
@@ -4924,199 +4917,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
         return s;
     }
 
-    public static BottomSheet showMediaPriceSheet(Context context, long stars, boolean allowClear, Utilities.Callback2<Long, Runnable> whenDone, Theme.ResourcesProvider resourcesProvider) {
-        final BottomSheet.Builder b = new BottomSheet.Builder(context, false, resourcesProvider);
-        final BottomSheet[] sheet = new BottomSheet[1];
 
-        final LinearLayout linearLayout = new LinearLayout(context);
-        linearLayout.setOrientation(LinearLayout.VERTICAL);
-        linearLayout.setClipChildren(false);
-        linearLayout.setClipToPadding(false);
-        linearLayout.setPadding(dp(16), dp(16), dp(16), dp(8));
-
-        final TextView titleView = new TextView(context);
-        titleView.setTypeface(AndroidUtilities.bold());
-        titleView.setText(getString(R.string.PaidContentTitle));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        linearLayout.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 4, 0, 4, 18));
-
-        final EditTextBoldCursor editText = new EditTextBoldCursor(context);
-        final OutlineTextContainerView editTextContainer = new OutlineTextContainerView(context, resourcesProvider);
-        editTextContainer.setForceForceUseCenter(true);
-        editTextContainer.setText(getString(R.string.PaidContentPriceTitle));
-        editTextContainer.setLeftPadding(dp(14 + 22));
-        editText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        editText.setCursorSize(AndroidUtilities.dp(20));
-        editText.setCursorWidth(1.5f);
-        editText.setBackground(null);
-        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
-        editText.setMaxLines(1);
-        int padding = AndroidUtilities.dp(16);
-        editText.setPadding(dp(6), padding, padding, padding);
-        editText.setInputType(InputType.TYPE_CLASS_NUMBER);
-        editText.setTypeface(Typeface.DEFAULT);
-        editText.setSelectAllOnFocus(true);
-        editText.setHighlightColor(Theme.getColor(Theme.key_chat_inTextSelectionHighlight, resourcesProvider));
-        editText.setHandlesColor(Theme.getColor(Theme.key_chat_TextSelectionCursor, resourcesProvider));
-        editText.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
-        editText.setOnFocusChangeListener((v, hasFocus) -> editTextContainer.animateSelection(hasFocus, !TextUtils.isEmpty(editText.getText())));
-        LinearLayout editTextLayout = new LinearLayout(context);
-        editTextLayout.setOrientation(LinearLayout.HORIZONTAL);
-        ImageView starImage = new ImageView(context);
-        starImage.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        starImage.setImageResource(R.drawable.star_small_inner);
-        editTextLayout.addView(starImage, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, Gravity.LEFT | Gravity.CENTER_VERTICAL, 14, 0, 0, 0));
-        editTextLayout.addView(editText, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 1, Gravity.FILL));
-        editTextContainer.attachEditText(editText);
-        editTextContainer.addView(editTextLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
-        linearLayout.addView(editTextContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-        TextView subPriceView = new TextView(context);
-        subPriceView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        subPriceView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
-        editTextContainer.addView(subPriceView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, 14, 0));
-
-        final LinkSpanDrawable.LinksTextView infoView = new LinkSpanDrawable.LinksTextView(context);
-        infoView.setText(AndroidUtilities.replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.PaidContentInfo), () -> {
-            Browser.openUrl(context, getString(R.string.PaidContentInfoLink));
-        }), true));
-        infoView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-        infoView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2, resourcesProvider));
-        infoView.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-        linearLayout.addView(infoView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 14, 3, 14, 24));
-
-        ButtonWithCounterView button = new ButtonWithCounterView(context, resourcesProvider).setRound();
-        button.setText(getString(stars > 0 ? R.string.PaidContentUpdateButton : R.string.PaidContentButton), false);
-        linearLayout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-
-        final ButtonWithCounterView clearButton;
-        if (stars > 0 && allowClear) {
-            clearButton = new ButtonWithCounterView(context, false, resourcesProvider).setRound();
-            clearButton.setText(getString(R.string.PaidContentClearButton), false, false);
-            linearLayout.addView(clearButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 4, 0, 0));
-        } else {
-            clearButton = null;
-        }
-
-        b.setCustomView(linearLayout);
-        sheet[0] = b.create();
-
-        editText.setText(stars <= 0 ? "" : Long.toString(stars));
-        editText.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            private boolean ignore;
-            private int shakeDp = 2;
-            @Override
-            public void afterTextChanged(Editable s) {
-                if (ignore) return;
-
-                long input_stars = 0;
-                try {
-                    input_stars = TextUtils.isEmpty(s) ? 0 : Long.parseLong(s.toString());
-                    if (input_stars > MessagesController.getInstance(UserConfig.selectedAccount).starsPaidPostAmountMax) {
-                        ignore = true;
-                        editText.setText(Long.toString(input_stars = MessagesController.getInstance(UserConfig.selectedAccount).starsPaidPostAmountMax));
-                        editText.setSelection(editText.getText().length());
-                        AndroidUtilities.shakeViewSpring(editTextContainer, shakeDp = -shakeDp);
-                    }
-                } catch (Exception e) {
-                    ignore = true;
-                    editText.setText(stars <= 0 ? "" : Long.toString(stars));
-                    editText.setSelection(editText.getText().length());
-                }
-                ignore = false;
-
-                if (!allowClear) {
-                    button.setEnabled(input_stars > 0);
-                }
-
-                editTextContainer.animateSelection(editText.isFocused(), !TextUtils.isEmpty(editText.getText()));
-
-                if (input_stars == 0) {
-                    subPriceView.animate().alpha(0).start();
-                    subPriceView.setText("");
-                } else {
-                    subPriceView.animate().alpha(1f).start();
-                    subPriceView.setText("≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (input_stars / 1000.0 * MessagesController.getInstance(UserConfig.selectedAccount).starsUsdWithdrawRate1000), "USD"));
-                }
-            }
-        });
-
-        final boolean[] loading = new boolean[] { false };
-        editText.setOnEditorActionListener((textView, i, keyEvent) -> {
-            if (i == EditorInfo.IME_ACTION_NEXT) {
-                if (loading[0]) return true;
-                if (whenDone != null) {
-                    button.setLoading(loading[0] = true);
-                    whenDone.run(Long.parseLong(editText.getText().toString()), () -> {
-                        AndroidUtilities.hideKeyboard(editText);
-                        sheet[0].dismiss();
-                    });
-                } else {
-                    AndroidUtilities.hideKeyboard(editText);
-                    sheet[0].dismiss();
-                }
-                return true;
-            }
-            return false;
-        });
-        button.setOnClickListener(v -> {
-            if (loading[0]) return;
-            if (whenDone != null) {
-                final String s = editText.getText().toString();
-                button.setLoading(loading[0] = true);
-                whenDone.run(TextUtils.isEmpty(s) ? 0 : Long.parseLong(s), () -> {
-                    AndroidUtilities.hideKeyboard(editText);
-                    sheet[0].dismiss();
-                });
-            } else {
-                AndroidUtilities.hideKeyboard(editText);
-                sheet[0].dismiss();
-            }
-        });
-        if (clearButton != null) {
-            clearButton.setOnClickListener(v -> {
-                if (loading[0]) return;
-                if (whenDone != null) {
-                    clearButton.setLoading(loading[0] = true);
-                    whenDone.run(0L, () -> {
-                        loading[0] = false;
-                        AndroidUtilities.hideKeyboard(editText);
-                        sheet[0].dismiss();
-                    });
-                } else {
-                    AndroidUtilities.hideKeyboard(editText);
-                    sheet[0].dismiss();
-                }
-            });
-        }
-
-        sheet[0].fixNavigationBar();
-        sheet[0].setOnDismissListener(d -> {
-            AndroidUtilities.hideKeyboard(editText);
-        });
-        sheet[0].show();
-
-        BaseFragment lastFragment = LaunchActivity.getLastFragment();
-        boolean keyboardVisible = false;
-        if (lastFragment instanceof ChatActivity) {
-            keyboardVisible = ((ChatActivity) lastFragment).needEnterText();
-        }
-        AndroidUtilities.runOnUIThread(() -> {
-            sheet[0].setFocusable(true);
-            editText.requestFocus();
-            AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(editText));
-        }, keyboardVisible ? 200 : 80);
-
-        return sheet[0];
-    }
 
 
 
