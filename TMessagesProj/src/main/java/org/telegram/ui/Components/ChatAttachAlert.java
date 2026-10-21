@@ -204,7 +204,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     public static final int LAYOUT_TYPE_EMOJI = 14;
     public static final int LAYOUT_TYPE_LINK = 15;
     public static final int LAYOUT_TYPE_RICH = 16;
-    public static final int LAYOUT_TYPE_MONEY = 17;
 
     private static final int ANIMATOR_ID_CAPTION_ABOVE = 0;
     private static final int ANIMATOR_ID_CAPTION_VISIBLE = 1;
@@ -1034,9 +1033,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     private ChatAttachAlertEmojiLayout emojiLayout;
     private ChatAttachAlertEmojiLayout stickersLayout;
     private ChatAttachAlertRichLayout richLayout;
-    private ChatAttachAlertGramLayout gramLayout;
-    private boolean gramSendDismissalInProgress;
-    private float gramSendExitTranslationY;
     private AttachAlertLayout[] layouts = new AttachAlertLayout[12];
     private LongSparseArray<ChatAttachAlertBotWebViewLayout> botAttachLayouts = new LongSparseArray<>();
     private AttachAlertLayout currentAttachLayout;
@@ -1401,7 +1397,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 @Override
                 protected void onTransitionStart(boolean keyboardVisible, int contentHeight) {
                     super.onTransitionStart(keyboardVisible, contentHeight);
-                    if (previousScrollOffsetY > 0 && previousScrollOffsetY != scrollOffsetY[0] && (keyboardVisible || currentAttachLayout == gramLayout)) {
+                    if (previousScrollOffsetY > 0 && previousScrollOffsetY != scrollOffsetY[0] && keyboardVisible) {
                         fromScrollY = previousScrollOffsetY;
                         toScrollY = scrollOffsetY[0];
                     } else {
@@ -1443,8 +1439,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 protected void onPanTranslationUpdate(float y, float progress, boolean keyboardVisible) {
                     currentPanTranslationY = y;
                     if (fromScrollY > 0) {
-                        final float remaining = currentAttachLayout == gramLayout && !keyboardVisible
-                                ? progress : 1f - progress;
+                        final float remaining = 1f - progress;
                         currentPanTranslationY += (fromScrollY - toScrollY) * remaining;
                     }
                     actionBar.setTranslationY(currentPanTranslationY);
@@ -1462,7 +1457,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     // actionBarShadow.setTranslationY(currentPanTranslationY);
                     updateSelectedPosition(0);
 
-                    setCurrentPanTranslationY(currentAttachLayout == gramLayout ? 0f : currentPanTranslationY);
+                    setCurrentPanTranslationY(currentPanTranslationY);
                     invalidate();
                     frameLayout2.invalidate();
 
@@ -1475,7 +1470,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
                 @Override
                 protected boolean heightAnimationEnabled() {
-                    if ((isDismissed() && !gramSendDismissalInProgress) || !openTransitionFinished) {
+                    if (isDismissed() || !openTransitionFinished) {
                         return false;
                     }
                     return (
@@ -2153,7 +2148,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     containerView.invalidate();
                 }
                 // Keyboard panning and the send exit animate independently.
-                super.setTranslationY(translationY - currentPanTranslationY + gramSendExitTranslationY);
+                super.setTranslationY(translationY - currentPanTranslationY);
                 if (currentSheetAnimationType != 1) {
                     currentAttachLayout.onContainerTranslationUpdated(currentPanTranslationY);
                 }
@@ -2788,22 +2783,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                         showLayout(restrictedLayout = new ChatAttachRestrictedLayout(1, this, getContext(), resourcesProvider));
                     }
                     showLayout(photoLayout);
-                } else if (num == LAYOUT_TYPE_MONEY) {
-                    if (gramLayout == null && baseFragment instanceof ChatActivity) {
-                        final TLRPC.User recipient = ((ChatActivity) baseFragment).getCurrentUser();
-                        if (isMoneyTabRecipient(recipient)) {
-                            layouts[11] = gramLayout = new ChatAttachAlertGramLayout(
-                                    this,
-                                    getContext(),
-                                    currentAccount,
-                                    recipient,
-                                    resourcesProvider
-                            );
-                        }
-                    }
-                    if (gramLayout != null) {
-                        showLayout(gramLayout);
-                    }
                 } else if (num == 3) {
                     if (!musicEnabled && checkCanRemoveRestrictionsByBoosts()) {
                         return;
@@ -4596,8 +4575,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             newId = LAYOUT_TYPE_STICKERS;
         } else if (layout == richLayout) {
             newId = LAYOUT_TYPE_RICH;
-        } else if (layout == gramLayout) {
-            newId = LAYOUT_TYPE_MONEY;
         }
         showLayout(layout, newId);
     }
@@ -4839,7 +4816,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             }
 
             final int menuWidth;
-            if (newId == LAYOUT_TYPE_PHOTO || newId == LAYOUT_TYPE_LOCATION || newId == LAYOUT_TYPE_MONEY || layout instanceof ChatAttachAlertBotWebViewLayout) {
+            if (newId == LAYOUT_TYPE_PHOTO || newId == LAYOUT_TYPE_LOCATION || layout instanceof ChatAttachAlertBotWebViewLayout) {
                 menuWidth = dp(46);
             } else if (newId == LAYOUT_TYPE_DOCUMENTS) {
                 menuWidth = dp(84);
@@ -5831,13 +5808,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 actionBarAnimation.setDuration((long) (180 * Math.abs((show ? 1.0f : 0.0f) - actionBar.getAlpha())));
                 ArrayList<Animator> animators = new ArrayList<>();
                 final ObjectAnimator actionBarAlphaAnimator = ObjectAnimator.ofFloat(actionBar, View.ALPHA, show ? 1.0f : 0.0f);
-                actionBarAlphaAnimator.addUpdateListener(animation -> {
-                    // The inline Money menu crossfades with this sibling view.
-                    // Alpha updates alone do not redraw the layout's display list.
-                    if (currentAttachLayout == gramLayout && gramLayout != null) {
-                        gramLayout.invalidate();
-                    }
-                });
                 animators.add(actionBarAlphaAnimator);
                 // animators.add(ObjectAnimator.ofFloat(actionBarShadow, View.ALPHA, show ? 1.0f : 0.0f));
                 if (needsSearchItem) {
@@ -6660,17 +6630,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         return Build.VERSION.SDK_INT < 23 || ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private static boolean isMoneyTabRecipient(TLRPC.User user) {
-        return user != null
-                && !UserObject.isUserSelf(user)
-                && !UserObject.isBot(user)
-                && !UserObject.isDeleted(user)
-                && !UserObject.isService(user.id)
-                && !UserObject.isReplyUser(user)
-                && !UserObject.isAnonymous(user)
-                && user.id != UserObject.VERIFY
-                && !MessagesController.isSupportUser(user);
-    }
 
     private static boolean checkMusicPermission(Context context) {
         return Build.VERSION.SDK_INT < 23 || ContextCompat.checkSelfPermission(context, Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
@@ -6687,7 +6646,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         private List<TLRPC.TL_attachMenuBot> attachMenuBots = new ArrayList<>();
 
         private int documentButton;
-        private int moneyButton;
         private int musicButton;
         private int pollButton;
         private int todoButton;
@@ -6735,9 +6693,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                         attachButton.setTextAndIcon(1, getString(R.string.ChatGallery), GlassTabView.TabAnimation.GALLERY);
                         attachButton.setTag(1);
                         err = !checkPhotoAndCameraPermission(mContext);
-                    } else if (position == moneyButton) {
-                        attachButton.setTextAndIcon(LAYOUT_TYPE_MONEY, getString(R.string.WalletAttachMoney), GlassTabView.TabAnimation.GRAM);
-                        attachButton.setTag(LAYOUT_TYPE_MONEY);
                     } else if (position == documentButton) {
                         attachButton.setTextAndIcon(4, getString(R.string.ChatDocument), GlassTabView.TabAnimation.FILES);
                         attachButton.setTag(4);
@@ -6823,7 +6778,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             buttonsCount = 0;
             galleryButton = -1;
             documentButton = -1;
-            moneyButton = -1;
             musicButton = -1;
             pollButton = -1;
             todoButton = -1;
@@ -6836,7 +6790,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             emojiButton = -1;
             attachBotsStartRow = -1;
             attachBotsEndRow = -1;
-            moneyButton = -1;
 
             if (isPollAttach) {
                 galleryButton = buttonsCount++;
@@ -6886,9 +6839,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 final boolean paidUser = user != null && ((ChatActivity) baseFragment).getMessagesController().getSendPaidMessagesStars(user.id) > 0;
                 galleryButton = buttonsCount++;
                 documentButton = buttonsCount++;
-                if (MessagesController.getInstance(currentAccount).config.walletAvailable.get() && ((ChatActivity) baseFragment).getChatMode() == ChatActivity.MODE_DEFAULT && isMoneyTabRecipient(user)) {
-                    moneyButton = buttonsCount++;
-                }
 
                 if (plainTextEnabled) {
                     locationButton = buttonsCount++;
@@ -6947,40 +6897,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         }
     }
 
-    @Override
-    protected boolean onCustomCloseAnimation() {
-        if (gramLayout != null && currentAttachLayout == gramLayout) {
-            AnimatorSet animation = gramLayout.createSendTransition(() -> {
-                currentSheetAnimation = null;
-                currentSheetAnimationType = 0;
-                dismissInternal();
-            });
-            if (animation != null) {
-                currentSheetAnimation = animation;
-                currentSheetAnimationType = 2;
-                return true;
-            }
-        }
-        return super.onCustomCloseAnimation();
-    }
 
-    public boolean isGramSendDismissalInProgress() {
-        return gramSendDismissalInProgress;
-    }
 
-    public float getGramSendExitTranslationY() {
-        return gramSendExitTranslationY;
-    }
 
-    public void setGramSendTransitionProgress(float progress) {
-        float keyboardTranslation = containerView.getTranslationY() - gramSendExitTranslationY;
-        gramSendExitTranslationY = containerView.getHeight() * progress;
-        containerView.setTranslationY(keyboardTranslation);
-        if (gramLayout != null) gramLayout.setSendTransitionProgress(progress);
-        backDrawable.setAlpha(dimBehind ? Math.round(dimBehindAlpha * (1f - progress)) : 0);
-        navigationBarAlpha = 1f - progress;
-        getContainer().invalidate();
-    }
 
     @Override
     public void dismissInternal() {
@@ -7005,7 +6924,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         todoLayout = null;
         locationLayout = null;
         documentLayout = null;
-        gramLayout = null;
         for (int a = 1; a < layouts.length; a++) {
             if (layouts[a] == null) {
                 continue;
@@ -7016,13 +6934,6 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         }
         updateActionBarVisibility(false, false);
         super.dismissInternal();
-        if (gramSendDismissalInProgress) {
-            gramSendDismissalInProgress = false;
-            gramSendExitTranslationY = 0f;
-            if (baseFragment != null && baseFragment.getFragmentView() != null) {
-                ViewCompat.requestApplyInsets(baseFragment.getFragmentView());
-            }
-        }
     }
 
     @Override
@@ -7084,11 +6995,10 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         if (currentAttachLayout.onDismiss() || isDismissed()) {
             return;
         }
-        gramSendDismissalInProgress = currentAttachLayout == gramLayout && gramLayout != null && gramLayout.hasQueuedSend();
-        if (!gramSendDismissalInProgress && commentTextView != null) {
+        if (commentTextView != null) {
             AndroidUtilities.hideKeyboard(commentTextView.getEditText());
         }
-        if (!gramSendDismissalInProgress && topCommentTextView != null) {
+        if (topCommentTextView != null) {
             AndroidUtilities.hideKeyboard(topCommentTextView.getEditText());
         }
         botAttachLayouts.clear();

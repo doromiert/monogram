@@ -113,8 +113,6 @@ import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.StoriesController;
 import org.telegram.ui.ThemeActivity;
 import org.telegram.ui.TopicsFragment;
-import org.telegram.ui.Wallet.GramWallet;
-import org.telegram.ui.Wallet.GramWalletStorage;
 import org.telegram.ui.bots.BotWebViewAttachedSheet;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.WebViewRequestProps;
@@ -6476,7 +6474,6 @@ public class MessagesController extends BaseController implements NotificationCe
         getColorPalette().cleanup();
         getTranslateController().cleanup();
         getSavedMessagesController().cleanup();
-        GramWallet.cleanup(currentAccount);
         if (storiesController != null) {
             storiesController.cleanup();
         }
@@ -16263,7 +16260,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public void performLogout(int type) {
         org.telegram.messenger.xmpp.MonogramController.get(currentAccount).logout();
         if (type == 1) {
-            GramWalletStorage.wipeForUser(ApplicationLoader.applicationContext, currentAccount, getUserConfig().getClientUserId());
             unregistedPush();
             TLRPC.TL_auth_logOut req = new TLRPC.TL_auth_logOut();
             getConnectionsManager().sendRequest(req, (response, error) -> {
@@ -19645,14 +19641,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 ImageLoader.saveMessageThumbs(message);
                 AndroidUtilities.runOnUIThread(() -> {
                     getSendMessagesHelper().onMessageEdited(message);
-                    if (!message.out && message.dialog_id == 777000
-                            && message.action instanceof TLRPC.TL_messageActionWalletTonConnectRequest) {
-                        TLRPC.TL_messageActionWalletTonConnectRequest request =
-                                (TLRPC.TL_messageActionWalletTonConnectRequest) message.action;
-                        if (request.accepted || request.declined) {
-                            GramWallet.getInstance(currentAccount).tonConnect.markProcessed(request.session_id, message.id);
-                        }
-                    }
                 });
 
                 boolean isDialogCreated = createdDialogIds.contains(message.dialog_id);
@@ -20489,14 +20477,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         getMediaDataController().loadSavedReactions(true);
                     } else if (baseUpdate instanceof TL_update.TL_updateSavedReactionTags) {
                         getSavedReactionTags(0, true);
-                    } else if (baseUpdate instanceof TL_update.TL_updateSentWalletTransaction) {
-                        GramWallet.getInstance(currentAccount).onUpdate((TL_update.TL_updateSentWalletTransaction) baseUpdate);
-                    } else if (baseUpdate instanceof TL_update.TL_updateWalletGaslessInfo) {
-                        GramWallet.getInstance(currentAccount).onUpdate((TL_update.TL_updateWalletGaslessInfo) baseUpdate);
-                    } else if (baseUpdate instanceof TL_update.TL_updateWalletState) {
-                        GramWallet.getInstance(currentAccount).onUpdate((TL_update.TL_updateWalletState) baseUpdate);
-                    } else if (baseUpdate instanceof TL_update.TL_updateWalletTonConnectSession) {
-                        GramWallet.getInstance(currentAccount).tonConnect.onSessionUpdate(((TL_update.TL_updateWalletTonConnectSession) baseUpdate).session);
                     } else if (baseUpdate instanceof TL_update.TL_updateFavedStickers) {
                         getMediaDataController().loadRecents(MediaDataController.TYPE_FAVE, false, false, true);
                     } else if (baseUpdate instanceof TL_update.TL_updateContactsReset) {

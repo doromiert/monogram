@@ -44,8 +44,6 @@ import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Wallet.GramWallet;
-import org.telegram.ui.Wallet.GramWalletStorage;
 
 import java.util.ArrayList;
 
@@ -148,30 +146,9 @@ public class LogoutActivity extends BaseFragment {
     }
 
     public void showLogOutDialog() {
-        final AlertDialog progressDialog = new AlertDialog(getContext(), AlertDialog.ALERT_TYPE_SPINNER);
-        progressDialog.showDelayed(500);
-        GramWallet.ensureLocalWalletBalances(currentAccount, () -> {
-            progressDialog.dismiss();
-            long localGramBalance = 0L;
-            if (MessagesController.getInstance(currentAccount).config.walletAvailable.get()) {
-                final GramWallet wallet = GramWallet.getInstance(currentAccount);
-                if (wallet.getBalance() > 0 && !wallet.isBackupEnabled() && !wallet.cantAccessWallet()) {
-                    localGramBalance += wallet.getBalance();
-                }
-                for (GramWallet.PreviousWallet w : wallet.getPreviousWallets()) {
-                    if (!w.outdated && !w.loading && w.balance > 0) {
-                        localGramBalance += w.balance;
-                    }
-                }
-            }
-            showLogOutDialog(localGramBalance);
-        });
-    }
-
-    public void showLogOutDialog(long grams) {
         new AlertDialog.Builder(getContext())
             .setTitle(getString(R.string.LogOut))
-            .setMessage(AndroidUtilities.replaceTags(grams > 0 ? formatString(R.string.AreYouSureLogoutGrams, GramWallet.formatGramsWithUnit(grams)) : getString(R.string.AreYouSureLogout)))
+            .setMessage(getString(R.string.AreYouSureLogout))
             .setPositiveButton(getString(R.string.LogOut), (dialogInterface, i) -> {
                 MessagesController.getInstance(currentAccount).performLogout(1);
             })

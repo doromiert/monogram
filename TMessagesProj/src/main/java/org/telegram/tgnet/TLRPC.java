@@ -41,7 +41,6 @@ import org.telegram.tgnet.tl.TL_keyboard;
 import org.telegram.tgnet.tl.TL_communities;
 import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.tgnet.tl.TL_update;
-import org.telegram.tgnet.tl.TL_wallet;
 import org.telegram.tgnet.tl.legacy.TL_legacy_message;
 import org.telegram.tgnet.tl.TL_payments;
 import org.telegram.tgnet.tl.TL_stars;
@@ -30970,16 +30969,6 @@ public class TLRPC {
                     return new TL_update.TL_updateEditEphemeralMessage();
                 case TL_update.TL_updateEphemeralBotCallbackQuery.constructor:
                     return new TL_update.TL_updateEphemeralBotCallbackQuery();
-                case TL_update.TL_updateSentWalletTransaction.constructor:
-                    return new TL_update.TL_updateSentWalletTransaction();
-                case TL_update.TL_updateWalletGaslessInfo.constructor:
-                    return new TL_update.TL_updateWalletGaslessInfo();
-                case TL_update.TL_updateWalletState.constructor:
-                    return new TL_update.TL_updateWalletState();
-                case TL_update.TL_updateWalletTonConnectSession.constructor:
-                    return new TL_update.TL_updateWalletTonConnectSession();
-                case TL_update.TL_updateWalletTonConnectPendingDisconnect.constructor:
-                    return new TL_update.TL_updateWalletTonConnectPendingDisconnect();
                 default:
                     return null;
             }
@@ -54533,7 +54522,6 @@ public class TLRPC {
         public int button_id;
         public String url;
         public String match_code;
-        public TL_wallet.inputTonConnectOauthSession tonconnect_session;
 
         @Override
         public UrlAuthResult deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
@@ -54545,7 +54533,7 @@ public class TLRPC {
             flags = setFlag(flags, FLAG_0, write_allowed);
             flags = setFlag(flags, FLAG_3, share_phone_number);
             flags = setFlag(flags, FLAG_4, match_code != null);
-            flags = setFlag(flags, FLAG_5, tonconnect_session != null);
+            flags = setFlag(flags, FLAG_5, false);
             stream.writeInt32(flags);
             if (hasFlag(flags, FLAG_1)) {
                 peer.serializeToStream(stream);
@@ -54557,9 +54545,6 @@ public class TLRPC {
             }
             if (hasFlag(flags, FLAG_4)) {
                 stream.writeString(match_code);
-            }
-            if (hasFlag(flags, FLAG_5)) {
-                tonconnect_session.serializeToStream(stream);
             }
         }
     }
