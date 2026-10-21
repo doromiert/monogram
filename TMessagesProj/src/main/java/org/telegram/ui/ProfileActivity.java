@@ -16209,9 +16209,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (sharedMediaLayout != null) {
             sharedMediaLayout.setPagesPaddingBottom(navigationBarHeight + additionNavigationBarHeight);
 
-            if (sharedMediaLayout.giftsContainer != null) {
-                sharedMediaLayout.giftsContainer.setButtonOffset(navigationBarHeight + additionFloatingButtonOffset);
-            }
+
         }
 
         // listView.setPadding(0, 0, 0, navigationBarHeight + additionNavigationBarHeight);

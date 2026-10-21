@@ -5455,26 +5455,7 @@ public class TL_stars {
         }
     }
 
-    public static final class toggleChatStarGiftNotifications extends TLObject {
-        public static final int constructor = 0x60eaefa1;
 
-        public int flags;
-        public boolean enabled;
-        public TLRPC.InputPeer peer;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            flags = setFlag(flags, 1, enabled);
-            stream.writeInt32(flags);
-            peer.serializeToStream(stream);
-        }
-    }
 
     public static final class starGiftWithdrawalUrl extends TLObject {
         public static final int constructor = 0x84aa3a9c;

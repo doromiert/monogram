@@ -478,14 +478,7 @@ public class StarsController {
             }
         }
 
-        public void updateGiftsCollections(TL_stars.SavedStarGift gift, int collection_id, boolean included) {
-            for (GiftsList list : gifts.values()) {
-                list.updateGiftsCollections(gift, collection_id, included);
-            }
-            if (all != null) {
-                all.updateGiftsCollections(gift, collection_id, included);
-            }
-        }
+
 
         public void updateGiftsUnsaved(TL_stars.SavedStarGift gift, boolean unsaved) {
             for (GiftsList list : gifts.values()) {
@@ -617,112 +610,6 @@ public class StarsController {
             NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftCollectionsLoaded, dialogId, this);
         }
 
-
-
-        public void addGift(int id, TL_stars.SavedStarGift gift, boolean insert) {
-            final ArrayList<TL_stars.SavedStarGift> gifts = new ArrayList<>();
-            gifts.add(gift);
-            addGifts(id, gifts, insert);
-        }
-
-        public void addGifts(int id, ArrayList<TL_stars.SavedStarGift> gifts, boolean insert) {
-            if (gifts.isEmpty()) return;
-            final GiftsList list = getListById(id);
-            if (list != null && insert) {
-                list.gifts.addAll(0, gifts);
-                list.totalCount += gifts.size();
-                NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftsLoaded, dialogId, list);
-                updateIcon(id);
-            }
-            final TL_stars.updateStarGiftCollection req = new TL_stars.updateStarGiftCollection();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            req.collection_id = id;
-            req.flags |= 4;
-            for (TL_stars.SavedStarGift gift : gifts) {
-                updateGiftsCollections(gift, id, true);
-                if (gift.msg_id > 0) {
-                    final TL_stars.TL_inputSavedStarGiftUser inputGift = new TL_stars.TL_inputSavedStarGiftUser();
-                    inputGift.msg_id = gift.msg_id;
-                    req.add_stargift.add(inputGift);
-                } else if (gift.saved_id != 0) {
-                    final TL_stars.TL_inputSavedStarGiftChat inputGift = new TL_stars.TL_inputSavedStarGiftChat();
-                    inputGift.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-                    inputGift.saved_id = gift.saved_id;
-                    req.add_stargift.add(inputGift);
-                } else {
-                    FileLog.w("can't convert gift to inputgift to add into the collection");
-                }
-            }
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                if (res instanceof TL_stars.TL_starGiftCollection) {
-                    final TL_stars.TL_starGiftCollection loaded = (TL_stars.TL_starGiftCollection) res;
-                    int index = indexOf(loaded.collection_id);
-                    if (index >= 0) {
-                        collections.set(index, loaded);
-                    }
-                }
-            }));
-        }
-
-        public void removeGift(int id, final TL_stars.SavedStarGift gift) {
-            final ArrayList<TL_stars.SavedStarGift> gifts = new ArrayList<>();
-            gifts.add(gift);
-            removeGifts(id, gifts);
-        }
-
-        public void removeGifts(int id, final ArrayList<TL_stars.SavedStarGift> gifts) {
-            if (gifts.isEmpty()) return;
-            final GiftsList list = getListById(id);
-            if (list != null && !list.gifts.isEmpty()) {
-                for (int i = 0; i < list.gifts.size(); ++i) {
-                    final TL_stars.SavedStarGift g = list.gifts.get(i);
-                    boolean remove = false;
-                    for (int j = 0; j < gifts.size(); ++j) {
-                        if (eq(g, gifts.get(j))) {
-                            remove = true;
-                            break;
-                        }
-                    }
-                    if (remove) {
-                        list.gifts.remove(i);
-                        list.totalCount = Math.max(0, list.totalCount - 1);
-                        i--;
-                    }
-                }
-            }
-            updateIcon(id);
-            final TL_stars.updateStarGiftCollection req = new TL_stars.updateStarGiftCollection();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            req.collection_id = id;
-            req.flags |= 2;
-            for (TL_stars.SavedStarGift gift : gifts) {
-                updateGiftsCollections(gift, id, false);
-                if (gift.msg_id > 0) {
-                    final TL_stars.TL_inputSavedStarGiftUser inputGift = new TL_stars.TL_inputSavedStarGiftUser();
-                    inputGift.msg_id = gift.msg_id;
-                    req.delete_stargift.add(inputGift);
-                } else if (gift.saved_id != 0) {
-                    final TL_stars.TL_inputSavedStarGiftChat inputGift = new TL_stars.TL_inputSavedStarGiftChat();
-                    inputGift.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-                    inputGift.saved_id = gift.saved_id;
-                    req.delete_stargift.add(inputGift);
-                } else {
-                    FileLog.w("can't convert gift to inputgift to add into the collection");
-                }
-            }
-            final int count = req.delete_stargift.size();
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                if (res instanceof TL_stars.TL_starGiftCollection) {
-                    final TL_stars.TL_starGiftCollection loaded = (TL_stars.TL_starGiftCollection) res;
-                    int index = indexOf(loaded.collection_id);
-                    if (index >= 0) {
-                        collections.set(index, loaded);
-                    }
-                }
-            }));
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftsLoaded, dialogId, list);
-        }
-
         public void reorder(ArrayList<Integer> collectionIds) {
             final HashMap<Integer, TL_stars.TL_starGiftCollection> map = new HashMap<>();
             for (final TL_stars.TL_starGiftCollection collection : collections) {
@@ -791,18 +678,7 @@ public class StarsController {
             NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftsLoaded, dialogId, GiftsList.this);
         }
 
-        public void updateGiftsCollections(TL_stars.SavedStarGift gift, int collection_id, boolean included) {
-            for (final TL_stars.SavedStarGift g : gifts) {
-                if (StarsController.eq(g, gift)) {
-                    if (included) {
-                        if (!g.collection_id.contains(collection_id))
-                            g.collection_id.add((Integer) collection_id);
-                    } else {
-                        g.collection_id.remove((Integer) collection_id);
-                    }
-                }
-            }
-        }
+
 
         public void updateGiftsUnsaved(TL_stars.SavedStarGift gift, boolean unsaved) {
             boolean changed = false;
