@@ -11694,4 +11694,6 @@
     <string name="MonogramAppIconGradient">Gradient</string>
     <string name="MonogramEmojiStatus">Emoji status</string>
     <string name="MonogramEmojiStatusFor">%1$s’s emoji status</string>
+    <string name="MonogramStoryServiceLimit">The server is not accepting more stories right now.</string>
+    <string name="MonogramStoryServiceLimitUntil">The server is not accepting more stories until %1$s.</string>
 </resources>

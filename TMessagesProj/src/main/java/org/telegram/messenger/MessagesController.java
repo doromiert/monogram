@@ -23534,7 +23534,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public boolean storiesEnabled() {
         switch (storiesPosting) {
             case "premium":
-                return getUserConfig().isPremium();
             case "enabled":
                 return true;
             default:
@@ -23552,7 +23551,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public boolean storyEntitiesAllowed() {
         switch (storiesEntities) {
             case "premium":
-                return getUserConfig().isPremium();
             case "enabled":
                 return true;
             default:
@@ -23567,7 +23565,6 @@ public class MessagesController extends BaseController implements NotificationCe
         }
         switch (storiesEntities) {
             case "premium":
-                return user != null && user.premium;
             case "enabled":
                 return true;
             default:

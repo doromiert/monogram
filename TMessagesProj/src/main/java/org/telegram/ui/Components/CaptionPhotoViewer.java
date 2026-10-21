@@ -427,16 +427,6 @@ public class CaptionPhotoViewer extends CaptionContainerView {
 
     @Override
     protected int getCaptionLimit() {
-        return UserConfig.getInstance(currentAccount).isPremium() ? getCaptionPremiumLimit() : getCaptionDefaultLimit();
-    }
-
-    @Override
-    protected int getCaptionDefaultLimit() {
-        return MessagesController.getInstance(currentAccount).captionLengthLimitDefault;
-    }
-
-    @Override
-    protected int getCaptionPremiumLimit() {
         return MessagesController.getInstance(currentAccount).captionLengthLimitPremium;
     }
 

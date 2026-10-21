@@ -32,7 +32,6 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
@@ -97,14 +96,6 @@ public class CaptionStory extends CaptionContainerView {
                 }
             };
 
-            final boolean isPremium = UserConfig.getInstance(currentAccount).isPremium();
-
-            Utilities.Callback<Integer> showPremiumHint = isPremium ? null : period -> {
-                if (onPremiumHintShow != null) {
-                    onPremiumHintShow.run(period);
-                }
-            };
-
             periodPopup = ItemOptions.makeOptions(rootView, resourcesProvider, periodButton);
             periodPopup.addText(LocaleController.getString("StoryPeriodHint"), 13, dp(200));
             periodPopup.addGap();
@@ -117,8 +108,6 @@ public class CaptionStory extends CaptionContainerView {
                             LocaleController.formatPluralString("Hours", period / 3600),
                         Theme.key_actionBarDefaultSubmenuItem,
                         () -> onPeriodSelected.run(period)
-                ).putPremiumLock(
-                    isPremium || period == 86400 || period == Integer.MAX_VALUE ? null : () -> showPremiumHint.run(period)
                 );
                 if (periodIndex == i) {
                     periodPopup.putCheck();
@@ -497,10 +486,7 @@ public class CaptionStory extends CaptionContainerView {
         this.onPeriodUpdate = listener;
     }
 
-    private Utilities.Callback<Integer> onPremiumHintShow;
-    public void setOnPremiumHint(Utilities.Callback<Integer> listener) {
-        this.onPremiumHintShow = listener;
-    }
+
 
     @Override
     protected void beforeUpdateShownKeyboard(boolean show) {
@@ -526,14 +512,11 @@ public class CaptionStory extends CaptionContainerView {
     }
 
     @Override
-    protected int getCaptionPremiumLimit() {
+    protected int getCaptionLimit() {
         return MessagesController.getInstance(currentAccount).storyCaptionLengthLimitPremium;
     }
 
-    @Override
-    protected int getCaptionDefaultLimit() {
-        return MessagesController.getInstance(currentAccount).storyCaptionLengthLimitDefault;
-    }
+
 
     private RoundVideoRecorder currentRecorder;
     private float fromX, fromY;

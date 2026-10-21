@@ -6,8 +6,6 @@ import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.AndroidUtilities.translitSafe;
 
 import android.Manifest;
-import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
@@ -19,7 +17,6 @@ import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
-import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -37,7 +34,6 @@ import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -79,7 +75,6 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
-import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ContextLinkCell;
@@ -88,8 +83,6 @@ import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedFileDrawable;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.BackupImageView;
-import org.telegram.ui.Components.Bulletin;
-import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CloseProgressDrawable2;
 import org.telegram.ui.Components.CombinedDrawable;
@@ -102,7 +95,6 @@ import org.telegram.ui.Components.ExtendedGridLayoutManager;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LoadingSpan;
 import org.telegram.ui.Components.PermissionRequest;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.Reactions.ReactionImageHolder;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
@@ -113,11 +105,8 @@ import org.telegram.ui.Components.Size;
 import org.telegram.ui.Components.StickerCategoriesListView;
 import org.telegram.ui.Components.ViewPagerFixed;
 import org.telegram.ui.ContentPreviewViewer;
-import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.SelectAnimatedEmojiDialog;
 import org.telegram.ui.Stories.StoryReactionWidgetBackground;
-import org.telegram.ui.WrappedResourceProvider;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1417,56 +1406,11 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
         }
     }
 
-    public void showPremiumBulletin(String text) {
-        try {
-            container.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-        } catch (Exception ignored) {}
-        BulletinFactory.of(container, resourcesProvider).createSimpleBulletin(
-                R.raw.star_premium_2,
-                LocaleController.getString(R.string.IncreaseLimit),
-                premiumText(text)
-        ).show(true);
-    }
 
-    private CharSequence premiumText(String text) {
-        return AndroidUtilities.replaceSingleTag(text, Theme.key_chat_messageLinkIn, 0, this::openPremium, resourcesProvider);
-    }
 
-    private void openPremium() {
-        Bulletin.hideVisible();
-        PremiumFeatureBottomSheet sheet = new PremiumFeatureBottomSheet(new BaseFragment() {
-            { currentAccount = EmojiBottomSheet.this.currentAccount; }
-            @Override
-            public Dialog showDialog(Dialog dialog) {
-                dialog.show();
-                return dialog;
-            }
-            @Override
-            public Activity getParentActivity() {
-                return LaunchActivity.instance;
-            }
 
-            @Override
-            public Theme.ResourcesProvider getResourceProvider() {
-                return new WrappedResourceProvider(resourcesProvider) {
-                    @Override
-                    public void appendColors() {
-                        sparseIntArray.append(Theme.key_dialogBackground, 0xFF1E1E1E);
-                        sparseIntArray.append(Theme.key_windowBackgroundGray, 0xFF000000);
-                    }
-                };
-            }
 
-            @Override
-            public boolean isLightStatusBar() {
-                return false;
-            }
-        }, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, false);
-        sheet.setOnDismissListener(d -> {
 
-        });
-        sheet.show();
-    }
 
     public boolean canShowWidget(Integer id) {
         return true;
@@ -2885,7 +2829,7 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
             super(context);
             setPadding(0, 0, 0, 0);
             if (canShowWidget(WIDGET_LINK))
-                widgets.add(new Button(WIDGET_LINK, R.drawable.msg_limit_links, LocaleController.getString(R.string.StoryWidgetLink)).needsPremium());
+                widgets.add(new Button(WIDGET_LINK, R.drawable.msg_limit_links, LocaleController.getString(R.string.StoryWidgetLink)));
             if (canShowWidget(WIDGET_LOCATION))
                 widgets.add(new Button(WIDGET_LOCATION, R.drawable.map_pin3, LocaleController.getString(R.string.StoryWidgetLocation)));
             if (canShowWidget(WIDGET_WEATHER)) {
@@ -2933,11 +2877,9 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
 
             String emojiDrawable;
             Drawable drawable;
-            Drawable lockDrawable;
             StaticLayout layout;
             float textWidth;
             float textLeft;
-            Paint lockPaint;
 
 
             public Button(int id, int iconId, String string) {
@@ -2972,15 +2914,7 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
                 this.height = dpf2(36);
             }
 
-            public Button needsPremium() {
-                if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                    lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock3).mutate();
-                    lockDrawable.setColorFilter(new PorterDuffColorFilter(Theme.multAlpha(Color.WHITE, .60f), PorterDuff.Mode.SRC_IN));
-                    lockPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                    lockPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
-                }
-                return this;
-            }
+
 
             public void draw(Canvas canvas, float left, float top) {
                 bounds.set(left, top, left + width, top + height);
@@ -2988,9 +2922,7 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
                 canvas.save();
                 canvas.scale(scale, scale, bounds.centerX(), bounds.centerY());
                 canvas.drawRoundRect(bounds, dp(8), dp(8), bgPaint);
-                if (lockDrawable != null) {
-                    canvas.saveLayerAlpha(bounds, 0xFF, Canvas.ALL_SAVE_FLAG);
-                }
+
                 if (drawable == null) {
                     drawable = Emoji.getEmojiBigDrawable(emojiDrawable);
                     if (this.drawable instanceof Emoji.EmojiDrawable) {
@@ -3007,27 +2939,7 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
                     );
                     drawable.draw(canvas);
                 }
-                if (lockDrawable != null) {
-                    AndroidUtilities.rectTmp.set(
-                        bounds.left + dp(6 + 24 - 12 + .55f),
-                        bounds.top + height - dp(5) - dp(12 + .55f),
-                        bounds.left + dp(6 + 24 - .55f),
-                        bounds.left + dp(6 + 24 + 1)
-                    );
-                    canvas.drawRoundRect(
-                        AndroidUtilities.rectTmp,
-                        dp(6), dp(6),
-                        lockPaint
-                    );
-                    lockDrawable.setBounds(
-                            (int) (bounds.left + dp(6 + 24 - 12)),
-                            (int) (bounds.top + height - dp(5) - dp(12)),
-                            (int) (bounds.left + dp(6 + 24)),
-                            (int) (bounds.top + height - dp(5))
-                    );
-                    lockDrawable.draw(canvas);
-                    canvas.restore();
-                }
+
                 canvas.translate(bounds.left + dp(6 + (drawable == null && emojiDrawable == null ? 0 : 24 + 4)) - textLeft, bounds.top + height / 2 - layout.getHeight() / 2f);
                 layout.draw(canvas);
                 canvas.restore();

@@ -18,7 +18,6 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -49,17 +48,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Parcelable;
 import android.text.Layout;
-import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.CharacterStyle;
-import android.text.style.ClickableSpan;
-import android.text.style.ForegroundColorSpan;
 import android.text.style.ImageSpan;
-import android.text.style.URLSpan;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -149,20 +144,16 @@ import org.telegram.ui.Components.PermissionRequest;
 import org.telegram.ui.Components.PhotoFilterBlurControl;
 import org.telegram.ui.Components.PhotoFilterCurvesControl;
 import org.telegram.ui.Components.PhotoFilterView;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RectOld;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
-import org.telegram.ui.Components.TextStyleSpan;
 import org.telegram.ui.Components.ThanosEffect;
 import org.telegram.ui.Components.URLSpanUserMention;
 import org.telegram.ui.Components.VideoEditTextureView;
 import org.telegram.ui.Components.WaveDrawable;
 import org.telegram.ui.Components.ZoomControlView;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.ui.Stories.DialogStoriesCell;
@@ -171,7 +162,6 @@ import org.telegram.ui.Stories.PeerStoriesView;
 import org.telegram.ui.Stories.StoriesController;
 import org.telegram.ui.Stories.StoryViewer;
 import org.telegram.ui.Stories.StoryWaveEffectView;
-import org.telegram.ui.WrappedResourceProvider;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -2371,39 +2361,13 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
 
             @Override
             protected boolean captionLimitToast() {
-                if (MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-                    return false;
-                }
                 Bulletin visibleBulletin = Bulletin.getVisibleBulletin();
                 if (visibleBulletin != null && visibleBulletin.tag == 2) {
                     return false;
                 }
-                final int symbols = MessagesController.getInstance(currentAccount).storyCaptionLengthLimitPremium;
-                final int times = Math.round((float) symbols / MessagesController.getInstance(currentAccount).storyCaptionLengthLimitDefault);
-                SpannableStringBuilder text = AndroidUtilities.replaceTags(formatPluralString("CaptionPremiumSubtitle", times, "" + symbols));
-                int startIndex = text.toString().indexOf("__");
-                if (startIndex >= 0) {
-                    text.replace(startIndex, startIndex + 2, "");
-                    int endIndex = text.toString().indexOf("__");
-                    if (endIndex >= 0) {
-                        text.replace(endIndex, endIndex + 2, "");
-                        text.setSpan(new ForegroundColorSpan(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider)), startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        text.setSpan(new ClickableSpan() {
-                            @Override
-                            public void updateDrawState(@NonNull TextPaint ds) {
-                                ds.setUnderlineText(false);
-                            }
-
-                            @Override
-                            public void onClick(@NonNull View widget) {
-                                openPremium();
-                            }
-                        }, startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                }
-                Bulletin bulletin = BulletinFactory.of(captionContainer, resourcesProvider).createSimpleBulletin(R.raw.caption_limit, getString(R.string.CaptionPremiumTitle), text);
+                Bulletin bulletin = BulletinFactory.of(captionContainer, resourcesProvider)
+                        .createCaptionLimitBulletin(MessagesController.getInstance(currentAccount).storyCaptionLengthLimitPremium);
                 bulletin.tag = 2;
-                bulletin.setDuration(5000);
                 bulletin.show(false);
                 return true;
             }
@@ -2565,7 +2529,6 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
         if (selectedDialogId != 0) {
             captionEdit.setDialogId(selectedDialogId);
         }
-        captionEdit.setOnPremiumHint(this::showPremiumPeriodBulletin);
         captionEdit.setOnKeyboardOpen(open -> {
             if (open && timelineView != null) {
                 timelineView.onBackPressed();
@@ -3193,17 +3156,7 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
             }
         }
         outputEntry.captionEntitiesAllowed = MessagesController.getInstance(currentAccount).storyEntitiesAllowed();
-        if (captionEdit != null && !outputEntry.captionEntitiesAllowed) {
-            CharSequence text = captionEdit.getText();
-            if (text instanceof Spannable && (
-                    ((Spannable) text).getSpans(0, text.length(), TextStyleSpan.class).length > 0 ||
-                            ((Spannable) text).getSpans(0, text.length(), URLSpan.class).length > 0
-            )) {
-                BulletinFactory.of(windowView, resourcesProvider).createSimpleBulletin(R.raw.voip_invite, premiumText(getString(R.string.StoryPremiumFormatting))).show(true);
-                AndroidUtilities.shakeViewSpring(captionEdit, shiftDp = -shiftDp);
-                return;
-            }
-        }
+
         if (outputEntry.isEdit || outputEntry.botId != 0) {
             outputEntry.editedPrivacy = false;
             applyFilter(null);
@@ -5118,7 +5071,7 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
 
 //            privacySelector.setStoryPeriod(outputEntry == null || !UserConfig.getInstance(currentAccount).isPremium() ? 86400 : outputEntry.period);
             captionEdit.setPeriod(outputEntry == null ? 86400 : outputEntry.period, false);
-            captionEdit.setPeriodVisible(!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && (outputEntry == null || !outputEntry.isEdit));
+            captionEdit.setPeriodVisible(outputEntry == null || !outputEntry.isEdit);
             captionEdit.setHasRoundVideo(outputEntry != null && outputEntry.round != null);
             setReply();
             timelineView.setOpen(outputEntry == null || !outputEntry.isCollage() || !outputEntry.hasVideo(), false);
@@ -5151,9 +5104,7 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
                 }
             }
             previewAlreadySet = false;
-            captionEdit.editText.getEditText().setOnPremiumMenuLockClickListener(MessagesController.getInstance(currentAccount).storyEntitiesAllowed() ? null : () -> {
-                BulletinFactory.of(windowView, resourcesProvider).createSimpleBulletin(R.raw.voip_invite, premiumText(getString(R.string.StoryPremiumFormatting))).show(true);
-            });
+            captionEdit.editText.getEditText().setOnPremiumMenuLockClickListener(null);
             storiesSelector.setVisibility(entries == null ? View.GONE : View.VISIBLE);
             if (entries != null) {
                 storiesSelector.set(entries, selectedEntriesOrder, selectedEntries);
@@ -7455,46 +7406,25 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
         if (shownLimitReached) {
             return;
         }
-        final LimitReachedBottomSheet sheet = new LimitReachedBottomSheet(new BaseFragment() {
-            @Override
-            public boolean isLightStatusBar() {
-                return false;
-            }
-
-            @Override
-            public Activity getParentActivity() {
-                return activity;
-            }
-
-            @Override
-            public Theme.ResourcesProvider getResourceProvider() {
-                return new WrappedResourceProvider(resourcesProvider) {
-                    @Override
-                    public void appendColors() {
-                        sparseIntArray.append(Theme.key_dialogBackground, 0xFF1F1F1F);
-                        sparseIntArray.append(Theme.key_windowBackgroundGray, 0xFF333333);
-                    }
-                };
-            }
-
-            @Override
-            public boolean presentFragment(BaseFragment fragment) {
-                openPremium();
-                return false;
-            }
-        }, activity, storyLimit.getLimitReachedType(), currentAccount, null) {
-            { storiesCount = getCount(); }
-        };
-        sheet.setOnDismissListener(e -> {
+        CharSequence message = storyLimit.until > ConnectionsManager.getInstance(currentAccount).getCurrentTime()
+                ? LocaleController.formatString(R.string.MonogramStoryServiceLimitUntil,
+                        LocaleController.formatDateTime((int) storyLimit.until, true))
+                : getString(R.string.MonogramStoryServiceLimit);
+        AlertDialog dialog = new AlertDialog.Builder(activity, resourcesProvider)
+                .setTitle(getString(R.string.LimitReached))
+                .setMessage(message)
+                .setPositiveButton(getString(R.string.OK), null)
+                .create();
+        dialog.setOnDismissListener(e -> {
             shownLimitReached = false;
-            previewView.updatePauseReason(7, true);
+            previewView.updatePauseReason(7, false);
             if (closeRecorder) {
                 close(true);
             }
         });
         previewView.updatePauseReason(7, true);
         shownLimitReached = true;
-        sheet.show();
+        dialog.show();
     }
 
     private boolean isBackgroundVisible;
@@ -7516,79 +7446,11 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
         SourceView getView(long dialogId);
     }
 
-    private void openPremium() {
-        if (previewView != null) {
-            previewView.updatePauseReason(4, true);
-        }
-        if (captionEdit != null) {
-            captionEdit.hidePeriodPopup();
-        }
-        PremiumFeatureBottomSheet sheet = new PremiumFeatureBottomSheet(new BaseFragment() {
-            { currentAccount = StoryRecorder.this.currentAccount; }
-            @Override
-            public Dialog showDialog(Dialog dialog) {
-                dialog.show();
-                return dialog;
-            }
-            @Override
-            public Activity getParentActivity() {
-                return StoryRecorder.this.activity;
-            }
 
-            @Override
-            public Theme.ResourcesProvider getResourceProvider() {
-                return new WrappedResourceProvider(resourcesProvider) {
-                    @Override
-                    public void appendColors() {
-                        sparseIntArray.append(Theme.key_dialogBackground, 0xFF1E1E1E);
-                        sparseIntArray.append(Theme.key_windowBackgroundGray, 0xFF000000);
-                    }
-                };
-            }
 
-            @Override
-            public boolean isLightStatusBar() {
-                return false;
-            }
-        }, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, false);
-        sheet.setOnDismissListener(d -> {
-            if (previewView != null) {
-                previewView.updatePauseReason(4, false);
-            }
-        });
-        sheet.show();
-    }
 
-    private CharSequence premiumText(String text) {
-        return AndroidUtilities.replaceSingleTag(text, Theme.key_chat_messageLinkIn, 0, this::openPremium, resourcesProvider);
-    }
 
-    private void showPremiumPeriodBulletin(int period) {
-        final int hours = period / 3600;
 
-        Bulletin.BulletinWindow.BulletinWindowLayout window = Bulletin.BulletinWindow.make(activity, new Bulletin.Delegate() {
-            @Override
-            public int getTopOffset(int tag) {
-                return 0;
-            }
-
-            @Override
-            public boolean clipWithGradient(int tag) {
-                return true;
-            }
-        });
-        WindowManager.LayoutParams params = window.getLayout();
-        if (params != null) {
-            params.height = WindowManager.LayoutParams.WRAP_CONTENT;
-            params.width = containerView.getWidth();
-            params.y = (int) (containerView.getY() + AndroidUtilities.dp(56));
-            window.updateLayout();
-        }
-        window.setTouchable(true);
-        BulletinFactory.of(window, resourcesProvider)
-            .createSimpleBulletin(R.raw.fire_on, premiumText(formatPluralString("StoryPeriodPremium", hours)), 3)
-            .show(true);
-    }
 
     public void setIconMuted(boolean muted, boolean animated) {
         if (muteButtonDrawable == null) {
