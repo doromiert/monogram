@@ -555,3 +555,15 @@ Removed Premium/Stars requirement state, lookups, update listeners, lock/price b
 Migrated search/share/group/restricted-recipient callers: removed paid-selection rejection for ProfileSearchCell/HintDialogCell/GroupCreateUserCell, paid restriction overrides/status labels in the restricted-user picker, old Premium badge opt-ins and CategoryAdapterRecycler's unused paid-badge parameter. Native selection callbacks and normal user status remain. Main DialogCell badges, other paid-contact consumers and the controller requirement cache/request are still pending; actual XMPP/Stories block lists and group permission checks are unchanged.
 
 Source review checked all removed cell state/API names across consumers, both CategoryAdapterRecycler constructors, ordinary online/checkbox rendering branches, class boundaries and diff whitespace. No tests, build or phone interaction; source-only, unshipped.
+
+### Remove main-list paid-contact locks and restricted-invite subscription paths
+
+Removed DialogCell paid-contact locks, paid-channel subscription star badges and their price/status state; removed associated chat-list click/long-press suppression, paid-contact toast/callback and recipient-price calculation. Normal chat navigation, unread/online/TTL/call/story indicators and real permissions retain their existing paths. Profile secret-chat eligibility no longer depends on Telegram paid-contact state; this does not add XMPP secret-chat support.
+
+Deleted MessagesController’s contact-requirement cache, batching runnable, RPC and invalidation methods and TL_account.getRequirementsToContact after migrating all Java callers. Call invitation failures retain actual restricted-user collection and the invite-link sheet without a second request to classify users by subscription. Restricted invitation sheets no longer accept paid-user arrays, hide users by payment status or display subscription purchase offers. Invite-link sends no longer calculate prices or request payment confirmation. Missing-invitee users and the XMPP-specific failure alert remain handled.
+
+Story replies no longer query paid-contact state or show Premium/boost Unlock actions. Actual group plain-message permission and disabled-live-comment checks remain, with ordinary reply-restricted notices. Other story subscription/boost paths remain separate cleanup.
+
+Removed native voice-message privacy radio locks, subscription error/purchase bulletin and Premium-only exception-row suppression. This makes existing native choices available without payment; it does not implement missing XMPP voice-message privacy enforcement or claim that those legacy rules work end to end.
+
+Source inspection covered remaining references to removed APIs, all restricted-sheet callers, selection/link sending, retained restriction conditions, Java class boundaries and diff whitespace. No tests, Nix build or phone actions; unshipped source work. Runtime/compilation checks are deferred to the next APK. README remains untouched.

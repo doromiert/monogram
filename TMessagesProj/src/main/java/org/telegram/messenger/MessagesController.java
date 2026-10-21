@@ -8773,7 +8773,7 @@ public class MessagesController extends BaseController implements NotificationCe
                                 LimitReachedBottomSheet restricterdUsersBottomSheet = new LimitReachedBottomSheet(lastFragment, lastFragment.getParentActivity(), LimitReachedBottomSheet.TYPE_ADD_MEMBERS_RESTRICTED, currentAccount, null);
                                 ArrayList<TLRPC.User> users = new ArrayList<TLRPC.User>();
                                 users.add(user);
-                                restricterdUsersBottomSheet.setRestrictedUsers(chat, users, null, null, null);
+                                restricterdUsersBottomSheet.setRestrictedUsers(chat, users, null);
                                 restricterdUsersBottomSheet.show();
                             }
                             onError.run(error);
@@ -24083,100 +24083,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public static boolean isStoryQualityFull() {
         return MessagesController.getInstance(UserConfig.selectedAccount).isStoryQualityFullOnAccount();
     }
-
-    private final LongSparseArray<TL_account.RequirementToContact> cachedIsUserContactBlocked = new LongSparseArray<>();
-    private final HashSet<Long> loadingIsUserContactBlocked = new HashSet<>();
-    public TL_account.RequirementToContact isUserContactBlocked(long userId) {
-        return isUserContactBlocked(userId, false);
-    }
-    public TL_account.RequirementToContact isUserContactBlocked(long userId, boolean cache) {
-        if (getUserConfig().isPremium() || getUserConfig().getClientUserId() == userId) {
-            return null;
-        }
-        TL_account.RequirementToContact cached = cachedIsUserContactBlocked.get(userId);
-        if (cached != null)
-            return cached;
-        TLRPC.User user = getUser(userId);
-        if (user != null && !user.contact_require_premium && user.send_paid_messages_stars == 0)
-            return null;
-        TLRPC.UserFull userFull = getUserFull(userId);
-        if (userFull != null)
-            return UserObject.getRequirementToContact(userFull);
-        if (getInputUser(userId) == null)
-            return null;
-        if (cache)
-            return null;
-        loadingIsUserContactBlocked.add(userId);
-        AndroidUtilities.cancelRunOnUIThread(requestIsUserContactBlockedRunnable);
-        AndroidUtilities.runOnUIThread(requestIsUserContactBlockedRunnable, 60);
-        return null;
-    }
-
-    public void invalidateUserPremiumBlocked(long userId, int classGuid) {
-        if (loadingFullUsers.contains(userId)) {
-            return;
-        }
-        int index = loadedFullUsers.indexOfKey(userId);
-        if (index >= 0) {
-            loadedFullUsers.removeAt(index);
-        }
-        loadFullUser(getUser(userId), classGuid, true);
-    }
-
-    private final Runnable requestIsUserContactBlockedRunnable = this::requestIsUserContactBlocked;
-    private void requestIsUserContactBlocked() {
-        if (loadingIsUserContactBlocked.isEmpty()) return;
-        final TL_account.getRequirementsToContact req = new TL_account.getRequirementsToContact();
-        final ArrayList<Long> ids = new ArrayList<>();
-        for (long userId : loadingIsUserContactBlocked) {
-            final TLRPC.InputUser inputUser = getInputUser(userId);
-            if (inputUser != null) {
-                req.id.add(inputUser);
-                ids.add(userId);
-            }
-        }
-        loadingIsUserContactBlocked.clear();
-        if (req.id.isEmpty()) {
-            return;
-        }
-        getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-            boolean changed = false;
-            if (res instanceof Vector) {
-                final ArrayList<Object> objects = ((Vector) res).objects;
-                for (int i = 0; i < Math.min(ids.size(), objects.size()); ++i) {
-                    final long userId = ids.get(i);
-                    if (!(objects.get(i) instanceof TL_account.RequirementToContact)) continue;
-                    final TL_account.RequirementToContact r = (TL_account.RequirementToContact) objects.get(i);
-
-                    final TL_account.RequirementToContact cached = cachedIsUserContactBlocked.get(userId);
-                    if (!UserObject.eq(cached, r)) {
-                        if (r == null || r instanceof TL_account.requirementToContactEmpty) {
-                            cachedIsUserContactBlocked.remove(userId);
-                        } else {
-                            cachedIsUserContactBlocked.put(userId, r);
-                        }
-                        changed = true;
-                    }
-
-                    final TLRPC.UserFull userFull = getUserFull(userId);
-                    if (userFull != null && UserObject.applyRequirementToContact(userFull, r)) {
-                        getMessagesStorage().updateUserInfo(userFull, true);
-                        changed = true;
-                    } else if (userFull == null) {
-                        getMessagesStorage().updateUserInfoContactBlocked(userId, r);
-                        changed = true;
-                    }
-                }
-            }
-            if (changed) {
-                getNotificationCenter().postNotificationName(NotificationCenter.userIsPremiumBlockedUpadted);
-            }
-        }));
-    }
-
-
-
-
 
     private boolean loadingAvailableEffects;
     private TLRPC.messages_AvailableEffects availableEffects;

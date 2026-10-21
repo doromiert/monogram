@@ -365,23 +365,6 @@ public class AlertsCreator {
         }
         if (error.text.equals("JOIN_GUARD_TIMEOUT")) {
             showSimpleAlert(fragment, LocaleController.getString(R.string.GuardBotTimeoutTitle), LocaleController.getString(R.string.GuardBotTimeout));
-        } else if (request instanceof TLRPC.TL_messages_sendMessage && error.text.contains("PRIVACY_PREMIUM_REQUIRED")) {
-            TLRPC.TL_messages_sendMessage req = (TLRPC.TL_messages_sendMessage) request;
-            long dialogId = DialogObject.getPeerDialogId(req.peer);
-            String username = "";
-            if (dialogId >= 0) {
-                username = UserObject.getFirstName(MessagesController.getInstance(currentAccount).getUser(dialogId));
-            } else {
-                TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
-                if (chat != null) {
-                    username = chat.title;
-                }
-            }
-            if (fragment == null) {
-                fragment = LaunchActivity.getLastFragment();
-            }
-            showSimpleAlert(fragment, LocaleController.getString(R.string.MessagePremiumErrorTitle), LocaleController.formatString(R.string.MessagePremiumErrorMessage, username));
-            MessagesController.getInstance(currentAccount).invalidateUserPremiumBlocked(dialogId, 0);
         } else if (request instanceof TLRPC.TL_messages_initHistoryImport || request instanceof TLRPC.TL_messages_checkHistoryImportPeer || request instanceof TLRPC.TL_messages_checkHistoryImport || request instanceof TLRPC.TL_messages_startHistoryImport) {
             TLRPC.InputPeer peer;
             if (request instanceof TLRPC.TL_messages_initHistoryImport) {
@@ -3559,8 +3542,6 @@ public class AlertsCreator {
             return;
         }
         final ArrayList<TLRPC.User> users = new ArrayList<>();
-        final ArrayList<Long> pmLockedUsers = new ArrayList<>();
-        final ArrayList<Long> inviteLockedUsers = new ArrayList<>();
         for (TLRPC.TL_missingInvitee missing_invitee : invitedUsers.missing_invitees) {
             TLRPC.User user = null;
             if (invitedUsers.updates != null) {
@@ -3579,12 +3560,8 @@ public class AlertsCreator {
                 continue;
             }
             users.add(user);
-            if (missing_invitee.premium_required_for_pm) {
-                pmLockedUsers.add(user.id);
-            }
-            if (missing_invitee.premium_would_allow_invite) {
-                inviteLockedUsers.add(user.id);
-            }
+
+
         }
         if (users.isEmpty())
             return;
@@ -3593,7 +3570,7 @@ public class AlertsCreator {
             BaseFragment lastFragment = LaunchActivity.getLastFragment();
             if (lastFragment != null && lastFragment.getParentActivity() != null) {
                 LimitReachedBottomSheet restrictedUsersBottomSheet = new LimitReachedBottomSheet(lastFragment, lastFragment.getParentActivity(), LimitReachedBottomSheet.TYPE_ADD_MEMBERS_RESTRICTED, currentAccount, null);
-                restrictedUsersBottomSheet.setRestrictedUsers(currentChat, users, pmLockedUsers, inviteLockedUsers, null);
+                restrictedUsersBottomSheet.setRestrictedUsers(currentChat, users, null);
                 restrictedUsersBottomSheet.show();
             }
         }, 200);

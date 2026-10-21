@@ -123,7 +123,6 @@ import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_phone;
 import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -2563,39 +2562,21 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 												}
 												if (invitedCount.incrementAndGet() == totalCount && !restrictedUsers.isEmpty()) {
 													AndroidUtilities.runOnUIThread(() -> {
-														final TL_account.getRequirementsToContact req3 = new TL_account.getRequirementsToContact();
 														ArrayList<TLRPC.User> users2 = new ArrayList<>();
-														ArrayList<Long> premiumBlockedUsers = new ArrayList<>();
-														ArrayList<Long> premiumInviteBlockedUsers = new ArrayList<>();
 														for (long userId1 : restrictedUsers) {
 															if (groupCall != null) {
 																groupCall.removeInvitedUser(userId1);
 															}
 															users2.add(MessagesController.getInstance(currentAccount).getUser(userId1));
-															req3.id.add(MessagesController.getInstance(currentAccount).getInputUser(userId1));
 														}
 														final Runnable showLimitSheet = () -> {
 															BaseFragment fragment = LaunchActivity.getSafeLastFragment();
 															if (fragment == null) return;
 															final LimitReachedBottomSheet restricterdUsersBottomSheet = new LimitReachedBottomSheet(fragment, fragment.getContext(), LimitReachedBottomSheet.TYPE_CALL_RESTRICTED, currentAccount, new DarkBlueThemeResourcesProvider());
-															restricterdUsersBottomSheet.setRestrictedUsers(null, users2, premiumBlockedUsers, premiumInviteBlockedUsers, link);
+															restricterdUsersBottomSheet.setRestrictedUsers(null, users2, link);
 															restricterdUsersBottomSheet.show();
 														};
-														if (UserConfig.getInstance(currentAccount).isPremium()) {
-															showLimitSheet.run();
-														} else {
-															ConnectionsManager.getInstance(currentAccount).sendRequest(req3, (res3, err3) -> AndroidUtilities.runOnUIThread(() -> {
-																if (res3 instanceof Vector) {
-																	Vector<TL_account.RequirementToContact> result = (Vector<TL_account.RequirementToContact>) res3;
-																	for (int i = 0; i < Math.min(users2.size(), result.objects.size()); ++i) {
-																		if (result.objects.get(i) instanceof TL_account.requirementToContactPremium) {
-																			premiumBlockedUsers.add(users2.get(i).id);
-																		}
-																	}
-																}
-																showLimitSheet.run();
-															}));
-														}
+														showLimitSheet.run();
 													});
 												}
 											});
@@ -2657,39 +2638,21 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 										}
 										if (invitedCount.incrementAndGet() == totalCount && !restrictedUsers.isEmpty()) {
 											AndroidUtilities.runOnUIThread(() -> {
-												final TL_account.getRequirementsToContact req3 = new TL_account.getRequirementsToContact();
 												ArrayList<TLRPC.User> users2 = new ArrayList<>();
-												ArrayList<Long> premiumBlockedUsers = new ArrayList<>();
-												ArrayList<Long> premiumInviteBlockedUsers = new ArrayList<>();
 												for (long userId1 : restrictedUsers) {
 													if (groupCall != null) {
 														groupCall.removeInvitedUser(userId1);
 													}
 													users2.add(MessagesController.getInstance(currentAccount).getUser(userId1));
-													req3.id.add(MessagesController.getInstance(currentAccount).getInputUser(userId1));
 												}
 												final Runnable showLimitSheet = () -> {
 													BaseFragment fragment = LaunchActivity.getSafeLastFragment();
 													if (fragment == null) return;
 													final LimitReachedBottomSheet restricterdUsersBottomSheet = new LimitReachedBottomSheet(fragment, fragment.getContext(), LimitReachedBottomSheet.TYPE_CALL_RESTRICTED, currentAccount, new DarkBlueThemeResourcesProvider());
-													restricterdUsersBottomSheet.setRestrictedUsers(null, users2, premiumBlockedUsers, premiumInviteBlockedUsers, link);
+													restricterdUsersBottomSheet.setRestrictedUsers(null, users2, link);
 													restricterdUsersBottomSheet.show();
 												};
-												if (UserConfig.getInstance(currentAccount).isPremium()) {
-													showLimitSheet.run();
-												} else {
-													ConnectionsManager.getInstance(currentAccount).sendRequest(req3, (res3, err3) -> AndroidUtilities.runOnUIThread(() -> {
-														if (res3 instanceof Vector) {
-															Vector<TL_account.RequirementToContact> result = (Vector<TL_account.RequirementToContact>) res3;
-															for (int i = 0; i < Math.min(users2.size(), result.objects.size()); ++i) {
-																if (result.objects.get(i) instanceof TL_account.requirementToContactPremium) {
-																	premiumBlockedUsers.add(users2.get(i).id);
-																}
-															}
-														}
-														showLimitSheet.run();
-													}));
-												}
+												showLimitSheet.run();
 											});
 										}
 									});

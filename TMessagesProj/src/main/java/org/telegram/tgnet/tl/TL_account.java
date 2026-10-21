@@ -3436,27 +3436,7 @@ public class TL_account {
         }
     }
 
-    public static class getRequirementsToContact extends TLObject {
-        public static final int constructor = 0xd89a83a3;
 
-        public ArrayList<TLRPC.InputUser> id = new ArrayList<>();
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return Vector.TLDeserialize(stream, constructor, exception, RequirementToContact::TLdeserialize);
-        }
-
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            id = Vector.deserialize(stream, TLRPC.InputUser::TLdeserialize, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            Vector.serialize(stream, id);
-        }
-    }
 
     public static class SavedMusicIds extends TLObject {
 

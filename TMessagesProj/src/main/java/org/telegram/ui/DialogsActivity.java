@@ -4330,10 +4330,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             viewPage.listView.setOnItemClickListener((view, position, x, y) -> {
                 if (view instanceof GraySectionCell)
                     return;
-                if (view instanceof DialogCell && ((DialogCell) view).isBlocked()) {
-                    showPremiumBlockedToast(view, ((DialogCell) view).getDialogId());
-                    return;
-                }
+
                 if (clickSelectsDialog()) {
                     onItemLongClick(viewPage.listView, view, position, 0, 0, viewPage.dialogsType, viewPage.dialogsAdapter);
                     return;
@@ -4396,10 +4393,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             viewPage.listView.setOnItemLongClickListener(new RecyclerListView.OnItemLongClickListenerExtended() {
                 @Override
                 public boolean onItemClick(View view, int position, float x, float y) {
-                    if (view instanceof DialogCell && ((DialogCell) view).isBlocked()) {
-                        showPremiumBlockedToast(view, ((DialogCell) view).getDialogId());
-                        return true;
-                    }
+
                     if (filterTabsView != null && filterTabsView.getVisibility() == View.VISIBLE && filterTabsView.isEditing()) {
                         return false;
                     }
@@ -4871,20 +4865,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     return super.dispatchTouchEvent(ev);
                 }
 
-                @Override
-                public long getStarsPrice() {
-                    long price = 0;
-                    if (selectedDialogs != null) {
-                        for (final long did : selectedDialogs) {
-                            long dialogPrice = getMessagesController().getSendPaidMessagesStars(did);
-                            if (dialogPrice <= 0 && did > 0) {
-                                dialogPrice = DialogObject.getMessagesStarsPrice(getMessagesController().isUserContactBlocked(did));
-                            }
-                            price += dialogPrice;
-                        }
-                    }
-                    return price;
-                }
+
 
                 @Override
                 public int getMessagesCount() {
@@ -5864,28 +5845,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         popup[0].dimBehind();
     }
 
-    private int shiftDp = -4;
-    private void showPremiumBlockedToast(View view, long dialogId) {
-        AndroidUtilities.shakeViewSpring(view, shiftDp = -shiftDp);
-        BotWebViewVibrationEffect.APP_ERROR.vibrate();
-        String username = "";
-        if (dialogId >= 0) {
-            username = UserObject.getUserName(MessagesController.getInstance(currentAccount).getUser(dialogId));
-        }
-        Bulletin bulletin;
-        if (org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) || getMessagesController().premiumFeaturesBlocked()) {
-            bulletin = BulletinFactory.of(this).createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBlockedNonPremium, username)));
-        } else {
-            bulletin = BulletinFactory.of(this)
-                .createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBlockedNonPremium, username)), LocaleController.getString(R.string.UserBlockedNonPremiumButton), () -> {
-                    BaseFragment lastFragment = LaunchActivity.getLastFragment();
-                    if (lastFragment != null) {
-                        presentFragment(new PremiumPreviewFragment("noncontacts"));
-                    }
-                });
-        }
-        bulletin.show();
-    }
+
 
     private void updateDialogsHint() {
         if (topPanelLayout == null || dialogsHintCell == null || fragmentView == null || getContext() == null) {
@@ -9943,16 +9903,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
                 writeButton.setCount(Math.max(1, selectedDialogs.size()), true);
-                long price = 0;
-                final int messagesCount = this.messagesCount + (TextUtils.isEmpty(commentView.getFieldText()) ? 0 : 1);
-                for (final long did : selectedDialogs) {
-                    long dialogPrice = getMessagesController().getSendPaidMessagesStars(did);
-                    if (dialogPrice <= 0 && did > 0) {
-                        dialogPrice = DialogObject.getMessagesStarsPrice(getMessagesController().isUserContactBlocked(did));
-                    }
-                    price += dialogPrice;
-                }
-                writeButton.setStarsPrice(price, messagesCount);
                 commentView.updateSendButtonPaid();
                 if (wasSelectedDialogsEmpty == selectedDialogs.isEmpty()) {
                     actionBar.setTitle(LocaleController.formatPluralString("Recipient", selectedDialogs.size()));
@@ -12661,10 +12611,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
             }
 
-            @Override
-            public void didPressedBlockedDialog(View view, long did) {
-                showPremiumBlockedToast(view, did);
-            }
+
 
             @Override
             public void didPressedOnSubDialog(long did) {

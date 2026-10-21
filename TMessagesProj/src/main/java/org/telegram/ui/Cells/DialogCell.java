@@ -506,17 +506,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private boolean draftVoice;
     private TLRPC.DraftMessage draftMessage;
 
-    private final AnimatedFloat premiumBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private boolean premiumBlocked;
-    private final AnimatedFloat starsBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private long starsPriceBlocked;
 
-    public boolean isBlocked() {
-        return premiumBlocked;
-    }
-    public long getStarsPrice() {
-        return starsPriceBlocked;
-    }
+
+
 
     protected CheckBox2 checkBox;
 
@@ -767,7 +759,6 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             currentDialogFolderId = 0;
         }
         dialogsType = type;
-        showPremiumBlocked(dialogsType == DialogsActivity.DIALOGS_TYPE_FORWARD);
         if (tags == null) {
             tags = new DialogCellTags(this);
         }
@@ -3744,7 +3735,6 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 updateLayout = true;
             }
         }
-        updatePremiumBlocked(animated);
         return requestLayout;
     }
 
@@ -4995,71 +4985,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         return reorderGradientPaint;
     }
 
-    private PremiumGradient.PremiumGradientTools premiumGradient;
-    private Drawable lockDrawable;
 
-    private int starBgColor;
-    private Drawable starFg, starBg;
 
     public boolean drawAvatarOverlays(Canvas canvas) {
-        boolean needInvalidate = false, stars = false;
-        if (chat != null && (chat.flags2 & 2048) != 0) {
-            stars = true;
-            float bottom =  avatarImage.getImageY2();
-            float right = avatarImage.getImageX2();
-            float checkProgress = checkBox != null && checkBox.isChecked() ? 1.0f - checkBox.getProgress() : 1.0f;
+        boolean needInvalidate = false;
 
-            if (starBg == null) {
-                starBg = getContext().getResources().getDrawable(R.drawable.star_small_outline).mutate();
-            }
-            final int bg = Theme.getColor(Theme.key_windowBackgroundWhite);
-            if (starBgColor != bg) {
-                starBg.setColorFilter(new PorterDuffColorFilter(starBgColor = bg, PorterDuff.Mode.SRC_IN));
-            }
-            if (starFg == null) {
-                starFg = getContext().getResources().getDrawable(R.drawable.star_small_inner).mutate();
-            }
 
-            final int sz = dp(19.33f);
-            AndroidUtilities.rectTmp2.set((int) right + dp(1.66f) - sz, (int) bottom - sz, (int) right + dp(1.66f), (int) bottom);
-            AndroidUtilities.rectTmp2.inset(-dp(1), -dp(1));
-            starBg.setBounds(AndroidUtilities.rectTmp2);
-            starBg.setAlpha((int) (0xFF * checkProgress));
-            starBg.draw(canvas);
-            AndroidUtilities.rectTmp2.set((int) right + dp(1.66f) - sz, (int) bottom - sz, (int) right + dp(1.66f), (int) bottom);
-            starFg.setBounds(AndroidUtilities.rectTmp2);
-            starFg.setAlpha((int) (0xFF * checkProgress));
-            starFg.draw(canvas);
-        }
-        float lockT = premiumBlockedT.set(premiumBlocked && !stars);
-        if (lockT > 0) {
-            float top =  avatarImage.getCenterY() + dp(18);
-            float left = avatarImage.getCenterX() + dp(18);
-
-            canvas.save();
-            Theme.dialogs_onlineCirclePaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
-            canvas.drawCircle(left, top, dp(10 + 1.33f) * lockT, Theme.dialogs_onlineCirclePaint);
-            if (premiumGradient == null) {
-                premiumGradient = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradient1, Theme.key_premiumGradient2, -1, -1, -1, resourcesProvider);
-            }
-            premiumGradient.gradientMatrix((int) (left - dp(10)), (int) (top - dp(10)), (int) (left + dp(10)), (int) (top + dp(10)), 0, 0);
-            canvas.drawCircle(left, top, dp(10) * lockT, premiumGradient.paint);
-            if (lockDrawable == null) {
-                lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock2).mutate();
-                lockDrawable.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
-            }
-            lockDrawable.setBounds(
-                    (int) (left - lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                    (int) (top  - lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT),
-                    (int) (left + lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                    (int) (top  + lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT)
-            );
-            lockDrawable.setAlpha((int) (0xFF * lockT));
-            lockDrawable.draw(canvas);
-            canvas.restore();
-            return false;
-        }
-        if (isDialogCell && currentDialogFolderId == 0 && !stars) {
+        if (isDialogCell && currentDialogFolderId == 0) {
             showTtl = ttlPeriod > 0 && !isOnline() && !hasCall && !storyParams.drawnLive;
             if (rightFragmentOpenedProgress != 1f && (showTtl || ttlProgress > 0)) {
                 if (timerDrawable == null || (timerDrawable.getTime() != ttlPeriod && ttlPeriod > 0)) {
@@ -6521,30 +6453,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         return adaptiveEmojiColorFilter[n];
     }
 
-    private Runnable unsubscribePremiumBlocked;
-    public void showPremiumBlocked(boolean show) {
-        if (show != (unsubscribePremiumBlocked != null)) {
-            if (!show && unsubscribePremiumBlocked != null) {
-                unsubscribePremiumBlocked.run();
-                unsubscribePremiumBlocked = null;
-            } else if (show) {
-                unsubscribePremiumBlocked = NotificationCenter.getInstance(currentAccount).listen(this, NotificationCenter.userIsPremiumBlockedUpadted, args -> {
-                    updatePremiumBlocked(true);
-                });
-            }
-        }
-    }
 
-    private void updatePremiumBlocked(boolean animated) {
-        final TL_account.RequirementToContact r = (unsubscribePremiumBlocked != null) && user != null ? MessagesController.getInstance(currentAccount).isUserContactBlocked(user.id) : null;
-        if (premiumBlocked != DialogObject.isPremiumBlocked(r) || starsPriceBlocked != DialogObject.getMessagesStarsPrice(r)) {
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
-            if (!animated) {
-                premiumBlockedT.set(premiumBlocked, true);
-                starsBlockedT.set(starsPriceBlocked > 0, true);
-            }
-            invalidate();
-        }
-    }
+
+
 }

@@ -200,7 +200,6 @@ public class DialogsSearchAdapter extends RecyclerListView.SelectionAdapter {
     public interface DialogsSearchAdapterDelegate {
         void searchStateChanged(boolean searching, boolean animated);
         void didPressedOnSubDialog(long did);
-        void didPressedBlockedDialog(View view, long did);
         void needRemoveHint(long did);
         void needClearList();
         void runResultsEnterAnimation();
