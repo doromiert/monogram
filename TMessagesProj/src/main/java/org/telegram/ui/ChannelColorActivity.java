@@ -420,7 +420,7 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
                     public boolean supportsAnimation() {
                         return false;
                     }
-                }, null);
+                });
             }
         });
         DefaultItemAnimator itemAnimator = new DefaultItemAnimator();

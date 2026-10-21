@@ -47,8 +47,6 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.SystemClock;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.SparseIntArray;
@@ -105,7 +103,6 @@ import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
-import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -128,7 +125,6 @@ import org.telegram.ui.Components.BackgroundGradientDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CircularProgressDrawable;
 import org.telegram.ui.Components.ColorPicker;
-import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.Easings;
 import org.telegram.ui.Components.FragmentFloatingButton;
@@ -136,7 +132,6 @@ import org.telegram.ui.Components.GestureDetector2;
 import org.telegram.ui.Components.HintView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.MotionBackgroundDrawable;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
@@ -306,7 +301,6 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
     private float dimAmount = 0f;
     private float progressToDarkTheme;
     DayNightSwitchDelegate onSwitchDayNightDelegate;
-    private ColoredImageSpan lockSpan;
 
     private AnimatorSet patternViewAnimation;
 
@@ -401,22 +395,6 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             return true;
         }
     });
-
-    private boolean checkingBoostsLevel = false, checkedBoostsLevel = false;
-    public TL_stories.TL_premium_boostsStatus boostsStatus;
-    private void checkBoostsLevel() {
-        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { checkedBoostsLevel=true;checkingBoostsLevel=false;return; }
-        if (dialogId >= 0 || checkingBoostsLevel || checkedBoostsLevel || boostsStatus != null) {
-            return;
-        }
-        checkingBoostsLevel = true;
-        getMessagesController().getBoostsController().getBoostsStats(dialogId, boostsStatus -> {
-            this.boostsStatus = boostsStatus;
-            checkedBoostsLevel = true;
-            updateApplyButton1(true);
-            checkingBoostsLevel = false;
-        });
-    }
 
     float maxScrollOffset;
     float currentScrollOffset;
@@ -2386,33 +2364,13 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
             if (chat != null) {
                 applyButton1.setText(LocaleController.formatString(R.string.ApplyWallpaperForChannel, chat.title));
-                if (boostsStatus != null && boostsStatus.level < getCustomWallpaperLevelMin()) {
-                    SpannableStringBuilder text = new SpannableStringBuilder("l");
-                    if (lockSpan == null) {
-                        lockSpan = new ColoredImageSpan(R.drawable.mini_switch_lock);
-                        lockSpan.setTopOffset(1);
-                    }
-                    text.setSpan(lockSpan, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    text.append(" ").append(LocaleController.formatPluralString("ReactionLevelRequiredBtn", getCustomWallpaperLevelMin()));
-                    applyButton1.setSubText(text, animated);
-                } else if (boostsStatus == null) {
-                    checkBoostsLevel();
-                } else {
-                    applyButton1.setSubText(null, animated);
-                }
+                applyButton1.setSubText(null, animated);
             } else {
                 applyButton1.setText(LocaleController.formatString(R.string.ApplyWallpaperForChannel, LocaleController.getString(R.string.AccDescrChannel).toLowerCase()));
             }
         } else {
             applyButton1.setText(LocaleController.getString(R.string.ApplyWallpaper));
         }
-    }
-
-    private int getCustomWallpaperLevelMin() {
-        if (ChatObject.isChannelAndNotMegaGroup(-dialogId, currentAccount)) {
-            return getMessagesController().channelCustomWallpaperLevelMin;
-        }
-        return getMessagesController().groupCustomWallpaperLevelMin;
     }
 
     private boolean applyingLocalWallpaper;
@@ -2454,29 +2412,6 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
 
     private void applyWallpaperBackground() {
         if(dialogId!=0 && org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { applyLocalChatWallpaper();return; }
-        if (dialogId < 0) {
-            if (boostsStatus != null && boostsStatus.level < getCustomWallpaperLevelMin()) {
-                getMessagesController().getBoostsController().userCanBoostChannel(dialogId, boostsStatus, canApplyBoost -> {
-                    if (getContext() == null) {
-                        return;
-                    }
-                    LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_BOOSTS_FOR_CUSTOM_WALLPAPER, currentAccount, getResourceProvider());
-                    limitReachedBottomSheet.setCanApplyBoost(canApplyBoost);
-                    limitReachedBottomSheet.setBoostsStats(boostsStatus, true);
-                    limitReachedBottomSheet.setDialogId(dialogId);
-                    if (!insideBottomSheet()) {
-                        limitReachedBottomSheet.showStatisticButtonInLink(() -> {
-                            TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
-                            presentFragment(StatisticActivity.create(chat));
-                        });
-                    }
-                    showDialog(limitReachedBottomSheet);
-                });
-                return;
-            } else if (boostsStatus == null) {
-                return;
-            }
-        }
 
         if (currentWallpaper instanceof WallpapersListActivity.EmojiWallpaper) {
             if (delegate != null) {
@@ -3255,7 +3190,6 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
 
     @Override
     public boolean onFragmentCreate() {
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.chatWasBoostedByUser);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.invalidateMotionBackground);
         getNotificationCenter().addObserver(this, NotificationCenter.wallpaperSettedToUser);
@@ -3288,7 +3222,6 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
 
     @Override
     public void onFragmentDestroy() {
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.chatWasBoostedByUser);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.emojiLoaded);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.invalidateMotionBackground);
         getNotificationCenter().removeObserver(this, NotificationCenter.wallpaperSettedToUser);
@@ -3536,12 +3469,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
     @SuppressWarnings("unchecked")
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.chatWasBoostedByUser) {
-            if (dialogId == (long) args[2]) {
-                this.boostsStatus = (TL_stories.TL_premium_boostsStatus) args[0];
-                updateApplyButton1(true);
-            }
-        } else if (id == NotificationCenter.emojiLoaded) {
+        if (id == NotificationCenter.emojiLoaded) {
             if (listView == null) {
                 return;
             }

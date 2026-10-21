@@ -28,11 +28,9 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ChatThemeController;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -49,34 +47,16 @@ import org.telegram.ui.Components.RecyclerListView;
 public class ChannelWallpaperActivity extends BaseFragment {
 
     public final long dialogId;
-    public int currentLevel;
-    public TL_stories.TL_premium_boostsStatus boostsStatus;
     public TLRPC.WallPaper galleryWallpaper;
     public TLRPC.WallPaper currentWallpaper, selectedWallpaper;
     private boolean isChannel;
 
-    public ChannelWallpaperActivity(long dialogId, TL_stories.TL_premium_boostsStatus boostsStatus) {
+    public ChannelWallpaperActivity(long dialogId) {
         super();
         this.dialogId = dialogId;
         TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
         if (chat != null) {
             isChannel = ChatObject.isChannelAndNotMegaGroup(chat);
-            currentLevel = chat.level;
-        }
-        this.boostsStatus = boostsStatus;
-        if (boostsStatus == null) {
-            MessagesController.getInstance(currentAccount).getBoostsController().getBoostsStats(dialogId, loadedBoostsStatus -> {
-                this.boostsStatus = loadedBoostsStatus;
-                if (boostsStatus != null) {
-                    this.currentLevel = boostsStatus.level;
-                    if (chat != null) {
-                        chat.flags |= 1024;
-                        chat.level = currentLevel;
-                    }
-                }
-            });
-        } else {
-            currentLevel = boostsStatus.level;
         }
 
         TLRPC.ChatFull chatFull = getMessagesController().getChatFull(-dialogId);
@@ -169,7 +149,7 @@ public class ChannelWallpaperActivity extends BaseFragment {
                         onSelectedWallpaperChange.run(currentWallpaper, selectedWallpaper, galleryWallpaper);
                     }
                     finishFragment();
-                }, toggleThemeDelegate, boostsStatus);
+                }, toggleThemeDelegate);
             }
         });
         DefaultItemAnimator itemAnimator = new DefaultItemAnimator();
@@ -256,7 +236,6 @@ public class ChannelWallpaperActivity extends BaseFragment {
                             return true;
                         }
                     };
-                    themePreviewActivity.boostsStatus = boostsStatus;
                     themePreviewActivity.setOnSwitchDayNightDelegate(toggleThemeDelegate);
                     themePreviewActivity.setResourceProvider(resourceProvider);
                     themePreviewActivity.setInitialModes(false, false, .20f);

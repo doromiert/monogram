@@ -200,7 +200,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
 
     private boolean historyHidden;
     private TLRPC.ChatReactions availableReactions;
-    private TL_stories.TL_premium_boostsStatus boostsStatus;
 
     private boolean createAfterUpload;
     private boolean donePressed;
@@ -1028,13 +1027,11 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             }
 
             if (ChatObject.isMegagroup(currentChat) && ChatObject.hasAdminRights(currentChat) && !ChatObject.isCommunity(currentChat)) {
-                MessagesController.getInstance(currentAccount).getBoostsController().getBoostsStats(-currentChat.id, boostsStatus -> this.boostsStatus = boostsStatus);
                 colorCell = new PeerColorActivity.ChangeNameColorCell(currentAccount, -currentChat.id, context, getResourceProvider());
                 colorCell.setBackground(Theme.getSelectorDrawable(true));
                 typeEditContainer.addView(colorCell, LayoutHelper.createLinear(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 colorCell.setOnClickListener(v -> {
                     GroupColorActivity activity = new GroupColorActivity(-currentChat.id);
-                    activity.boostsStatus = boostsStatus;
                     activity.setOnApplied(this);
                     presentFragment(activity);
                 });
