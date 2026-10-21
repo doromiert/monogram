@@ -11629,12 +11629,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 });
             }
 
-            @Override
-            public void onAnimatedEmojiUnlockClick() {
-                if (parentFragment != null) {
-                    parentFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
-                }
-            }
+
 
             @Override
             public void onStickerSelected(View view, TLRPC.Document sticker, String query, Object parent, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod) {

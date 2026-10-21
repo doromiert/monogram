@@ -87,7 +87,6 @@ import org.telegram.ui.Components.TextStyleSpan;
 import org.telegram.ui.Components.URLSpanReplacement;
 import org.telegram.ui.Components.URLSpanUserMention;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.ui.Stories.StoriesStorage;
 import org.telegram.utils.code.highlight.CodeHighlighting;
@@ -9009,10 +9008,10 @@ public class MediaDataController extends BaseController {
     }
 
     public void getEmojiSuggestions(String[] langCodes, String keyword, boolean fullMatch, KeywordResultCallback callback, final CountDownLatch sync, boolean allowAnimated, boolean allowTopicIcons, boolean includeSingleEmoji, Integer maxAnimatedPerEmoji) {
-        getEmojiSuggestions(langCodes, keyword, fullMatch, callback, sync, allowAnimated, allowTopicIcons, includeSingleEmoji, false, maxAnimatedPerEmoji, false);
+        getEmojiSuggestions(langCodes, keyword, fullMatch, callback, sync, allowAnimated, allowTopicIcons, includeSingleEmoji, maxAnimatedPerEmoji, false);
     }
 
-    public void getEmojiSuggestions(String[] langCodes, String keyword, boolean fullMatch, KeywordResultCallback callback, final CountDownLatch sync, boolean allowAnimated, boolean allowTopicIcons, boolean includeSingleEmoji, boolean forcePremium, Integer maxAnimatedPerEmoji, boolean includeOnlyTextColor) {
+    public void getEmojiSuggestions(String[] langCodes, String keyword, boolean fullMatch, KeywordResultCallback callback, final CountDownLatch sync, boolean allowAnimated, boolean allowTopicIcons, boolean includeSingleEmoji, Integer maxAnimatedPerEmoji, boolean includeOnlyTextColor) {
         if (callback == null) {
             return;
         }
@@ -9147,7 +9146,7 @@ public class MediaDataController extends BaseController {
             });
             String aliasFinal = alias;
             if (allowAnimated) {
-                fillWithAnimatedEmoji(result, maxAnimatedPerEmoji, allowTopicIcons, forcePremium, includeOnlyTextColor, () -> {
+                fillWithAnimatedEmoji(result, maxAnimatedPerEmoji, allowTopicIcons, includeOnlyTextColor, () -> {
                     if (sync != null) {
                         callback.run(result, aliasFinal);
                         sync.countDown();
@@ -9175,7 +9174,7 @@ public class MediaDataController extends BaseController {
 
     private boolean triedLoadingEmojipacks = false;
 
-    public void fillWithAnimatedEmoji(ArrayList<KeywordResult> result, Integer maxAnimatedPerEmojiInput, boolean allowTopicIcons, boolean forcePremium, boolean includeOnlyTextColor, Runnable onDone) {
+    public void fillWithAnimatedEmoji(ArrayList<KeywordResult> result, Integer maxAnimatedPerEmojiInput, boolean allowTopicIcons, boolean includeOnlyTextColor, Runnable onDone) {
         if (result == null || result.isEmpty()) {
             if (onDone != null) {
                 onDone.run();
@@ -9191,7 +9190,6 @@ public class MediaDataController extends BaseController {
             ArrayList<TLRPC.Document> animatedEmoji = new ArrayList<>();
             final int maxAnimatedPerEmoji = maxAnimatedPerEmojiInput == null ? (result.size() > 5 ? 1 : (result.size() > 2 ? 2 : 3)) : maxAnimatedPerEmojiInput;
             int len = maxAnimatedPerEmojiInput == null ? Math.min(15, result.size()) : result.size();
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || forcePremium;
             String topicIconsName = null;
             if (allowTopicIcons) {
                 topicIconsName = UserConfig.getInstance(currentAccount).defaultTopicIcons;
@@ -9223,7 +9221,6 @@ public class MediaDataController extends BaseController {
                                 String emoticon = MessageObject.findAnimatedEmojiEmoticon(document, null);
                                 if (document != null &&
                                     emoticon != null && emoticon.contains(emoji) &&
-                                    (isPremium || MessageObject.isFreeEmoji(document)) &&
                                     !foundEmojis.contains(document.id)
                                 ) {
                                     foundEmojis.add(document.id);
@@ -9279,7 +9276,7 @@ public class MediaDataController extends BaseController {
                                         }
                                     }
 
-                                    if (attribute != null && !TextUtils.isEmpty(attribute.alt) && attribute.alt.contains(emoji) && (isPremium || attribute.free || set.set != null && set.set.short_name != null && set.set.short_name.equals(topicIconsName))) {
+                                    if (attribute != null && !TextUtils.isEmpty(attribute.alt) && attribute.alt.contains(emoji)) {
                                         if (!foundEmojis.contains(document.id)) {
                                             foundEmojis.add(document.id);
                                             animatedEmoji.add(document);
@@ -9318,7 +9315,7 @@ public class MediaDataController extends BaseController {
                                     }
                                 }
 
-                                if (attribute != null && !TextUtils.isEmpty(attribute.alt) && attribute.alt.contains(emoji) && (isPremium || attribute.free || set.set != null && set.set.short_name != null && set.set.short_name.equals(topicIconsName))) {
+                                if (attribute != null && !TextUtils.isEmpty(attribute.alt) && attribute.alt.contains(emoji)) {
                                     if (!foundEmojis.contains(document.id)) {
                                         foundEmojis.add(document.id);
                                         animatedEmoji.add(document);

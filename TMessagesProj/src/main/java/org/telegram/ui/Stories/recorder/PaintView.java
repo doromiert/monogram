@@ -91,7 +91,6 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.AlertDialog;
-import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.BubbleActivity;
 import org.telegram.ui.Cells.ChatActionCell;
@@ -5235,13 +5234,7 @@ public class PaintView extends SizeNotifierFrameLayoutPhoto implements IPhotoPai
                 return true;
             }
 
-            @Override
-            public void onAnimatedEmojiUnlockClick() {
-                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-                if (fragment != null) {
-                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
-                }
-            }
+
 
             @Override
             public void onEmojiSelected(String symbol) {

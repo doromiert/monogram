@@ -540,7 +540,7 @@ public class MessagesController extends BaseController implements NotificationCe
     public String mapKey;
     public int maxMessageLength;
     public int getMaxMessageLength() {
-        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(config.messageLengthLimitPremium.get(),config.messageLengthLimitDefault.get()) : config.messageLengthLimitDefault.get();
+        return Math.max(config.messageLengthLimitPremium.get(), config.messageLengthLimitDefault.get());
     }
     public int maxCaptionLength;
     public int roundVideoSize;
@@ -860,22 +860,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (dialogFilters.isEmpty()) {
             return;
         }
-        if (!premium && !org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
-            if (!dialogFilters.get(0).isDefault()) {
-                for (int i = 1; i < dialogFilters.size(); i++) {
-                    if (dialogFilters.get(i).isDefault()) {
-                        DialogFilter defaultFilter = dialogFilters.remove(i);
-                        dialogFilters.add(0, defaultFilter);
-                        break;
-                    }
-                }
-            }
-            lockFiltersInternal();
-        } else {
-            for (int i = 0; i < dialogFilters.size(); i++) {
-                dialogFilters.get(i).locked = false;
-            }
-        }
+        lockFiltersInternal();
 
         getMessagesStorage().saveDialogFiltersOrder();
         getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
@@ -883,33 +868,10 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void lockFiltersInternal() {
-        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
-            boolean changed = false;
-            for (DialogFilter filter : dialogFilters) {
-                changed |= filter.locked;
-                filter.locked = false;
-            }
-            if (changed) getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
-            return;
-        }
         boolean changed = false;
-        if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
-            int n = dialogFilters.size() - 1 - dialogFiltersLimitDefault;
-            ArrayList<DialogFilter> filtersSortedById = new ArrayList<>(dialogFilters);
-            Collections.reverse(filtersSortedById);
-            for (int i = 0; i < filtersSortedById.size(); i++) {
-                if (i < n) {
-                    if (!filtersSortedById.get(i).locked) {
-                        changed = true;
-                    }
-                    filtersSortedById.get(i).locked = true;
-                } else {
-                    if (filtersSortedById.get(i).locked) {
-                        changed = true;
-                    }
-                    filtersSortedById.get(i).locked = false;
-                }
-            }
+        for (DialogFilter filter : dialogFilters) {
+            changed |= filter.locked;
+            filter.locked = false;
         }
         if (changed) {
             getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
@@ -921,7 +883,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int getAboutLimit() {
-        return getUserConfig().isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? Math.max(aboutLengthLimitPremium,aboutLengthLimitDefault) : aboutLengthLimitDefault;
+        return Math.max(aboutLengthLimitPremium, aboutLengthLimitDefault);
     }
 
     public int getMaxUserReactionsCount() {
@@ -929,7 +891,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public int getChatReactionsCount() {
-        return org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) ? getMaxUserReactionsCount() : getUserConfig().isPremium() ? reactionsInChatMax : 1;
+        return getMaxUserReactionsCount();
     }
 
     public int getChatMaxUniqReactions(long dialogId) {
@@ -953,16 +915,9 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
-    public void putLastGiftAuctionUpdate() {
-        if (mainPreferences != null) {
-            mainPreferences.edit().putLong("lastGiftAuctionTimeUpdate", System.currentTimeMillis()).apply();
-        }
-    }
 
-    public boolean giftAuctionUpdateWasRecently() {
-        final long t = mainPreferences != null ? mainPreferences.getLong("lastGiftAuctionTimeUpdate", 0) : 0;
-        return System.currentTimeMillis() - t < 86400 * 1000;
-    }
+
+
 
 
 
@@ -6385,9 +6340,7 @@ public class MessagesController extends BaseController implements NotificationCe
         } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
             loadAppConfig(false);
             getContactsController().reloadContactsStatusesMaybe(true);
-            if (storyQualityFull && !getUserConfig().isPremium() || getUserConfig().isPremium()) {
-                getNotificationCenter().postNotificationName(NotificationCenter.storyQualityUpdate);
-            }
+
         }
     }
 
@@ -23630,20 +23583,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean richEditorAvailable() {
-        if (BuildVars.DEBUG_VERSION) return true;
-        return !TextUtils.equals("disabled", config.richMessagePosting.get());
+        return true;
     }
 
     public boolean richEditorAllowed() {
-        switch (config.richMessagePosting.get()) {
-            case "premium":
-                return getUserConfig().isPremium();
-            case "enabled":
-                return true;
-            default:
-            case "disabled":
-                return false;
-        }
+        return true;
     }
 
     public boolean storyEntitiesAllowed() {
@@ -24149,7 +24093,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isStoryQualityFullOnAccount() {
-        return getUserConfig().isPremium() && storyQualityFull;
+        return storyQualityFull;
     }
 
     public static boolean isStoryQualityFull() {

@@ -51,10 +51,8 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
-import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.FloatingToolbar;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
 
 public class PhotoViewerCaptionEnterView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate, SizeNotifierFrameLayout.SizeNotifierFrameLayoutDelegate {
@@ -635,13 +633,7 @@ public class PhotoViewerCaptionEnterView extends FrameLayout implements Notifica
                 return true;
             }
 
-            @Override
-            public void onAnimatedEmojiUnlockClick() {
-                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-                if (fragment != null) {
-                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
-                }
-            }
+
 
             @Override
             public void onCustomEmojiSelected(long documentId, TLRPC.Document document,  String emoticon, boolean isRecent) {

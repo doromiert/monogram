@@ -1311,7 +1311,7 @@ public class EmojiBottomSheet extends BottomSheet implements NotificationCenter.
                     listView.scrollToPosition(0, 0);
                     searchField.showProgress(false);
                     tabsStrip.showSelected(false);
-                }, null, false, false, false, true, 50, false);
+                }, null, false, false, false, 50, false);
             };
 
             @NonNull

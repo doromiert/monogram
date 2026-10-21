@@ -791,6 +791,8 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [x] Source cleanup: remove owned collectible management/catalogue requests/observers and Telegram color/status apply path from PeerColorActivity; preserve local colors, ordinary emoji, account ownership checks and unsaved-change handling. Restore ordinary row factories accidentally removed in the previous unshipped source commit. Build/UI verification deferred until APK delivery.
 
 - [x] Source cleanup: free rich-draft sends, emoji/sticker selection/status and pack layouts; remove reaction/effect/pack locks in SelectAnimatedEmojiDialog and upgrade UI in StickersAlert. Delete paid sticker filtering and migrate all callers. Preserve emoji import validation; unbuilt/unshipped. See MONETIZATION_CHANGES.md.
-- [ ] Continue emoji/media monetization cleanup: obsolete EmojiView header/upgrade widgets, editor/caption/paint purchase callbacks, catalogue-only paths and remaining subscription checks outside the edited components.
+- [o] Emoji/media monetization cleanup: obsolete header/upgrade widgets and editor/caption/paint purchase callbacks removed in source. Catalogue-only paths and subscription checks outside the edited components still require cleanup; package/UI verification pending.
 
 - [x] Source cleanup: free configured larger captions and story-editor link/reaction controls; replace media/caption upgrade flows with neutral limit feedback and native pack settings. Remove viewer ad menu/caption/button and attachment checklist entry/creation path. See MONETIZATION_CHANGES.md; no build/tests/install this pass.
+
+- [x] Source cleanup: delete obsolete emoji upgrade widgets/delegates; free shared message/bio/reaction limits, folder order/locks, rich-editor access and full-quality story editing. Remove subscription override/filtering from emoji suggestion APIs and migrate callers. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.

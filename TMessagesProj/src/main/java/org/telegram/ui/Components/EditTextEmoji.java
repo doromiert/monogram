@@ -843,13 +843,7 @@ public class EditTextEmoji extends FrameLayout implements NotificationCenter.Not
                 return emojiExpanded;
             }
 
-            @Override
-            public void onAnimatedEmojiUnlockClick() {
-                org.telegram.ui.ActionBar.BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-                if (fragment != null) {
-                    fragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
-                }
-            }
+
 
             @Override
             public void onEmojiSelected(String symbol) {
