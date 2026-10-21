@@ -10,7 +10,7 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.ui.bots.AffiliateProgramFragment.percents;
+import static org.telegram.messenger.utils.CurrencyFormatter.percents;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;

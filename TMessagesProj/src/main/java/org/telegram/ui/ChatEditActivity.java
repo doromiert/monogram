@@ -97,9 +97,7 @@ import org.telegram.ui.Components.Reactions.ReactionsUtils;
 import org.telegram.ui.Components.SectionsScrollView;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
 import org.telegram.ui.Components.UndoView;
-import org.telegram.ui.bots.AffiliateProgramFragment;
 import org.telegram.ui.bots.BotVerifySheet;
-import org.telegram.ui.bots.ChannelAffiliateProgramsFragment;
 import org.telegram.ui.community.CommunityCreateActivity;
 import org.telegram.ui.community.CommunityEditActivity;
 import org.telegram.ui.community.CommunitySheet;
@@ -108,7 +106,6 @@ import org.telegram.ui.community.cells.CommunityLinkView2;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 
 public class ChatEditActivity extends BaseFragment implements ImageUpdater.ImageUpdaterDelegate, NotificationCenter.NotificationCenterDelegate {
@@ -157,7 +154,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
     private TextCell adminCell;
     private TextCell blockCell;
     private TextCell logCell;
-    private TextCell channelAffiliateProgramsCell;
     private TextCell statsAndBoosts;
     private TextCell setAvatarCell;
     private ShadowSectionCell infoSectionCell;
@@ -175,7 +171,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
     private TextInfoPrivacyCell communityGapView;
 
     private TextCell publicLinkCell;
-    private TextCell botAffiliateProgramCell;
     private TextCell editIntroCell;
     private TextCell editCommandsCell;
     private TextCell changeBotSettingsCell;
@@ -373,7 +368,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             getNotificationCenter().addObserver(this, NotificationCenter.chatInfoDidLoad);
             getNotificationCenter().addObserver(this, NotificationCenter.chatSwitchedForum);
             getNotificationCenter().addObserver(this, NotificationCenter.chatAvailableReactionsUpdated);
-            getNotificationCenter().addObserver(this, NotificationCenter.channelConnectedBotsUpdate);
         } else {
             avatarDrawable.setInfo(5, currentUser.first_name, null);
             isChannel = false;
@@ -421,7 +415,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             getNotificationCenter().removeObserver(this, NotificationCenter.chatInfoDidLoad);
             getNotificationCenter().removeObserver(this, NotificationCenter.chatSwitchedForum);
             getNotificationCenter().removeObserver(this, NotificationCenter.chatAvailableReactionsUpdated);
-            getNotificationCenter().removeObserver(this, NotificationCenter.channelConnectedBotsUpdate);
         } else {
             getNotificationCenter().removeObserver(this, NotificationCenter.userInfoDidLoad);
 
@@ -1237,13 +1230,7 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
                 });
             }
 
-            channelAffiliateProgramsCell = new TextCell(context);
-            channelAffiliateProgramsCell.setTextAndIcon(ChatEditActivity.applyNewSpan(LocaleController.getString(R.string.ChannelAffiliatePrograms)), R.drawable.menu_feature_premium, false);
-            channelAffiliateProgramsCell.setBackground(Theme.getSelectorDrawable(false));
-            channelAffiliateProgramsCell.setOnClickListener(v -> {
-                presentFragment(new ChannelAffiliateProgramsFragment(-chatId));
-            });
-            channelAffiliateProgramsCell.setVisibility(View.GONE);
+
 
             if (ChatObject.isChannel(currentChat) || currentChat.gigagroup) {
                 logCell = new TextCell(context);
@@ -1289,14 +1276,10 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             if (logCell != null) {
                 infoContainer.addView(logCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             }
-            if (channelAffiliateProgramsCell != null) {
-                infoContainer.addView(channelAffiliateProgramsCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            }
-            if (channelAffiliateProgramsCell != null && getMessagesController().starrefConnectAllowed && ChatObject.isChannelAndNotMegaGroup(currentChat)) {
-                channelAffiliateProgramsCell.setVisibility(View.VISIBLE);
-            }
+
+
             if (logCell != null) {
-                logCell.setNeedDivider(channelAffiliateProgramsCell != null && channelAffiliateProgramsCell.getVisibility() == View.VISIBLE);
+                logCell.setNeedDivider(false);
             }
         }
 
@@ -1312,21 +1295,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             });
 
             updatePublicLinksCount();
-
-            botAffiliateProgramCell = new TextCell(context);
-            botAffiliateProgramCell.setBackground(Theme.getSelectorDrawable(false));
-            botAffiliateProgramCell.setTextAndValueAndIcon(applyNewSpan(getString(R.string.AffiliateProgramBot)), "", R.drawable.msg_shareout, true);
-            infoContainer.addView(botAffiliateProgramCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            botAffiliateProgramCell.setOnClickListener(v -> {
-                presentFragment(new AffiliateProgramFragment(userId));
-            });
-            botAffiliateProgramCell.setDrawLoading(userInfo == null, 45, false);
-            if (userInfo != null) {
-                botAffiliateProgramCell.setValue(userInfo.starref_program == null ? getString(R.string.AffiliateProgramBotOff) : String.format(Locale.US, "%.1f%%", userInfo.starref_program.commission_permille / 10.0f), false);
-            }
-            if (!getMessagesController().starrefProgramAllowed) {
-                botAffiliateProgramCell.setVisibility(View.GONE);
-            }
 
             editIntroCell = new TextCell(context);
             editIntroCell.setBackground(Theme.getSelectorDrawable(false));
@@ -1679,9 +1647,7 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
         if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
             PhotoViewer.getInstance().checkCurrentImageVisibility();
         }
-        if (channelAffiliateProgramsCell != null && getMessagesController().starrefConnectAllowed && ChatObject.isChannelAndNotMegaGroup(currentChat)) {
-            channelAffiliateProgramsCell.setVisibility(View.VISIBLE);
-        }
+
     }
 
     private void updateCanForum() {
@@ -1757,11 +1723,6 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             Long uid = (Long) args[0];
             if (uid == userId) {
                 setInfo(getMessagesController().getUserFull(userId));
-            }
-        } else if (id == NotificationCenter.channelConnectedBotsUpdate) {
-            Long did = (Long) args[0];
-            if (did == -chatId) {
-
             }
         } else if (id == NotificationCenter.dialogDeleted) {
             long dialogId = (long) args[0];
@@ -2125,12 +2086,7 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             if (currentUser == null) {
                 currentUser = userId == 0 ? null : getMessagesController().getUser(userId);
             }
-            if (botAffiliateProgramCell != null) {
-                botAffiliateProgramCell.setDrawLoading(userInfo == null, 45, true);
-                if (userInfo != null) {
-                    botAffiliateProgramCell.setValue(userInfo.starref_program == null ? getString(R.string.AffiliateProgramBotOff) : String.format(Locale.US, "%.1f%%", userInfo.starref_program.commission_permille / 10.0f), false);
-                }
-            }
+
             if (verifyCell != null) {
                 verifyCell.setVisibility(userInfo != null && userInfo.bot_info != null && userInfo.bot_info.verifier_settings != null ? View.VISIBLE : View.GONE);
             }
@@ -2150,9 +2106,7 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
             availableReactions = info.available_reactions;
             preloadedReactions.clear();
             preloadedReactions.addAll(ReactionsUtils.startPreloadReactions(currentChat, info));
-            if (channelAffiliateProgramsCell != null && getMessagesController().starrefConnectAllowed && ChatObject.isChannelAndNotMegaGroup(currentChat)) {
-                channelAffiliateProgramsCell.setVisibility(View.VISIBLE);
-            }
+
         }
         checkWelcomeMessagesValue();
     }

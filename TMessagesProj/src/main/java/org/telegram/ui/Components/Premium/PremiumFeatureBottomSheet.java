@@ -54,7 +54,7 @@ import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.ThemePreviewActivity;
-import org.telegram.ui.bots.AffiliateProgramFragment;
+import org.telegram.ui.Components.FeatureInfoCell;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -808,17 +808,17 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
                 featuresLayout = new LinearLayout(getContext());
                 featuresLayout.setOrientation(VERTICAL);
 
-                final AffiliateProgramFragment.FeatureCell[] featureCells = new AffiliateProgramFragment.FeatureCell[3];
+                final FeatureInfoCell[] featureCells = new FeatureInfoCell[3];
 
-                featureCells[0] = new AffiliateProgramFragment.FeatureCell(getContext(), true, resourcesProvider);
+                featureCells[0] = new FeatureInfoCell(getContext(), true, resourcesProvider);
                 featureCells[0].set(R.drawable.menu_feature_unique, getString(R.string.GiftsFeature1Title), getString(R.string.GiftsFeature1Text));
                 featuresLayout.addView(featureCells[0], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-                featureCells[1] = new AffiliateProgramFragment.FeatureCell(getContext(), true, resourcesProvider);
+                featureCells[1] = new FeatureInfoCell(getContext(), true, resourcesProvider);
                 featureCells[1].set(R.drawable.menu_feature_tradable, getString(R.string.GiftsFeature2Title), getString(R.string.GiftsFeature2Text));
                 featuresLayout.addView(featureCells[1], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-                featureCells[2] = new AffiliateProgramFragment.FeatureCell(getContext(), true, resourcesProvider);
+                featureCells[2] = new FeatureInfoCell(getContext(), true, resourcesProvider);
                 featureCells[2].set(R.drawable.menu_wear, getString(R.string.GiftsFeature3Title), getString(R.string.GiftsFeature3Text));
                 featuresLayout.addView(featureCells[2], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 

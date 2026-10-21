@@ -9,7 +9,7 @@ import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.ChatEditActivity.applyNewSpan;
 import static org.telegram.ui.Stars.StarsController.findAttribute;
 import static org.telegram.ui.Stars.StarsIntroActivity.StarsTransactionView.getPlatformDrawable;
-import static org.telegram.ui.bots.AffiliateProgramFragment.percents;
+import static org.telegram.messenger.utils.CurrencyFormatter.percents;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -27,7 +27,6 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -68,7 +67,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.ChatObject;
-import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.DocumentObject;
 import org.telegram.messenger.Emoji;
@@ -104,7 +102,6 @@ import org.telegram.ui.AvatarSpan;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.SessionCell;
 import org.telegram.ui.ChatActivity;
-import org.telegram.ui.ChatUsersActivity;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
@@ -146,12 +143,9 @@ import org.telegram.ui.GradientHeaderActivity;
 import org.telegram.ui.ImageReceiverSpan;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PrivacyControlActivity;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.HintView2;
-import org.telegram.ui.bots.AffiliateProgramFragment;
-import org.telegram.ui.bots.ChannelAffiliateProgramsFragment;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -680,7 +674,6 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
     private final int BUTTON_EXPAND = -1;
     private final int BUTTON_GIFT = -2;
     private final int BUTTON_SUBSCRIPTIONS_EXPAND = -3;
-    private final int BUTTON_AFFILIATE = -4;
 
     public void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         if (getContext() == null) {
@@ -698,10 +691,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
 
         items.add(UItem.asShadow(null));
 
-        if (getMessagesController().starrefConnectAllowed) {
-            items.add(AffiliateProgramFragment.ColorfulTextCell.Factory.as(BUTTON_AFFILIATE, getThemedColor(Theme.key_color_green), R.drawable.filled_earn_stars, applyNewSpan(getString(R.string.UserAffiliateProgramRowTitle)), getString(R.string.UserAffiliateProgramRowText)));
-            items.add(UItem.asShadow(null));
-        }
+
 
         if (c.hasSubscriptions()) {
             items.add(UItem.asHeader(getString(R.string.StarMySubscriptions)));
@@ -733,12 +723,6 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
         } else if (item.id == BUTTON_SUBSCRIPTIONS_EXPAND) {
             StarsController.getInstance(currentAccount).loadSubscriptions();
             adapter.update(true);
-        } else if (item.id == BUTTON_AFFILIATE) {
-            if (MessagesController.getInstance(currentAccount).isFrozen()) {
-                AccountFrozenAlert.show(currentAccount);
-                return;
-            }
-            presentFragment(new ChannelAffiliateProgramsFragment(getUserConfig().getClientUserId()));
         } else if (item.instanceOf(StarTierView.Factory.class)) {
             if (item.object instanceof TL_stars.TL_starsTopupOption) {
                 StarsController.getInstance(currentAccount).buy(getParentActivity(), (TL_stars.TL_starsTopupOption) item.object, (success, error) -> {
@@ -4235,48 +4219,6 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
                     final long fullPrice = Math.abs(Math.round(transaction.amount.toDouble() + transaction.starref_amount.toDouble()));
                     tableView.addRow(getString(R.string.StarsTransactionFullPrice), replaceStarsWithPlain(transaction.amount, "⭐️ " + LocaleController.formatNumber(fullPrice, ','), .8f));
                 }
-            } else if (affiliate_to_bot) {
-                final long botId = dialogId;
-                final long channelId = DialogObject.getPeerDialogId(transaction.starref_peer);
-                final long referredUserId = did;
-                tableView.addRowLink(getString(R.string.StarAffiliateReason), getString(R.string.StarAffiliateReasonProgram), () -> {
-                    sheet[0].dismiss();
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        lastFragment.presentFragment(new AffiliateProgramFragment(botId));
-                    }
-                });
-                tableView.addRowUser(getString(R.string.StarAffiliate), currentAccount, channelId, () -> {
-                    sheet[0].dismiss();
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        lastFragment.presentFragment(ProfileActivity.of(channelId));
-                    }
-                });
-                tableView.addRowUser(getString(R.string.StarAffiliateReferredUser), currentAccount, referredUserId, () -> {
-                    sheet[0].dismiss();
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        lastFragment.presentFragment(ProfileActivity.of(referredUserId));
-                    }
-                });
-                tableView.addRow(getString(R.string.StarAffiliateCommission), percents(transaction.starref_commission_permille));
-            } else if (affiliate_to_channel) {
-                final long botId = did;
-                final long channelId = dialogId;
-                tableView.addRowLink(getString(R.string.StarAffiliateReason), getString(R.string.StarAffiliateReasonProgram), () -> {
-                    BotStarsController.getInstance(currentAccount).getConnectedBot(context, dialogId, botId, connectedBot -> {
-                        sheet[0].dismiss();
-                        ChannelAffiliateProgramsFragment.showShareAffiliateAlert(context, currentAccount, connectedBot, dialogId, resourcesProvider);
-                    });
-                });
-                tableView.addRowUser(getString(R.string.StarAffiliateMiniApp), currentAccount, botId, () -> {
-                    sheet[0].dismiss();
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        lastFragment.presentFragment(ProfileActivity.of(botId));
-                    }
-                });
             } else if (giveaway) {
                 tableView.addRowUser(getString(R.string.StarGiveawayPrizeFrom), currentAccount, did, () -> {
                     sheet[0].dismiss();

@@ -313,3 +313,11 @@ Deleted ChannelMonetizationLayout itself, including revenue/statistics requests,
 Removed TON/Stars currency chart formatting and duplicated currency/USD legend rows from the generic chart helpers; ordinary numeric charts retain their formatting/legend paths. Removed the Cocoon attribution/promotion and explanatory sheet from TranslateButton, which were the remaining consumers of the deleted revenue class's FeatureCell. Translation controls and provider selection remain. Pruned imports made unused by these removals, including the stale revenue import in SlideIntChooseView.
 
 Source-only inspection covers deleted class/constants/API references across Java/XML, edited class boundaries, ordinary numeric legend count/labels, adapter switch branches and whitespace. No tests, compilation, APK or phone interaction. BotStarsController still contains other Stars/revenue/affiliate consumers and StarsIntroActivity still needs cleanup; full monetization removal is incomplete and these changes remain unshipped.
+
+### Affiliate/referral programs
+
+Deleted AffiliateProgramFragment, ChannelAffiliateProgramsFragment and SuggestedAffiliateProgramsFragment. Removed their chat/bot editing rows, update listeners, Stars balance entry and transaction connect/share/settings links. Removed the referral-controller tail from BotStarsController: connected/suggested bot discovery, connection lookup, sorting/pagination, connection edits and admined bot/channel discovery used by those screens. Existing Telegram Business connected-bot code is a separate remaining subsystem.
+
+Moved the generic icon/title/description cell into Components.FeatureInfoCell for its surviving gift/feature-info callers and moved the generic permille percentage formatter into CurrencyFormatter. Neither helper has referral service behavior. Migrated all consumers before deleting the affiliate screens; their decorative helpers no longer keep affiliate connection/network code alive.
+
+Source-only inspection covers deleted screen/controller/API references, surviving helper imports/callers, edited class boundaries, remaining notification branches and whitespace. No tests, compilation, APK or phone interaction. Changes are unshipped; historical affiliate transaction descriptions/schema, other Stars operations and Business/Premium/boost code remain in scope.

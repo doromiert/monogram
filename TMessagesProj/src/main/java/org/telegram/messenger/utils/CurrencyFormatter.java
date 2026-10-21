@@ -63,4 +63,12 @@ public final class CurrencyFormatter {
             return amount + " " + currency;
         }
     }
+    public static CharSequence percents(int commission) {
+        float f = commission / 10.0f;
+        if ((int) f == f) {
+            return String.format(java.util.Locale.US, "%d%%", commission / 10);
+        } else {
+            return String.format(java.util.Locale.US, "%.1f%%", f);
+        }
+    }
 }

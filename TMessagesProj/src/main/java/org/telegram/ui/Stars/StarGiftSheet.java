@@ -21,7 +21,7 @@ import static org.telegram.ui.Stars.StarsIntroActivity.addAvailabilityRow;
 import static org.telegram.ui.Stars.StarsIntroActivity.replaceStars;
 import static org.telegram.ui.Stars.StarsIntroActivity.replaceStarsWithPlain;
 import static org.telegram.ui.Stars.StarsIntroActivity.setGiftImage;
-import static org.telegram.ui.bots.AffiliateProgramFragment.percents;
+import static org.telegram.messenger.utils.CurrencyFormatter.percents;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -151,7 +151,7 @@ import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
-import org.telegram.ui.bots.AffiliateProgramFragment;
+import org.telegram.ui.Components.FeatureInfoCell;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -184,7 +184,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
     private final LinearLayout wearLayout;
     private final TextView wearTitle;
     private final TextView wearSubtitle;
-    private final AffiliateProgramFragment.FeatureCell[] wearFeatureCells;
+    private final FeatureInfoCell[] wearFeatureCells;
 
     private boolean myProfile;
     private TL_stars.SavedStarGift savedStarGift;
@@ -421,16 +421,16 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             wearSubtitle.setText(LocaleController.getString(R.string.Gift2WearSubtitle));
             wearLayout.addView(wearSubtitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL, 20, 6, 20, 24));
 
-            wearFeatureCells = new AffiliateProgramFragment.FeatureCell[3];
-            wearFeatureCells[0] = new AffiliateProgramFragment.FeatureCell(context, resourcesProvider);
+            wearFeatureCells = new FeatureInfoCell[3];
+            wearFeatureCells[0] = new FeatureInfoCell(context, resourcesProvider);
             wearFeatureCells[0].set(R.drawable.menu_feature_unique, getString(R.string.Gift2WearFeature1Title), getString(R.string.Gift2WearFeature1Text));
             wearLayout.addView(wearFeatureCells[0], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            wearFeatureCells[1] = new AffiliateProgramFragment.FeatureCell(context, resourcesProvider);
+            wearFeatureCells[1] = new FeatureInfoCell(context, resourcesProvider);
             wearFeatureCells[1].set(R.drawable.menu_feature_cover, getString(R.string.Gift2WearFeature2Title), getString(R.string.Gift2WearFeature2Text));
             wearLayout.addView(wearFeatureCells[1], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            wearFeatureCells[2] = new AffiliateProgramFragment.FeatureCell(context, resourcesProvider);
+            wearFeatureCells[2] = new FeatureInfoCell(context, resourcesProvider);
             wearFeatureCells[2].set(R.drawable.menu_verification, getString(R.string.Gift2WearFeature3Title), getString(R.string.Gift2WearFeature3Text));
             wearLayout.addView(wearFeatureCells[2], LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }

@@ -8,7 +8,6 @@ import static org.telegram.messenger.LocaleController.formatYearMonthDay;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
-import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.widget.LinearLayout;
@@ -26,12 +25,10 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Stars.ExplainStarsSheet;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
-import org.telegram.ui.bots.AffiliateProgramFragment;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
