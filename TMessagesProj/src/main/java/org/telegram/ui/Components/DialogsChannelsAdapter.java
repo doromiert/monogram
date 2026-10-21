@@ -3,16 +3,10 @@ package org.telegram.ui.Components;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
-import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.view.View;
-import android.view.ViewGroup;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.RecyclerView;
 
-import org.checkerframework.checker.units.qual.A;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
@@ -21,17 +15,10 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.ConnectionsManager;
-import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Adapters.DialogsSearchAdapter;
-import org.telegram.ui.Cells.GraySectionCell;
-import org.telegram.ui.Cells.ProfileSearchCell;
-import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
-import org.telegram.ui.UserInfoActivity;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 
 public class DialogsChannelsAdapter extends UniversalAdapter {
@@ -43,7 +30,6 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
 
     public final ArrayList<MessageObject> messages = new ArrayList<>();
     public final ArrayList<TLRPC.Chat> searchMyChannels = new ArrayList<>();
-    public final ArrayList<TLRPC.Chat> searchRecommendedChannels = new ArrayList<>();
     public final ArrayList<TLRPC.Chat> searchChannels = new ArrayList<>();
     public boolean expandedSearchChannels;
 
@@ -89,30 +75,7 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                     items.add(UItem.asProfileCell(myChannels.get(i)).withUsername(true));
                 }
             }
-            MessagesController.ChannelRecommendations recommendations = MessagesController.getInstance(currentAccount).getCachedChannelRecommendations(0);
-            if (recommendations != null) {
-                ArrayList<TLRPC.Chat> chats = new ArrayList<>();
-                for (TLObject obj : recommendations.chats) {
-                    if (obj instanceof TLRPC.Chat) {
-                        final TLRPC.Chat chat = (TLRPC.Chat) obj;
-                        TLRPC.Chat localChat = MessagesController.getInstance(currentAccount).getChat(chat.id);
-                        if (ChatObject.isNotInChat(chat) && (localChat == null || ChatObject.isNotInChat(localChat)))
-                            chats.add(chat);
-                    }
-                }
-                if (!chats.isEmpty()) {
-                    items.add(UItem.asGraySection(getString(R.string.SearchRecommendedChannels)));
-                }
-                for (TLRPC.Chat chat : chats) {
-                    items.add(UItem.asProfileCell(chat));
-                }
-            } else {
-                items.add(UItem.asFlicker(FlickerLoadingView.GRAY_SECTION));
-                items.add(UItem.asFlicker(FlickerLoadingView.PROFILE_SEARCH_CELL));
-                items.add(UItem.asFlicker(FlickerLoadingView.PROFILE_SEARCH_CELL));
-                items.add(UItem.asFlicker(FlickerLoadingView.PROFILE_SEARCH_CELL));
-                items.add(UItem.asFlicker(FlickerLoadingView.PROFILE_SEARCH_CELL));
-            }
+
         } else {
             ArrayList<TLRPC.Chat> foundChannels = new ArrayList<>();
             for (TLRPC.Chat chat : searchMyChannels) {
@@ -120,11 +83,7 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                 if (ChatObject.isNotInChat(chat) && (localChat == null || ChatObject.isNotInChat(localChat)))
                     foundChannels.add(chat);
             }
-            for (TLRPC.Chat chat : searchRecommendedChannels) {
-                TLRPC.Chat localChat = MessagesController.getInstance(currentAccount).getChat(chat.id);
-                if (ChatObject.isNotInChat(chat) && (localChat == null || ChatObject.isNotInChat(localChat)))
-                    foundChannels.add(chat);
-            }
+
             for (TLRPC.Chat chat : searchChannels) {
                 TLRPC.Chat localChat = MessagesController.getInstance(currentAccount).getChat(chat.id);
                 if (ChatObject.isNotInChat(chat) && (localChat == null || ChatObject.isNotInChat(localChat)))
@@ -282,31 +241,7 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
                     }
                 }
 
-                searchRecommendedChannels.clear();
-                String q = this.query.toLowerCase(), qT = AndroidUtilities.translitSafe(q);
-                MessagesController.ChannelRecommendations recommendations = MessagesController.getInstance(currentAccount).getCachedChannelRecommendations(0);
-                if (recommendations != null && !recommendations.chats.isEmpty()) {
-                    for (TLObject obj : recommendations.chats) {
-                        if (obj instanceof TLRPC.Chat) {
-                            final TLRPC.Chat chat = (TLRPC.Chat) obj;
-                            if (!ChatObject.isChannelAndNotMegaGroup(chat))
-                                continue;
-                            TLRPC.Chat localChat = MessagesController.getInstance(currentAccount).getChat(chat.id);
-                            if (!(ChatObject.isNotInChat(chat) && (localChat == null || ChatObject.isNotInChat(localChat))))
-                                continue;
-                            String t = chat.title.toLowerCase(), tT = AndroidUtilities.translitSafe(t);
-                            if (
-                                t.startsWith(q) || t.contains(" " + q) ||
-                                tT.startsWith(qT) || tT.contains(" " + qT)
-                            ) {
-                                if (chatIds.contains(chat.id))
-                                    continue;
-                                chatIds.add(chat.id);
-                                searchRecommendedChannels.add(chat);
-                            }
-                        }
-                    }
-                }
+
 
                 searchChannels.clear();
                 if (response != null) {
@@ -337,7 +272,6 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
         if (TextUtils.isEmpty(this.query)) {
             messages.clear();
             searchChannels.clear();
-            searchRecommendedChannels.clear();
             searchMyChannels.clear();
             update(true);
             searchChannelsId++;
@@ -353,7 +287,6 @@ public class DialogsChannelsAdapter extends UniversalAdapter {
 
         messages.clear();
         searchChannels.clear();
-        searchRecommendedChannels.clear();
         searchMyChannels.clear();
 
         AndroidUtilities.runOnUIThread(searchMessagesRunnable, 1000);

@@ -9,7 +9,6 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -985,10 +984,6 @@ public class MediaActivity extends BaseFragment implements SharedMediaLayout.Sha
         } else if (id == SharedMediaLayout.TAB_GIF) {
             showSubtitle(i, true, true);
             subtitleTextView[i].setText(LocaleController.formatPluralString("GIFs", mediaCount[MediaDataController.MEDIA_GIF]), animated);
-        } else if (id == SharedMediaLayout.TAB_RECOMMENDED_CHANNELS) {
-            showSubtitle(i, true, true);
-            MessagesController.ChannelRecommendations rec = MessagesController.getInstance(currentAccount).getChannelRecommendations(dialogId);
-            subtitleTextView[i].setText(LocaleController.formatPluralString("Channels", rec == null ? 0 : rec.more + rec.chats.size()), animated);
         }
     }
 

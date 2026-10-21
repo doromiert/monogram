@@ -594,8 +594,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public int transcribeAudioTrialDurationMax;
     public int transcribeAudioTrialCooldownUntil;
     public int transcribeAudioTrialCurrentNumber;
-    public int recommendedChannelsLimitDefault;
-    public int recommendedChannelsLimitPremium;
     public int boostsChannelLevelMax;
     public int channelRestrictSponsoredLevelMin;
     public int channelAutotranslationLevelMin;
@@ -1658,8 +1656,6 @@ public class MessagesController extends BaseController implements NotificationCe
         transcribeAudioTrialCurrentNumber = mainPreferences.getInt("transcribeAudioTrialCurrentNumber", transcribeAudioTrialWeeklyNumber);
         transcribeAudioTrialDurationMax = mainPreferences.getInt("transcribeAudioTrialDurationMax", 300);
         transcribeAudioTrialCooldownUntil = mainPreferences.getInt("transcribeAudioTrialCooldownUntil", 0);
-        recommendedChannelsLimitDefault = mainPreferences.getInt("recommendedChannelsLimitDefault", 10);
-        recommendedChannelsLimitPremium = mainPreferences.getInt("recommendedChannelsLimitPremium", 100);
         boostsChannelLevelMax = mainPreferences.getInt("boostsChannelLevelMax", 100);
         channelRestrictSponsoredLevelMin = mainPreferences.getInt("channelRestrictSponsoredLevelMin", 30);
         channelAutotranslationLevelMin = mainPreferences.getInt("channelAutotranslationLevelMin", 3);
@@ -4029,28 +4025,8 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                     break;
                 }
-                case "recommended_channels_limit_default": {
-                    if (value.value instanceof TLRPC.TL_jsonNumber) {
-                        TLRPC.TL_jsonNumber num = (TLRPC.TL_jsonNumber) value.value;
-                        if (recommendedChannelsLimitDefault != num.value) {
-                            recommendedChannelsLimitDefault = (int) num.value;
-                            editor.putInt("recommendedChannelsLimitDefault", recommendedChannelsLimitDefault);
-                            changed = true;
-                        }
-                    }
-                    break;
-                }
-                case "recommended_channels_limit_premium": {
-                    if (value.value instanceof TLRPC.TL_jsonNumber) {
-                        TLRPC.TL_jsonNumber num = (TLRPC.TL_jsonNumber) value.value;
-                        if (recommendedChannelsLimitPremium != num.value) {
-                            recommendedChannelsLimitPremium = (int) num.value;
-                            editor.putInt("recommendedChannelsLimitPremium", recommendedChannelsLimitPremium);
-                            changed = true;
-                        }
-                    }
-                    break;
-                }
+
+
                 case "boosts_channel_level_max": {
                     if (value.value instanceof TLRPC.TL_jsonNumber) {
                         TLRPC.TL_jsonNumber num = (TLRPC.TL_jsonNumber) value.value;
@@ -23529,89 +23505,11 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
-    public static class ChannelRecommendations {
-        public boolean wasPremium;
-        public final ArrayList<TLObject> chats = new ArrayList<>();
-        public int more;
 
-        public static boolean hasRecommendations(ChannelRecommendations rec) {
-            return rec != null && !rec.chats.isEmpty();
-        }
 
-        public static boolean hasRecommendations(int currentAccount, long dialogId) {
-            return hasRecommendations(MessagesController.getInstance(currentAccount).getChannelRecommendations(dialogId));
-        }
-    }
 
-    private HashMap<Long, ChannelRecommendations> cachedChannelRecommendations;
-    public ChannelRecommendations getCachedChannelRecommendations(long dialogId) {
-        if (cachedChannelRecommendations == null) {
-            return null;
-        }
-        return cachedChannelRecommendations.get(dialogId);
-    }
 
-    public ChannelRecommendations getChannelRecommendations(long dialogId) {
-        if (cachedChannelRecommendations == null) {
-            cachedChannelRecommendations = new HashMap<>();
-        }
-        final boolean isPremium = getUserConfig().isPremium();
-        ChannelRecommendations rec = null;
-        if (cachedChannelRecommendations.containsKey(dialogId)) {
-            rec = cachedChannelRecommendations.get(dialogId);
-            if (rec == null || rec.wasPremium == isPremium) {
-                return rec;
-            }
-        }
-        TLObject req;
-        if (dialogId > 0) {
-            TL_bots.getBotRecommendations r = new TL_bots.getBotRecommendations();
-            r.bot = getInputUser(dialogId);
-            if (r.bot == null) return null;
-            req = r;
-        } else {
-            TLRPC.TL_channels_getChannelRecommendations r = new TLRPC.TL_channels_getChannelRecommendations();
-            if (dialogId != 0) {
-                r.flags |= 1;
-                r.channel = getInputChannel(-dialogId);
-                if (r.channel == null) return null;
-            }
-            req = r;
-        }
-        cachedChannelRecommendations.put(dialogId, null);
-        getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-            if (res instanceof TLRPC.messages_Chats) {
-                ArrayList<TLRPC.Chat> chats = ((TLRPC.messages_Chats) res).chats;
-                putChats(chats, false);
 
-                ChannelRecommendations newrec = new ChannelRecommendations();
-                newrec.wasPremium = isPremium;
-                newrec.chats.addAll(chats);
-                if (res instanceof TLRPC.TL_messages_chatsSlice) {
-                    newrec.more = Math.max(0, ((TLRPC.TL_messages_chatsSlice) res).count - chats.size());
-                } else if (!getUserConfig().isPremium() && BuildVars.DEBUG_PRIVATE_VERSION) {
-                    newrec.more = 90;
-                }
-                cachedChannelRecommendations.put(dialogId, newrec);
-                getNotificationCenter().postNotificationName(NotificationCenter.channelRecommendationsLoaded, dialogId);
-            } else if (res instanceof TLRPC.Users) {
-                ArrayList<TLRPC.User> users = ((TLRPC.Users) res).users;
-                putUsers(users, false);
-
-                ChannelRecommendations newrec = new ChannelRecommendations();
-                newrec.wasPremium = isPremium;
-                newrec.chats.addAll(users);
-                if (res instanceof TLRPC.TL_usersSlice) {
-                    newrec.more = Math.max(0, ((TLRPC.TL_usersSlice) res).count - users.size());
-                } else if (!getUserConfig().isPremium() && BuildVars.DEBUG_PRIVATE_VERSION) {
-                    newrec.more = 90;
-                }
-                cachedChannelRecommendations.put(dialogId, newrec);
-                getNotificationCenter().postNotificationName(NotificationCenter.channelRecommendationsLoaded, dialogId);
-            }
-        }));
-        return rec;
-    }
 
     private HashSet<Long> loadingReactionTags;
     private LongSparseArray<TLRPC.TL_messages_savedReactionsTags> reactionTags;

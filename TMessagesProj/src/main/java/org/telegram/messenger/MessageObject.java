@@ -162,7 +162,6 @@ public class MessageObject {
     public static final int TYPE_STORY_MENTION = 24;
     public static final int TYPE_GIFT_PREMIUM_CHANNEL = 25;
     public static final int TYPE_GIVEAWAY = 26;
-    public static final int TYPE_JOINED_CHANNEL = 27; // recommendations list
     public static final int TYPE_GIVEAWAY_RESULTS = 28;
     public static final int TYPE_PAID_MEDIA = 29; // messageMediaPaidMedia with stars
     public static final int TYPE_GIFT_STARS = 30;
@@ -282,8 +281,6 @@ public class MessageObject {
     public int overrideLinkColor = -1;
     public long overrideLinkEmoji = -1;
     public TLRPC.TL_peerColorCollectible overrideLinkPeerColor;
-    private boolean channelJoined;
-    public boolean channelJoinedExpanded;
 
     public TLRPC.TL_forumTopic replyToForumTopic; // used only for reply message in view all messages
 
@@ -4588,7 +4585,6 @@ public class MessageObject {
         TLObject fromObject = fromUser != null ? fromUser : fromChat;
         drawServiceWithDefaultTypeface = false;
 
-        channelJoined = false;
         if (messageOwner instanceof TLRPC.TL_messageService) {
             if (messageOwner.action != null) {
                 if (messageOwner.action instanceof TLRPC.TL_messageActionNewCreatorPending) {
@@ -4858,7 +4854,6 @@ public class MessageObject {
                         }
                         if (messageOwner.from_id != null && singleUserId == messageOwner.from_id.user_id) {
                             if (ChatObject.isChannel(chat) && !chat.megagroup) {
-                                channelJoined = true;
                                 messageText = getString(R.string.ChannelJoined);
                             } else {
                                 if (messageOwner.peer_id.channel_id != 0) {
@@ -6595,10 +6590,6 @@ public class MessageObject {
         isRoundVideoCached = 0;
         if (isSponsored()) {
             type = TYPE_TEXT;
-        } else if (channelJoined) {
-            contentType = 0;
-            type = TYPE_JOINED_CHANNEL;
-            channelJoinedExpanded = MessagesController.getInstance(currentAccount).getMainSettings().getBoolean("c" + getDialogId() + "_rec", true);
         } else if (messageOwner instanceof TLRPC.TL_message || messageOwner instanceof TLRPC.TL_messageForwarded_old2) {
             if (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaUnsupported) {
                 contentType = 10;
@@ -8378,9 +8369,7 @@ public class MessageObject {
             }
             return true;
         }
-        if (type == TYPE_JOINED_CHANNEL) {
-            return false;
-        } else if (isSponsored()) {
+        if (isSponsored()) {
             return false;
         } else if (hasCode) {
             return false;
@@ -9576,9 +9565,7 @@ public class MessageObject {
     }
 
     public boolean needDrawAvatar() {
-        if (type == TYPE_JOINED_CHANNEL) {
-            return false;
-        }
+
         if (isRepostPreview) {
             return true;
         }
@@ -12910,15 +12897,9 @@ public class MessageObject {
         }
     }
 
-    public void toggleChannelRecommendations() {
-        expandChannelRecommendations(!channelJoinedExpanded);
-    }
 
-    public void expandChannelRecommendations(boolean expand) {
-        MessagesController.getInstance(currentAccount).getMainSettings().edit()
-                .putBoolean("c" + getDialogId() + "_rec", channelJoinedExpanded = expand)
-                .apply();
-    }
+
+
 
     public static int findQuoteStart(String text, String quote, int quote_offset) {
         if (text == null || quote == null) {

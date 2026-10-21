@@ -446,7 +446,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private boolean needSendMessage;
     private boolean hasVoiceChatItem;
     private boolean isTopic;
-    private boolean openSimilar;
     public boolean myProfile;
     public boolean openGifts;
     public int openGiftsCollection;
@@ -2082,7 +2081,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         chatId = arguments.getLong("chat_id", 0);
         topicId = arguments.getLong("topic_id", 0);
         saved = arguments.getBoolean("saved", false);
-        openSimilar = arguments.getBoolean("similar", false);
         isTopic = topicId != 0;
         banFromGroup = arguments.getLong("ban_chat_id", 0);
         reportReactionMessageId = arguments.getInt("report_reaction_message_id", 0);
@@ -2229,7 +2227,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         getNotificationCenter().addObserver(this, NotificationCenter.botStarsUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.botStarsTransactionsLoaded);
         getNotificationCenter().addObserver(this, NotificationCenter.dialogDeleted);
-        getNotificationCenter().addObserver(this, NotificationCenter.channelRecommendationsLoaded);
         getNotificationCenter().addObserver(this, NotificationCenter.starUserGiftsLoaded);
         getNotificationCenter().addObserver(this, NotificationCenter.profileMusicUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.updatedChatRanks);
@@ -2368,7 +2365,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         getNotificationCenter().removeObserver(this, NotificationCenter.botStarsUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.botStarsTransactionsLoaded);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogDeleted);
-        getNotificationCenter().removeObserver(this, NotificationCenter.channelRecommendationsLoaded);
         getNotificationCenter().removeObserver(this, NotificationCenter.starUserGiftsLoaded);
         getNotificationCenter().removeObserver(this, NotificationCenter.profileMusicUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.updatedChatRanks);
@@ -3194,7 +3190,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         top = view.getTop();
                     }
                     boolean layout = false;
-                    if ((actionBar.isSearchFieldVisible() || openSimilar) && sharedMediaRow >= 0) {
+                    if (actionBar.isSearchFieldVisible() && sharedMediaRow >= 0) {
                         layoutManager.scrollToPositionWithOffset(sharedMediaRow, -paddingTop);
                         layout = true;
                     } else if (invalidateScroll || currentPaddingTop != paddingTop) {
@@ -3648,8 +3644,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         } else if (openGifts && (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0)) {
             initialTab = SharedMediaLayout.TAB_GIFTS;
             openedGifts = true;
-        } else if (openSimilar) {
-            initialTab = SharedMediaLayout.TAB_RECOMMENDED_CHANNELS;
         } else if (users != null) {
             initialTab = SharedMediaLayout.TAB_GROUPUSERS;
         }
@@ -4965,7 +4959,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
         });
 
-        if (openSimilar || openGifts || openCommonChats) {
+        if (openGifts || openCommonChats) {
             updateRowsIds();
             scrollToSharedMedia();
             savedScrollToSharedMedia = true;
@@ -7867,9 +7861,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             mediaCounterTextView.setText(sharedMediaLayout.getBotPreviewsSubtitle(true));
         } else if (id == SharedMediaLayout.TAB_ARCHIVED_STORIES) {
             mediaCounterTextView.setText(LocaleController.formatPluralString("ProfileStoriesArchiveCount", sharedMediaLayout.getStoriesCount(id)));
-        } else if (id == SharedMediaLayout.TAB_RECOMMENDED_CHANNELS) {
-            final MessagesController.ChannelRecommendations rec = MessagesController.getInstance(currentAccount).getChannelRecommendations(getDialogId());
-            mediaCounterTextView.setText(LocaleController.formatPluralString(isBot ? "Bots" : "Channels", rec == null ? 0 : rec.chats.size() + rec.more));
         } else if (id == SharedMediaLayout.TAB_SAVED_MESSAGES) {
             int messagesCount = getMessagesController().getSavedMessagesController().getMessagesCount(getDialogId());
             mediaCounterTextView.setText(LocaleController.formatPluralString("SavedMessagesCount", Math.max(1, messagesCount)));
@@ -9097,15 +9088,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     removeSelfFromStack();
                 }
             }
-        } else if (id == NotificationCenter.channelRecommendationsLoaded) {
-            final long dialogId = (long) args[0];
-            if (sharedMediaRow < 0 && dialogId == getDialogId()) {
-                updateRowsIds();
-                updateSelectedMediaTabText();
-                if (listAdapter != null) {
-                    listAdapter.notifyDataSetChanged();
-                }
-            }
         } else if (id == NotificationCenter.starUserGiftsLoaded) {
             final long dialogId = (long) args[0];
             if (dialogId == getDialogId() && !isSettings()) {
@@ -10308,13 +10290,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (!hasMedia && chatInfo != null) {
             hasMedia = chatInfo.stories_pinned_available;
         }
-        if (!hasMedia) {
-            if (chatId != 0 && MessagesController.ChannelRecommendations.hasRecommendations(currentAccount, -chatId)) {
-                hasMedia = true;
-            } else if (isBot && userId != 0 && MessagesController.ChannelRecommendations.hasRecommendations(currentAccount, userId)) {
-                hasMedia = true;
-            }
-        }
+
 
         if (userId != 0) {
             TLRPC.User user = getMessagesController().getUser(userId);

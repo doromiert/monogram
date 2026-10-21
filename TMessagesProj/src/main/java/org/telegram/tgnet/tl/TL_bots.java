@@ -1097,22 +1097,7 @@ public class TL_bots {
 
     }
 
-    public static class getBotRecommendations extends TLObject {
-        public static final int constructor = 0xa1b70815;
 
-        public TLRPC.InputUser bot;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Users.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            bot.serializeToStream(stream);
-        }
-    }
 
     public static class exportedBotToken extends TLObject {
         public static final int constructor = 0x3c60b621;

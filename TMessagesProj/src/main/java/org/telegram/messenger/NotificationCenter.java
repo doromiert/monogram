@@ -235,7 +235,6 @@ public class NotificationCenter {
     public static final int storiesSendAsUpdate = totalEvents++;
     public static final int unconfirmedAuthUpdate = totalEvents++;
     public static final int dialogPhotosUpdate = totalEvents++;
-    public static final int channelRecommendationsLoaded = totalEvents++;
     public static final int savedMessagesDialogsUpdate = totalEvents++;
     public static final int savedReactionTagsUpdate = totalEvents++;
     public static final int userIsPremiumBlockedUpadted = totalEvents++;

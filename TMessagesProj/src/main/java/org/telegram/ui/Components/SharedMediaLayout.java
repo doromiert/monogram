@@ -29,12 +29,10 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.text.Layout;
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.StaticLayout;
@@ -107,7 +105,6 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
-import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -150,7 +147,6 @@ import org.telegram.ui.Gifts.ProfileGiftsContainer;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.LocationActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.ProfileActivity2;
 import org.telegram.ui.ProfileStoriesCollectionTabs;
@@ -161,7 +157,6 @@ import org.telegram.ui.Stories.StoriesListPlaceProvider;
 import org.telegram.ui.Stories.UserListPoller;
 import org.telegram.ui.Stories.ViewsForPeerStoriesRequester;
 import org.telegram.ui.Stories.bots.BotPreviewsEditContainer;
-import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.PreviewView;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
 import org.telegram.ui.ThemeActivity;
@@ -186,7 +181,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     public static final int TAB_GROUPUSERS = 7;
     public static final int TAB_STORIES = 8;
     public static final int TAB_ARCHIVED_STORIES = 9;
-    public static final int TAB_RECOMMENDED_CHANNELS = 10;
     public static final int TAB_SAVED_DIALOGS = 11;
     public static final int TAB_SAVED_MESSAGES = 12;
     public static final int TAB_BOT_PREVIEWS = 13;
@@ -659,7 +653,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     private PollAdapter pollAdapter;
     private GifAdapter gifAdapter;
     private CommonGroupsAdapter commonGroupsAdapter;
-    private ChannelRecommendationsAdapter channelRecommendationsAdapter;
     private SavedDialogsAdapter savedDialogsAdapter;
     private SavedMessagesSearchAdapter savedMessagesSearchAdapter;
     private ChatActivityContainer savedMessagesContainer;
@@ -1607,7 +1600,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         } else {
             main_tab = null;
         }
-        if (initialTab == TAB_GIFTS || initialTab == TAB_RECOMMENDED_CHANNELS || initialTab == TAB_SAVED_DIALOGS || initialTab == TAB_COMMON_GROUPS) {
+        if (initialTab == TAB_GIFTS || initialTab == TAB_SAVED_DIALOGS || initialTab == TAB_COMMON_GROUPS) {
             this.initialTab = initialTab;
         } else if (user != null && user.bot && user.bot_has_main_app && user.bot_can_edit) {
             this.initialTab = TAB_BOT_PREVIEWS;
@@ -1675,7 +1668,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             .add(NotificationCenter.messagePlayingDidStart)
             .add(NotificationCenter.storiesListUpdated)
             .add(NotificationCenter.storiesUpdated)
-            .add(NotificationCenter.channelRecommendationsLoaded)
             .add(NotificationCenter.savedMessagesDialogsUpdate)
             .add(NotificationCenter.dialogsNeedReload)
             .add(NotificationCenter.starUserGiftsLoaded)
@@ -2275,7 +2267,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         linksSearchAdapter = new MediaSearchAdapter(context, 3);
         groupUsersSearchAdapter = new GroupUsersSearchAdapter(context);
         commonGroupsAdapter = new CommonGroupsAdapter(context);
-        channelRecommendationsAdapter = new ChannelRecommendationsAdapter(context);
         savedDialogsAdapter = new SavedDialogsAdapter(context);
         savedMessagesSearchAdapter = new SavedMessagesSearchAdapter(context);
         if (!isStoriesView() && !includeSavedDialogs() && topicId == 0) {
@@ -3002,13 +2993,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     }
                 }
 
-                @Override
-                public Integer getSelectorColor(int position) {
-                    if (getAdapter() == channelRecommendationsAdapter && channelRecommendationsAdapter.more > 0 && position == channelRecommendationsAdapter.getItemCount() - 1) {
-                        return 0;
-                    }
-                    return super.getSelectorColor(position);
-                }
+
 
                 @Override
                 public void onScrolled(int dx, int dy) {
@@ -3289,19 +3274,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     if (messageObject != null) {
                         onItemClick(position, view, messageObject, 0, mediaPage.selectedType);
                     }
-                } else if (mediaPage.selectedType == TAB_RECOMMENDED_CHANNELS) {
-                    if ((view instanceof ProfileSearchCell || y < dp(60)) && position >= 0 && position < channelRecommendationsAdapter.chats.size()) {
-                        Bundle args = new Bundle();
-                        TLObject obj = channelRecommendationsAdapter.chats.get(position);
-                        if (obj instanceof TLRPC.Chat) {
-                            args.putLong("chat_id", ((TLRPC.Chat) obj).id);
-                        } else if (obj instanceof TLRPC.User) {
-                            args.putLong("user_id", ((TLRPC.User) obj).id);
-                        } else {
-                            return;
-                        }
-                        profileActivity.presentFragment(new ChatActivity(args));
-                    }
                 } else if (mediaPage.selectedType == TAB_SAVED_DIALOGS) {
                     if (mediaPage.listView.getAdapter() == savedMessagesSearchAdapter) {
                         if (position < 0) {
@@ -3532,9 +3504,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         if (messageObject != null) {
                             return onItemLongClick(messageObject, view, mediaPage.selectedType);
                         }
-                    } else if (mediaPage.selectedType == TAB_RECOMMENDED_CHANNELS) {
-                        channelRecommendationsAdapter.openPreview(position);
-                        return true;
                     } else if (mediaPage.selectedType == TAB_SAVED_DIALOGS) {
                         savedDialogsAdapter.select(view);
                         return true;
@@ -4789,7 +4758,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             if (lastVisiblePosition + 1 >= profileActivity.getMessagesController().getSavedMessagesController().getLoadedCount()) {
                 profileActivity.getMessagesController().getSavedMessagesController().loadDialogs(false);
             }
-        } else if (mediaPage.selectedType != TAB_RECOMMENDED_CHANNELS && mediaPage.selectedType != TAB_SAVED_MESSAGES && mediaPage.selectedType != TAB_BOT_PREVIEWS && mediaPage.selectedType != TAB_GIFTS) {
+        } else if (mediaPage.selectedType != TAB_SAVED_MESSAGES && mediaPage.selectedType != TAB_BOT_PREVIEWS && mediaPage.selectedType != TAB_GIFTS) {
             final int threshold;
             if (mediaPage.selectedType == 0) {
                 threshold = 3;
@@ -4913,7 +4882,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             type != TAB_GIF &&
             type != TAB_COMMON_GROUPS &&
             type != TAB_SAVED_DIALOGS &&
-            type != TAB_RECOMMENDED_CHANNELS &&
             type != TAB_BOT_PREVIEWS &&
             type != TAB_GIFTS
         );
@@ -6448,13 +6416,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     }
                 }
             }
-        } else if (id == NotificationCenter.channelRecommendationsLoaded) {
-            long dialogId = (long) args[0];
-            if (dialogId == dialog_id) {
-                channelRecommendationsAdapter.update(true);
-                updateTabs(true);
-                checkCurrentTabValid();
-            }
         } else if (id == NotificationCenter.savedMessagesDialogsUpdate) {
             if (dialog_id == 0 || dialog_id == profileActivity.getUserConfig().getClientUserId()) {
                 savedDialogsAdapter.update(true);
@@ -6819,7 +6780,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         if (!delegate.isFragmentOpened()) {
             animated = false;
         }
-        boolean hasRecommendations = false;
         boolean hasSavedDialogs = false;
         boolean hasSavedMessages = savedMessagesContainer != null && sharedMediaPreloader != null && sharedMediaPreloader.hasSavedMessages;
         final TLRPC.User user = dialog_id <= 0 || profileActivity == null ? null : profileActivity.getMessagesController().getUser(dialog_id);
@@ -6880,10 +6840,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             if ((hasMedia[6] <= 0) == scrollSlidingTextTabStrip.hasTab(TAB_COMMON_GROUPS)) {
                 changed++;
             }
-            hasRecommendations = !channelRecommendationsAdapter.chats.isEmpty();
-            if (hasRecommendations != scrollSlidingTextTabStrip.hasTab(TAB_RECOMMENDED_CHANNELS)) {
-                changed++;
-            }
+
             hasSavedDialogs = includeSavedDialogs() && !profileActivity.getMessagesController().getSavedMessagesController().unsupported && profileActivity.getMessagesController().getSavedMessagesController().hasDialogs();
             if (hasSavedDialogs != scrollSlidingTextTabStrip.hasTab(TAB_SAVED_DIALOGS)) {
                 changed++;
@@ -7002,9 +6959,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 if (hasMedia[6] > 0) {
                     tabs.add(new Pair(TAB_COMMON_GROUPS, getString(R.string.SharedGroupsTab2)));
                 }
-                if (hasRecommendations) {
-                    tabs.add(new Pair(TAB_RECOMMENDED_CHANNELS, getString(dialog_id > 0 ? R.string.SimilarBotsTab : R.string.SimilarChannelsTab)));
-                }
+
             }
             if (scrollSlidingTextTabStrip.isReordering()) {
                 final Utilities.CallbackReturn<Integer, Boolean> has = id -> {
@@ -7303,12 +7258,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     storiesReorder.attachToRecyclerView(mediaPages[a].listView);
                 }
                 spanCount = mediaColumnsCount[1];
-            } else if (mediaPages[a].selectedType == TAB_RECOMMENDED_CHANNELS) {
-                sections = true;
-                if (currentAdapter != channelRecommendationsAdapter) {
-                    recycleAdapter(currentAdapter);
-                    mediaPages[a].listView.setAdapter(channelRecommendationsAdapter);
-                }
             } else if (mediaPages[a].selectedType == TAB_SAVED_DIALOGS) {
                 sections = true;
                 if (currentAdapter != savedDialogsAdapter) {
@@ -7391,7 +7340,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             if (giftsContainer != null && mediaPages[a].selectedType != TAB_GIFTS && giftsContainer.getParent() == mediaPages[a]) {
                 mediaPages[a].removeView(giftsContainer);
             }
-            if (mediaPages[a].selectedType == TAB_PHOTOVIDEO || mediaPages[a].selectedType == TAB_SAVED_DIALOGS || isAnyStoryPageType(mediaPages[a].selectedType)|| mediaPages[a].selectedType == TAB_VOICE || mediaPages[a].selectedType == TAB_GIF || mediaPages[a].selectedType == TAB_COMMON_GROUPS || mediaPages[a].selectedType == TAB_GROUPUSERS && !delegate.canSearchMembers() || mediaPages[a].selectedType == TAB_RECOMMENDED_CHANNELS || mediaPages[a].selectedType == TAB_BOT_PREVIEWS || mediaPages[a].selectedType == TAB_GIFTS) {
+            if (mediaPages[a].selectedType == TAB_PHOTOVIDEO || mediaPages[a].selectedType == TAB_SAVED_DIALOGS || isAnyStoryPageType(mediaPages[a].selectedType)|| mediaPages[a].selectedType == TAB_VOICE || mediaPages[a].selectedType == TAB_GIF || mediaPages[a].selectedType == TAB_COMMON_GROUPS || mediaPages[a].selectedType == TAB_GROUPUSERS && !delegate.canSearchMembers() || mediaPages[a].selectedType == TAB_BOT_PREVIEWS || mediaPages[a].selectedType == TAB_GIFTS) {
                 if (animated) {
                     searchItemState = 2;
                 } else {
@@ -7441,8 +7390,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     mediaPages[a].emptyView.showProgress(storiesList != null && (storiesList.isLoading() || hasInternet() && storiesList.getCount() > 0), animated);
                     fastScrollVisible = storiesList != null && storiesList.getCount() > 0 && !isSearchingStories();
                 }
-            } else if (mediaPages[a].selectedType == TAB_RECOMMENDED_CHANNELS) {
-
             } else if (mediaPages[a].selectedType == TAB_SAVED_DIALOGS) {
 
             } else if (mediaPages[a].selectedType == TAB_SAVED_MESSAGES) {
@@ -10097,227 +10044,9 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         }
     }
 
-    private class ChannelRecommendationsAdapter extends RecyclerListView.SelectionAdapter {
 
-        private final Context mContext;
-        private final ArrayList<TLObject> chats = new ArrayList<>();
-        private int more;
 
-        public ChannelRecommendationsAdapter(Context context) {
-            mContext = context;
-            update(false);
-        }
 
-        public void update(boolean notify) {
-            if (profileActivity == null) {
-                return;
-            }
-            if (DialogObject.isChatDialog(dialog_id)) {
-                TLRPC.Chat thisChat = MessagesController.getInstance(profileActivity.getCurrentAccount()).getChat(-dialog_id);
-                if (thisChat == null || !ChatObject.isChannelAndNotMegaGroup(thisChat)) {
-                    return;
-                }
-            } else {
-                TLRPC.User thisUser = MessagesController.getInstance(profileActivity.getCurrentAccount()).getUser(dialog_id);
-                if (thisUser == null) {
-                    return;
-                }
-            }
-            final MessagesController.ChannelRecommendations rec = MessagesController.getInstance(profileActivity.getCurrentAccount()).getChannelRecommendations(dialog_id);
-            chats.clear();
-            if (rec != null) {
-                for (int i = 0; i < rec.chats.size(); ++i) {
-                    TLObject obj = rec.chats.get(i);
-                    if (obj instanceof TLRPC.Chat && ChatObject.isNotInChat((TLRPC.Chat) obj)) {
-                        chats.add(obj);
-                    } else {
-                        chats.add(obj);
-                    }
-                }
-            }
-            more = chats.isEmpty() || UserConfig.getInstance(profileActivity.getCurrentAccount()).isPremium() ? 0 : rec.more;
-            if (notify) {
-                notifyDataSetChanged();
-            }
-        }
-
-        @Override
-        public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return true;
-        }
-
-        @Override
-        public int getItemCount() {
-            return chats.size();
-        }
-
-        @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            View view;
-            if (viewType == VIEW_TYPE_SIMILAR_CHANNEL_BLOCK) {
-                MoreRecommendationsCell cell = new MoreRecommendationsCell(profileActivity == null ? UserConfig.selectedAccount : profileActivity.getCurrentAccount(), mContext, dialog_id > 0, resourcesProvider, () -> {
-                    if (profileActivity != null) {
-                        profileActivity.presentFragment(new PremiumPreviewFragment("similar_channels"));
-                    }
-                });
-                view = cell;
-            } else {
-                view = new ProfileSearchCell(mContext, resourcesProvider);
-            }
-            view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            return new RecyclerListView.Holder(view);
-        }
-
-        public void openPreview(int position) {
-            if (position < 0 || position >= chats.size()) return;
-            final TLObject obj = chats.get(position);
-
-            Bundle args = new Bundle();
-            if (obj instanceof TLRPC.Chat) {
-                args.putLong("chat_id", ((TLRPC.Chat) obj).id);
-            } else if (obj instanceof TLRPC.User) {
-                args.putLong("user_id", ((TLRPC.User) obj).id);
-            } else {
-                return;
-            }
-            final BaseFragment fragment = new ChatActivity(args);
-            if (profileActivity instanceof ProfileActivity) {
-                ((ProfileActivity) profileActivity).prepareBlurBitmap();
-            }
-
-            ActionBarPopupWindow.ActionBarPopupWindowLayout previewMenu = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getContext(), R.drawable.popup_fixed_alert, resourcesProvider, ActionBarPopupWindow.ActionBarPopupWindowLayout.FLAG_SHOWN_FROM_BOTTOM);
-            previewMenu.setBackgroundColor(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground));
-
-            if (obj instanceof TLRPC.Chat) {
-                final TLRPC.Chat chat = (TLRPC.Chat) obj;
-
-                ActionBarMenuSubItem openChannel = new ActionBarMenuSubItem(getContext(), false, false);
-                openChannel.setTextAndIcon(getString(R.string.OpenChannel2), R.drawable.msg_channel);
-                openChannel.setMinimumWidth(160);
-                openChannel.setOnClickListener(view -> {
-                    if (profileActivity != null && profileActivity.getParentLayout() != null) {
-                        profileActivity.getParentLayout().expandPreviewFragment();
-                    }
-                });
-                previewMenu.addView(openChannel);
-
-                ActionBarMenuSubItem joinChannel = new ActionBarMenuSubItem(getContext(), false, false);
-                joinChannel.setTextAndIcon(getString(R.string.ProfileJoinChannel), R.drawable.msg_addbot);
-                joinChannel.setMinimumWidth(160);
-                joinChannel.setOnClickListener(view -> {
-                    profileActivity.finishPreviewFragment();
-                    chat.left = false;
-                    update(false);
-                    notifyItemRemoved(position);
-                    if (chats.isEmpty()) {
-                        updateTabs(true);
-                        checkCurrentTabValid();
-                    }
-                    profileActivity.getNotificationCenter().postNotificationName(NotificationCenter.channelRecommendationsLoaded, -dialog_id);
-                    profileActivity.getMessagesController().addUserToChat(chat.id, profileActivity.getUserConfig().getCurrentUser(), 0, null, profileActivity, () -> {
-                        BulletinFactory.of(profileActivity).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.YouJoinedChannel, chat == null ? "" : chat.title)).show(true);
-                    });
-                });
-                previewMenu.addView(joinChannel);
-                profileActivity.presentFragmentAsPreviewWithMenu(fragment, previewMenu);
-            } else if (obj instanceof TLRPC.User) {
-                final TLRPC.User user = (TLRPC.User) obj;
-
-                profileActivity.presentFragmentAsPreview(fragment);
-            }
-        }
-
-        @Override
-        public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            ProfileSearchCell cell = null;
-            if (holder.getItemViewType() == VIEW_TYPE_SIMILAR_CHANNEL) {
-                if (!(holder.itemView instanceof ProfileSearchCell)) return;
-                cell = (ProfileSearchCell) holder.itemView;
-            } else if (holder.getItemViewType() == VIEW_TYPE_SIMILAR_CHANNEL_BLOCK) {
-                if (!(holder.itemView instanceof MoreRecommendationsCell)) return;
-                cell = ((MoreRecommendationsCell) holder.itemView).channelCell;
-            }
-            if (cell != null) {
-                cell.setData(chats.get(position), null, null, null, false, false);
-                cell.useSeparator = position != chats.size() - 1;
-            }
-        }
-
-        @Override
-        public int getItemViewType(int position) {
-            if (more > 0 && position == getItemCount() - 1) {
-                return VIEW_TYPE_SIMILAR_CHANNEL_BLOCK;
-            }
-            return VIEW_TYPE_SIMILAR_CHANNEL;
-        }
-    }
-
-    private static class MoreRecommendationsCell extends FrameLayout {
-
-        private final int currentAccount;
-        private final Theme.ResourcesProvider resourcesProvider;
-
-        public final ProfileSearchCell channelCell;
-
-        private final View gradientView;
-        private final ButtonWithCounterView button;
-        private final LinkSpanDrawable.LinksTextView textView;
-
-        public MoreRecommendationsCell(int currentAccount, Context context, boolean bots, Theme.ResourcesProvider resourcesProvider, Runnable onPremiumClick) {
-            super(context);
-
-            this.currentAccount = currentAccount;
-            this.resourcesProvider = resourcesProvider;
-
-            channelCell = new ProfileSearchCell(context, resourcesProvider);
-            channelCell.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider), Theme.RIPPLE_MASK_ALL));
-            addView(channelCell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-            gradientView = new View(context);
-            gradientView.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[] {
-                Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider), .4f),
-                Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider)
-            }));
-            addView(gradientView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 60));
-
-            button = new ButtonWithCounterView(context, resourcesProvider);
-            final SpannableStringBuilder buttonText = new SpannableStringBuilder();
-            buttonText.append(getString(bots ? R.string.MoreSimilarBotsButton : R.string.MoreSimilarButton));
-            buttonText.append(" ");
-            SpannableString lock = new SpannableString("l");
-            lock.setSpan(new ColoredImageSpan(R.drawable.msg_mini_lock2), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            buttonText.append(lock);
-            button.setText(buttonText, false);
-            addView(button, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP, 14, 38, 14, 0));
-            button.setOnClickListener(v -> {
-                if (onPremiumClick != null) {
-                    onPremiumClick.run();
-                }
-            });
-
-            textView = new LinkSpanDrawable.LinksTextView(context, resourcesProvider);
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-            textView.setTextAlignment(TEXT_ALIGNMENT_CENTER);
-            textView.setGravity(Gravity.CENTER);
-            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            textView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
-            textView.setLineSpacing(dp(3), 1f);
-            final SpannableStringBuilder text = AndroidUtilities.premiumText(getString(bots ? R.string.MoreSimilarBotsText : R.string.MoreSimilarText), () -> {
-                if (onPremiumClick != null) {
-                    onPremiumClick.run();
-                }
-            });
-            SpannableString count = new SpannableString("" + MessagesController.getInstance(currentAccount).recommendedChannelsLimitPremium);
-            count.setSpan(new TypefaceSpan(AndroidUtilities.bold()), 0, count.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            textView.setText(AndroidUtilities.replaceCharSequence("%s", text, count));
-            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 24, 96, 24, 12));
-        }
-
-        @Override
-        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(145), MeasureSpec.EXACTLY));
-        }
-    }
 
     private class CommonGroupsAdapter extends RecyclerListView.SelectionAdapter {
 

@@ -66836,25 +66836,7 @@ public class TLRPC {
         }
     }
 
-    public static class TL_channels_getChannelRecommendations extends TLObject {
-        public static final int constructor = 0x25a71742;
 
-        public int flags;
-        public InputChannel channel;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return messages_Chats.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            if (hasFlag(flags, FLAG_0)) {
-                channel.serializeToStream(stream);
-            }
-        }
-    }
 
     public static class TL_channels_toggleViewForumAsMessages extends TLObject {
         public static final int constructor = 0x9738bb15;

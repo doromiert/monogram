@@ -10,7 +10,6 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.lerp;
-import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
@@ -291,7 +290,6 @@ import org.telegram.ui.Components.spoilers.SpoilerEffect;
 import org.telegram.ui.Components.voip.CellFlickerDrawable;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Delegates.ChatActivityMemberRequestsDelegate;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.ui.Stories.StoriesListPlaceProvider;
@@ -1693,7 +1691,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 processRowSelect(view, outside, x, y);
             }
-            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null && ((ChatMessageCell) view).getMessageObject().type != MessageObject.TYPE_JOINED_CHANNEL)) {
+            if (view instanceof ChatMessageCell && (((ChatMessageCell) view).getMessageObject() != null)) {
                 startMultiselect(position);
                 result = true;
             }
@@ -1848,19 +1846,7 @@ public class ChatActivity extends BaseFragment implements
                 processRowSelect(view, outside, x, y);
                 return;
             }
-            if (view instanceof ChatMessageCell) {
-                MessageObject msg = ((ChatMessageCell) view).getMessageObject();
-                if (msg != null && msg.type == MessageObject.TYPE_JOINED_CHANNEL) {
-                    msg.toggleChannelRecommendations();
-                    msg.forceUpdate = true;
-                    ((ChatMessageCell) view).forceResetMessageObject();
-                    view.requestLayout();
-                    if (position >= 0) {
-                        chatAdapter.notifyItemChanged(position);
-                    }
-                    return;
-                }
-            }
+
             createMenu(view, true, false, x, y, false);
         }
 
@@ -1902,7 +1888,7 @@ public class ChatActivity extends BaseFragment implements
                 performDoubleTapMessageAction(messageObject,action);
                 return;
             }
-            if (messageObject.isSecret() || !messageObject.canSetReaction() || messageObject.isExpiredStory() || messageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
+            if (messageObject.isSecret() || !messageObject.canSetReaction() || messageObject.isExpiredStory()) {
                 return;
             }
             if (!(currentChat == null || ChatObject.isChannelAndNotMegaGroup(currentChat) || ChatObject.canUserDoAction(currentChat, ChatObject.ACTION_SEND_REACTIONS))) {
@@ -2000,7 +1986,7 @@ public class ChatActivity extends BaseFragment implements
 
     private String swipeQuickReaction(MessageObject message) {
         if(message==null || !message.canSetReaction() || message.isSecret() || message.isSponsored() || message.isDateObject
-                || message.isSending() || message.isEditing() || message.isExpiredStory() || message.type==MessageObject.TYPE_JOINED_CHANNEL
+                || message.isSending() || message.isEditing() || message.isExpiredStory()
                 || isSecretChat() || isInScheduleMode() || actionBar.isActionModeShowed()) return null;
         if(currentChat!=null && !ChatObject.isChannelAndNotMegaGroup(currentChat) && !ChatObject.canUserDoAction(currentChat,ChatObject.ACTION_SEND_REACTIONS)) return null;
         String emoji=getMediaDataController().getDoubleTapReaction();
@@ -3074,7 +3060,6 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.messageTranslating)
             .add(NotificationCenter.onReceivedChannelDifference)
             .add(NotificationCenter.storiesUpdated)
-            .add(NotificationCenter.channelRecommendationsLoaded)
             .add(NotificationCenter.updateTranscriptionLock)
             .add(NotificationCenter.savedMessagesDialogsUpdate)
             .add(NotificationCenter.quickRepliesDeleted)
@@ -19164,7 +19149,7 @@ public class ChatActivity extends BaseFragment implements
         if (message != null && message.isAnyGift()) {
             return;
         }
-        if (type < 2 || type == 20 || type == MessageObject.TYPE_SUGGEST_PHOTO || message != null && (message.type == MessageObject.TYPE_JOINED_CHANNEL || message.type == MessageObject.TYPE_GIFT_STARS) || (message != null && message.isWallpaperAction())) {
+        if (type < 2 || type == 20 || type == MessageObject.TYPE_SUGGEST_PHOTO || message != null && (message.type == MessageObject.TYPE_GIFT_STARS) || (message != null && message.isWallpaperAction())) {
             return;
         }
         if (message != null && (message.isSponsored() || message.isEphemeral())) {
@@ -24131,29 +24116,6 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.storiesUpdated) {
             if (avatarContainer != null) {
                 avatarContainer.avatarImageView.invalidate();
-            }
-        } else if (id == NotificationCenter.channelRecommendationsLoaded) {
-            final long dialogId = (long) args[0];
-            if (chatListView != null) {
-                for (int i = 0; i < chatListView.getChildCount(); ++i) {
-                    View child = chatListView.getChildAt(i);
-                    if (child instanceof ChatMessageCell){
-                        ChatMessageCell cell = (ChatMessageCell) child;
-                        if (cell.channelRecommendationsCell != null && cell.channelRecommendationsCell.chatId == -dialogId) {
-                            boolean wasExpanded = cell.channelRecommendationsCell.isExpanded();
-                            cell.channelRecommendationsCell.update();
-                            if (cell.channelRecommendationsCell.isExpanded() != wasExpanded) {
-                                cell.getMessageObject().forceUpdate = true;
-                                cell.forceResetMessageObject();
-                                cell.requestLayout();
-                                final int position = chatListView.getChildAdapterPosition(child);
-                                if (position >= 0) {
-                                    chatAdapter.notifyItemChanged(position);
-                                }
-                            }
-                        }
-                    }
-                }
             }
         } else if (id == NotificationCenter.updateTranscriptionLock) {
             if (chatListView != null) {
@@ -31797,7 +31759,7 @@ public class ChatActivity extends BaseFragment implements
         if (chatActivityEnterView != null && (chatActivityEnterView.isRecordingAudioVideo() || chatActivityEnterView.isRecordLocked())) {
             return false;
         }
-        if (message != null && (message.type == MessageObject.TYPE_JOINED_CHANNEL || message.isEphemeral())) {
+        if (message != null && message.isEphemeral()) {
             return false;
         }
 
@@ -39629,92 +39591,16 @@ public class ChatActivity extends BaseFragment implements
             BulletinFactory.of(ChatActivity.this).createCopyBulletin(LocaleController.getString(R.string.CodeCopied)).show();
         }
 
-        @Override
-        public void didPressMoreChannelRecommendations(ChatMessageCell cell) {
-            if (getUserConfig().isPremium()) {
-                Bundle args = new Bundle();
-                args.putLong("dialog_id", dialog_id);
-                args.putInt("start_from", SharedMediaLayout.TAB_RECOMMENDED_CHANNELS);
-                presentFragment(new MediaActivity(args, avatarContainer.getSharedMediaPreloader()));
-            } else {
-                BulletinFactory.of(ChatActivity.this).createSimpleBulletin(
-                    R.raw.star_premium_2,
-                    AndroidUtilities.replaceSingleTag(formatPluralStringComma("UnlockSimilarChannelsPremium", getMessagesController().recommendedChannelsLimitPremium), () -> {
-                        presentFragment(new PremiumPreviewFragment("similar_channels"));
-                    })
-                ).show();
-            }
-        }
 
-        @Override
-        public void didPressChannelRecommendation(ChatMessageCell cell, TLObject peer, boolean longPress) {
-            if (getContext() == null || peer == null || parentLayout != null && parentLayout.isInPreviewMode()) {
-                return;
-            }
-            Bundle args = new Bundle();
-            if (peer instanceof TLRPC.Chat) {
-                args.putLong("chat_id", ((TLRPC.Chat) peer).id);
-            } else if (peer instanceof TLRPC.User) {
-                args.putLong("user_id", ((TLRPC.User) peer).id);
-            } else {
-                return;
-            }
-            if (longPress && peer instanceof TLRPC.Chat) {
-                final TLRPC.Chat chat = (TLRPC.Chat) peer;
 
-                ActionBarPopupWindow.ActionBarPopupWindowLayout previewMenu = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getContext(), R.drawable.popup_fixed_alert4, getResourceProvider(), ActionBarPopupWindow.ActionBarPopupWindowLayout.FLAG_SHOWN_FROM_BOTTOM);
-                previewMenu.setBackgroundColor(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground));
 
-                ActionBarMenuSubItem openChannel = new ActionBarMenuSubItem(getParentActivity(), false, false);
-                openChannel.setTextAndIcon(LocaleController.getString(R.string.OpenChannel2), R.drawable.msg_channel);
-                openChannel.setMinimumWidth(160);
-                openChannel.setOnClickListener(view -> {
-                    if (parentLayout != null) {
-                        parentLayout.expandPreviewFragment();
-                    }
-                });
-                previewMenu.addView(openChannel);
-
-                ActionBarMenuSubItem joinChannel = new ActionBarMenuSubItem(getParentActivity(), false, false);
-                joinChannel.setTextAndIcon(LocaleController.getString(R.string.ProfileJoinChannel), R.drawable.msg_addbot);
-                joinChannel.setMinimumWidth(160);
-                joinChannel.setOnClickListener(view -> {
-                    finishPreviewFragment();
-                    chat.left = false;
-                    if (cell != null && cell.channelRecommendationsCell != null) {
-                        getNotificationCenter().postNotificationName(NotificationCenter.channelRecommendationsLoaded, cell.channelRecommendationsCell.chatId);
-                    }
-                    getMessagesController().addUserToChat(chat.id, getUserConfig().getCurrentUser(), 0, null, ChatActivity.this, () -> {
-                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.YouJoinedChannel, chat == null ? "" : chat.title)).show(true);
-                    });
-                });
-                previewMenu.addView(joinChannel);
-
-                ChatActivity chatActivity = new ChatActivity(args);
-                chatActivity.allowExpandPreviewByClick = true;
-                presentFragmentAsPreviewWithMenu(chatActivity, previewMenu);
-                checkShowBlur(true);
-            } else {
-                presentFragment(new ChatActivity(args));
-            }
-        }
 
         @Override
         public int getChatMode() {
             return chatMode;
         }
 
-        @Override
-        public void didPressChannelRecommendationsClose(ChatMessageCell cell) {
-            MessageObject msg = cell.getMessageObject();
-            if (msg != null && msg.type == MessageObject.TYPE_JOINED_CHANNEL) {
-                msg.toggleChannelRecommendations();
-                msg.forceUpdate = true;
-                cell.forceResetMessageObject();
-                cell.requestLayout();
-                chatAdapter.updateRowWithMessageObject(msg, false, false);
-            }
-        }
+
 
         @Override
         public boolean didPressAnimatedEmoji(ChatMessageCell cell, AnimatedEmojiSpan span) {

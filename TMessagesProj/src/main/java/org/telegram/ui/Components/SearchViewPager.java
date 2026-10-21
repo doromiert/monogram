@@ -64,7 +64,6 @@ import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.FilteredSearchView;
-import org.telegram.ui.PremiumPreviewFragment;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -360,7 +359,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             @Override
             public void update(boolean animated) {
                 super.update(animated);
-                channelsEmptyView.showProgress(loadingMessages || loadingChannels || messages == null || !messages.isEmpty() || searchMyChannels == null || !searchMyChannels.isEmpty() || searchChannels == null || !searchChannels.isEmpty() || searchRecommendedChannels == null || !searchRecommendedChannels.isEmpty(), animated);
+                channelsEmptyView.showProgress(loadingMessages || loadingChannels || messages == null || !messages.isEmpty() || searchMyChannels == null || !searchMyChannels.isEmpty() || searchChannels == null || !searchChannels.isEmpty(), animated);
                 if (TextUtils.isEmpty(query)) {
                     channelsEmptyView.title.setText(getString(R.string.NoChannelsTitle));
                     channelsEmptyView.subtitle.setVisibility(View.VISIBLE);
@@ -634,7 +633,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
         }
 
         if (view == channelsSearchContainer) {
-            MessagesController.getInstance(currentAccount).getChannelRecommendations(0);
             channelsSearchAdapter.search(query);
             channelsEmptyView.setKeyboardHeight(keyboardSize, false);
         } else if (view == botsSearchContainer) {
@@ -1284,7 +1282,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
 
         observersGroup = NotificationCenter.getInstance(currentAccount)
             .createObserversGroup(this)
-            .add(NotificationCenter.channelRecommendationsLoaded)
             .add(NotificationCenter.dialogDeleted)
             .add(NotificationCenter.dialogsNeedReload)
             .add(NotificationCenter.reloadWebappsHints)
@@ -1313,11 +1310,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.channelRecommendationsLoaded) {
-            channelsEmptyView.showProgress(MessagesController.getInstance(currentAccount).getChannelRecommendations(0) != null, true);
-            channelsSearchAdapter.updateMyChannels();
-            channelsSearchAdapter.update(true);
-        } else if (id == NotificationCenter.dialogDeleted || id == NotificationCenter.dialogsNeedReload) {
+        if (id == NotificationCenter.dialogDeleted || id == NotificationCenter.dialogsNeedReload) {
             channelsSearchAdapter.updateMyChannels();
             channelsSearchAdapter.update(true);
         } else if (id == NotificationCenter.reloadWebappsHints) {

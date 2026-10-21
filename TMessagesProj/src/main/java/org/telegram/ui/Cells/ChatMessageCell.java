@@ -11,7 +11,6 @@ package org.telegram.ui.Cells;
 import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
-import static org.telegram.messenger.AndroidUtilities.find;
 import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.formatPluralString;
 import static org.telegram.messenger.LocaleController.formatPluralStringComma;
@@ -279,7 +278,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public ExpiredStoryView expiredStoryView;
     private boolean skipFrameUpdate;
 
-    public ChannelRecommendationsCell channelRecommendationsCell;
     private final PostRunnableHolder postRunnableHolder = new PostRunnableHolder();
 
     public RadialProgress2 getRadialProgress() {
@@ -626,17 +624,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
         }
 
-        default void didPressChannelRecommendation(ChatMessageCell cell, TLObject chat, boolean longPress) {
 
-        }
 
-        default void didPressMoreChannelRecommendations(ChatMessageCell cell) {
 
-        }
 
-        default void didPressChannelRecommendationsClose(ChatMessageCell cell) {
 
-        }
 
         default int getChatMode() {
             return ChatActivity.MODE_DEFAULT;
@@ -4928,12 +4920,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             disallowLongPress = true;
             cancelCheckLongPress();
         }
-        if (!result && channelRecommendationsCell != null && currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
-            result = channelRecommendationsCell.checkTouchEvent(event);
-            if (result) {
-                disallowLongPress = true;
-            }
-        }
+
 
         if (!result) {
             result = checkQuickShareMotionEvent(event);
@@ -5801,7 +5788,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         this.blurredViewBottomOffset = blurredViewBottomOffset;
         this.childPosition2 = position2;
 
-        if ((!botButtons.isEmpty() || channelRecommendationsCell != null && currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) && viewTop != visibleTop) {
+        if ((!botButtons.isEmpty()) && viewTop != visibleTop) {
             invalidate();
         }
         viewTop = visibleTop;
@@ -6421,9 +6408,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (mediaSpoilerEffect2 != null) {
             mediaSpoilerEffect2.detach(this);
         }
-        if (channelRecommendationsCell != null) {
-            channelRecommendationsCell.onDetachedFromWindow();
-        }
+
 
         Choreographer60FpsContent.getInstance().removeFrameCallback(invalidateOutboundsRunnable);
     }
@@ -6557,9 +6542,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 mediaSpoilerEffect2.attach(this);
             }
         }
-        if (channelRecommendationsCell != null) {
-            channelRecommendationsCell.onAttachedToWindow();
-        }
+
         if (stickerSetIcons != null) {
             stickerSetIcons.attach(this);
         }
@@ -7313,23 +7296,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 drawCommentNumber = false;
             }
 
-            if (messageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
-                drawBackground = true;
-                drawForwardedName = false;
-                hasReplyQuote = false;
-                isReplyQuote = false;
-                isReplyTaskOrPollOption = false;
-                replyNameLayout = null;
-                replyTextLayout = null;
-                drawSummaryReply = false;
-                forwardedNameLayout[0] = null;
-                forwardedNameLayout[1] = null;
-                drawName = false;
-                if (channelRecommendationsCell == null) {
-                    channelRecommendationsCell = new ChannelRecommendationsCell(this);
-                }
-                channelRecommendationsCell.setMessageObject(messageObject);
-            } else if (messageObject.isExpiredStory()) {
+            if (messageObject.isExpiredStory()) {
                 if (!messageIdChanged) {
                     requestLayout();
                 }
@@ -19868,7 +19835,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return;
         }
 
-        if (currentMessageObject != null && !currentMessageObject.isSending() && currentMessageObject.type != MessageObject.TYPE_JOINED_CHANNEL && !currentMessageObject.isSendError() && checkBox != null && (checkBoxVisible || checkBoxAnimationInProgress) && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_BOTTOM) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0)) {
+        if (currentMessageObject != null && !currentMessageObject.isSending() && !currentMessageObject.isSendError() && checkBox != null && (checkBoxVisible || checkBoxAnimationInProgress) && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_BOTTOM) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0)) {
             canvas.save();
             float y = getY() + getPaddingTop();
             if (currentMessagesGroup != null && currentMessagesGroup.messages.size() > 1) {
@@ -20097,13 +20064,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return;
         }
 
-        if (channelRecommendationsCell != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
-            if (delegate == null || delegate.canDrawOutboundsContent()) {
-                channelRecommendationsCell.draw(canvas);
-            }
-            transitionParams.recordDrawingState();
-            return;
-        }
+
 
         final int sponosoredAlpha = (int) (255 * (1f - isSponsoredMessageHidden.getFloatValue()));
         if (sponosoredAlpha == 0) {
@@ -20966,9 +20927,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (transitionParams.animateExpandedQuotes && (currentMessageObject.type == MessageObject.TYPE_TEXT || currentMessageObject.type == MessageObject.TYPE_STORY_MENTION || currentMessageObject.type == MessageObject.TYPE_EMOJIS || currentMessageObject.isGiveawayOrGiveawayResults())) {
             return true;
         }
-        if (channelRecommendationsCell != null && currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
-            return true;
-        }
+
         if ((drawTopic || transitionParams.animateDrawTopic) && topicButton != null) {
             return true;
         }
@@ -21038,10 +20997,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public void drawOutboundsContent(Canvas canvas) {
-        if (channelRecommendationsCell != null && currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
-            channelRecommendationsCell.draw(canvas);
-            return;
-        }
+
         if (currentMessageObject == null) {
             return;
         }
@@ -23808,7 +23764,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public boolean needDrawTime() {
-        return !forceNotDrawTime && (currentMessageObject == null || currentMessageObject.type != MessageObject.TYPE_JOINED_CHANNEL);
+        return !forceNotDrawTime;
     }
 
     public boolean shouldDrawTimeOnMedia() {
@@ -23822,9 +23778,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (!drawFromPinchToZoom && delegate != null && delegate.getPinchToZoomHelper() != null && delegate.getPinchToZoomHelper().isInOverlayModeFor(this) && shouldDrawTimeOnMedia()) {
             return;
         }
-        if (currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
-            return;
-        }
+
         for (int i = 0; i < 2; i++) {
             float currentAlpha = alpha;
             if (i == 0 && isDrawSelectionBackground() && currentSelectedBackgroundAlpha == 1f && !shouldDrawTimeOnMedia()) {
@@ -28311,9 +28265,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         public int lastReplyTextXOffset;
         public float animateReplyTextOffset;
 
-        public boolean lastDrawingRecommendationsExpanded;
-        public boolean animateRecommendationsExpanded;
-        public boolean animateFromRecommendationsExpanded;
 
         public boolean lastDrawNameLayout;
         public boolean lastDrawAvatar;
@@ -28387,7 +28338,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             lastDrawingLinkAbove = linkPreviewAbove;
             lastDrawingMediaAbove = captionAbove;
 
-            lastDrawingRecommendationsExpanded = currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL && channelRecommendationsCell != null && channelRecommendationsCell.isExpanded();
 
             if (commentLayout != null) {
                 lastCommentsCount = getRepliesCount();
@@ -28665,13 +28615,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 changed = true;
             }
 
-            animateRecommendationsExpanded = false;
-            final boolean channelsExpanded = currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL && channelRecommendationsCell != null && channelRecommendationsCell.isExpanded();
-            if (channelsExpanded != lastDrawingRecommendationsExpanded) {
-                animateRecommendationsExpanded = true;
-                animateFromRecommendationsExpanded = lastDrawingRecommendationsExpanded;
-                changed = true;
-            }
+
 
             animateLinkAbove = false;
             if (linkPreviewAbove != lastDrawingLinkAbove) {
@@ -29031,7 +28975,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             needsStopClipping = false;
             animateLinkAbove = false;
             animateMediaAbove = false;
-            animateRecommendationsExpanded = false;
             animateDrawingTimeAlpha = false;
             animateLocationIsExpired = false;
             animatePlayingRound = false;
@@ -29137,9 +29080,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     @Override
     public void computeScroll() {
         super.computeScroll();
-        if (channelRecommendationsCell != null) {
-            channelRecommendationsCell.computeScroll();
-        }
+
     }
 
     private ColorFilter[] adaptiveEmojiColorFilter;
