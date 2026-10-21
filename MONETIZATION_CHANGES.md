@@ -72,7 +72,7 @@ A contact on 0.2.133 reports failed OMEMO 2 sends (`Invalid OMEMO2 content`) and
 
 ## Verification
 
-No tests, phone UI actions or APK deployment have been performed for this work yet. Implementation-phase source inspection is permitted; release checks will be recorded here when preparing an APK.
+Release verification for 0.2.135 is recorded below. No phone UI actions were performed.
 
 ### Stars checkout and paid-message cleanup (0.2.135 release preparation)
 
@@ -80,3 +80,14 @@ No tests, phone UI actions or APK deployment have been performed for this work y
 - Removed paid-message postponement/undo and checkout gating from ordinary sending. Confirmation callbacks report zero fees (including one zero entry per forwarding destination); bot-forum and ephemeral-message handling remain intact.
 - Legacy balance/catalog/history contracts return empty local data; gift/resale checkout contracts report unavailability. Broader Stars/gift/auction and promotional UI removal remains unfinished.
 - Release checks and installation are recorded below after completion.
+
+### 0.2.135 release verification
+
+- [x] Nix arm64 APK build: `:TMessagesProj_App:assembleAfatDebug`. Fixed the final stale TON-address click handler reference found by compilation; retired wallet links have no action.
+- [x] Focused release tests: `MonogramFavoriteEmojiTest` (1) and `MonogramTranslationLanguagesTest` (2), all passed.
+- [x] Runtime dependency graph excludes Play Billing, Stripe and Google Wallet.
+- [x] Inspected all 59,218 defined APK DEX classes: Billing API/client/utilities, Stripe/Google Wallet, wallet/TON UI, PaymentFormActivity and VideoAds implementations absent. All three native libraries are arm64; main native library has no wallet-engine/JNI markers. Historical monetary schemas and remaining Stars/gift UI are still present.
+- [x] Signed APK matches the previously delivered signer; version 0.2.135, Android version code 73109. SHA-256: `195d357843037892b5461ae7238199838470251c63d901810c58f1515c959973`.
+- [ ] Phone runtime/visual acceptance: not performed. Last ADB endpoint `192.168.1.128:39413` refused connections and no phone was listed. APK link delivery via the configured bot is the authorized fallback.
+
+The overall monetization removal remains in progress; this release does not certify every Stars, gift, auction, promotional screen or frontend gate has been removed.
