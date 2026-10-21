@@ -97,3 +97,11 @@ The overall monetization removal remains in progress; this release does not cert
 ### Ralu OMEMO2 diagnostics received after packaging
 
 The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse:63 → XmppOmemo2.bundle:131 → targets:105 → encrypt:209 → XmppSession.sendModern:960 → send:884 → MonogramController.handle:3587`. The failure is the signed-prekey ID parser, before bundle cryptographic verification/encryption, not a fingerprint trust rejection. The parser currently accepts only decimal IDs 1..2147483647. The rejected ID and owning device are still unknown; the trace alone does not distinguish zero, an out-of-range value, or missing/malformed input. Next step: inspect the offending bundle's `spk@id` and supported wire/native ranges before changing validation. No encryption change was included in 0.2.135.
+
+### Legacy profile monetization cleanup (after 0.2.135; not shipped)
+
+- Removed legacy settings Premium/Business subscription, Stars/TON and gift row allocation, click handlers and row binding; removed eager TON balance lookup. Removed subscription-grace renewal row and its subscription-management browser action. Phone/password suggestions remain.
+- Removed bot/channel revenue row creation, balance queries, formatting and launch actions from profiles; ordinary group settings, members, notifications and moderation paths remain.
+- Removed user/channel gift menu construction, menu/action click implementation and both info-refresh paths that could restore those actions. Birthday rows retain their data without a gift-buy icon; username QR action remains.
+- Removed profile affiliate-program row, connect/share RPC action and associated view binding. Removed paid gift-overlay widget construction on profiles; optional guarded animation references/public field remain until the wider gift UI is retired.
+- Source review only. No build/tests/phone actions for this follow-up, per the instruction to test at APK delivery. Existing shared collectible-gift status UI, gift libraries and other monetization screens/controllers still require removal; this does not claim all profile Premium gates are freed.
