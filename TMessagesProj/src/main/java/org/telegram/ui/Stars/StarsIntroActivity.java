@@ -146,7 +146,6 @@ import org.telegram.ui.GradientHeaderActivity;
 import org.telegram.ui.ImageReceiverSpan;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PostSuggestionsEditActivity;
 import org.telegram.ui.PrivacyControlActivity;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
@@ -4022,42 +4021,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
             textView.setText(s);
             linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 36, 0, 36, 4));
 
-            if (transaction.paid_message && transaction.starref_commission_permille > 0 && positive) {
-                textView = new LinkSpanDrawable.LinksTextView(context);
-                textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                textView.setGravity(Gravity.CENTER);
-                textView.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-                ((LinkSpanDrawable.LinksTextView) textView).setDisablePaddingsOffsetY(true);
-                SpannableStringBuilder text = new SpannableStringBuilder();
-                text.append(AndroidUtilities.replaceTags(formatString(R.string.StarsTransactionMessageFeeInfo, percents(1000 - transaction.starref_commission_permille))));
-                if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId() || ChatObject.canUserDoAction(MessagesController.getInstance(currentAccount).getChat(-dialogId), ChatObject.ACTION_BLOCK_USERS)) {
-                    text.append(" ");
-                    text.append(AndroidUtilities.replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.StarsTransactionMessageFeeInfoLink).replace(' ', ' '), () -> {
-                        BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                        if (lastFragment != null) {
-                            if (dialogId >= 0) {
-                                lastFragment.presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_MESSAGES));
-                            } else {
-                                TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
-                                if (ChatObject.isChannelAndNotMegaGroup(chat)) {
-                                    PostSuggestionsEditActivity fragment = new PostSuggestionsEditActivity(-dialogId);
-                                    lastFragment.presentFragment(fragment);
-                                } else {
-                                    final Bundle args = new Bundle();
-                                    args.putLong("chat_id", -dialogId);
-                                    args.putInt("type", ChatUsersActivity.TYPE_KICKED);
-                                    ChatUsersActivity fragment = new ChatUsersActivity(args);
-                                    fragment.setInfo(MessagesController.getInstance(currentAccount).getChatFull(-dialogId));
-                                    lastFragment.presentFragment(fragment);
-                                }
-                            }
-                        }
-                    }), true));
-                }
-                textView.setText(text);
-                linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 36, 0, 36, 4));
-            } else if (!(transaction.amount instanceof TL_stars.TL_starsTonAmount) && (giveaway || transaction.gift)) {
+ else if (!(transaction.amount instanceof TL_stars.TL_starsTonAmount) && (giveaway || transaction.gift)) {
                 final TLRPC.User user =   transaction.sent_by == null ? null : MessagesController.getInstance(currentAccount).getUser(DialogObject.getPeerDialogId(transaction.sent_by));
                 final TLRPC.User received = transaction.sent_by == null ? null : MessagesController.getInstance(currentAccount).getUser(DialogObject.getPeerDialogId(transaction.received_by));
                 final boolean self = UserObject.isUserSelf(user);

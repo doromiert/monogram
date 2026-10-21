@@ -289,3 +289,11 @@ Removed collectible-username purchase-info requests and the collectible-phone de
 Removed username validation links and purchase-oriented validation messages from username/channel editing screens, and replaced the bot username help purchase link with ordinary username help. Removed the Fragment purchase action and the extra username-sale availability request from chat username long-press handling, retaining cached-peer and ordinary username resolution. Fragment URLs no longer receive a special browser confirmation exemption.
 
 Source-only inspection covers removed class/schema references, the retained username resolution/copy paths, edited Java class boundaries and whitespace. No tests, build, APK or phone interaction. These changes remain unshipped; other Premium/Business/Stars/gift/backend/resource cleanup is still incomplete.
+
+### Bot balance controls and paid post-suggestion settings
+
+Removed ChatEditActivity's Stars/TON balance section, revenue-screen click actions, loading placeholders, observer registration and balance-update handling. Removed the paid post-suggestion row, its pricing/enablement display and theme bindings. Ordinary group editing, permissions, reactions, appearance and location controls remain.
+
+Deleted PostSuggestionsEditActivity after removing its chat-edit entry point and the remaining paid-message commission/settings paragraph in StarsIntroActivity. This removes that screen's Stars price slider and Telegram paid-message/broadcast-settings requests rather than presenting a nonfunctional paid feature on XMPP. Other StarsIntroActivity transaction/revenue UI and BotStarsActivity/controller consumers remain for subsequent cleanup.
+
+Source-only inspection covers deleted class/method references, edited class boundaries, notification branches and whitespace. No tests, compilation, APK or phone interaction; changes are unshipped and full monetization removal remains incomplete.
