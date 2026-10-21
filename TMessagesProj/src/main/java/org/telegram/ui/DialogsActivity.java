@@ -12,7 +12,6 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.formatPluralString;
-import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.Components.AlertsCreator.createClearOrDeleteDialogsAlert;
@@ -203,8 +202,6 @@ import org.telegram.ui.Components.chat.ChatInputViewsContainer;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.chat.layouts.ChatActivityFadeView;
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder;
-import org.telegram.ui.Stars.StarGiftSheet;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.Components.Bulletin;
@@ -5705,39 +5702,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(this, getContext(), true, xoff, SelectAnimatedEmojiDialog.TYPE_EMOJI_STATUS, getResourceProvider()) {
             @Override
             protected boolean willApplyEmoji(View view, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
-                if (gift != null) {
-                    final TL_stars.SavedStarGift savedStarGift = StarsController.getInstance(currentAccount).findUserStarGift(gift.id);
-                    return savedStarGift == null || MessagesController.getGlobalMainSettings().getInt("statusgiftpage", 0) >= 2;
-                }
+                if (gift != null) return false;
                 return true;
             }
 
             @Override
             protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
+                if (gift != null) return;
                 final TLRPC.EmojiStatus emojiStatus;
                 if (documentId == null) {
                     emojiStatus = new TLRPC.TL_emojiStatusEmpty();
-                } else if (gift != null) {
-                    final TL_stars.SavedStarGift savedStarGift = StarsController.getInstance(currentAccount).findUserStarGift(gift.id);
-                    if (savedStarGift != null && MessagesController.getGlobalMainSettings().getInt("statusgiftpage", 0) < 2) {
-                        MessagesController.getGlobalMainSettings().edit().putInt("statusgiftpage", MessagesController.getGlobalMainSettings().getInt("statusgiftpage", 0) + 1).apply();
-                        new StarGiftSheet(getContext(), currentAccount, UserConfig.getInstance(currentAccount).getClientUserId(), resourceProvider)
-                            .set(savedStarGift, null)
-                            .setupWearPage()
-                            .show();
-                        if (popup[0] != null) {
-                            selectAnimatedEmojiDialog = null;
-                            popup[0].dismiss();
-                        }
-                        return;
-                    }
-                    final TLRPC.TL_inputEmojiStatusCollectible status = new TLRPC.TL_inputEmojiStatusCollectible();
-                    status.collectible_id = gift.id;
-                    if (until != null) {
-                        status.flags |= 1;
-                        status.until = until;
-                    }
-                    emojiStatus = status;
                 } else {
                     final TLRPC.TL_emojiStatus status = new TLRPC.TL_emojiStatus();
                     status.document_id = documentId;

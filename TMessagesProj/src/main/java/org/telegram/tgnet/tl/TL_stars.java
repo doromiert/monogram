@@ -1898,26 +1898,7 @@ public class TL_stars {
         }
     }
 
-    public static class saveStarGift extends TLObject {
-        public static final int constructor = 0x2a2a697c;
 
-        public int flags;
-        public boolean unsave;
-        public InputSavedStarGift stargift;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            flags = setFlag(flags, 1, unsave);
-            stream.writeInt32(flags);
-            stargift.serializeToStream(stream);
-        }
-    }
 
     public static class convertStarGift extends TLObject {
         public static final int constructor = 0x74bf076b;

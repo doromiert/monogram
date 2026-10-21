@@ -1,10 +1,6 @@
 package org.telegram.ui.Stars;
 
-import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.LocaleController.formatPluralString;
-import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.formatString;
-import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.messenger.MediaDataController.calcHash;
 
 import android.content.Context;
@@ -480,14 +476,7 @@ public class StarsController {
 
 
 
-        public void updateGiftsUnsaved(TL_stars.SavedStarGift gift, boolean unsaved) {
-            for (GiftsList list : gifts.values()) {
-                list.updateGiftsUnsaved(gift, unsaved);
-            }
-            if (all != null) {
-                all.updateGiftsUnsaved(gift, unsaved);
-            }
-        }
+
 
         private long getHash(ArrayList<TL_stars.TL_starGiftCollection> array) {
             long hash = 0;
@@ -626,18 +615,7 @@ public class StarsController {
 
 
 
-        public void updateGiftsUnsaved(TL_stars.SavedStarGift gift, boolean unsaved) {
-            boolean changed = false;
-            for (final TL_stars.SavedStarGift g : gifts) {
-                if (StarsController.eq(g, gift) && g.unsaved != unsaved) {
-                    g.unsaved = unsaved;
-                    changed = true;
-                }
-            }
-            if (changed) {
-                NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftsLoaded, dialogId, GiftsList.this);
-            }
-        }
+
 
         public int findGiftToUpgrade(int fromIndex) {
             if (!StarGiftSheet.isMineWithActions(currentAccount, dialogId)) return -1;
