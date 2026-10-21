@@ -251,7 +251,7 @@ public class StarGiftPreviewSheet extends BottomSheetWithRecyclerListView {
         headerView = new FrameLayout(context);
         headerView.setClipChildren(false);
 
-        topView = new StarGiftSheet.TopView(context, resourcesProvider, this::onBackPressed, v -> {}, null, v -> {}, v -> {}, v -> {}) {
+        topView = new StarGiftSheet.TopView(context, resourcesProvider, this::onBackPressed, v -> {}, null, v -> {}, v -> {}) {
             @Override
             public float getRealHeight() {
                 return dp(315);

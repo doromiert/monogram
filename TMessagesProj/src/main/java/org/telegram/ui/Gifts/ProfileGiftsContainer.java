@@ -917,21 +917,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                         ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);
                     });
                 }
-                if (savedStarGift.gift instanceof TL_stars.TL_starGiftUnique) {
-                    final TL_stars.TL_starGiftUnique gift = (TL_stars.TL_starGiftUnique) savedStarGift.gift;
-                    final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-                    final boolean canTransfer = DialogObject.getPeerDialogId(gift.owner_id) == selfId;
-                    o.addIf(canTransfer, R.drawable.menu_transfer, getString(R.string.Gift2TransferOption), () -> {
-                        new StarGiftSheet(getContext(), currentAccount, parent.dialogId, resourcesProvider) {
-                            @Override
-                            public BulletinFactory getBulletinFactory() {
-                                return BulletinFactory.of(parent.fragment);
-                            }
-                        }
-                            .set(savedStarGift, null)
-                            .openTransfer();
-                    });
-                }
+
                 if (parent.collections.isMine() && isCollection) {
                     o.add(R.drawable.msg_removefolder, getString(R.string.Gift2RemoveFromCollection), true, () -> {
                         parent.collections.removeGift(list.collectionId, savedStarGift);

@@ -780,3 +780,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [o] Monetization follow-up: gift catalogue and send-gift purchase screens deleted; remaining launch actions removed. Static legacy card/ribbon/cell presentation separated as `GiftVisuals` pending wider collectible deletion. Source-only; resale/collectible screens, Stars data operations and selector monetary modes remain. Verify at next APK delivery.
 
 - [o] Monetization follow-up: collectible purchase-offer screen/accept/decline backend, NFT deep-link lookup, gift resale list/unlist/reprice operations and Stars/TON price-entry sheets removed. Source-only; resale browsing, collectible transfer/export/sharing/crafting and remaining gift/Stars data code still pending. Verify at next APK delivery.
+
+- [o] Monetization follow-up: collectible transfer/payment and TON export password/withdrawal flows, gift-to-Stars conversion and explicit explorer/wallet-address/Fragment-market controls removed. Source-only; resale browsing, crafting/upgrades and remaining collectible wear/share/data code still pending. Verify at next APK delivery.
