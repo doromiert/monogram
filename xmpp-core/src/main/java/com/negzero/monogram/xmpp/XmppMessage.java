@@ -143,7 +143,7 @@ public final class XmppMessage {
         }
         String caption = "";
         if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
-        MessageMarkup markup=readable ? encryption==Encryption.LEGACY_OMEMO ? MessageMarkup.body(body) : MessageMarkup.from(content,body) : null;
+        MessageMarkup markup=readable ? encryption==Encryption.LEGACY_OMEMO ? MessageMarkup.legacy(content,body) : MessageMarkup.from(content,body) : null;
         MessageMarkup captionMarkup=sharing==null || markup==null ? null : sharing.captionMarkup(content,body,reply,markup);
         InlineEmoji inlineEmoji=readable && encryption!=Encryption.LEGACY_OMEMO && reactions==null && retraction==null ? InlineEmoji.from(content,body) : null;
         boolean displayStickerHint = StickerHint.from(message, encryption == Encryption.LEGACY_OMEMO, readable, attachment);
@@ -179,7 +179,7 @@ public final class XmppMessage {
             if(!body.endsWith(payload)) throw new IllegalArgumentException("Markup belongs to another body");
             full=value.inBody(body,body.codePointCount(0,body.length()-payload.length()));
         }
-        if(encryption==Encryption.LEGACY_OMEMO) full=MessageMarkup.body(body).withMentions(full.mentions);
+        if(encryption==Encryption.LEGACY_OMEMO) full=full.markdown ? MessageMarkup.body(body).withMentions(full.mentions).asMarkdown() : MessageMarkup.body(body).withMentions(full.mentions);
         MessageMarkup captionValue=null;
         if(sharing!=null) {
             String payload=sharing.body(caption);

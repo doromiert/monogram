@@ -160,6 +160,16 @@ public class MarkdownParser {
     }
 
     public static String parse(String source, ArrayList<TL_iv.PageBlock> blocks) {
+        return parse(source,blocks,false);
+    }
+
+    /** Bounded chat-message input; keeps the existing article renderer and disables no formatting controls. */
+    public static String parseMessage(String source, ArrayList<TL_iv.PageBlock> blocks) {
+        if(source==null || source.length()>32768) throw new IllegalArgumentException("Article is too long");
+        return parse(source,blocks,true);
+    }
+
+    private static String parse(String source, ArrayList<TL_iv.PageBlock> blocks, boolean bounded) {
         final java.util.LinkedHashMap<String, String> footnotes = new java.util.LinkedHashMap<>();
         source = extractFootnoteDefs(source, footnotes);
         source = rewriteFootnoteRefs(source);
@@ -198,7 +208,18 @@ public class MarkdownParser {
         final Parser parser = parserBuilder.build();
         final java.util.ArrayDeque<String> orderedMarkers = scanOrderedListMarkers(source);
         final BlockVisitor blockVisitor = new BlockVisitor(blocks, orderedMarkers);
-        parser.parse(source).accept(blockVisitor);
+        final Node document=parser.parse(source);
+        if(bounded) {
+            final java.util.ArrayDeque<Node> pending=new java.util.ArrayDeque<>();
+            final java.util.IdentityHashMap<Node,Integer> depths=new java.util.IdentityHashMap<>();
+            pending.push(document);depths.put(document,0);int count=0;
+            while(!pending.isEmpty()) {
+                Node node=pending.pop();int depth=depths.get(node);
+                if(++count>2048 || depth>24) throw new IllegalArgumentException("Article is too complex");
+                for(Node child=node.getFirstChild();child!=null;child=child.getNext()) { pending.push(child);depths.put(child,depth+1); }
+            }
+        }
+        document.accept(blockVisitor);
         blockVisitor.finish();
         appendFootnotes(parser, blocks, footnotes);
         if (blockVisitor.title != null) {
@@ -497,9 +518,12 @@ public class MarkdownParser {
         int styleFlags;
     }
 
+    private static final int MESSAGE_SPOILER_FLAG=1 << 30;
+
     private static int flagFor(String name) {
         if (name == null) return 0;
         switch (name.toLowerCase()) {
+            case "tg-spoiler": return MESSAGE_SPOILER_FLAG;
             case "u": case "ins":            return org.telegram.ui.ArticleViewer.TEXT_FLAG_UNDERLINE;
             case "mark":                     return org.telegram.ui.ArticleViewer.TEXT_FLAG_MARKED;
             case "sub":                      return org.telegram.ui.ArticleViewer.TEXT_FLAG_SUB;
@@ -538,6 +562,7 @@ public class MarkdownParser {
             final TextStyle ts = (TextStyle) rt;
             TL_iv.RichText cur = materializeStyles(ts.text);
             final int f = ts.styleFlags;
+            if ((f & MESSAGE_SPOILER_FLAG) != 0) cur = wrapStyle(new TL_iv.textSpoiler(),cur);
             if ((f & org.telegram.ui.ArticleViewer.TEXT_FLAG_MONO)      != 0) cur = wrapStyle(new TL_iv.textFixed(),       cur);
             if ((f & org.telegram.ui.ArticleViewer.TEXT_FLAG_STRIKE)    != 0) cur = wrapStyle(new TL_iv.textStrike(),      cur);
             if ((f & org.telegram.ui.ArticleViewer.TEXT_FLAG_UNDERLINE) != 0) cur = wrapStyle(new TL_iv.textUnderline(),   cur);

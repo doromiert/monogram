@@ -212,6 +212,7 @@ public final class XmppSession implements AutoCloseable {
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMentions.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.STYLING);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.CONTENT);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageRetraction.LEGACY);
         calls = new com.negzero.monogram.xmpp.calls.XmppCalls(connection);
@@ -998,6 +999,7 @@ public final class XmppSession implements AutoCloseable {
         if (correction != null) correction.addTo(message);
         if (sharing != null) sharing.addTo(message, body);
         if(!encrypted && markup!=null) markup.inBody(body,prefix).addTo(message);
+        if(encrypted && markup!=null) markup.addContentHint(message);
         if(!encrypted && inline!=null) inline.inBody(body,prefix).addTo(message);
         if(retraction!=null) {
             retraction.addMetadataTo(message);

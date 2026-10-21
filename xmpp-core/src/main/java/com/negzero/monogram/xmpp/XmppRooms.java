@@ -672,6 +672,7 @@ public final class XmppRooms implements AutoCloseable {
             publicMarkup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message); }
         if(sharing!=null) sharing.addTo(message,wireBody);
         if(displayStickerHint && encrypted) StickerHint.addTo(message);
+        if(encrypted && markup!=null) markup.addContentHint(message);
         if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);

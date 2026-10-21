@@ -87,7 +87,7 @@ public final class XmppRoomMessage {
                 catch(java.io.IOException invalid) { /* Malformed attachment references stay visible as text. */ }
         }
         String caption=sharing==null ? "" : sharing.caption(wire,body,reply);
-        MessageMarkup markup=readable ? encrypted ? MessageMarkup.body(body) : MessageMarkup.from(wire,body) : null;
+        MessageMarkup markup=readable ? encrypted ? MessageMarkup.legacy(wire,body) : MessageMarkup.from(wire,body) : null;
         MessageMarkup captionMarkup=sharing==null || markup==null ? null : sharing.captionMarkup(wire,body,reply,markup);
         InlineEmoji inlineEmoji=!encrypted && readable && reactions==null && retraction==null ? InlineEmoji.from(wire,body) : null;
         Date delay=archiveTime!=null ? archiveTime : DelayInformationManager.getDelayTimestamp(wire);
@@ -133,7 +133,7 @@ public final class XmppRoomMessage {
             if(!body.endsWith(payload)) throw new IllegalArgumentException("Markup belongs to another body");
             full=value.inBody(body,body.codePointCount(0,body.length()-payload.length()));
         }
-        if(encryption==XmppMessage.Encryption.LEGACY_OMEMO) full=MessageMarkup.body(body).withMentions(full.mentions);
+        if(encryption==XmppMessage.Encryption.LEGACY_OMEMO) full=full.markdown ? MessageMarkup.body(body).withMentions(full.mentions).asMarkdown() : MessageMarkup.body(body).withMentions(full.mentions);
         MessageMarkup captionValue=null;
         if(sharing!=null) {
             String payload=sharing.body(caption);

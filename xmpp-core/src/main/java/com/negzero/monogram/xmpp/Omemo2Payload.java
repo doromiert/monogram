@@ -149,6 +149,7 @@ final class Omemo2Payload {
                 || name.equals("replace") && MessageCorrection.NAMESPACE.equals(namespace)
                 || name.equals("reactions") && MessageReactions.NAMESPACE.equals(namespace)
                 || name.equals("reference") && MessageMentions.NAMESPACE.equals(namespace)
+                || name.equals("content") && MessageMarkup.CONTENT.equals(namespace)
                 || name.equals("markup") && MessageMarkup.NAMESPACE.equals(namespace)
                 || name.equals("unstyled") && MessageMarkup.STYLING.equals(namespace)
                 || name.equals("retract") && MessageRetraction.NAMESPACE.equals(namespace)

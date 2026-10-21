@@ -2933,6 +2933,10 @@ public final class MonogramController {
             }
         });
     }
+    private void warnArticleFallback() {
+        AndroidUtilities.runOnUIThread(() -> android.widget.Toast.makeText(org.telegram.messenger.ApplicationLoader.applicationContext,
+                "This will look broken outside of Monogram",android.widget.Toast.LENGTH_LONG).show());
+    }
     public int queuedSendCount() { return (int)pendingSends.values().stream().filter(send -> !send.scheduled.get()).count(); }
     public void cancelRequest(int token) {
         TranslationRequest translation=translationRequests.remove(token);if(translation!=null) translation.cancel();
@@ -3160,6 +3164,7 @@ public final class MonogramController {
                 if(roomMutation(request)) error.text="MONOGRAM_XMPP_ROOM: "+roomError(e);
                 else if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
                 else if(request instanceof TLRPC.TL_messages_sendReaction && e instanceof IllegalArgumentException) error.text="MONOGRAM_REACTION_UNAVAILABLE: "+e.getMessage();
+                else if(e instanceof MonogramArticles.Failure) error.text="MONOGRAM_XMPP_FAILED|"+e.getMessage();
                 else if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
                 else if (e instanceof MonogramStore.EditUnavailable) error.text = ((MonogramStore.EditUnavailable)e).code;
                 else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
@@ -3582,12 +3587,14 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_messages_editMessage) {
             TLRPC.TL_messages_editMessage edit = (TLRPC.TL_messages_editMessage) request;
             if (edit.peer == null || edit.peer.user_id == 0 && edit.peer.chat_id == 0 || edit.media != null || edit.schedule_date != 0 || edit.quick_reply_shortcut_id != 0
-                    || (edit.flags & 2048) == 0) throw new UnsupportedOperationException();
+                    || (edit.flags & 2048) == 0 && edit.rich_message==null) throw new UnsupportedOperationException();
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
             MonogramStore.EditTarget target = editTarget(edit.id, peer);
             com.negzero.monogram.xmpp.InlineEmoji inline=target.sharing==null ? MonogramEmojis.fromEntities(account,edit.message,edit.entities) : null;
-            MessageMarkup markup = MonogramMentions.fromEntities(store,peer,edit.message,edit.entities);
+            MessageMarkup markup = edit.rich_message!=null ? new MessageMarkup(MonogramArticles.markdown(edit.rich_message),java.util.Collections.emptyList()).asMarkdown()
+                    : MonogramMentions.fromEntities(store,peer,edit.message,edit.entities);
             markup=inline==null ? markup.styled() : markup.preservingBody();
+            if(edit.rich_message!=null) warnArticleFallback();
             XmppMessage.Encryption mode = target.sharing!=null ? target.encryption
                     : target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
             int saved;
@@ -3617,8 +3624,10 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
             com.negzero.monogram.xmpp.InlineEmoji inline=MonogramEmojis.fromEntities(account,send.message,send.entities);
-            MessageMarkup markup = MonogramMentions.fromEntities(store,send.peer.chat_id>0 ? -send.peer.chat_id : send.peer.user_id,send.message,send.entities);
+            MessageMarkup markup = send.rich_message!=null ? new MessageMarkup(MonogramArticles.markdown(send.rich_message),java.util.Collections.emptyList()).asMarkdown()
+                    : MonogramMentions.fromEntities(store,send.peer.chat_id>0 ? -send.peer.chat_id : send.peer.user_id,send.message,send.entities);
             markup=inline==null ? markup.styled() : markup.preservingBody();
+            if(send.rich_message!=null) warnArticleFallback();
             if (send.peer.chat_id!=0) {
                 if (send.schedule_date!=0) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;

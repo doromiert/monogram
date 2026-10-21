@@ -76,6 +76,7 @@ public final class MonogramFormatting {
     }
     public static void apply(TLRPC.Message message,MessageMarkup markup) {
         if(markup==null) return;
+        if(markup.markdown) { message.message=markup.body;message.entities.clear();message.flags&=~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;MonogramArticles.apply(message,markup.body);return; }
         MessageMarkup display=markup.display();
         if(!Objects.equals(message.message,display.body)) message.entities.clear();
         else message.entities.removeIf(entity -> style(entity)!=null);
