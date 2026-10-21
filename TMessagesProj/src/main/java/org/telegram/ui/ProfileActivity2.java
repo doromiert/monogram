@@ -26,7 +26,6 @@ import android.text.TextUtils;
 import android.text.style.CharacterStyle;
 import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
-import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -36,7 +35,6 @@ import androidx.core.view.NestedScrollingParent3;
 import androidx.core.view.NestedScrollingParentHelper;
 import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.LinearSmoothScroller;
 import androidx.recyclerview.widget.LinearSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -57,7 +55,6 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_fragment;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.BackDrawable;
@@ -665,30 +662,12 @@ public class ProfileActivity2 extends BaseFragment implements
         span = new ClickableSpan() {
             @Override
             public void onClick(@NonNull View view) {
-                if (!usernameObj.editable) {
-                    if (loadingSpan == this) return;
-                    setLoadingSpan(this);
-                    final TL_fragment.TL_getCollectibleInfo req = new TL_fragment.TL_getCollectibleInfo();
-                    final TL_fragment.TL_inputCollectibleUsername input = new TL_fragment.TL_inputCollectibleUsername();
-                    input.username = usernameObj.username;
-                    req.collectible = input;
-                    int reqId = getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                        setLoadingSpan(null);
-                        if (res instanceof TL_fragment.TL_collectibleInfo) {
-                            if (getContext() == null) return;
-                            FragmentUsernameBottomSheet.open(getContext(), FragmentUsernameBottomSheet.TYPE_USERNAME, usernameObj.username, user != null ? user : chat, (TL_fragment.TL_collectibleInfo) res, getResourceProvider());
-                        } else {
-                            BulletinFactory.showError(err);
-                        }
-                    }));
-                    getConnectionsManager().bindRequestToGuid(reqId, getClassGuid());
-                } else {
-                    setLoadingSpan(null);
-                    String urlFinal = getMessagesController().linkPrefix + "/" + usernameRaw;
-                    if (chat == null || !chat.noforwards) {
-                        AndroidUtilities.addToClipboard(urlFinal);
-                        BulletinFactory.of(ProfileActivity2.this).createCopyBulletin(getString(R.string.UsernameCopied)).show();
-                    }
+
+                setLoadingSpan(null);
+                String urlFinal = getMessagesController().linkPrefix + "/" + usernameRaw;
+                if (chat == null || !chat.noforwards) {
+                    AndroidUtilities.addToClipboard(urlFinal);
+                    BulletinFactory.of(ProfileActivity2.this).createCopyBulletin(getString(R.string.UsernameCopied)).show();
                 }
             }
 

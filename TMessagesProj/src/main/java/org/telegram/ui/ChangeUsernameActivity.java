@@ -64,7 +64,6 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
-import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -89,8 +88,6 @@ import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.TypefaceSpan;
-import org.telegram.ui.Components.URLSpanNoUnderline;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -679,27 +676,6 @@ public class ChangeUsernameActivity extends BaseFragment {
                             tagsString.replace(index, index + 1, " ");
                             tagsString.setSpan(new ForegroundColorSpan(getThemedColor(Theme.key_text_RedRegular)), 0, index, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         }
-                        TypefaceSpan[] spans = tagsString.getSpans(0, tagsString.length(), TypefaceSpan.class);
-                        for (int i = 0; i < spans.length; ++i) {
-                            tagsString.setSpan(
-                                new ClickableSpan() {
-                                    @Override
-                                    public void onClick(@NonNull View view) {
-                                        Browser.openUrl(getContext(), "https://fragment.com/username/" + username);
-                                    }
-
-                                    @Override
-                                    public void updateDrawState(@NonNull TextPaint ds) {
-                                        super.updateDrawState(ds);
-                                        ds.setUnderlineText(false);
-                                    }
-                                },
-                                tagsString.getSpanStart(spans[i]),
-                                tagsString.getSpanEnd(spans[i]),
-                                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                            );
-                            tagsString.removeSpan(spans[i]);
-                        }
                         text = tagsString;
                     }
                     super.setText(text, type);
@@ -715,20 +691,8 @@ public class ChangeUsernameActivity extends BaseFragment {
             addView(text1View, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
             addView(text2View, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
-            if (botId != 0) {
-                String str = LocaleController.getString(R.string.BotUsernameHelp);
-                SpannableStringBuilder text = new SpannableStringBuilder(str);
-                int index1 = str.indexOf('*');
-                int index2 = str.lastIndexOf('*');
-                if (index1 != -1 && index2 != -1 && index1 != index2) {
-                    text.replace(index2, index2 + 1, "");
-                    text.replace(index1, index1 + 1, "");
-                    text.setSpan(new URLSpanNoUnderline("https://fragment.com"), index1, index2 - 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-                text1View.setText(text);
-            } else {
-                text1View.setText(AndroidUtilities.replaceTags(LocaleController.getString(R.string.UsernameHelp)));
-            }
+            text1View.setText(AndroidUtilities.replaceTags(LocaleController.getString(R.string.UsernameHelp)));
+
         }
 
         private Integer height;
@@ -1330,9 +1294,9 @@ public class ChangeUsernameActivity extends BaseFragment {
                                     statusTextView.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
                                 } else if (error != null && "USERNAME_PURCHASE_AVAILABLE".equals(error.text)) {
                                     if (req.username.length() == 4) {
-                                        statusTextView.setText(LocaleController.getString(R.string.UsernameInvalidShortPurchase));
+                                        statusTextView.setText(LocaleController.getString(R.string.UsernameInvalidShort));
                                     } else {
-                                        statusTextView.setText(LocaleController.getString(R.string.UsernameInUsePurchase));
+                                        statusTextView.setText(LocaleController.getString(R.string.UsernameInUse));
                                     }
                                     statusTextView.setTag(Theme.key_windowBackgroundWhiteGrayText8);
                                     statusTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText8));

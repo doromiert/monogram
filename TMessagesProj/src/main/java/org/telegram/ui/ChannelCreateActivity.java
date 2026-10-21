@@ -863,28 +863,6 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
                             tagsString.replace(index, index + 1, " ");
                             tagsString.setSpan(new ForegroundColorSpan(getThemedColor(Theme.key_text_RedRegular)), 0, index, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                         }
-                        TypefaceSpan[] spans = tagsString.getSpans(0, tagsString.length(), TypefaceSpan.class);
-                        final String username = descriptionTextView == null || descriptionTextView.getText() == null ? "" : descriptionTextView.getText().toString();
-                        for (int i = 0; i < spans.length; ++i) {
-                            tagsString.setSpan(
-                                new ClickableSpan() {
-                                    @Override
-                                    public void onClick(@NonNull View view) {
-                                        Browser.openUrl(getContext(), "https://fragment.com/username/" + username);
-                                    }
-
-                                    @Override
-                                    public void updateDrawState(@NonNull TextPaint ds) {
-                                        super.updateDrawState(ds);
-                                        ds.setUnderlineText(false);
-                                    }
-                                },
-                                tagsString.getSpanStart(spans[i]),
-                                tagsString.getSpanEnd(spans[i]),
-                                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                            );
-                            tagsString.removeSpan(spans[i]);
-                        }
                         text = tagsString;
                     }
                     super.setText(text, type);
@@ -1328,9 +1306,9 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
                             checkTextView.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
                         } else if (error != null && "USERNAME_PURCHASE_AVAILABLE".equals(error.text)) {
                             if (req.username.length() == 4) {
-                                checkTextView.setText(LocaleController.getString(R.string.UsernameInvalidShortPurchase));
+                                checkTextView.setText(LocaleController.getString(R.string.UsernameInvalidShort));
                             } else {
-                                checkTextView.setText(LocaleController.getString(R.string.UsernameInUsePurchase));
+                                checkTextView.setText(LocaleController.getString(R.string.UsernameInUse));
                             }
                             checkTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText8));
                         } else if (error != null && "CHANNELS_ADMIN_PUBLIC_TOO_MUCH".equals(error.text)) {

@@ -281,3 +281,11 @@ Removed all three sponsored-report entry points and the sponsored request/respon
 Removed chat context-menu ad hide/report/revenue options, speed-upgrade option and its Premium-video prefetch. Removed the revenue-info callback and sponsored-label touch handler from ChatMessageCell/ChatActivity. Removed PremiumPreviewFragment's sponsored-message toggle request, ad-setting rows and revenue-info link, preserving its unrelated feature routing. Deleted RevenueSharingAdsInfoBottomSheet after removing all callers. Historical sponsored rendering/data and the local legacy-message dismissal hook remain for later cleanup; this is not a claim that the entire ad schema/rendering layer is gone.
 
 Source-only inspection covers removed Java/XML references, ordinary ReportBottomSheet constructor/caller, option-page branches, edited class boundaries and whitespace. No tests, compilation, APK or phone interaction. Other Premium/Business/Stars/gift/backend/resource/schema cleanup remains active; full completion is unproven.
+
+### Collectible usernames and phone numbers / Fragment
+
+Removed collectible-username purchase-info requests and the collectible-phone detail action from both profile implementations. Ordinary username copy/share and profile navigation remain; phone rows use the normal mobile label and dial/copy actions. Removed the FragmentUsernameBottomSheet and its now-unreferenced TL_fragment schema.
+
+Removed username validation links and purchase-oriented validation messages from username/channel editing screens, and replaced the bot username help purchase link with ordinary username help. Removed the Fragment purchase action and the extra username-sale availability request from chat username long-press handling, retaining cached-peer and ordinary username resolution. Fragment URLs no longer receive a special browser confirmation exemption.
+
+Source-only inspection covers removed class/schema references, the retained username resolution/copy paths, edited Java class boundaries and whitespace. No tests, build, APK or phone interaction. These changes remain unshipped; other Premium/Business/Stars/gift/backend/resource cleanup is still incomplete.

@@ -44160,7 +44160,7 @@ public class ChatActivity extends BaseFragment implements
     public void didLongPressUsername(ChatMessageCell cell, CharacterStyle link, String username) {
         final Browser.Progress progress = makeProgressForLink(cell, link);
         TLObject cachedObject = getMessagesController().getUserOrChat(username);
-        Utilities.Callback2<TLObject, Boolean> open = (obj, selling) -> {
+        Utilities.Callback<TLObject> open = obj -> {
             progress.end();
 
             boolean isUser = false, isGroup = false, isChannel = false;
@@ -44188,11 +44188,7 @@ public class ChatActivity extends BaseFragment implements
                 AndroidUtilities.addToClipboard("@" + username);
                 BulletinFactory.of(ChatActivity.this).createCopyBulletin(getString(R.string.UsernameCopied)).show();
             });
-            if (selling) {
-                options.add(R.drawable.outline_gram_24, getString(R.string.BuyUsernameOnFragment), () -> {
-                    Browser.openUrl(getContext(), "https://fragment.com/username/" + username);
-                });
-            }
+
             options.addGap();
             if (did != 0) {
                 options.addProfile(obj, getString(isUser ? R.string.ViewProfile : (isChannel ? R.string.ViewChannelProfile : R.string.ViewGroupProfile)), () -> {
@@ -44206,68 +44202,34 @@ public class ChatActivity extends BaseFragment implements
             dialog.setScrim(cell, link, null);
             showDialog(dialog);
         };
-        if (true || BuildVars.DEBUG_PRIVATE_VERSION) {
-            TL_account.checkUsername req2 = new TL_account.checkUsername();
-            req2.username = username;
-            int reqId2 = getConnectionsManager().sendRequest(req2, (res2, err2) -> AndroidUtilities.runOnUIThread(() -> {
-                final boolean selling = err2 != null && "USERNAME_PURCHASE_AVAILABLE".equals(err2.text);
-                if (cachedObject != null || err2 == null && res2 instanceof TLRPC.TL_boolTrue) {
-                    open.run(cachedObject, selling);
-                } else {
-                    TLRPC.TL_contacts_resolveUsername req = new TLRPC.TL_contacts_resolveUsername();
-                    req.username = username;
-                    int reqId = getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                        progress.end();
 
-                        TLObject obj = null;
-                        if (res instanceof TLRPC.TL_contacts_resolvedPeer) {
-                            TLRPC.TL_contacts_resolvedPeer r = (TLRPC.TL_contacts_resolvedPeer) res;
-                            getMessagesController().putUsers(r.users, false);
-                            getMessagesController().putChats(r.chats, false);
-
-                            long did = DialogObject.getPeerDialogId(r.peer);
-                            if (did >= 0) {
-                                obj = getMessagesController().getUser(did);
-                            } else if (did < 0) {
-                                obj = getMessagesController().getChat(-did);
-                            }
-                        }
-                        open.run(obj, selling);
-                    }));
-                    progress.onCancel(() -> getConnectionsManager().cancelRequest(reqId, true));
-                    progress.init();
-                }
-            }));
-            progress.onCancel(() -> getConnectionsManager().cancelRequest(reqId2, true));
-            progress.init();
+        if (cachedObject != null) {
+            open.run(cachedObject);
         } else {
-            if (cachedObject != null) {
-                open.run(cachedObject, false);
-            } else {
-                TLRPC.TL_contacts_resolveUsername req = new TLRPC.TL_contacts_resolveUsername();
-                req.username = username;
-                int reqId = getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                    progress.end();
+            TLRPC.TL_contacts_resolveUsername req = new TLRPC.TL_contacts_resolveUsername();
+            req.username = username;
+            int reqId = getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
+                progress.end();
 
-                    TLObject obj = null;
-                    if (res instanceof TLRPC.TL_contacts_resolvedPeer) {
-                        TLRPC.TL_contacts_resolvedPeer r = (TLRPC.TL_contacts_resolvedPeer) res;
-                        getMessagesController().putUsers(r.users, false);
-                        getMessagesController().putChats(r.chats, false);
+                TLObject obj = null;
+                if (res instanceof TLRPC.TL_contacts_resolvedPeer) {
+                    TLRPC.TL_contacts_resolvedPeer r = (TLRPC.TL_contacts_resolvedPeer) res;
+                    getMessagesController().putUsers(r.users, false);
+                    getMessagesController().putChats(r.chats, false);
 
-                        long did = DialogObject.getPeerDialogId(r.peer);
-                        if (did >= 0) {
-                            obj = getMessagesController().getUser(did);
-                        } else if (did < 0) {
-                            obj = getMessagesController().getChat(-did);
-                        }
+                    long did = DialogObject.getPeerDialogId(r.peer);
+                    if (did >= 0) {
+                        obj = getMessagesController().getUser(did);
+                    } else if (did < 0) {
+                        obj = getMessagesController().getChat(-did);
                     }
-                    open.run(obj, false);
-                }));
-                progress.onCancel(() -> getConnectionsManager().cancelRequest(reqId, true));
-                progress.init();
-            }
+                }
+                open.run(obj);
+            }));
+            progress.onCancel(() -> getConnectionsManager().cancelRequest(reqId, true));
+            progress.init();
         }
+
     }
 
     public void didLongPressCopyButton(String text) {
