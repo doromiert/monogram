@@ -58,6 +58,37 @@ public class MonogramLinkPreviewsTest {
         headers.remove("transfer-encoding");try { MonogramPreviewHttp.body(new ByteArrayInputStream(new byte[4]),headers,5,()->true);fail(); } catch(EOFException expected) {}
         try { MonogramPreviewHttp.body(new ByteArrayInputStream(new byte[5]),headers,5,()->false);fail(); } catch(IOException expected) {}
     }
+    @Test public void htmlMetadataPrefixCanBeReadWithoutDownloadingTheWholePageButImagesStayStrict() throws Exception {
+        byte[] page="<title>Preview</title>large document tail".getBytes(StandardCharsets.UTF_8);
+        Map<String,String> headers=new HashMap<>();headers.put("content-length",Integer.toString(page.length));
+        byte[] prefix=MonogramPreviewHttp.body(new ByteArrayInputStream(page),headers,22,()->true,true);
+        assertEquals(22,prefix.length);assertEquals("Preview",MonogramLinkPreviews.metadata(new String(prefix,StandardCharsets.UTF_8)).get("title"));
+        try { MonogramPreviewHttp.body(new ByteArrayInputStream(page),headers,22,()->true);fail(); } catch(IOException expected) {}
+        headers.clear();headers.put("transfer-encoding","chunked");
+        byte[] chunked=(Integer.toHexString(page.length)+"\r\n"+new String(page,StandardCharsets.UTF_8)+"\r\n0\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+        assertArrayEquals(prefix,MonogramPreviewHttp.body(new ByteArrayInputStream(chunked),headers,22,()->true,true));
+        headers.put("content-length","22");
+        try { MonogramPreviewHttp.body(new ByteArrayInputStream(chunked),headers,22,()->true,true);fail(); } catch(IOException expected) {}
+        headers.clear();assertArrayEquals(prefix,MonogramPreviewHttp.body(new ByteArrayInputStream(page),headers,22,()->true,true));
+    }
+    @Test public void youtubeMetadataUsesOnlyFixedFirstPartyEndpointAndIgnoresRemotePlayerHtml() throws Exception {
+        for(String url:Arrays.asList("https://www.youtube.com/watch?v=r8Ljx3SP03Y&list=private","https://youtu.be/r8Ljx3SP03Y?t=1","https://m.youtube.com/shorts/r8Ljx3SP03Y"))
+            assertEquals("https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dr8Ljx3SP03Y&format=json",MonogramLinkPreviews.youtubeMetadataUrl(new URI(url)));
+        assertNull(MonogramLinkPreviews.youtubeMetadataUrl(new URI("https://youtube.com.evil.example/watch?v=r8Ljx3SP03Y")));
+        assertNull(MonogramLinkPreviews.youtubeMetadataUrl(new URI("https://www.youtube.com/watch?v=invalid")));
+        Map<String,String> fields=MonogramLinkPreviews.youtubeMetadata("{\"title\":\"A &amp; B\",\"author_name\":\"Author\",\"thumbnail_url\":\"https://i.ytimg.com/a.jpg\",\"html\":\"<iframe src='https://example.org/'></iframe>\"}");
+        assertEquals("A & B",fields.get("og:title"));assertEquals("YouTube",fields.get("og:site_name"));assertEquals("Author",fields.get("og:description"));assertFalse(fields.containsKey("html"));
+    }
+    @Test public void fetchPolicyUpgradeRetriesOldFailuresWithoutDiscardingSuccessfulPreviews() throws Exception {
+        android.content.SharedPreferences preferences=context.getSharedPreferences("preview-policy",Context.MODE_PRIVATE);preferences.edit().clear().putString("jid","alice@example.org").commit();
+        MonogramLinkPreviews previews=new MonogramLinkPreviews(0,preferences,store);previews.enabled(true);
+        String url="https://example.org/works";store.saveLinkPreview(url,page(url),System.currentTimeMillis()+60000);
+        store.saveLinkPreview("https://example.org/failed",null,System.currentTimeMillis()+60000);
+        TLRPC.TL_message message=new TLRPC.TL_message();message.id=1;message.message=url;message.media=new TLRPC.TL_messageMediaEmpty();
+        AtomicBoolean refreshed=new AtomicBoolean();previews.maybeFetch(message,false,()->true,Runnable::run,()->refreshed.set(true));
+        assertTrue(refreshed.get());assertTrue(store.linkPreviewFresh(url,System.currentTimeMillis()));assertFalse(store.linkPreviewFresh("https://example.org/failed",System.currentTimeMillis()));
+        previews.cancel();
+    }
     @Test public void cachedPreviewSurvivesReopenButNeverOverridesMediaOrEditedText() throws Exception {
         int id=store.save(MessageFixture.replyMessage("preview","preview",null,"https://example.org/page",true,false,100000,"phone",false,null));
         String url="https://example.org/page";store.saveLinkPreview(url,page(url),System.currentTimeMillis()+100000);
@@ -99,7 +130,7 @@ public class MonogramLinkPreviewsTest {
     }
     @Test public void schema27MigrationPreservesMessagesAndAddsEmptyPreviewCache() throws Exception {
         int id=store.save(MessageFixture.replyMessage("preserve","preserve",null,"Keep me",true,false,100000,"phone",true,null));
-        store.getWritableDatabase().execSQL("DROP TABLE link_previews");store.getWritableDatabase().setVersion(27);store.close();store=new MonogramStore(context,"previews.db");
-        assertEquals(28,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
+        store.getWritableDatabase().execSQL("DROP TABLE link_previews");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_tag_names");store.getWritableDatabase().setVersion(27);store.close();store=new MonogramStore(context,"previews.db");
+        assertEquals(29,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
     }
 }

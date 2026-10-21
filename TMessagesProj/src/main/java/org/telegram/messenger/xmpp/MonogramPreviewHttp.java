@@ -44,6 +44,12 @@ final class MonogramPreviewHttp {
                 && ((b[2]&255)==0 || (b[2]&255)==0x0d && (b[3]&255)==0xb8)) && !(first==0x20 && second==0x02) && !(first==0x3f && second==0xff);
     }
     static Response fetch(String address,int limit,java.util.function.BooleanSupplier permitted) throws IOException {
+        return fetch(address,limit,permitted,false);
+    }
+    static Response fetchHtml(String address,int limit,java.util.function.BooleanSupplier permitted) throws IOException {
+        return fetch(address,limit,permitted,true);
+    }
+    private static Response fetch(String address,int limit,java.util.function.BooleanSupplier permitted,boolean htmlPrefix) throws IOException {
         final long started=System.nanoTime();
         final java.util.function.BooleanSupplier permission=permitted;
         permitted=() -> permission.getAsBoolean() && System.nanoTime()-started<TimeUnit.SECONDS.toNanos(15);
@@ -64,7 +70,7 @@ final class MonogramPreviewHttp {
                     if(!permitted.getAsBoolean()) throw new IOException("Preview cancelled");
                     String path=url.getRawPath();if(path==null || path.isEmpty()) path="/";
                     if(url.getRawQuery()!=null) path+="?"+url.getRawQuery();
-                    String request="GET "+path+" HTTP/1.1\r\nHost: "+url.getRawAuthority()+"\r\nUser-Agent: Monogram-LinkPreview/1\r\nAccept: text/html, image/jpeg, image/png, image/webp\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+                    String request="GET "+path+" HTTP/1.1\r\nHost: "+url.getRawAuthority()+"\r\nUser-Agent: Monogram-LinkPreview/1\r\nAccept: text/html, application/json, image/jpeg, image/png, image/webp\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
                     socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));socket.getOutputStream().flush();
                     InputStream input=new BufferedInputStream(socket.getInputStream());
                     String[] status=line(input,permitted).split(" ",3);
@@ -87,7 +93,8 @@ final class MonogramPreviewHttp {
                     if(code!=200) throw new IOException("Preview unavailable");
                     String encoding=headers.get("content-encoding");if(encoding!=null && !encoding.equalsIgnoreCase("identity")) throw new IOException("Unsupported preview encoding");
                     String type=headers.getOrDefault("content-type","");
-                    return new Response(url,type,body(input,headers,limit,permitted));
+                    boolean html=type.toLowerCase(Locale.ROOT).startsWith("text/html") || type.toLowerCase(Locale.ROOT).startsWith("application/xhtml+xml");
+                    return new Response(url,type,body(input,headers,limit,permitted,htmlPrefix && html));
                 }
             }
         }
@@ -99,6 +106,9 @@ final class MonogramPreviewHttp {
         throw new IOException("Preview header too long");
     }
     static byte[] body(InputStream input,Map<String,String> headers,int limit,java.util.function.BooleanSupplier permitted) throws IOException {
+        return body(input,headers,limit,permitted,false);
+    }
+    static byte[] body(InputStream input,Map<String,String> headers,int limit,java.util.function.BooleanSupplier permitted,boolean prefix) throws IOException {
         String transfer=headers.get("transfer-encoding"),length=headers.get("content-length");
         if(transfer!=null && (!"chunked".equalsIgnoreCase(transfer) || length!=null)) throw new IOException("Unsupported preview framing");
         ByteArrayOutputStream output=new ByteArrayOutputStream();
@@ -107,14 +117,25 @@ final class MonogramPreviewHttp {
                 String number=line(input,permitted).split(";",2)[0].trim();long count;
                 try { count=Long.parseLong(number,16); } catch(NumberFormatException invalid) { throw new IOException("Invalid chunk",invalid); }
                 if(count==0) return output.toByteArray();
-                if(count<0 || count>limit-output.size()) throw new IOException("Preview too large");
+                if(count<0) throw new IOException("Invalid chunk size");
+                if(count>limit-output.size()) {
+                    if(!prefix) throw new IOException("Preview too large");
+                    copy(input,output,limit-output.size(),limit,permitted);return output.toByteArray();
+                }
                 copy(input,output,(int)count,limit,permitted);if(!line(input,permitted).isEmpty()) throw new IOException("Invalid chunk ending");
             }
         }
         long count=-1;
         if(length!=null) try { count=Long.parseLong(length); } catch(NumberFormatException invalid) { throw new IOException("Invalid length",invalid); }
-        if(count>limit || count<0 && length!=null) throw new IOException("Preview too large");
-        copy(input,output,(int)count,limit,permitted);return output.toByteArray();
+        if(count<0 && length!=null || count>limit && !prefix) throw new IOException("Preview too large");
+        if(prefix && (count<0 || count>limit)) {
+            byte[] buffer=new byte[8192];
+            while(output.size()<limit) {
+                if(!permitted.getAsBoolean() || Thread.currentThread().isInterrupted()) throw new IOException("Preview cancelled");
+                int read=input.read(buffer,0,Math.min(buffer.length,limit-output.size()));if(read<0) break;output.write(buffer,0,read);
+            }
+        } else copy(input,output,(int)count,limit,permitted);
+        return output.toByteArray();
     }
     private static void copy(InputStream input,ByteArrayOutputStream output,int count,int limit,java.util.function.BooleanSupplier permitted) throws IOException {
         byte[] buffer=new byte[8192];int remaining=count;

@@ -66,6 +66,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         getWritableDatabase().insertWithOnConflict("link_previews",null,value,SQLiteDatabase.CONFLICT_REPLACE);
         getWritableDatabase().execSQL("DELETE FROM link_previews WHERE url NOT IN (SELECT url FROM link_previews ORDER BY expires DESC LIMIT 256)");
     }
+    synchronized void clearFailedLinkPreviews() { getWritableDatabase().delete("link_previews","media IS NULL",null); }
     synchronized void clearLinkPreviews() { getWritableDatabase().delete("link_previews",null,null); }
     private void decorateLinkPreview(TLRPC.Message message) {
         if(!MonogramLinkPreviews.candidate(message)) return;

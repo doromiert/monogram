@@ -110,7 +110,10 @@ public final class MonogramController {
         debugLog.enabled(preferences.getBoolean("debug-message-xml",false));
         displayedReady=readReceiptsEnabled();
         preferences.edit().remove("media-auto-enabled").remove("media-auto-limit").apply();
-        AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).addObserver(this::historyMediaLoaded,NotificationCenter.messagesDidLoad));
+        AndroidUtilities.runOnUIThread(() -> {
+            NotificationCenter.getInstance(account).addObserver(this::historyMediaLoaded,NotificationCenter.messagesDidLoad);
+            NotificationCenter.getInstance(account).addObserver(this::sentLinkPreview,NotificationCenter.messageReceivedByServer);
+        });
     }
     public final com.negzero.monogram.xmpp.XmppDebugLog debugLog=new com.negzero.monogram.xmpp.XmppDebugLog();
     public void debugCapture(boolean enabled) {
@@ -1339,9 +1342,12 @@ public final class MonogramController {
         java.util.Map<Long,ArrayList<MessageObject>> byPeer=new java.util.HashMap<>();
         for(int id:updated) if(!store.hiddenMessage(id)) {
             TLRPC.Message message=store.getMessage(id,self); messages.add(message);
-            if(message.dialog_id==mediaHistoryPeer && MonogramAttachments.has(message)) {
-                File path=new File(message.attachPath);
-                if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
+            if(message.dialog_id==mediaHistoryPeer) {
+                maybeLinkPreview(message);
+                if(MonogramAttachments.has(message)) {
+                    File path=new File(message.attachPath);
+                    if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
+                }
             }
             byPeer.computeIfAbsent(message.dialog_id,ignored -> new ArrayList<>()).add(new MessageObject(account,message,true,true));
         }
@@ -2341,6 +2347,15 @@ public final class MonogramController {
         if (!(reply instanceof TLRPC.TL_inputReplyToMessage) || reply.top_msg_id != 0 || reply.todo_item_id != 0 || reply.poll_option != null
                 || reply.monoforum_peer_id != null || reply.reply_to_peer_id != null && (peer<0 ? -reply.reply_to_peer_id.chat_id : reply.reply_to_peer_id.user_id) != peer) throw new UnsupportedOperationException();
         return replyTo(reply.reply_to_msg_id, peer, encrypted, reply.quote_text, reply.quote_offset);
+    }
+    private void sentLinkPreview(int notification,int currentAccount,Object... args) {
+        if(currentAccount!=account || args.length<2 || !(args[1] instanceof Integer) || (int)args[1]<=0) return;
+        final int id=(int)args[1];final long owner=accountEpoch;
+        // ACK observers finish on the UI thread before preview replacements are delivered there.
+        worker.execute(() -> {
+            if(owner!=accountEpoch || store.hiddenMessage(id)) return;
+            try { maybeLinkPreview(store.getMessage(id,self)); } catch(IllegalArgumentException unknownMessage) { /* Not a persisted XMPP message. */ }
+        });
     }
     private void historyMediaLoaded(int notification,int currentAccount,Object... args) {
         if(currentAccount!=account || args.length<3 || !(args[2] instanceof java.util.List)) return;
