@@ -50,7 +50,6 @@ import org.telegram.ui.Components.LinkActionView;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.Components.Premium.LimitPreviewView;
 import org.telegram.ui.Components.Premium.boosts.BoostPagerBottomSheet;
-import org.telegram.ui.Components.Premium.boosts.GiftInfoBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.cells.statistics.GiftedUserCell;
 import org.telegram.ui.Components.Premium.boosts.cells.statistics.GiveawayCell;
 import org.telegram.ui.Components.RLottieImageView;
@@ -346,22 +345,6 @@ public class ChannelBoostLayout extends FrameLayout {
                 TL_stories.Boost boost = cell.getBoost();
                 if (boost.giveaway && boost.stars > 0) {
                     StarsIntroActivity.showBoostsSheet(context, currentAccount, dialogId, boost, resourcesProvider);
-                } else if (((boost.gift || boost.giveaway) && boost.user_id >= 0) || boost.unclaimed) {
-                    TLRPC.TL_payments_checkedGiftCode giftCode = new TLRPC.TL_payments_checkedGiftCode();
-                    giftCode.giveaway_msg_id = boost.giveaway_msg_id;
-                    giftCode.to_id = boost.user_id;
-                    giftCode.from_id = MessagesController.getInstance(UserConfig.selectedAccount).getPeer(-currentChat.id);
-                    giftCode.date = boost.date;
-                    giftCode.via_giveaway = boost.giveaway;
-                    giftCode.days = (boost.expires - boost.date) / 86400;
-                    giftCode.months = (boost.expires - boost.date) / 30 / 86400;
-                    if (boost.unclaimed) {
-                        giftCode.to_id = NO_USER_ID;
-                        giftCode.flags = -1;
-                    } else {
-                        giftCode.boost = boost;
-                    }
-                    new GiftInfoBottomSheet(fragment, false, true, giftCode, boost.used_gift_slug).show();
                 } else if (boost.giveaway && boost.user_id == NO_USER_ID) {
                     final Bulletin.LottieLayout layout = new Bulletin.LottieLayout(fragment.getParentActivity(), fragment.getResourceProvider());
                     layout.setAnimation(R.raw.chats_infotip, 36, 36);

@@ -369,3 +369,11 @@ Removed InviteLinkBottomSheet's subscription detail sheet and per-member subscri
 Removed expired-subscriber row/list state and its pagination pass/request flag. Retained ordinary joined/requested-user pagination and combined has-more handling, creator/member role rendering, invite expiry/revocation information and usage/approval controls. Invite expiry itself is distinct from a paid subscription and remains supported.
 
 Source-only inspection covers removed subscription/revenue identifiers and APIs across Java/XML, ordinary UserCell constructor/role methods, retained list indexes/pagination/profile click callbacks, edited Java boundaries and whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; StarsController, transaction history/schema, other Premium/Business/boost screens and resources still require cleanup.
+
+### Premium gift-code redemption and delivery sheets
+
+Deleted GiftInfoBottomSheet, PremiumPreviewGiftLinkBottomSheet and PremiumPreviewGiftSentBottomSheet, plus the unused PremiumNotAvailableBottomSheet official-Telegram-install subscription prompt. Removed gift-code intent handling, chat action delegate/open methods and loading callback, boost-list gift-code detail construction and giveaway prize-redemption button. Ordinary chat actions, boost-list remaining branches and generic intent handling remain while their respective Telegram-only subsystems are removed separately.
+
+This removes these subscription gift-code entry points and sheets; it does not claim the remaining PremiumPreviewBottomSheet, gift/history rendering or boost implementation is gone. The paid SMS implementation was already absent on source inspection; legacy SMS settings-link handling remains to be cleaned with the wider settings routing.
+
+Source-only inspection covers deleted screen/method/delegate references across Java/XML, surviving action/intent/boost branches, edited Java boundaries and whitespace. No tests, build, APK or phone interaction. Changes are unshipped and full monetization removal remains incomplete.

@@ -195,7 +195,6 @@ import org.telegram.ui.Components.PipRoundVideoView;
 import org.telegram.ui.Components.PipVideoOverlay;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.BoostPagerBottomSheet;
-import org.telegram.ui.Components.Premium.boosts.GiftInfoBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.UserSelectorBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
@@ -1520,9 +1519,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 && org.telegram.messenger.xmpp.MonogramPurchaseLinks.blocked(intent.getData().toString())) {
             intent.setAction(null);intent.setData(null);rejectMonogramPurchase(progress);return true;
         }
-        if (GiftInfoBottomSheet.handleIntent(intent, progress)) {
-            return true;
-        }
+
         if (UserSelectorBottomSheet.handleIntent(intent, progress)) {
             return true;
         }

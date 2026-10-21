@@ -640,17 +640,7 @@ public class BoostDialogs {
             String str;
             if (giveawayInfo.winner) {
                 str = getString(R.string.BoostingGiveawayYouWon);
-                if ((giveawayInfo.flags & 16) != 0) {
 
-                } else {
-                    builder.setPositiveButton(getString("BoostingGiveawayViewPrize", R.string.BoostingGiveawayViewPrize), (dialogInterface, i) -> {
-                        BaseFragment fragment = LaunchActivity.getLastFragment();
-                        if (fragment == null) {
-                            return;
-                        }
-                        GiftInfoBottomSheet.show(fragment, giveawayInfo.gift_code_slug);
-                    });
-                }
                 builder.setNegativeButton(getString("Close", R.string.Close), (dialogInterface, i) -> {
 
                 });
