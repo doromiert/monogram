@@ -20,7 +20,6 @@ import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AppGlobalConfig;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
@@ -360,7 +359,7 @@ public class SellGiftEnterPriceSheet extends BottomSheet {
                 (MessagesController.getInstance(currentAccount).config.tonUsdRate.get()):
                 (MessagesController.getInstance(currentAccount).starsUsdWithdrawRate1000 * 0.00001);
 
-        sb.append(BillingController.getInstance().formatCurrency((long) (inputAmount.asDouble() * rate * 100), "USD", 2));
+        sb.append(org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (inputAmount.asDouble() * rate * 100), "USD", 2));
 
         dollarsEqView.setText(sb, animated);
     }

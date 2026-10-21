@@ -158,14 +158,14 @@ public class PremiumPreviewBottomSheet extends BottomSheetWithRecyclerListView i
         recyclerListView.setOnItemClickListener((view, position) -> {
             if (view instanceof PremiumFeatureCell) {
                 PremiumFeatureCell cell = (PremiumFeatureCell) view;
-                PremiumPreviewFragment.sentShowFeaturePreview(currentAccount, cell.data.type);
+
                 showDialog(new PremiumFeatureBottomSheet(fragment, cell.data.type, false));
             }
             onAdditionItemClicked(view);
         });
 
         MediaDataController.getInstance(currentAccount).preloadPremiumPreviewStickers();
-        PremiumPreviewFragment.sentShowScreenStat("profile");
+
 
         fireworksOverlay = new FireworksOverlay(getContext());
         container.addView(fireworksOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
@@ -227,7 +227,7 @@ public class PremiumPreviewBottomSheet extends BottomSheetWithRecyclerListView i
 
         PremiumButtonView premiumButtonView = new PremiumButtonView(getContext(), false, resourcesProvider);
         premiumButtonView.setButton(PremiumPreviewFragment.getPremiumButtonText(currentAccount, null), v -> {
-            PremiumPreviewFragment.sentPremiumButtonClick();
+
             PremiumPreviewFragment.buyPremium(fragment, "profile");
         });
 

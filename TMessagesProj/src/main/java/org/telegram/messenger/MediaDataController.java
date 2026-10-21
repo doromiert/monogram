@@ -46,7 +46,6 @@ import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
 
-import com.android.billingclient.api.ProductDetails;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
@@ -444,79 +443,13 @@ public class MediaDataController extends BaseController {
         }
     }
 
-    public void checkPremiumPromo() {
-        if (!isLoadingPremiumPromo && (premiumPromo == null || Math.abs(System.currentTimeMillis() / 1000 - premiumPromoUpdateDate) >= 60 * 60)) {
-            loadPremiumPromo(true);
-        }
-    }
+
 
     public TLRPC.TL_help_premiumPromo getPremiumPromo() {
         return premiumPromo;
     }
 
-    public Integer getPremiumHintAnnualDiscount(boolean checkTransaction) {
-        if (checkTransaction && (!BillingController.getInstance().isReady() || BillingController.getInstance().getLastPremiumTransaction() == null) || premiumPromo == null) {
-            return null;
-        }
 
-        boolean found = false;
-        int discount = 0;
-        double currentPrice = 0;
-        for (TLRPC.TL_premiumSubscriptionOption option : premiumPromo.period_options) {
-            if (checkTransaction ? option.current && Objects.equals(option.transaction.replaceAll(PremiumPreviewFragment.TRANSACTION_PATTERN, "$1"), BillingController.getInstance().getLastPremiumTransaction()) : option.months == 1) {
-                found = true;
-
-                if (!BuildVars.useInvoiceBilling() && BillingController.PREMIUM_PRODUCT_DETAILS != null) {
-                    ProductDetails.SubscriptionOfferDetails offerDetails = null;
-                    for (ProductDetails.SubscriptionOfferDetails details : BillingController.PREMIUM_PRODUCT_DETAILS.getSubscriptionOfferDetails()) {
-                        String period = details.getPricingPhases().getPricingPhaseList().get(0).getBillingPeriod();
-                        if (option.months == 12 ? period.equals("P1Y") : period.equals(String.format(Locale.ROOT, "P%dM", option.months))) {
-                            offerDetails = details;
-                            break;
-                        }
-                    }
-
-                    if (offerDetails == null) {
-                        currentPrice = (double) option.amount / option.months;
-                    } else {
-                        currentPrice = (double) offerDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceAmountMicros() / option.months;
-                    }
-                } else {
-                    currentPrice = (double) option.amount / option.months;
-                }
-            }
-        }
-        for (TLRPC.TL_premiumSubscriptionOption option : premiumPromo.period_options) {
-            if (found && option.months == 12) {
-                double amount;
-                if (!BuildVars.useInvoiceBilling() && BillingController.PREMIUM_PRODUCT_DETAILS != null) {
-                    ProductDetails.SubscriptionOfferDetails offerDetails = null;
-                    for (ProductDetails.SubscriptionOfferDetails details : BillingController.PREMIUM_PRODUCT_DETAILS.getSubscriptionOfferDetails()) {
-                        String period = details.getPricingPhases().getPricingPhaseList().get(0).getBillingPeriod();
-                        if (option.months == 12 ? period.equals("P1Y") : period.equals(String.format(Locale.ROOT, "P%dM", option.months))) {
-                            offerDetails = details;
-                            break;
-                        }
-                    }
-
-                    if (offerDetails == null) {
-                        amount = (double) option.amount / option.months;
-                    } else {
-                        amount = (double) offerDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceAmountMicros() / option.months;
-                    }
-                } else {
-                    amount = (double) option.amount / option.months;
-                }
-
-                discount = (int) ((1.0 - amount / currentPrice) * 100);
-            }
-        }
-        if (!found || discount <= 0) {
-            return null;
-        }
-
-        return discount;
-    }
 
     public TLRPC.TL_attachMenuBots getAttachMenuBots() {
         return attachMenuBots;
@@ -647,92 +580,11 @@ public class MediaDataController extends BaseController {
         });
     }
 
-    public void loadPremiumPromo(boolean cache) {
-        isLoadingPremiumPromo = true;
-        if (cache) {
-            getMessagesStorage().getStorageQueue().postRunnable(() -> {
-                SQLiteCursor c = null;
-                int date = 0;
-                TLRPC.TL_help_premiumPromo premiumPromo = null;
-                try {
-                    c = getMessagesStorage().getDatabase().queryFinalized("SELECT data, date FROM premium_promo");
-                    if (c.next()) {
-                        NativeByteBuffer data = c.byteBufferValue(0);
-                        if (data != null) {
-                            premiumPromo = TLRPC.TL_help_premiumPromo.TLdeserialize(data, data.readInt32(false), true);
-                            data.reuse();
-                        }
-                        date = c.intValue(1);
-                    }
-                } catch (Exception e) {
-                    FileLog.e(e, false);
-                } finally {
-                    if (c != null) {
-                        c.dispose();
-                    }
-                }
-                processLoadedPremiumPromo(premiumPromo, date, true);
-            });
-        } else {
-            TLRPC.TL_help_getPremiumPromo req = new TLRPC.TL_help_getPremiumPromo();
-            getConnectionsManager().sendRequest(req, (response, error) -> {
-                int date = (int) (System.currentTimeMillis() / 1000);
-                if (response instanceof TLRPC.TL_help_premiumPromo) {
-                    TLRPC.TL_help_premiumPromo r = (TLRPC.TL_help_premiumPromo) response;
-                    processLoadedPremiumPromo(r, date, false);
-                }
-            });
-        }
-    }
 
-    public void processLoadedPremiumPromo(TLRPC.TL_help_premiumPromo premiumPromo, int date, boolean cache) {
-        if (premiumPromo != null) {
-            this.premiumPromo = premiumPromo;
-            premiumPromoUpdateDate = date;
-            getMessagesController().putUsers(premiumPromo.users, cache);
-            AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.premiumPromoUpdated));
-        }
 
-        if (!cache) {
-            if (premiumPromo != null) {
-                putPremiumPromoToCache(premiumPromo, date);
-            }
-            isLoadingPremiumPromo = false;
-        } else {
-            if (premiumPromo == null || Math.abs(System.currentTimeMillis() / 1000 - date) >= 60 * 60 * 24) {
-                loadPremiumPromo(false);
-            } else {
-                isLoadingPremiumPromo = false;
-            }
-        }
-    }
 
-    private void putPremiumPromoToCache(TLRPC.TL_help_premiumPromo premiumPromo, int date) {
-        getMessagesStorage().getStorageQueue().postRunnable(() -> {
-            try {
-                if (premiumPromo != null) {
-                    getMessagesStorage().getDatabase().executeFast("DELETE FROM premium_promo").stepThis().dispose();
-                    SQLitePreparedStatement state = getMessagesStorage().getDatabase().executeFast("REPLACE INTO premium_promo VALUES(?, ?)");
-                    state.requery();
-                    NativeByteBuffer data = new NativeByteBuffer(premiumPromo.getObjectSize());
-                    premiumPromo.serializeToStream(data);
-                    state.bindByteBuffer(1, data);
-                    state.bindInteger(2, date);
-                    state.step();
-                    data.reuse();
-                    state.dispose();
-                } else {
-                    SQLitePreparedStatement state = getMessagesStorage().getDatabase().executeFast("UPDATE premium_promo SET date = ?");
-                    state.requery();
-                    state.bindInteger(1, date);
-                    state.step();
-                    state.dispose();
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
-        });
-    }
+
+
 
     public List<TLRPC.TL_availableReaction> getReactionsList() {
         return reactionsList;
@@ -8832,7 +8684,6 @@ public class MediaDataController extends BaseController {
         checkFeaturedEmoji();
         checkReactions();
         checkMenuBots(true);
-        checkPremiumPromo();
         checkPremiumGiftStickers();
         checkTonGiftStickers();
         checkGenericAnimations();

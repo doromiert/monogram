@@ -5204,7 +5204,7 @@ public class MessageObject {
                     int i = messageText.toString().indexOf("un2");
                     if (i != -1) {
                         SpannableStringBuilder sb = SpannableStringBuilder.valueOf(messageText);
-                        CharSequence price = BillingController.getInstance().formatCurrency(messageOwner.action.amount, messageOwner.action.currency);
+                        CharSequence price = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(messageOwner.action.amount, messageOwner.action.currency);
                         if ((messageOwner.action.flags & 1) != 0) {
                             price = String.format("%.2f", (messageOwner.action.cryptoAmount * Math.pow(10, -9))) + " " + messageOwner.action.cryptoCurrency + " (~ " + price + ")";
                         }
@@ -5224,7 +5224,7 @@ public class MessageObject {
                     int i = messageText.toString().indexOf("un2");
                     if (i != -1) {
                         SpannableStringBuilder sb = SpannableStringBuilder.valueOf(messageText);
-                        CharSequence price = BillingController.getInstance().formatCurrency(messageOwner.action.amount, messageOwner.action.currency);
+                        CharSequence price = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(messageOwner.action.amount, messageOwner.action.currency);
                         if ((messageOwner.action.flags & 1) != 0) {
                             price = String.format("%.2f", (messageOwner.action.cryptoAmount * Math.pow(10, -9))) + " " + messageOwner.action.cryptoCurrency + " (~ " + price + ")";
                         }

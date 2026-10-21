@@ -61,7 +61,6 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.Premium.boosts.BoostRepository;
-import org.telegram.ui.PaymentFormActivity;
 
 import java.util.ArrayList;
 
@@ -623,22 +622,7 @@ public class UndoView extends FrameLayout {
                 subInfoText = null;
                 icon = R.raw.payment_success;
                 timeLeft = 5000;
-                if (parentFragment != null && infoObject2 instanceof TLRPC.Message) {
-                    TLRPC.Message message = (TLRPC.Message) infoObject2;
-                    setOnTouchListener(null);
-                    infoTextView.setMovementMethod(null);
-                    setOnClickListener(v -> {
-                        hide(true, 1);
-                        TLRPC.TL_payments_getPaymentReceipt req = new TLRPC.TL_payments_getPaymentReceipt();
-                        req.msg_id = message.id;
-                        req.peer = parentFragment.getMessagesController().getInputPeer(message.peer_id);
-                        parentFragment.getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                            if (response instanceof TLRPC.PaymentReceipt) {
-                                parentFragment.presentFragment(new PaymentFormActivity((TLRPC.PaymentReceipt) response));
-                            }
-                        }), ConnectionsManager.RequestFlagFailOnServerErrors);
-                    });
-                }
+
             } else if (action == ACTION_VOIP_MUTED) {
                 String name;
                 if (infoObject instanceof TLRPC.User) {

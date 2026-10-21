@@ -281,7 +281,6 @@ public class UserConfig extends BaseController {
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.currentUserPremiumStatusChanged);
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.premiumStatusChangedGlobal);
 
-                getMediaDataController().loadPremiumPromo(false);
                 getMediaDataController().loadReactions(false, null);
                 getMessagesController().getStoriesController().invalidateStoryLimit();
             });
@@ -289,7 +288,7 @@ public class UserConfig extends BaseController {
             AndroidUtilities.runOnUIThread(() -> {
                 getMessagesController().updatePremium(newUser.premium);
                 NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.currentUserPremiumStatusChanged);
-                getMediaDataController().loadPremiumPromo(true);
+
             });
         }
     }

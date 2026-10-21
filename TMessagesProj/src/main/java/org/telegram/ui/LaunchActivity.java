@@ -4188,63 +4188,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     FileLog.e(e);
                 }
             }));
-        } else if (inputInvoiceSlug != null) {
-            TLRPC.TL_payments_getPaymentForm req = new TLRPC.TL_payments_getPaymentForm();
-            TLRPC.TL_inputInvoiceSlug invoiceSlug = new TLRPC.TL_inputInvoiceSlug();
-            invoiceSlug.slug = inputInvoiceSlug;
-            req.invoice = invoiceSlug;
-            requestId[0] = ConnectionsManager.getInstance(intentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                if (error != null) {
-                    if ("SUBSCRIPTION_ALREADY_ACTIVE".equalsIgnoreCase(error.text)) {
-                        BulletinFactory.of(mainFragmentsStack.get(mainFragmentsStack.size() - 1)).createErrorBulletin(LocaleController.getString(R.string.PaymentInvoiceSubscriptionLinkAlreadyPaid)).show();
-                    } else {
-                        BulletinFactory.of(mainFragmentsStack.get(mainFragmentsStack.size() - 1)).createErrorBulletin(LocaleController.getString(R.string.PaymentInvoiceLinkInvalid)).show();
-                    }
-                } else if (!LaunchActivity.this.isFinishing()) {
-                    PaymentFormActivity paymentFormActivity = null;
-                    if (response instanceof TLRPC.TL_payments_paymentFormStars) {
-                        Runnable callback = navigateToPremiumGiftCallback;
-                        navigateToPremiumGiftCallback = null;
-                        StarsController.getInstance(currentAccount).openPaymentForm(null, invoiceSlug, (TLRPC.TL_payments_paymentFormStars) response, () -> {
-                            try {
-                                dismissLoading.run();
-                            } catch (Exception e) {
-                                FileLog.e(e);
-                            }
-                        }, status -> {
-                            if (callback != null && "paid".equals(status)) {
-                                callback.run();
-                            }
-                        });
-                        return;
-                    } else if (response instanceof TLRPC.PaymentForm) {
-                        TLRPC.PaymentForm form = (TLRPC.PaymentForm) response;
-                        MessagesController.getInstance(intentAccount).putUsers(form.users, false);
-                        paymentFormActivity = new PaymentFormActivity(form, inputInvoiceSlug, getActionBarLayout().getLastFragment());
-                    } else if (response instanceof TLRPC.PaymentReceipt) {
-                        paymentFormActivity = new PaymentFormActivity((TLRPC.PaymentReceipt) response);
-                    }
-
-                    if (paymentFormActivity != null) {
-                        if (navigateToPremiumGiftCallback != null) {
-                            Runnable callback = navigateToPremiumGiftCallback;
-                            navigateToPremiumGiftCallback = null;
-                            paymentFormActivity.setPaymentFormCallback(status -> {
-                                if (status == PaymentFormActivity.InvoiceStatus.PAID) {
-                                    callback.run();
-                                }
-                            });
-                        }
-                        presentFragment(paymentFormActivity);
-                    }
-                }
-
-                try {
-                    dismissLoading.run();
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            }));
         } else if (username != null) {
             if (progress != null) {
                 progress.init();

@@ -86,7 +86,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.json.JSONObject;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.ChatObject;
@@ -4236,8 +4235,8 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                 tableView.addRow(getString(R.string.Gift2Quantity), formatPluralStringComma("Gift2QuantityIssued1", gift.availability_issued) + formatPluralStringComma("Gift2QuantityIssued2", gift.availability_total));
             }
             if (!TextUtils.isEmpty(gift.slug) && (gift.flags & 256) != 0) {
-                final String roundedValue = BillingController.getInstance().formatCurrency(gift.value_amount, gift.value_currency, BillingController.getInstance().getCurrencyExp(gift.value_currency), true);
-                final String value = BillingController.getInstance().formatCurrency(gift.value_amount, gift.value_currency);
+                final String roundedValue = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency, org.telegram.messenger.utils.CurrencyFormatter.getCurrencyExp(gift.value_currency), true);
+                final String value = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency);
                 tableView.addRow(getString(R.string.GiftValue2), "~" + roundedValue, getString(R.string.GiftValue2LearnMore), () -> {
                     openValueStats(gift.gift_id, gift.title, getGiftName(), value, gift.getDocument(), gift.slug);
                 });
@@ -6594,7 +6593,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
         addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributeBackdrop.class));
         addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributePattern.class));
         if (!TextUtils.isEmpty(gift.slug) && (gift.flags & 256) != 0) {
-            final String roundedValue = BillingController.getInstance().formatCurrency(gift.value_amount, gift.value_currency, BillingController.getInstance().getCurrencyExp(gift.value_currency), true);
+            final String roundedValue = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency, org.telegram.messenger.utils.CurrencyFormatter.getCurrencyExp(gift.value_currency), true);
             tableView.addRow(getString(R.string.GiftValue2), "~" + roundedValue);
         }
         topView.addView(tableView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 23, 16, 23, 4));
@@ -7917,7 +7916,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                 addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributeBackdrop.class));
                 addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributePattern.class));
                 if (!TextUtils.isEmpty(gift.slug) && (gift.flags & 256) != 0) {
-                    final String roundedValue = BillingController.getInstance().formatCurrency(gift.value_amount, gift.value_currency, BillingController.getInstance().getCurrencyExp(gift.value_currency), true);
+                    final String roundedValue = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency, org.telegram.messenger.utils.CurrencyFormatter.getCurrencyExp(gift.value_currency), true);
                     tableView.addRow(getString(R.string.GiftValue2), "~" + roundedValue);
                 }
                 topView.addView(tableView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 23, 16, 23, 4));
@@ -8135,27 +8134,27 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                 final TableView tableView = new TableView(getContext(), resourcesProvider);
                 tableLayout.addView(tableView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
                 tableView.addRow(getString(R.string.GiftValueInitialSale), LocaleController.formatYearMonthDay(info.initial_sale_date, true));
-                tableView.addRow(getString(R.string.GiftValueInitialPrice), StarsIntroActivity.replaceStarsWithPlain("⭐️" + info.initial_sale_stars + " (~" + BillingController.getInstance().formatCurrency(info.initial_sale_price, info.currency) + ")", .8f));
+                tableView.addRow(getString(R.string.GiftValueInitialPrice), StarsIntroActivity.replaceStarsWithPlain("⭐️" + info.initial_sale_stars + " (~" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.initial_sale_price, info.currency) + ")", .8f));
                 if (info.hasFlag(info.flags, TLObject.FLAG_0)) {
                     tableView.addRow(getString(R.string.GiftValueLastSale), LocaleController.formatYearMonthDay(info.last_sale_date, true));
                     int morePercent = (int) (Math.round(((double) info.last_sale_price / info.initial_sale_price) * 1000) / 10) - 100;
                     if (morePercent > 0) {
-                        tableView.addRow(getString(R.string.GiftValueLastPrice), BillingController.getInstance().formatCurrency(info.last_sale_price, info.currency), "+" + LocaleController.formatNumber(morePercent, ' ') + "%", null);
+                        tableView.addRow(getString(R.string.GiftValueLastPrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.last_sale_price, info.currency), "+" + LocaleController.formatNumber(morePercent, ' ') + "%", null);
                     } else {
-                        tableView.addRow(getString(R.string.GiftValueLastPrice), BillingController.getInstance().formatCurrency(info.last_sale_price, info.currency));
+                        tableView.addRow(getString(R.string.GiftValueLastPrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.last_sale_price, info.currency));
                     }
                 }
                 if (info.hasFlag(info.flags, TLObject.FLAG_2)) {
                     final ButtonSpan.TextViewButtons[] view = new ButtonSpan.TextViewButtons[1];
-                    final Runnable hint = () -> showHint.run(view[0], LocaleController.formatString(R.string.GiftValueMinPriceInfo, BillingController.getInstance().formatCurrency(info.floor_price, info.currency), collectionTitle));
-                    TableRow row = tableView.addRow(getString(R.string.GiftValueMinPrice), BillingController.getInstance().formatCurrency(info.floor_price, info.currency), "?", hint);
+                    final Runnable hint = () -> showHint.run(view[0], LocaleController.formatString(R.string.GiftValueMinPriceInfo, org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.floor_price, info.currency), collectionTitle));
+                    TableRow row = tableView.addRow(getString(R.string.GiftValueMinPrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.floor_price, info.currency), "?", hint);
                     view[0] = (ButtonSpan.TextViewButtons) ((TableView.TableRowContent) row.getChildAt(1)).getChildAt(0);
                     row.setOnClickListener(v -> hint.run());
                 }
                 if (info.hasFlag(info.flags, TLObject.FLAG_3)) {
                     final ButtonSpan.TextViewButtons[] view = new ButtonSpan.TextViewButtons[1];
-                    final Runnable hint = () -> showHint.run(view[0], LocaleController.formatString(R.string.GiftValueAveragePriceInfo, BillingController.getInstance().formatCurrency(info.average_price, info.currency), collectionTitle));
-                    TableRow row = tableView.addRow(getString(R.string.GiftValueAveragePrice), BillingController.getInstance().formatCurrency(info.average_price, info.currency), "?", hint);
+                    final Runnable hint = () -> showHint.run(view[0], LocaleController.formatString(R.string.GiftValueAveragePriceInfo, org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.average_price, info.currency), collectionTitle));
+                    TableRow row = tableView.addRow(getString(R.string.GiftValueAveragePrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.average_price, info.currency), "?", hint);
                     view[0] = (ButtonSpan.TextViewButtons) ((TableView.TableRowContent) row.getChildAt(1)).getChildAt(0);
                     row.setOnClickListener(v -> hint.run());
                 }

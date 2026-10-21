@@ -30696,18 +30696,6 @@ public class ChatActivity extends BaseFragment implements
                     BulletinFactory.of(this).createErrorBulletin(LocaleController.getString(R.string.MessageNotFound), themeDelegate).show();
                 }
                 return true;
-            } else if (!longpress && message.messageOwner.action instanceof TLRPC.TL_messageActionPaymentSent) {
-                TLRPC.TL_payments_getPaymentReceipt req = new TLRPC.TL_payments_getPaymentReceipt();
-                req.msg_id = message.getId();
-                req.peer = getMessagesController().getInputPeer(message.messageOwner.peer_id);
-                getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                    if (response instanceof TLRPC.TL_payments_paymentReceiptStars) {
-                        StarsIntroActivity.showTransactionSheet(getContext(), false, currentAccount, (TLRPC.TL_payments_paymentReceiptStars) response, resourceProvider);
-                    } else if (response instanceof TLRPC.PaymentReceipt) {
-                        presentFragment(new PaymentFormActivity((TLRPC.PaymentReceipt) response));
-                    }
-                }), ConnectionsManager.RequestFlagFailOnServerErrors);
-                return true;
             } else if (!longpress && message.messageOwner.action instanceof TLRPC.TL_messageActionPaymentRefunded) {
                 TLRPC.TL_messageActionPaymentRefunded action = (TLRPC.TL_messageActionPaymentRefunded) message.messageOwner.action;
                 StarsIntroActivity.showTransactionSheet(getContext(), currentAccount, message.messageOwner.date, action, resourceProvider);

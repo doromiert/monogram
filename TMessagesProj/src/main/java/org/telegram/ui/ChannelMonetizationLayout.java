@@ -47,7 +47,6 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.FileLog;
@@ -673,7 +672,7 @@ public class ChannelMonetizationLayout extends SizeNotifierFrameLayout implement
             ssb.setSpan(balanceTitleSizeSpan, index, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         balanceTitle.setText(ssb);
-        balanceSubtitle.setText("≈" + BillingController.getInstance().formatCurrency(amount, "USD"));
+        balanceSubtitle.setText("≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(amount, "USD"));
     }
 
     private void setStarsBalance(TL_stars.StarsAmount amount, int blockedUntil) {
@@ -687,7 +686,7 @@ public class ChannelMonetizationLayout extends SizeNotifierFrameLayout implement
         }
         starsBalance = amount;
         starsBalanceTitle.setText(ssb);
-        starsBalanceSubtitle.setText("≈" + BillingController.getInstance().formatCurrency((long) (stars_rate * amount.amount * 100.0), "USD"));
+        starsBalanceSubtitle.setText("≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (stars_rate * amount.amount * 100.0), "USD"));
         starsBalanceEditTextContainer.setVisibility(amount.amount > 0 ? VISIBLE : GONE);
         if (starsBalanceEditTextAll) {
             starsBalanceEditTextIgnore = true;
@@ -1164,7 +1163,7 @@ public class ChannelMonetizationLayout extends SizeNotifierFrameLayout implement
                 }
                 amountContainer[i].setVisibility(View.VISIBLE);
                 cryptoAmountView[i].setText(cryptoAmount);
-                amountView[i].setText("≈" + BillingController.getInstance().formatCurrency(amount, value.currency));
+                amountView[i].setText("≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(amount, value.currency));
             }
         }
 

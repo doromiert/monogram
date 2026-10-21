@@ -140,9 +140,9 @@ public class LinkManager {
             return true;
 
         if ("$".equalsIgnoreCase(first))
-            return handleInvoiceSlug(path.substring(1));
+            return true;
         if ("invoice".equalsIgnoreCase(first))
-            return handleInvoiceSlug(second);
+            return true;
 
         if ("addstyle".equalsIgnoreCase(first))
             return handleAiStyle(second);
@@ -196,7 +196,7 @@ public class LinkManager {
             return handleTgResolve(uri);
 
         if ("invoice".equalsIgnoreCase(first))
-            return handleInvoiceSlug(uri.getQueryParameter("slug"));
+            return true;
 
         if ("oauth".equalsIgnoreCase(first))
             return handleOAuth(uri, uri.getQueryParameter("token"));
@@ -1257,64 +1257,7 @@ public class LinkManager {
         return true;
     }
 
-    private boolean handleInvoiceSlug(String slug) {
-        if(rejectMonetaryRoute()) return true;
-        if (TextUtils.isEmpty(slug)) return false;
 
-        init();
-
-        final TLRPC.TL_payments_getPaymentForm req = new TLRPC.TL_payments_getPaymentForm();
-        final TLRPC.TL_inputInvoiceSlug invoiceSlug = new TLRPC.TL_inputInvoiceSlug();
-        invoiceSlug.slug = slug;
-        req.invoice = invoiceSlug;
-        final int reqId = getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (error != null) {
-                if ("SUBSCRIPTION_ALREADY_ACTIVE".equalsIgnoreCase(error.text)) {
-                    getBulletinFactory().createErrorBulletin(LocaleController.getString(R.string.PaymentInvoiceSubscriptionLinkAlreadyPaid)).show();
-                } else {
-                    getBulletinFactory().createErrorBulletin(LocaleController.getString(R.string.PaymentInvoiceLinkInvalid)).show();
-                }
-            } else if (!activity.isFinishing()) {
-                PaymentFormActivity paymentFormActivity = null;
-                if (response instanceof TLRPC.TL_payments_paymentFormStars) {
-                    final Runnable callback = activity.navigateToPremiumGiftCallback;
-                    activity.navigateToPremiumGiftCallback = null;
-                    StarsController.getInstance(currentAccount).openPaymentForm(null, invoiceSlug, (TLRPC.TL_payments_paymentFormStars) response, () -> {
-                        done();
-                    }, status -> {
-                        if (callback != null && "paid".equals(status)) {
-                            callback.run();
-                        }
-                    });
-                    return;
-                } else if (response instanceof TLRPC.PaymentForm) {
-                    final TLRPC.PaymentForm form = (TLRPC.PaymentForm) response;
-                    MessagesController.getInstance(currentAccount).putUsers(form.users, false);
-                    paymentFormActivity = new PaymentFormActivity(form, slug, getLastFragment());
-                } else if (response instanceof TLRPC.PaymentReceipt) {
-                    paymentFormActivity = new PaymentFormActivity((TLRPC.PaymentReceipt) response);
-                }
-
-                if (paymentFormActivity != null) {
-                    if (activity.navigateToPremiumGiftCallback != null) {
-                        Runnable callback = activity.navigateToPremiumGiftCallback;
-                        activity.navigateToPremiumGiftCallback = null;
-                        paymentFormActivity.setPaymentFormCallback(status -> {
-                            if (status == PaymentFormActivity.InvoiceStatus.PAID) {
-                                callback.run();
-                            }
-                        });
-                    }
-                    presentFragment(paymentFormActivity);
-                }
-            }
-
-            done();
-        }));
-        setRequestId(reqId);
-
-        return true;
-    }
 
     private boolean handleOAuth(Uri uri, String token) {
         if (!isExternalIntent) return true;

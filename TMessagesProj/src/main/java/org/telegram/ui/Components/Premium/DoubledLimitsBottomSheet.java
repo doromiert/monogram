@@ -169,7 +169,6 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.billingProductDetailsUpdated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.premiumPromoUpdated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
     }
@@ -178,14 +177,13 @@ public class DoubledLimitsBottomSheet extends BottomSheetWithRecyclerListView im
     public void dismiss() {
         super.dismiss();
 
-        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.billingProductDetailsUpdated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.premiumPromoUpdated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.billingProductDetailsUpdated || id == NotificationCenter.premiumPromoUpdated) {
+        if (id == NotificationCenter.premiumPromoUpdated) {
             premiumButtonView.buttonTextView.setText(PremiumPreviewFragment.getPremiumButtonText(currentAccount, selectedTier));
         } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
             bindPremium(UserConfig.getInstance(currentAccount).isPremium());

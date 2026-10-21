@@ -2837,7 +2837,6 @@ public class MessagesController extends BaseController implements NotificationCe
                             editor.putStringSet("directPaymentsCurrency", currencySet);
                             changed = true;
 
-                            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.billingProductDetailsUpdated);
                         }
                     }
                     break;

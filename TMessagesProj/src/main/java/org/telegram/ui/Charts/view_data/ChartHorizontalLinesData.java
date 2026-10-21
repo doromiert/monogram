@@ -8,7 +8,6 @@ import android.text.StaticLayout;
 import android.text.TextPaint;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChannelMonetizationLayout;
@@ -138,7 +137,7 @@ public class ChartHorizontalLinesData {
     public CharSequence format(int a, TextPaint paint, long v, int formatter) {
         if (formatter == ChartData.FORMATTER_TON) {
             if (a == 1) {
-                return "≈" + BillingController.getInstance().formatCurrency(v, "USD");
+                return "≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(v, "USD");
             }
             if (formatterTON == null) {
                 DecimalFormatSymbols symbols = new DecimalFormatSymbols(Locale.US);
@@ -152,7 +151,7 @@ public class ChartHorizontalLinesData {
             return ChannelMonetizationLayout.replaceTON("TON " + formatterTON.format(v / 1_000_000_000.0), paint, .8f, -dp(.66f), false);
         } else if (formatter == ChartData.FORMATTER_XTR) {
             if (a == 1) {
-                return "≈" + BillingController.getInstance().formatCurrency(v, "USD");
+                return "≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(v, "USD");
             }
             return StarsIntroActivity.replaceStarsWithPlain("XTR " + LocaleController.formatNumber(v, ' '), .65f);
         }

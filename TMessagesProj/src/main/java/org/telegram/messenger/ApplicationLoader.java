@@ -274,7 +274,6 @@ public class ApplicationLoader extends Application {
             ContactsController.getInstance(a).checkAppAccount();
             DownloadController.getInstance(a);
         }
-        if(!BuildVars.IS_BILLING_UNAVAILABLE) BillingController.getInstance().startConnection();
     }
 
     public ApplicationLoader() {

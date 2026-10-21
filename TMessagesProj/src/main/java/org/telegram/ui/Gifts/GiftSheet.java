@@ -56,12 +56,8 @@ import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.GridLayoutManager;
 
-import com.android.billingclient.api.BillingClient;
-import com.android.billingclient.api.ProductDetails;
-import com.android.billingclient.api.QueryProductDetailsParams;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.DialogObject;
@@ -663,7 +659,6 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
             setBirthday();
         }
 
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.billingProductDetailsUpdated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.starGiftsLoaded);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.userInfoDidLoad);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.starGiftSoldOut);
@@ -769,7 +764,6 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
     @Override
     public void dismiss() {
         super.dismiss();
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.billingProductDetailsUpdated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.starGiftsLoaded);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.userInfoDidLoad);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.starGiftSoldOut);
@@ -778,9 +772,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.billingProductDetailsUpdated) {
-            updatePremiumTiers();
-        } else if (id == NotificationCenter.starGiftsLoaded) {
+        if (id == NotificationCenter.starGiftsLoaded) {
             if (adapter != null) {
                 adapter.update(true);
             }
@@ -829,78 +821,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
 
     private void updatePremiumTiers() {
         premiumTiers.clear();
-        if (premiumTiers.isEmpty() && options != null && !options.isEmpty()) {
-            List<QueryProductDetailsParams.Product> products = new ArrayList<>();
-            long pricePerMonthMax = 0;
-            for (int i = options.size() - 1; i >= 0; i--) {
-                final TLRPC.TL_premiumGiftCodeOption option = options.get(i);
-                if ("XTR".equalsIgnoreCase(option.currency)) continue;
-                Object starsOption = null;
-                for (TLRPC.TL_premiumGiftCodeOption o : options) {
-                    if (o != option && "XTR".equalsIgnoreCase(o.currency) && o.months == option.months) {
-                        starsOption = o;
-                        break;
-                    }
-                }
-                final GiftPremiumBottomSheet.GiftTier giftTier = new GiftPremiumBottomSheet.GiftTier(option, starsOption);
-                premiumTiers.add(giftTier);
-                if (BuildVars.useInvoiceBilling()) {
-                    if (giftTier.getPricePerMonth() > pricePerMonthMax) {
-                        pricePerMonthMax = giftTier.getPricePerMonth();
-                    }
-                } else if (giftTier.getStoreProduct() != null && BillingController.getInstance().isReady()) {
-                    products.add(QueryProductDetailsParams.Product.newBuilder()
-                            .setProductType(BillingClient.ProductType.INAPP)
-                            .setProductId(giftTier.getStoreProduct())
-                            .build());
-                }
-            }
-            if (BuildVars.useInvoiceBilling()) {
-                for (GiftPremiumBottomSheet.GiftTier tier : premiumTiers) {
-                    tier.setPricePerMonthRegular(pricePerMonthMax);
-                }
-            } else if (!products.isEmpty()) {
-                long startMs = System.currentTimeMillis();
-                BillingController.getInstance().queryProductDetails(products, (billingResult, list) -> {
-                    long pricePerMonthMaxStore = 0;
-
-                    for (ProductDetails details : list) {
-                        for (GiftPremiumBottomSheet.GiftTier giftTier : premiumTiers) {
-                            if (giftTier.getStoreProduct() != null && giftTier.getStoreProduct().equals(details.getProductId())) {
-                                giftTier.setGooglePlayProductDetails(details);
-
-                                if (giftTier.getPricePerMonth() > pricePerMonthMaxStore) {
-                                    pricePerMonthMaxStore = giftTier.getPricePerMonth();
-                                }
-                                break;
-                            }
-                        }
-                    }
-
-                    for (GiftPremiumBottomSheet.GiftTier giftTier : premiumTiers) {
-                        giftTier.setPricePerMonthRegular(pricePerMonthMaxStore);
-                    }
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (adapter != null) {
-                            adapter.update(false);
-                        }
-                    });
-                });
-            }
-        }
-        if (premiumTiers.isEmpty()) {
-            BoostRepository.loadGiftOptions(currentAccount, null, paymentOptions -> {
-                if (getContext() == null || !isShown()) return;
-                options = BoostRepository.filterGiftOptions(paymentOptions, 1);
-                options = BoostRepository.filterGiftOptionsByBilling(options);
-                if (!options.isEmpty()) {
-                    updatePremiumTiers();
-                    if (adapter != null) {
-                        adapter.update(true);
-                    }
-                }
-            });
-        }
+        if (adapter != null) adapter.update(false);
     }
 
     @Override

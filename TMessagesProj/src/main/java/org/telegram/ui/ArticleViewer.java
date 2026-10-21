@@ -14964,10 +14964,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
                 }
 
-                @Override
-                public void onWebAppOpenInvoice(TLRPC.InputInvoice inputInvoice, String slug, TLObject response) {
 
-                }
 
                 @Override
                 public void onSetupMainButton(boolean isVisible, boolean isActive, String text, long emojiId, int color, int textColor, boolean isProgressVisible, boolean hasShineEffect) {

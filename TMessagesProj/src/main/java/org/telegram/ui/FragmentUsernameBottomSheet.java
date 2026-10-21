@@ -19,7 +19,6 @@ import android.widget.TextView;
 
 import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
@@ -88,8 +87,8 @@ public class FragmentUsernameBottomSheet {
             ownerName = "";
         }
 
-        final String money = BillingController.getInstance().formatCurrency(info.amount, info.currency);
-        final String crypto_money = BillingController.getInstance().formatCurrency(info.crypto_amount, info.crypto_currency);
+        final String money = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.amount, info.currency);
+        final String crypto_money = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.crypto_amount, info.crypto_currency);
 
         String title;
         String message;

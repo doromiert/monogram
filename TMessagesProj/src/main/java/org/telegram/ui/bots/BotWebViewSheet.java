@@ -98,7 +98,6 @@ import org.telegram.ui.Components.SimpleFloatPropertyCompat;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PaymentFormActivity;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.ReportBottomSheet;
 import org.telegram.ui.Stars.StarsController;
@@ -698,45 +697,7 @@ public class BotWebViewSheet extends Dialog implements NotificationCenter.Notifi
                 hasSettings = visible;
             }
 
-            @Override
-            public void onWebAppOpenInvoice(TLRPC.InputInvoice inputInvoice, String slug, TLObject response) {
-                BaseFragment parentFragment = ((LaunchActivity) parentActivity).getActionBarLayout().getLastFragment();
-                PaymentFormActivity paymentFormActivity = null;
-                if (response instanceof TLRPC.TL_payments_paymentFormStars) {
-                    AndroidUtilities.hideKeyboard(windowView);
-                    final AlertDialog progressDialog = new AlertDialog(getContext(), AlertDialog.ALERT_TYPE_SPINNER);
-                    progressDialog.showDelayed(150);
-                    StarsController.getInstance(currentAccount).openPaymentForm(null, inputInvoice, (TLRPC.TL_payments_paymentFormStars) response, () -> {
-                        progressDialog.dismiss();
-                    }, status -> {
-                        webViewContainer.onInvoiceStatusUpdate(slug, status);
-                    });
-                    return;
-                } else if (response instanceof TLRPC.PaymentForm) {
-                    TLRPC.PaymentForm form = (TLRPC.PaymentForm) response;
-                    MessagesController.getInstance(currentAccount).putUsers(form.users, false);
-                    paymentFormActivity = new PaymentFormActivity(form, slug, parentFragment);
-                } else if (response instanceof TLRPC.PaymentReceipt) {
-                    paymentFormActivity = new PaymentFormActivity((TLRPC.PaymentReceipt) response);
-                }
 
-                if (paymentFormActivity != null) {
-                    swipeContainer.stickTo(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
-
-                    AndroidUtilities.hideKeyboard(windowView);
-                    OverlayActionBarLayoutDialog overlayActionBarLayoutDialog = new OverlayActionBarLayoutDialog(context, resourcesProvider);
-                    overlayActionBarLayoutDialog.show();
-                    paymentFormActivity.setPaymentFormCallback(status -> {
-                        if (status != PaymentFormActivity.InvoiceStatus.PENDING) {
-                            overlayActionBarLayoutDialog.dismiss();
-                        }
-
-                        webViewContainer.onInvoiceStatusUpdate(slug, status.name().toLowerCase(Locale.ROOT));
-                    });
-                    paymentFormActivity.setResourcesProvider(resourcesProvider);
-                    overlayActionBarLayoutDialog.addFragment(paymentFormActivity);
-                }
-            }
 
             @Override
             public void onWebAppExpand() {

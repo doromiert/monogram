@@ -17,7 +17,6 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
@@ -103,7 +102,7 @@ public class StarGiveawayOptionCell extends FrameLayout {
         } else {
             titleView.setText(LocaleController.formatPluralStringComma("GiveawayStars", (int) option.stars, ' '), false);
             subtitleView.setText(LocaleController.formatPluralStringComma("BoostingStarOptionPerUser", (int) per_user_stars, ','), animated);
-            priceView.setText(BillingController.getInstance().formatCurrency(option.amount, option.currency));
+            priceView.setText(org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(option.amount, option.currency));
         }
 
         starsCount = 1 + index;

@@ -527,16 +527,10 @@ public class FileRefController extends BaseController {
                 onRequestComplete(locationKey, parentKey, response, error, true, false);
             });
         } else if (parentObject instanceof TLRPC.TL_help_premiumPromo) {
-            TLRPC.TL_help_getPremiumPromo req = new TLRPC.TL_help_getPremiumPromo();
-            getConnectionsManager().sendRequest(req, (response, error) -> {
-                int date = (int) (System.currentTimeMillis() / 1000);
-                if (response instanceof TLRPC.TL_help_premiumPromo) {
-                    TLRPC.TL_help_premiumPromo r = (TLRPC.TL_help_premiumPromo) response;
-                    getMediaDataController().processLoadedPremiumPromo(r, date, false);
-                }
-
-                onRequestComplete(locationKey, parentKey, response, error, true, false);
-            });
+            TLRPC.TL_error error = new TLRPC.TL_error();
+            error.code = 400;
+            error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
+            onRequestComplete(locationKey, parentKey, null, error, true, false);
         } else if (parentObject instanceof TLRPC.TL_availableReaction) {
             TLRPC.TL_messages_getAvailableReactions req = new TLRPC.TL_messages_getAvailableReactions();
             req.hash = 0;

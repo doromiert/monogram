@@ -133,7 +133,6 @@ import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.AuthTokensHelper;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
@@ -7375,8 +7374,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             }
                             final String usernameStr = "@" + usernameObj.username;
                             final String date = LocaleController.getInstance().getFormatterBoostExpired().format(new Date(info.purchase_date * 1000L));
-                            final String cryptoAmount = BillingController.getInstance().formatCurrency(info.crypto_amount, info.crypto_currency);
-                            final String amount = BillingController.getInstance().formatCurrency(info.amount, info.currency);
+                            final String cryptoAmount = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.crypto_amount, info.crypto_currency);
+                            final String amount = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.amount, info.currency);
                             BulletinFactory.of(shareAlert.bulletinContainer2, resourcesProvider)
                                     .createImageBulletin(
                                             R.drawable.filled_username,

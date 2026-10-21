@@ -70,11 +70,11 @@ public class BoostViaGiftsBottomSheet extends BottomSheetWithRecyclerListView im
 
     private final ArrayList<Item> items = new ArrayList<>();
     private final List<Integer> sliderValues =
-        BoostRepository.isGoogleBillingAvailable() ?
+        false ?
             Arrays.asList(1, 3, 5, 7, 10, 25, 50) :
             Arrays.asList(1, 3, 5, 7, 10, 25, 50, 100);
     private final List<Integer> sliderStarsValues =
-        BoostRepository.isGoogleBillingAvailable() ?
+        false ?
             Arrays.asList(1, 3, 5, 7, 10, 25, 50) :
             Arrays.asList(1, 3, 5, 7, 10, 25, 50, 100);
     private final List<Integer> starsNotExtended = Arrays.asList(750, 10_000, 50_000);
@@ -337,7 +337,7 @@ public class BoostViaGiftsBottomSheet extends BottomSheetWithRecyclerListView im
                 for (int i = 0; i < options.size(); i++) {
                     TLRPC.TL_premiumGiftCodeOption option = options.get(i);
                     if (option.months == selectedMonths && selectedUsers.size() > 0) {
-                        if (BoostRepository.isGoogleBillingAvailable() && BoostDialogs.checkReduceUsers(getContext(), resourcesProvider, giftCodeOptions, option)) {
+                        if (false && BoostDialogs.checkReduceUsers(getContext(), resourcesProvider, giftCodeOptions, option)) {
                             return;
                         }
                         actionBtn.updateLoading(true);
@@ -356,7 +356,7 @@ public class BoostViaGiftsBottomSheet extends BottomSheetWithRecyclerListView im
                 for (int i = 0; i < options.size(); i++) {
                     TLRPC.TL_premiumGiftCodeOption option = options.get(i);
                     if (option.months == selectedMonths) {
-                        if (BoostRepository.isGoogleBillingAvailable() && BoostDialogs.checkReduceQuantity(sliderValues, getContext(), resourcesProvider, giftCodeOptions, option, arg -> {
+                        if (false && BoostDialogs.checkReduceQuantity(sliderValues, getContext(), resourcesProvider, giftCodeOptions, option, arg -> {
                             selectedSliderIndex = sliderValues.indexOf(arg.users);
                             updateRows(true, true);
                             updateActionButton(true);

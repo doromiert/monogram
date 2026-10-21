@@ -8,7 +8,7 @@ This file tracks the requested work: make client-side/XMPP-relevant features fre
 - [ ] Make all relevant client-side/XMPP features free without fabricating a paid Telegram identity.
 - [ ] Remove Telegram-only purchases, subscriptions, Stars, paid content, gifts, ads and their entry points/backends.
 - [o] Remove cryptocurrency/wallet/TonConnect Java, JNI and packaged engine integration. Wallet backend and transaction UI removed; separate TON/Stars screens and historical schema/presentation cleanup remain.
-- [ ] Remove remaining Google Play Billing dependency and API users.
+- [o] Remove remaining Google Play Billing dependency and API users. Source client/SDK/API users removed; actual dependency/APK absence still needs release verification. Legacy unavailable purchase hooks and monetary screens still need cleanup.
 - [ ] Verify the complete signed APK against these requirements before marking the goal complete.
 
 ## Baseline inspected on 2026-10-21
@@ -49,6 +49,18 @@ Remaining before a release: finish removing TON/Stars/purchase screens, old tran
 - Removed chat ad click/impression RPCs and their call sites; any historical ad dismissal is local and has no subscription gate.
 - Removed sponsored-peer search queries and impression reporting from `DialogsSearchAdapter`, including query/request-ID state. Ordinary local/global search stays on its existing path.
 - Historical sponsored-message/search-peer display/report handling, ad-related settings/screens and generated schemas remain for a later removal pass. These backend changes do not certify complete ad removal.
+
+### Billing and checkout removal (implementation, not release-verified)
+
+- Removed `messenger/BillingController.java` entirely, including client creation/reconnect, product/purchase queries, restore/assignment, acknowledgement/consumption, subscription management and billing intents. Removed `utils/BillingUtilities.java` (developer payloads, account identifiers, receipt/purpose persistence).
+- Removed `com.android.billingclient:billing:8.0.0` from Gradle. The optional map provider now declares its already-used location dependency directly at the same version, instead of relying on a transitive purchase dependency. Manifest removal directives for Billing permissions/components remain as exclusions, not SDK class implementations.
+- Removed Play API imports/types, price queries/listeners and product pricing fields from Premium, gift, giveaway and Stars source users. Existing read-only amount/price presentation uses `utils/CurrencyFormatter.java`, which has no store, transaction, account or cryptocurrency-specific implementation. Generic unknown currency labels remain renderable as stored data.
+- Removed the Premium subscription purchase/upgrade/restore backend and the Stars top-up/gift/giveaway and Premium gift-code/giveaway checkout implementations (including their invoice alternatives). Removed the invoice-billing selector and Billing product-update observers/events from their source callers. Remaining legacy entry methods report unavailability/failure to their callers; their promotional screens and the rest of Stars/gift transactions still require removal. These methods are not claimed as fully deleted UI features.
+- Removed `PaymentFormActivity.java` in full and its deep-link, keyboard-buy, receipt and attachment/webview launch paths. Removed the web invoice delegate and all five UI implementations. A web widget invoice request receives the existing `cancelled` protocol response without a payment-form lookup, checkout UI or transaction; other widget/browser features remain on their existing paths.
+- Removed Premium promotion fetch/cache refresh and purchase/promo/feature-preview analytics RPCs, including startup/user-config triggers and their callers. Removed annual/upgrade/restore/Christmas sales-hint implementations and their UI branches from the chat list. Old promo file-reference refresh completes with unavailability instead of fetching a new promotion.
+- Removed the obsolete `MonogramBillingDisabledTest`: it referenced the deleted client and SDK. No tests have been run; the release gate must inspect the actual dependency graph and signed APK, rather than testing a retired stub.
+
+Remaining: Stars/gift/auction/paid-media/message backends and their screens, old Premium upsell/marketing UI, ad reporting/settings remnants, crypto and monetary schema/presentation/configuration remnants, plus the remaining free-client-feature audit. No APK is ready or released from this branch yet.
 
 ### New user report tracked
 

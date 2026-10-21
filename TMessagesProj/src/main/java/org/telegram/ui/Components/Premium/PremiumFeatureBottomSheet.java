@@ -591,7 +591,6 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.billingProductDetailsUpdated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.premiumPromoUpdated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
 
@@ -650,7 +649,6 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
     public void dismiss() {
         super.dismiss();
 
-        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.billingProductDetailsUpdated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.premiumPromoUpdated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
 
@@ -659,7 +657,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.billingProductDetailsUpdated || id == NotificationCenter.premiumPromoUpdated) {
+        if (id == NotificationCenter.premiumPromoUpdated) {
             setButtonText();
         } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
             if (UserConfig.getInstance(currentAccount).isPremium()) {

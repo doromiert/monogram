@@ -100,7 +100,6 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.Reactions.ReactionsUtils;
-import org.telegram.ui.PaymentFormActivity;
 import org.telegram.ui.Stories.MessageMediaStoryFull;
 import org.telegram.ui.TwoStepVerificationActivity;
 import org.telegram.ui.TwoStepVerificationSetupActivity;
@@ -3979,6 +3978,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void sendCallback(final boolean cache, final MessageObject messageObject, final TL_keyboard.KeyboardButtonProto button, TLRPC.InputCheckPasswordSRP srp, TwoStepVerificationActivity passwordFragment, final ChatActivity parentFragment) {
+        if (button != null && TLKeyboardHelper.isType(button, TL_keyboard.TL_inlineButtonTypeBuy.class)) {
+            return;
+        }
         if (messageObject == null || button == null || parentFragment == null) {
             return;
         }
@@ -4049,22 +4051,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         OAuthSheet.handle(false, currentAccount, (TLRPC.TL_messages_requestUrlAuth) request[0], (TLRPC.TL_urlAuthResultAccepted) response, buttonTypeUrlAuth.url, null, null, false, null);
                     } else if (response instanceof TLRPC.TL_urlAuthResultDefault) {
                         AlertsCreator.showOpenUrlAlert(parentFragment, buttonTypeUrlAuth.url, false, true);
-                    }
-                } else if (TLKeyboardHelper.isType(button, TL_keyboard.TL_inlineButtonTypeBuy.class)) {
-                    if (response instanceof TLRPC.TL_payments_paymentFormStars) {
-                        TLRPC.InputInvoice inputInvoice = ((TLRPC.TL_payments_getPaymentForm) request[0]).invoice;
-                        StarsController.getInstance(currentAccount).openPaymentForm(messageObject, inputInvoice, (TLRPC.TL_payments_paymentFormStars) response, () -> {
-                            waitingForCallback.remove(key);
-                            finalKeys.remove(key);
-                        }, status -> {});
-                    } else if (response instanceof TLRPC.PaymentForm) {
-                        final TLRPC.PaymentForm form = (TLRPC.PaymentForm) response;
-                        getMessagesController().putUsers(form.users, false);
-                        parentFragment.presentFragment(new PaymentFormActivity(form, messageObject, parentFragment));
-                    } else if (response instanceof TLRPC.TL_payments_paymentReceiptStars) {
-                        StarsIntroActivity.showTransactionSheet(LaunchActivity.instance != null ? LaunchActivity.instance : ApplicationLoader.applicationContext, false, currentAccount, (TLRPC.TL_payments_paymentReceiptStars) response, null);
-                    } else if (response instanceof TLRPC.PaymentReceipt) {
-                        parentFragment.presentFragment(new PaymentFormActivity((TLRPC.PaymentReceipt) response));
                     }
                 } else {
                     TLRPC.TL_messages_botCallbackAnswer res = (TLRPC.TL_messages_botCallbackAnswer) response;
@@ -4228,28 +4214,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 req.flags |= 2;
                 request[0] = req;
                 getConnectionsManager().sendRequest(req, requestDelegate, ConnectionsManager.RequestFlagFailOnServerErrors);
-            } else if (TLKeyboardHelper.isType(button, TL_keyboard.TL_inlineButtonTypeBuy.class)) {
-                if ((messageObject.messageOwner.media.flags & 4) == 0) {
-                    TLRPC.TL_payments_getPaymentForm req = new TLRPC.TL_payments_getPaymentForm();
-                    TLRPC.TL_inputInvoiceMessage inputInvoice = new TLRPC.TL_inputInvoiceMessage();
-                    inputInvoice.msg_id = messageObject.getId();
-                    inputInvoice.peer = getMessagesController().getInputPeer(messageObject.messageOwner.peer_id);
-                    req.invoice = inputInvoice;
-                    final JSONObject themeParams = BotWebViewSheet.makeThemeParams(null);
-                    if (themeParams != null) {
-                        req.theme_params = new TLRPC.TL_dataJSON();
-                        req.theme_params.data = themeParams.toString();
-                        req.flags |= 1;
-                    }
-                    request[0] = req;
-                    getConnectionsManager().sendRequest(req, requestDelegate, ConnectionsManager.RequestFlagFailOnServerErrors);
-                } else {
-                    TLRPC.TL_payments_getPaymentReceipt req = new TLRPC.TL_payments_getPaymentReceipt();
-                    req.msg_id = messageObject.messageOwner.media.receipt_msg_id;
-                    req.peer = getMessagesController().getInputPeer(messageObject.messageOwner.peer_id);
-                    request[0] = req;
-                    getConnectionsManager().sendRequest(req, requestDelegate, ConnectionsManager.RequestFlagFailOnServerErrors);
-                }
             } else {
                 if (messageObject.isEphemeral()) {
                     TL_ephemeral.TL_getCallbackAnswer req = new TL_ephemeral.TL_getCallbackAnswer();

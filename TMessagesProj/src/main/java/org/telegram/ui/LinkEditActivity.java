@@ -37,7 +37,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BillingController;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLog;
@@ -567,7 +566,7 @@ public class LinkEditActivity extends BaseFragment {
                                 }
                                 subPriceView.setText(formatString(
                                         getConnectionsManager().isTestBackend() ? R.string.RequireMonthlyFeePriceTest5Minutes : R.string.RequireMonthlyFeePrice,
-                                        BillingController.getInstance().formatCurrency((long) (stars / 1000.0 * MessagesController.getInstance(currentAccount).starsUsdWithdrawRate1000), "USD")
+                                        org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (stars / 1000.0 * MessagesController.getInstance(currentAccount).starsUsdWithdrawRate1000), "USD")
                                 ));
                             } catch (Exception e) {
                                 FileLog.e(e);
