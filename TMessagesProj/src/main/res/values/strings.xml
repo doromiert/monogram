@@ -11691,4 +11691,5 @@
     <string name="MonogramUseSystemCamera">Use system camera</string>
     <string name="MonogramUseSystemCameraInfo">Open your device’s camera app from the media picker instead of Monogram’s camera. Applies to all accounts.</string>
     <string name="MonogramCaptionLimit">Captions can contain up to %1$s characters.</string>
+    <string name="MonogramAppIconGradient">Gradient</string>
 </resources>
