@@ -1919,13 +1919,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     } else {
                         sorting = null;
                     }
-                    if (giftsContainer.canAdd()) {
-                        o.add(R.drawable.menu_folder_add, getString(R.string.Gift2NewCollection), () -> {
-                            giftsContainer.createCollection();
-                            o.dismiss();
-                        });
-                        gap = true;
-                    }
+
                     if (giftsContainer.collections.isMine()) {
                         if (!list.getPinned().isEmpty() || page.isCollection) {
                             o.add(R.drawable.tabs_reorder, getString(R.string.Gift2Reorder), () -> {

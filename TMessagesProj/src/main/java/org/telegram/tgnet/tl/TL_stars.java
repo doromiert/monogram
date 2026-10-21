@@ -5859,26 +5859,7 @@ public class TL_stars {
         }
     }
 
-    public static class createStarGiftCollection extends TLObject {
-        public static final int constructor = 0x1f4a0e87;
 
-        public TLRPC.InputPeer peer;
-        public String title;
-        public ArrayList<InputSavedStarGift> stargift = new ArrayList<>();
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_starGiftCollection.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-            stream.writeString(title);
-            Vector.serialize(stream, stargift);
-        }
-    }
 
     public static class updateStarGiftCollection extends TLObject {
         public static final int constructor = 0x4fddbee7;

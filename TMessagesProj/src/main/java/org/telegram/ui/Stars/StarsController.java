@@ -567,58 +567,7 @@ public class StarsController {
             if (load || shown) load();
         }
 
-        public boolean creating;
-        public void createCollection(String title, Utilities.Callback<TL_stars.TL_starGiftCollection> created) {
-            if (creating) return;
 
-            creating = true;
-
-            final TL_stars.TL_starGiftCollection tempCollection = new TL_stars.TL_starGiftCollection();
-            tempCollection.collection_id = -1;
-            tempCollection.title = title;
-            collections.add(tempCollection);
-            refilterCollections();
-
-            final GiftsList list = new GiftsList(currentAccount, dialogId, false);
-            list.setCollectionId(-1);
-            list.totalCount = 0;
-            list.endReached = true;
-            gifts.put(-1, list);
-
-            final TL_stars.createStarGiftCollection req = new TL_stars.createStarGiftCollection();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            req.title = title;
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                creating = false;
-                if (res instanceof TL_stars.TL_starGiftCollection) {
-                    final TL_stars.TL_starGiftCollection loaded = (TL_stars.TL_starGiftCollection) res;
-                    collections.remove(tempCollection);
-                    collections.add(loaded);
-                    gifts.remove(-1);
-                    list.collectionId = loaded.collection_id;
-                    gifts.put(loaded.collection_id, list);
-                    refilterCollections();
-
-                    NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftCollectionsLoaded, dialogId, GiftsCollections.this);
-
-                    if (created != null) {
-                        created.run(loaded);
-                    }
-                } else {
-                    if (err != null) {
-                        BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                        if (lastFragment != null) {
-                            BulletinFactory.of(lastFragment).showForError(err);
-                        }
-                    }
-                    collections.remove(tempCollection);
-                    gifts.remove(-1);
-                    refilterCollections();
-
-                    NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftCollectionsLoaded, dialogId, GiftsCollections.this);
-                }
-            }));
-        }
 
         public TL_stars.TL_starGiftCollection findById(int id) {
             for (int i = 0; i < collections.size(); ++i) {
@@ -668,14 +617,7 @@ public class StarsController {
             NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftCollectionsLoaded, dialogId, this);
         }
 
-        public void rename(int id, String newName) {
-            final TL_stars.updateStarGiftCollection req = new TL_stars.updateStarGiftCollection();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            req.collection_id = id;
-            req.flags |= 1;
-            req.title = newName;
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);
-        }
+
 
         public void addGift(int id, TL_stars.SavedStarGift gift, boolean insert) {
             final ArrayList<TL_stars.SavedStarGift> gifts = new ArrayList<>();

@@ -10,32 +10,24 @@ import static org.telegram.messenger.Utilities.clamp01;
 import static org.telegram.ui.Stars.StarGiftSheet.getGiftName;
 import static org.telegram.ui.Stars.StarGiftSheet.isMineWithActions;
 
-import android.app.Activity;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
-import android.text.Editable;
-import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
-import android.text.TextWatcher;
 import android.util.Pair;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
-import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
-import android.view.inputmethod.EditorInfo;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -51,43 +43,34 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stars;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
-import org.telegram.ui.ActionBar.AlertDialog;
-import org.telegram.ui.ActionBar.AlertDialogDecor;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AnimatedColor;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
-import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CheckBox2;
 import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CubicBezierInterpolator;
-import org.telegram.ui.Components.EditTextCaption;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
-import org.telegram.ui.Components.Premium.boosts.UserSelectorBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
@@ -148,7 +131,6 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         return color;
     }
 
-    private CharSequence addCollectionTabText;
     private void fillTabs(boolean animated) {
         if (viewPager == null || tabsView == null) return;
         viewPager.fillTabs(animated);
@@ -735,35 +717,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                     collectionsLayout.setOrientation(LinearLayout.VERTICAL);
                     so.addView(collectionsScrollView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-                    if (parent.collections.getCollections().size() + 1 < MessagesController.getInstance(currentAccount).config.stargiftsCollectionsLimit.get()) {
-                        final ActionBarMenuSubItem subitem = new ActionBarMenuSubItem(getContext(), false, false, resourcesProvider);
-                        subitem.setPadding(dp(18), 0, dp(18), 0);
-                        subitem.setColors(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider), Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider));
-                        subitem.setSelectorColor(Theme.multAlpha(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider), .12f));
-                        subitem.setTextAndIcon(getString(R.string.Gift2NewCollection), R.drawable.menu_folder_add);
-                        subitem.setOnClickListener(v -> {
-                            o.dismiss();
-                            parent.openEnterNameAlert(null, name -> {
-                                parent.collections.createCollection(name, collection -> {
-                                    parent.collections.addGift(collection.collection_id, savedStarGift, true);
-                                    parent.fillTabs(true);
-                                    parent.tabsView.scrollToTab(collection.collection_id, 1 + parent.collections.indexOf(collection.collection_id));
-                                    if (parent.fragment instanceof ProfileActivity) {
-                                        ((ProfileActivity) parent.fragment).scrollToSharedMedia(true);
-                                    }
-                                    parent.updateTabsShown(true);
 
-                                    BulletinFactory.of(parent.fragment)
-                                        .createSimpleMultiBulletin(
-                                            savedStarGift.gift.getDocument(),
-                                            AndroidUtilities.replaceTags(formatString(R.string.Gift2AddedToCollection, getGiftName(savedStarGift.gift), collection.title))
-                                        )
-                                        .show();
-                                });
-                            });
-                        });
-                        collectionsLayout.addView(subitem, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-                    }
                     for (final TL_stars.TL_starGiftCollection collection : parent.collections.getCollections()) {
                         final StarsController.GiftsList list = parent.collections.getListById(collection.collection_id);
                         final boolean contains = list.contains(savedStarGift);
@@ -1034,19 +988,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                 return !isReordering();
             }
 
-            @Override
-            protected void addMoreTabs() {
-                if (canAdd() && tabsView != null) {
-                    if (addCollectionTabText == null) {
-                        final SpannableStringBuilder sb = new SpannableStringBuilder("+ " + getString(R.string.Gift2NewCollection));
-                        final ColoredImageSpan span = new ColoredImageSpan(R.drawable.poll_add_plus);
-                        span.spaceScaleX = .8f;
-                        sb.setSpan(span, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        addCollectionTabText = sb;
-                    }
-                    tabsView.addTab(-1, addCollectionTabText);
-                }
-            }
+
         };
         viewPager.setAllowDisallowInterceptTouch(true);
         viewPager.setAdapter(new ViewPagerFixed.Adapter() {
@@ -1159,10 +1101,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         tabsView.tabMarginDp = 12;
         tabsView.setPreTabClick((id, pos) -> {
             resetReordering();
-            if (id == -1) {
-                createCollection();
-                return true;
-            }
+
             return false;
         });
         tabsView.setOnTabLongClick((page, view) -> {
@@ -1240,13 +1179,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                     }
                         .show();
                 })
-                .addIf(isMine, R.drawable.msg_edit, getString(R.string.Gift2CollectionsRename), () -> {
-                    openEnterNameAlert(collection.title, newName -> {
-                        collections.rename(collection.collection_id, newName);
-                        collection.title = newName;
-                        fillTabs(true);
-                    });
-                })
+
                 .addIf(isMine, R.drawable.tabs_reorder, getString(R.string.Gift2CollectionsReorder), () -> {
                     setReorderingCollections(true);
                 })
@@ -1357,7 +1290,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
     }
 
     public void updateTabsShown(boolean animated) {
-        final boolean shown = !collections.getCollections().isEmpty() || canAdd();
+        final boolean shown = !collections.getCollections().isEmpty();
         if (viewPager.getViewPages() != null) {
             final View[] views = viewPager.getViewPages();
             for (View view : views) {
@@ -1485,10 +1418,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         setReorderingCollections(false);
     }
 
-    public boolean canAdd() {
-        if (!collections.isMine()) return false;
-        return collections.getCollections().size() < MessagesController.getInstance(currentAccount).config.stargiftsCollectionsLimit.get();
-    }
+
 
     private boolean shouldHideButton(int page) {
         if (!collections.isMine() || page == 0) return true;
@@ -1894,179 +1824,9 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         }
     }
 
-    private void openEnterNameAlert(String editing, Utilities.Callback<String> whenDone) {
-        final Context context = getContext();
 
-        Activity activity = AndroidUtilities.findActivity(context);
-        View currentFocus = activity != null ? activity.getCurrentFocus() : null;
-        final boolean adaptive = false;
-        AlertDialog[] dialog = new AlertDialog[1];
-        AlertDialog.Builder builder;
-        if (adaptive) {
-            builder = new AlertDialogDecor.Builder(context, resourcesProvider);
-        } else {
-            builder = new AlertDialog.Builder(context, resourcesProvider);
-        }
-        TextView[] positiveButton = new TextView[1];
 
-        if (editing != null) {
-            builder.setTitle(getString(R.string.Gift2EditCollectionNameTitle));
-        } else {
-            builder.setTitle(getString(R.string.Gift2NewCollectionTitle));
-            builder.setMessage(getString(R.string.Gift2NewCollectionText));
-        }
-        final int MAX_LENGTH = 12;
-        EditTextCaption editText = new EditTextCaption(context, resourcesProvider) {
-            AnimatedColor limitColor = new AnimatedColor(this);
-            private int limitCount;
-            AnimatedTextView.AnimatedTextDrawable limit = new AnimatedTextView.AnimatedTextDrawable(false, true, true); {
-                limit.setAnimationProperties(.2f, 0, 160, CubicBezierInterpolator.EASE_OUT_QUINT);
-                limit.setTextSize(dp(15.33f));
-                limit.setCallback(this);
-                limit.setGravity(Gravity.RIGHT);
-            }
 
-            @Override
-            protected boolean verifyDrawable(@NonNull Drawable who) {
-                return who == limit || super.verifyDrawable(who);
-            }
-
-            @Override
-            protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
-                super.onTextChanged(text, start, lengthBefore, lengthAfter);
-
-                if (limit != null) {
-                    limitCount = MAX_LENGTH - text.length();
-                    limit.cancelAnimation();
-                    limit.setText(limitCount > 4 ? "" : "" + limitCount);
-                }
-            }
-
-            @Override
-            protected void dispatchDraw(Canvas canvas) {
-                super.dispatchDraw(canvas);
-
-                limit.setTextColor(limitColor.set(Theme.getColor(limitCount < 0 ? Theme.key_text_RedRegular : Theme.key_dialogSearchHint, resourcesProvider)));
-                limit.setBounds(getScrollX(), 0, getScrollX() + getWidth(), getHeight());
-                limit.draw(canvas);
-            }
-        };
-        editText.lineYFix = true;
-        editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
-            @Override
-            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                if (actionId == EditorInfo.IME_ACTION_DONE) {
-                    String text = editText.getText().toString();
-                    if (text.length() <= 0 || text.length() > MAX_LENGTH) {
-                        AndroidUtilities.shakeView(editText);
-                        return true;
-                    }
-
-                    whenDone.run(text);
-
-                    if (dialog[0] != null) {
-                        dialog[0].dismiss();
-                    }
-                    if (currentFocus != null) {
-                        currentFocus.requestFocus();
-                    }
-                    return true;
-                }
-                return false;
-            }
-        });
-        MediaDataController.getInstance(currentAccount).fetchNewEmojiKeywords(AndroidUtilities.getCurrentKeyboardLanguage(), true);
-        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
-        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-        editText.setHintColor(Theme.getColor(Theme.key_groupcreate_hintText, resourcesProvider));
-        editText.setHintText(getString(R.string.Gift2NewCollectionHint));
-        editText.setFocusable(true);
-        editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        editText.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, resourcesProvider), Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, resourcesProvider), Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
-        editText.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        editText.setBackgroundDrawable(null);
-        editText.setPadding(0, dp(6), 0, dp(6));
-
-        editText.addTextChangedListener(new TextWatcher() {
-            boolean ignoreTextChange;
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override
-            public void afterTextChanged(Editable s) {
-                if (ignoreTextChange) {
-                    return;
-                }
-                if (s.length() > MAX_LENGTH) {
-                    ignoreTextChange = true;
-                    s.delete(MAX_LENGTH, s.length());
-                    AndroidUtilities.shakeView(editText);
-                    try {
-                        editText.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                    } catch (Exception ignore) {}
-                    ignoreTextChange = false;
-                }
-            }
-        });
-
-        LinearLayout container = new LinearLayout(context);
-        container.setOrientation(LinearLayout.VERTICAL);
-
-        editText.setText(editing);
-        container.addView(editText, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 0, 24, 10));
-        builder.makeCustomMaxHeight();
-        builder.setView(container);
-        builder.setWidth(dp(292));
-
-        builder.setPositiveButton(getString(editing != null ? R.string.Edit : R.string.Create), (dialogInterface, i) -> {
-            String text = editText.getText().toString();
-            if (text.length() <= 0 || text.length() > MAX_LENGTH) {
-                AndroidUtilities.shakeView(editText);
-                return;
-            }
-
-            whenDone.run(text);
-
-            dialogInterface.dismiss();
-        });
-        builder.setNegativeButton(getString(R.string.Cancel), (dialogInterface, i) -> {
-            dialogInterface.dismiss();
-        });
-        dialog[0] = builder.create();
-        if (currentMenu != null && currentMenu.actionBarPopupWindow != null) {
-            currentMenu.actionBarPopupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
-        }
-        AndroidUtilities.requestAdjustNothing(activity, fragment.getClassGuid());
-        dialog[0].setOnDismissListener(d -> {
-            AndroidUtilities.hideKeyboard(editText);
-            AndroidUtilities.requestAdjustResize(activity, fragment.getClassGuid());
-        });
-        dialog[0].setOnShowListener(d -> {
-            editText.requestFocus();
-            AndroidUtilities.showKeyboard(editText);
-        });
-        dialog[0].show();
-        dialog[0].setDismissDialogByButtons(false);
-        View button = dialog[0].getButton(DialogInterface.BUTTON_POSITIVE);
-        if (button instanceof TextView) {
-            positiveButton[0] = (TextView) button;
-        }
-        editText.setSelection(editText.getText().length());
-    }
-
-    public void createCollection() {
-        openEnterNameAlert(null, name -> {
-            collections.createCollection(name, collection -> {
-                fillTabs(true);
-                tabsView.scrollToTab(collection.collection_id, 1 + collections.indexOf(collection.collection_id));
-                if (fragment instanceof ProfileActivity) {
-                    ((ProfileActivity) fragment).scrollToSharedMedia(true);
-                }
-                updateTabsShown(true);
-            });
-        });
-    }
 
     public void addGifts() {
         final Page currentPage = getCurrentPage();
