@@ -52,4 +52,9 @@ public class MessageSuggestionParams {
     public static MessageSuggestionParams of(AmountUtils.Amount amount, long time) {
         return new MessageSuggestionParams(amount, time);
     }
+    public static String formatDateTime(long time) {
+        if (time <= 0) return LocaleController.getString(R.string.PostSuggestionsAnytime);
+        String text = LocaleController.formatDateTime(time, true);
+        return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
+    }
 }

@@ -24896,68 +24896,17 @@ public class MessagesController extends BaseController implements NotificationCe
         return mainPreferences.getLong("forumlasttopic" + chatId, 1);
     }
 
-    public void addOfferToSuggestedMessage(MessageObject msg, TLRPC.SuggestedPost suggestedPost) {
-        if (msg == null || msg.messageOwner == null) {
-            return;
-        }
-
-        ArrayList<MessageObject> messageObjects = new ArrayList<>(1);
-        messageObjects.add(msg);
-        getSendMessagesHelper().sendMessage(messageObjects, msg.getDialogId(),
-            !msg.isForwarded(), false, true, 0,
-                0, msg.messageOwner.suggested_post != null ? msg : null,
-            -1, 0,
-            DialogObject.getPeerDialogId(msg.messageOwner.saved_peer_id),
-            MessageSuggestionParams.of(suggestedPost)
-        );
-    }
-
-    public void approveSuggestedMessage(long dialogId, int messageId, int scheduleDate) {
-        approveOrRejectSuggestedMessageImpl(dialogId, messageId, scheduleDate, false, null);
-    }
-
-    public void rejectSuggestedMessage(long dialogId, int messageId, String reason) {
-        approveOrRejectSuggestedMessageImpl(dialogId, messageId, -1, true, reason);
-    }
 
 
-    private final HashMap<String, Boolean> sendingSuggestedMessageApprovalMap = new HashMap<>();
 
-    public boolean isSendingSuggestedMessageApproval(long dialogId, int messageId, boolean isApprove) {
-        final Boolean _isApprove = sendingSuggestedMessageApprovalMap.get(dialogId + "_" + messageId);
-        return _isApprove != null && _isApprove == isApprove;
-    }
 
-    private void approveOrRejectSuggestedMessageImpl(long dialogId, int messageId, int scheduleDate, boolean reject, String reason) {
-        if (sendingSuggestedMessageApprovalMap.containsKey(dialogId + "_" + messageId)) {
-            return;
-        }
 
-        TLRPC.TL_messages_toggleSuggestedPostApproval request = new TLRPC.TL_messages_toggleSuggestedPostApproval();
-        request.reject = reject;
-        request.peer = getMessagesController().getInputPeer(dialogId);
-        request.msg_id = messageId;
-        if (scheduleDate > 0) {
-            request.schedule_date = scheduleDate;
-            request.flags |= TLObject.FLAG_0;
-        }
-        if (reject && !TextUtils.isEmpty(reason)) {
-            request.reject_comment = reason;
-        }
 
-        sendingSuggestedMessageApprovalMap.put(dialogId + "_" + messageId, !reject);
-        getConnectionsManager().sendRequest(request, (response, err) -> {
-            sendingSuggestedMessageApprovalMap.remove(dialogId + "_" + messageId);
 
-            if (err != null) {
-                // todo: show error
-                return;
-            }
-            if (response != null) {
-                processUpdates((TLRPC.Updates) response, false);
-            }
-        });
-    }
+
+
+
+
 
     public static class SavedMusicList {
 

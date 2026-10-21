@@ -165,7 +165,6 @@ import org.telegram.ui.PhotoViewer;
 import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stars.MessageSuggestionOfferSheet;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.WebAppDisclaimerAlert;
@@ -3946,23 +3945,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     }, resourcesProvider);
                 });
             }
-            if ((currentAttachLayout == photoLayout || currentAttachLayout == photoPreviewLayout) && currentAttachLayout.getSelectedItemsCount() == 1 && chatActivity != null && ChatObject.isMonoForum(chatActivity.getCurrentChat())) {
-                final ChatActivity finalChatActivity = chatActivity;
-                final long finalDialogId1 = dialogId;
-                options.add(R.drawable.input_suggest_paid_24, getString(R.string.PostSuggestionsSendWithOffer), () -> {
-                    new MessageSuggestionOfferSheet(getContext(), currentAccount, finalDialogId1,
-                            finalChatActivity.messageSuggestionParams != null ? finalChatActivity.messageSuggestionParams: MessageSuggestionParams.empty(),
-                            finalChatActivity, resourcesProvider, MessageSuggestionOfferSheet.MODE_INPUT, (params) -> {
 
-                        finalChatActivity.messageSuggestionParams = params;
-                        final boolean shownDialog = sendPressed(true, 0, 0, effectId, isCaptionAbove());
-                        if (messageSendPreview != null) {
-                            messageSendPreview.dismiss(!shownDialog);
-                            messageSendPreview = null;
-                        }
-                    }).show();
-                });
-            }
             if (editingMessageObject == null && !self) {
                 options.add(R.drawable.input_notify_off, getString(R.string.SendWithoutSound), () -> {
                     final long effectId = messageSendPreview != null ? messageSendPreview.getSelectedEffect() : 0;
@@ -4215,19 +4198,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     private void onWriteButtonPressed() {
-        if (editingMessageObject != null && editingMessageObject.needResendWhenEdit() && !ChatObject.canManageMonoForum(currentAccount, editingMessageObject.getDialogId())) {
-            if (baseFragment instanceof ChatActivity) {
-                final ChatActivity chatActivity = (ChatActivity) baseFragment;
-                final MessageSuggestionParams params = chatActivity.messageSuggestionParams != null ?
-                        chatActivity.messageSuggestionParams :
-                        MessageSuggestionParams.of(editingMessageObject.messageOwner.suggested_post);
 
-                if (!StarsController.isEnoughAmount(currentAccount, params.amount)) {
-                    chatActivity.showSuggestionOfferForEditMessage(params);
-                    return;
-                }
-            }
-        }
 
         if (currentLimit - codepointCount < 0) {
             AndroidUtilities.shakeView(captionLimitView);

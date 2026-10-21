@@ -1790,12 +1790,5 @@ public class StarsController {
             .show();
     }
 
-    public static boolean isEnoughAmount(int currentAccount, AmountUtils.Amount amount) {
-        if (amount == null) {
-            return true;
-        }
 
-        AmountUtils.Amount balance = getInstance(currentAccount, amount.currency).getBalanceAmount();
-        return balance.asNano() >= amount.asNano();
-    }
 }

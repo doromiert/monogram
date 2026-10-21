@@ -5006,35 +5006,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             }
         }
 
-        if (parentFragment != null && delegate != null && ChatObject.isMonoForum(parentFragment.getCurrentChat())) {
-            options.add(R.drawable.input_suggest_paid_24, getString(R.string.PostSuggestionsSendWithOffer), () -> {
-                if (messageSendPreview != null) {
-                    messageSendPreview.dismiss(false);
-                    messageSendPreview = null;
-                }
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (delegate != null) {
-                        delegate.didPressSuggestionButton();
-                    }
-                }, 600);
-            });
-            /*
-            options.add(R.drawable.input_suggest_paid_24, getString(R.string.PostSuggestionsSendWithOffer), () -> {
-                new StarsSuggestionSheet(getContext(), currentAccount, parentFragment.getDialogId(),
-                        parentFragment.messageSuggestionParams != null ? parentFragment.messageSuggestionParams: MessageSuggestionParams.empty(),
-                        parentFragment, resourcesProvider, StarsSuggestionSheet.MODE_INPUT, (params) -> {
 
-                    parentFragment.messageSuggestionParams = params;
-                    sendMessageInternal(true, 0, 0, true);
-
-                    if (messageSendPreview != null) {
-                        messageSendPreview.dismiss(true);
-                        messageSendPreview = null;
-                    }
-                }).show();
-            })
-            ;*/
-        }
 
         if (sendWithoutSoundButtonValue) {
             options.add(R.drawable.input_notify_off, getString(R.string.SendWithoutSound), () -> {
@@ -5525,7 +5497,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     photoEntry.reset();
                     sending = true;
                     boolean updateStickersOrder = SendMessagesHelper.checkUpdateStickersOrder(info.caption);
-                    SendMessagesHelper.prepareSendingMedia(accountInstance, photos, dialog_id, replyingMessageObject, getThreadMessage(), null, replyingQuote, false, false, editingMessageObject, notify, scheduleDate, scheduleRepeatPeriod, parentFragment == null ? 0 : parentFragment.getChatMode(), updateStickersOrder, null, parentFragment != null ? parentFragment.getMessageChatSendParams() : null, 0, false, 0, getSendMonoForumPeerId(), parentFragment != null ? parentFragment.messageSuggestionParams : null);
+                    SendMessagesHelper.prepareSendingMedia(accountInstance, photos, dialog_id, replyingMessageObject, getThreadMessage(), null, replyingQuote, false, false, editingMessageObject, notify, scheduleDate, scheduleRepeatPeriod, parentFragment == null ? 0 : parentFragment.getChatMode(), updateStickersOrder, null, parentFragment != null ? parentFragment.getMessageChatSendParams() : null, 0, false, 0, getSendMonoForumPeerId(), getSendMessageSuggestionParams());
                     if (delegate != null) {
                         delegate.onMessageSend(null, true, scheduleDate, scheduleRepeatPeriod, 0);
                     }
@@ -7540,18 +7512,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             return;
         }
 
-        if (editingMessageObject.needResendWhenEdit() && !ChatObject.canManageMonoForum(currentAccount, editingMessageObject.getDialogId())) {
-            final MessageSuggestionParams params = parentFragment != null && parentFragment.messageSuggestionParams != null ?
-                parentFragment.messageSuggestionParams : MessageSuggestionParams.of(editingMessageObject.messageOwner.suggested_post);
 
-            if (!StarsController.isEnoughAmount(currentAccount, params.amount)) {
-                if (parentFragment != null) {
-                    parentFragment.showSuggestionOfferForEditMessage(params);
-                }
-
-                return;
-            }
-        }
 
         if (currentLimit - codePointCount < 0) {
             if (captionLimitView != null) {
@@ -7631,38 +7592,9 @@ public class ChatActivityEnterView extends FrameLayout implements
             }
 
 
-            if (editingMessageObject.needResendWhenEdit()) {
-                SendMessagesHelper.SendMessageParams sendMessageParams = SendMessagesHelper.SendMessageParams.of(
-                    editingMessageObject.editingMessage.toString(),
-                    editingMessageObject.getDialogId()
-                );
 
-                sendMessageParams.suggestionParams = parentFragment != null && parentFragment.messageSuggestionParams != null ?
-                        parentFragment.messageSuggestionParams : MessageSuggestionParams.of(editingMessageObject.messageOwner.suggested_post);
-                sendMessageParams.monoForumPeer = DialogObject.getPeerDialogId(editingMessageObject.messageOwner.saved_peer_id);
-                sendMessageParams.hasMediaSpoilers = editingMessageObject.hasMediaSpoilers();
-                sendMessageParams.replyToMsg = editingMessageObject;
-                sendMessageParams.parentObject = editingMessageObject;
+            SendMessagesHelper.getInstance(currentAccount).editMessage(editingMessageObject, null, null, null, null, null, null, false, editingMessageObject.hasMediaSpoilers(), null);
 
-                if (editingMessageObject.getDocument() instanceof TLRPC.TL_document) {
-                    sendMessageParams.document = (TLRPC.TL_document) editingMessageObject.getDocument();
-                    sendMessageParams.caption = sendMessageParams.message;
-                    sendMessageParams.message = null;
-                } else if (editingMessageObject.messageOwner.media != null && !(editingMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaEmpty)) {
-                    if (editingMessageObject.messageOwner.media.photo instanceof TLRPC.TL_photo) {
-                        sendMessageParams.photo = (TLRPC.TL_photo) editingMessageObject.messageOwner.media.photo;
-                    } else {
-                        sendMessageParams.location = editingMessageObject.messageOwner.media;
-                    }
-
-                    sendMessageParams.caption = sendMessageParams.message;
-                    sendMessageParams.message = null;
-                }
-
-                SendMessagesHelper.getInstance(currentAccount).sendMessage(sendMessageParams);
-            } else {
-                SendMessagesHelper.getInstance(currentAccount).editMessage(editingMessageObject, null, null, null, null, null, null, false, editingMessageObject.hasMediaSpoilers(), null);
-            }
         }
         setEditingMessageObject(null, null, false);
     }

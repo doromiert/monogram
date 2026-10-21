@@ -7378,19 +7378,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         pickerViewSendButton.setContentDescription(getString("Send", R.string.Send));
         ScaleStateListAnimator.apply(pickerViewSendButton);
         pickerViewSendButton.setOnClickListener(v -> {
-            if (parentChatActivity != null && parentChatActivity.editingMessageObject != null && parentChatActivity.editingMessageObject.needResendWhenEdit() && !ChatObject.canManageMonoForum(currentAccount, parentChatActivity.editingMessageObject.getDialogId())) {
-                final MessageSuggestionParams params = parentFragment != null && parentChatActivity.messageSuggestionParams != null ?
-                        parentChatActivity.messageSuggestionParams :
-                        MessageSuggestionParams.of(parentChatActivity.editingMessageObject.messageOwner.suggested_post);
 
-                if (!StarsController.isEnoughAmount(currentAccount, params.amount)) {
-                    if (parentChatActivity != null) {
-                        parentChatActivity.showSuggestionOfferForEditMessage(params);
-                    }
-
-                    return;
-                }
-            }
 
             if (captionEdit.isCaptionOverLimit()) {
                 AndroidUtilities.shakeViewSpring(captionEdit.limitTextView, shiftDp = -shiftDp);

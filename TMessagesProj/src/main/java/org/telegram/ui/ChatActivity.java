@@ -306,7 +306,6 @@ import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Delegates.ChatActivityMemberRequestsDelegate;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stars.MessageSuggestionOfferSheet;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.ui.Stories.StoriesListPlaceProvider;
 import org.telegram.ui.Stories.StoriesUtilities;
@@ -1252,10 +1251,6 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_EDIT_TODO = 109;
     public final static int OPTION_ADD_TO_TODO = 110;
 
-    public final static int OPTION_SUGGESTION_EDIT_PRICE = 111;
-    public final static int OPTION_SUGGESTION_EDIT_TIME = 112;
-    public final static int OPTION_SUGGESTION_EDIT_MESSAGE = 113;
-    public final static int OPTION_SUGGESTION_ADD_OFFER = 114;
 
     public final static int OPTION_VIEW_STATISTICS = 115;
     public final static int OPTION_WELCOME_REVERT = 116;
@@ -2540,10 +2535,7 @@ public class ChatActivity extends BaseFragment implements
             openAttachMenu();
         }
 
-        @Override
-        public void didPressSuggestionButton() {
-            new MessageSuggestionOfferSheet(getContext(), currentAccount, dialog_id, messageSuggestionParams != null ? messageSuggestionParams: MessageSuggestionParams.empty(), ChatActivity.this, getResourceProvider(), MessageSuggestionOfferSheet.MODE_INPUT, ChatActivity.this::showFieldPanelForSuggestionParams).show();
-        }
+
 
         @Override
         public void toggleVideoRecordingPause() {
@@ -8025,7 +8017,7 @@ public class ChatActivity extends BaseFragment implements
         actionsButtonsLayout.setPadding(0, dp(56), 0, 0);
         actionsButtonsLayout.setClipToPadding(false);
         chatInputBubbleContainer.addView(actionsButtonsLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 106, Gravity.BOTTOM));
-        chatActivityEnterView.setSuggestionButtonVisible(ChatObject.isMonoForum(currentChat), false);
+        chatActivityEnterView.setSuggestionButtonVisible(false, false);
 
         chatActivityEnterTopView = new ChatActivityEnterTopView(context) {
             @Override
@@ -8082,12 +8074,8 @@ public class ChatActivity extends BaseFragment implements
                 byButtonPress[0] = false;
             }
 
-            if (fieldPanelShown == 5) {
-                new MessageSuggestionOfferSheet(context, currentAccount, dialog_id, messageSuggestionParams != null ? messageSuggestionParams: MessageSuggestionParams.empty(), this, getResourceProvider(), MessageSuggestionOfferSheet.MODE_INPUT, this::showFieldPanelForSuggestionParams).show();
-            } else if (fieldPanelShown == 1 && editingMessageObject != null) {
-                if (editingMessageObject.needResendWhenEdit() && !isButtonPress) {
-                    showSuggestionOfferForEditMessage(messageSuggestionParams != null ? messageSuggestionParams: MessageSuggestionParams.empty());
-                } else if (editingMessageObject.canEditMedia() && editingMessageObjectReqId == 0) {
+            if (fieldPanelShown == 1 && editingMessageObject != null) {
+                if (editingMessageObject.canEditMedia() && editingMessageObjectReqId == 0) {
                     Utilities.Callback<Integer> open = type -> {
                         if (chatAttachAlert == null) {
                             createChatAttachView();
@@ -10856,9 +10844,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public void fallbackFieldPanel() {
-        if (messageSuggestionParams != null) {
-            showFieldPanelForSuggestionParams(messageSuggestionParams);
-        } else if (foundWebPage != null) {
+        if (foundWebPage != null) {
             showFieldPanelForWebPage(true, foundWebPage, false);
         } else if (replyingQuote != null) {
             showFieldPanelForReplyQuote(replyingMessageObject, replyingQuote);
@@ -14690,9 +14676,7 @@ public class ChatActivity extends BaseFragment implements
         showFieldPanel(show, null, messageObjectToEdit, null, null, true, 0, null, false, 0, true);
     }
 
-    public void showFieldPanelForSuggestionParams(MessageSuggestionParams suggestionParams) {
-        showFieldPanel(true, null, null, null, null, true, 0, null, false, 0, suggestionParams, true);
-    }
+
 
     public void showFieldPanel(boolean show, MessageObject messageObjectToReply, MessageObject messageObjectToEdit, ArrayList<MessageObject> messageObjectsToForward, TLRPC.WebPage webPage, boolean notify, int scheduleDate, ReplyQuote quote, boolean cancel, long payStars, boolean animated) {
         showFieldPanel(show, messageObjectToReply, messageObjectToEdit, messageObjectsToForward, webPage, notify, scheduleDate, quote, cancel, payStars, null, animated);
@@ -14705,7 +14689,7 @@ public class ChatActivity extends BaseFragment implements
             return;
         }
 
-        chatActivityEnterView.setSuggestionButtonVisible(!show && ChatObject.isMonoForum(currentChat), animated);
+        chatActivityEnterView.setSuggestionButtonVisible(false, animated);
 
         if (mentionContainer != null) {
             mentionContainer.getAdapter().setAllowStickers(!show || messageObjectToEdit == null);
@@ -14775,9 +14759,7 @@ public class ChatActivity extends BaseFragment implements
                 chatActivityEnterView.setForceShowSendButton(false, false);
                 final boolean canEditMedia = messageObjectToEdit.canEditMedia();
                 replyCloseImageView.setContentDescription(LocaleController.getString(R.string.AccDescrCancelEdit));
-                if (messageObjectToEdit.needResendWhenEdit()) {
-                    messageSuggestionParams = MessageSuggestionParams.of(messageObjectToEdit.messageOwner != null ? messageObjectToEdit.messageOwner.suggested_post : null);
-                }
+
                 if (!mediaEmpty && canEditMedia) {
                     String editButtonText = null;
                     String replaceButtonText;
@@ -14845,7 +14827,7 @@ public class ChatActivity extends BaseFragment implements
                     } else {
                         replyObjectTextView.setText(StarsIntroActivity.replaceStarsWithPlain(isTon,
                                 LocaleController.formatSpannable(R.string.SuggestAPostBelowSubtitleStarsAndTime, amountString,
-                                        Emoji.replaceEmoji("\uD83D\uDCC6 " + MessageSuggestionOfferSheet.formatDateTime(messageSuggestionParams.time), replyObjectTextView.getPaint().getFontMetricsInt(), true)
+                                        Emoji.replaceEmoji("\uD83D\uDCC6 " + MessageSuggestionParams.formatDateTime(messageSuggestionParams.time), replyObjectTextView.getPaint().getFontMetricsInt(), true)
                                 ), 0.66f, spanArr));
                     }
 
@@ -15363,7 +15345,7 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     replyObjectTextView.setText(StarsIntroActivity.replaceStarsWithPlain(isTon,
                         LocaleController.formatSpannable(R.string.SuggestAPostBelowSubtitleStarsAndTime, amountString,
-                            Emoji.replaceEmoji("\uD83D\uDCC6 " + MessageSuggestionOfferSheet.formatDateTime(suggestionParams.time), replyObjectTextView.getPaint().getFontMetricsInt(), true)
+                            Emoji.replaceEmoji("\uD83D\uDCC6 " + MessageSuggestionParams.formatDateTime(suggestionParams.time), replyObjectTextView.getPaint().getFontMetricsInt(), true)
                     ), 0.66f, spanArr));
                 }
 
@@ -30114,10 +30096,7 @@ public class ChatActivity extends BaseFragment implements
             hideFieldPanel(true);
         }
 
-        if (/*messageSuggestionParams == null &&*/ draftMessage != null && draftMessage.suggested_post != null) {
-            messageSuggestionParams = MessageSuggestionParams.of(draftMessage.suggested_post);
-            showFieldPanelForSuggestionParams(messageSuggestionParams);
-        }
+
 
         if (replyingMessageObject == null || threadMessageObject == replyingMessageObject) {
             if (draftReplyMessage != null && !(threadMessageObject != null && threadMessageObject.getId() == draftReplyMessage.id)) {
@@ -30753,25 +30732,7 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
 
-            if (suggestEdit) {
-                items.clear();
-                options.clear();
-                icons.clear();
 
-                if (selectedObject != null && (selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.type == MessageObject.TYPE_PHOTO || selectedObject.type == MessageObject.TYPE_VIDEO)) {
-                    items.add(LocaleController.getString(R.string.EditOfferMessage));
-                    options.add(OPTION_SUGGESTION_EDIT_MESSAGE);
-                    icons.add(R.drawable.msg_edit);
-                }
-
-                items.add(LocaleController.getString(R.string.EditOfferPrice));
-                options.add(OPTION_SUGGESTION_EDIT_PRICE);
-                icons.add(R.drawable.menu_edit_price);
-
-                items.add(LocaleController.getString(R.string.EditOfferTime));
-                options.add(OPTION_SUGGESTION_EDIT_TIME);
-                icons.add(R.drawable.msg_calendar2);
-            }
 
             if (options.isEmpty() && optionsView == null) {
                 return false;
@@ -32815,9 +32776,7 @@ public class ChatActivity extends BaseFragment implements
         if (!asSuggestion) {
             checkEditTimer();
         }
-        if (asSuggestion) {
-            messageSuggestionParams = MessageSuggestionParams.of(messageObject.messageOwner.suggested_post);
-        }
+
 
         chatActivityEnterView.setAllowStickersAndGifs(true, false, false, true);
 
@@ -33528,12 +33487,11 @@ public class ChatActivity extends BaseFragment implements
                 }
                 break;
             }
-            case OPTION_SUGGESTION_EDIT_MESSAGE:
             case OPTION_EDIT: {
                 if (selectedObjectToEditCaption != null) {
-                    startEditingMessageObject(selectedObjectToEditCaption, option == OPTION_SUGGESTION_EDIT_MESSAGE);
+                    startEditingMessageObject(selectedObjectToEditCaption, false);
                 } else {
-                    startEditingMessageObject(selectedObject, option == OPTION_SUGGESTION_EDIT_MESSAGE);
+                    startEditingMessageObject(selectedObject, false);
                 }
                 selectedObject = null;
                 selectedObjectGroup = null;
@@ -34017,33 +33975,8 @@ public class ChatActivity extends BaseFragment implements
             case OPTION_WELCOME_REVERT:
                 getMessagesController().revertWelcomeEphemeralMessage(selectedObject);
                 break;
-            case OPTION_SUGGESTION_ADD_OFFER:
-            case OPTION_SUGGESTION_EDIT_PRICE: {
-                final MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;
-                final TLRPC.SuggestedPost suggestedPost = msg != null && msg.messageOwner != null ? msg.messageOwner.suggested_post : null;
 
-                new MessageSuggestionOfferSheet(getContext(), currentAccount, dialog_id, MessageSuggestionParams.of(suggestedPost), this, getResourceProvider(), MessageSuggestionOfferSheet.MODE_EDIT, newParams -> {
-                    final TLRPC.SuggestedPost newSuggestedPost = newParams.toTl();
-                    if (msg != null && msg.messageOwner != null && newSuggestedPost != null) {
-                        getMessagesController().addOfferToSuggestedMessage(msg, newSuggestedPost);
-                    }
-                }).show();
-                break;
-            }
-            case OPTION_SUGGESTION_EDIT_TIME: {
-                final MessageObject msg = selectedObjectGroup != null ? selectedObjectGroup.findPrimaryMessageObject() : selectedObject;
-                final TLRPC.SuggestedPost suggestedPost = msg != null && msg.messageOwner != null ? msg.messageOwner.suggested_post : null;
 
-                checkStarsNeedSheet(() -> AlertsCreator.createSuggestedMessageDatePickerDialog(getContext(), suggestedPost != null ? suggestedPost.schedule_date : 0, (notify, scheduleDate, scheduleRepeatPeriod) -> {
-                    if (notify) {
-                        final TLRPC.SuggestedPost newSuggestedPost = MessageSuggestionParams.of(AmountUtils.Amount.of(suggestedPost != null ? suggestedPost.price : null), scheduleDate).toTl();
-                        if (msg != null && msg.messageOwner != null && newSuggestedPost != null) {
-                            getMessagesController().addOfferToSuggestedMessage(msg, newSuggestedPost);
-                        }
-                    }
-                }, getResourceProvider(), AlertsCreator.SUGGEST_DATE_PICKER_MODE_EDIT).show(), AmountUtils.Amount.of(suggestedPost != null ? suggestedPost.price : null), !ChatObject.canManageMonoForum(currentAccount, getDialogId()));
-                break;
-            }
         }
         selectedObject = null;
         selectedObjectGroup = null;
@@ -34051,48 +33984,9 @@ public class ChatActivity extends BaseFragment implements
         closeMenu(!preserveDim);
     }
 
-    public void showSuggestionOfferForEditMessage(MessageSuggestionParams oldParams) {
-        if (editingMessageObject == null) {
-            return;
-        }
-        new MessageSuggestionOfferSheet(getContext(), currentAccount, dialog_id, oldParams, this, getResourceProvider(), MessageSuggestionOfferSheet.MODE_INPUT, params -> {
-            messageSuggestionParams = params;
-            editingMessageObject.messageOwner.suggested_post = params.toTl();
 
-            showFieldPanelForEdit(true, editingMessageObject);
-        }).show();
-    }
 
-    public void checkStarsNeedSheet(Runnable runnable, AmountUtils.Amount amountRequired, boolean needCheck) {
-        if (amountRequired == null || !needCheck) {
-            runnable.run();
-            return;
-        }
 
-        Runnable onLoad = () -> {
-            if (isFinished) {
-                return;
-            }
-
-            final StarsController starsController = StarsController.getInstance(currentAccount, amountRequired.currency);
-            if (AmountUtils.Amount.ofSafe(starsController.getBalance()).asNano() < amountRequired.asNano()) {
-                if (amountRequired.currency == AmountUtils.Currency.STARS) {
-                    new StarsIntroActivity.StarsNeededSheet(getContext(), getResourceProvider(), amountRequired.asDecimal(),
-                        StarsIntroActivity.StarsNeededSheet.TYPE_PRIVATE_MESSAGE,
-                        ForumUtilities.getMonoForumTitle(currentAccount, getDialogId(), true), null, getDialogId()).show();
-                }
-            } else {
-                runnable.run();
-            }
-        };
-
-        final StarsController starsController = StarsController.getInstance(currentAccount, amountRequired.currency);
-        if (!starsController.balanceAvailable()) {
-            starsController.getBalance(true, onLoad, true);
-        } else {
-            onLoad.run();
-        }
-    }
 
     private void hideAds() {
         // Discard any historical sponsored entry locally, without a subscription or ad RPC.
@@ -35177,7 +35071,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public MessageSuggestionParams getSendMessageSuggestionParams() {
-        return messageSuggestionParams;
+        return null;
     }
 
     public TLRPC.Chat getCurrentChat() {
@@ -35300,15 +35194,7 @@ public class ChatActivity extends BaseFragment implements
 
         animatorRoundMessageCameraVisibility.setValue(false, true);
 
-        if (editingMessageObject != null && editingMessageObject.needResendWhenEdit() && !ChatObject.canManageMonoForum(currentAccount, editingMessageObject.getDialogId())) {
-            final MessageSuggestionParams params = messageSuggestionParams != null ? messageSuggestionParams :
-                MessageSuggestionParams.of(editingMessageObject.messageOwner.suggested_post);
 
-            if (!StarsController.isEnoughAmount(currentAccount, params.amount)) {
-                showSuggestionOfferForEditMessage(params);
-                return;
-            }
-        }
 
         if (videoEditedInfo != null && videoEditedInfo.roundVideo) {
             AndroidUtilities.runOnUIThread(closeInstantCameraAnimation = () -> {
@@ -39726,116 +39612,7 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
 
-            if (button.id == BotInlineKeyboard.ButtonCustom.SUGGESTION_DECLINE) {
-                AlertsCreator.showDeclineSuggestedPostDialog(ChatActivity.this, DialogObject.getPeerDialogId(message.from_id), true, reason -> {
-                    getMessagesController().rejectSuggestedMessage(DialogObject.getPeerDialogId(message.peer_id), message.id, reason);
-                });
-            } else if (button.id == BotInlineKeyboard.ButtonCustom.SUGGESTION_ACCEPT) {
-                if (message.suggested_post != null) {
-                    final boolean isDirectAdmin = ChatObject.canManageMonoForum(currentAccount, currentChat);
-                    final boolean canPostMessages = isDirectAdmin && ChatObject.canUserDoChannelDirectAdminAction(currentAccount, currentChat, ChatObject.ACTION_POST);
-
-                    final Runnable onLoad = () -> {
-                        final SpannableStringBuilder ssb = new SpannableStringBuilder();
-                        ssb.append(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.SuggestedMessageAcceptInfo,
-                                getMessagesController().getPeerName(DialogObject.getPeerDialogId(message.from_id)))));
-
-                        ssb.append("\n\n");
-
-                        AmountUtils.Amount amount = AmountUtils.Amount.ofSafe(message.suggested_post.price);
-                        final int permille = amount.currency == AmountUtils.Currency.TON ?
-                                getMessagesController().config.tonSuggestedPostCommissionPermille.get():
-                                getMessagesController().config.starsSuggestedPostCommissionPermille.get();
-
-                        if (isDirectAdmin) {
-                            amount = AmountUtils.Amount.fromNano(amount.asNano()  / 1000 * permille, amount.currency);
-                        }
-
-                        if (message.suggested_post.schedule_date == 0) {
-                            if (isDirectAdmin) {
-                                ssb.append(AndroidUtilities.replaceTags(LocaleController.formatString(
-                                    R.string.SuggestedMessageAcceptInfoAnytimeAdmin2,
-                                    amount.formatAsDecimalSpaced(),
-                                    percents(permille)
-                                )));
-                            } else {
-                                ssb.append(AndroidUtilities.replaceTags(LocaleController.formatString(
-                                    R.string.SuggestedMessageAcceptInfoAnytimeUser2,
-                                    amount.formatAsDecimalSpaced()
-                                )));
-                            }
-                        } else {
-                            if (isDirectAdmin) {
-                                ssb.append(AndroidUtilities.replaceTags(LocaleController.formatString(
-                                    R.string.SuggestedMessageAcceptInfoAdmin2,
-                                    amount.formatAsDecimalSpaced(),
-                                    MessageSuggestionOfferSheet.formatDateTime(message.suggested_post.schedule_date),
-                                    percents(permille)
-                                )));
-                            } else {
-                                ssb.append(AndroidUtilities.replaceTags(LocaleController.formatString(
-                                    R.string.SuggestedMessageAcceptInfoUser2,
-                                    amount.formatAsDecimalSpaced(),
-                                    MessageSuggestionOfferSheet.formatDateTime(message.suggested_post.schedule_date)
-                                )));
-                            }
-                        }
-
-                        ssb.append(' ');
-                        ssb.append(AndroidUtilities.replaceTags(LocaleController.formatString(
-                            R.string.SuggestedMessageAcceptInfo3,
-                            MessagesController.getInstance(currentAccount).config.starsSuggestedPostAgeMin.get(TimeUnit.HOURS)
-                        )));
-
-                        final Bulletin[] bulletin = new Bulletin[1];
-                        final DialogInterface.OnDismissListener onDismiss = d -> {
-                            if (bulletin[0] != null) {
-                                bulletin[0].hide();
-                            }
-                        };
-
-                        final AlertDialog[] dialog = new AlertDialog[1];
-
-                        dialog[0] = AlertsCreator.showSimpleConfirmAlert(ChatActivity.this,
-                            LocaleController.getString(R.string.SuggestedPostAcceptTitle), ssb,
-                            LocaleController.getString(message.suggested_post.schedule_date == 0 ?
-                                R.string.Next :
-                                R.string.SuggestedPostPublish
-                            ), false,
-                        () -> {
-                            if (message.suggested_post.schedule_date == 0) {
-                                dialog[0].setOnDismissListener(null);
-                                AlertsCreator.createSuggestedMessageDatePickerDialog(getContext(), 0, (notify, scheduleDate, scheduleRepeatPeriod) -> {
-                                    if (notify) {
-                                        getMessagesController().approveSuggestedMessage(
-                                            DialogObject.getPeerDialogId(messageObject.messageOwner.peer_id),
-                                            messageObject.messageOwner.id, scheduleDate
-                                        );
-                                    }
-                                }, getResourceProvider(), AlertsCreator.SUGGEST_DATE_PICKER_MODE_ACCEPT).show().setOnDismissListener(onDismiss);
-                            } else {
-                                getMessagesController().approveSuggestedMessage(
-                                        DialogObject.getPeerDialogId(messageObject.messageOwner.peer_id),
-                                        messageObject.messageOwner.id, 0
-                                );
-                            }
-                        });
-
-                        dialog[0].setOnDismissListener(onDismiss);
-
-                        if (isDirectAdmin &&  amount.currency == AmountUtils.Currency.STARS) {
-                            bulletin[0] = BulletinFactory.of(Bulletin.BulletinWindow.make(getContext()), resourceProvider)
-                                    .createSimpleBulletin(R.raw.info, getString(R.string.SuggestedMessageAcceptStarsDisclaimer), 10)
-                                    .setDuration(60_000)
-                                    .show(true);
-                        }
-                    };
-
-                    checkStarsNeedSheet(onLoad, AmountUtils.Amount.of(message.suggested_post != null ? message.suggested_post.price : null), !isDirectAdmin);
-                }
-            } else if (button.id == BotInlineKeyboard.ButtonCustom.SUGGESTION_EDIT) {
-                createMenu(cell, true, false, cell.getLastTouchX(), cell.getLastTouchY(), true, false, true);
-            } else if (button.id == BotInlineKeyboard.ButtonCustom.OPEN_MESSAGE_THREAD) {
+            if (button.id == BotInlineKeyboard.ButtonCustom.OPEN_MESSAGE_THREAD) {
                 topicsTabs.selectTopic(messageObject.getTopicId(), true);
             }
         }
@@ -45477,11 +45254,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_EDIT);
                     icons.add(R.drawable.msg_edit);
                 }
-                if (ChatObject.isMonoForum(currentChat) && selectedObject.getGroupId() == 0 && selectedObjectGroup == null && message != null && message.messageOwner != null && message.messageOwner.suggested_post == null && message.messageOwner.action == null) {
-                    items.add(LocaleController.getString(R.string.EditOfferAdd));
-                    options.add(OPTION_SUGGESTION_ADD_OFFER);
-                    icons.add(R.drawable.menu_edit_price);
-                }
+
 //                        if (message.scheduled && message.type == MessageObject.TYPE_PAID_MEDIA && message.canEditMessage(currentChat)) {
 //                            items.add(LocaleController.getString(R.string.PaidMediaPriceButton));
 // Price editing is not offered in Monogram.
@@ -45843,11 +45616,7 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_EDIT);
                     icons.add(R.drawable.msg_edit);
                 }
-                if (ChatObject.isMonoForum(currentChat) && selectedObject.getGroupId() == 0 && selectedObjectGroup == null && message != null && message.messageOwner != null && message.messageOwner.suggested_post == null && message.messageOwner.action == null) {
-                    items.add(LocaleController.getString(R.string.EditOfferAdd));
-                    options.add(OPTION_SUGGESTION_ADD_OFFER);
-                    icons.add(R.drawable.menu_edit_price);
-                }
+
                 if (!selectedObject.isPaidSuggestedPostProtected() && chatMode == MODE_SCHEDULED && selectedObject.canEditMessageScheduleTime(currentChat)) {
                     items.add(LocaleController.getString(R.string.MessageScheduleEditTime));
                     options.add(OPTION_EDIT_SCHEDULE_TIME);

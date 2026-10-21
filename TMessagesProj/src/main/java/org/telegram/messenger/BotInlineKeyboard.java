@@ -69,9 +69,6 @@ public class BotInlineKeyboard {
     }
 
     public static class ButtonCustom extends Button {
-        public static final int SUGGESTION_DECLINE = 1;
-        public static final int SUGGESTION_ACCEPT = 2;
-        public static final int SUGGESTION_EDIT = 3;
         public static final int OPEN_MESSAGE_THREAD = 4;
         public static final int GIFT_OFFER_DECLINE = 5;
         public static final int GIFT_OFFER_ACCEPT = 6;
@@ -154,15 +151,7 @@ public class BotInlineKeyboard {
             }
         }
 
-        public void addSuggestionKeyboard() {
-            buttons.add(new Button[]{
-                new ButtonCustom(ButtonCustom.SUGGESTION_DECLINE, R.string.PostSuggestionsInlineDecline, R.drawable.filled_bot_decline_24),
-                new ButtonCustom(ButtonCustom.SUGGESTION_ACCEPT, R.string.PostSuggestionsInlineAccept, R.drawable.filled_bot_approve_24),
-            });
-            buttons.add(new Button[]{
-                    new ButtonCustom(ButtonCustom.SUGGESTION_EDIT, R.string.PostSuggestionsInlineEdit, R.drawable.filled_bot_suggest_24)
-            });
-        }
+
 
         public void addGiftOfferKeyboard() {
             buttons.add(new Button[]{

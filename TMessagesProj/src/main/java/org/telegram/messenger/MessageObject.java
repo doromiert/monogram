@@ -4460,31 +4460,7 @@ public class MessageObject {
         return false;
     }
 
-    public boolean hasSuggestionInlineButtons() {
-        boolean needShow = messageOwner != null
-            && messageOwner.suggested_post != null
-            && !messageOwner.suggested_post.rejected
-            && !messageOwner.suggested_post.accepted
-            && !isSendError()
-            && !isSending();
 
-        if (needShow) {
-            final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-            final long topicId = DialogObject.getPeerDialogId(messageOwner.saved_peer_id);
-            final long senderId = DialogObject.getPeerDialogId(messageOwner.from_id);
-
-            final boolean isUser = selfId == topicId;
-            final boolean isAdmin = !isUser;
-            final boolean messageFromUser = topicId == senderId;
-            final boolean messageFromAdmin = !messageFromUser;
-
-            if (isUser && messageFromUser || isAdmin && messageFromAdmin) {
-                needShow = false;
-            }
-        }
-
-        return needShow;
-    }
 
     public BotInlineKeyboard.Source getInlineBotButtons() {
         return inlineKeyboardSource;
@@ -4507,10 +4483,7 @@ public class MessageObject {
         if (messageOwner != null && messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup && ((TLRPC.TL_replyInlineMarkup) messageOwner.reply_markup).rows != null) {
             builder.addBotKeyboard((TLRPC.TL_replyInlineMarkup) messageOwner.reply_markup);
         }
-        if (hasSuggestionInlineButtons()) {
-            builder.addSeparator();
-            builder.addSuggestionKeyboard();
-        }
+
         if (builder.isNotEmpty()) {
             inlineKeyboardSource = builder.build();
         }

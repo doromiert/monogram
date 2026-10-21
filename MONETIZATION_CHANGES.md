@@ -155,3 +155,12 @@ The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse
 - Generic checkbox alert now has a single ordinary API and no monetary balance header variant. Existing callers retain the original checkbox behavior.
 - Remaining monetary suggested-post offers/balance sheet, shared send-button price rendering and generic gift/sales controllers still need removal. This pass does not claim all monetary message schemas/send parameters are gone.
 - Source-only inspection; no build/tests/phone actions. At next APK delivery verify compilation, composer send/edit/schedule, ordinary greetings, top-panel reports and checkbox alerts.
+
+### Suggested-post Stars/TON sales removal (source only)
+
+- Deleted `Stars/MessageSuggestionOfferSheet`, including currency tabs, balance cloud/top-up link, commission/price entry and sale scheduling UI. Removed its composer/reply-panel/context-menu/attachment launch paths and send-with-offer action. Sale-specific date/decline dialogs were deleted; ordinary schedule controls remain.
+- Removed `MessagesController` add/approve/reject suggested-post transaction backend, in-flight state and `messages.toggleSuggestedPostApproval` request construction. Removed sale accept/decline/edit keyboard generation, handlers and progress rendering. Ordinary bot and open-thread buttons remain.
+- Removed balance checks that redirected photo, attachment, text/media editing into the sale sheet. Text editing uses the existing edit-message path instead of resubmitting a sale offer. Removed obsolete balance helper from StarsController.
+- Chat send accessors no longer return suggested-sale parameters, media composing uses that accessor, and sale metadata from old drafts is not reopened as an editable offer. Existing draft message/reply content is preserved.
+- Historical suggestion model/serialization and some read-only presentation remain for the broader schema/presentation cleanup. Date formatting for existing history moved to the existing model helper; no sales screen is retained just to format a timestamp. Remaining gifts/Stars controllers and shared monetary rendering are not claimed complete.
+- Source-only review confirms no references to the deleted sheet, offer dialogs, approval request backend or UI launch APIs. No build/tests/phone actions; next APK delivery must verify compilation, normal edit/media send, draft restoration, bot buttons, forwarding and scheduling.
