@@ -36,7 +36,6 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.Property;
 import android.util.SparseIntArray;
-import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -44,7 +43,6 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.ItemTouchHelper;
@@ -60,7 +58,6 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -119,7 +116,6 @@ public class FilterTabsView extends FrameLayout {
         public int titleWidth;
         public int counter;
         public boolean isDefault;
-        public boolean isLocked;
         public boolean noanimate;
 
         public Tab(int i, CharSequence title, boolean noanimate) {
@@ -193,7 +189,6 @@ public class FilterTabsView extends FrameLayout {
         public float changeProgress;
 
         public boolean animateCounterChange;
-        private float locIconXOffset;
 
 
         float lastTextX;
@@ -230,7 +225,6 @@ public class FilterTabsView extends FrameLayout {
         private float animateFromTabWidth;
         private float lastWidth;
         private float rotation;
-        private float progressToLocked;
 
         public TabView(Context context) {
             super(context);
@@ -561,37 +555,7 @@ public class FilterTabsView extends FrameLayout {
             lastTabWidth = tabWidth;
             lastWidth = getMeasuredWidth();
 
-            if (currentTab.isLocked || progressToLocked != 0) {
-                if (lockDrawable == null) {
-                    lockDrawable = ContextCompat.getDrawable(getContext(), R.drawable.other_lockedfolders);
-                }
-                if (currentTab.isLocked && progressToLocked != 1f) {
-                    progressToLocked += 16 / 150f;
-                } else if (!currentTab.isLocked){
-                    progressToLocked -= 16 / 150f;
-                }
-                progressToLocked = Utilities.clamp(progressToLocked, 1f, 0);
-                int unactiveColor = Theme.getColor(unactiveTextColorKey, resourcesProvider);
-                if (aUnactiveTextColorKey >= 0) {
-                    unactiveColor = ColorUtils.blendARGB(unactiveColor, Theme.getColor(aUnactiveTextColorKey, resourcesProvider), animationValue);
-                }
-                if (lockDrawableColor != unactiveColor) {
-                    lockDrawableColor = unactiveColor;
-                    lockDrawable.setColorFilter(new PorterDuffColorFilter(unactiveColor, PorterDuff.Mode.MULTIPLY));
-                }
-                int iconX = (int) ((getMeasuredWidth() - lockDrawable.getIntrinsicWidth()) / 2f + locIconXOffset);
-                int iconY = getMeasuredHeight() - dp(12);
-                lockDrawable.setBounds(iconX, iconY, iconX + lockDrawable.getIntrinsicWidth(), iconY + lockDrawable.getIntrinsicHeight());
-                if (progressToLocked != 1f) {
-                    canvas.save();
-                    canvas.scale(progressToLocked, progressToLocked, lockDrawable.getBounds().centerX(), lockDrawable.getBounds().centerY());
-                    lockDrawable.draw(canvas);
-                    canvas.restore();
-                } else {
-                    lockDrawable.draw(canvas);
-                }
 
-            }
         }
 
         private boolean attached;
@@ -751,29 +715,7 @@ public class FilterTabsView extends FrameLayout {
             invalidate();
         }
 
-        public void shakeLockIcon(float x, int num) {
-            if (num == 6) {
-                locIconXOffset = 0;
-                return;
-            }
-            AnimatorSet animatorSet = new AnimatorSet();
-            ValueAnimator animator = ValueAnimator.ofFloat(0, dp(x));
-            animator.addUpdateListener(animation -> {
-                locIconXOffset = (float) animation.getAnimatedValue();
-                invalidate();
-            });
-            animatorSet.playTogether(animator);
-            animatorSet.setDuration(50);
-            animatorSet.addListener(new AnimatorListenerAdapter() {
-                @Override
-                public void onAnimationEnd(Animator animation) {
-                    shakeLockIcon(num == 5 ? 0 : -x, num + 1);
-                    locIconXOffset = 0;
-                    invalidate();
-                }
-            });
-            animatorSet.start();
-        }
+
     }
 
     public final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -846,8 +788,6 @@ public class FilterTabsView extends FrameLayout {
     private int previousPosition;
     private int previousId;
     DefaultItemAnimator itemAnimator;
-    private Drawable lockDrawable;
-    private int lockDrawableColor;
 
     private final Runnable animationRunnable = new Runnable() {
         @Override
@@ -1160,12 +1100,7 @@ public class FilterTabsView extends FrameLayout {
     }
 
     public void scrollToTab(Tab tab, int position) {
-        if (tab.isLocked) {
-            if (delegate != null) {
-                delegate.onPageSelected(tab, false);
-            }
-            return;
-        }
+
         boolean scrollingForward = currentPosition < position;
         scrollingToChild = -1;
         previousPosition = currentPosition;
@@ -1256,7 +1191,7 @@ public class FilterTabsView extends FrameLayout {
         return title;
     }
 
-    public void addTab(int id, int stableId, String text, ArrayList<TLRPC.MessageEntity> entities, boolean noanimate, boolean isDefault, boolean isLocked) {
+    public void addTab(int id, int stableId, String text, ArrayList<TLRPC.MessageEntity> entities, boolean noanimate, boolean isDefault) {
         int position = tabs.size();
         if (position == 0 && selectedTabId == -1) {
             selectedTabId = id;
@@ -1270,12 +1205,11 @@ public class FilterTabsView extends FrameLayout {
 
         Tab tab = new Tab(id, text(text, entities), noanimate);
         tab.isDefault = isDefault;
-        tab.isLocked = isLocked;
         allTabsWidth += tab.getWidth(true) + dp(TAB_PADDING_WIDTH);
         tabs.add(tab);
     }
 
-    public void addTab(int id, int stableId, CharSequence text, boolean noanimate, boolean isDefault, boolean isLocked) {
+    public void addTab(int id, int stableId, CharSequence text, boolean noanimate, boolean isDefault) {
         int position = tabs.size();
         if (position == 0 && selectedTabId == -1) {
             selectedTabId = id;
@@ -1289,7 +1223,6 @@ public class FilterTabsView extends FrameLayout {
 
         Tab tab = new Tab(id, text, noanimate);
         tab.isDefault = isDefault;
-        tab.isLocked = isLocked;
         allTabsWidth += tab.getWidth(true) + dp(TAB_PADDING_WIDTH);
         tabs.add(tab);
     }
@@ -1692,7 +1625,6 @@ public class FilterTabsView extends FrameLayout {
                     req.order.add(filter.id);
                 }
             }
-            MessagesController.getInstance(UserConfig.selectedAccount).lockFiltersInternal();
             ConnectionsManager.getInstance(UserConfig.selectedAccount).sendRequest(req, (response, error) -> {
             });
             orderChanged = false;
@@ -1791,11 +1723,7 @@ public class FilterTabsView extends FrameLayout {
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             TabView tabView = (TabView) holder.itemView;
-            int oldId = tabView.currentTab != null ? tabView.getId() : -1;
             tabView.setTab(tabs.get(position), position);
-            if (oldId != tabView.getId()) {
-                tabView.progressToLocked = tabView.currentTab.isLocked ? 1f : 0;
-            }
         }
 
         @Override
@@ -1981,29 +1909,9 @@ public class FilterTabsView extends FrameLayout {
         return selectedTabId == tabs.get(0).id;
     }
 
-    public boolean isLocked(int id) {
-        for (int i = 0; i < tabs.size(); i++) {
-            if (tabs.get(i).id == id) {
-                return tabs.get(i).isLocked;
-            }
-        }
-        return false;
-    }
 
-    public void shakeLock(int id) {
-        for (int i = 0; i < listView.getChildCount(); i++) {
-            if (listView.getChildAt(i) instanceof TabView) {
-                TabView tabView = (TabView) listView.getChildAt(i);
-                if (tabView.currentTab.id == id) {
-                    tabView.shakeLockIcon(1, 0);
-                    try {
-                        tabView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                    } catch (Exception ignore) {}
-                    break;
-                }
-            }
-        }
-    }
+
+
 
 
 

@@ -226,7 +226,6 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.MediaActivity;
 import org.telegram.ui.Components.NumberTextView;
 import org.telegram.ui.Components.PacmanAnimation;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.ProxyDrawable;
 import org.telegram.ui.Components.PullForegroundDrawable;
 import org.telegram.ui.Components.RLottieDrawable;
@@ -357,7 +356,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         private DialogsItemAnimator dialogsItemAnimator;
         private RecyclerItemsEnterAnimator recyclerItemsEnterAnimator;
 
-        private boolean isLocked;
         public boolean animateStoriesView;
 
         private RecyclerListView animationSupportListView;
@@ -1415,16 +1413,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             viewPages[1].setTranslationX(dx - viewPages[0].getMeasuredWidth());
                         }
                         float scrollProgress = Math.abs(dx) / (float) viewPages[0].getMeasuredWidth();
-                        if (viewPages[1].isLocked && scrollProgress > 0.3f) {
-                            dispatchTouchEvent(MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0));
-                            filterTabsView.shakeLock(viewPages[1].selectedType);
-                            AndroidUtilities.runOnUIThread(() -> {
-                                showDialog(new LimitReachedBottomSheet(DialogsActivity.this, getContext(), LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
-                            }, 200);
-                            return false;
-                        } else {
-                            filterTabsView.selectTabWithId(viewPages[1].selectedType, scrollProgress);
-                        }
+                        filterTabsView.selectTabWithId(viewPages[1].selectedType, scrollProgress);
+
                     }
                 } else if (ev == null || ev.getPointerId(0) == startedTrackingPointerId && (ev.getAction() == MotionEvent.ACTION_CANCEL || ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_POINTER_UP)) {
                     velocityTracker.computeCurrentVelocity(1000, maximumVelocity);
@@ -1445,22 +1435,18 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (startedTracking) {
                         float x = viewPages[0].getX();
                         tabsAnimation = new AnimatorSet();
-                        if (viewPages[1].isLocked) {
-                            backAnimation = true;
-                        } else {
-                            if (additionalOffset != 0) {
-                                if (Math.abs(velX) > 1500) {
-                                    backAnimation = animatingForward ? velX > 0 : velX < 0;
-                                } else {
-                                    if (animatingForward) {
-                                        backAnimation = (viewPages[1].getX() > (viewPages[0].getMeasuredWidth() >> 1));
-                                    } else {
-                                        backAnimation = (viewPages[0].getX() < (viewPages[0].getMeasuredWidth() >> 1));
-                                    }
-                                }
+                        if (additionalOffset != 0) {
+                            if (Math.abs(velX) > 1500) {
+                                backAnimation = animatingForward ? velX > 0 : velX < 0;
                             } else {
-                                backAnimation = Math.abs(x) < viewPages[0].getMeasuredWidth() / 3.0f && (Math.abs(velX) < 3500 || Math.abs(velX) < Math.abs(velY));
+                                if (animatingForward) {
+                                    backAnimation = (viewPages[1].getX() > (viewPages[0].getMeasuredWidth() >> 1));
+                                } else {
+                                    backAnimation = (viewPages[0].getX() < (viewPages[0].getMeasuredWidth() >> 1));
+                                }
                             }
+                        } else {
+                            backAnimation = Math.abs(x) < viewPages[0].getMeasuredWidth() / 3.0f && (Math.abs(velX) < 3500 || Math.abs(velX) < Math.abs(velY));
                         }
                         float dx;
                         if (backAnimation) {
@@ -3565,11 +3551,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (viewPages[0].selectedType == tab.id) {
                         return;
                     }
-                    if (tab.isLocked) {
-                        filterTabsView.shakeLock(tab.id);
-                        showDialog(new LimitReachedBottomSheet(DialogsActivity.this, context, LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
-                        return;
-                    }
+
 
                     ArrayList<MessagesController.DialogFilter> dialogFilters = getMessagesController().getDialogFilters();
                     if (!tab.isDefault && (tab.id < 0 || tab.id >= dialogFilters.size())) {
@@ -6428,9 +6410,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             getMessagesController().selectDialogFilter(filter, viewPages[a].dialogsType == 8 ? 1 : 0);
         }
 
-        if (viewPages.length > 1) {
-            viewPages[1].isLocked = filter.locked;
-        }
 
         viewPages[a].dialogsAdapter.setDialogsType(viewPages[a].dialogsType);
         viewPages[a].layoutManager.scrollToPositionWithOffset(viewPages[a].dialogsType == DIALOGS_TYPE_DEFAULT && hasHiddenArchive() && viewPages[a].archivePullViewState == ARCHIVE_ITEM_STATE_HIDDEN ? 1 : 0, (int) scrollYOffset);
@@ -6483,10 +6462,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 filterTabsView.removeTabs();
                 for (int a = 0, N = filters.size(); a < N; a++) {
                     if (filters.get(a).isDefault()) {
-                        filterTabsView.addTab(a, 0, LocaleController.getString(R.string.FilterAllChats), null, false, true, filters.get(a).locked);
+                        filterTabsView.addTab(a, 0, LocaleController.getString(R.string.FilterAllChats), null, false, true);
                     } else {
                         final MessagesController.DialogFilter filter = filters.get(a);
-                        filterTabsView.addTab(a, filter.localId, filter.name, filter.entities, filter.title_noanimate, false, filters.get(a).locked);
+                        filterTabsView.addTab(a, filter.localId, filter.name, filter.entities, filter.title_noanimate, false);
                     }
                 }
                 if (stableId >= 0) {
@@ -6515,9 +6494,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 if (updateCurrentTab) {
                     switchToCurrentSelectedMode(false);
                 }
-                if (filterTabsView.isLocked(filterTabsView.getCurrentTabId())) {
-                    filterTabsView.selectFirstTab();
-                }
+
             }
         } else {
             if (filterTabsView.getVisibility() != View.GONE) {

@@ -23,7 +23,6 @@ import android.widget.TextView;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -38,7 +37,6 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -266,7 +264,6 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         private boolean shareLoading = false;
         private final LoadingDrawable shareLoadingDrawable;
         private boolean needDivider;
-        float progressToLock;
 
         private MessagesController.DialogFilter currentFilter;
 
@@ -292,9 +289,6 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             textView.setTextSize(16);
             textView.setMaxLines(1);
             textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
-            Drawable drawable = ContextCompat.getDrawable(getContext(), R.drawable.other_lockedfolders2);
-            drawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_stickers_menu), PorterDuff.Mode.MULTIPLY));
-            textView.setRightDrawable(drawable);
             textView.setEmojiColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourceProvider));
             addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 80 : 64, 10, LocaleController.isRTL ? 64 : 80, 0));
 
@@ -471,9 +465,6 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             if (filter.isDefault()) {
                 name = LocaleController.getString(R.string.FilterAllChats);
             }
-            if (!animated) {
-                progressToLock = currentFilter.locked ? 1f : 0;
-            }
             CharSequence title = name;
             title = Emoji.replaceEmoji(title, textView.getPaint().getFontMetricsInt(), false);
             title = MessageObject.replaceAnimatedEmoji(title, filter.entities, textView.getPaint().getFontMetricsInt());
@@ -504,18 +495,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             if (needDivider) {
                 canvas.drawLine(LocaleController.isRTL ? 0 : dp(62), getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? dp(62) : 0), getMeasuredHeight() - 1, Theme.dividerPaint);
             }
-            if (currentFilter != null) {
-                if (currentFilter.locked && progressToLock != 1f) {
-                    progressToLock += 16 / 150f;
-                    invalidate();
-                } else if (!currentFilter.locked && progressToLock != 0) {
-                    progressToLock -= 16 / 150f;
-                    invalidate();
-                }
-            }
-            progressToLock = Utilities.clamp(progressToLock, 1f, 0f);
-            textView.setRightDrawableScale(progressToLock);
-            textView.invalidate();
+
         }
 
         @SuppressLint("ClickableViewAccessibility")
@@ -643,17 +623,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         FrameLayout frameLayout = (FrameLayout) fragmentView;
         frameLayout.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
-        listView = new RecyclerListView(context) {
-            @Override
-            public boolean onTouchEvent(MotionEvent e) {
-                if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        getMessagesController().lockFiltersInternal();
-                    }, 250);
-                }
-                return super.onTouchEvent(e);
-            }
-        };
+        listView = new RecyclerListView(context);
         listView.setSections();
         actionBar.setAdaptiveBackground(listView);
         DefaultItemAnimator itemAnimator = new DefaultItemAnimator();

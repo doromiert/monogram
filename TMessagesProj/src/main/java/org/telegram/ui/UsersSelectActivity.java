@@ -75,7 +75,6 @@ import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.GroupCreateSpan;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.StickerEmptyView;
 
@@ -781,14 +780,7 @@ public class UsersSelectActivity extends BaseFragment implements NotificationCen
                     GroupCreateSpan span = selectedContacts.get(id);
                     spansContainer.removeSpan(span);
                 } else {
-                    if (!(type == TYPE_FILTER && org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount))
-                            && ((!(object instanceof String) && !getUserConfig().isPremium() && selectedCount >= MessagesController.getInstance(currentAccount).dialogFiltersChatsLimitDefault)
-                            || selectedCount >= MessagesController.getInstance(currentAccount).dialogFiltersChatsLimitPremium)) {
-                        LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(this, context, LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null);
-                        limitReachedBottomSheet.setCurrentValue(selectedCount);
-                        showDialog(limitReachedBottomSheet);
-                        return;
-                    }
+
                     if (object instanceof TLRPC.User) {
                         TLRPC.User user = (TLRPC.User) object;
                         MessagesController.getInstance(currentAccount).putUser(user, !searching);
@@ -1040,16 +1032,7 @@ public class UsersSelectActivity extends BaseFragment implements NotificationCen
 
     private void updateHint() {
         if (type == TYPE_FILTER) {
-            if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
-                actionBar.setSubtitle(selectedCount == 0 ? getString(R.string.SelectChats) : LocaleController.formatPluralString("Chats", selectedCount));
-                return;
-            }
-            int limit = getUserConfig().isPremium() ? getMessagesController().dialogFiltersChatsLimitPremium : getMessagesController().dialogFiltersChatsLimitDefault;
-            if (selectedCount == 0) {
-                actionBar.setSubtitle(formatString("MembersCountZero", R.string.MembersCountZero, LocaleController.formatPluralString("Chats", limit)));
-            } else {
-                actionBar.setSubtitle(String.format(LocaleController.getPluralString("MembersCountSelected", selectedCount), selectedCount, limit));
-            }
+            actionBar.setSubtitle(selectedCount == 0 ? getString(R.string.SelectChats) : LocaleController.formatPluralString("Chats", selectedCount));
         } else if (type == TYPE_AUTO_DELETE_EXISTING_CHATS) {
             actionBar.setTitle("");
             actionBar.setSubtitle("");

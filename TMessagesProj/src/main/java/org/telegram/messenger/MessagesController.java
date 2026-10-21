@@ -835,23 +835,13 @@ public class MessagesController extends BaseController implements NotificationCe
         if (dialogFilters.isEmpty()) {
             return;
         }
-        lockFiltersInternal();
 
         getMessagesStorage().saveDialogFiltersOrder();
         getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
         getStoriesController().onPremiumChanged();
     }
 
-    public void lockFiltersInternal() {
-        boolean changed = false;
-        for (DialogFilter filter : dialogFilters) {
-            changed |= filter.locked;
-            filter.locked = false;
-        }
-        if (changed) {
-            getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
-        }
-    }
+
 
     public int getCaptionMaxLengthLimit() {
         return Math.max(captionLengthLimitPremium, captionLengthLimitDefault);
@@ -1175,7 +1165,6 @@ public class MessagesController extends BaseController implements NotificationCe
 
         private static int dialogFilterPointer = 10;
         public int localId = dialogFilterPointer++;
-        public boolean locked;
 
         public boolean includesDialog(AccountInstance accountInstance, long dialogId) {
             MessagesController messagesController = accountInstance.getMessagesController();
@@ -2264,7 +2253,6 @@ public class MessagesController extends BaseController implements NotificationCe
                     getNotificationCenter().postNotificationName(NotificationCenter.filterSettingsUpdated);
                 }
 
-                lockFiltersInternal();
 
                 if (onDone != null) {
                     onDone.run();
@@ -2408,7 +2396,6 @@ public class MessagesController extends BaseController implements NotificationCe
         if (dialogFilters.size() == 1 && SharedConfig.getChatSwipeAction(currentAccount) != SwipeGestureSettingsView.SWIPE_GESTURE_FOLDERS) {
             SharedConfig.updateChatListSwipeSetting(SwipeGestureSettingsView.SWIPE_GESTURE_FOLDERS);
         }
-        lockFiltersInternal();
     }
 
     public static TLRPC.TL_emojiStatusCollectible emojiStatusCollectibleFromGift(TL_stars.TL_starGiftUnique gift) {
