@@ -1255,7 +1255,6 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_SPEED_PROMO = 103;
     public final static int OPTION_OPEN_PROFILE = 104;
     public final static int OPTION_FACT_CHECK = 106;
-    public final static int OPTION_EDIT_PRICE = 107;
     public final static int OPTION_GIFT = 108;
     public final static int OPTION_EDIT_TODO = 109;
     public final static int OPTION_ADD_TO_TODO = 110;
@@ -33831,17 +33830,7 @@ public class ChatActivity extends BaseFragment implements
                 selectedObjectToEditCaption = null;
                 break;
             }
-            case OPTION_EDIT_PRICE: {
-                final MessageObject msg = selectedObject;
-                TLRPC.TL_messageMediaPaidMedia paidMedia = (TLRPC.TL_messageMediaPaidMedia) selectedObject.messageOwner.media;
-                StarsIntroActivity.showMediaPriceSheet(getContext(), paidMedia.stars_amount, false, (stars, done) -> {
-                    StarsController.getInstance(currentAccount).updateMediaPrice(msg, stars, done);
-                }, themeDelegate);
-                selectedObject = null;
-                selectedObjectGroup = null;
-                selectedObjectToEditCaption = null;
-                break;
-            }
+
             case OPTION_GIFT: {
                 showDialog(new GiftSheet(getContext(), currentAccount, getDialogId(), null, null));
                 break;
@@ -36669,7 +36658,7 @@ public class ChatActivity extends BaseFragment implements
                     showDialog(new AudioPlayerAlert(getContext(), themeDelegate));
                 }
             } else if (str.startsWith("tonaddress:")) {
-                didPressTonAddress(cell, url, str.substring(11));
+                // Retired wallet links have no action in Monogram.
                 if (cell != null) {
                     cell.resetPressedLink(-1);
                 }
@@ -41130,12 +41119,6 @@ public class ChatActivity extends BaseFragment implements
         public void didPressGroupImage(ChatMessageCell cell, ImageReceiver imageReceiver, TLRPC.MessageExtendedMedia media, float x, float y) {
             final MessageObject message = cell.getMessageObject();
             if (media instanceof TLRPC.TL_messageExtendedMediaPreview) {
-                final Browser.Progress progress = makeProgressForPaidMedia(cell);
-                Runnable cancel = StarsController.getInstance(currentAccount).pay(message, progress::end);
-                if (cancel != null) {
-                    progress.onCancel(cancel);
-                    progress.init();
-                }
                 return;
             }
             final TLRPC.Message omsg = message.messageOwner;
@@ -45847,7 +45830,7 @@ public class ChatActivity extends BaseFragment implements
                 }
 //                        if (message.scheduled && message.type == MessageObject.TYPE_PAID_MEDIA && message.canEditMessage(currentChat)) {
 //                            items.add(LocaleController.getString(R.string.PaidMediaPriceButton));
-//                            options.add(OPTION_EDIT_PRICE);
+// Price editing is not offered in Monogram.
 //                            icons.add(R.drawable.menu_feature_paid);
 //                        }
                 if (chatMode != MODE_WELCOME_MESSAGES && selectedObject.contentType == 0 && !selectedObject.isMediaEmptyWebpage() && selectedObject.getId() > 0 && !selectedObject.isOut() && (currentChat != null || currentUser != null && currentUser.bot)) {

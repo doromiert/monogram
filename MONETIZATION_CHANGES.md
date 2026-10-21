@@ -73,3 +73,10 @@ A contact on 0.2.133 reports failed OMEMO 2 sends (`Invalid OMEMO2 content`) and
 ## Verification
 
 No tests, phone UI actions or APK deployment have been performed for this work yet. Implementation-phase source inspection is permitted; release checks will be recorded here when preparing an APK.
+
+### Stars checkout and paid-message cleanup (0.2.135 release preparation)
+
+- Removed Stars paid-content checkout, subscription payment, price-editing and top-up implementations and their remaining entry actions. Paid invitations report unavailability.
+- Removed paid-message postponement/undo and checkout gating from ordinary sending. Confirmation callbacks report zero fees (including one zero entry per forwarding destination); bot-forum and ephemeral-message handling remain intact.
+- Legacy balance/catalog/history contracts return empty local data; gift/resale checkout contracts report unavailability. Broader Stars/gift/auction and promotional UI removal remains unfinished.
+- Release checks and installation are recorded below after completion.

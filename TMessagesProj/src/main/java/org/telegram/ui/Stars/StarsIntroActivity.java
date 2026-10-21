@@ -4825,31 +4825,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
                 textView.setGravity(Gravity.CENTER);
                 linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 26, 7, 26, 15));
 
-                if (subscription.chat_invite_hash != null || subscription.invoice_slug != null) {
-                    ButtonWithCounterView button = new ButtonWithCounterView(context, true, resourcesProvider);
-                    button.setText(getString(R.string.StarsSubscriptionRenew), false);
-                    linearLayout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-                    button.setOnClickListener(v -> {
-                        if (button.isLoading()) return;
-                        button.setLoading(true);
-                        TL_stars.TL_changeStarsSubscription req = new TL_stars.TL_changeStarsSubscription();
-                        req.canceled = false;
-                        req.peer = new TLRPC.TL_inputPeerSelf();
-                        req.subscription_id = subscription.id;
-                        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                            button.setLoading(false);
-                            if (sheet[0] != null) {
-                                sheet[0].dismiss();
-                            }
-                            StarsController.getInstance(currentAccount).invalidateSubscriptions(true);
 
-                            BaseFragment fragment = LaunchActivity.getSafeLastFragment();
-                            if (fragment != null) {
-                                BulletinFactory.of(fragment).createUsersBulletin(Collections.singletonList(peerObject), getString(R.string.StarsSubscriptionRenewedToast), AndroidUtilities.replaceTags(formatString(R.string.StarsSubscriptionRenewedToastText, peerName))).show(false);
-                            }
-                        }));
-                    });
-                }
             } else {
                 textView = new LinkSpanDrawable.LinksTextView(context, resourcesProvider);
                 textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2, resourcesProvider));
@@ -4905,57 +4881,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
             textView.setGravity(Gravity.CENTER);
             linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 26, 7, 26, 15));
 
-            if (subscription.chat_invite_hash != null || subscription.invoice_slug != null) {
-                ButtonWithCounterView button = new ButtonWithCounterView(context, true, resourcesProvider).setRound();
-                button.setText(getString(R.string.StarsSubscriptionAgain), false);
-                linearLayout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-                button.setOnClickListener(v -> {
-                    if (button.isLoading()) return;
-                    button.setLoading(true);
-                    if (subscription.chat_invite_hash != null) {
-                        TLRPC.TL_messages_checkChatInvite req = new TLRPC.TL_messages_checkChatInvite();
-                        req.hash = subscription.chat_invite_hash;
-                        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                            button.setLoading(false);
-                            if (res instanceof TLRPC.ChatInvite) {
-                                TLRPC.ChatInvite invite = (TLRPC.ChatInvite) res;
-                                if (invite.subscription_pricing == null) { // wtf
-                                    BulletinFactory.of(sheet[0].topBulletinContainer, resourcesProvider).createErrorBulletin(getString(R.string.UnknownError)).show(false);
-                                    return;
-                                }
-                                final long stars = invite.subscription_pricing.amount;
-                                StarsController.getInstance(currentAccount).subscribeTo(req.hash, invite, (status, dialogId) -> {
-                                    if ("paid".equals(status) && dialogId != 0) {
-                                        AndroidUtilities.runOnUIThread(() -> {
-                                            BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                                            if (lastFragment == null) return;
-                                            BaseFragment chatActivity = ChatActivity.of(dialogId);
-                                            lastFragment.presentFragment(chatActivity);
 
-                                            TLRPC.Chat newChat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
-                                            if (newChat != null) {
-                                                AndroidUtilities.runOnUIThread(() -> {
-                                                    BulletinFactory.of(chatActivity).createSimpleBulletin(R.raw.stars_send, getString(R.string.StarsSubscriptionCompleted), AndroidUtilities.replaceTags(formatPluralString("StarsSubscriptionCompletedText", (int) stars, newChat.title))).show(true);
-                                                }, 250);
-                                            }
-                                        });
-                                    }
-                                });
-                            } else {
-                                BulletinFactory.of(sheet[0].topBulletinContainer, resourcesProvider).createErrorBulletin(LocaleController.getString(R.string.LinkHashExpired)).show(false);
-                            }
-                        }));
-                    } else if (subscription.invoice_slug != null) {
-                        maybeCloseAfterUpdate[0] = true;
-                        Browser.openUrl(context, Uri.parse("https://t.me/$" + subscription.invoice_slug), true, false, false, new Browser.Progress() {
-                            @Override
-                            public void end() {
-                                button.setLoading(false);
-                            }
-                        }, null, false, true, false);
-                    }
-                });
-            }
         }
 
         b.setCustomView(linearLayout);

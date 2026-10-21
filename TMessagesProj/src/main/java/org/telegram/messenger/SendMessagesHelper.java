@@ -312,7 +312,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 uploadSet.remove(path);
             }
         }
-        
+
         private void addUploadProgress(String path, long sz, float progress) {
             uploadProgresses.put(path, progress);
             uploadSize.put(path, sz);
@@ -826,7 +826,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 retriedToSendArray[index] = value;
             }
         }
-        
+
         public int topMessageId;
 
         public TLRPC.InputMedia inputUploadMedia;
@@ -1633,7 +1633,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             if (sendingMessage != null) {
                 getConnectionsManager().cancelRequest(sendingMessage.reqId, true);
             }
-            StarsController.getInstance(currentAccount).hidePaidMessageToast(object);
 
             for (HashMap.Entry<String, ArrayList<DelayedMessage>> entry : delayedMessages.entrySet()) {
                 ArrayList<DelayedMessage> messages = entry.getValue();
@@ -2584,7 +2583,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 newMsgObj.wasJustSent = true;
                 objArr.add(newMsgObj);
                 arr.add(newMsg);
-                StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
+
 
                 if (msgObj.replyMessageObject != null) {
                     for (int i = 0; i < messages.size(); i++) {
@@ -2854,9 +2853,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         }
                     };
 
-                    if (StarsController.getInstance(currentAccount).beforeSendingFinalRequest(req, newMsgArr, send2)) {
-                        send2.run();
-                    }
+                    send2.run();
 
                     if (a != messages.size() - 1) {
                         objArr = new ArrayList<>();
@@ -5409,7 +5406,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             reqSend.suggested_post = retryMessageObject.messageOwner.suggested_post;
                         }
                         if (retryMessageObject == null) {
-                            StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
+
                         }
                         performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
                         if (retryMessageObject == null) {
@@ -5472,7 +5469,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         reqSend.invert_media = newMsg.invert_media;
                         applyMonoForumPeerId(reqSend, sendMessageParams.monoForumPeer);
                         if (retryMessageObject == null) {
-                            StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
+
                         }
                         performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
                         if (retryMessageObject == null) {
@@ -5556,7 +5553,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 reqSend.invert_media = newMsg.invert_media;
                 applyMonoForumPeerId(reqSend, sendMessageParams.monoForumPeer);
                 if (retryMessageObject == null) {
-                    StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
+
                 }
                 performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
                 if (retryMessageObject == null) {
@@ -6109,7 +6106,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         reqSend = request;
                     }
                     if (retryMessageObject == null) {
-                        StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
+
                     }
                     if (groupId != 0) {
                         performSendDelayedMessage(delayedMessage);
@@ -7676,9 +7673,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         for (int a = 0, size = msgObjs.size(); a < size; a++) {
             putToSendingMessages(msgObjs.get(a).messageOwner, scheduled);
         }
-        if (!StarsController.getInstance(currentAccount).beforeSendingFinalRequest(request, msgObjs, () -> performSendMessageRequestMulti(request, msgObjs, originalPaths, parentObjects, delayedMessage, scheduled))) {
-            return;
-        }
+
         if (!BotForumHelper.getInstance(currentAccount).beforeSendingFinalRequest(request, msgObjs, () -> performSendMessageRequestMulti(request, msgObjs, originalPaths, parentObjects, delayedMessage, scheduled))) {
             return;
         }
@@ -8068,9 +8063,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
         final TLRPC.Message newMsgObj = msgObj.messageOwner;
         putToSendingMessages(newMsgObj, scheduled);
-        if (!StarsController.getInstance(currentAccount).beforeSendingFinalRequest(req, msgObj, () -> performSendMessageRequest(req, msgObj, originalPath, parentMessage, check, delayedMessage, parentObject, params, scheduled))) {
-            return;
-        }
+
         if (!BotForumHelper.getInstance(currentAccount).beforeSendingFinalRequest(req, msgObj, () -> performSendMessageRequest(req, msgObj, originalPath, parentMessage, check, delayedMessage, parentObject, params, scheduled))) {
             return;
         }

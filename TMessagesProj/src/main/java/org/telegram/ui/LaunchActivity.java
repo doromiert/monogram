@@ -2716,18 +2716,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                         url = url.replace("tg:message", "tg://telegram.org").replace("tg://message", "tg://telegram.org");
                                         data = Uri.parse(url);
                                         chatLinkSlug = data.getQueryParameter("slug");
-                                    } else if (url.startsWith("tg:stars_topup") || url.startsWith("tg://stars_topup")) {
-                                        url = url.replace("tg:stars_topup", "tg://telegram.org").replace("tg://stars_topup", "tg://telegram.org");
-                                        data = Uri.parse(url);
-                                        long balance = 0;
-                                        try {
-                                            balance = (int) Long.parseLong(data.getQueryParameter("balance"));
-                                            if (balance < 0 || balance >= Integer.MAX_VALUE) balance = 0;
-                                        } catch (Exception e) {
-                                            FileLog.e(e);
-                                        }
-                                        String purpose = data.getQueryParameter("purpose");
-                                        StarsController.getInstance(intentAccount[0]).showStarsTopup(this, balance, purpose);
                                     } else if (url.startsWith("tg:stars") || url.startsWith("tg://stars")) {
                                         if (progress != null) {
                                             progress.end();
@@ -4911,25 +4899,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
                                 }
                             } else if (invite.subscription_pricing != null && !invite.can_refulfill_subscription) {
-                                final long stars = invite.subscription_pricing.amount;
-                                MessagesController.getInstance(intentAccount).putChat(invite.chat, false);
-                                StarsController.getInstance(currentAccount).subscribeTo(group, invite, (status, dialogId) -> {
-                                    if ("paid".equals(status) && dialogId != 0) {
-                                        AndroidUtilities.runOnUIThread(() -> {
-                                            BaseFragment lastFragment = getSafeLastFragment();
-                                            if (lastFragment == null) return;
-                                            BaseFragment chatActivity = ChatActivity.of(dialogId);
-                                            lastFragment.presentFragment(chatActivity);
-
-                                            TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
-                                            if (chat != null) {
-                                                AndroidUtilities.runOnUIThread(() -> {
-                                                    BulletinFactory.of(chatActivity).createSimpleBulletin(R.raw.stars_send, LocaleController.getString(R.string.StarsSubscriptionCompleted), AndroidUtilities.replaceTags(formatPluralString("StarsSubscriptionCompletedText", (int) stars, chat.title))).show(true);
-                                                }, 250);
-                                            }
-                                        });
-                                    }
-                                });
+                                BulletinFactory.showError(getString(R.string.MonogramPurchasesUnavailable));
                             } else {
                                 BaseFragment fragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
                                 fragment.showDialog(new JoinGroupAlert(LaunchActivity.this, invite, group, fragment, (fragment instanceof ChatActivity ? ((ChatActivity) fragment).themeDelegate : null)));

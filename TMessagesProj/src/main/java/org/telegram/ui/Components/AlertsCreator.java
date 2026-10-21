@@ -2408,94 +2408,14 @@ public class AlertsCreator {
 
     public static boolean ensurePaidMessagesMultiConfirmation(int currentAccount, ArrayList<Long> dialogIds, int messagesCount, Utilities.Callback<HashMap<Long, Long>> confirmed) {
         if (confirmed == null) return false;
-        if (dialogIds == null || dialogIds.isEmpty()) {
-            confirmed.run(new HashMap<>());
-            return false;
-        }
-
-        boolean allDontAsk = true;
-        long _totalPrice = 0;
         HashMap<Long, Long> prices = new HashMap<>();
-        int _totalChatsCount = 0;
-        for (long did : dialogIds) {
-            long price = MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(did);
-            if (price <= 0 && did > 0) {
-                price = DialogObject.getMessagesStarsPrice(MessagesController.getInstance(currentAccount).isUserContactBlocked(did));
-            }
-            prices.put(did, price);
-            _totalPrice += price;
-            StarsController.getInstance(currentAccount).sendingMessagesCount.put(did, messagesCount);
-
-            if (price > 0) {
-                _totalChatsCount++;
-            }
-            if (price > 0 && allDontAsk) {
-                long askedPrice = MessagesController.getInstance(currentAccount).getMainSettings().getLong("ask_paid_message_" + did + "_price", 0L);
-                if (askedPrice < price) {
-                    allDontAsk = false;
-                }
-            }
-        }
-        final long totalPrice = _totalPrice * Math.max(1, messagesCount);
-        final int totalChats = _totalChatsCount;
-
-        if (allDontAsk || totalPrice <= 0) {
-            confirmed.run(prices);
-            return false;
-        }
-
-        final Activity activity = AndroidUtilities.getActivity();
-        final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-        final Theme.ResourcesProvider resourcesProvider = PhotoViewer.getInstance().isVisible() || lastFragment != null && lastFragment.hasShownSheet() ? new DarkThemeResourceProvider() : (lastFragment != null ? lastFragment.getResourceProvider() : null);
-
-        SpannableStringBuilder sb = new SpannableStringBuilder();
-        sb.append(replaceTags(LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessageMulti1", totalChats)));
-        sb.append(" ");
-        sb.append(replaceTags(LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessageMulti2", (int) totalPrice, LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessageMulti2Messages", messagesCount * Math.max(1, totalChats)))));
-        showAlertWithCheckboxWithBalance(activity, getString(R.string.MessageLockedStarsConfirmTitle), sb, getString(R.string.MessageLockedStarsConfirmMessageDontAsk), LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessagePay", messagesCount), dontAsk -> {
-            if (dontAsk) {
-                SharedPreferences.Editor e = MessagesController.getInstance(currentAccount).getMainSettings().edit();
-                for (long dialogId : dialogIds) {
-                    long price = MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(dialogId);
-                    if (price <= 0 && dialogId > 0) {
-                        price = DialogObject.getMessagesStarsPrice(MessagesController.getInstance(currentAccount).isUserContactBlocked(dialogId));
-                    }
-                    e.putLong("ask_paid_message_" + dialogId + "_price", price);
-                    StarsController.getInstance(currentAccount).justAgreedToNotAskDialogs.put(dialogId, System.currentTimeMillis());
-                }
-                e.apply();
-            }
-            final Runnable gotBalance = () -> {
-                final long balance = StarsController.getInstance(currentAccount).getBalance().amount;
-                if (balance < totalPrice) {
-                    if (activity == null) return;
-                    final long dialogId = dialogIds.get(0);
-                    new StarsIntroActivity.StarsNeededSheet(activity, resourcesProvider, totalPrice, StarsIntroActivity.StarsNeededSheet.TYPE_PRIVATE_MESSAGE, DialogObject.getShortName(currentAccount, dialogId), () -> {
-                        confirmed.run(prices);
-                    }, dialogId).show();
-                } else {
-                    confirmed.run(prices);
-                }
-            };
-            if (!StarsController.getInstance(currentAccount).balanceAvailable()) {
-                StarsController.getInstance(currentAccount).invalidateBalance(gotBalance);
-            } else {
-                gotBalance.run();
-            }
-        }, resourcesProvider);
-        return true;
+        if (dialogIds != null) for (long dialogId : dialogIds) prices.put(dialogId, 0L);
+        confirmed.run(prices);
+        return false;
     }
 
     public static boolean needsPaidMessageAlert(int currentAccount, long dialogId) {
-        long _send_paid_messages_stars = MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(dialogId);
-        if (_send_paid_messages_stars <= 0 && dialogId > 0) {
-            _send_paid_messages_stars = DialogObject.getMessagesStarsPrice(MessagesController.getInstance(currentAccount).isUserContactBlocked(dialogId));
-        }
-        final long send_paid_messages_stars = _send_paid_messages_stars;
-        return (
-            send_paid_messages_stars > 0 &&
-            send_paid_messages_stars > MessagesController.getInstance(currentAccount).getMainSettings().getLong("ask_paid_message_" + dialogId + "_price", 0L)
-        );
+        return false;
     }
 
     public static boolean ensurePaidMessageConfirmation(int currentAccount, long dialogId, int count, Utilities.Callback<Long> confirmedPrice) {
@@ -2503,86 +2423,11 @@ public class AlertsCreator {
     }
 
     public static boolean ensurePaidMessageConfirmation(int currentAccount, long dialogId, int count, Utilities.Callback<Long> confirmedPrice, long stars) {
-        if (confirmedPrice == null) return false;
-
-        long _send_paid_messages_stars = MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(dialogId);
-        if (_send_paid_messages_stars <= 0 && dialogId > 0) {
-            _send_paid_messages_stars = DialogObject.getMessagesStarsPrice(MessagesController.getInstance(currentAccount).isUserContactBlocked(dialogId));
-        }
-        final long send_paid_messages_stars = _send_paid_messages_stars;
-        final long price = count * send_paid_messages_stars;
-
-        StarsController.getInstance(currentAccount).sendingMessagesCount.put(dialogId, count);
-        if (price <= 0 || stars == price) {
-            confirmedPrice.run(price);
-            return false;
-        }
-
-        showPayForMessageAlert(currentAccount, dialogId, send_paid_messages_stars, count, () -> {
-            final Runnable gotBalance = () -> {
-                final long balance = StarsController.getInstance(currentAccount).getBalance().amount;
-                if (balance < price) {
-                    final Activity activity = AndroidUtilities.getActivity();
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    final Theme.ResourcesProvider resourcesProvider = PhotoViewer.getInstance().isVisible() || lastFragment != null && lastFragment.hasShownSheet() ? new DarkThemeResourceProvider() : (lastFragment != null ? lastFragment.getResourceProvider() : null);
-
-                    if (activity == null) return;
-                    new StarsIntroActivity.StarsNeededSheet(activity, resourcesProvider, price, StarsIntroActivity.StarsNeededSheet.TYPE_PRIVATE_MESSAGE, DialogObject.getShortName(currentAccount, dialogId), () -> {
-                        confirmedPrice.run(send_paid_messages_stars);
-                    }, dialogId).show();
-                } else {
-                    confirmedPrice.run(send_paid_messages_stars);
-                }
-            };
-            if (!StarsController.getInstance(currentAccount).balanceAvailable()) {
-                StarsController.getInstance(currentAccount).invalidateBalance(gotBalance);
-            } else {
-                gotBalance.run();
-            }
-        });
-        return true;
+        if (confirmedPrice != null) confirmedPrice.run(0L);
+        return false;
     }
 
-    public static void showPayForMessageAlert(int currentAccount, long dialogId, long stars, int messagesCount, Runnable confirmed) {
-        if (confirmed == null) return;
 
-        if (stars <= MessagesController.getInstance(currentAccount).getMainSettings().getLong("ask_paid_message_" + dialogId + "_price", 0L)) {
-            confirmed.run();
-            return;
-        }
-
-        final Activity activity = AndroidUtilities.getActivity();
-        final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-        final Theme.ResourcesProvider resourcesProvider = PhotoViewer.getInstance().isVisible() || lastFragment != null && lastFragment.hasShownSheet() ? new DarkThemeResourceProvider() : (lastFragment != null ? lastFragment.getResourceProvider() : null);
-
-        String chatName = DialogObject.getShortName(currentAccount, dialogId);
-        if (ChatObject.isMonoForum(currentAccount, dialogId)) {
-            chatName = ForumUtilities.getMonoForumTitle(currentAccount, dialogId, true);
-        } else if (lastFragment instanceof ChatActivity) {
-            ChatActivity chatActivity = (ChatActivity) lastFragment;
-            if (chatActivity.isComments && chatActivity.getDialogId() == dialogId && chatActivity.replyOriginalChat != null) {
-                chatName = DialogObject.getShortName(currentAccount, -chatActivity.replyOriginalChat.id);
-            }
-        }
-
-        SpannableStringBuilder sb = new SpannableStringBuilder();
-        sb.append(replaceTags(LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessage1", (int) stars, chatName)));
-        sb.append(" ");
-        if (messagesCount == 1) {
-            sb.append(replaceTags(LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessage2One", (int) stars)));
-        } else {
-            sb.append(replaceTags(LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessage2Many1", (int) (stars * messagesCount))));
-            sb.append(" ");
-            sb.append(replaceTags(LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessage2Many2", messagesCount)));
-        }
-        showAlertWithCheckboxWithBalance(activity, getString(R.string.MessageLockedStarsConfirmTitle), sb, getString(R.string.MessageLockedStarsConfirmMessageDontAsk), LocaleController.formatPluralStringComma("MessageLockedStarsConfirmMessagePay", messagesCount), dontAsk -> {
-            if (dontAsk) {
-                MessagesController.getInstance(currentAccount).getMainSettings().edit().putLong("ask_paid_message_" + dialogId + "_price", stars).apply();
-                StarsController.getInstance(currentAccount).justAgreedToNotAskDialogs.put(dialogId, System.currentTimeMillis());
-            }
-            AndroidUtilities.runOnUIThread(confirmed);
-        }, resourcesProvider);
-    }
 
     public static AlertDialog showAlertWithCheckbox(Context context, CharSequence title, CharSequence message, CharSequence check, CharSequence button, Utilities.Callback<Boolean> onAction, Theme.ResourcesProvider resourcesProvider) {
         return showAlertWithCheckbox(context, title, message, check, button, onAction, resourcesProvider, false);
