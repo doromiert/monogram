@@ -193,3 +193,11 @@ The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse
 ### OMEMO2 signed-prekey diagnostic follow-up
 
 Verified the signed-prekey ID range against XEP-0384 §5.3.2: 1..2147483647. The supplied trace does not establish which value was rejected. `Omemo2Bundle.parse` now reports a specific signed-prekey-ID error with missing/malformed status or a bounded decimal value, preserving the cause and all existing validation. No key material or arbitrary XML enters the new error. This is diagnostic instrumentation, not a delivery fix; no identity, trust or encryption-mode changes. Source-only: tests/build/install deferred until APK delivery, per user instruction.
+
+### Gift upgrade, crafting and remaining sheet purchase removal
+
+Removed `StarGiftSheet` upgrade/prepaid-upgrade entry points, next-upgrade carousel actions, payment-form queries, upgrade transactions and balance retries, one-second price refresh runnable, price schedule sheet, upgrade marketing layout and sender checkbox. Removed the unused upgrade learn-more entry point. Removed crafting requests, selection subscriptions, controls, nested crafting UI/animations, help layout and crafting dismissal guards. Deleted the now-unreferenced post-upgrade update helper. Updated the shared `TopView` constructor and its preview caller after deleting the crafting callback.
+
+Removed resale buy controls and checkout handlers plus paid original-description removal, retaining a read-only details row. No payment-form, send-Stars-form, upgrade or craft request construction remains in this sheet. Removed imports made unused by these deletions. Source inspection covered removed method references, both shared constructor callers, class brace boundaries and `git diff --check`; no tests, build or phone interaction, per the source-work instruction.
+
+Remaining scope: gift history/display, collectible/profile management and market browser code still exists elsewhere; shared legacy page drawing retains old page slots used by previews. This is not a complete gift-schema/assets purge or a claim that all monetization has been removed. These follow-up changes are unshipped.
