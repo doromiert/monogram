@@ -20066,7 +20066,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         TL_update.TL_updateStarsBalance update = (TL_update.TL_updateStarsBalance) baseUpdate;
                         final boolean ton = update.balance instanceof TL_stars.TL_starsTonAmount;
                         StarsController.getInstance(currentAccount, ton).updateBalance(update.balance);
-                        StarsController.getInstance(currentAccount, ton).invalidateTransactions(false);
                     } else if (baseUpdate instanceof TL_update.TL_updateUser) {
                         TL_update.TL_updateUser update = (TL_update.TL_updateUser) baseUpdate;
                         TLRPC.User currentUser = getUser(update.user_id);
@@ -24185,23 +24184,9 @@ public class MessagesController extends BaseController implements NotificationCe
         }));
     }
 
-    public void disableAds(boolean send) {
-        TLRPC.UserFull userFull = getUserFull(getUserConfig().getClientUserId());
-        if (userFull == null) return;
-        userFull.sponsored_enabled = false;
-        getMessagesStorage().updateUserInfo(userFull, false);
-        if (send) {
-            TL_account.toggleSponsoredMessages req = new TL_account.toggleSponsoredMessages();
-            req.enabled = false;
-            getConnectionsManager().sendRequest(req, null);
-        }
-    }
 
-    public boolean isSponsoredDisabled() {
-        TLRPC.UserFull userFull = getUserFull(getUserConfig().getClientUserId());
-        if (userFull == null) return false;
-        return !userFull.sponsored_enabled;
-    }
+
+
 
     private boolean loadingAvailableEffects;
     private TLRPC.messages_AvailableEffects availableEffects;

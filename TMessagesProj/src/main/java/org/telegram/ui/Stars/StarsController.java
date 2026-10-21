@@ -171,31 +171,6 @@ public class StarsController {
         return balanceLoaded;
     }
 
-    private boolean optionsLoading, optionsLoaded;
-    private ArrayList<TL_stars.TL_starsTopupOption> options;
-    public ArrayList<TL_stars.TL_starsTopupOption> getOptionsCached() {
-        return options;
-    }
-
-    public ArrayList<TL_stars.TL_starsTopupOption> getOptions() {
-        if (options == null) options = new ArrayList<>();
-        optionsLoading = false;
-        optionsLoaded = true;
-        return options;
-    }
-
-    private boolean giftOptionsLoading, giftOptionsLoaded;
-    private ArrayList<TL_stars.TL_starsGiftOption> giftOptions;
-    public ArrayList<TL_stars.TL_starsGiftOption> getGiftOptionsCached() {
-        return giftOptions;
-    }
-    public ArrayList<TL_stars.TL_starsGiftOption> getGiftOptions() {
-        if (giftOptions == null) giftOptions = new ArrayList<>();
-        giftOptionsLoading = false;
-        giftOptionsLoaded = true;
-        return giftOptions;
-    }
-
     private boolean giveawayOptionsLoading, giveawayOptionsLoaded;
     private ArrayList<TL_stars.TL_starsGiveawayOption> giveawayOptions;
     public ArrayList<TL_stars.TL_starsGiveawayOption> getGiveawayOptionsCached() {
@@ -221,103 +196,6 @@ public class StarsController {
 
     // ===== STAR TRANSACTIONS =====
 
-    public static final int ALL_TRANSACTIONS = 0;
-    public static final int INCOMING_TRANSACTIONS = 1;
-    public static final int OUTGOING_TRANSACTIONS = 2;
-
-    public final ArrayList<TL_stars.StarsTransaction>[] transactions = new ArrayList[] { new ArrayList<>(), new ArrayList<>(), new ArrayList<>() };
-    public final boolean[] transactionsExist = new boolean[3];
-    private final String[] offset = new String[3];
-    private final boolean[] loading = new boolean[3];
-    private final boolean[] endReached = new boolean[3];
-
-    public void invalidateTransactions(boolean load) {
-        for (int i = 0; i < 3; ++i) {
-            if (loading[i]) continue;
-            transactions[i].clear();
-            offset[i] = null;
-            loading[i] = false;
-            endReached[i] = false;
-            if (load)
-                loadTransactions(i);
-        }
-    }
-    public void preloadTransactions() {
-        for (int i = 0; i < 3; ++i) {
-            if (!loading[i] && !endReached[i] && offset[i] == null) {
-                loadTransactions(i);
-            }
-        }
-    }
-    public void loadTransactions(int type) {
-        transactions[type].clear();
-        transactionsExist[type] = false;
-        loading[type] = false;
-        endReached[type] = true;
-    }
-    public boolean isLoadingTransactions(int type) {
-        return loading[type];
-    }
-    public boolean didFullyLoadTransactions(int type) {
-        return endReached[type];
-    }
-    public boolean hasTransactions() {
-        return hasTransactions(ALL_TRANSACTIONS);
-    }
-    public boolean hasTransactions(int type) {
-        return balanceAvailable() && !transactions[type].isEmpty();
-    }
-
-
-
-    // ===== STAR SUBSCRIPTIONS =====
-
-    public final ArrayList<TL_stars.StarsSubscription> subscriptions = new ArrayList<>();
-    public String subscriptionsOffset;
-    public boolean subscriptionsLoading, subscriptionsEndReached;
-
-    public boolean hasSubscriptions() {
-        return balanceAvailable() && !subscriptions.isEmpty();
-    }
-
-    public void invalidateSubscriptions(boolean load) {
-        if (subscriptionsLoading) return;
-        subscriptions.clear();
-        subscriptionsOffset = null;
-        subscriptionsLoading = false;
-        subscriptionsEndReached = false;
-        if (load) loadSubscriptions();
-    }
-
-    public void loadSubscriptions() {
-        subscriptions.clear();
-        subscriptionsLoading = false;
-        subscriptionsEndReached = true;
-    }
-    public boolean isLoadingSubscriptions() {
-        return subscriptionsLoading;
-    }
-    public boolean didFullyLoadSubscriptions() {
-        return subscriptionsEndReached;
-    }
-
-    public final ArrayList<TL_stars.StarsSubscription> insufficientSubscriptions = new ArrayList<>();
-    private boolean insufficientSubscriptionsLoading;
-    public void loadInsufficientSubscriptions() {
-        insufficientSubscriptions.clear();
-        insufficientSubscriptionsLoading = false;
-    }
-    public void invalidateInsufficientSubscriptions(boolean load) {
-        if (insufficientSubscriptionsLoading) return;
-        insufficientSubscriptions.clear();
-        insufficientSubscriptionsLoading = false;
-        if (load) loadInsufficientSubscriptions();
-    }
-    public boolean hasInsufficientSubscriptions() {
-        return !insufficientSubscriptions.isEmpty();
-    }
-
-
     public Theme.ResourcesProvider getResourceProvider() {
         BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
         if (lastFragment != null) {
@@ -332,22 +210,11 @@ public class StarsController {
 
 
 
-    public boolean canBuy(TLRPC.InputPeer purposePeer) {
-        return false;
-    }
 
-    public void buy(
-        Activity activity,
-        TL_stars.TL_starsTopupOption option,
-        Utilities.Callback2<Boolean, String> whenDone,
-        TLRPC.InputPeer purposePeer
-    ) {
-        if (whenDone != null) whenDone.run(false, "MONOGRAM_FEATURE_UNAVAILABLE");
-    }
 
-    public void buyGift(Activity activity, TL_stars.TL_starsGiftOption option, long user_id, Utilities.Callback2<Boolean, String> whenDone) {
-        if (whenDone != null) whenDone.run(false, "MONOGRAM_FEATURE_UNAVAILABLE");
-    }
+
+
+
 
     public void buyGiveaway(
             Activity activity,
@@ -370,13 +237,7 @@ public class StarsController {
 
 
 
-    public static void showNoSupportDialog(Context context, Theme.ResourcesProvider resourcesProvider) {
-        new AlertDialog.Builder(context, resourcesProvider)
-            .setTitle(getString(R.string.StarsNotAvailableTitle))
-            .setMessage(getString(R.string.StarsNotAvailableText))
-            .setPositiveButton(getString(R.string.OK), null)
-            .show();
-    }
+
 
 
 

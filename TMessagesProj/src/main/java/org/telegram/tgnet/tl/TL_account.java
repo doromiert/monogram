@@ -3448,20 +3448,7 @@ public class TL_account {
         }
     }
 
-    public static class toggleSponsoredMessages extends TLObject {
-        public static final int constructor = 0xb9d9a38d;
 
-        public boolean enabled;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeBool(enabled);
-        }
-    }
 
     public static class TL_businessIntro extends TLObject {
         public static final int constructor = 0x5a0a066d;

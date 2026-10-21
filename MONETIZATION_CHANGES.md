@@ -385,3 +385,11 @@ Deleted PostsSearchContainer, including Telegram post-search/flood-price checks,
 Changed showDownloads to locate the DOWNLOADS_TYPE item rather than using a fixed position, preserving navigation after the Posts tab is removed and when optional tabs differ. Ordinary dialog/media filter search paths and download list construction remain. Separate public hashtag/story-search and recommendation implementations still remain for later classification/removal; this is not a claim that all Telegram global search is gone.
 
 Source-only inspection covers deleted class/fields/tab API references across Java/XML, remaining pager type/filter mapping, Downloads callers and edited Java boundaries/whitespace. No tests, build, APK or phone interaction. These changes remain unshipped; Premium/Business/boost/Stars controller, historical data and resources remain in scope.
+
+### Remove orphaned Stars payment APIs and ad toggle request
+
+Deleted the unused Stars top-up and gift-option caches/accessors, purchase eligibility/top-up/gift purchase stubs, transaction arrays/pagination APIs, subscription/insufficient-subscription state and loaders from StarsController after their UI callers were removed. Removed the lone remaining transaction-invalidation call from the legacy balance-update handler. Giveaway options/purchase and remaining gift/profile/balance consumers still exist and remain in scope.
+
+Deleted the unused Stars-unavailable dialog helper and its stale import. Deleted MessagesController.disableAds/isSponsoredDisabled and the now-unreferenced TL_account.toggleSponsoredMessages request type, removing that remaining Telegram sponsored-message settings request rather than leaving an inactive API behind.
+
+Source-only inspection covers deleted public APIs/types, removed state identifiers, surviving balance-update branch and Java class boundaries/whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; Stars giveaways/gift/profile operations, Premium/Business/boost code and resources still require cleanup.
