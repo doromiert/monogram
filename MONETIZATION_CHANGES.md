@@ -105,3 +105,9 @@ The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse
 - Removed user/channel gift menu construction, menu/action click implementation and both info-refresh paths that could restore those actions. Birthday rows retain their data without a gift-buy icon; username QR action remains.
 - Removed profile affiliate-program row, connect/share RPC action and associated view binding. Removed paid gift-overlay widget construction on profiles; optional guarded animation references/public field remain until the wider gift UI is retired.
 - Source review only. No build/tests/phone actions for this follow-up, per the instruction to test at APK delivery. Existing shared collectible-gift status UI, gift libraries and other monetization screens/controllers still require removal; this does not claim all profile Premium gates are freed.
+
+### Free profile display and collectible removal (source only)
+
+- Profile notes retain links/entities and biographies use full rich-text rendering for everyone. Topic icon pack information is no longer gated by a Premium-feature availability flag. Self-profile emoji-status selection no longer requires a paid-account flag. Local profile-color editing displays its ordinary icon rather than a subscription lock.
+- Removed the other-user Premium sales-preview click implementation and its NFT link. Removed channel collectible NFT navigation, the collectible tooltip widget/timer/animation and its remaining NFT link. Shared status-picker callback signatures remain, but collectible gift selection is rejected and no collectible status object or wear-gift sheet is created by this profile callback. Ordinary emoji status selection remains.
+- Existing collectible model/deserialization and shared picker/gift classes still need broader removal. Other profile/server permission checks are untouched; no fake paid identity is assigned. No build/tests/deployment for this source pass.

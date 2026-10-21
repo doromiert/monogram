@@ -253,7 +253,6 @@ import org.telegram.ui.Components.ProfileGalleryBlurView;
 import org.telegram.ui.Components.Paint.PersistColorPalette;
 import org.telegram.ui.Components.Premium.LimitPreviewView;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumPreviewBottomSheet;
 import org.telegram.ui.Components.Premium.ProfilePremiumCell;
 import org.telegram.ui.Components.ProfileGalleryView;
 import org.telegram.ui.Components.ProfileGooeyView;
@@ -289,8 +288,6 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Stars.ProfileGiftsView;
 import org.telegram.ui.Stars.StarGiftPatterns;
-import org.telegram.ui.Stars.StarGiftSheet;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.ProfileStoriesView;
 import org.telegram.ui.Stories.StoriesController;
 import org.telegram.ui.Stories.StoriesListPlaceProvider;
@@ -3138,7 +3135,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             ratingView.setParentExpanded(1f);
                         }
                         expandPhoto = false;
-                        updateCollectibleHint();
+
                     }
 
                     calculatePositionsOnFirstLoad();
@@ -5291,11 +5288,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 fallbackImage.onDetachedFromWindow();
             }
 
-            @Override
-            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-                super.onLayout(changed, left, top, right, bottom);
-                updateCollectibleHint();
-            }
         };
         fallbackImage = new ImageReceiver(avatarContainer2);
         fallbackImage.setRoundRadius(AndroidUtilities.dp(11));
@@ -5338,7 +5330,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (avatarBig != null) {
                 return;
             }
-            if (isTopic && !getMessagesController().premiumFeaturesBlocked()) {
+            if (isTopic) {
                 ArrayList<TLRPC.TL_forumTopic> topics = getMessagesController().getTopicsController().getTopics(chatId);
                 if (topics != null) {
                     TLRPC.TL_forumTopic currentTopic = null;
@@ -5517,14 +5509,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
 
-                @Override
-                protected void onDraw(Canvas canvas) {
-                    final int wasRightDrawableX = getRightDrawableX();
-                    super.onDraw(canvas);
-                    if (wasRightDrawableX != getRightDrawableX()) {
-                        updateCollectibleHint();
-                    }
-                }
             };
             if (a == 1) {
                 nameTextView[a].setTextColor(getThemedColor(Theme.key_profile_title));
@@ -6364,7 +6348,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (giftsView != null) {
             giftsView.setExpandProgress(value);
         }
-        updateCollectibleHint();
+
 
         if (topView != null && topView.hasEmoji) {
             topView.invalidate();
@@ -6683,11 +6667,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(this, getContext(), true, Math.max(0, ecenter), currentChat == null ? SelectAnimatedEmojiDialog.TYPE_EMOJI_STATUS : SelectAnimatedEmojiDialog.TYPE_EMOJI_STATUS_CHANNEL, true, resourcesProvider, topMarginDp) {
             @Override
             protected boolean willApplyEmoji(View view, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
-                if (gift != null) {
-                    final TL_stars.SavedStarGift savedStarGift = StarsController.getInstance(currentAccount).findUserStarGift(gift.id);
-                    return savedStarGift == null || MessagesController.getGlobalMainSettings().getInt("statusgiftpage", 0) >= 2;
-                }
-                return true;
+                return gift == null;
             }
 
             @Override
@@ -6698,28 +6678,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             @Override
             protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
                 final TLRPC.EmojiStatus emojiStatus;
-                if (gift != null) {
-                    final TL_stars.SavedStarGift savedStarGift = StarsController.getInstance(currentAccount).findUserStarGift(gift.id);
-                    if (savedStarGift != null && MessagesController.getGlobalMainSettings().getInt("statusgiftpage", 0) < 2) {
-                        MessagesController.getGlobalMainSettings().edit().putInt("statusgiftpage", MessagesController.getGlobalMainSettings().getInt("statusgiftpage", 0) + 1).apply();
-                        new StarGiftSheet(getContext(), currentAccount, UserConfig.getInstance(currentAccount).getClientUserId(), resourcesProvider)
-                                .set(savedStarGift, null)
-                                .setupWearPage()
-                                .show();
-                        if (popup[0] != null) {
-                            selectAnimatedEmojiDialog = null;
-                            popup[0].dismiss();
-                        }
-                        return;
-                    }
-                    final TLRPC.TL_inputEmojiStatusCollectible status = new TLRPC.TL_inputEmojiStatusCollectible();
-                    status.collectible_id = gift.id;
-                    if (until != null) {
-                        status.flags |= 1;
-                        status.until = until;
-                    }
-                    emojiStatus = status;
-                } else if (documentId == null) {
+                if (gift != null) return;
+                if (documentId == null) {
                     emojiStatus = new TLRPC.TL_emojiStatusEmpty();
                 } else {
                     final TLRPC.TL_emojiStatus status = new TLRPC.TL_emojiStatus();
@@ -6730,8 +6690,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                     emojiStatus = status;
                 }
-                emojiStatusGiftId = gift != null ? gift.id : null;
-                getMessagesController().updateEmojiStatus(currentChat == null ? 0 : -currentChat.id, emojiStatus, gift);
+                emojiStatusGiftId = null;
+                getMessagesController().updateEmojiStatus(currentChat == null ? 0 : -currentChat.id, emojiStatus, null);
                 for (int a = 0; a < 2; ++a) {
                     if (emojiStatusDrawable[a] != null) {
                         if (documentId == null && currentChat == null) {
@@ -6741,7 +6701,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         } else {
                             emojiStatusDrawable[a].set((Drawable) null, true);
                         }
-                        emojiStatusDrawable[a].setParticles(gift != null, true);
+                        emojiStatusDrawable[a].setParticles(false, true);
                     }
                 }
                 if (documentId != null) {
@@ -8248,7 +8208,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             nameTextView[a].setScaleX(nameScale);
             nameTextView[a].setScaleY(nameScale);
         }
-        updateCollectibleHint();
+
 
         final int newTop = (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0) + ActionBar.getCurrentActionBarHeight();
         updateExtraViews(newTop);
@@ -8505,7 +8465,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         onlineTextView[1].setTranslationY(getOnlineTextViewTranslationYWithOffsets(newTop + h - getActionsExtraHeight() - dpf2(10) - onlineTextView[1].getBottom() + additionalTranslationY));
                         mediaCounterTextView.setTranslationX(onlineTextView[1].getTranslationX());
                         mediaCounterTextView.setTranslationY(onlineTextView[1].getTranslationY());
-                        updateCollectibleHint();
+
                     }
                 } else {
                     if (isPulledDown) {
@@ -8583,7 +8543,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         onlineTextView[1].setTranslationY(getOnlineTextViewTranslationYWithOffsets(onlineY));
                         mediaCounterTextView.setTranslationX(onlineX);
                         mediaCounterTextView.setTranslationY(onlineY);
-                        updateCollectibleHint();
+
                     }
                 }
             }
@@ -8656,7 +8616,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 params.height = (int) AndroidUtilities.lerp(AndroidUtilities.dpf2(100), (extraHeight + newTop) / avatarScale, avatarAnimationProgress);
                 avatarContainer.requestLayout();
 
-                updateCollectibleHint();
             } else if (h <= headerExtraHeight) {
                 if (openAnimationInProgress) {
                     avatarScale = lerp(42, 96, diff) / 100f;
@@ -8753,7 +8712,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (a == 1) updateTextLayoutBasedOnTranslation();
                 }
                 mediaCounterTextView.setTranslationY(onlineY);
-                updateCollectibleHint();
+
             }
 
             if (!textMeasured && (expandAnimator == null || !expandAnimator.isRunning())) {
@@ -9680,9 +9639,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             openAnimationInProgress = true;
             if (!isOpen) {
                 captureBackwardInitialValues();
-                if (collectibleHint != null) {
-                    collectibleHint.hide(true);
-                }
+
             }
         }
         if (isOpen) {
@@ -11220,7 +11177,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (ratingView != null) {
                 ratingView.updateColors(peerColor);
             }
-            setCollectibleGiftStatus(user.emoji_status instanceof TLRPC.TL_emojiStatusCollectible ? (TLRPC.TL_emojiStatusCollectible) user.emoji_status : null);
+
 
 
             final ImageLocation imageLocation = ImageLocation.getForUserOrChat(user, ImageLocation.TYPE_BIG);
@@ -11409,69 +11366,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (a == 1 && (rightIconIsStatus || rightIconIsPremium)) {
                     nameTextView[a].setRightDrawableOutside(true);
                 }
-                if (user.self && getMessagesController().isPremiumUser(user)) {
+                nameTextView[a].setRightDrawableOnClick(null);
+                if (user.self) {
                     nameTextView[a].setRightDrawableOnClick(v -> {
                         showStatusSelect();
                     });
                 }
-                if (!user.self && getMessagesController().isPremiumUser(user)) {
-                    final SimpleTextView textView = nameTextView[a];
-                    nameTextView[a].setRightDrawableOnClick(v -> {
-                        if (user.emoji_status instanceof TLRPC.TL_emojiStatusCollectible) {
-                            TLRPC.TL_emojiStatusCollectible status = (TLRPC.TL_emojiStatusCollectible) user.emoji_status;
-                            if (status != null) {
-                                Browser.openUrl(getContext(), "https://" + getMessagesController().linkPrefix + "/nft/" + status.slug);
-                            }
-                            return;
-                        }
-                        PremiumPreviewBottomSheet premiumPreviewBottomSheet = new PremiumPreviewBottomSheet(ProfileActivity.this, currentAccount, user, resourcesProvider);
-                        int[] coords = new int[2];
-                        textView.getLocationOnScreen(coords);
-                        premiumPreviewBottomSheet.startEnterFromX = textView.rightDrawableX;
-                        premiumPreviewBottomSheet.startEnterFromY = textView.rightDrawableY;
-                        premiumPreviewBottomSheet.startEnterFromScale = textView.getScaleX();
-                        premiumPreviewBottomSheet.startEnterFromX1 = textView.getLeft();
-                        premiumPreviewBottomSheet.startEnterFromY1 = textView.getTop();
-                        premiumPreviewBottomSheet.startEnterFromView = textView;
-                        if (textView.getRightDrawable() == emojiStatusDrawable[1] && emojiStatusDrawable[1] != null && emojiStatusDrawable[1].getDrawable() instanceof AnimatedEmojiDrawable) {
-                            premiumPreviewBottomSheet.startEnterFromScale *= 0.98f;
-                            TLRPC.Document document = ((AnimatedEmojiDrawable) emojiStatusDrawable[1].getDrawable()).getDocument();
-                            if (document != null) {
-                                BackupImageView icon = new BackupImageView(getContext());
-                                String filter = "160_160";
-                                ImageLocation mediaLocation;
-                                String mediaFilter;
-                                SvgHelper.SvgDrawable thumbDrawable = DocumentObject.getSvgThumb(document.thumbs, Theme.key_windowBackgroundWhiteGrayIcon, 0.2f);
-                                TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 90);
-                                if ("video/webm".equals(document.mime_type)) {
-                                    mediaLocation = ImageLocation.getForDocument(document);
-                                    mediaFilter = filter + "_" + ImageLoader.AUTOPLAY_FILTER;
-                                    if (thumbDrawable != null) {
-                                        thumbDrawable.overrideWidthAndHeight(512, 512);
-                                    }
-                                } else {
-                                    if (thumbDrawable != null && MessageObject.isAnimatedStickerDocument(document, false)) {
-                                        thumbDrawable.overrideWidthAndHeight(512, 512);
-                                    }
-                                    mediaLocation = ImageLocation.getForDocument(document);
-                                    mediaFilter = filter;
-                                }
-                                icon.setLayerNum(7);
-                                icon.setRoundRadius(AndroidUtilities.dp(4));
-                                icon.setImage(mediaLocation, mediaFilter, ImageLocation.getForDocument(thumb, document), "140_140", thumbDrawable, document);
-                                if (((AnimatedEmojiDrawable) emojiStatusDrawable[1].getDrawable()).canOverrideColor()) {
-                                    icon.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlueIcon), PorterDuff.Mode.SRC_IN));
-                                    premiumPreviewBottomSheet.statusStickerSet = MessageObject.getInputStickerSet(document);
-                                } else {
-                                    premiumPreviewBottomSheet.statusStickerSet = MessageObject.getInputStickerSet(document);
-                                }
-                                premiumPreviewBottomSheet.overrideTitleIcon = icon;
-                                premiumPreviewBottomSheet.isEmojiStatus = true;
-                            }
-                        }
-                        showDialog(premiumPreviewBottomSheet);
-                    });
-                }
+
             }
 
             if (userId == UserConfig.getInstance(currentAccount).clientUserId) {
@@ -11532,7 +11433,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (topView != null) {
                 topView.setBackgroundEmojiId(ChatObject.getProfileEmojiId(chat), chat != null && chat.emoji_status instanceof TLRPC.TL_emojiStatusCollectible, true);
             }
-            setCollectibleGiftStatus(chat.emoji_status instanceof TLRPC.TL_emojiStatusCollectible ? (TLRPC.TL_emojiStatusCollectible) chat.emoji_status : null);
+
 
             if (isTopic) {
                 topic = getMessagesController().getTopicsController().findTopic(chatId, topicId);
@@ -11693,11 +11594,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                                 preloadedChannelEmojiStatuses = true;
                                 getMediaDataController().loadRestrictedStatusEmojis();
                             }
-                        } else if (chat.emoji_status instanceof TLRPC.TL_emojiStatusCollectible) {
-                            final String slug = ((TLRPC.TL_emojiStatusCollectible) chat.emoji_status).slug;
-                            nameTextView[a].setRightDrawableOnClick(v -> {
-                                Browser.openUrl(getContext(), "https://" + getMessagesController().linkPrefix + "/nft/" + slug);
-                            });
                         }
                     }
                 } else if (!copyFromChatActivity) {
@@ -13395,15 +13291,12 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         if (userInfo == null) return;
                         TLRPC.TL_textWithEntities note = userInfo.note;
                         CharSequence text;
-                        if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                            text = MessageObject.formatTextWithEntities(MessageObject.removeLinks(note));
-                        } else {
-                            text = MessageObject.formatTextWithEntities(note);
-                            if (!(text instanceof SpannableStringBuilder)) {
-                                text = new SpannableStringBuilder(text);
-                            }
-                            AndroidUtilities.addLinksSafe((SpannableStringBuilder) text, Linkify.WEB_URLS, false, false);
+                        text = MessageObject.formatTextWithEntities(note);
+                        if (!(text instanceof SpannableStringBuilder)) {
+                            text = new SpannableStringBuilder(text);
                         }
+                        AndroidUtilities.addLinksSafe((SpannableStringBuilder) text, Linkify.WEB_URLS, false, false);
+
                         detailCell.setTextAndValue(
                             text,
                             getString(R.string.ProfileNotes),
@@ -13541,7 +13434,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         String value;
                         if (userInfo == null || !TextUtils.isEmpty(userInfo.about)) {
                             value = userInfo == null ? LocaleController.getString(R.string.Loading) : userInfo.about;
-                            aboutLinkCell.setTextAndValue(value, LocaleController.getString(R.string.UserBio), getUserConfig().isPremium());
+                            aboutLinkCell.setTextAndValue(value, LocaleController.getString(R.string.UserBio), true);
                             currentBio = userInfo != null ? userInfo.about : null;
                         } else {
                             aboutLinkCell.setTextAndValue(LocaleController.getString(R.string.UserBio), LocaleController.getString(R.string.UserBioDetail), false);
@@ -16309,20 +16202,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     private void updateEditColorIcon() {
         if (getContext() == null || editColorItem == null) return;
-        if (getUserConfig().isPremium()) {
-            editColorItem.setIcon(R.drawable.menu_profile_colors);
-        } else {
-            Drawable icon = ContextCompat.getDrawable(getContext(), R.drawable.menu_profile_colors_locked);
-            icon.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_actionBarDefaultSubmenuItemIcon), PorterDuff.Mode.SRC_IN));
-            Drawable lockIcon = ContextCompat.getDrawable(getContext(), R.drawable.msg_gallery_locked2);
-            lockIcon.setColorFilter(new PorterDuffColorFilter(ColorUtils.blendARGB(Color.WHITE, Color.BLACK, 0.5f), PorterDuff.Mode.MULTIPLY));
-            CombinedDrawable combinedDrawable = new CombinedDrawable(icon, lockIcon, dp(1), -dp(1)) {
-                @Override
-                public void setColorFilter(ColorFilter colorFilter) {
-                }
-            };
-            editColorItem.setIcon(combinedDrawable);
-        }
+        editColorItem.setIcon(R.drawable.menu_profile_colors);
     }
 
     public boolean hasPrivacyCommand() {
@@ -16338,60 +16218,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
 
-    private HintView2 collectibleHint;
-    private int collectibleHintBackgroundColor;
-    private Boolean collectibleHintVisible;
-    private TLRPC.TL_emojiStatusCollectible collectibleStatus;
 
-    public void setCollectibleGiftStatus(TLRPC.TL_emojiStatusCollectible status) {
-        if (avatarContainer2 == null) return;
-        if (collectibleStatus == status) return;
-        if (collectibleStatus != null && status != null && collectibleStatus.collectible_id == status.collectible_id)
-            return;
-        collectibleStatus = status;
-        if (collectibleHint != null) {
-            collectibleHint.hide();
-        }
-        if (status != null && !TextUtils.isEmpty(status.slug)) {
-            collectibleHintVisible = null;
-            collectibleHint = new HintView2(getContext(), HintView2.DIRECTION_BOTTOM);
-            collectibleHintBackgroundColor = Theme.blendOver(status.center_color | 0xFF000000, Theme.multAlpha(status.pattern_color | 0xFF000000, .5f));
-            collectibleHint.setPadding(dp(4), 0, dp(4), dp(2));
-            collectibleHint.setFlicker(.66f, Theme.multAlpha(status.text_color | 0xFF000000, 0.5f));
-            avatarContainer2.addView(collectibleHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 24));
-            collectibleHint.setTextSize(9.33f);
-            collectibleHint.setTextTypeface(AndroidUtilities.bold());
-            collectibleHint.setText(status.title);
-            collectibleHint.setDuration(-1);
-            collectibleHint.setInnerPadding(4.66f + 1, 2.66f, 4.66f + 1, 2.66f);
-            collectibleHint.setArrowSize(4, 2.66f);
-            collectibleHint.setRoundingWithCornerEffect(false);
-            collectibleHint.setRounding(16);
-            collectibleHint.show();
-            final String slug = status.slug;
-            collectibleHint.setOnClickListener(v -> {
-                Browser.openUrl(getContext(), "https://" + getMessagesController().linkPrefix + "/nft/" + slug);
-            });
-            if (extraHeight < dp(82)) {
-                collectibleHintVisible = false;
-                collectibleHint.setAlpha(0.0f);
-            }
-            updateCollectibleHint();
-            AndroidUtilities.runOnUIThread(collectibleHint::hide, 6 * 1000);
-        }
-    }
 
-    public void updateCollectibleHint() {
-        if (collectibleHint == null) return;
-        collectibleHint.setJointPx(0, -collectibleHint.getPaddingLeft() + nameTextView[1].getX() + (nameTextView[1].getRightDrawableX() - nameTextView[1].getRightDrawableWidth() * lerp(0.45f, 0.25f, currentExpandAnimatorValue)) * nameTextView[1].getScaleX());
-        final float expanded = AndroidUtilities.lerp(expandAnimatorValues, currentExpanAnimatorFracture);
-        collectibleHint.setTranslationY(-collectibleHint.getPaddingBottom() + nameTextView[1].getY() - dp(24) + lerp(dp(6), -dp(12), expanded));
-        collectibleHint.setBgColor(ColorUtils.blendARGB(collectibleHintBackgroundColor, 0x50000000, expanded));
-        final boolean visible = extraHeight >= dp(82);
-        if (collectibleHintVisible == null || collectibleHintVisible != visible) {
-            collectibleHint.animate().alpha((collectibleHintVisible = visible) ? 1.0f : 0.0f).setInterpolator(CubicBezierInterpolator.EASE_OUT).setDuration(200).start();
-        }
-    }
+
+
 
     private int lastStoriesSelectedCount;
     private boolean lastStoriesIsInAlbum;
