@@ -1007,15 +1007,9 @@ final class RoundVideoOverlayRenderer {
             canvas.drawBitmap(frameBitmap, frameSize * x - logoOffset, frameSize * y - logoOffset, null);
         }
 
-        Bitmap text = AndroidUtilities.getBitmapFromRaw(R.raw.round_blur_overlay_text);
-        if (text != null) {
-            Bitmap scaled = Bitmap.createScaledBitmap(text, textSize, textSize, true);
-            Bitmap alpha = scaled.extractAlpha();
-            canvas.drawBitmap(alpha, 0f, logoAtlasHeight, null);
-            alpha.recycle();
-            scaled.recycle();
-            text.recycle();
-        }
+        Bitmap text = org.telegram.messenger.xmpp.MonogramBranding.roundVideoWatermark(textSize);
+        canvas.drawBitmap(text, 0f, logoAtlasHeight, null);
+        text.recycle();
 
         if (atlasBitmap.getRowBytes() != atlasWidth) {
             atlasBitmap.recycle();

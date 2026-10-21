@@ -108,17 +108,9 @@ public class InstantCameraVideoEncoderOverlayHelper {
                 float scale = (float) logoSize / videoWidth;
                 setVertexCords(verData, VERTEX_BUFFER_WATERMARK_TEXT_POSITION, 1f - scale * 2f, -1f + scale * 2f, 1, -1);
 
-                Bitmap bitmap = AndroidUtilities.getBitmapFromRaw(R.raw.round_blur_overlay_text);
-                if (bitmap != null) {
-                    Bitmap sBitmap = Bitmap.createScaledBitmap(bitmap, logoSize, logoSize, true);
-                    Bitmap aBitmap = sBitmap.extractAlpha();
-
-                    GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, aBitmap, 0);
-
-                    aBitmap.recycle();
-                    sBitmap.recycle();
-                    bitmap.recycle();
-                }
+                Bitmap bitmap = org.telegram.messenger.xmpp.MonogramBranding.roundVideoWatermark(logoSize);
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
+                bitmap.recycle();
             } else  {
                 GLES20.glTexImage2D(
                         GLES20.GL_TEXTURE_2D,

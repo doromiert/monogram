@@ -525,3 +525,9 @@ Deleted BusinessLinksActivity, BusinessLinksController and BusinessLinksEmptyVie
 Deleted Business-link editing/preset-message/save state and methods from ChatActivityEnterView. Removed ChatAvatarContainer's link-mode media-preload/avatar/subtitle exceptions. Deleted nine unused Business chat-link request/response/input classes in TL_account. LaunchActivity consumes legacy Business link slugs without performing Telegram resolution; its broad legacy link parameter plumbing, inert notification IDs and old storage table are not removed in this pass. Ordinary XMPP links are unchanged. Other Business services and the main Premium storefront remain unfinished.
 
 Source inspection checked removed modes/classes/methods/request identifiers across Java/resources, shared adapter switch cases, ordinary composer delegate/rights/attachment paths, header conditions, class boundaries and diff whitespace. No tests, build or device interaction; unshipped source work.
+
+### Round-video branding correction
+
+The round-video watermark was a baked curved TELEGRAM PNG, referenced by both InstantCameraVideoEncoderOverlayHelper and RoundVideoOverlayRenderer. Replaced both uses with MonogramBranding.roundVideoWatermark, a shared native Canvas alpha-mask renderer drawing curved MONOGRAM text at the existing corner footprint/output sizes. Kept the plane animation unchanged as requested for logo branding. Removed the now-unused Telegram wordmark PNG. This affects newly encoded videos; text already baked into older files cannot change.
+
+Source review checked both encoder call sites, alpha-mask ownership/recycling, old-resource references, class boundaries and diff whitespace. No tests, build or phone actions; visual/recording verification remains for APK delivery.
