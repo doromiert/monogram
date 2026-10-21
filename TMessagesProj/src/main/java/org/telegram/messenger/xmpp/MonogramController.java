@@ -501,7 +501,7 @@ public final class MonogramController {
         ArrayList<TLRPC.User> users = new ArrayList<>();
         if (composing) users.add(store.user(user, self));
         ArrayList<TLRPC.Chat> chats = new ArrayList<>();
-        if (dialog < 0) chats.add(store.roomChat(dialog));
+        if (dialog < 0) chats.add(store.roomChat(dialog,self));
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, chats, false, now()));
     }
     private void clearRoomTyping() {
@@ -990,7 +990,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if(session!=expected || sessionEpoch!=epoch || accountEpoch!=owner) return;
                             long dialog=store.room(jid,room.nickname); store.roomState(room,self); dirtyRoomBookmark(dialog); publishRoom(dialog); dismissRoomInvitation(jid);
-                            TLRPC.Chat chat=store.roomChat(dialog); TLRPC.TL_messages_dialogs cached=dialogs();
+                            TLRPC.Chat chat=store.roomChat(dialog,self); TLRPC.TL_messages_dialogs cached=dialogs();
                             publishDialogs(cached,() -> sessionEpoch==epoch && accountEpoch==owner,() -> callback.run(chat,null));
                         });
                     } catch(Exception failed) { roomResult(callback,failed); }
@@ -1033,7 +1033,7 @@ public final class MonogramController {
         });
     }
     private void publishRoom(long dialog) {
-        TLRPC.Chat chat=store.roomChat(dialog); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(chat);
+        TLRPC.Chat chat=store.roomChat(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(chat);
         ArrayList<TLRPC.User> users=store.roomUsers(dialog,self);
         if(store.profile(dialog)==null) refreshProfile(dialog);
         java.util.Set<Long> active=store.activeRoomUsers(dialog);
@@ -1065,7 +1065,7 @@ public final class MonogramController {
             }
         }
         if(updates.isEmpty()) return;
-        ArrayList<TLRPC.User> users=roomUpdateUsers(updates); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog));
+        ArrayList<TLRPC.User> users=roomUpdateUsers(updates); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog,self));
         long epoch=sessionEpoch;
         Utilities.stageQueue.postRunnable(() -> {
             MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now());
@@ -1389,7 +1389,7 @@ public final class MonogramController {
             TLRPC.TL_dialog dialog=new TLRPC.TL_dialog(); dialog.id=peer; dialog.peer=new TLRPC.TL_peerChat(); dialog.peer.chat_id=-peer;
             if(!history.isEmpty()) { dialog.top_message=history.get(0).id; dialog.last_message_date=history.get(0).date; }
             dialog.notify_settings=new TLRPC.TL_peerNotifySettings(); MonogramDialogState.apply(account,accountJid(),dialog);result.dialogs.add(dialog); result.messages.addAll(history);
-            result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self));
+            result.chats.add(store.roomChat(peer,self)); result.users.addAll(store.roomUsers(peer,self));
         }
         result.dialogs.sort((a, b) -> Integer.compare(b.last_message_date, a.last_message_date));
         result.users.add(ownUser());
@@ -1587,7 +1587,7 @@ public final class MonogramController {
                 result.messages.addAll(loadType==4 ? store.historyAroundDate(peer,self,date,count,allowed)
                         : loadType==3 && offset>0 ? store.historyAround(peer,self,offset,count,allowed)
                         : store.history(peer,self,Math.max(0,offset),count,loadType==1,allowed));
-                if (peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
+                if (peer<0) { result.chats.add(store.roomChat(peer,self)); result.users.addAll(store.roomUsers(peer,self)); }
                 else result.users.add(store.user(peer, self)); if (self > 0) result.users.add(ownUser());
             } catch (RuntimeException failed) {
                 if (BuildVars.LOGS_ENABLED) FileLog.e("Monogram cached history: " + failed.getClass().getSimpleName());
@@ -1845,7 +1845,7 @@ public final class MonogramController {
         });
     }
     private MonogramCallPrivacy callPrivacy() throws Exception {
-        return new MonogramCallPrivacy(account,accountJid(),id -> store.user(id,self),chat -> store.roomChat(-chat),
+        return new MonogramCallPrivacy(account,accountJid(),id -> store.user(id,self),chat -> store.roomChat(-chat,self),
                 (peer,chat) -> store.roomMember(chat,peer));
     }
     void resolveCallUser(String address,boolean incoming,XmppSession expected,Consumer<TLRPC.User> callback) {
@@ -2198,7 +2198,7 @@ public final class MonogramController {
     private void publishCorrections(long peer, ArrayList<TLRPC.Update> updates) {
         if (updates.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.User> users=new ArrayList<>(); ArrayList<TLRPC.Chat> chats=new ArrayList<>();
-        if(peer<0) { users.addAll(store.roomUsers(peer,self)); chats.add(store.roomChat(peer)); }
+        if(peer<0) { users.addAll(store.roomUsers(peer,self)); chats.add(store.roomChat(peer,self)); }
         else { users.add(store.user(peer,self)); users.add(ownUser()); }
         final long owner=accountEpoch;
         Utilities.stageQueue.postRunnable(() -> { if(accountEpoch==owner) MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now()); });
@@ -3053,7 +3053,7 @@ public final class MonogramController {
         if(session!=expected || sessionEpoch!=epoch) throw new IllegalStateException("Account connection changed. Please retry.");
     }
     private Updates roomUpdates(long dialog) {
-        Updates updates=new Updates(); updates.date=now(); updates.chats.add(store.roomChat(dialog));
+        Updates updates=new Updates(); updates.date=now(); updates.chats.add(store.roomChat(dialog,self));
         updates.users.addAll(store.roomUsers(dialog,self)); return updates;
     }
     private long nativeRoomState(XmppSession expected,long epoch,com.negzero.monogram.xmpp.XmppRooms.State room,boolean created) throws Exception {
@@ -3193,7 +3193,7 @@ public final class MonogramController {
         TL_update.TL_updateDeleteMessages hidden=new TL_update.TL_updateDeleteMessages(); hidden.messages.addAll(store.reactions.hidden(peer));
         if(!hidden.messages.isEmpty()) result.updates.add(hidden);
         if(result.updates.isEmpty()) return result;
-        if(peer<0) result.chats.add(store.roomChat(peer)); else users.add(peer);
+        if(peer<0) result.chats.add(store.roomChat(peer,self)); else users.add(peer);
         users.add(self);
         for(long user:users) result.users.add(store.user(user,self));
         return result;
@@ -3426,7 +3426,7 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_getChats) {
             TLRPC.TL_messages_chats result=new TLRPC.TL_messages_chats();
-            for(long id:((TLRPC.TL_messages_getChats)request).id) result.chats.add(store.roomChat(-id)); return result;
+            for(long id:((TLRPC.TL_messages_getChats)request).id) result.chats.add(store.roomChat(-id,self)); return result;
         }
         if (request instanceof TLRPC.TL_messages_getFullChat) {
             long dialog=-((TLRPC.TL_messages_getFullChat)request).chat_id;refreshRoomRoster(dialog,false);return store.roomFull(dialog,self);
@@ -3435,7 +3435,7 @@ public final class MonogramController {
             TLRPC.TL_messages_deleteChatUser leave=(TLRPC.TL_messages_deleteChatUser)request;
             if (!(leave.user_id instanceof TLRPC.TL_inputUserSelf) && leave.user_id.user_id!=self) throw new UnsupportedOperationException();
             session().rooms.leave(store.jid(-leave.chat_id)); store.leaveRoom(-leave.chat_id); dirtyRoomBookmark(-leave.chat_id); publishRoom(-leave.chat_id);
-            Updates result=new Updates(); result.date=now(); result.chats.add(store.roomChat(-leave.chat_id)); return result;
+            Updates result=new Updates(); result.date=now(); result.chats.add(store.roomChat(-leave.chat_id,self)); return result;
         }
         if (request instanceof TLRPC.TL_messages_getDialogs) return MonogramDialogState.dialogs(account,accountJid(),dialogs(),(TLRPC.TL_messages_getDialogs)request);
         if (request instanceof TLRPC.TL_messages_getPinnedDialogs) return MonogramDialogState.pinned(account,accountJid(),dialogs(),((TLRPC.TL_messages_getPinnedDialogs)request).folder_id);
@@ -3447,7 +3447,7 @@ public final class MonogramController {
                 try { TLRPC.Message message = store.getMessage(input, self); result.messages.add(message); peers.add(message.dialog_id); }
                 catch (IllegalArgumentException missing) { /* The requested local message is unavailable. */ }
             }
-            for (long peer : peers) { if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); } result.users.add(ownUser()); return result;
+            for (long peer : peers) { if(peer<0) { result.chats.add(store.roomChat(peer,self)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); } result.users.add(ownUser()); return result;
         }
         if(request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal) {
             TLRPC.TL_messages_messagesSlice result;
@@ -3463,7 +3463,7 @@ public final class MonogramController {
             java.util.Set<Long> peers=new java.util.HashSet<>();
             for(TLRPC.Message message:result.messages) peers.add(message.dialog_id);
             for(long peer:peers) {
-                if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); }
+                if(peer<0) { result.chats.add(store.roomChat(peer,self)); result.users.addAll(store.roomUsers(peer,self)); }
                 else result.users.add(store.user(peer,self));
             }
             result.users.add(ownUser()); return result;
@@ -3473,7 +3473,7 @@ public final class MonogramController {
             TLRPC.TL_messages_messages result = new TLRPC.TL_messages_messages();
             long peer=query.peer.chat_id!=0 ? -query.peer.chat_id : query.peer.user_id;
             result.messages.addAll(store.history(peer, self, query.offset_id, query.limit));
-            if(peer<0) { result.chats.add(store.roomChat(peer)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); result.users.add(ownUser()); return result;
+            if(peer<0) { result.chats.add(store.roomChat(peer,self)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); result.users.add(ownUser()); return result;
         }
         if(request instanceof TLRPC.TL_messages_getMessagesReactions) {
             TLRPC.TL_messages_getMessagesReactions query=(TLRPC.TL_messages_getMessagesReactions)request;
@@ -3561,7 +3561,7 @@ public final class MonogramController {
             corrections.edited.remove(edit.id); publishCorrections(peer, correctionUpdates(corrections, saved));
             Updates result = new Updates(); result.date = now();
             TL_update.TL_updateEditMessage update = new TL_update.TL_updateEditMessage(); update.message = store.getMessage(edit.id, self); result.updates.add(update);
-            if(peer<0) { result.users.addAll(store.roomUsers(peer,self)); result.chats.add(store.roomChat(peer)); }
+            if(peer<0) { result.users.addAll(store.roomUsers(peer,self)); result.chats.add(store.roomChat(peer,self)); }
             else { result.users.add(store.user(peer, self)); result.users.add(ownUser()); }
             return result;
         }

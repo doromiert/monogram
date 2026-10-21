@@ -412,7 +412,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         try(Cursor rows=getReadableDatabase().rawQuery("SELECT 1 FROM ("+ROOM_MEMBERS+") WHERE user=? LIMIT 1",
                 new String[]{Long.toString(chat),Long.toString(chat),Long.toString(peer)})) { return rows.moveToFirst(); }
     }
-    synchronized TLRPC.Chat roomChat(long dialog) {
+    synchronized TLRPC.Chat roomChat(long dialog) { return roomChat(dialog,0); }
+    synchronized TLRPC.Chat roomChat(long dialog,long self) {
         Room room=room(dialog); TLRPC.TL_chat chat=new TLRPC.TL_chat();
         chat.id=-dialog; chat.title=room.title; chat.photo=new TLRPC.TL_chatPhotoEmpty(); chat.version=1; chat.left=!room.autojoin;
         // A missing rights object makes modern Telegram deny every send action.
@@ -439,11 +440,12 @@ final class MonogramStore extends SQLiteOpenHelper {
             chat.photo.photo_small=chat.photo.photo_big=MonogramProfiles.location(dialog); chat.photo.dc_id=Integer.MIN_VALUE;
         }
         try (Cursor c=getReadableDatabase().rawQuery("SELECT count(*) FROM ("+ROOM_MEMBERS+")",new String[]{Long.toString(-dialog),Long.toString(-dialog)})) { c.moveToFirst(); chat.participants_count=c.getInt(0); }
+        if(self>0) MonogramGroupAppearance.project(database,jid(self),room.jid,chat);
         return chat;
     }
     synchronized TLRPC.TL_messages_chatFull roomFull(long dialog,long self) {
         Room room=room(dialog); TLRPC.TL_messages_chatFull result=new TLRPC.TL_messages_chatFull();
-        result.chats.add(roomChat(dialog)); result.users.addAll(roomUsers(dialog,self));
+        result.chats.add(roomChat(dialog,self)); result.users.addAll(roomUsers(dialog,self));
         TLRPC.TL_chatFull full=new TLRPC.TL_chatFull(); full.id=-dialog; full.about=room.description;
         full.notify_settings=new TLRPC.TL_peerNotifySettings(); full.participants=new TLRPC.TL_chatParticipants(); full.participants.chat_id=-dialog; full.participants.version=1;
         try (Cursor c=getReadableDatabase().rawQuery("SELECT members.user,a.affiliation FROM ("+ROOM_MEMBERS+") members LEFT JOIN room_affiliations a ON a.room=? AND a.user=members.user",

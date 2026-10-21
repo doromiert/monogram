@@ -191,7 +191,6 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
 
     @Override
     public boolean onFragmentCreate() {
-        getMediaDataController().loadRestrictedStatusEmojis();
         getNotificationCenter().addObserver(this, NotificationCenter.dialogDeleted);
         return super.onFragmentCreate();
     }
@@ -202,9 +201,18 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogDeleted);
     }
 
+    private final String appearanceOwner;
+    private final String appearancePeer;
+    private final long appearanceGeneration;
+
     public ChannelColorActivity(long dialogId) {
         super();
         this.dialogId = dialogId;
+        org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        appearanceOwner = controller.accountJid();
+        appearancePeer = controller.jid(dialogId);
+        appearanceGeneration = controller.accountGeneration();
+        org.telegram.messenger.xmpp.MonogramUserColors.ensurePalette(getMessagesController(), currentAccount);
 
         resourceProvider = new ThemeDelegate();
         msgInDrawable = new MessageDrawable(MessageDrawable.TYPE_TEXT, false, false, resourceProvider);
@@ -239,6 +247,7 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
     public View createView(Context context) {
         TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
         if (chat != null) {
+            org.telegram.messenger.xmpp.MonogramGroupAppearance.project("monogram-" + currentAccount + ".db", appearanceOwner, appearancePeer, chat);
             currentReplyColor = selectedReplyColor = ChatObject.getColorId(chat);
             currentReplyEmoji = selectedReplyEmoji = ChatObject.getEmojiId(chat);
             currentProfileColor = selectedProfileColor = ChatObject.getProfileColorId(chat);
@@ -252,6 +261,19 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
                 galleryWallpaper = currentWallpaper;
             }
         }
+
+        currentWallpaper = selectedWallpaper = ChatThemeController.getInstance(currentAccount).getDialogWallpaper(dialogId);
+        if (currentWallpaper == null) {
+            EmojiThemes theme = ChatThemeController.getInstance(currentAccount).getDialogTheme(dialogId);
+            if (theme != null && !TextUtils.isEmpty(theme.getEmoticon())) {
+                TLRPC.TL_wallPaperNoFile wallpaper = new TLRPC.TL_wallPaperNoFile();
+                wallpaper.flags = 4;
+                wallpaper.settings = new TLRPC.TL_wallPaperSettings();
+                wallpaper.settings.emoticon = theme.getEmoticon();
+                currentWallpaper = selectedWallpaper = wallpaper;
+            }
+        }
+        if (ChatThemeController.isNotEmoticonWallpaper(currentWallpaper)) galleryWallpaper = currentWallpaper;
 
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setTitle(LocaleController.getString(R.string.ChannelColorTitle2));
@@ -452,210 +474,62 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
         return !hasUnsavedChanged();
     }
 
+    private boolean appearanceOwnerCurrent() {
+        org.telegram.messenger.xmpp.MonogramController controller = org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        return appearanceOwner != null && !appearanceOwner.isEmpty() && appearanceOwner.equals(controller.accountJid())
+                && appearanceGeneration == controller.accountGeneration()
+                && appearancePeer != null && appearancePeer.equals(controller.jid(dialogId));
+    }
+
+    private void appearanceSaveFailed() {
+        button.setLoading(false);
+        if (getContext() != null) BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.UnknownError)).show();
+    }
+
     private void buttonClick() {
-        if (button.isLoading()) {
+        if (button.isLoading()) return;
+        if (!appearanceOwnerCurrent()) { appearanceSaveFailed(); return; }
+        TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+        if (chat == null) { appearanceSaveFailed(); return; }
+        // Save colors/status first; a wallpaper failure leaves the editor open for retry.
+        if (!org.telegram.messenger.xmpp.MonogramGroupAppearance.save(currentAccount, appearanceOwner,
+                appearanceGeneration, appearancePeer, dialogId, chat, selectedReplyColor, selectedProfileColor,
+                selectedReplyEmoji, selectedProfileEmoji, selectedStatusEmoji)) {
+            appearanceSaveFailed();
             return;
         }
-
-
-        int[] reqCount = new int[] { 0 };
-        int[] reqReceivedCount = new int[] { 0 };
-        boolean[] receivedError = new boolean[] { false };
-        Utilities.Callback<TLRPC.TL_error> whenRequestDone = error -> AndroidUtilities.runOnUIThread(() -> {
-            if (receivedError[0] || reqReceivedCount[0] >= reqCount[0]) return;
-            if (error != null) {
-                receivedError[0] = true;
-
-                button.setLoading(false);
-                BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.formatString(R.string.UnknownErrorCode, error.text)).show();
-
-                return;
-            }
-            reqReceivedCount[0]++;
-            if (reqReceivedCount[0] == reqCount[0]) {
-                finishFragment();
-                showBulletin();
-                button.setLoading(false);
-            }
-        });
-
-        TLRPC.Chat channel = getMessagesController().getChat(-dialogId);
-        if (channel == null) {
-            FileLog.e("channel is null in ChannelColorAcitivity");
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.UnknownError)).show();
-            return;
-        }
-
+        getMessagesController().putChat(chat, false);
+        getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces,
+                MessagesController.UPDATE_MASK_CHAT | MessagesController.UPDATE_MASK_EMOJI_STATUS);
         button.setLoading(true);
-
-        if (currentReplyColor != selectedReplyColor || currentReplyEmoji != selectedReplyEmoji) {
-            TLRPC.TL_channels_updateColor req = new TLRPC.TL_channels_updateColor();
-            req.channel = getMessagesController().getInputChannel(-dialogId);
-            req.for_profile = false;
-
-            if (channel.color == null) {
-                channel.color = new TLRPC.TL_peerColor();
-                channel.flags2 |= 128;
-            }
-            req.flags |= 4;
-            req.color = selectedReplyColor;
-            channel.color.flags |= 1;
-            channel.color.color = selectedReplyColor;
-
-            if (selectedReplyEmoji != 0) {
-                req.flags |= 1;
-                req.background_emoji_id = selectedReplyEmoji;
-                channel.color.flags |= 2;
-                channel.color.background_emoji_id = selectedReplyEmoji;
-            } else {
-                channel.color.flags &=~ 2;
-                channel.color.background_emoji_id = 0;
-            }
-
-            reqCount[0]++;
-            getConnectionsManager().sendRequest(req, (res, err) -> {
-                if (res instanceof TLRPC.Updates) {
-                    getMessagesController().processUpdates((TLRPC.Updates) res, false);
-                }
-                if (whenRequestDone != null) {
-                    whenRequestDone.run(err);
-                }
-            });
-        }
-
-        if (currentProfileColor != selectedProfileColor || currentProfileEmoji != selectedProfileEmoji) {
-            TLRPC.TL_channels_updateColor req = new TLRPC.TL_channels_updateColor();
-            req.channel = getMessagesController().getInputChannel(-dialogId);
-            req.for_profile = true;
-
-            if (channel.profile_color == null) {
-                channel.profile_color = new TLRPC.TL_peerColor();
-                channel.flags2 |= 256;
-            }
-            if (selectedProfileColor >= 0) {
-                req.flags |= 4;
-                req.color = selectedProfileColor;
-                channel.profile_color.flags |= 1;
-                channel.profile_color.color = selectedProfileColor;
-            } else {
-                channel.profile_color.flags &=~ 1;
-            }
-
-            if (selectedProfileEmoji != 0) {
-                req.flags |= 1;
-                req.background_emoji_id = selectedProfileEmoji;
-                channel.profile_color.flags |= 2;
-                channel.profile_color.background_emoji_id = selectedProfileEmoji;
-            } else {
-                channel.profile_color.flags &=~ 2;
-                channel.profile_color.background_emoji_id = 0;
-            }
-
-            reqCount[0]++;
-            getConnectionsManager().sendRequest(req, (res, err) -> {
-                if (res instanceof TLRPC.Updates) {
-                    getMessagesController().processUpdates((TLRPC.Updates) res, false);
-                }
-                if (whenRequestDone != null) {
-                    whenRequestDone.run(err);
-                }
-            });
-        }
-
-        if (!ChatThemeController.wallpaperEquals(currentWallpaper, selectedWallpaper)) {
-            TLRPC.TL_messages_setChatWallPaper req = new TLRPC.TL_messages_setChatWallPaper();
-            req.peer = getMessagesController().getInputPeer(dialogId);
-            if (selectedWallpaper != null) {
-                if (!TextUtils.isEmpty(ChatThemeController.getWallpaperEmoticon(selectedWallpaper))) {
-                    req.flags |= 1;
-                    req.wallpaper = new TLRPC.TL_inputWallPaperNoFile();
-                    ((TLRPC.TL_inputWallPaperNoFile) req.wallpaper).id = 0;
-
-                    req.flags |= 4;
-                    req.settings = new TLRPC.TL_wallPaperSettings();
-                    req.settings.flags |= 128;
-                    req.settings.emoticon = ChatThemeController.getWallpaperEmoticon(selectedWallpaper);
-                } else {
-                    req.flags |= 1;
-                    if (selectedWallpaper instanceof TLRPC.TL_wallPaper) {
-                        TLRPC.TL_inputWallPaper wallPaper = new TLRPC.TL_inputWallPaper();
-                        wallPaper.id = selectedWallpaper.id;
-                        wallPaper.access_hash = selectedWallpaper.access_hash;
-                        req.wallpaper = wallPaper;
-                    } else if (selectedWallpaper instanceof TLRPC.TL_wallPaperNoFile) {
-                        TLRPC.TL_inputWallPaperNoFile wallPaperNoFile = new TLRPC.TL_inputWallPaperNoFile();
-                        wallPaperNoFile.id = selectedWallpaper.id;
-                        req.wallpaper = wallPaperNoFile;
-                    }
-                }
-            }
-
-            reqCount[0]++;
-            getConnectionsManager().sendRequest(req, (res, err) -> {
-                if (res instanceof TLRPC.Updates) {
-                    getMessagesController().processUpdates((TLRPC.Updates) res, false);
-                }
-                if (whenRequestDone != null) {
-                    whenRequestDone.run(err);
-                }
-            });
-            TLRPC.ChatFull chatFull1 = getMessagesController().getChatFull(-dialogId);
-            ChatThemeController.getInstance(currentAccount).saveChatWallpaper(dialogId, selectedWallpaper);
-            if (chatFull1 != null) {
-                if (selectedWallpaper == null) {
-                    chatFull1.flags2 &=~ 128;
-                    chatFull1.wallpaper = null;
-                } else {
-                    chatFull1.flags2 |= 128;
-                    chatFull1.wallpaper = selectedWallpaper;
-                }
-                getMessagesController().putChatFull(chatFull1);
-                getNotificationCenter().postNotificationName(NotificationCenter.chatInfoDidLoad, chatFull1, 0, false, false);
-            }
-        }
-
-        if (!DialogObject.emojiStatusesEqual(currentStatusEmoji, selectedStatusEmoji)) {
-            TLRPC.TL_channels_updateEmojiStatus req = new TLRPC.TL_channels_updateEmojiStatus();
-            req.channel = getMessagesController().getInputChannel(-dialogId);
-            if (selectedStatusEmoji == null || selectedStatusEmoji instanceof TLRPC.TL_emojiStatusEmpty) {
-                req.emoji_status = new TLRPC.TL_emojiStatusEmpty();
-                channel.emoji_status = new TLRPC.TL_emojiStatusEmpty();
-                channel.flags2 &=~ 512;
-            } else if (selectedStatusEmoji instanceof TLRPC.TL_emojiStatusCollectible) {
-                final TLRPC.TL_emojiStatusCollectible valueStatus = (TLRPC.TL_emojiStatusCollectible) selectedStatusEmoji;
-                final TLRPC.TL_inputEmojiStatusCollectible status = new TLRPC.TL_inputEmojiStatusCollectible();
-                status.collectible_id = valueStatus.collectible_id;
-                status.flags = valueStatus.flags;
-                status.until = valueStatus.until;
-                req.emoji_status = status;
-                channel.emoji_status = selectedStatusEmoji;
-                channel.flags |= 512;
-            } else {
-                req.emoji_status = selectedStatusEmoji;
-                channel.emoji_status = selectedStatusEmoji;
-                channel.flags |= 512;
-            }
-
-            getMessagesController().updateEmojiStatusUntilUpdate(dialogId, selectedStatusEmoji);
-
-            reqCount[0]++;
-            getConnectionsManager().sendRequest(req, (res, err) -> {
-                if (res instanceof TLRPC.Updates) {
-                    getMessagesController().processUpdates((TLRPC.Updates) res, false);
-                }
-                if (whenRequestDone != null) {
-                    whenRequestDone.run(err);
-                }
-            });
-        }
-
-        if (reqCount[0] == 0) {
-            finishFragment();
+        Runnable done = () -> {
+            if (!appearanceOwnerCurrent()) { button.setLoading(false); return; }
             button.setLoading(false);
-        } else {
-            getMessagesController().putChat(channel, false);
-            getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_EMOJI_STATUS);
+            finishFragment();
+            showBulletin();
+        };
+        if (ChatThemeController.wallpaperEquals(currentWallpaper, selectedWallpaper)) { done.run(); return; }
+        ChatThemeController themes = ChatThemeController.getInstance(currentAccount);
+        if (selectedWallpaper == null) {
+            if (themes.setLocalDialogTheme(dialogId, null)) done.run(); else appearanceSaveFailed();
+            return;
         }
+        String emoticon = ChatThemeController.getWallpaperEmoticon(selectedWallpaper);
+        if (!TextUtils.isEmpty(emoticon)) {
+            TLRPC.TL_chatTheme theme = new TLRPC.TL_chatTheme();
+            theme.emoticon = emoticon;
+            if (themes.setLocalDialogTheme(dialogId, theme)) done.run(); else appearanceSaveFailed();
+            return;
+        }
+        String source = selectedWallpaper.uploadingImage;
+        if (selectedWallpaper instanceof TLRPC.TL_wallPaper && ((TLRPC.TL_wallPaper) selectedWallpaper).document != null) {
+            java.io.File file = FileLoader.getInstance(currentAccount).getPathToAttach(((TLRPC.TL_wallPaper) selectedWallpaper).document, true);
+            if (file == null || !file.isFile()) { appearanceSaveFailed(); return; }
+            source = file.getAbsolutePath();
+        }
+        TLRPC.WallPaperSettings settings = selectedWallpaper.settings;
+        if (settings == null) settings = new TLRPC.TL_wallPaperSettings();
+        themes.setLocalWallpaper(dialogId, settings, null, source, wallpaper -> done.run(), this::appearanceSaveFailed);
     }
 
 
@@ -713,9 +587,11 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
         } else {
             type = down ? SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON : SelectAnimatedEmojiDialog.TYPE_SET_REPLY_ICON_BOTTOM;
         }
-        SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(ChannelColorActivity.this, getContext(), true, xoff, type, true, getResourceProvider(), down ? 24 : 16, accentColor) {
+        SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(ChannelColorActivity.this, getContext(), true, xoff, type, true, getResourceProvider(), down ? 24 : 16, accentColor, currentAccount, true) {
             @Override
             protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
+                if (!appearanceOwnerCurrent() || gift != null || documentId != null
+                        && !org.telegram.messenger.xmpp.MonogramUserColors.validEmoji(currentAccount, documentId)) return;
                 if (onSet != null) {
                     onSet.run(documentId == null ? 0 : documentId, until, gift);
                 }
