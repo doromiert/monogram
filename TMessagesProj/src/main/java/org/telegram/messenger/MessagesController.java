@@ -5982,6 +5982,8 @@ public class MessagesController extends BaseController implements NotificationCe
         TLRPC.InputPeer inputPeer;
         if (id == getUserConfig().getClientUserId()) {
             inputPeer = new TLRPC.TL_inputPeerSelf();
+            // Self has no Telegram wire ID; retain its local XMPP identity for native adapters.
+            if(id>0) org.telegram.messenger.xmpp.MonogramSelfChat.resolve(inputPeer,id);
         } else if (id < 0) {
             TLRPC.Chat chat = getChat(-id);
             if (ChatObject.isChannel(chat)) {

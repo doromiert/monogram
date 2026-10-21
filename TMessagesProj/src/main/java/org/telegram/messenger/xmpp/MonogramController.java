@@ -1144,7 +1144,7 @@ public final class MonogramController {
             String error=null;
             ArchiveTask task=sync==null ? null : sync.windows.get(peer);
             if(!sameAccount(owner,own) || sync==null || !currentArchive(sync)) error="Connect to XMPP before loading older history.";
-            else if(peer==0 || peer==self) error="Older server history is unavailable for this conversation.";
+            else if(peer==0) error="Older server history is unavailable for this conversation.";
             else if(task!=null && task.unsupported) error=peer<0 ? "This room does not provide server history." : "Your server does not provide message history.";
             else if(task==null || sync.pending.contains(peer)) error="This conversation’s history is still loading. Try again when it finishes.";
             else if(task.loaded==0) error="Recent history has not loaded. Reconnect and try again.";
@@ -1162,7 +1162,7 @@ public final class MonogramController {
     private void startArchiveSync(XmppSession expected) {
         cancelSearchLoads(archiveSync);
         ArchiveSync sync = new ArchiveSync(expected, accountEpoch,store.jid(self)); archiveSync = sync;
-        for (long peer : store.peers()) if (peer != self) prepareArchivePeer(sync,peer);
+        for (long peer : store.peers()) prepareArchivePeer(sync,peer);
         for(long room:store.rooms()) try { if(store.room(room).autojoin && expected.rooms.state(store.jid(room)).joined) { joinedRooms.add(room); prepareArchivePeer(sync,room); } } catch(Exception ignored) {}
         // Keep discovery for conversations that exist only in the server archive.
         prepareArchivePeer(sync,0);
@@ -1313,7 +1313,7 @@ public final class MonogramController {
             refreshReplies(peer,updated);
             publishReactions(peer,null);
             ArchiveSync active=archiveSync;
-            if(peer!=self && active!=null && currentArchive(active) && !active.peers.contains(peer)) prepareArchivePeer(active,peer);
+            if(active!=null && currentArchive(active) && !active.peers.contains(peer)) prepareArchivePeer(active,peer);
         }
         if(changed && UserConfig.getInstance(account).isClientActivated()) {
             for(long peer:peers) if(peer<0) publishRoom(peer);
@@ -1374,7 +1374,6 @@ public final class MonogramController {
     private TLRPC.TL_messages_dialogs dialogs() {
         TLRPC.TL_messages_dialogs result = new TLRPC.TL_messages_dialogs();
         for (long peer : store.peers()) {
-            if (peer == self) continue;
             ArrayList<TLRPC.Message> history = store.history(peer, self, 0, 1);
             if (history.isEmpty()) continue;
             TLRPC.TL_dialog dialog = new TLRPC.TL_dialog(); dialog.id = peer; dialog.peer = new TLRPC.TL_peerUser(); dialog.peer.user_id = peer;
@@ -2777,6 +2776,12 @@ public final class MonogramController {
     public String lastSendError(long peer) { return preferences.getString(sendErrorKey(peer),null); }
     public void request(TLObject request,RequestDelegate callback) { request(0,request,callback); }
     public void request(int token,TLObject request,RequestDelegate callback) {
+        try { MonogramSelfChat.resolve(request,self); }
+        catch(IllegalStateException signedOut) {
+            TLRPC.TL_error error=new TLRPC.TL_error();error.code=401;error.text="MONOGRAM_ACCOUNT_REQUIRED";
+            if(callback!=null) Utilities.stageQueue.postRunnable(() -> callback.run(null,error));
+            return;
+        }
         if(request instanceof TLRPC.TL_messages_translateText) {
             translate(token,(TLRPC.TL_messages_translateText)request,callback);return;
         }
@@ -2812,6 +2817,7 @@ public final class MonogramController {
     }
     public void prepareOutgoingRequest(TLObject request,TLRPC.Message message) {
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request)) return;
+        MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
     }
     private static final class PendingSend {

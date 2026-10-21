@@ -33,12 +33,13 @@ public class MonogramOutboxTest {
         outbox.clear(); history.clear(); outbox.merge(-7,history,new ArrayList<>(Arrays.asList(pending)));
         assertEquals(Arrays.asList(pending),history);
     }
-    @Test public void roomWithoutStableReplyIdUsesQuoteAndStillProtectsEncryptedText() throws Exception {
+    @Test public void explicitlyUnsupportedRoomUsesQuoteAndStillProtectsEncryptedText() throws Exception {
         android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication(); String file="quote-only-room.db"; context.deleteDatabase(file);
         try(MonogramStore store=new MonogramStore(context,file)) {
             long self=store.peer("alice@example.org"),peer=store.room("room@conference.example.org","Alice");
             int id=store.saveRoom(com.negzero.monogram.xmpp.MessageFixture.roomText("room@conference.example.org","Bob","wire",null,"Secret","bob@example.org","bob-id",100000,true,null,null),self);
-            com.negzero.monogram.xmpp.ReplyReference quote=store.replyTo(id,peer,self,true,null,0);
+            assertThrows(IllegalArgumentException.class,() -> store.replyTo(id,peer,self,true,null,0));
+            com.negzero.monogram.xmpp.ReplyReference quote=store.replyTo(id,peer,self,true,null,0,true);
             assertEquals("> Secret\nAnswer",quote.wireBody("Answer"));
             org.jivesoftware.smack.packet.Message wire=new org.jivesoftware.smack.packet.Message(); quote.addTo(wire);
             assertFalse(wire.hasExtension("reply",com.negzero.monogram.xmpp.ReplyReference.NAMESPACE));
