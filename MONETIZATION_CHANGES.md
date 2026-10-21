@@ -377,3 +377,11 @@ Deleted GiftInfoBottomSheet, PremiumPreviewGiftLinkBottomSheet and PremiumPrevie
 This removes these subscription gift-code entry points and sheets; it does not claim the remaining PremiumPreviewBottomSheet, gift/history rendering or boost implementation is gone. The paid SMS implementation was already absent on source inspection; legacy SMS settings-link handling remains to be cleaned with the wider settings routing.
 
 Source-only inspection covers deleted screen/method/delegate references across Java/XML, surviving action/intent/boost branches, edited Java boundaries and whitespace. No tests, build, APK or phone interaction. Changes are unshipped and full monetization removal remains incomplete.
+
+### Remove paid public-post search
+
+Deleted PostsSearchContainer, including Telegram post-search/flood-price checks, balance loading, pay-to-search controls, request cancellation/loading UI and paid-search empty-state rendering. Removed its SearchViewPager field, construction/listeners, tab metadata/title/view routing, search/color/padding hooks and the home keyboard-height callback. Removed the now-unused PremiumPreviewFragment New-label helper import from SearchViewPager.
+
+Changed showDownloads to locate the DOWNLOADS_TYPE item rather than using a fixed position, preserving navigation after the Posts tab is removed and when optional tabs differ. Ordinary dialog/media filter search paths and download list construction remain. Separate public hashtag/story-search and recommendation implementations still remain for later classification/removal; this is not a claim that all Telegram global search is gone.
+
+Source-only inspection covers deleted class/fields/tab API references across Java/XML, remaining pager type/filter mapping, Downloads callers and edited Java boundaries/whitespace. No tests, build, APK or phone interaction. These changes remain unshipped; Premium/Business/boost/Stars controller, historical data and resources remain in scope.

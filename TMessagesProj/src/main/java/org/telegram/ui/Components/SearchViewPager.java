@@ -1,7 +1,6 @@
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.ui.PremiumPreviewFragment.applyNewSpan;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -98,8 +97,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
     public final @NonNull RecyclerListView botsSearchListView;
     public DialogsBotsAdapter botsSearchAdapter;
 
-    public boolean postsAreNew;
-    public final @NonNull PostsSearchContainer postsSearchContainer;
 
     public boolean expandedPublicPosts = false;
     private DefaultItemAnimator hashtagItemAnimator;
@@ -544,18 +541,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
 
         itemsEnterAnimator = new RecyclerItemsEnterAnimator(searchListView, true);
 
-        postsAreNew = false; // MessagesController.getGlobalMainSettings().getInt("searchpostsnew", 0) < 3;
-        postsSearchContainer = new PostsSearchContainer(context, fragment);
-        postsSearchContainer.listView.setClipToPadding(false);
-        postsSearchContainer.listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                super.onScrolled(recyclerView, dx, dy);
-                onPageScrolled(dx, dy);
-            }
-        });
-        postsSearchContainer.listView.addEdgeEffectListener(this::invalidateBlur);
-
         setAdapter(viewPagerAdapter = new ViewPagerAdapter());
     }
 
@@ -658,8 +643,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             if (TextUtils.isEmpty(query)) {
                 botsSearchAdapter.checkBottom();
             }
-        } else if (view == postsSearchContainer) {
-            postsSearchContainer.search(query);
         } else if (view == hashtagSearchContainer) {
             if (hashtagSearchAdapter.getHashtag(query) == null) {
                 return;
@@ -1132,9 +1115,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
                 }
             }
         }
-        if (postsSearchContainer != null) {
-            postsSearchContainer.updateColors();
-        }
+
     }
 
     public void reset() {
@@ -1188,7 +1169,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
         setPagesPaddings(channelsSearchContainer, channelsSearchListView, pagesPaddingTop, pagesPaddingBottom, doNotRequestLayout);
         setPagesPaddings(botsSearchContainer, botsSearchListView, pagesPaddingTop, pagesPaddingBottom, doNotRequestLayout);
         setPagesPaddings(hashtagSearchContainer, hashtagSearchListView, pagesPaddingTop, pagesPaddingBottom, doNotRequestLayout);
-        postsSearchContainer.setPagesPaddings(pagesPaddingTop, pagesPaddingBottom, doNotRequestLayout);
         if (downloadsContainer != null) {
             downloadsContainer.setPagesPaddings(pagesPaddingTop, pagesPaddingBottom, doNotRequestLayout);
         }
@@ -1367,7 +1347,13 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
     }
 
     public void showDownloads() {
-        setPosition((expandedPublicPosts ? 1 : 0) + 5);
+        if (viewPagerAdapter == null) return;
+        for (int position = 0; position < viewPagerAdapter.items.size(); position++) {
+            if (viewPagerAdapter.items.get(position).type == ViewPagerAdapter.DOWNLOADS_TYPE) {
+                setPosition(position);
+                return;
+            }
+        }
     }
 
     public int getPositionForType(int initialSearchType) {
@@ -1393,8 +1379,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             return hashtagSearchListView;
         } else if (page == downloadsContainer) {
             return downloadsContainer.recyclerListView;
-        } else if (page == postsSearchContainer) {
-            return postsSearchContainer.listView;
         } else if (page instanceof FilteredSearchView) {
             return ((FilteredSearchView) page).recyclerListView;
         }
@@ -1430,7 +1414,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
         private final static int FILTER_TYPE = 3;
         private final static int BOTS_TYPE = 4;
         private final static int PUBLIC_POSTS_TYPE = 5;
-        private final static int POSTS_TYPE = 6;
 
         public ViewPagerAdapter() {
             updateItems();
@@ -1446,7 +1429,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             if (expandedPublicPosts) {
                 items.add(new Item(PUBLIC_POSTS_TYPE));
             }
-            items.add(new Item(POSTS_TYPE));
             if (!showOnlyDialogsAdapter) {
                 Item item = new Item(FILTER_TYPE);
                 item.filterIndex = 0;
@@ -1477,12 +1459,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
                 return getString(R.string.ChannelsTab);
             } else if (items.get(position).type == BOTS_TYPE) {
                 return getString(R.string.AppsTab);
-            } else if (items.get(position).type == POSTS_TYPE) {
-                if (postsAreNew) {
-                    return applyNewSpan(getString(R.string.SearchPosts));
-                } else {
-                    return getString(R.string.SearchPosts);
-                }
             } else if (items.get(position).type == DOWNLOADS_TYPE) {
                 return getString(R.string.DownloadsTabs);
             } else if (items.get(position).type == PUBLIC_POSTS_TYPE) {
@@ -1521,8 +1497,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
                 downloadsContainer.recyclerListView.addEdgeEffectListener(SearchViewPager.this::invalidateBlur);
                 downloadsContainer.setUiCallback(SearchViewPager.this);
                 return downloadsContainer;
-            } else if (viewType == 6) {
-                return postsSearchContainer;
             } else {
                 FilteredSearchView filteredSearchView = new FilteredSearchView(parent);
                 filteredSearchView.setChatPreviewDelegate(chatPreviewDelegate);
@@ -1561,9 +1535,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             if (items.get(position).type == PUBLIC_POSTS_TYPE) {
                 return 5;
             }
-            if (items.get(position).type == POSTS_TYPE) {
-                return 6;
-            }
+
             return 7 + items.get(position).filterIndex;
         }
 
