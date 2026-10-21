@@ -833,3 +833,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 
 - [x] Source cleanup: remove gift acceptance and paid/Premium contact-requirement rows/state/navigation from Privacy Settings and consume their old settings links; remove last-seen subscription sales rows. Preserve ordinary and Monogram-specific privacy controls. Source-only, unshipped; see `MONETIZATION_CHANGES.md`.
 - [ ] Finish privacy monetization cleanup: remove legacy gift/paid-message editor branches and controller rule loading, voice-message subscription gates and paid-user exception rules; preserve or implement relevant XMPP privacy behavior without exposing unsupported Telegram controls.
+
+- [x] Source cleanup: delete the legacy paid-message privacy editor, charge/fee-exemption save and load requests, price controls, purchase prompts and paid-contact cross-promotion; remove Premium-user exception selection/state/rule emission. Keep ordinary user/group privacy exceptions and three ordinary privacy choices. Source-only, unshipped; see `MONETIZATION_CHANGES.md`.
