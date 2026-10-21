@@ -393,3 +393,11 @@ Deleted the unused Stars top-up and gift-option caches/accessors, purchase eligi
 Deleted the unused Stars-unavailable dialog helper and its stale import. Deleted MessagesController.disableAds/isSponsoredDisabled and the now-unreferenced TL_account.toggleSponsoredMessages request type, removing that remaining Telegram sponsored-message settings request rather than leaving an inactive API behind.
 
 Source-only inspection covers deleted public APIs/types, removed state identifiers, surviving balance-update branch and Java class boundaries/whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; Stars giveaways/gift/profile operations, Premium/Business/boost code and resources still require cleanup.
+
+### Giveaway purchase/setup removal
+
+Deleted BoostViaGiftsBottomSheet and BoostPagerBottomSheet. Removed giveaway header buttons, setup/list click paths, prepaid-giveaway rows, purchase encouragement rows and the gifting promotion in the boost-limit footer. Removed the deleted pager's configuration-change hook and Stars giveaway option preload. Ordinary remaining boost/feature/copy controls still exist pending full boost cleanup; no giveaway button is left opening an unavailable purchase sheet.
+
+Deleted the now-unused StarsController giveaway option cache/accessors and buyGiveaway stub. Deleted BoostRepository.payGiftCode/payGiveAway stubs and launchPreparedGiveaway, including its Telegram prepaid-giveaway launch request. Other boost repository methods and historical giveaway rendering remain for later cleanup.
+
+Source inspection caught and corrected an orphaned else branch when removing the giveaway purchase row. Reviewed surviving boost-header/list/footer branches, deleted API references across Java/XML, Java class boundaries and whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; wider boost/Premium/Business/Stars and resource/schema cleanup remains incomplete.

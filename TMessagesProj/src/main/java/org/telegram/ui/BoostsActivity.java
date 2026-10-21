@@ -60,7 +60,6 @@ import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.Components.Premium.LimitPreviewView;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
-import org.telegram.ui.Components.Premium.boosts.BoostPagerBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.cells.statistics.GiftedUserCell;
 import org.telegram.ui.Components.Premium.boosts.cells.statistics.GiveawayCell;
 import org.telegram.ui.Components.RecyclerListView;
@@ -357,14 +356,7 @@ public class BoostsActivity extends GradientHeaderActivity implements Notificati
             items.add(new ItemInternal(OVERVIEW_TYPE, false));
             items.add(new ItemInternal(DIVIDER_VIEW_TYPE, false));
 
-            if (boostsStatus.prepaid_giveaways.size() > 0) {
-                items.add(new ItemInternal(HEADER_VIEW_TYPE_SMALL, LocaleController.getString(R.string.BoostingPreparedGiveaways)));
-                for (int i = 0; i < boostsStatus.prepaid_giveaways.size(); i++) {
-                    TL_stories.PrepaidGiveaway prepaidGiveaway = boostsStatus.prepaid_giveaways.get(i);
-                    items.add(new ItemInternal(SHOW_PREPARED_GIVE_AWAY, prepaidGiveaway, i == boostsStatus.prepaid_giveaways.size() - 1));
-                }
-                items.add(new ItemInternal(DIVIDER_TEXT_VIEW_TYPE, LocaleController.getString(R.string.BoostingSelectPaidGiveaway)));
-            }
+
 
             items.add(new ItemInternal(HEADER_VIEW_TYPE_TABS, LocaleController.getString(R.string.Boosters)));
             if (selectedTab == TAB_BOOSTS) {
@@ -401,13 +393,7 @@ public class BoostsActivity extends GradientHeaderActivity implements Notificati
 
             items.add(new ItemInternal(HEADER_VIEW_TYPE, LocaleController.getString(R.string.LinkForBoosting)));
             items.add(new ItemInternal(LINK_VIEW_TYPE, boostsStatus.boost_url));
-            if (MessagesController.getInstance(currentAccount).giveawayGiftsPurchaseAvailable && ChatObject.hasAdminRights(currentChat)) {
-                items.add(new ItemInternal(DIVIDER_TEXT_VIEW_TYPE, LocaleController.getString(isChannel() ? R.string.BoostingShareThisLink : R.string.BoostingShareThisLinkGroup)));
-                items.add(new ItemInternal(SHOW_BOOST_BY_GIFTS, true));
-                items.add(new ItemInternal(DIVIDER_TEXT_VIEW_TYPE, LocaleController.getString(isChannel() ? R.string.BoostingGetMoreBoosts2 : R.string.BoostingGetMoreBoostsGroup)));
-            } else {
-                items.add(new ItemInternal(DIVIDER_TEXT_VIEW_TYPE, ""));
-            }
+            items.add(new ItemInternal(DIVIDER_TEXT_VIEW_TYPE, ""));
             items.add(new ItemInternal(BOTTOM_PADDING, false));
         }
         if (animated) {
@@ -716,26 +702,19 @@ public class BoostsActivity extends GradientHeaderActivity implements Notificati
         View underSubTitleView = new FrameLayout(getContext()) {
 
             private final HeaderButtonView buttonView1;
-            private final HeaderButtonView buttonView2;
             private final HeaderButtonView buttonView3;
 
             {
                 setWillNotDraw(false);
                 buttonView1 = new HeaderButtonView(getContext());
-                buttonView2 = new HeaderButtonView(getContext());
                 buttonView3 = new HeaderButtonView(getContext());
 
                 buttonView1.setTextAndIcon(LocaleController.getString(R.string.BoostBtn), R.drawable.filled_boost_plus);
-                buttonView2.setTextAndIcon(LocaleController.getString(R.string.GiveawayBtn), R.drawable.filled_gift_premium);
                 buttonView3.setTextAndIcon(LocaleController.getString(R.string.FeaturesBtn), R.drawable.filled_info);
                 buttonView1.setOnClickListener(v -> {
                     LimitReachedBottomSheet.openBoostsForUsers(BoostsActivity.this, true, dialogId, canApplyBoost, boostsStatus, null);
                 });
-                buttonView2.setOnClickListener(v -> {
-                    updateDialogVisibility(true);
-                    BoostPagerBottomSheet.show(BoostsActivity.this, dialogId, resourceProvider);
-                    BoostPagerBottomSheet.getInstance().setOnHideListener(dialog -> updateDialogVisibility(false));
-                });
+
                 buttonView3.setOnClickListener(v -> {
                     LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(BoostsActivity.this, getContext(), TYPE_FEATURES, currentAccount, getResourceProvider());
                     limitReachedBottomSheet.setBoostsStats(boostsStatus, true);
@@ -745,9 +724,7 @@ public class BoostsActivity extends GradientHeaderActivity implements Notificati
                 LinearLayout linearLayout = new LinearLayout(getContext());
                 linearLayout.setOrientation(LinearLayout.HORIZONTAL);
                 linearLayout.addView(buttonView1, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, 0));
-                if (MessagesController.getInstance(currentAccount).giveawayGiftsPurchaseAvailable && ChatObject.hasAdminRights(currentChat)) {
-                    linearLayout.addView(buttonView2, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, 0));
-                }
+
                 linearLayout.addView(buttonView3, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, 0));
 
                 addView(linearLayout, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 19, 0, 0));
@@ -817,12 +794,8 @@ public class BoostsActivity extends GradientHeaderActivity implements Notificati
                     presentFragment(ProfileActivity.of(cell.getDialogId()));
                 }
             }
-            if (view instanceof TextCell) {
-                BoostPagerBottomSheet.show(this, dialogId, resourceProvider);
-            }
-            if (view instanceof GiveawayCell) {
-                BoostPagerBottomSheet.show(this, resourceProvider, dialogId, ((GiveawayCell) view).getPrepaidGiveaway());
-            }
+
+
             if (items.get(position).viewType == SHOW_MORE_VIEW_TYPE) {
                 loadUsers(selectedTab == TAB_GIFTS);
             }

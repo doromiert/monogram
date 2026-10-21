@@ -194,7 +194,6 @@ import org.telegram.ui.Components.PhonebookShareAlert;
 import org.telegram.ui.Components.PipRoundVideoView;
 import org.telegram.ui.Components.PipVideoOverlay;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.boosts.BoostPagerBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.UserSelectorBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
@@ -6951,10 +6950,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (embedBottomSheet != null) {
             embedBottomSheet.onConfigurationChanged(newConfig);
         }
-        BoostPagerBottomSheet boostPagerBottomSheet = BoostPagerBottomSheet.getInstance();
-        if (boostPagerBottomSheet != null) {
-            boostPagerBottomSheet.onConfigurationChanged(newConfig);
-        }
+
         PhotoViewer photoViewer = PhotoViewer.getPipInstance();
         if (photoViewer != null) {
             photoViewer.onConfigurationChanged(newConfig);

@@ -171,18 +171,6 @@ public class StarsController {
         return balanceLoaded;
     }
 
-    private boolean giveawayOptionsLoading, giveawayOptionsLoaded;
-    private ArrayList<TL_stars.TL_starsGiveawayOption> giveawayOptions;
-    public ArrayList<TL_stars.TL_starsGiveawayOption> getGiveawayOptionsCached() {
-        return giveawayOptions;
-    }
-    public ArrayList<TL_stars.TL_starsGiveawayOption> getGiveawayOptions() {
-        if (giveawayOptions == null) giveawayOptions = new ArrayList<>();
-        giveawayOptionsLoading = false;
-        giveawayOptionsLoaded = true;
-        return giveawayOptions;
-    }
-
     private void bulletinError(TLRPC.TL_error err, String str) {
         bulletinError(err == null ? str : err.text);
     }
@@ -216,19 +204,7 @@ public class StarsController {
 
 
 
-    public void buyGiveaway(
-            Activity activity,
-            TLRPC.Chat chat, List<TLObject> chats,
-            TL_stars.TL_starsGiveawayOption option, int users,
-            List<TLObject> countries,
-            int date,
-            boolean winnersVisible,
-            boolean onlyNewSubscribers,
-            boolean withAdditionPrize, String prizeDescription,
-            Utilities.Callback2<Boolean, String> whenDone
-    ) {
-        if (whenDone != null) whenDone.run(false, "MONOGRAM_FEATURE_UNAVAILABLE");
-    }
+
 
 
 

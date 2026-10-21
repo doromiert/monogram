@@ -91,7 +91,6 @@ import org.telegram.ui.Components.Loadable;
 import org.telegram.ui.Components.LoginOrView;
 import org.telegram.ui.Components.Premium.boosts.BoostCounterView;
 import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
-import org.telegram.ui.Components.Premium.boosts.BoostPagerBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.BoostRepository;
 import org.telegram.ui.Components.Premium.boosts.ReassignBoostBottomSheet;
 import org.telegram.ui.Components.Reactions.ChatCustomReactionsEditActivity;
@@ -1286,44 +1285,6 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
                         wrapperLayout.setPadding(backgroundPaddingLeft + dp(6), 0, backgroundPaddingLeft + dp(6), 0);
                         wrapperLayout.setOrientation(LinearLayout.VERTICAL);
 
-                        LoginOrView orDividerView = new LoginOrView(context);
-
-                        TextView textView = new LinkSpanDrawable.LinksTextView(context);
-                        SpannableStringBuilder text = AndroidUtilities.replaceTags(getString(isGroup() ? R.string.BoostingStoriesByGiftingGroup2 : R.string.BoostingStoriesByGiftingChannel2));
-                        SpannableStringBuilder link = new SpannableStringBuilder(getString(R.string.BoostingStoriesByGiftingLink));
-                        link.setSpan(new ClickableSpan() {
-                            @Override
-                            public void updateDrawState(@NonNull TextPaint ds) {
-                                super.updateDrawState(ds);
-                                ds.setUnderlineText(false);
-                                ds.setColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-                            }
-                            @Override
-                            public void onClick(@NonNull View view) {
-                                BoostPagerBottomSheet.show(getBaseFragment(), dialogId, resourcesProvider);
-                            }
-                        }, 0, link.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        SpannableString arrow = new SpannableString(">");
-                        Drawable imageDrawable = getContext().getResources().getDrawable(R.drawable.msg_arrowright).mutate();
-                        imageDrawable.setColorFilter(new PorterDuffColorFilter(Theme.key_chat_messageLinkIn, PorterDuff.Mode.SRC_IN));
-                        ColoredImageSpan span = new ColoredImageSpan(imageDrawable);
-                        span.setColorKey(Theme.key_chat_messageLinkIn);
-                        span.setSize(dp(18));
-                        span.setWidth(dp(11));
-                        span.setTranslateX(-dp(5));
-                        arrow.setSpan(span, 0, arrow.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        textView.setText(TextUtils.concat(text, " ", AndroidUtilities.replaceCharSequence(">", link, arrow)));
-                        textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                        textView.setLineSpacing(dp(3), 1.0f);
-                        if (resourcesProvider instanceof DarkThemeResourceProvider) {
-                            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-                        } else {
-                            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-                        }
-                        textView.setGravity(Gravity.CENTER_HORIZONTAL);
-                        textView.setOnClickListener(v -> BoostPagerBottomSheet.show(getBaseFragment(), dialogId, resourcesProvider));
-                        orDividerView.setOnClickListener(v -> textView.performClick());
-
                         if (isMiniBoostBtnForAdminAvailable()) {
                             ButtonWithCounterView copyBtn = new ButtonWithCounterView(context, resourcesProvider);
                             copyBtn.setText(getString(R.string.Copy), false);
@@ -1338,8 +1299,6 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
                         } else {
                             wrapperLayout.addView(actionBtn, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 12, 12, 12, 8));
                         }
-                        wrapperLayout.addView(orDividerView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, -5, 0, 0));
-                        wrapperLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, -6, 12, 17));
                         view = wrapperLayout;
                         break;
                     case VIEW_TYPE_BOOST_FEATURE:
