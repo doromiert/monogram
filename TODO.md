@@ -804,3 +804,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [x] Source cleanup: remove home/search speed-upgrade icons and promo-video prefetch, search ad menu/screen, folder-tab drag/snap-back restrictions and reaction-picker subscription split. Keep XMPP custom-reaction availability warning and standard reaction selection. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.
 
 - [x] Source cleanup: remove sticker-cell, featured-pack, emoji-pack-sheet and long-press-preview upgrade controls. Keep ordinary install/remove/loading paths and artwork effects; free emoji copy/send/status capability checks. Delete unused UnlockPremiumView. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.
+
+- [x] Source cleanup: remove ad-report requests/options/callbacks from the shared report sheet; remove chat ad/revenue/speed-upgrade menu actions and video prefetch, Premium screen ad toggle/rows and revenue-info screen. Preserve ordinary reports; historical ad rendering/data still pending. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.

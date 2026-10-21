@@ -1236,14 +1236,9 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_STATISTICS = 28;
     public final static int OPTION_TRANSLATE = 29;
     public final static int OPTION_TRANSCRIBE = 30;
-    public final static int OPTION_HIDE_SPONSORED_MESSAGE = 31;
     public final static int OPTION_VIEW_IN_TOPIC = 32;
-    public final static int OPTION_ABOUT_REVENUE_SHARING_ADS = 33;
-    public final static int OPTION_REPORT_AD = 34;
-    public final static int OPTION_REMOVE_ADS = 35;
     public final static int OPTION_SEND_NOW = 100;
     public final static int OPTION_EDIT_SCHEDULE_TIME = 102;
-    public final static int OPTION_SPEED_PROMO = 103;
     public final static int OPTION_OPEN_PROFILE = 104;
     public final static int OPTION_FACT_CHECK = 106;
     public final static int OPTION_EDIT_TODO = 109;
@@ -30652,28 +30647,7 @@ public class ChatActivity extends BaseFragment implements
                 icons.add(R.drawable.msg_user_search);
             }
 
-            if (!getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && message.getDocument() != null && message.getDocument().size >= 150 * 1024 * 1024 && FileLoader.getInstance(currentAccount).isLoadingFile(FileLoader.getAttachFileName(message.getDocument())) && chatMode != MODE_SAVED) {
-                items.add(LocaleController.getString(R.string.PremiumSpeedPromo));
-                options.add(OPTION_SPEED_PROMO);
-                icons.add(R.drawable.msg_speed);
 
-                if (SharedConfig.getDevicePerformanceClass() != SharedConfig.PERFORMANCE_CLASS_LOW) {
-                    TLRPC.TL_help_premiumPromo premiumPromo = MediaDataController.getInstance(currentAccount).getPremiumPromo();
-                    String typeString = PremiumPreviewFragment.featureTypeToServerString(PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED);
-                    if (premiumPromo != null) {
-                        int index = -1;
-                        for (int i = 0; i < premiumPromo.video_sections.size(); i++) {
-                            if (premiumPromo.video_sections.get(i).equals(typeString)) {
-                                index = i;
-                                break;
-                            }
-                        }
-                        if (index != -1) {
-                            FileLoader.getInstance(currentAccount).loadFile(premiumPromo.videos.get(index), premiumPromo, FileLoader.PRIORITY_HIGH, 0);
-                        }
-                    }
-                }
-            }
             if (message.messageOwner.action instanceof TLRPC.TL_messageActionSetMessagesTTL && single && (dialog_id >= 0 || (currentChat != null && ChatObject.canUserDoAdminAction(currentChat, ChatObject.ACTION_DELETE_MESSAGES)))) {
                 AutoDeletePopupWrapper autoDeletePopupWrapper = new AutoDeletePopupWrapper(contentView.getContext(), null, new AutoDeletePopupWrapper.Callback() {
                     @Override
@@ -31629,9 +31603,7 @@ public class ChatActivity extends BaseFragment implements
                         }
                     }
                     scrimPopupWindowItems[visiblePosition] = cell;
-                    if (option == OPTION_REMOVE_ADS) {
-                        popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
-                    }
+
                     popupLayout.addView(cell);
                     final int i = a;
                     cell.setOnClickListener(v1 -> {
@@ -33940,26 +33912,11 @@ public class ChatActivity extends BaseFragment implements
                 preserveDim = true;
                 break;
             }
-            case OPTION_HIDE_SPONSORED_MESSAGE: {
-                hideAds();
-                break;
-            }
-            case OPTION_ABOUT_REVENUE_SHARING_ADS: {
-                RevenueSharingAdsInfoBottomSheet.showAlert(contentView.getContext(),ChatActivity.this, false, resourceProvider);
-                break;
-            }
-            case OPTION_REPORT_AD: {
-                ReportBottomSheet.openSponsored(ChatActivity.this, selectedObject, themeDelegate);
-                break;
-            }
-            case OPTION_REMOVE_ADS: {
-                hideAds();
-                break;
-            }
-            case OPTION_SPEED_PROMO: {
-                showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED, true));
-                break;
-            }
+
+
+
+
+
             case OPTION_OPEN_PROFILE: {
                 TLRPC.Peer from = selectedObject.messageOwner.from_id;
                 openUserProfile(from.user_id != 0 ? from.user_id : from.channel_id != 0 ? from.channel_id : from.chat_id);
@@ -41572,13 +41529,7 @@ public class ChatActivity extends BaseFragment implements
             return (msg != null && msg.getDialogId() == UserObject.REPLY_BOT || (chatAdapter != null && chatAdapter.isFiltered)) && chatMode != MODE_SEARCH;
         }
 
-        @Override
-        public void didPressAboutRevenueSharingAds() {
-            if (contentView == null || getParentActivity() == null) {
-                return;
-            }
-            RevenueSharingAdsInfoBottomSheet.showAlert(contentView.getContext(), ChatActivity.this, false, resourceProvider);
-        }
+
 
         @Override
         public void didPressRevealSensitiveContent(ChatMessageCell cell) {
@@ -45166,27 +45117,9 @@ public class ChatActivity extends BaseFragment implements
             allowChatActions = false;
         }
 
-        if (message.isSponsored() && !getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && !message.sponsoredCanReport) {
-            items.add(LocaleController.getString(R.string.HideAd));
-            options.add(OPTION_HIDE_SPONSORED_MESSAGE);
-            icons.add(R.drawable.msg_block2);
-        }
 
-        if (message.isSponsored() && message.sponsoredCanReport) {
-            items.add(LocaleController.getString(R.string.AboutRevenueSharingAds));
-            options.add(OPTION_ABOUT_REVENUE_SHARING_ADS);
-            icons.add(R.drawable.msg_report);
 
-            items.add(LocaleController.getString(R.string.ReportAd));
-            options.add(OPTION_REPORT_AD);
-            icons.add(R.drawable.msg_block2);
 
-            if (!getMessagesController().premiumFeaturesBlocked()) {
-                items.add(getString(R.string.RemoveAds));
-                options.add(OPTION_REMOVE_ADS);
-                icons.add(R.drawable.msg_cancel);
-            }
-        }
 
         final @DrawableRes int deleteIconRes;
         if (selectedObject.isPaidSuggestedPostProtected()) {

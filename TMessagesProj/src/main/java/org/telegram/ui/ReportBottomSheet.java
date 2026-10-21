@@ -6,8 +6,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -28,7 +26,6 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLMethod;
 import org.telegram.tgnet.TLObject;
@@ -44,11 +41,8 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
-import org.telegram.ui.Components.CombinedDrawable;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.LinkSpanDrawable;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalRecyclerView;
@@ -64,18 +58,14 @@ public class ReportBottomSheet extends BottomSheet {
     private static final int PAGE_TYPE_OPTIONS = 0;
     private static final int PAGE_TYPE_SUB_OPTIONS = 1;
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final boolean sponsored;
     private final boolean stories;
     private final boolean ephemeral;
     private final ArrayList<Integer> messageIds;
-    private final byte[] sponsoredId;
     private final long dialogId;
     private Listener listener;
 
     interface Listener {
         default void onReported() {}
-        default void onHidden() {}
-        default void onPremiumRequired() {}
     }
 
     private ReportBottomSheet(
@@ -86,34 +76,10 @@ public class ReportBottomSheet extends BottomSheet {
         long dialogId,
         ArrayList<Integer> messageIds
     ) {
-        this(false, context, resourcesProvider, dialogId, stories, ephemeral, messageIds, null);
-    }
-
-    private ReportBottomSheet(
-        Context context,
-        Theme.ResourcesProvider resourcesProvider,
-        long dialogId,
-        byte[] sponsoredId
-    ) {
-        this(true, context, resourcesProvider, dialogId, false, false, null, sponsoredId);
-    }
-
-    private ReportBottomSheet(
-        final boolean sponsored,
-        Context context,
-        Theme.ResourcesProvider resourcesProvider,
-        long dialogId,
-        boolean stories,
-        boolean ephemeral,
-        ArrayList<Integer> messageIds,
-        byte[] sponsoredId
-    ) {
         super(context, true, resourcesProvider);
-        this.sponsored = sponsored;
         this.messageIds = messageIds;
         this.stories = stories;
         this.ephemeral = ephemeral;
-        this.sponsoredId = sponsoredId;
         this.dialogId = dialogId;
         backgroundPaint.setColor(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
         fixNavigationBar(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
@@ -171,26 +137,12 @@ public class ReportBottomSheet extends BottomSheet {
 
         });
 
-        if (messageIds == null && sponsoredId == null) {
-            if (sponsored) {
-                setReportChooseOption((TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) null);
-            } else {
-                setReportChooseOption((TLRPC.TL_reportResultChooseOption) null);
-            }
+        if (messageIds == null) {
+            setReportChooseOption((TLRPC.TL_reportResultChooseOption) null);
         }
     }
 
-    private ReportBottomSheet setReportChooseOption(TLRPC.TL_channels_sponsoredMessageReportResultChooseOption chooseOption) {
-        View[] viewPages = viewPager.getViewPages();
-        if (viewPages[0] instanceof Page) {
-            ((Page) viewPages[0]).bind(PAGE_TYPE_OPTIONS);
-            containerView.post(() -> ((Page) viewPages[0]).setOption(chooseOption));
-        }
-        if (viewPages[1] instanceof Page) {
-            ((Page) viewPages[1]).bind(PAGE_TYPE_SUB_OPTIONS);
-        }
-        return this;
-    }
+
 
     private ReportBottomSheet setReportChooseOption(TLRPC.TL_reportResultChooseOption chooseOption) {
         View[] viewPages = viewPager.getViewPages();
@@ -247,12 +199,7 @@ public class ReportBottomSheet extends BottomSheet {
 
     private void submitOption(final CharSequence optionText, final byte[] option, final String comment) {
         TLObject request;
-        if (sponsored) {
-            TLRPC.TL_messages_reportSponsoredMessage req = new TLRPC.TL_messages_reportSponsoredMessage();
-            req.random_id = sponsoredId;
-            req.option = option;
-            request = req;
-        } else if (stories) {
+        if (stories) {
             TL_stories.TL_stories_report req = new TL_stories.TL_stories_report();
             req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
             if (messageIds != null) {
@@ -290,7 +237,6 @@ public class ReportBottomSheet extends BottomSheet {
                 }
                 if (response != null) {
                     if (
-                        response instanceof TLRPC.TL_channels_sponsoredMessageReportResultChooseOption ||
                         response instanceof TLRPC.TL_reportResultChooseOption ||
                         response instanceof TLRPC.TL_reportResultAddComment
                     ) {
@@ -302,21 +248,12 @@ public class ReportBottomSheet extends BottomSheet {
                                 nextPage.setOption((TLRPC.TL_reportResultChooseOption) response);
                             } else if (response instanceof TLRPC.TL_reportResultAddComment) {
                                 nextPage.setOption((TLRPC.TL_reportResultAddComment) response);
-                            } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) {
-                                nextPage.setOption((TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) response);
                             }
                             if (optionText != null) {
                                 nextPage.setHeaderText(optionText);
                             }
                         }
-                    } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultAdsHidden) {
-                        MessagesController.getInstance(currentAccount).disableAds(false);
-                        if (listener != null) {
-                            listener.onHidden();
-                            dismiss();
-                        }
                     } else if (
-                        response instanceof TLRPC.TL_channels_sponsoredMessageReportResultReported ||
                         response instanceof TLRPC.TL_reportResultReported
                     ) {
                         if (listener != null) {
@@ -325,16 +262,8 @@ public class ReportBottomSheet extends BottomSheet {
                         }
                     }
                 } else if (error != null) {
-                    if (!sponsored && "MESSAGE_ID_REQUIRED".equals(error.text)) {
+                    if ("MESSAGE_ID_REQUIRED".equals(error.text)) {
                         ChatActivity.openReportChat(dialogId, optionText.toString(), option, comment);
-                    } else if ("PREMIUM_ACCOUNT_REQUIRED".equals(error.text)) {
-                        if (listener != null) {
-                            listener.onPremiumRequired();
-                        }
-                    } else if ("AD_EXPIRED".equals(error.text)) {
-                        if (listener != null) {
-                            listener.onReported();
-                        }
                     }
                     dismiss();
                 }
@@ -415,7 +344,6 @@ public class ReportBottomSheet extends BottomSheet {
     private class Page extends FrameLayout {
         int pageType;
 
-        TLRPC.TL_channels_sponsoredMessageReportResultChooseOption sponsoredOption;
         TLRPC.TL_reportResultChooseOption option;
         TLRPC.TL_reportResultAddComment commentOption;
 
@@ -439,9 +367,7 @@ public class ReportBottomSheet extends BottomSheet {
                     onBackPressed();
                 }
             });
-            if (sponsored) {
-                headerView.setText(LocaleController.getString(R.string.ReportAd));
-            } else if (stories) {
+            if (stories) {
                 headerView.setText(LocaleController.getString(R.string.ReportStory));
             } else {
                 headerView.setText(LocaleController.getString(R.string.Report2));
@@ -500,22 +426,15 @@ public class ReportBottomSheet extends BottomSheet {
             }
         }
 
-        public void setOption(TLRPC.TL_channels_sponsoredMessageReportResultChooseOption option) {
-            this.sponsoredOption = option;
-            this.option = null;
-            this.commentOption = null;
-            listView.adapter.update(false);
-        }
+
 
         public void setOption(TLRPC.TL_reportResultChooseOption option) {
-            this.sponsoredOption = null;
             this.option = option;
             this.commentOption = null;
             listView.adapter.update(false);
         }
 
         public void setOption(TLRPC.TL_reportResultAddComment option) {
-            this.sponsoredOption = null;
             this.option = null;
             this.commentOption = option;
             listView.adapter.update(false);
@@ -551,12 +470,10 @@ public class ReportBottomSheet extends BottomSheet {
             items.add(space);
             height += headerView.getMeasuredHeight() / AndroidUtilities.density;
 
-            if (sponsoredOption != null || option != null || commentOption != null) {
-                if (sponsoredOption != null || option != null) {
+            if (option != null || commentOption != null) {
+                if (option != null) {
                     HeaderCell headerCell = new HeaderCell(getContext(), Theme.key_windowBackgroundWhiteBlueHeader, 21, 0, 0, false, resourcesProvider);
-                    if (sponsoredOption != null) {
-                        headerCell.setText(sponsoredOption.title);
-                    } else if (option != null) {
+                    if (option != null) {
                         headerCell.setText(option.title);
                     }
                     headerCell.setBackgroundColor(getThemedColor(Theme.key_dialogBackground));
@@ -566,16 +483,7 @@ public class ReportBottomSheet extends BottomSheet {
                     height += 40;
                 }
 
-                if (sponsoredOption != null) {
-                    for (int i = 0; i < sponsoredOption.options.size(); i++) {
-                        UItem buttonItem = new UItem(UniversalAdapter.VIEW_TYPE_RIGHT_ICON_TEXT, false);
-                        buttonItem.text = sponsoredOption.options.get(i).text;
-                        buttonItem.iconResId = R.drawable.msg_arrowright;
-                        buttonItem.id = i;
-                        items.add(buttonItem);
-                        height += 50;
-                    }
-                } else if (option != null) {
+                if (option != null) {
                     for (int i = 0; i < option.options.size(); i++) {
                         UItem buttonItem = new UItem(UniversalAdapter.VIEW_TYPE_RIGHT_ICON_TEXT, false);
                         buttonItem.text = option.options.get(i).text;
@@ -639,24 +547,7 @@ public class ReportBottomSheet extends BottomSheet {
                 }
                 items.get(items.size() - 1).hideDivider = true;
 
-                if (sponsored && pageType == PAGE_TYPE_OPTIONS) {
-                    FrameLayout frameLayout = new FrameLayout(getContext());
-                    Drawable shadowDrawable = Theme.getThemedDrawable(getContext(), R.drawable.greydivider, Theme.getColor(Theme.key_windowBackgroundGrayShadow, resourcesProvider));
-                    Drawable background = new ColorDrawable(getThemedColor(Theme.key_windowBackgroundGray));
-                    CombinedDrawable combinedDrawable = new CombinedDrawable(background, shadowDrawable, 0, 0);
-                    combinedDrawable.setFullsize(true);
-                    frameLayout.setBackground(combinedDrawable);
-                    LinkSpanDrawable.LinksTextView textView = new LinkSpanDrawable.LinksTextView(getContext());
-                    textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                    textView.setText(AndroidUtilities.replaceLinks(LocaleController.getString(R.string.ReportAdLearnMore), resourcesProvider));
-                    textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, resourcesProvider));
-                    textView.setGravity(Gravity.CENTER);
-                    frameLayout.addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 16, 16, 16, 16));
-                    UItem bottomItem = UItem.asCustom(frameLayout);
-                    bottomItem.id = -3;
-                    items.add(bottomItem);
-                    height += 46;
-                }
+
             }
 
             if (listView != null) {
@@ -671,12 +562,7 @@ public class ReportBottomSheet extends BottomSheet {
 
         private void onClick(UItem item, View view, int position, float x, float y) {
             if (item.viewType == UniversalAdapter.VIEW_TYPE_RIGHT_ICON_TEXT) {
-                if (sponsoredOption != null) {
-                    TLRPC.TL_sponsoredMessageReportOption clickedOption = sponsoredOption.options.get(item.id);
-                    if (clickedOption != null) {
-                        submitOption(clickedOption.text, clickedOption.option, null);
-                    }
-                } else if (option != null) {
+                if (option != null) {
                     TLRPC.TL_messageReportOption clickedOption = option.options.get(item.id);
                     if (clickedOption != null) {
                         submitOption(clickedOption.text, clickedOption.option, null);
@@ -936,329 +822,11 @@ public class ReportBottomSheet extends BottomSheet {
         });
     }
 
-    public static void openSponsored(
-        ChatActivity fragment,
-        MessageObject message,
-        Theme.ResourcesProvider resourceProvider
-    ) {
-        if (fragment == null) return;
-        final int currentAccount = fragment.getCurrentAccount();
-        final Context context = fragment.getContext();
-        final long dialogId = fragment.getDialogId();
-        if (context == null) return;
-
-        TLRPC.TL_messages_reportSponsoredMessage req = new TLRPC.TL_messages_reportSponsoredMessage();
-        final byte[] sponsoredId = req.random_id = message.sponsoredId;
-        req.option = new byte[]{};
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-            if (response != null) {
-                if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        TLRPC.TL_channels_sponsoredMessageReportResultChooseOption result = (TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) response;
-                        new ReportBottomSheet(context, resourceProvider, dialogId, sponsoredId)
-                            .setReportChooseOption(result)
-                            .setListener(new ReportBottomSheet.Listener() {
-                                @Override
-                                public void onReported() {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        BulletinFactory.of(fragment)
-                                                .createAdReportedBulletin(
-                                                    AndroidUtilities.replaceSingleTag(
-                                                        LocaleController.getString(R.string.AdReported),
-                                                        -1,
-                                                        AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                                        () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                                        resourceProvider
-                                                    )
-                                                )
-                                                .show();
-                                        fragment.removeMessageWithThanos(message);
-                                    }, 200);
-                                }
-
-                                @Override
-                                public void onHidden() {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        BulletinFactory.of(fragment)
-                                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                                            .show();
-                                        fragment.removeMessageWithThanos(message);
-                                    }, 200);
-                                }
-
-                                @Override
-                                public void onPremiumRequired() {
-                                    fragment.showDialog(new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true));
-                                }
-                            })
-                            .show();
-                    });
-                } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultReported) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        BulletinFactory.of(fragment)
-                            .createAdReportedBulletin(
-                                AndroidUtilities.replaceSingleTag(
-                                    LocaleController.getString(R.string.AdReported),
-                                    -1,
-                                    AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                    () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                    resourceProvider
-                                )
-                            )
-                            .show();
-                        fragment.removeMessageWithThanos(message);
-                    }, 200);
-                } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultAdsHidden) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        BulletinFactory.of(fragment)
-                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                            .show();
-                        MessagesController.getInstance(currentAccount).disableAds(false);
-                        fragment.removeMessageWithThanos(message);
-                    }, 200);
-                }
-            } else if (error != null && "AD_EXPIRED".equalsIgnoreCase(error.text)) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    BulletinFactory.of(fragment)
-                        .createAdReportedBulletin(
-                            AndroidUtilities.replaceSingleTag(
-                                LocaleController.getString(R.string.AdReported),
-                                -1,
-                                AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                resourceProvider
-                            )
-                        )
-                        .show();
-                    fragment.removeMessageWithThanos(message);
-                }, 200);
-            }
-        });
-    }
-
-    public static void openSponsored(
-        int currentAccount,
-        Context context,
-        long dialogId,
-
-        TLRPC.TL_sponsoredMessage ad,
-        BulletinFactory bulletinFactory,
-        Theme.ResourcesProvider resourceProvider,
-
-        Runnable showPremium,
-        Runnable done
-    ) {
-//        if (fragment == null) return;
-//        final int currentAccount = fragment.getCurrentAccount();
-//        final Context context = fragment.getContext();
-//        final long dialogId = fragment.getDialogId();
-        if (context == null) return;
-
-        TLRPC.TL_messages_reportSponsoredMessage req = new TLRPC.TL_messages_reportSponsoredMessage();
-        final byte[] sponsoredId = req.random_id = ad.random_id;
-        req.option = new byte[]{};
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-            if (response != null) {
-                if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        TLRPC.TL_channels_sponsoredMessageReportResultChooseOption result = (TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) response;
-                        new ReportBottomSheet(context, resourceProvider, dialogId, sponsoredId)
-                            .setReportChooseOption(result)
-                            .setListener(new ReportBottomSheet.Listener() {
-                                @Override
-                                public void onReported() {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        if (done != null) {
-                                            done.run();
-                                        }
-                                        bulletinFactory
-                                            .createAdReportedBulletin(
-                                                AndroidUtilities.replaceSingleTag(
-                                                    LocaleController.getString(R.string.AdReported),
-                                                    -1,
-                                                    AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                                    () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                                    resourceProvider
-                                                )
-                                            )
-                                            .show();
-//                                        fragment.removeMessageWithThanos(message);
-                                    }, 200);
-                                }
-
-                                @Override
-                                public void onHidden() {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        if (done != null) {
-                                            done.run();
-                                        }
-                                        bulletinFactory
-                                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                                            .show();
-//                                        fragment.removeMessageWithThanos(message);
-                                    }, 200);
-                                }
-
-                                @Override
-                                public void onPremiumRequired() {
-                                    showPremium.run();
-//                                    fragment.showDialog(new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true));
-                                }
-                            })
-                            .show();
-                    });
-                } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultReported) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (done != null) {
-                            done.run();
-                        }
-//                        BulletinFactory.of(fragment)
-                        bulletinFactory
-                            .createAdReportedBulletin(
-                                AndroidUtilities.replaceSingleTag(
-                                    LocaleController.getString(R.string.AdReported),
-                                    -1,
-                                    AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                    () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                    resourceProvider
-                                )
-                            )
-                            .show();
-//                        fragment.removeMessageWithThanos(message);
-                    }, 200);
-                } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultAdsHidden) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        if (done != null) {
-                            done.run();
-                        }
-//                        BulletinFactory.of(fragment)
-                        bulletinFactory
-                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                            .show();
-                        MessagesController.getInstance(currentAccount).disableAds(false);
-//                        fragment.removeMessageWithThanos(message);
-                    }, 200);
-                }
-            } else if (error != null && "AD_EXPIRED".equalsIgnoreCase(error.text)) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (done != null) {
-                        done.run();
-                    }
-                    bulletinFactory
-                        .createAdReportedBulletin(
-                            AndroidUtilities.replaceSingleTag(
-                                LocaleController.getString(R.string.AdReported),
-                                -1,
-                                AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                resourceProvider
-                            )
-                        )
-                        .show();
-                }, 200);
-            }
-        });
-    }
 
 
-    public static void openSponsoredPeer(
-        BaseFragment fragment,
-        byte[] random_id,
-        Theme.ResourcesProvider resourceProvider,
-        Runnable remove
-    ) {
-        if (fragment == null) return;
-        final int currentAccount = fragment.getCurrentAccount();
-        final Context context = fragment.getContext();
-        if (context == null) return;
 
-        final TLRPC.TL_messages_reportSponsoredMessage req = new TLRPC.TL_messages_reportSponsoredMessage();
-        final byte[] sponsoredId = req.random_id = random_id;
-        req.option = new byte[]{};
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-            if (response != null) {
-                if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        TLRPC.TL_channels_sponsoredMessageReportResultChooseOption result = (TLRPC.TL_channels_sponsoredMessageReportResultChooseOption) response;
-                        new ReportBottomSheet(context, resourceProvider, 0, sponsoredId)
-                            .setReportChooseOption(result)
-                            .setListener(new ReportBottomSheet.Listener() {
-                                @Override
-                                public void onReported() {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        BulletinFactory.of(fragment)
-                                            .createAdReportedBulletin(
-                                                AndroidUtilities.replaceSingleTag(
-                                                    LocaleController.getString(R.string.AdReported),
-                                                    -1,
-                                                    AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                                    () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                                    resourceProvider
-                                                )
-                                            )
-                                            .show();
-                                            AndroidUtilities.runOnUIThread(remove);
-                                    }, 200);
-                                }
 
-                                @Override
-                                public void onHidden() {
-                                    AndroidUtilities.runOnUIThread(() -> {
-                                        BulletinFactory.of(fragment)
-                                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                                            .show();
-                                        AndroidUtilities.runOnUIThread(remove);
-                                    }, 200);
-                                }
 
-                                @Override
-                                public void onPremiumRequired() {
-                                    fragment.showDialog(new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ADS, true));
-                                }
-                            })
-                            .show();
-                    });
-                } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultReported) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        BulletinFactory.of(fragment)
-                            .createAdReportedBulletin(
-                                AndroidUtilities.replaceSingleTag(
-                                    LocaleController.getString(R.string.AdReported),
-                                    -1,
-                                    AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                    () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                    resourceProvider
-                                )
-                            )
-                            .show();
-                        AndroidUtilities.runOnUIThread(remove);
-                    }, 200);
-                } else if (response instanceof TLRPC.TL_channels_sponsoredMessageReportResultAdsHidden) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        BulletinFactory.of(fragment)
-                            .createAdReportedBulletin(LocaleController.getString(R.string.AdHidden))
-                            .show();
-                        MessagesController.getInstance(currentAccount).disableAds(false);
-                        AndroidUtilities.runOnUIThread(remove);
-                    }, 200);
-                }
-            } else if (error != null && "AD_EXPIRED".equalsIgnoreCase(error.text)) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    BulletinFactory.of(fragment)
-                        .createAdReportedBulletin(
-                            AndroidUtilities.replaceSingleTag(
-                                LocaleController.getString(R.string.AdReported),
-                                -1,
-                                AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                                () -> Browser.openUrl(context, "https://promote.telegram.org/guidelines"),
-                                resourceProvider
-                            )
-                        )
-                        .show();
-                    AndroidUtilities.runOnUIThread(remove);
-                }, 200);
-            }
-        });
-    }
+
 
 }

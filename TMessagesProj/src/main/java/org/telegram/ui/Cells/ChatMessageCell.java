@@ -859,9 +859,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return msg != null && msg.getDialogId() == UserObject.REPLY_BOT;
         }
 
-        default void didPressAboutRevenueSharingAds() {
 
-        }
 
         default void didPressRevealSensitiveContent(ChatMessageCell cell) {
 
@@ -3959,37 +3957,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         return false;
     }
 
-    private boolean checkTitleLabelMotion(MotionEvent event) {
-        if (!currentMessageObject.isSponsored() || !currentMessageObject.sponsoredCanReport) {
-            return false;
-        }
 
-        int x = (int) getEventX(event);
-        int y = (int) getEventY(event);
-
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            if (x >= titleLabelX - dp(6) && x <= titleLabelX + titleLabelLayoutWidth + dp(6)
-                    && y >= titleLabelY - dp(2) && y <= titleLabelY + titleLabelLayoutHeight + dp(2)) {
-                if (titleLabelBounce != null) {
-                    titleLabelBounce.setPressed(true);
-                }
-                isTitleLabelPressed = true;
-                return true;
-            }
-        } else if (event.getAction() == MotionEvent.ACTION_UP) {
-            if (isTitleLabelPressed) {
-                if (delegate != null) {
-                    delegate.didPressAboutRevenueSharingAds();
-                }
-                if (titleLabelBounce != null) {
-                    titleLabelBounce.setPressed(false);
-                }
-                playSoundEffect(SoundEffectConstants.CLICK);
-                isTitleLabelPressed = false;
-            }
-        }
-        return false;
-    }
 
     private void invalidateWithParent() {
         if (currentMessagesGroup != null && getParent() != null) {
@@ -5013,9 +4981,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
         if (!result) {
             result = checkAudioMotionEvent(event);
-        }
-        if (!result) {
-            result = checkTitleLabelMotion(event);
         }
         if (!result) {
             result = checkContactMotionEvent(event);
