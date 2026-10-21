@@ -7237,35 +7237,6 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public long getSendPaidMessagesStars(long did) {
-        if (did > 0) {
-            if (did == getUserConfig().getClientUserId()) {
-                return 0;
-            }
-            final TLRPC.UserFull userFull = getUserFull(did);
-            if (userFull != null) {
-                return userFull.send_paid_messages_stars;
-            }
-            final TLRPC.User user = getUser(did);
-            if (user != null && user.send_paid_messages_stars > 0) {
-                return DialogObject.getMessagesStarsPrice(isUserContactBlocked(user.id));
-            }
-        } else if (did < 0) {
-            final TLRPC.Chat chat = getChat(-did);
-            if (ChatObject.hasAdminRights(chat)) {
-                return 0;
-            }
-            if (ChatObject.isMonoForum(chat) && ChatObject.canManageMonoForum(currentAccount, chat)) {
-                return 0;
-            }
-
-            TLRPC.ChatFull chatFull = getChatFull(-did);
-            if (chatFull != null) {
-                return chatFull.send_paid_messages_stars;
-            } else if (chat != null) {
-                return chat.send_paid_messages_stars;
-            }
-            return 0;
-        }
         return 0;
     }
 
@@ -19158,11 +19129,6 @@ public class MessagesController extends BaseController implements NotificationCe
                     updatesOnMainThread = new ArrayList<>();
                 }
                 updatesOnMainThread.add(baseUpdate);
-            } else if (baseUpdate instanceof TL_update.TL_updateMonoForumNoPaidException) {
-                if (updatesOnMainThread == null) {
-                    updatesOnMainThread = new ArrayList<>();
-                }
-                updatesOnMainThread.add(baseUpdate);
             } else if (baseUpdate instanceof TL_update.TL_updateUserPhoto) {
                 TL_update.TL_updateUserPhoto update = (TL_update.TL_updateUserPhoto) baseUpdate;
                 interfaceUpdateMask |= UPDATE_MASK_AVATAR;
@@ -20057,13 +20023,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         if (update.user_id == getUserConfig().getClientUserId()) {
                             getNotificationsController().setLastOnlineFromOtherDevice(update.status.expires);
                         }
-                    } else if (baseUpdate instanceof TL_update.TL_updateMonoForumNoPaidException) {
-                        TL_update.TL_updateMonoForumNoPaidException update = (TL_update.TL_updateMonoForumNoPaidException) baseUpdate;
-                        StarsController.getInstance(currentAccount).processUpdateMonoForumNoPaidException(
-                            update.channel_id,
-                            DialogObject.getPeerDialogId(update.saved_peer_id),
-                            update.exception
-                        );
                     } else if (baseUpdate instanceof TL_update.TL_updatePeerWallpaper) {
                         TL_update.TL_updatePeerWallpaper update = (TL_update.TL_updatePeerWallpaper) baseUpdate;
                         ChatThemeController.getInstance(currentAccount).processUpdate(update);

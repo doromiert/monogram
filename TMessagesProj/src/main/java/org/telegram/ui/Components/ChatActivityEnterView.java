@@ -3573,32 +3573,10 @@ public class ChatActivityEnterView extends FrameLayout implements
         viewParentForEmojiView = viewParent;
     }
 
-    private long paidMessagesPrice;
     public void updateSendButtonPaid() {
-        long paidMessagesPrice = getStarsPrice();
-        if (paidMessagesPrice > 0) {
-            paidMessagesPrice *= getMessagesCount();
-        }
-        if (this.paidMessagesPrice != paidMessagesPrice) {
-            final View oldSendButton = getSendButtonInternal();
-            this.paidMessagesPrice = paidMessagesPrice;
-            final View newSendButton = getSendButtonInternal();
-            if (oldSendButton != newSendButton) {
-                newSendButton.setVisibility(oldSendButton.getVisibility());
-                newSendButton.setAlpha(oldSendButton.getAlpha());
-                newSendButton.setScaleX(oldSendButton.getScaleX());
-                newSendButton.setScaleY(oldSendButton.getScaleY());
-
-                oldSendButton.setVisibility(View.GONE);
-            }
-            if (paidMessagesPrice > 0 || isLiveComment) {
-                sendButton.setStarsPrice(paidMessagesPrice, 1);
-            }
-            updateFieldRight(lastAttachVisible);
-        }
         if (isLiveComment) {
             createCaptionLimitView();
-            int newLimit = areLiveCommentsFree() ? HighlightMessageSheet.getMaxLength(currentAccount) : HighlightMessageSheet.getTierOption(currentAccount, (int) paidMessagesPrice, HighlightMessageSheet.TIER_LENGTH);
+            int newLimit = HighlightMessageSheet.getMaxLength(currentAccount);
             if (currentLimit != newLimit) {
                 currentLimit = newLimit;
                 int beforeLimit;
@@ -3634,13 +3612,11 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     public long getStarsPrice() {
-        return parentFragment != null ?
-                parentFragment.getMessagesController().getSendPaidMessagesStars(parentFragment.getDialogId()) :
-                MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(dialog_id);
+        return 0;
     }
 
     public boolean areLiveCommentsFree() {
-        return false;
+        return true;
     }
 
     public int getMessagesCount() {
@@ -6751,11 +6727,6 @@ public class ChatActivityEnterView extends FrameLayout implements
         }
         updateSendButtonPaid();
         final boolean isPostSuggestions = parentFragment != null && parentFragment.getChatMode() == ChatActivity.MODE_SUGGESTIONS && parentFragment.isSubscriberSuggestions;
-        long paidMessagesStarsPrice = (parentFragment != null ? parentFragment.getMessagesController().getSendPaidMessagesStars(parentFragment.getDialogId()) : 0);
-        if (paidMessagesStarsPrice > 0) {
-            paidMessagesStarsPrice *= getMessagesCount();
-        }
-
         final int chatActivityMode = parentFragment != null ? parentFragment.getChatMode() : -1;
 
         if (chatActivityMode == ChatActivity.MODE_WELCOME_MESSAGES) {
@@ -6769,9 +6740,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 messageEditText.setHintText(getString(R.string.BusinessRepliesEnter));
             }
         } else if (isPostSuggestions) {
-            final CharSequence hint = paidMessagesStarsPrice > 0 ?
-                StarsIntroActivity.replaceStars(LocaleController.formatString(R.string.SuggestPostForStars, LocaleController.formatNumber((int) paidMessagesStarsPrice, ','), spans)):
-                LocaleController.formatString(R.string.SuggestPostForFree);
+            final CharSequence hint = LocaleController.formatString(R.string.SuggestPostForFree);
             messageEditText.setHintText(hint);
             if (spans[0] != null) {
                 spans[0].spaceScaleX = 0.9f;
@@ -6782,11 +6751,6 @@ public class ChatActivityEnterView extends FrameLayout implements
             messageEditText.setHintText(replyingMessageObject.messageOwner.reply_markup.placeholder, animated);
         } else if (editingMessageObject != null) {
             messageEditText.setHintText(editingCaption ? getString(R.string.Caption) : getString(R.string.TypeMessage));
-        } else if (paidMessagesStarsPrice > 0) {
-            messageEditText.setHintText(StarsIntroActivity.replaceStars(LocaleController.formatString(R.string.TypeMessageForStars, LocaleController.formatNumber((int) paidMessagesStarsPrice, ',')), spans));
-            if (spans[0] != null) {
-                spans[0].spaceScaleX = 0.9f;
-            }
         } else if (botKeyboardViewVisible && botButtonsMessageObject != null && botButtonsMessageObject.messageOwner.reply_markup != null && !TextUtils.isEmpty(botButtonsMessageObject.messageOwner.reply_markup.placeholder)) {
             messageEditText.setHintText(botButtonsMessageObject.messageOwner.reply_markup.placeholder, animated);
         } else if (parentFragment != null && parentFragment.isForumInViewAsMessagesMode()) {
@@ -9881,15 +9845,10 @@ public class ChatActivityEnterView extends FrameLayout implements
             createDoneButton(false);
             doneButton.setOnClickListener(view -> doneEditingMessage());
 
-            if (editingMessageObject.needResendWhenEdit() && paidMessagesPrice > 0) {
-                doneButton.setStarsPrice(paidMessagesPrice, 1, true);
-                doneButton.setLayoutParams(LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.RIGHT));
-                doneButton.requestLayout();
-            } else {
-                doneButton.setStarsPrice(0, 1, true);
-                doneButton.setLayoutParams(LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.RIGHT));
-                doneButton.requestLayout();
-            }
+
+            doneButton.setStarsPrice(0, 1, true);
+            doneButton.setLayoutParams(LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.BOTTOM | Gravity.RIGHT));
+            doneButton.requestLayout();
 
             doneButton.setOnLongClickListener(v -> {
                 if (messageObject.isMediaEmpty()) return false;

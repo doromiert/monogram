@@ -1716,66 +1716,14 @@ public class StarsController {
         }));
     }
 
-    public void getPaidRevenue(long user_id, long parent_id, Utilities.Callback<Long> got) {
-        final TL_account.getPaidMessagesRevenue req = new TL_account.getPaidMessagesRevenue();
-        req.user_id = MessagesController.getInstance(currentAccount).getInputUser(user_id);
-        if (parent_id != 0) {
-            req.parent_peer = MessagesController.getInstance(currentAccount).getInputPeer(parent_id);
-        }
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-            if (res instanceof TL_account.paidMessagesRevenue) {
-                got.run(((TL_account.paidMessagesRevenue) res).stars_amount);
-            } else {
-                got.run(0L);
-            }
-        }));
-    }
-
-    public void stopPaidMessages(long user_id, long parent_id, boolean refund, boolean stop) {
-        final TL_account.toggleNoPaidMessagesException req = new TL_account.toggleNoPaidMessagesException();
-        req.user_id = MessagesController.getInstance(currentAccount).getInputUser(user_id);
-        if (parent_id != 0) {
-            req.parent_peer = MessagesController.getInstance(currentAccount).getInputPeer(parent_id);
-        }
-        req.refund_charged = refund;
-        req.require_payment = !stop;
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-            if (res instanceof TLRPC.TL_boolTrue) {
-                if (parent_id != 0) {
-                    processUpdateMonoForumNoPaidException(-parent_id, user_id, stop);
-                } else {
-                    TLRPC.UserFull userFull = MessagesController.getInstance(currentAccount).getUserFull(user_id);
-                    if (userFull != null && userFull.settings != null) {
-                        userFull.settings.flags &= ~16384;
-                        userFull.settings.charge_paid_message_stars = 0;
-                    }
-                    MessagesController.getNotificationsSettings(currentAccount).edit().putLong("dialog_bar_paying_" + user_id, 0L).apply();
-                    MessagesController.getInstance(currentAccount).loadPeerSettings(
-                        MessagesController.getInstance(currentAccount).getUser(user_id),
-                        MessagesController.getInstance(currentAccount).getChat(-user_id),
-                        true
-                    );
-                    ContactsController.getInstance(currentAccount).loadPrivacySettings(true);
-                    NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messagesFeeUpdated, user_id);
-                }
-            }
-        }));
-    }
-
-    public void processUpdateMonoForumNoPaidException(long channelId, long userId, boolean nopaidMessagesException) {
-        TopicsController topicsController = MessagesController.getInstance(currentAccount).getTopicsController();
-        TLRPC.TL_forumTopic topic = topicsController.findTopic(channelId, userId);
-        if (topic != null) {
-            topic.nopaid_messages_exception = nopaidMessagesException;
-            topicsController.saveTopics(channelId);
-
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messagesFeeUpdated, userId);
-        }
-    }
 
 
 
-    public static final long PAID_MESSAGES_TIMEOUT = 3_000;
+
+
+
+
+
 
 
 

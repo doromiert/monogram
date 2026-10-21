@@ -2429,15 +2429,11 @@ public class AlertsCreator {
 
 
 
+
+
+
+
     public static AlertDialog showAlertWithCheckbox(Context context, CharSequence title, CharSequence message, CharSequence check, CharSequence button, Utilities.Callback<Boolean> onAction, Theme.ResourcesProvider resourcesProvider) {
-        return showAlertWithCheckbox(context, title, message, check, button, onAction, resourcesProvider, false);
-    }
-
-    public static AlertDialog showAlertWithCheckboxWithBalance(Context context, CharSequence title, CharSequence message, CharSequence check, CharSequence button, Utilities.Callback<Boolean> onAction, Theme.ResourcesProvider resourcesProvider) {
-        return showAlertWithCheckbox(context, title, message, check, button, onAction, resourcesProvider, true);
-    }
-
-    public static AlertDialog showAlertWithCheckbox(Context context, CharSequence title, CharSequence message, CharSequence check, CharSequence button, Utilities.Callback<Boolean> onAction, Theme.ResourcesProvider resourcesProvider, boolean withBalance) {
         if (context == null) {
             onAction.run(false);
             return null;
@@ -2509,9 +2505,7 @@ public class AlertsCreator {
         });
         builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         AlertDialog d = builder.create();
-        if (withBalance) {
-            d.setShowStarsBalance(true);
-        }
+
         d.show();
         return d;
     }

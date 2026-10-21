@@ -146,3 +146,12 @@ The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse
 - Consumed retired Stars/Premium/Business/send-gift settings links without sales screens/catalogue requests, and `tg:stars`/`tg:send_gift` routes without recipient resolution or gift launch. Other generic gift resale/collectible links and their screens are still pending removal.
 - Remaining `GiftSheet` and `SendGiftSheet` classes and launches within other monetary screens are not claimed removed; shared gift artwork is still used by historical-message/other UI. Further passes must separate generic local styling from those purchase screens before deleting them.
 - Source-only review; no tests/build/device actions. Next APK checks must cover ordinary composer buttons, scheduled-send position, channel search/direct controls, context menus, home hints and retired links.
+
+### Paid-message fee UI and revenue cleanup (source only)
+
+- `MessagesController.getSendPaidMessagesStars` now provides zero for legacy callers; no paid-account identity/permission is fabricated. Removed paid-fee exception update queuing/dispatch and the Stars handler, fee revenue lookup and refund/charge exception RPCs.
+- Removed chat fee menu controls/header text, monetary top-panel/checkbox balance dialogs, balance prefetch and paid-price send-error popup. Normal verification/report/top-panel paths remain. Removed Premium-required contact overlay/greeting purchase actions and their premium-contact requery hooks; ordinary greetings/intro rendering stays on its existing path.
+- Composer price API is zero; removed price-dependent send/edit-button changes and “type/suggest for Stars” hints. Legacy update method still updates ordinary live-comment length feedback using the configured maximum without a paid tier. Removed fee suppression of scheduled-send hints and scheduling availability. Existing chat/admin/send permissions still apply.
+- Generic checkbox alert now has a single ordinary API and no monetary balance header variant. Existing callers retain the original checkbox behavior.
+- Remaining monetary suggested-post offers/balance sheet, shared send-button price rendering and generic gift/sales controllers still need removal. This pass does not claim all monetary message schemas/send parameters are gone.
+- Source-only inspection; no build/tests/phone actions. At next APK delivery verify compilation, composer send/edit/schedule, ordinary greetings, top-panel reports and checkbox alerts.
