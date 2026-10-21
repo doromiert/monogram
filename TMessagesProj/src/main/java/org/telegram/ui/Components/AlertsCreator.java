@@ -136,7 +136,6 @@ import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.LoginActivity;
 import org.telegram.ui.NotificationsCustomSettingsActivity;
 import org.telegram.ui.NotificationsSettingsActivity;
-import org.telegram.ui.PremiumFeatureCell;
 import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.PrivacyControlActivity;
 import org.telegram.ui.ProfileActivity;
@@ -8923,78 +8922,5 @@ public class AlertsCreator {
         return sheet[0] = builder.create();
     }
 
-    public static void showDisableSharingInfo(Context context, Theme.ResourcesProvider resourcesProvider, Runnable onClick) {
-        if (context == null) {
-            return;
-        }
 
-        final boolean[] disabled = new boolean[1];
-
-        BottomSheet.Builder b = new BottomSheet.Builder(context);
-        Runnable dismiss = b.getDismissRunnable();
-
-        final LinearLayout linearLayout = new LinearLayout(context);
-        linearLayout.setOrientation(LinearLayout.VERTICAL);
-        linearLayout.setClipChildren(false);
-        linearLayout.setClipToPadding(false);
-
-        RLottieImageView backupImageView = new RLottieImageView(context);
-        linearLayout.addView(backupImageView, LayoutHelper.createLinear(110, 110, Gravity.CENTER, 0, 21, 0, 11));
-        backupImageView.setAnimation(R.raw.raised_hand, 110, 110);
-        backupImageView.setAutoRepeat(false);
-        backupImageView.playAnimation();
-
-        final TextView titleView = new TextView(context);
-        titleView.setTypeface(AndroidUtilities.bold());
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setText(getString(R.string.DisableSharingInfoHeader));
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        linearLayout.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 20, 0, 20, 14));
-
-        {
-            PremiumFeatureCell cell = new PremiumFeatureCell(context, resourcesProvider);
-            cell.title.setText(getString(R.string.DisableSharingInfoHeader1));
-            cell.description.setText(getString(R.string.DisableSharingInfoText1));
-            cell.nextIcon.setVisibility(View.GONE);
-            cell.imageView.setImageResource(R.drawable.menu_photo_off_24);
-            cell.imageView.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, -2));
-        }
-        {
-            PremiumFeatureCell cell = new PremiumFeatureCell(context, resourcesProvider);
-            cell.title.setText(getString(R.string.DisableSharingInfoHeader2));
-            cell.description.setText(getString(R.string.DisableSharingInfoText2));
-            cell.nextIcon.setVisibility(View.GONE);
-            cell.imageView.setImageResource(R.drawable.menu_share_off_24);
-            cell.imageView.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, -2));
-        }
-        {
-            PremiumFeatureCell cell = new PremiumFeatureCell(context, resourcesProvider);
-            cell.title.setText(getString(R.string.DisableSharingInfoHeader3));
-            cell.description.setText(getString(R.string.DisableSharingInfoText3));
-            cell.nextIcon.setVisibility(View.GONE);
-            cell.imageView.setImageResource(R.drawable.menu_download_off_24);
-            cell.imageView.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 6, 0, 6, 8));
-        }
-        {
-            ButtonWithCounterView button = new ButtonWithCounterView(context, resourcesProvider);
-            button.setOnClickListener(v -> {
-                disabled[0] = true;
-                dismiss.run();
-            });
-            button.setRound();
-            button.setText(getString(R.string.DisableSharingInfoButton), false);
-            linearLayout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 16, 10, 16, 8));
-        }
-        b.setCustomView(linearLayout);
-        BottomSheet sheet = b.show();
-        sheet.setOnDismissListener(() -> {
-            if (disabled[0] && onClick != null) {
-                onClick.run();
-            }
-        });
-    }
 }

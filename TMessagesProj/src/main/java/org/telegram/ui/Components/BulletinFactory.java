@@ -1483,24 +1483,7 @@ public final class BulletinFactory {
     }
 
     @CheckResult
-    public static Bulletin createDissableSharingBulletin(BaseFragment fragment, String pendingUsername, boolean sharingDisabled) {
-        final Bulletin.LottieLayout layout = new Bulletin.LottieLayout(fragment.getParentActivity(), fragment.getResourceProvider());
-        final String text;
-        if (pendingUsername != null) {
-            text = LocaleController.formatString(sharingDisabled ?
-                R.string.DisableSharingToastDisabledPending :
-                R.string.DisableSharingToastEnabledPending, pendingUsername);
-        } else {
-            text = LocaleController.getString(sharingDisabled ?
-                R.string.DisableSharingToastDisabled :
-                R.string.DisableSharingToastEnabled);
-        }
 
-        layout.textView.setText(AndroidUtilities.replaceTags(text));
-        layout.setAnimation(sharingDisabled || pendingUsername != null ? R.raw.e_hand_2 : R.raw.contact_check);
-
-        return Bulletin.make(fragment, layout, Bulletin.DURATION_PROLONG);
-    }
 
     @CheckResult
     public Bulletin createBanBulletin(boolean banned) {

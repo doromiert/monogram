@@ -105,7 +105,6 @@ import org.telegram.ui.AvatarSpan;
 import org.telegram.ui.ChannelAdminLogActivity;
 import org.telegram.ui.ChatBackgroundDrawable;
 import org.telegram.ui.community.CommunitySheet;
-import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
@@ -800,11 +799,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
                     final long requestTtl = MessagesController.getInstance(currentAccount).config.noForwardsRequestExpirePeriod.get(TimeUnit.SECONDS);
                     offerExpired = action.expired || messageObject.messageOwner.date + requestTtl < ConnectionsManager.getInstance(currentAccount).getCurrentTime();
 
-                    if (!messageObject.isOut() && !action.expired && (!offerExpired)) {
-                        final BotInlineKeyboard.Builder b = new BotInlineKeyboard.Builder();
-                        b.addSharingOfferKeyboard();
-                        botInlineButtons = b.build();
-                    }
+
                 } else if (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionStarGiftPurchaseOffer) {
                     final TLRPC.TL_messageActionStarGiftPurchaseOffer action = (TLRPC.TL_messageActionStarGiftPurchaseOffer) messageObject.messageOwner.action;
                     final TL_stars.StarGift gift = action.gift;
@@ -3672,11 +3667,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
                     button.selectorDrawable.setState(StateSet.NOTHING);
                 }
                 button.setPressed(false);
-                if (delegate != null && !button.isLocked) {
-                    if (button.buttonCustom != null) {
-                        didPressCustomBotButton(button.buttonCustom);
-                    }
-                }
+
                 pressedBotButton = -1;
                 invalidateOutbounds();
             }
@@ -3694,31 +3685,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
         return result;
     }
 
-    private void didPressCustomBotButton(BotInlineKeyboard.ButtonCustom button) {
-        if (getMessageObject() == null) {
-            return;
-        }
 
-        if (button.id == BotInlineKeyboard.ButtonCustom.SHARING_OFFER_DECLINE) {
-            final BaseFragment fragment = delegate != null ? delegate.getBaseFragment() : null;
-            if (fragment != null && currentMessageObject != null && currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.action instanceof TLRPC.TL_messageActionNoForwardsRequest) {
-                final TLRPC.TL_messageActionNoForwardsRequest action = (TLRPC.TL_messageActionNoForwardsRequest) currentMessageObject.messageOwner.action;
-                AlertsCreator.showSimpleConfirmAlert(fragment, getString(action.prev_value ? R.string.SharingOfferDisableCancelTitle : R.string.SharingOfferEnableCancelTitle),
-                    getString(action.prev_value ? R.string.SharingOfferDisableCancelText : R.string.SharingOfferEnableCancelText),
-                    getString(R.string.SharingOfferCancelYes), false,
-                    () -> MessagesController.getInstance(currentAccount).toggleChatNoForwards(currentMessageObject.getDialogId(), currentMessageObject.getId(), action.prev_value, null));
-            }
-        } else if (button.id == BotInlineKeyboard.ButtonCustom.SHARING_OFFER_ACCEPT) {
-            final BaseFragment fragment = delegate != null ? delegate.getBaseFragment() : null;
-            if (fragment != null && currentMessageObject != null && currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.action instanceof TLRPC.TL_messageActionNoForwardsRequest) {
-                final TLRPC.TL_messageActionNoForwardsRequest action = (TLRPC.TL_messageActionNoForwardsRequest) currentMessageObject.messageOwner.action;
-                AlertsCreator.showSimpleConfirmAlert(fragment, getString(action.new_value ? R.string.SharingOfferDisableCancelTitle : R.string.SharingOfferEnableCancelTitle),
-                    getString(action.new_value ? R.string.SharingOfferDisableConfirmText : R.string.SharingOfferEnableConfirmText),
-                    getString(R.string.SharingOfferCancelYes), false,
-                    () -> MessagesController.getInstance(currentAccount).toggleChatNoForwards(currentMessageObject.getDialogId(), currentMessageObject.getId(), action.new_value, null));
-            }
-        }
-    }
 
     public void drawReactions(Canvas canvas, boolean fromParent, Integer only) {
         if (canDrawInParent) {

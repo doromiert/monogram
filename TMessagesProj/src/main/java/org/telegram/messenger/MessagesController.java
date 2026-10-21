@@ -15260,49 +15260,15 @@ public class MessagesController extends BaseController implements NotificationCe
         }, ConnectionsManager.RequestFlagInvokeAfter);
     }
 
-    public void toggleChatNoForwards(long dialogId, boolean enabled) {
-        toggleChatNoForwards(dialogId, 0, enabled, null);
-    }
-
-
-    public static final int TOGGLE_NO_FORWARDS_RESULT_ERROR = 0;
-    public static final int TOGGLE_NO_FORWARDS_RESULT_OK = 1;
-    public static final int TOGGLE_NO_FORWARDS_RESULT_PENDING = 2;
-
-    public void toggleChatNoForwards(long dialogId, int msgId, boolean enabled, Utilities.Callback2<Integer, TLRPC.TL_error> callback) {
+    public void toggleGroupNoForwards(long chatId, boolean enabled) {
         TLRPC.TL_messages_toggleNoForwards req = new TLRPC.TL_messages_toggleNoForwards();
-        req.peer = getInputPeer(dialogId);
+        req.peer = getInputPeer(-chatId);
         req.enabled = enabled;
-        if (msgId > 0) {
-            req.request_msg_id = msgId;
-            req.flags |= TLObject.FLAG_0;
-        }
         getConnectionsManager().sendRequestTyped(req, null, (response, error) -> {
             if (response != null) {
-                int status = TOGGLE_NO_FORWARDS_RESULT_ERROR;
-                for (TLRPC.Update update : response.updates) {
-                    if (update instanceof TL_update.TL_updateNewMessage) {
-                        TLRPC.Message message = ((TL_update.TL_updateNewMessage) update).message;
-                        if (message.action instanceof TLRPC.TL_messageActionNoForwardsRequest) {
-                            status = TOGGLE_NO_FORWARDS_RESULT_PENDING;
-                            break;
-                        } else if (message.action instanceof TLRPC.TL_messageActionNoForwardsToggle) {
-                            status = TOGGLE_NO_FORWARDS_RESULT_OK;
-                            break;
-                        }
-                    }
-                }
                 processUpdates(response, false);
-
-                final int finalStatus = status;
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (callback != null) {
-                        callback.run(finalStatus, null);
-                    }
-                    getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_CHAT);
-                });
-            } else if (callback != null) {
-                AndroidUtilities.runOnUIThread(() -> callback.run(TOGGLE_NO_FORWARDS_RESULT_ERROR, error));
+                AndroidUtilities.runOnUIThread(() ->
+                        getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, UPDATE_MASK_CHAT));
             }
         }, ConnectionsManager.RequestFlagInvokeAfter);
     }

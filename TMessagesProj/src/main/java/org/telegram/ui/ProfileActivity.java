@@ -571,8 +571,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private final static int set_username = 43;
     private final static int bot_privacy = 44;
     private final static int delete_group = 45;
-    private final static int enable_no_forwards = 46;
-    private final static int disable_no_forwards = 47;
     private final static int send_money = 48;
 
     private Rect rect = new Rect();
@@ -2588,15 +2586,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     leaveChatPressed(false);
                 } else if (id == delete_group) {
                     leaveChatPressed(true);
-                } else if (id == enable_no_forwards) {
-                    if (!getUserConfig().isPremium()) {
-                        new PremiumFeatureBottomSheet(ProfileActivity.this, getContext(), currentAccount, false, PremiumPreviewFragment.PREMIUM_FEATURE_SHARING_DISABLE, false, null).show();
-                        return;
-                    }
-
-                    AlertsCreator.showDisableSharingInfo(context, resourcesProvider, () -> toggleNoForwards(true));
-                } else if (id == disable_no_forwards) {
-                    toggleNoForwards(false);
                 } else if (id == delete_topic) {
                     AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
                     builder.setTitle(LocaleController.getPluralString("DeleteTopics", 1));
@@ -5876,26 +5865,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         return fragmentView;
     }
 
-    private void toggleNoForwards(boolean enabled) {
-        getMessagesController().toggleChatNoForwards(userId, 0, enabled, (res, err) -> {
-            if (finishFragmentIfPreviousIsChatActivity()) {
-                return;
-            }
 
-            if (BulletinFactory.canShowBulletin(ProfileActivity.this)) {
-                if (res == MessagesController.TOGGLE_NO_FORWARDS_RESULT_OK) {
-                    BulletinFactory.createDissableSharingBulletin(ProfileActivity.this, null, enabled).show();
-                } else if (res == MessagesController.TOGGLE_NO_FORWARDS_RESULT_PENDING) {
-                    BulletinFactory.createDissableSharingBulletin(ProfileActivity.this, DialogObject.getShortName(userId), enabled).show();
-                } else if (err != null) {
-                    BulletinFactory.showError(err);
-                }
-            }
-            if (flagSecure != null) {
-                flagSecure.invalidate();
-            }
-        });
-    }
 
     public void startTabsReorder() {
         sharedMediaLayout.scrollSlidingTextTabStrip.setReordering(true);
@@ -9053,9 +9023,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         otherItem.hideSubItem(bot_privacy);
                     }
 
-                    final boolean forwardsAllowed = !userInfo.noforwards_my_enabled && !userInfo.noforwards_peer_enabled;
-                    otherItem.setSubItemShown(enable_no_forwards, forwardsAllowed);
-                    otherItem.setSubItemShown(disable_no_forwards, !forwardsAllowed);
+
                 }
             }
         } else if (id == NotificationCenter.privacyRulesUpdated) {
@@ -11808,14 +11776,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     otherItem.addSubItem(start_secret_chat, R.drawable.msg_secret, LocaleController.getString(R.string.StartEncryptedChat));
 
 
-                    if (userInfo != null) {
-                        otherItem.addSubItem(enable_no_forwards, R.drawable.menu_share_off_24, getString(R.string.DisableSharing));
-                        otherItem.addSubItem(disable_no_forwards, R.drawable.menu_share_on_24, getString(R.string.EnableSharing));
 
-                        final boolean forwardsAllowed = !userInfo.noforwards_my_enabled && !userInfo.noforwards_peer_enabled;
-                        otherItem.setSubItemShown(enable_no_forwards, forwardsAllowed);
-                        otherItem.setSubItemShown(disable_no_forwards, !forwardsAllowed);
-                    }
                 }
                 if (!isBot && getContactsController().contactsDict.get(userId) != null) {
                     otherItem.addSubItem(add_shortcut, R.drawable.msg_home, LocaleController.getString(R.string.AddShortcut));
