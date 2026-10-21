@@ -2750,7 +2750,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     openAddMember();
                 } else if (id == statistics) {
                     TLRPC.Chat chat = getMessagesController().getChat(chatId);
-                    presentFragment(StatisticActivity.create(chat, false));
+                    presentFragment(StatisticActivity.create(chat));
                 } else if (id == view_discussion) {
                     openDiscussion();
                 } else if (id == channel_stories) {

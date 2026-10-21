@@ -13,7 +13,6 @@ import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.messenger.utils.CurrencyFormatter.percents;
 
 import android.Manifest;
 import android.animation.Animator;
@@ -258,7 +257,6 @@ import org.telegram.ui.Components.*;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
 import org.telegram.ui.Components.Forum.ForumUtilities;
-import org.telegram.ui.Components.Premium.GiftPremiumBottomSheet;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumPreviewBottomSheet;
@@ -1646,7 +1644,6 @@ public class ChatActivity extends BaseFragment implements
     private final static int auto_delete_timer = 26;
     private final static int change_colors = 27;
     private final static int tag_message = 28;
-    private final static int boost_group = 29;
 
     private final static int bot_help = 30;
     private final static int bot_settings = 31;
@@ -4009,14 +4006,6 @@ public class ChatActivity extends BaseFragment implements
                     } catch (Exception e) {
                         FileLog.e(e);
                     }
-                } else if (id == boost_group) {
-                    if (ChatObject.hasAdminRights(currentChat)) {
-                        BoostsActivity boostsActivity = new BoostsActivity(dialog_id);
-                        boostsActivity.setBoostsStatus(boostsStatus);
-                        presentFragment(boostsActivity);
-                    } else {
-                        getNotificationCenter().postNotificationName(NotificationCenter.openBoostForUsersDialog, dialog_id);
-                    }
                 } else if (id == report) {
                     ReportBottomSheet.openChat(ChatActivity.this);
                 } else if (id == star) {
@@ -4536,10 +4525,7 @@ public class ChatActivity extends BaseFragment implements
             if (searchItem != null) {
                 headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));
             }
-            if (ChatObject.isBoostSupported(currentChat) && (getUserConfig().isPremium() || ChatObject.isBoosted(chatInfo) || ChatObject.hasAdminRights(currentChat))) {
-                RLottieDrawable drawable = new RLottieDrawable(R.raw.boosts, dp(24), dp(24));
-                headerItem.lazilyAddSubItem(boost_group, drawable, LocaleController.getString(ChatObject.isChannelAndNotMegaGroup(currentChat) ? R.string.BoostingBoostChannelMenu : R.string.BoostingBoostGroupMenu));
-            }
+
             translateItem = headerItem.lazilyAddSubItem(translate, R.drawable.msg_translate, LocaleController.getString(R.string.TranslateMessage));
             updateTranslateItemVisibility();
             if (currentChat != null && !currentChat.creator && !ChatObject.hasAdminRights(currentChat)) {

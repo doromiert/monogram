@@ -45,7 +45,6 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.BoostsActivity;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
@@ -100,19 +99,8 @@ public class BoostDialogs {
 
     private static void showBulletin(final BulletinFactory bulletinFactory, Theme.ResourcesProvider resourcesProvider, final TLRPC.Chat chat, final boolean isGiveaway) {
         AndroidUtilities.runOnUIThread(() -> bulletinFactory.createSimpleBulletin(R.raw.star_premium_2,
-                isGiveaway ? getString("BoostingGiveawayCreated", R.string.BoostingGiveawayCreated)
-                        : getString("BoostingAwardsCreated", R.string.BoostingAwardsCreated),
-                AndroidUtilities.replaceSingleTag(
-                        isGiveaway ? getString(ChatObject.isChannelAndNotMegaGroup(chat) ? R.string.BoostingCheckStatistic : R.string.BoostingCheckStatisticGroup) :
-                                getString(ChatObject.isChannelAndNotMegaGroup(chat) ? R.string.BoostingCheckGiftsStatistic : R.string.BoostingCheckGiftsStatisticGroup),
-                        Theme.key_undo_cancelColor, 0, () -> {
-                            if (chat != null) {
-                                BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();
-                                params.transitionFromLeft = true;
-                                LaunchActivity.getLastFragment().showAsSheet(new BoostsActivity(-chat.id), params);
-                            }
-                        }, resourcesProvider)
-        ).setDuration(Bulletin.DURATION_PROLONG).show(), 300);
+                getString(isGiveaway ? R.string.BoostingGiveawayCreated : R.string.BoostingAwardsCreated))
+                .setDuration(Bulletin.DURATION_PROLONG).show(), 300);
     }
 
     public static void showGiftLinkForwardedBulletin(long did) {

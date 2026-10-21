@@ -1244,7 +1244,7 @@ public class ChatEditActivity extends BaseFragment implements ImageUpdater.Image
                 statsAndBoosts.setTextAndIcon(getString(R.string.StatisticsAndBoosts), R.drawable.msg_stats, true);
                 statsAndBoosts.setBackground(Theme.getSelectorDrawable(false));
                 statsAndBoosts.setOnClickListener(v -> {
-                    presentFragment(StatisticActivity.create(currentChat, false));
+                    presentFragment(StatisticActivity.create(currentChat));
                 });
             }
 

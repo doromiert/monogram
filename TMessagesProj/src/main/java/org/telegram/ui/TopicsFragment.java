@@ -117,7 +117,6 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.Components.NumberTextView;
 import org.telegram.ui.Components.PullForegroundDrawable;
-import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.RecyclerAnimationScrollHelper;
 import org.telegram.ui.Components.RecyclerItemsEnterAnimator;
@@ -200,7 +199,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
     private static final int delete_chat_id = 11;
     private static final int hide_id = 12;
     private static final int show_id = 13;
-    private static final int boost_group_id = 14;
     private static final int report = 15;
 
     private boolean removeFragmentOnTransitionEnd;
@@ -216,7 +214,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
     private ActionBarMenuSubItem createTopicSubmenu;
     private ActionBarMenuSubItem addMemberSubMenu;
     private ActionBarMenuSubItem deleteChatSubmenu;
-    private ActionBarMenuSubItem boostGroupSubmenu;
     private ActionBarMenuSubItem reportSubmenu;
     private boolean bottomPannelVisible = true;
     private float searchAnimationProgress = 0f;
@@ -703,17 +700,7 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
                             bottomSheet.show();
                         }
                         break;
-                    case boost_group_id: {
-                        TLRPC.Chat chatLocal = getMessagesController().getChat(chatId);
-                        if (ChatObject.hasAdminRights(chatLocal)) {
-                            BoostsActivity boostsActivity = new BoostsActivity(-chatId);
-                            boostsActivity.setBoostsStatus(boostsStatus);
-                            presentFragment(boostsActivity);
-                        } else {
-                            getNotificationCenter().postNotificationName(NotificationCenter.openBoostForUsersDialog, -chatId);
-                        }
-                        break;
-                    }
+
                     case create_topic_id:
                         TopicCreateFragment fragment = TopicCreateFragment.create(chatId, 0);
                         presentFragment(fragment);
@@ -869,7 +856,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
         other.setContentDescription(getString(R.string.AccDescrMoreOptions));
         other.addSubItem(toggle_id, R.drawable.msg_discussion, getString(R.string.TopicViewAsMessages));
         addMemberSubMenu = other.addSubItem(add_member_id, R.drawable.msg_addcontact, getString(R.string.AddMember));
-        boostGroupSubmenu = other.addSubItem(boost_group_id, 0, new RLottieDrawable(R.raw.boosts, AndroidUtilities.dp(24), AndroidUtilities.dp(24)), getString(R.string.BoostingBoostGroupMenu), true, false);
         createTopicSubmenu = other.addSubItem(create_topic_id, R.drawable.msg_topic_create, getString(R.string.CreateTopic));
         reportSubmenu = other.addSubItem(report, R.drawable.msg_report, getString(R.string.ReportChat));
         deleteChatSubmenu = other.addSubItem(delete_chat_id, R.drawable.msg_leave, getString(R.string.LeaveMegaMenu), themeDelegate);
@@ -2638,7 +2624,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
 
         other.setVisibility(openedForSelect ? View.GONE : View.VISIBLE);
         addMemberSubMenu.setVisibility(ChatObject.canAddUsers(chatLocal) ? View.VISIBLE : View.GONE);
-        boostGroupSubmenu.setVisibility(ChatObject.isBoostSupported(chatLocal) && (getUserConfig().isPremium() || ChatObject.isBoosted(chatFull) || ChatObject.hasAdminRights(chatLocal)) ? View.VISIBLE : View.GONE);
         deleteChatSubmenu.setVisibility(chatLocal != null && !chatLocal.creator && !ChatObject.isNotInChat(chatLocal) ? View.VISIBLE : View.GONE);
         reportSubmenu.setVisibility(chatLocal != null && !chatLocal.creator && !ChatObject.hasAdminRights(chatLocal) ? View.VISIBLE : View.GONE);
         updateCreateTopicButton(true);
