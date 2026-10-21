@@ -297,3 +297,11 @@ Removed ChatEditActivity's Stars/TON balance section, revenue-screen click actio
 Deleted PostSuggestionsEditActivity after removing its chat-edit entry point and the remaining paid-message commission/settings paragraph in StarsIntroActivity. This removes that screen's Stars price slider and Telegram paid-message/broadcast-settings requests rather than presenting a nonfunctional paid feature on XMPP. Other StarsIntroActivity transaction/revenue UI and BotStarsActivity/controller consumers remain for subsequent cleanup.
 
 Source-only inspection covers deleted class/method references, edited class boundaries, notification branches and whitespace. No tests, compilation, APK or phone interaction; changes are unshipped and full monetization removal remains incomplete.
+
+### Channel revenue tab and bot revenue/withdrawal page
+
+Removed StatisticActivity's monetization tab, revenue-layout construction, start-from-revenue state, blur/scroll capture, padding and action-bar branches. Revenue permissions no longer qualify a chat for the statistics page. Retained statistics and the existing boost page, with tab creation matching the supported boost page; boost removal remains separate outstanding work.
+
+Removed StarsIntroActivity's bot revenue/statistics button and deleted BotStarsActivity, including its Stars/TON charts, transaction loading and withdrawal UI/requests. Its duration-format helper was moved privately into ChannelMonetizationLayout for the latter's remaining references. ChannelMonetizationLayout and BotStarsController still have other consumers; no claim that their transaction/network implementations have been fully removed.
+
+Source-only inspection covers deleted class/tab state references, surviving pager positions/page count, edited Java boundaries and whitespace. No tests, build, APK or phone interaction. Source changes are unshipped; shared revenue components, Stars entry paths, boost/Business/Premium code and resources remain in scope.

@@ -177,7 +177,6 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
     private SpannableStringBuilder starBalanceIcon;
     private AnimatedTextView starBalanceTextView;
     private TextView starBalanceTitleView;
-    private ButtonWithCounterView withdrawButton;
     private FrameLayout oneButtonsLayout;
     private ButtonWithCounterView buyButton;
     private LinearLayout twoButtonsLayout;
@@ -380,16 +379,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
         });
         twoButtonsLayout.addView(topupButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER, 1, 0, 0, 8, 0));
 
-        withdrawButton = new ButtonWithCounterView(getContext(), resourceProvider);
-        withdrawButton.setRound();
-        ssb = new SpannableStringBuilder("x  ");
-        ssb.setSpan(new ColoredImageSpan(R.drawable.mini_stats, ColoredImageSpan.ALIGN_CENTER), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        ssb.append(getString(R.string.StarsStats));
-        withdrawButton.setText(ssb, false);
-        withdrawButton.setOnClickListener(v -> {
-            presentFragment(new BotStarsActivity(BotStarsActivity.TYPE_STARS, getUserConfig().getClientUserId()));
-        });
-        twoButtonsLayout.addView(withdrawButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER, 1, 0, 0, 0, 0));
+
 
         balanceLayout.addView(buttonsLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER, 20, 17, 20, 0));
 

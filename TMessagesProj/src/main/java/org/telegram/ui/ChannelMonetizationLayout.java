@@ -90,7 +90,6 @@ import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.Components.ViewPagerFixed;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
-import org.telegram.ui.Stars.BotStarsActivity;
 import org.telegram.ui.Stars.BotStarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
@@ -162,6 +161,24 @@ public class ChannelMonetizationLayout extends SizeNotifierFrameLayout implement
 
     public final boolean tonRevenueAvailable;
     public final boolean starsRevenueAvailable;
+
+    private static String untilString(int t) {
+        final int d = t / (60 * 60 * 24);
+        t -= d * (60 * 60 * 24);
+        final int h = t / (60 * 60);
+        t -= h * (60 * 60);
+        final int m = t / 60;
+        t -= m * 60;
+        final int s = t;
+
+        if (d == 0) {
+            if (h == 0) {
+                return String.format(Locale.ENGLISH, "%02d:%02d", m, s);
+            }
+            return String.format(Locale.ENGLISH, "%02d:%02d:%02d", h, m, s);
+        }
+        return LocaleController.formatString(R.string.PeriodDHM, String.format(Locale.ENGLISH, "%02d", d), String.format(Locale.ENGLISH, "%02d", h), String.format(Locale.ENGLISH, "%02d", m));
+    }
 
     public ChannelMonetizationLayout(
         Context context,
@@ -379,7 +396,7 @@ public class ChannelMonetizationLayout extends SizeNotifierFrameLayout implement
 
             final int now = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
             if (starsBalanceBlockedUntil > now) {
-                withdrawalBulletin = BulletinFactory.of(fragment).createSimpleBulletin(R.raw.timer_3, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.BotStarsWithdrawalToast, BotStarsActivity.untilString(starsBalanceBlockedUntil - now)))).show();
+                withdrawalBulletin = BulletinFactory.of(fragment).createSimpleBulletin(R.raw.timer_3, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.BotStarsWithdrawalToast, untilString(starsBalanceBlockedUntil - now)))).show();
                 return;
             }
 
@@ -466,11 +483,11 @@ public class ChannelMonetizationLayout extends SizeNotifierFrameLayout implement
                     lock.setSpan(coloredImageSpan, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
                 SpannableStringBuilder buttonLockedText = new SpannableStringBuilder();
-                buttonLockedText.append(lock).append(BotStarsActivity.untilString(starsBalanceBlockedUntil - now));
+                buttonLockedText.append(lock).append(untilString(starsBalanceBlockedUntil - now));
                 starsBalanceButton.setSubText(buttonLockedText, true);
 
                 if (withdrawalBulletin != null && withdrawalBulletin.getLayout() instanceof Bulletin.LottieLayout && withdrawalBulletin.getLayout().isAttachedToWindow()) {
-                    ((Bulletin.LottieLayout) withdrawalBulletin.getLayout()).textView.setText(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.BotStarsWithdrawalToast, BotStarsActivity.untilString(starsBalanceBlockedUntil - now))));
+                    ((Bulletin.LottieLayout) withdrawalBulletin.getLayout()).textView.setText(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.BotStarsWithdrawalToast, untilString(starsBalanceBlockedUntil - now))));
                 }
 
                 AndroidUtilities.cancelRunOnUIThread(this.setStarsBalanceButtonText);
