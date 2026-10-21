@@ -699,15 +699,11 @@ public class PollItemMenu extends Dialog {
             messageOptions.addView(messageSeenLayout);
             messageOptions.addGap();
         } else if (showPrivateMessageSeen) {
-            MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_SEEN, message, () -> {
-                dismiss(false);
-            }, resourcesProvider);
+            MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_SEEN, message, resourcesProvider);
             messageOptions.addView(messagePrivateSeenView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 36));
             messageOptions.addGap();
         } else if (showPrivateMessageEdit) {
-            MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_EDIT, message, () -> {
-                dismiss(false);
-            }, resourcesProvider);
+            MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_EDIT, message, resourcesProvider);
             messageOptions.addView(messagePrivateSeenView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 36));
             messageOptions.addGap();
         }

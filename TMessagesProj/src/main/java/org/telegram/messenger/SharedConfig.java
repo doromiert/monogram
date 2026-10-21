@@ -352,7 +352,6 @@ public class SharedConfig {
     public static int storiesColumnsCount = 3;
     public static int fastScrollHintCount = 3;
     public static boolean dontAskManageStorage;
-    public static boolean multipleReactionsPromoShowed;
 
     public static boolean isFloatingDebugActive;
     public static LiteMode liteMode;
@@ -678,7 +677,6 @@ public class SharedConfig {
             useSurfaceInStories = preferences.getBoolean("useSurfaceInStories", Build.VERSION.SDK_INT >= 30);
             payByInvoice = preferences.getBoolean("payByInvoice", false);
             photoViewerBlur = preferences.getBoolean("photoViewerBlur", true);
-            multipleReactionsPromoShowed = preferences.getBoolean("multipleReactionsPromoShowed", false);
             callEncryptionHintDisplayedCount = preferences.getInt("callEncryptionHintDisplayedCount", 0);
             debugVideoQualities = preferences.getBoolean("debugVideoQualities", false);
             shadowsInSections = preferences.getBoolean("shadowsInSections", false);
@@ -899,13 +897,7 @@ public class SharedConfig {
         saveConfig();
     }
 
-    public static void setMultipleReactionsPromoShowed(boolean val) {
-        multipleReactionsPromoShowed = val;
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("multipleReactionsPromoShowed", multipleReactionsPromoShowed);
-        editor.apply();
-    }
+
 
     public static void setSuggestStickers(int type) {
         suggestStickers = type;

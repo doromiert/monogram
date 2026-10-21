@@ -30838,23 +30838,17 @@ public class ChatActivity extends BaseFragment implements
                     popupLayout.addView(messageSeenLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44));
                     addGap = true;
                 } else if (showPrivateMessageSeen) {
-                    MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_SEEN, message, () -> {
-                        closeMenu(true);
-                    }, themeDelegate);
+                    MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_SEEN, message, themeDelegate);
                     popupLayout.addView(messagePrivateSeenView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 36));
                     addGap = true;
                 }
                 if (showPrivateMessageEdit) {
-                    MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_EDIT, message, () -> {
-                        closeMenu(true);
-                    }, themeDelegate);
+                    MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_EDIT, message, themeDelegate);
                     popupLayout.addView(messagePrivateSeenView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 36));
                     addGap = true;
                 }
                 if (showPrivateMessageFwdOriginal) {
-                    MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_FORWARD, message, () -> {
-                        closeMenu(true);
-                    }, themeDelegate);
+                    MessagePrivateSeenView messagePrivateSeenView = new MessagePrivateSeenView(getContext(), MessagePrivateSeenView.TYPE_FORWARD, message, themeDelegate);
                     popupLayout.addView(messagePrivateSeenView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 36));
                     addGap = true;
                 }
@@ -32003,7 +31997,6 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void updateGreetingLock() {
-        if (greetingsViewContainer != null) greetingsViewContainer.resetPremiumLock();
     }
 
     public void closeMenu() {
@@ -32093,31 +32086,7 @@ public class ChatActivity extends BaseFragment implements
 
     Runnable updateReactionRunnable;
 
-    private void showMultipleReactionsPromo(View cell, ReactionsLayoutInBubble.VisibleReaction visibleReaction, int currentChosenReactions) {
-        if (SharedConfig.multipleReactionsPromoShowed || cell == null || visibleReaction == null || getUserConfig().isPremium()) {
-            return;
-        }
-        if (currentChosenReactions == 1) {
-            SharedConfig.setMultipleReactionsPromoShowed(true);
-            TLRPC.Document document;
-            if (visibleReaction.documentId == 0) {
-                TLRPC.TL_availableReaction availableReaction = MediaDataController.getInstance(currentAccount).getReactionsMap().get(visibleReaction.emojicon);
-                if (availableReaction == null) {
-                    return;
-                }
-                document = availableReaction.center_icon;
-            } else {
-                document = AnimatedEmojiDrawable.findDocument(currentAccount, visibleReaction.documentId);
-            }
-            if (document == null) {
-                return;
-            }
-            BulletinFactory.of(ChatActivity.this).createEmojiBulletin(
-                    document,
-                    LocaleController.getString(R.string.ChatMultipleReactionsPromo)
-            ).setDuration(Bulletin.DURATION_PROLONG).show();
-        }
-    }
+
 
     public void selectReaction(View cell, MessageObject primaryMessage, ReactionsContainerLayout reactionsLayout, View fromView, float x, float y, ReactionsLayoutInBubble.VisibleReaction visibleReaction, boolean fromDoubleTap, boolean bigEmoji, boolean addToRecent, boolean withoutAnimation) {
         if (isInScheduleMode() || primaryMessage == null) {
@@ -39118,10 +39087,7 @@ public class ChatActivity extends BaseFragment implements
             }
         }
 
-        @Override
-        public void needShowPremiumFeatures(String source) {
-            presentFragment(new PremiumPreviewFragment(source));
-        }
+
 
         @Override
         public void needShowPremiumBulletin(int type) {

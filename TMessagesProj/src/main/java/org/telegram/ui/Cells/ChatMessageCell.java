@@ -747,8 +747,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         default void didPressHint(ChatMessageCell cell, int type) {
         }
 
-        default void needShowPremiumFeatures(String source) {
-        }
+
 
         default void needShowPremiumBulletin(int type) {
         }

@@ -1470,7 +1470,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 SharedConfig.updateStealthModeSendMessageConfirm(2);
                 SharedConfig.setStoriesReactionsLongPressHintUsed(false);
                 SharedConfig.setStoriesIntroShown(false);
-                SharedConfig.setMultipleReactionsPromoShowed(false);
+
                 ChatThemeController.getInstance(currentAccount).clearCache();
                 getNotificationCenter().postNotificationName(NotificationCenter.newSuggestionsAvailable);
                 RestrictedLanguagesSelectActivity.cleanup();

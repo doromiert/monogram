@@ -1,24 +1,16 @@
 package org.telegram.ui.Components;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
-import android.text.Spannable;
-import android.text.SpannableString;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -46,7 +38,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -80,12 +71,7 @@ public class SenderSelectPopup extends ActionBarPopupWindow {
     protected List<SpringAnimation> springAnimations = new ArrayList<>();
     private boolean dismissed;
 
-    private FrameLayout bulletinContainer;
-    private Runnable bulletinHideCallback;
-    private boolean isDismissingByBulletin;
     private int popupX, popupY;
-
-    private List<Bulletin> bulletins = new ArrayList<>();
 
     @SuppressLint("WrongConstant")
     public SenderSelectPopup(
@@ -183,20 +169,9 @@ public class SenderSelectPopup extends ActionBarPopupWindow {
                 if (peerId < 0) {
                     TLRPC.Chat chat = messagesController.getChat(-peerId);
                     if (chat != null) {
-                        if (peerObj.premium_required) {
-                            SpannableString str = new SpannableString(TextUtils.ellipsize(chat.title, senderView.title.getPaint(), maxWidth - AndroidUtilities.dp(100), TextUtils.TruncateAt.END) + " d");
-                            ColoredImageSpan span = new ColoredImageSpan(R.drawable.msg_mini_premiumlock);
-                            span.setTopOffset(1);
-                            span.setSize(AndroidUtilities.dp(14));
-                            span.setColorKey(Theme.key_windowBackgroundWhiteGrayText5);
-                            str.setSpan(span, str.length() - 1, str.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        senderView.title.setEllipsize(TextUtils.TruncateAt.END);
+                        senderView.title.setText(chat.title);
 
-                            senderView.title.setEllipsize(null);
-                            senderView.title.setText(str);
-                        } else {
-                            senderView.title.setEllipsize(TextUtils.TruncateAt.END);
-                            senderView.title.setText(chat.title);
-                        }
                         senderView.subtitle.setText(LocaleController.formatPluralString(ChatObject.isChannel(chat) && !chat.megagroup ? "Subscribers" : "Members", chat.participants_count));
                         senderView.avatar.setAvatar(chat);
                     }
@@ -233,84 +208,7 @@ public class SenderSelectPopup extends ActionBarPopupWindow {
             if (clicked) {
                 return;
             }
-            if (peerObj.premium_required && !UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) {
-                try {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                } catch (Exception ignored) {}
 
-                WindowManager windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-                if (bulletinContainer == null) {
-                    bulletinContainer = new FrameLayout(context) {
-                        @SuppressLint("ClickableViewAccessibility")
-                        @Override
-                        public boolean onTouchEvent(MotionEvent event) {
-                            View contentView = getContentView();
-                            int[] contentXY = new int[2];
-                            contentView.getLocationInWindow(contentXY);
-                            contentXY[0] += popupX;
-                            contentXY[1] += popupY;
-                            int[] viewXY = new int[2];
-                            getLocationInWindow(viewXY);
-                            if (event.getAction() == MotionEvent.ACTION_DOWN && event.getX() <= contentXY[0] ||
-                                    event.getX() >= contentXY[0] + contentView.getWidth() || event.getY() <= contentXY[1] ||
-                                    event.getY() >= contentXY[1] + contentView.getHeight()) {
-                                if (dismissed || isDismissingByBulletin) {
-                                    return true;
-                                }
-                                isDismissingByBulletin = true;
-
-                                startDismissAnimation();
-
-                                return true;
-                            }
-                            event.offsetLocation(viewXY[0] - contentXY[0], AndroidUtilities.statusBarHeight + viewXY[1] - contentXY[1]);
-                            return contentView.dispatchTouchEvent(event);
-                        }
-                    };
-                }
-                if (bulletinHideCallback != null) {
-                    AndroidUtilities.cancelRunOnUIThread(bulletinHideCallback);
-                }
-
-                if (bulletinContainer.getParent() == null) {
-                    WindowManager.LayoutParams params = new WindowManager.LayoutParams();
-                    params.width = params.height = WindowManager.LayoutParams.MATCH_PARENT;
-                    params.format = PixelFormat.TRANSLUCENT;
-                    params.type = WindowManager.LayoutParams.LAST_APPLICATION_WINDOW;
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        params.flags |= WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS;
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-                    }
-                    AndroidUtilities.setPreferredMaxRefreshRate(windowManager, bulletinContainer, params);
-                    windowManager.addView(bulletinContainer, params);
-                }
-
-                if (parentFragment != null) {
-                    Bulletin bulletin = Bulletin.make(bulletinContainer, new SelectSendAsPremiumHintBulletinLayout(context, parentFragment.themeDelegate, isChannel, () -> {
-                        if (parentFragment != null) {
-                            parentFragment.presentFragment(new PremiumPreviewFragment("select_sender"));
-                            dismiss();
-                        }
-                    }), Bulletin.DURATION_SHORT);
-                    bulletin.getLayout().addCallback(new Bulletin.Layout.Callback() {
-                        @Override
-                        public void onShow(@NonNull Bulletin.Layout layout) {
-                            bulletins.add(bulletin);
-                        }
-
-                        @Override
-                        public void onHide(@NonNull Bulletin.Layout layout) {
-                            bulletins.remove(bulletin);
-                        }
-                    });
-                    bulletin.show();
-                }
-
-                AndroidUtilities.runOnUIThread(bulletinHideCallback = () -> windowManager.removeView(bulletinContainer), Bulletin.DURATION_SHORT + 1000);
-                return;
-            }
             clicked = true;
             selectCallback.onPeerSelected(recyclerView, (SenderView) view, peerObj.peer);
         });
@@ -334,23 +232,7 @@ public class SenderSelectPopup extends ActionBarPopupWindow {
         if (dismissed) {
             return;
         }
-        if (bulletinContainer != null && bulletinContainer.getAlpha() == 1) {
-            WindowManager windowManager = (WindowManager) bulletinContainer.getContext().getSystemService(Context.WINDOW_SERVICE);
-            bulletinContainer.animate().alpha(0).setDuration(150).setListener(new AnimatorListenerAdapter() {
-                @Override
-                public void onAnimationEnd(Animator animation) {
-                    try {
-                        windowManager.removeViewImmediate(bulletinContainer);
-                    } catch (Exception e) {
 
-                    }
-
-                    if (bulletinHideCallback != null) {
-                        AndroidUtilities.cancelRunOnUIThread(bulletinHideCallback);
-                    }
-                }
-            });
-        }
         dismissed = true;
         super.dismiss();
     }
