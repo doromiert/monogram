@@ -55,7 +55,6 @@ import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DocumentObject;
 import org.telegram.messenger.Emoji;
@@ -364,7 +363,6 @@ public class ContentPreviewViewer {
     private View popupLayout;
     private float blurProgress;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private UnlockPremiumView unlockPremiumView;
     private ReactionsContainerLayout reactionsLayout;
     private FrameLayout reactionsLayoutContainer;
     private boolean closeOnDismiss;
@@ -728,15 +726,7 @@ public class ContentPreviewViewer {
                     title.setPadding(dp(16), dp(10), dp(16), dp(8));
                     previewMenu.addView(title);
                 }
-                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,currentDocument) && MessageObject.isPremiumSticker(currentDocument) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
-                    showUnlockPremiumView();
-                    menuVisible = true;
-                    containerView.invalidate();
-                    try {
-                        containerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                    } catch (Exception ignored) {}
-                    return;
-                }
+
                 final boolean inFavs = MediaDataController.getInstance(currentAccount).isStickerInFavorites(currentDocument);
                 ArrayList<CharSequence> items = new ArrayList<>();
                 final ArrayList<Integer> actions = new ArrayList<>();
@@ -1272,32 +1262,7 @@ public class ContentPreviewViewer {
         AndroidUtilities.runOnUIThread(() -> reactionsLayoutContainer.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(420).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start(), 10);
     }
 
-    private void showUnlockPremiumView() {
-        if (unlockPremiumView == null) {
-            unlockPremiumView = new UnlockPremiumView(containerView.getContext(), UnlockPremiumView.TYPE_STICKERS, resourcesProvider);
-            containerView.addView(unlockPremiumView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-            unlockPremiumView.setOnClickListener(v -> {
-                menuVisible = false;
-                containerView.invalidate();
-                close();
-            });
-            unlockPremiumView.premiumButtonView.buttonLayout.setOnClickListener(v -> {
-                if (parentActivity instanceof LaunchActivity) {
-                    LaunchActivity activity = (LaunchActivity) parentActivity;
-                    if (activity.getActionBarLayout() != null && activity.getActionBarLayout().getLastFragment() != null) {
-                        activity.getActionBarLayout().getLastFragment().dismissCurrentDialog();
-                    }
-                    activity.presentFragment(new PremiumPreviewFragment(PremiumPreviewFragment.featureTypeToServerString(PremiumPreviewFragment.PREMIUM_FEATURE_STICKERS)));
-                }
-                menuVisible = false;
-                containerView.invalidate();
-                close();
-            });
-        }
-        AndroidUtilities.updateViewVisibilityAnimated(unlockPremiumView, false, 1f, false);
-        AndroidUtilities.updateViewVisibilityAnimated(unlockPremiumView, true);
-        unlockPremiumView.setTranslationY(0);
-    }
+
 
     private int currentContentType;
     private TLRPC.Document currentDocument;
@@ -1465,7 +1430,6 @@ public class ContentPreviewViewer {
                             menuVisible = false;
                             closeOnDismiss = false;
                             dismissPopupWindow();
-                            AndroidUtilities.updateViewVisibilityAnimated(unlockPremiumView, false);
                             if (currentPreviewCell instanceof StickerEmojiCell) {
                                 StickerEmojiCell stickerEmojiCell = (StickerEmojiCell) currentPreviewCell;
                                 open(stickerEmojiCell.getSticker(), stickerEmojiCell.getStickerPath(), MessageObject.findAnimatedEmojiEmoticon(stickerEmojiCell.getSticker(), null, currentAccount), delegate != null ? delegate.getQuery(false) : null, null, contentType, stickerEmojiCell.isRecent(), stickerEmojiCell.getParentObject(), resourcesProvider);
@@ -2020,9 +1984,7 @@ public class ContentPreviewViewer {
         delegate = null;
         isVisible = false;
         AndroidUtilities.runOnUIThread(() -> resourcesProvider = null, 200);
-        if (unlockPremiumView != null) {
-            unlockPremiumView.animate().alpha(0).translationY(AndroidUtilities.dp(56)).setDuration(150).setInterpolator(CubicBezierInterpolator.DEFAULT).start();
-        }
+
         if (reactionsLayoutContainer != null) {
             reactionsLayoutContainer.animate().alpha(0).setDuration(150).scaleX(0.6f).scaleY(0.6f).setInterpolator(CubicBezierInterpolator.DEFAULT).start();
         }
@@ -2222,7 +2184,6 @@ public class ContentPreviewViewer {
                     blurrBitmap.recycle();
                     blurrBitmap = null;
                 }
-                AndroidUtilities.updateViewVisibilityAnimated(unlockPremiumView, false, 1f, false);
                 blurProgress = 0f;
                 try {
                     if (windowView.getParent() != null) {

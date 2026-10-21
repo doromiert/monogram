@@ -673,8 +673,6 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
             MediaDataController.getInstance(currentAccount).toggleStickerSet(getParentActivity(), covered == null ? set : covered, 2, this, false, false);
         } else if (cell.removeButtonView == view) {
             MediaDataController.getInstance(currentAccount).toggleStickerSet(getParentActivity(), set, 0, this, false, true);
-        } else if (cell.premiumButtonView == view) {
-            presentFragment(new MonogramPacksActivity(currentAccount, true));
         }
     }
 
