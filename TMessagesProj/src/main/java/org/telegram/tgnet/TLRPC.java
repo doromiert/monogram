@@ -54931,32 +54931,7 @@ public class TLRPC {
         }
     }
 
-    public static class TL_messages_setChatAvailableReactions extends TLObject {
-        public static final int constructor = 0x864b2581;
 
-        public int flags;
-        public InputPeer peer;
-        public ChatReactions available_reactions;
-        public int reactions_limit;
-        public boolean paid_enabled;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return Updates.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            peer.serializeToStream(stream);
-            available_reactions.serializeToStream(stream);
-            if (hasFlag(flags, FLAG_0)) {
-                stream.writeInt32(reactions_limit);
-            }
-            if (hasFlag(flags, FLAG_1)) {
-                stream.writeBool(paid_enabled);
-            }
-        }
-    }
 
     public static class TL_messages_getAvailableReactions extends TLObject {
         public static final int constructor = 0x18dea0ac;

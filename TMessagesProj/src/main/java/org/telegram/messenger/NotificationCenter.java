@@ -331,7 +331,6 @@ public class NotificationCenter {
     public static final int emojiPreviewThemesChanged = totalEvents++;
     public static final int reactionsDidLoad = totalEvents++;
     public static final int attachMenuBotsDidLoad = totalEvents++;
-    public static final int chatAvailableReactionsUpdated = totalEvents++;
     public static final int dialogsUnreadReactionsCounterChanged = totalEvents++;
     public static final int dialogsUnreadPollVotesCounterChanged = totalEvents++;
     public static final int onDatabaseOpened = totalEvents++;

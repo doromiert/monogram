@@ -1,9 +1,7 @@
 package org.telegram.ui.Components.Reactions;
 
-import static org.telegram.ui.Components.Premium.LimitReachedBottomSheet.TYPE_BOOSTS_FOR_REACTIONS;
 
 import android.graphics.Paint;
-import android.os.Bundle;
 import android.text.Editable;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
@@ -12,18 +10,12 @@ import android.text.TextUtils;
 
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.MediaDataController;
-import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
-import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
-import org.telegram.ui.Components.EditTextCaption;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.SelectAnimatedEmojiDialog;
-import org.telegram.ui.StatisticActivity;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -112,21 +104,7 @@ public class ReactionsUtils {
         }
     }
 
-    public static void showLimitReachedDialogForReactions(long dialogId, int lvl, TL_stories.TL_premium_boostsStatus boostsStatus) {
-        BaseFragment fragment = LaunchActivity.getLastFragment();
-        if (fragment == null || boostsStatus == null) {
-            return;
-        }
-        LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(fragment, fragment.getContext(), TYPE_BOOSTS_FOR_REACTIONS, UserConfig.selectedAccount, fragment.getResourceProvider());
-        limitReachedBottomSheet.setRequiredLvl(lvl);
-        limitReachedBottomSheet.setBoostsStats(boostsStatus, true);
-        limitReachedBottomSheet.setDialogId(dialogId);
-        limitReachedBottomSheet.showStatisticButtonInLink(() -> {
-            TLRPC.Chat chat = fragment.getMessagesController().getChat(-dialogId);
-            fragment.presentFragment(StatisticActivity.create(chat));
-        });
-        limitReachedBottomSheet.show();
-    }
+
 
     public static SpannableString createSpannableText(AnimatedEmojiSpan span, String key) {
         SpannableString spannable = new SpannableString(key);

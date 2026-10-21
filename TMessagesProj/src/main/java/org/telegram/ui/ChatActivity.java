@@ -3048,7 +3048,6 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.scheduledMessagesUpdated)
             .add(NotificationCenter.diceStickersDidLoad)
             .add(NotificationCenter.dialogDeleted)
-            .add(NotificationCenter.chatAvailableReactionsUpdated)
             .add(NotificationCenter.dialogsUnreadReactionsCounterChanged)
             .add(NotificationCenter.dialogsUnreadPollVotesCounterChanged)
             .add(NotificationCenter.groupStickersDidLoad)
@@ -23901,13 +23900,6 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     themeDelegate.setCurrentTheme(themeDelegate.chatTheme, themeDelegate.wallpaper, true, null);
                 }
-            }
-        } else if (id == NotificationCenter.chatAvailableReactionsUpdated) {
-            long chatId = (long) args[0];
-            long topicId = (long) args[1];
-            if (chatId == -dialog_id && (!isTopic || getTopicId() == topicId)) {
-                chatInfo = getMessagesController().getChatFull(chatId);
-                gotChatInfo();
             }
         } else if (id == NotificationCenter.dialogsUnreadPollVotesCounterChanged) {
             long dialogId = (long) args[0];

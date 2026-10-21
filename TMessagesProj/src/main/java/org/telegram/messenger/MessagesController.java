@@ -88,7 +88,6 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.ChatActivity;
-import org.telegram.ui.ChatReactionsEditActivity;
 import org.telegram.ui.ChatRightsEditActivity;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
@@ -590,7 +589,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public int transcribeAudioTrialDurationMax;
     public int transcribeAudioTrialCooldownUntil;
     public int transcribeAudioTrialCurrentNumber;
-    public int boostsChannelLevelMax;
     public int channelRestrictSponsoredLevelMin;
     public int channelAutotranslationLevelMin;
     public Set<String> webAppAllowedProtocols;
@@ -1651,7 +1649,6 @@ public class MessagesController extends BaseController implements NotificationCe
         transcribeAudioTrialCurrentNumber = mainPreferences.getInt("transcribeAudioTrialCurrentNumber", transcribeAudioTrialWeeklyNumber);
         transcribeAudioTrialDurationMax = mainPreferences.getInt("transcribeAudioTrialDurationMax", 300);
         transcribeAudioTrialCooldownUntil = mainPreferences.getInt("transcribeAudioTrialCooldownUntil", 0);
-        boostsChannelLevelMax = mainPreferences.getInt("boostsChannelLevelMax", 100);
         channelRestrictSponsoredLevelMin = mainPreferences.getInt("channelRestrictSponsoredLevelMin", 30);
         channelAutotranslationLevelMin = mainPreferences.getInt("channelAutotranslationLevelMin", 3);
         savedDialogsPinnedLimitDefault = mainPreferences.getInt("savedDialogsPinnedLimitDefault", 4);
@@ -3998,17 +3995,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
 
 
-                case "boosts_channel_level_max": {
-                    if (value.value instanceof TLRPC.TL_jsonNumber) {
-                        TLRPC.TL_jsonNumber num = (TLRPC.TL_jsonNumber) value.value;
-                        if (boostsChannelLevelMax != num.value) {
-                            boostsChannelLevelMax = (int) num.value;
-                            editor.putInt("boostsChannelLevelMax", boostsChannelLevelMax);
-                            changed = true;
-                        }
-                    }
-                    break;
-                }
+
                 case "channel_restrict_sponsored_level_min": {
                     if (value.value instanceof TLRPC.TL_jsonNumber) {
                         TLRPC.TL_jsonNumber num = (TLRPC.TL_jsonNumber) value.value;
@@ -22832,102 +22819,9 @@ public class MessagesController extends BaseController implements NotificationCe
         });
     }
 
-    public void setCustomChatReactions(long chatId, int type, List<TLRPC.Reaction> reactions, int reactionsCount, Boolean allow_paid, Utilities.Callback<TLRPC.TL_error> onError, Runnable onSuccess) {
-        TLRPC.TL_messages_setChatAvailableReactions req = new TLRPC.TL_messages_setChatAvailableReactions();
-        req.peer = getInputPeer(-chatId);
-        if (type == ChatReactionsEditActivity.SELECT_TYPE_NONE || reactions.isEmpty()) {
-            req.available_reactions = new TLRPC.TL_chatReactionsNone();
-        } else if (type == ChatReactionsEditActivity.SELECT_TYPE_ALL) {
-            req.available_reactions = new TLRPC.TL_chatReactionsAll();
-        } else {
-            TLRPC.TL_chatReactionsSome someReactions = new TLRPC.TL_chatReactionsSome();
-            req.available_reactions = someReactions;
-            someReactions.reactions.addAll(reactions);
-        }
-        if (allow_paid != null) {
-            req.flags |= 2;
-            req.paid_enabled = allow_paid;
-        }
-        req.flags |= 1;
-        req.reactions_limit = reactionsCount;
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (response != null) {
-                processUpdates((TLRPC.Updates) response, false);
-                TLRPC.ChatFull full = getChatFull(chatId);
-                if (full != null) {
-                    if (full instanceof TLRPC.TL_chatFull) {
-                        full.flags |= 262144;
-                    }
-                    if (full instanceof TLRPC.TL_channelFull) {
-                        full.flags |= 1073741824;
-                    }
-                    full.available_reactions = req.available_reactions;
-                    getMessagesStorage().updateChatInfo(full, false);
-                }
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (onSuccess != null) {
-                        onSuccess.run();
-                    }
-                    getNotificationCenter().postNotificationName(NotificationCenter.chatAvailableReactionsUpdated, chatId, 0L);
-                });
-            } else {
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (onError != null) {
-                        onError.run(error);
-                    }
-                });
-            }
-        });
 
-        TLRPC.ChatFull chatFull = getChatFull(chatId);
-        if (chatFull != null) {
-            if (chatFull instanceof TLRPC.TL_channelFull) {
-                chatFull.flags2 |= 8192;
-            } else {
-                chatFull.flags |= 1048576;
-            }
-            chatFull.reactions_limit = reactionsCount;
-            if (allow_paid != null) {
-                chatFull.paid_reactions_available = allow_paid;
-            }
-            getMessagesStorage().updateChatInfo(chatFull, false);
-        }
-    }
 
-    public void setChatReactions(long chatId, int type, List<String> reactions) {
-        TLRPC.TL_messages_setChatAvailableReactions req = new TLRPC.TL_messages_setChatAvailableReactions();
-        req.peer = getInputPeer(-chatId);
-        if (type == ChatReactionsEditActivity.SELECT_TYPE_NONE) {
-            req.available_reactions = new TLRPC.TL_chatReactionsNone();
-        } else if (type == ChatReactionsEditActivity.SELECT_TYPE_ALL) {
-            req.available_reactions = new TLRPC.TL_chatReactionsAll();
-        } else {
-            TLRPC.TL_chatReactionsSome someReactions = new TLRPC.TL_chatReactionsSome();
-            req.available_reactions = someReactions;
-            for (int i = 0; i < reactions.size(); i++) {
-                TLRPC.TL_reactionEmoji emojiReaction = new TLRPC.TL_reactionEmoji();
-                emojiReaction.emoticon = reactions.get(i);
-                someReactions.reactions.add(emojiReaction);
-            }
-        }
-        getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (response != null) {
-                processUpdates((TLRPC.Updates) response, false);
-                TLRPC.ChatFull full = getChatFull(chatId);
-                if (full != null) {
-                    if (full instanceof TLRPC.TL_chatFull) {
-                        full.flags |= 262144;
-                    }
-                    if (full instanceof TLRPC.TL_channelFull) {
-                        full.flags |= 1073741824;
-                    }
-                    full.available_reactions = req.available_reactions;
-                    getMessagesStorage().updateChatInfo(full, false);
-                }
-                AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.chatAvailableReactionsUpdated, chatId, 0L));
-            }
-        });
-    }
+
 
     public boolean matchesAdminRights(TLRPC.Chat chat, TLRPC.User user, TLRPC.TL_chatAdminRights rights) {
         if (rights == null) {
