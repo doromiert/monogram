@@ -188,7 +188,6 @@ import org.telegram.ui.Components.chat.layouts.ChatActivitySideControlsButtonsLa
 import org.telegram.ui.Components.inset.WindowInsetsInAppController;
 import org.telegram.ui.ContentPreviewViewer;
 import org.telegram.ui.DialogsActivity;
-import org.telegram.ui.Gifts.GiftSheet;
 import org.telegram.ui.GroupStickersActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.LinkManager;
@@ -258,7 +257,6 @@ public class ChatActivityEnterView extends FrameLayout implements
     private float horizontalPadding = 0;
     private boolean sendButtonEnabled = true;
     private TLRPC.UserFull userInfo;
-    public HintView2 birthdayHint;
     public HintView2 aiHint;
     private HintView2 sendSuggestHintView;
 
@@ -662,7 +660,6 @@ public class ChatActivityEnterView extends FrameLayout implements
     @Nullable
     private ImageView scheduledButton;
     @Nullable
-    private ImageView giftButton;
     private boolean scheduleButtonHidden;
     private AnimatorSet scheduledButtonAnimation;
     @Nullable
@@ -3702,7 +3699,6 @@ public class ChatActivityEnterView extends FrameLayout implements
                 super.setTranslationX(
                     dp(-DEFAULT_HEIGHT) +
                     innerTranslationX + attachLayoutPaddingTranslationX + attachLayoutTranslationX +
-                    dp(giftButton != null && giftButton.getVisibility() == View.VISIBLE ? -DEFAULT_HEIGHT : 0) * (giftButton == null ? 0 : giftButton.getAlpha()) +
                     dp(botButton != null && botButton.getVisibility() == VISIBLE ? -DEFAULT_HEIGHT : 0) * (botButton == null ? 0 : botButton.getAlpha())
                 );
             }
@@ -3729,68 +3725,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         return va;
     }
 
-    private void createGiftButton() {
-        if (giftButton != null || parentFragment == null) {
-            return;
-        }
 
-        giftButton = new ImageView(getContext()) {
-            @Override
-            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-                super.onLayout(changed, left, top, right, bottom);
-                post(ChatActivityEnterView.this::checkBirthdayHint);
-            }
-            @Override
-            public void setAlpha(float alpha) {
-                super.setAlpha(alpha);
-                if (scheduledButton != null) {
-                    scheduledButton.setTranslationX(scheduledButton.getTranslationX());
-                }
-            }
-        };
-        giftButton.setImageResource(R.drawable.msg_input_gift);
-        giftButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_glass_defaultIcon), PorterDuff.Mode.MULTIPLY));
-        giftButton.setVisibility(GONE);
-        giftButton.setContentDescription(getString(R.string.GiftPremium));
-        giftButton.setScaleType(ImageView.ScaleType.CENTER);
-        giftButton.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector)));
-        attachLayout.addView(giftButton, 0, LayoutHelper.createFrame(DEFAULT_HEIGHT, DEFAULT_HEIGHT, Gravity.CENTER_VERTICAL | Gravity.RIGHT));
-        giftButton.setOnClickListener(v -> {
-            SharedPreferences.Editor edit = MessagesController.getInstance(currentAccount).getMainSettings().edit();
-            if (BirthdayController.isToday(parentFragment.getCurrentUserInfo())) {
-                edit.putBoolean(Calendar.getInstance().get(Calendar.YEAR) + "show_gift_for_" + parentFragment.getDialogId(), false);
-            } else {
-                edit.putBoolean("show_gift_for_" + parentFragment.getDialogId(), false);
-            }
-            if (
-                MessagesController.getInstance(currentAccount).giftAttachMenuIcon &&
-                MessagesController.getInstance(currentAccount).giftTextFieldIcon
-            ) {
-                edit.putBoolean("show_gift_for_" + parentFragment.getDialogId(), false);
-            }
-            edit.apply();
-
-            final TLRPC.UserFull myUserInfo = MessagesController.getInstance(currentAccount).getUserFull(UserConfig.getInstance(currentAccount).getClientUserId());
-            if (!(getParentFragment().getCurrentUserInfo() != null && getParentFragment().getCurrentUserInfo().display_gifts_button || myUserInfo != null && myUserInfo.display_gifts_button)) {
-                AndroidUtilities.updateViewVisibilityAnimated(giftButton, false);
-            }
-
-            TLRPC.User user = getParentFragment().getCurrentUser();
-            if (user == null) return;
-            final boolean birthday = getParentFragment().getCurrentUserInfo() != null && BirthdayController.isToday(getParentFragment().getCurrentUserInfo().birthday);
-            final AlertDialog progressDialog = new AlertDialog(getContext(), AlertDialog.ALERT_TYPE_SPINNER);
-            progressDialog.showDelayed(200);
-            final int reqId = BoostRepository.loadGiftOptions(currentAccount, null, loadedOptions -> {
-                progressDialog.dismiss();
-                loadedOptions = BoostRepository.filterGiftOptions(loadedOptions, 1);
-                loadedOptions = BoostRepository.filterGiftOptionsByBilling(loadedOptions);
-                new GiftSheet(getContext(), currentAccount, user.id, loadedOptions, null).setBirthday(birthday).show();
-            });
-            progressDialog.setOnCancelListener(di -> {
-                parentFragment.getConnectionsManager().cancelRequest(reqId, true);
-            });
-        });
-    }
 
     public void createSuggestionButton() {
         if (suggestButton != null) {
@@ -6709,7 +6644,6 @@ public class ChatActivityEnterView extends FrameLayout implements
         }
 
         updateScheduleButton(false);
-        updateGiftButton(false);
         checkRoundVideo();
         checkChannelRights();
         updateFieldHint(false);
@@ -9776,7 +9710,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         }
         if (ev.getAction() == MotionEvent.ACTION_DOWN) {
             final View child = AndroidUtilities.findChildViewUnder(this, ev.getX(), ev.getY());
-            if (child != birthdayHint && child != aiHint) {
+            if (child != aiHint) {
                 hideHints();
             }
         }
@@ -10949,83 +10883,11 @@ public class ChatActivityEnterView extends FrameLayout implements
         setFieldText(text);
     }
 
-    public void updateGiftButton(boolean animated) {
 
-        final TLRPC.UserFull userInfo = getParentFragment() == null ? null : getParentFragment().getCurrentUserInfo();
-        final TLRPC.UserFull myUserInfo = MessagesController.getInstance(currentAccount).getUserFull(UserConfig.getInstance(currentAccount).getClientUserId());
-        final TLRPC.User user = getParentFragment() == null ? null : getParentFragment().getCurrentUser();
-        final boolean visible =
-            !MessagesController.getInstance(currentAccount).premiumPurchaseBlocked() &&
-            getParentFragment() != null && user != null &&
-            !BuildVars.IS_BILLING_UNAVAILABLE &&
-            (!UserObject.isUserSelf(user) || myUserInfo != null && myUserInfo.display_gifts_button) &&
-            !UserObject.isBot(user) &&
-            !MessagesController.isSupportUser(user) &&
-            userInfo != null &&
-            (
-                (
-                    !user.premium &&
-                    MessagesController.getInstance(currentAccount).giftAttachMenuIcon &&
-                    MessagesController.getInstance(currentAccount).giftTextFieldIcon &&
-                    MessagesController.getInstance(currentAccount).getMainSettings().getBoolean("show_gift_for_" + parentFragment.getDialogId(), true)
-                ) || (
-                    BirthdayController.isToday(userInfo.birthday) &&
-                    MessagesController.getInstance(currentAccount).getMainSettings().getBoolean(Calendar.getInstance().get(Calendar.YEAR) + "show_gift_for_" + parentFragment.getDialogId(), true)
-                ) ||
-                (userInfo.display_gifts_button || myUserInfo != null && myUserInfo.display_gifts_button) && !(
-                    userInfo.disallowed_stargifts != null &&
-                    userInfo.disallowed_stargifts.disallow_premium_gifts &&
-                    userInfo.disallowed_stargifts.disallow_limited_stargifts &&
-                    userInfo.disallowed_stargifts.disallow_unlimited_stargifts &&
-                    userInfo.disallowed_stargifts.disallow_unique_stargifts
-                )
-            ) &&
-            parentFragment != null && parentFragment.getChatMode() == 0;
 
-        if (!visible && birthdayHint != null) {
-            birthdayHint.hide();
-        }
-        if (!visible && giftButton == null) {
-            return;
-        }
-        createGiftButton();
 
-        AndroidUtilities.updateViewVisibilityAnimated(giftButton, visible, 1f, true, 1f, animated, a -> {
-            if (scheduledButton != null) {
-                scheduledButton.setTranslationX(scheduledButton.getTranslationX());
-            }
-        });
-        if (visible) {
-            checkBirthdayHint();
-        }
-    }
 
-    private void checkBirthdayHint() {
-        if (
-            birthdayHint == null && giftButton != null && giftButton.getRight() != 0 &&
-            parentFragment != null && BirthdayController.isToday(parentFragment.getCurrentUserInfo()) &&
-            MessagesController.getInstance(currentAccount).getMainSettings().getBoolean(Calendar.getInstance().get(Calendar.YEAR) + "bdayhint_" + parentFragment.getDialogId(), true)
-        ) {
-            MessagesController.getInstance(currentAccount).getMainSettings().edit().putBoolean(Calendar.getInstance().get(Calendar.YEAR) + "bdayhint_" + parentFragment.getDialogId(), false).apply();
 
-            birthdayHint = new HintView2(getContext(), HintView2.DIRECTION_BOTTOM);
-            birthdayHint.setRounding(13);
-            birthdayHint.setMultilineText(true);
-            setBirthdayHintText();
-            birthdayHint.setPadding(dp(12), 0, dp(12), 0);
-            birthdayHint.setJointPx(1f, -(getWidth() - dp(12) - (messageEditTextContainer.getX() + attachLayout.getX() + giftButton.getX() + giftButton.getMeasuredWidth() / 2f)));
-            addView(birthdayHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 200, Gravity.TOP, 0, -200 + 8, 0, 0));
-            birthdayHint.setOnHiddenListener(() -> removeView(birthdayHint));
-            birthdayHint.setDuration(8000);
-            birthdayHint.show();
-        }
-    }
-
-    private void setBirthdayHintText() {
-        if (birthdayHint == null) return;
-        birthdayHint.setText(Emoji.replaceWithRestrictedEmoji(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserBirthdayHint, UserObject.getFirstName(parentFragment.getCurrentUser()))), birthdayHint.getTextPaint().getFontMetricsInt(), this::setBirthdayHintText));
-        birthdayHint.setMaxWidthPx(HintView2.cutInFancyHalf(birthdayHint.getText(), birthdayHint.getTextPaint()));
-    }
 
     public boolean showSendSuggestionHint() {
         if (sendSuggestHintView == null && suggestButton != null && suggestButton.getVisibility() == VISIBLE && MessagesController.getGlobalMainSettings().getInt("channelsuggesthint2", 0) < 2) {
@@ -11050,9 +10912,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         if (sendSuggestHintView != null) {
             sendSuggestHintView.hide();
         }
-        if (birthdayHint != null) {
-            birthdayHint.hide();
-        }
+
     }
 
     public void updateScheduleButton(boolean animated) {
@@ -13596,7 +13456,6 @@ public class ChatActivityEnterView extends FrameLayout implements
                 updateBotButton(false);
             }
         } else if (id == NotificationCenter.didUpdatePremiumGiftFieldIcon) {
-            updateGiftButton(true);
         } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
             if (richDraftActive && sendButton != null) {
                 sendButton.setLocked(!UserConfig.getInstance(currentAccount).isPremium());

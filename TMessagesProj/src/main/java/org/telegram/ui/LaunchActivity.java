@@ -214,7 +214,6 @@ import org.telegram.ui.Components.poll.PollAttachedMediaPack;
 import org.telegram.ui.Components.spoilers.SpoilerEffect2;
 import org.telegram.ui.Components.voip.RTMPStreamPipOverlay;
 import org.telegram.ui.Components.voip.VoIPHelper;
-import org.telegram.ui.Gifts.GiftSheet;
 import org.telegram.ui.Stars.ISuperRipple;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
@@ -2714,71 +2713,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                         data = Uri.parse(url);
                                         chatLinkSlug = data.getQueryParameter("slug");
                                     } else if (url.startsWith("tg:stars") || url.startsWith("tg://stars")) {
-                                        if (progress != null) {
-                                            progress.end();
-                                        }
-                                        presentFragment(new StarsIntroActivity());
+                                        if (progress != null) progress.end();
                                         return pushOpened;
                                     } else if (url.startsWith("tg:send_gift") || url.startsWith("tg://send_gift")) {
-                                        final String to = data.getQueryParameter("to");
-                                        if (TextUtils.isEmpty(to)) {
-                                            if (progress != null) {
-                                                progress.end();
-                                            }
-                                            UserSelectorBottomSheet.open(0, BirthdayController.getInstance(currentAccount).getState());
-                                            return pushOpened;
-                                        }
-
-                                        long toId = 0;
-                                        try {
-                                            toId = Long.parseLong(to);
-                                        } catch (Exception e) {}
-
-                                        if (toId != 0) {
-                                            if (progress != null) {
-                                                progress.end();
-                                            }
-                                            final TLObject obj = MessagesController.getInstance(currentAccount).getUserOrChat(toId);
-                                            if (obj == null) {
-                                                BaseFragment lastFragment = LaunchActivity.getLastFragment();
-                                                if (lastFragment != null) {
-                                                    if (lastFragment instanceof ChatActivity) {
-                                                        ((ChatActivity) lastFragment).shakeContent();
-                                                    }
-                                                }
-                                                return pushOpened;
-                                            }
-                                            new GiftSheet(this, intentAccount[0], toId, null)
-                                                .show();
-                                            return pushOpened;
-                                        }
-
-                                        if (progress != null) {
-                                            progress.init();
-                                        }
-                                        final Runnable cancel = MessagesController.getInstance(intentAccount[0]).getUserNameResolver().resolve(to, null, (peerId) -> {
-                                            if (progress != null) {
-                                                progress.end();
-                                            }
-
-                                            final TLObject obj = MessagesController.getInstance(currentAccount).getUserOrChat(peerId);
-                                            if (obj == null) {
-                                                BaseFragment lastFragment = LaunchActivity.getLastFragment();
-                                                if (lastFragment != null) {
-                                                    if (lastFragment instanceof ChatActivity) {
-                                                        ((ChatActivity) lastFragment).shakeContent();
-                                                    }
-                                                }
-                                                return;
-                                            }
-
-                                            new GiftSheet(this, intentAccount[0], peerId, null)
-                                                .show();
-                                        });
-                                        if (progress != null && cancel != null) {
-                                            progress.onCancel(cancel);
-                                        }
-
+                                        if (progress != null) progress.end();
                                         return pushOpened;
                                     } else {
                                         unsupportedUrl = url.replace("tg://", "").replace("tg:", "");

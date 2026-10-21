@@ -208,7 +208,6 @@ import org.telegram.ui.Components.chat.ChatInputViewsContainer;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.chat.layouts.ChatActivityFadeView;
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder;
-import org.telegram.ui.Gifts.GiftSheet;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
@@ -5763,37 +5762,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    public boolean isStarsSubscriptionHintVisible() {
-        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) return false;
-        if (folderId != 0 || communityId != 0) {
-            return false;
-        }
 
-        if (MessagesController.getInstance(currentAccount).pendingSuggestions.contains("STARS_SUBSCRIPTION_LOW_BALANCE")) {
-            StarsController c = StarsController.getInstance(currentAccount);
-            if (!c.hasInsufficientSubscriptions()) {
-                c.loadInsufficientSubscriptions();
-                return false;
-            } else {
-                long starsNeeded = -c.balance.amount;
-                for (int i = 0; i < c.insufficientSubscriptions.size(); ++i) {
-                    final TL_stars.StarsSubscription sub = c.insufficientSubscriptions.get(i);
-                    final long did = DialogObject.getPeerDialogId(sub.peer);
-                    if (did >= 0) {
-                        TLRPC.User user = getMessagesController().getUser(did);
-                        if (user == null) continue;
-                    } else {
-                        TLRPC.Chat chat = getMessagesController().getChat(-did);
-                        if (chat == null) continue;
-                    }
-                    starsNeeded += sub.pricing.amount;
-                }
-                return starsNeeded > 0;
-            }
-        }
-
-        return false;
-    }
 
     private boolean isCommunityPendingRequestsVisible() {
         return communityId != 0 && communityFull != null && communityFull.requests_pending > 0
@@ -5997,16 +5966,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 MessagesController.getInstance(currentAccount).removeSuggestion(0, "SETUP_PASSKEY");
                 updateDialogsHint();
             });
-        } else if (folderId == 0 && communityId == 0 && getMessagesController().pendingSuggestions.contains("PREMIUM_GRACE")) {
-            dialogsHintCellVisible = true;
-            dialogsHintCell.setOnClickListener(v -> {
-                Browser.openUrl(getContext(), getMessagesController().premiumManageSubscriptionUrl);
-            });
-            dialogsHintCell.setText(Emoji.replaceWithRestrictedEmoji(LocaleController.getString(R.string.GraceTitle), dialogsHintCell.titleView, this::updateDialogsHint), LocaleController.getString(R.string.GraceMessage));
-            dialogsHintCell.setOnCloseListener(v -> {
-                MessagesController.getInstance(currentAccount).removeSuggestion(0, "PREMIUM_GRACE");
-                updateDialogsHint();
-            });
         } else if (folderId == 0 && communityId == 0 && getMessagesController().customPendingSuggestion != null) {
             final TLRPC.TL_pendingSuggestion suggestion = getMessagesController().customPendingSuggestion;
             dialogsHintCellVisible = true;
@@ -6029,76 +5988,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 MessagesController.getInstance(currentAccount).removeSuggestion(0, suggestion.suggestion);
                 updateDialogsHint();
             });
-        } else if (isStarsSubscriptionHintVisible()) {
-            StarsController c = StarsController.getInstance(currentAccount);
-            dialogsHintCellVisible = true;
-            StringBuilder s = new StringBuilder();
-            long starsNeeded = 0;
-            long _firstDialogId = 0;
-            if (c.hasInsufficientSubscriptions()) {
-                for (int i = 0; i < c.insufficientSubscriptions.size(); ++i) {
-                    final TL_stars.StarsSubscription sub = c.insufficientSubscriptions.get(i);
-                    final long did = DialogObject.getPeerDialogId(sub.peer);
-                    if (_firstDialogId == 0) _firstDialogId = did;
-                    if (did >= 0) {
-                        TLRPC.User user = getMessagesController().getUser(did);
-                        if (user == null) continue;
-                        if (s.length() > 0) s.append(", ");
-                        s.append(UserObject.getUserName(user));
-                    } else {
-                        TLRPC.Chat chat = getMessagesController().getChat(-did);
-                        if (chat == null) continue;
-                        if (s.length() > 0) s.append(", ");
-                        s.append(chat.title);
-                    }
-                    starsNeeded += sub.pricing.amount;
-                }
-            }
-            final String starsNeededName = s.toString();
-            final long starsNeededFinal = starsNeeded;
-            final long firstDialogId = _firstDialogId;
-            dialogsHintCell.setOnClickListener(v -> {
-                new StarsIntroActivity.StarsNeededSheet(getContext(), getResourceProvider(), starsNeededFinal, StarsIntroActivity.StarsNeededSheet.TYPE_SUBSCRIPTION_KEEP, starsNeededName, () -> {
-                    updateDialogsHint();
-                }, firstDialogId).show();
-            });
-            dialogsHintCell.setText(StarsIntroActivity.replaceStarsWithPlain(formatPluralStringComma("StarsSubscriptionExpiredHintTitle2", (int) (starsNeeded - c.balance.amount <= 0 ? starsNeeded : starsNeeded - c.balance.amount), starsNeededName), .72f), LocaleController.getString(R.string.StarsSubscriptionExpiredHintText));
-            dialogsHintCell.setOnCloseListener(v -> {
-                MessagesController.getInstance(currentAccount).removeSuggestion(0, "STARS_SUBSCRIPTION_LOW_BALANCE");
-                updateDialogsHint();
-            });
-        } else if (folderId == 0 && communityId == 0 && !getMessagesController().premiumPurchaseBlocked() && BirthdayController.getInstance(currentAccount).contains() && !getMessagesController().dismissedSuggestions.contains("BIRTHDAY_CONTACTS_TODAY")) {
-            BirthdayController.BirthdayState state = BirthdayController.getInstance(currentAccount).getState();
-            ArrayList<TLRPC.User> users = state.today;
-            dialogsHintCellVisible = true;
-            dialogsHintCell.setOnClickListener(v -> {
-                if (state != null && state.today.size() == 1) {
-                    showDialog(new GiftSheet(getContext(), currentAccount, state.today.get(0).id, null, null).setBirthday());
-                    return;
-                }
-                UserSelectorBottomSheet.open(0, state);
-            });
-            dialogsHintCell.setAvatars(currentAccount, users);
-            dialogsHintCell.setText(Emoji.replaceWithRestrictedEmoji(AndroidUtilities.replaceSingleTag(
-                users.size() == 1 ?
-                    LocaleController.formatString(R.string.BirthdayTodaySingleTitle, UserObject.getForcedFirstName(users.get(0))) :
-                    LocaleController.formatPluralString("BirthdayTodayMultipleTitle", users.size()),
-                Theme.key_windowBackgroundWhiteValueText,
-                AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
-                null
-            ), dialogsHintCell.titleView, this::updateDialogsHint),
-                LocaleController.formatString(users.size() == 1 ? R.string.BirthdayTodaySingleMessage2 : R.string.BirthdayTodayMultipleMessage2)
-            );
-            dialogsHintCell.setOnCloseListener(v -> {
-                BirthdayController.getInstance(currentAccount).hide();
-                MessagesController.getInstance(currentAccount).removeSuggestion(0, "BIRTHDAY_CONTACTS_TODAY");
-                updateDialogsHint();
-                BulletinFactory.of(this)
-                        .createSimpleBulletin(R.raw.gift, LocaleController.getString(R.string.BoostingPremiumChristmasToast), 4)
-                        .setDuration(Bulletin.DURATION_PROLONG)
-                        .show();
-            });
-            StarsController.getInstance(currentAccount).loadStarGifts();
         } else if (
             folderId == 0 && communityId == 0 &&
             MessagesController.getInstance(currentAccount).pendingSuggestions.contains("BIRTHDAY_SETUP") &&

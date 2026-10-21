@@ -770,3 +770,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [o] Monetization follow-up: live donation controls and polling/undo/payment authorization removed, paid-reaction sheet deleted, paid highlighting chooser removed. Ordinary particle animations extracted; auction-only slider remains until auction cleanup. Source-only; verify at next APK delivery.
 
 - [o] Monetization follow-up: gift auction controller, bidding/polling/queries, dedicated screens/slider, home promotion and deep-link fetches removed. Auction gift choices removed from remaining catalogue. Source-only; generic gift/Stars screens and generated monetary schemas/resources still pending, release checks deferred to APK delivery.
+
+- [o] Monetization follow-up: composer/channel gift buttons and purchase hints, old-message send-gift menu, home birthday/Stars/grace sales banners and direct gift/subscription settings links removed. Source-only. Generic gift screens, resale/collectibles and paid-message presentation still require cleanup; verify native composer/home/navigation at next APK delivery.
