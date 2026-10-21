@@ -5,8 +5,6 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
-import android.annotation.SuppressLint;
 import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -15,7 +13,6 @@ import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Outline;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
@@ -23,7 +20,6 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.os.Bundle;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -45,21 +41,17 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 
 import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
-import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -69,12 +61,6 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.EdgeToEdgeSupportMode;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
-import org.telegram.ui.Business.AwayMessagesActivity;
-import org.telegram.ui.Business.BusinessIntroActivity;
-import org.telegram.ui.Business.GreetMessagesActivity;
-import org.telegram.ui.Business.LocationActivity;
-import org.telegram.ui.Business.OpeningHoursActivity;
-import org.telegram.ui.Business.QuickRepliesActivity;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.Business.TimezonesController;
 import org.telegram.ui.Cells.HeaderCell;
@@ -83,22 +69,17 @@ import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.Bulletin;
-import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.FillLastLinearLayoutManager;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.MediaActivity;
 import org.telegram.ui.Components.Premium.AboutPremiumView;
 import org.telegram.ui.Components.Premium.GLIcon.GLIconRenderer;
 import org.telegram.ui.Components.Premium.GLIcon.GLIconTextureView;
 import org.telegram.ui.Components.Premium.GLIcon.Icon3D;
-import org.telegram.ui.Components.Premium.PremiumButtonView;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumGradient;
-import org.telegram.ui.Components.Premium.PremiumTierCell;
 import org.telegram.ui.Components.Premium.StarParticlesView;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.Components.SimpleThemeDescription;
 import org.telegram.ui.Components.TextStyleSpan;
 import org.telegram.ui.Components.TypefaceSpan;
@@ -114,7 +95,6 @@ import org.telegram.ui.Components.blur3.DownscaleScrollableNoiseSuppressor;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawableSource;
-import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSource;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
@@ -122,19 +102,14 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Stories.recorder.HintView2;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 
-public class PremiumPreviewFragment extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
+public class PremiumPreviewFragment extends BaseFragment {
     public final static String TRANSACTION_PATTERN = "^(.*?)(?:\\.\\.\\d*|)$";
-    private final static boolean IS_PREMIUM_TIERS_UNAVAILABLE = false;
 
     RecyclerListView listView;
     ArrayList<PremiumFeatureData> premiumFeatures = new ArrayList<>();
     ArrayList<PremiumFeatureData> morePremiumFeatures = new ArrayList<>();
-    final ArrayList<SubscriptionTier> subscriptionTiers = new ArrayList<>();
-    int selectedTierIndex = 0;
-    SubscriptionTier currentSubscriptionTier;
 
     int rowCount;
     int paddingRow;
@@ -149,13 +124,9 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
     int privacyRow;
     int lastPaddingRow;
     Drawable shadowDrawable;
-    private FrameLayout buttonContainer;
-    private FrameLayout buttonContainerInternal;
 
     PremiumFeatureCell dummyCell;
-    PremiumTierCell dummyTierCell;
     int totalGradientHeight;
-    int totalTiersGradientHeight;
 
     FillLastLinearLayoutManager layoutManager;
     //icons
@@ -222,21 +193,17 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
     float progress;
     private int currentYOffset;
     private FrameLayout contentView;
-    private PremiumButtonView premiumButtonView;
     float totalProgress;
     private final int type;
     private final boolean whiteBackground;
     private String source;
 
-    private boolean selectAnnualByDefault;
 
     final Bitmap gradientTextureBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
     final Canvas gradientCanvas = new Canvas(gradientTextureBitmap);
     PremiumGradient.PremiumGradientTools gradientTools = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradientBackground1, Theme.key_premiumGradientBackground2, Theme.key_premiumGradientBackground3, Theme.key_premiumGradientBackground4);
-    PremiumGradient.PremiumGradientTools tiersGradientTools;
 
     private Insets insets = Insets.NONE;
-    private boolean forcePremium;
     float progressToFull;
 
     public static int serverStringToFeatureType(String s) {
@@ -427,10 +394,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         return null;
     }
 
-    public PremiumPreviewFragment setForcePremium() {
-        this.forcePremium = true;
-        return this;
-    }
+
 
     public PremiumPreviewFragment(String source) {
         this(FEATURES_PREMIUM, source);
@@ -475,23 +439,10 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         iBlur3FactoryBg = new BlurredBackgroundDrawableViewFactory(iBlur3Source);
     }
 
-    {
-        tiersGradientTools = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradient1, Theme.key_premiumGradient2, -1, -1);
-        tiersGradientTools.exactly = true;
-        tiersGradientTools.x1 = 0;
-        tiersGradientTools.y1 = 0f;
-        tiersGradientTools.x2 = 0;
-        tiersGradientTools.y2 = 1f;
-        tiersGradientTools.cx = 0;
-        tiersGradientTools.cy = 0;
-    }
 
-    public PremiumPreviewFragment setSelectAnnualByDefault() {
-        this.selectAnnualByDefault = true;
-        return this;
-    }
 
-    @SuppressLint("NotifyDataSetChanged")
+
+
     @Override
     public View createView(Context context) {
         iBlur3Capture = (canvas, position) -> Blur3Utils.captureRelativeParent(listView, canvas, position, listView, contentView);
@@ -516,7 +467,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         gradientPaint.setShader(shader);
 
         dummyCell = new PremiumFeatureCell(context);
-        dummyTierCell = new PremiumTierCell(context);
 
         premiumFeatures.clear();
         morePremiumFeatures.clear();
@@ -567,21 +517,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
                     return true;
                 }
 
-                float listX = backgroundView.getX() + backgroundView.tierListView.getX(), listY = backgroundView.getY() + backgroundView.tierListView.getY();
-                AndroidUtilities.rectTmp.set(listX, listY, listX + backgroundView.tierListView.getWidth(), listY + backgroundView.tierListView.getHeight());
-                if (progressToFull < 1.0f && (AndroidUtilities.rectTmp.contains(ev.getX(), ev.getY()) || listInterceptedTouch) && !listView.scrollingByUser) {
-                    ev.offsetLocation(-listX, -listY);
-                    if (ev.getAction() == MotionEvent.ACTION_DOWN) {
-                        listInterceptedTouch = true;
-                    } else if (ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_CANCEL) {
-                        listInterceptedTouch = false;
-                    }
-                    backgroundView.tierListView.dispatchTouchEvent(ev);
-
-                    if (listInterceptedTouch) {
-                        return true;
-                    }
-                }
                 return super.dispatchTouchEvent(ev);
             }
 
@@ -592,9 +527,8 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
                 backgroundView.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
                 particlesView.getLayoutParams().height = backgroundView.getMeasuredHeight();
 
-                int buttonHeight = (buttonContainer == null || buttonContainer.getVisibility() == View.GONE ? 0 : dp(68));
-                layoutManager.setAdditionalHeight(buttonHeight + statusBarHeight - dp(16));
-                layoutManager.setMinimumLastViewHeight(buttonHeight);
+                layoutManager.setAdditionalHeight(statusBarHeight - dp(16));
+                layoutManager.setMinimumLastViewHeight(0);
                 super.onMeasure(widthMeasureSpec, heightMeasureSpec);
                 int size = getMeasuredHeight() + getMeasuredWidth() << 16;
                 if (lastSize != size) {
@@ -668,7 +602,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
                 }
                 float fromTranslation = currentYOffset
                     - (actionBar.getMeasuredHeight() + backgroundView.getMeasuredHeight() - statusBarHeight)
-                    + dp(backgroundView.tierListView.getVisibility() == VISIBLE ? 24 : 16)
+                    + dp(16)
                     + dp(24);
                 float toTranslation = ((actionBar.getMeasuredHeight() - statusBarHeight - backgroundView.titleView.getMeasuredHeight()) / 2f) + statusBarHeight - backgroundView.getTop() - backgroundView.titleView.getTop();
 
@@ -683,7 +617,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
                 backgroundView.imageView.setScaleY(s);
                 backgroundView.imageView.setAlpha(alpha);
                 backgroundView.subtitleView.setAlpha(alpha);
-                backgroundView.tierListView.setAlpha(alpha);
                 particlesView.setAlpha(1f - totalProgress);
 
                 particlesView.setTranslationY(-(particlesView.getMeasuredHeight() - backgroundView.imageView.getMeasuredWidth()) / 2f + backgroundView.getY() + backgroundView.imageFrameLayout.getY());
@@ -696,8 +629,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
 
                 if (!isDialogVisible) {
                     invalidate();
-                    buttonContainerInternal.invalidate();
-                    buttonContainer.invalidate();
                 }
                 gradientTools.gradientMatrix(0, 0, getMeasuredWidth(), getMeasuredHeight(), -getMeasuredWidth() * 0.1f * progress, 0);
                 if (whiteBackground) {
@@ -713,11 +644,10 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
 
                 super.dispatchDraw(canvas);
 
-                if (buttonContainer.getVisibility() != VISIBLE) {
-                    navbarProtectionDrawable.setFadeHeight(insets.bottom, false);
-                    navbarProtectionDrawable.setBounds(0, getHeight() - insets.bottom, getWidth(), getHeight());
-                    navbarProtectionDrawable.draw(canvas);
-                }
+                navbarProtectionDrawable.setFadeHeight(insets.bottom, false);
+                navbarProtectionDrawable.setBounds(0, getHeight() - insets.bottom, getWidth(), getHeight());
+                navbarProtectionDrawable.draw(canvas);
+
 
                 if (parentLayout != null && whiteBackground) {
                     parentLayout.drawHeaderShadow(canvas, (int) (0xFF * progressToFull), actionBar.getBottom());
@@ -814,78 +744,14 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
             if (view instanceof PremiumFeatureCell) {
                 PremiumFeatureCell cell = (PremiumFeatureCell) view;
 
-                if (type == FEATURES_BUSINESS && getUserConfig().isPremium()) {
-                    if (cell.data.type == PREMIUM_FEATURE_BUSINESS_LOCATION) {
-                        presentFragment(new LocationActivity());
-                    } else if (cell.data.type == PREMIUM_FEATURE_BUSINESS_GREETING_MESSAGES) {
-                        presentFragment(new GreetMessagesActivity());
-                    } else if (cell.data.type == PREMIUM_FEATURE_BUSINESS_AWAY_MESSAGES) {
-                        presentFragment(new AwayMessagesActivity());
-                    } else if (cell.data.type == PREMIUM_FEATURE_BUSINESS_OPENING_HOURS) {
-                        presentFragment(new OpeningHoursActivity());
-                    } else if (cell.data.type == PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES) {
-                        presentFragment(new QuickRepliesActivity());
-                    } else if (cell.data.type == PREMIUM_FEATURE_STORIES) {
-                        Bundle args = new Bundle();
-                        args.putLong("dialog_id", UserConfig.getInstance(currentAccount).getClientUserId());
-                        args.putInt("type", MediaActivity.TYPE_STORIES);
-                        presentFragment(new MediaActivity(args, null));
-                    } else if (cell.data.type == PREMIUM_FEATURE_EMOJI_STATUS) {
-                        showSelectStatusDialog(cell, UserObject.getEmojiStatusDocumentId(getUserConfig().getCurrentUser()), (documentId, until) -> {
-                            final TLRPC.EmojiStatus emojiStatus;
-                            if (documentId == null) {
-                                emojiStatus = new TLRPC.TL_emojiStatusEmpty();
-                            } else {
-                                final TLRPC.TL_emojiStatus status = new TLRPC.TL_emojiStatus();
-                                status.document_id = documentId;
-                                if (until != null) {
-                                    status.flags |= 1;
-                                    status.until = until;
-                                }
-                                emojiStatus = status;
-                            }
-                            getMessagesController().updateEmojiStatus(emojiStatus);
-                            cell.setEmoji(documentId == null ? 0 : documentId, true);
-                        });
-                    } else if (cell.data.type == PREMIUM_FEATURE_FOLDER_TAGS) {
-                        presentFragment(new FiltersSetupActivity().highlightTags());
-                    } else if (cell.data.type == PREMIUM_FEATURE_BUSINESS_INTRO) {
-                        presentFragment(new BusinessIntroActivity());
-                    }
-                    return;
-                }
 
-                SubscriptionTier tier = selectedTierIndex < 0 || selectedTierIndex >= subscriptionTiers.size() ? null : subscriptionTiers.get(selectedTierIndex);
-                showDialog(new PremiumFeatureBottomSheet(PremiumPreviewFragment.this, getContext(), currentAccount, type == FEATURES_BUSINESS, cell.data.type, false, tier));
+
+                showDialog(new PremiumFeatureBottomSheet(PremiumPreviewFragment.this, getContext(), currentAccount, type == FEATURES_BUSINESS, cell.data.type, false));
             }
         });
         contentView.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL, 0, 0, 0, -48));
 
-        buttonContainerInternal = new FrameLayout(context);
-        premiumButtonView = new PremiumButtonView(context, false, getResourceProvider());
-        premiumButtonView.setNonClickable();
-
-        updateButtonText(false);
-        buttonContainer = new FrameLayout(context);
-
-        buttonContainerInternal.setPadding(dp(8), dp(8), dp(8), dp(8));
-        buttonContainerInternal.addView(premiumButtonView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        buttonContainerInternal.setBackground(iBlur3Factory.create(buttonContainerInternal)
-            .setColorProvider(BlurredBackgroundProviderImpl.premiumButton(resourceProvider))
-            .setRadius(dp(28))
-            .setPadding(dp(5)));
-        ScaleStateListAnimator.apply(buttonContainerInternal, 0.02f, 1.5f);
-        buttonContainer.addView(buttonContainerInternal, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48 + 8 + 8, Gravity.BOTTOM, 4, 0, 4, 0));
-
-        BlurredBackgroundWithFadeDrawable fade = new BlurredBackgroundWithFadeDrawable(iBlur3Factory.create(buttonContainer));
-        fade.setFadeHeight(dp(40), false);
-
         navbarProtectionDrawable = new BlurredBackgroundWithFadeDrawable(iBlur3Factory.create(contentView));
-        buttonContainer.setBackground(fade);
-
-        if (getUserConfig().isClientActivated()) {
-            contentView.addView(buttonContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
-        }
 
         fragmentView = contentView;
         actionBar.setBackground(null);
@@ -911,8 +777,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         updateRows();
 
         backgroundView.imageView.startEnterAnimation(-180, 200);
-        if (forcePremium) {
-        }
+
         MediaDataController.getInstance(currentAccount).preloadPremiumPreviewStickers();
 
 
@@ -926,9 +791,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         return false;
     }
 
-    public static void buyPremium(BaseFragment fragment) {
-        buyPremium(fragment, "settings");
-    }
+
 
     public static void fillPremiumFeaturesList(ArrayList<PremiumFeatureData> premiumFeatures, int currentAccount, boolean all) {
         MessagesController messagesController = MessagesController.getInstance(currentAccount);
@@ -1048,27 +911,17 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         }
     }
 
-    public static void buyPremium(BaseFragment fragment, String source) {
-        buyPremium(fragment, null, source, true);
-    }
-
-    public static void buyPremium(BaseFragment fragment, String source, boolean forcePremium) {
-        buyPremium(fragment, null, source, forcePremium);
-    }
-
-    public static void buyPremium(BaseFragment fragment, SubscriptionTier tier, String source) {
-        buyPremium(fragment, tier, source, true);
-    }
 
 
 
-    public static void buyPremium(BaseFragment fragment, SubscriptionTier tier, String source, boolean forcePremium) {
-        BulletinFactory.showError(getString(R.string.MonogramPurchasesUnavailable));
-    }
 
-    public static String getPremiumButtonText(int currentAccount, SubscriptionTier tier) {
-        return getString(R.string.MonogramPurchasesUnavailable);
-    }
+
+
+
+
+
+
+
 
     private void measureGradient(int w, int h) {
         int yOffset = 0;
@@ -1104,14 +957,8 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         statusRow = rowCount++;
         lastPaddingRow = rowCount++;
 
-        if (type == FEATURES_BUSINESS && getUserConfig().isPremium()) {
-        }
-
-        AndroidUtilities.updateViewVisibilityAnimated(buttonContainer, !getUserConfig().isPremium() || currentSubscriptionTier != null && currentSubscriptionTier.getMonths() < subscriptionTiers.get(selectedTierIndex).getMonths() && !forcePremium, 1f, false);
-
-        int buttonHeight = buttonContainer.getVisibility() == View.VISIBLE ? dp(64) : 0;
-        layoutManager.setAdditionalHeight(buttonHeight + statusBarHeight - dp(16));
-        layoutManager.setMinimumLastViewHeight(buttonHeight);
+        layoutManager.setAdditionalHeight(statusBarHeight - dp(16));
+        layoutManager.setMinimumLastViewHeight(0);
     }
 
     @Override
@@ -1124,14 +971,8 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         if (getMessagesController().premiumFeaturesBlocked()) {
             return false;
         }
-        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
-        getNotificationCenter().addObserver(this, NotificationCenter.premiumPromoUpdated);
 
-        if (getMediaDataController().getPremiumPromo() != null) {
-            for (TLRPC.Document document : getMediaDataController().getPremiumPromo().videos) {
-                FileLoader.getInstance(currentAccount).loadFile(document, getMediaDataController().getPremiumPromo(), FileLoader.PRIORITY_HIGH, 0);
-            }
-        }
+
 
         if (type == FEATURES_BUSINESS) {
             TimezonesController.getInstance(currentAccount).load();
@@ -1140,28 +981,9 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         return super.onFragmentCreate();
     }
 
-    @Override
-    public void onFragmentDestroy() {
-        super.onFragmentDestroy();
 
-        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
-        getNotificationCenter().removeObserver(this, NotificationCenter.premiumPromoUpdated);
-    }
 
-    @SuppressLint("NotifyDataSetChanged")
-    @Override
-    public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.premiumPromoUpdated) {
-            updateButtonText(false);
-            backgroundView.updatePremiumTiers();
-        }
-        if (id == NotificationCenter.currentUserPremiumStatusChanged || id == NotificationCenter.premiumPromoUpdated) {
-            backgroundView.updateText();
-            backgroundView.updatePremiumTiers();
-            updateRows();
-            listView.getAdapter().notifyDataSetChanged();
-        }
-    }
+
 
     private class Adapter extends RecyclerListView.SelectionAdapter {
         private final static int TYPE_PADDING = 0,
@@ -1389,7 +1211,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         private final FrameLayout imageFrameLayout;
         private final GLIconTextureView imageView;
 
-        private RecyclerListView tierListView;
 
         public BackgroundView(Context context) {
             super(context);
@@ -1435,319 +1256,32 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
             subtitleView.setGravity(Gravity.CENTER_HORIZONTAL);
             addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, Gravity.CENTER_HORIZONTAL, 16, 7, 16, 0));
 
-            tierListView = new RecyclerListView(context) {
-                Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-                {
-                    paint.setColor(Theme.getColor(Theme.key_dialogBackground));
-                }
-
-                private Path path = new Path();
-                @Override
-                public void dispatchDraw(Canvas c) {
-                    path.rewind();
-                    AndroidUtilities.rectTmp.set(0, 0, getWidth(), getHeight());
-                    path.addRoundRect(AndroidUtilities.rectTmp, dp(16), dp(16), Path.Direction.CW);
-                    c.drawPath(path, paint);
-                    c.save();
-                    c.clipPath(path);
-                    super.dispatchDraw(c);
-                    c.restore();
-                }
-
-                @Override
-                protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-                    super.onSizeChanged(w, h, oldw, oldh);
-                    measureGradient(w, h);
-                }
-
-                @Override
-                public boolean onInterceptTouchEvent(MotionEvent e) {
-                    if (progressToFull >= 1.0f) {
-                        return false;
-                    }
-                    return super.onInterceptTouchEvent(e);
-                }
-
-                @Override
-                public boolean dispatchTouchEvent(MotionEvent e) {
-                    if (progressToFull >= 1.0f) {
-                        return false;
-                    }
-                    return super.dispatchTouchEvent(e);
-                }
-            };
-            tierListView.setOverScrollMode(OVER_SCROLL_NEVER);
-            tierListView.setLayoutManager(new LinearLayoutManager(context));
-            tierListView.setAdapter(new RecyclerListView.SelectionAdapter() {
-                @NonNull
-                @Override
-                public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-                    PremiumTierCell premiumTierCell = new PremiumTierCell(context) {
-                        @Override
-                        protected void dispatchDraw(Canvas canvas) {
-                            if (discountView.getVisibility() == VISIBLE) {
-                                AndroidUtilities.rectTmp.set(discountView.getLeft(), discountView.getTop(), discountView.getRight(), discountView.getBottom());
-                                tiersGradientTools.gradientMatrix(0, 0, getMeasuredWidth(), totalTiersGradientHeight, 0, -tier.yOffset);
-                                canvas.drawRoundRect(AndroidUtilities.rectTmp, dp(6), dp(6), tiersGradientTools.paint);
-                            }
-
-                            super.dispatchDraw(canvas);
-                        }
-                    };
-                    premiumTierCell.setCirclePaintProvider(obj -> {
-                        tiersGradientTools.gradientMatrix(0, 0, premiumTierCell.getMeasuredWidth(), totalTiersGradientHeight, 0, -premiumTierCell.getTier().yOffset);
-                        return tiersGradientTools.paint;
-                    });
-                    return new RecyclerListView.Holder(premiumTierCell);
-                }
-
-                @Override
-                public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-                    PremiumTierCell premiumTier = (PremiumTierCell) holder.itemView;
-                    premiumTier.bind(subscriptionTiers.get(position), position != getItemCount() - 1);
-                    premiumTier.setChecked(selectedTierIndex == position, false);
-                }
-
-                @Override
-                public boolean isEnabled(RecyclerView.ViewHolder holder) {
-                    return !subscriptionTiers.get(holder.getAdapterPosition()).subscriptionOption.current;
-                }
-
-                @Override
-                public int getItemCount() {
-                    return subscriptionTiers.size();
-                }
-            });
-            tierListView.setOnItemClickListener((view, position) -> {
-                if (!view.isEnabled()) {
-                    return;
-                }
-                if (view instanceof PremiumTierCell) {
-                    PremiumTierCell tierCell = (PremiumTierCell) view;
-                    selectedTierIndex = subscriptionTiers.indexOf(tierCell.getTier());
-                    updateButtonText(true);
-                    tierCell.setChecked(true, true);
-
-                    for (int i = 0; i < tierListView.getChildCount(); i++) {
-                        View ch = tierListView.getChildAt(i);
-                        if (ch instanceof PremiumTierCell) {
-                            PremiumTierCell otherCell = (PremiumTierCell) ch;
-                            if (otherCell.getTier() != tierCell.getTier()) {
-                                otherCell.setChecked(false, true);
-                            }
-                        }
-                    }
-
-                    for (int i = 0; i < tierListView.getHiddenChildCount(); i++) {
-                        View ch = tierListView.getHiddenChildAt(i);
-                        if (ch instanceof PremiumTierCell) {
-                            PremiumTierCell otherCell = (PremiumTierCell) ch;
-                            if (otherCell.getTier() != tierCell.getTier()) {
-                                otherCell.setChecked(false, true);
-                            }
-                        }
-                    }
-
-                    for (int i = 0; i < tierListView.getCachedChildCount(); i++) {
-                        View ch = tierListView.getCachedChildAt(i);
-                        if (ch instanceof PremiumTierCell) {
-                            PremiumTierCell otherCell = (PremiumTierCell) ch;
-                            if (otherCell.getTier() != tierCell.getTier()) {
-                                otherCell.setChecked(false, true);
-                            }
-                        }
-                    }
-
-                    for (int i = 0; i < tierListView.getAttachedScrapChildCount(); i++) {
-                        View ch = tierListView.getAttachedScrapChildAt(i);
-                        if (ch instanceof PremiumTierCell) {
-                            PremiumTierCell otherCell = (PremiumTierCell) ch;
-                            if (otherCell.getTier() != tierCell.getTier()) {
-                                otherCell.setChecked(false, true);
-                            }
-                        }
-                    }
-
-                    AndroidUtilities.updateViewVisibilityAnimated(buttonContainer, !getUserConfig().isPremium() || currentSubscriptionTier != null && currentSubscriptionTier.getMonths() < subscriptionTiers.get(selectedTierIndex).getMonths() && !forcePremium);
-                }
-            });
-            Path path = new Path();
-            float[] radii = new float[8];
-            tierListView.setSelectorTransformer(canvas -> {
-                View child = tierListView.getPressedChildView();
-                int position = child == null ? -1 : tierListView.getChildViewHolder(child).getAdapterPosition();
-
-                path.rewind();
-                Rect selectorRect = tierListView.getSelectorRect();
-                AndroidUtilities.rectTmp.set(selectorRect.left, selectorRect.top, selectorRect.right, selectorRect.bottom);
-                Arrays.fill(radii, 0);
-                if (position == 0) {
-                    Arrays.fill(radii, 0, 4, dp(12));
-                }
-                if (position == tierListView.getAdapter().getItemCount() - 1) {
-                    Arrays.fill(radii, 4, 8, dp(12));
-                }
-                path.addRoundRect(AndroidUtilities.rectTmp, radii, Path.Direction.CW);
-                canvas.clipPath(path);
-            });
-            setClipChildren(false);
-            setClipToPadding(false);
-            addView(tierListView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 16, 12, 4));
-
-            updatePremiumTiers();
             updateText();
         }
 
-        private void measureGradient(int w, int h) {
-            int yOffset = 0;
-            for (int i = 0; i < subscriptionTiers.size(); i++) {
-                dummyTierCell.bind(subscriptionTiers.get(i), false);
-                dummyTierCell.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST));
-                subscriptionTiers.get(i).yOffset = yOffset;
-                yOffset += dummyTierCell.getMeasuredHeight();
-            }
 
-            totalTiersGradientHeight = yOffset;
-        }
 
         @Override
         public boolean onInterceptTouchEvent(MotionEvent ev) {
             return true;
         }
 
-        @SuppressLint("NotifyDataSetChanged")
-        public void updatePremiumTiers() {
-            subscriptionTiers.clear();
-            selectedTierIndex = -1;
-            currentSubscriptionTier = null;
-            long pricePerYearMax = 0;
-            if (getMediaDataController().getPremiumPromo() != null) {
-                for (TLRPC.TL_premiumSubscriptionOption option : getMediaDataController().getPremiumPromo().period_options) {
-                    if (getUserConfig().isPremium() && !option.can_purchase_upgrade && !option.current) {
-                        continue;
-                    }
-
-                    SubscriptionTier subscriptionTier = new SubscriptionTier(option);
-                    subscriptionTiers.add(subscriptionTier);
-                    if (selectAnnualByDefault) {
-                        if (option.months == 12) {
-                            selectedTierIndex = subscriptionTiers.size() - 1;
-                        }
-                    }
-                    if (option.current) {
-                        currentSubscriptionTier = subscriptionTier;
-                    }
-                    if (subscriptionTier.getPricePerYear() > pricePerYearMax) {
-                        pricePerYearMax = subscriptionTier.getPricePerYear();
-                    }
-                }
-            }
 
 
-            for (SubscriptionTier tier : subscriptionTiers) {
-                tier.setPricePerYearRegular(pricePerYearMax);
-            }
-
-            if (selectedTierIndex == -1) {
-                for (int i = 0; i < subscriptionTiers.size(); i++) {
-                    SubscriptionTier tier = subscriptionTiers.get(i);
-                    if (tier.getMonths() == 12) {
-                        selectedTierIndex = i;
-                        break;
-                    }
-                }
-                if (selectedTierIndex == -1) {
-                    selectedTierIndex = 0;
-                }
-            }
-            updateButtonText(false);
-            tierListView.getAdapter().notifyDataSetChanged();
-        }
-
-        private boolean setTierListViewVisibility;
-        private boolean tierListViewVisible;
         public void updateText() {
             if (type == FEATURES_PREMIUM) {
-                titleView.setText(getString(forcePremium ? R.string.TelegramPremiumSubscribedTitle : R.string.TelegramPremium));
-                subtitleView.setText(AndroidUtilities.replaceTags(getString(getUserConfig().isPremium() || forcePremium ? R.string.TelegramPremiumSubscribedSubtitle : R.string.TelegramPremiumSubtitle)));
+                titleView.setText(getString(R.string.TelegramPremium));
+                subtitleView.setText(AndroidUtilities.replaceTags(getString(R.string.TelegramPremiumSubtitle)));
             } else if (type == FEATURES_BUSINESS) {
-                titleView.setText(getString(forcePremium ? R.string.TelegramPremiumSubscribedTitle : R.string.TelegramBusiness));
-                subtitleView.setText(AndroidUtilities.replaceTags(getString(getUserConfig().isPremium() || forcePremium ? R.string.TelegramBusinessSubscribedSubtitleTemp : R.string.TelegramBusinessSubtitleTemp)));
+                titleView.setText(getString(R.string.TelegramBusiness));
+                subtitleView.setText(AndroidUtilities.replaceTags(getString(R.string.TelegramBusinessSubtitleTemp)));
             }
             subtitleView.getLayoutParams().width = Math.min(AndroidUtilities.displaySize.x - dp(42), HintView2.cutInFancyHalf(subtitleView.getText(), subtitleView.getPaint()));
-            boolean tierNotVisible = forcePremium || BuildVars.IS_BILLING_UNAVAILABLE || IS_PREMIUM_TIERS_UNAVAILABLE || subscriptionTiers.size() <= 1;
-            if (!setTierListViewVisibility || !tierNotVisible) {
-                tierListView.setVisibility(tierNotVisible ? GONE : VISIBLE);
-                setTierListViewVisibility = true;
-            } else if (tierListView.getVisibility() == VISIBLE && tierNotVisible && tierListViewVisible == tierNotVisible) {
-                View v = tierListView;
-                ValueAnimator animator = ValueAnimator.ofFloat(1, 0).setDuration(250);
-                animator.addUpdateListener(animation -> {
-                    float val = (float) animation.getAnimatedValue();
-                    v.setAlpha(val);
-                    v.setScaleX(val);
-                    v.setScaleY(val);
 
-                    float f = animator.getAnimatedFraction();
-                    for (int i = 0; i < backgroundView.getChildCount(); i++) {
-                        View ch = backgroundView.getChildAt(i);
-                        if (ch != tierListView) {
-                            float offset = 0;
-                            if (ch == imageFrameLayout) {
-                                offset -= dp(15) * f;
-                            } else {
-                                offset += dp(8) * f;
-                            }
-                            ch.setTranslationY(f * v.getMeasuredHeight() + offset);
-                        }
-                    }
-                });
-                animator.addListener(new AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(Animator animation) {
-                        v.setVisibility(GONE);
-
-                        for (int i = 0; i < backgroundView.getChildCount(); i++) {
-                            View ch = backgroundView.getChildAt(i);
-                            if (ch != tierListView) {
-                                ch.setTranslationY(0);
-                            }
-                        }
-                    }
-                });
-                animator.setInterpolator(CubicBezierInterpolator.DEFAULT);
-                animator.start();
-            }
-            tierListViewVisible = !tierNotVisible;
         }
     }
 
-    private void updateButtonText(boolean animated) {
-        if (premiumButtonView == null) {
-            return;
-        }
-        if (getUserConfig().isPremium() && currentSubscriptionTier != null && selectedTierIndex < subscriptionTiers.size() && subscriptionTiers.get(selectedTierIndex).getMonths() < currentSubscriptionTier.getMonths()) {
-            return;
-        }
-        if (LocaleController.isRTL) {
-            animated = false;
-        }
-        if (BuildVars.IS_BILLING_UNAVAILABLE && selectedTierIndex < subscriptionTiers.size()) {
-            premiumButtonView.setButton(getPremiumButtonText(currentAccount, subscriptionTiers.get(selectedTierIndex)), null, animated);
-            buttonContainerInternal.setOnClickListener(v -> buyPremium(this));
-            return;
-        }
 
-        if (!subscriptionTiers.isEmpty() && selectedTierIndex < subscriptionTiers.size()) {
-            premiumButtonView.setButton(getPremiumButtonText(currentAccount, subscriptionTiers.get(selectedTierIndex)), null, animated);
-            buttonContainerInternal.setOnClickListener(v -> {
-                SubscriptionTier tier = subscriptionTiers.get(selectedTierIndex);
-                buyPremium(this, tier, "settings", true);
-            });
-            premiumButtonView.setFlickerDisabled(false);
-        }
-    }
 
     @Override
     public boolean isLightStatusBar() {
@@ -1873,97 +1407,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
 
 
 
-    public final static class SubscriptionTier {
-        public final TLRPC.TL_premiumSubscriptionOption subscriptionOption;
-        private int discount;
-        private long pricePerMonth;
-        private long pricePerYear;
 
-        private long pricePerYearRegular;
-
-        public int yOffset;
-
-        public SubscriptionTier(TLRPC.TL_premiumSubscriptionOption subscriptionOption) {
-            this.subscriptionOption = subscriptionOption;
-        }
-
-
-
-
-
-
-
-        public void setPricePerYearRegular(long pricePerYearRegular) {
-            this.pricePerYearRegular = pricePerYearRegular;
-        }
-
-        public int getMonths() {
-            return subscriptionOption.months;
-        }
-
-        public int getDiscount() {
-            if (discount == 0) {
-                if (getPricePerMonth() == 0) {
-                    return 0;
-                }
-
-                if (pricePerYearRegular != 0) {
-                    discount = (int) ((1.0 - getPricePerYear() / (double) pricePerYearRegular) * 100);
-
-                    if (discount == 0) {
-                        discount = -1;
-                    }
-                }
-            }
-            return discount;
-        }
-
-        public long getPricePerYear() {
-            if (pricePerYear == 0) {
-                long price = getPrice();
-                if (price != 0) {
-                    pricePerYear = (long) ((double) price / subscriptionOption.months * 12);
-                }
-            }
-            return pricePerYear;
-        }
-
-        public long getPricePerMonth() {
-            if (pricePerMonth == 0) {
-                long price = getPrice();
-                if (price != 0) {
-                    pricePerMonth = price / subscriptionOption.months;
-                }
-            }
-            return pricePerMonth;
-        }
-
-        public String getFormattedPricePerYearRegular() {
-            return org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(pricePerYearRegular, getCurrency());
-        }
-
-        public String getFormattedPricePerYear() {
-            return org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(getPricePerYear(), getCurrency());
-        }
-
-        public String getFormattedPricePerMonth() {
-            return org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(getPricePerMonth(), getCurrency());
-        }
-
-        public String getFormattedPrice() {
-            return org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(getPrice(), getCurrency());
-        }
-
-        public long getPrice() {
-            return subscriptionOption.amount;
-        }
-
-        public String getCurrency() {
-            return subscriptionOption.currency;
-        }
-
-
-    }
 
     private SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow selectAnimatedEmojiDialog;
     public void showSelectStatusDialog(PremiumFeatureCell cell, Long documentId, Utilities.Callback2<Long, Integer> onSet) {
@@ -2050,9 +1494,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         AndroidUtilities.setViewLayoutMargins(listView, insets.left, 0, insets.right, 0);
 
         backgroundView.setPadding(insets.left, 0, insets.right, 0);
-        if (buttonContainer != null) {
-            buttonContainer.setPadding(insets.left, dp(14), insets.right, insets.bottom);
-        }
+
 
         return WindowInsetsCompat.CONSUMED;
     }

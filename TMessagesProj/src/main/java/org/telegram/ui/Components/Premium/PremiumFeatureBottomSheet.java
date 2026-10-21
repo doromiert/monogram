@@ -45,21 +45,18 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.BottomPagesView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
-import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stories.recorder.HintView2;
-import org.telegram.ui.ThemePreviewActivity;
 import org.telegram.ui.Components.FeatureInfoCell;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 
-public class PremiumFeatureBottomSheet extends BottomSheet implements NotificationCenter.NotificationCenterDelegate {
+public class PremiumFeatureBottomSheet extends BottomSheet {
 
     private final BaseFragment baseFragment;
     private PremiumButtonView premiumButtonView;
@@ -80,42 +77,35 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
     SvgHelper.SvgDrawable svgIcon;
     private final int startType;
     private final boolean onlySelectedType;
-    private boolean forceAbout;
 
     int selectedPosition;
     int toPosition;
     float progress;
 
-    private PremiumPreviewFragment.SubscriptionTier selectedTier;
     private int gradientAlpha = 255;
     int topGlobalOffset;
     int topCurrentOffset;
     ActionBar actionBar;
 
     public PremiumFeatureBottomSheet(Context context, int startType, boolean onlySelectedType, Theme.ResourcesProvider resourcesProvider) {
-        this(null, context, UserConfig.selectedAccount, false, startType, onlySelectedType, null, resourcesProvider);
+        this(null, context, UserConfig.selectedAccount, false, startType, onlySelectedType, resourcesProvider);
     }
 
     public PremiumFeatureBottomSheet(BaseFragment fragment, int startType, boolean onlySelectedType) {
-        this(fragment, startType, onlySelectedType, null);
-    }
-
-    public PremiumFeatureBottomSheet(BaseFragment fragment, int startType, boolean onlySelectedType, PremiumPreviewFragment.SubscriptionTier subscriptionTier) {
-        this(fragment, fragment.getContext(), fragment.getCurrentAccount(), false, startType, onlySelectedType, subscriptionTier);
+        this(fragment, fragment.getContext(), fragment.getCurrentAccount(), false, startType, onlySelectedType);
     }
 
     public PremiumFeatureBottomSheet(BaseFragment fragment, Context context, int currentAccount, int startType, boolean onlySelectedType) {
-        this(fragment, context, currentAccount, false, startType, onlySelectedType, null);
+        this(fragment, context, currentAccount, false, startType, onlySelectedType);
     }
 
-    public PremiumFeatureBottomSheet(BaseFragment fragment, Context context, int currentAccount, boolean business, int startType, boolean onlySelectedType, PremiumPreviewFragment.SubscriptionTier subscriptionTier) {
-        this(fragment, context, currentAccount, business, startType, onlySelectedType, subscriptionTier, getResourceProvider(fragment));
+    public PremiumFeatureBottomSheet(BaseFragment fragment, Context context, int currentAccount, boolean business, int startType, boolean onlySelectedType) {
+        this(fragment, context, currentAccount, business, startType, onlySelectedType, getResourceProvider(fragment));
     }
 
-    public PremiumFeatureBottomSheet(BaseFragment fragment, Context context, int currentAccount, boolean business, int startType, boolean onlySelectedType, PremiumPreviewFragment.SubscriptionTier subscriptionTier, Theme.ResourcesProvider resourcesProvider) {
+    public PremiumFeatureBottomSheet(BaseFragment fragment, Context context, int currentAccount, boolean business, int startType, boolean onlySelectedType, Theme.ResourcesProvider resourcesProvider) {
         super(context, false, resourcesProvider);
         this.baseFragment = fragment;
-        selectedTier = subscriptionTier;
 
         fixNavigationBar(getThemedColor(Theme.key_dialogBackground));
         this.startType = startType;
@@ -400,43 +390,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
             linearLayout.addView(bottomPages, LayoutHelper.createLinear(11 * premiumFeatures.size(), 5, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 10));
         }
         premiumButtonView = new PremiumButtonView(getContext(), true, resourcesProvider);
-        premiumButtonView.buttonLayout.setOnClickListener(v -> {
-            if (fragment instanceof ChatActivity) {
-                ((ChatActivity) fragment).closeMenu();
-                if (((ChatActivity) fragment).chatAttachAlert != null) {
-                    ((ChatActivity) fragment).chatAttachAlert.dismiss(true);
-                }
-            }
-            BaseFragment mainFragment = LaunchActivity.getLastFragment();
-            for (int i = 0; i < 2; i++) {
-                BaseFragment currentFragment = i == 0 ? fragment : mainFragment;
-                if (currentFragment != null && currentFragment.getLastStoryViewer() != null) {
-                    currentFragment.getLastStoryViewer().dismissVisibleDialogs();
-                }
-                if (currentFragment != null && currentFragment.getVisibleDialog() != null) {
-                    currentFragment.getVisibleDialog().dismiss();
-                }
-            }
-            if (onlySelectedType || forceAbout) {
-                BaseFragment premiumFragment = new PremiumPreviewFragment(PremiumPreviewFragment.featureTypeToServerString(featureData.type));
-                if (fragment instanceof ThemePreviewActivity) {
-                    BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();
-                    params.transitionFromLeft = true;
-                    params.allowNestedScroll = false;
-                    fragment.showAsSheet(premiumFragment, params);
-                } else if (fragment != null) {
-                    fragment.presentFragment(premiumFragment);
-                } else {
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    if (lastFragment != null) {
-                        lastFragment.presentFragment(premiumFragment);
-                    }
-                }
-            } else {
-                PremiumPreviewFragment.buyPremium(fragment, selectedTier, PremiumPreviewFragment.featureTypeToServerString(featureData.type));
-            }
-            dismiss();
-        });
+        premiumButtonView.buttonLayout.setOnClickListener(v -> dismiss());
         premiumButtonView.overlayTextView.setOnClickListener(v -> {
             dismiss();
         });
@@ -446,18 +400,14 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
         buttonContainer.setBackgroundColor(getThemedColor(Theme.key_dialogBackground));
         linearLayout.addView(buttonContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 68, Gravity.BOTTOM));
 
-        if (startType == PremiumPreviewFragment.FEATURE_GIFTS) {
-            premiumButtonView.setOverlayText(replaceUnderstood(getString(R.string.Understood)), true, false);
-        } else if (UserConfig.getInstance(currentAccount).isPremium()) {
-            premiumButtonView.setOverlayText(LocaleController.getString(R.string.OK), false, false);
-        }
+        premiumButtonView.setOverlayText(LocaleController.getString(R.string.OK), false, false);
 
         ScrollView scrollView = new ScrollView(getContext());
         scrollView.addView(linearLayout);
         setCustomView(scrollView);
 
         MediaDataController.getInstance(currentAccount).preloadPremiumPreviewStickers();
-        setButtonText();
+
         customViewGravity = Gravity.LEFT | Gravity.BOTTOM;
 
         Drawable headerShadowDrawable = ContextCompat.getDrawable(getContext(), R.drawable.header_shadow).mutate();
@@ -553,30 +503,9 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
         buttonContainer.setVisibility(View.GONE);
     }
 
-    public PremiumFeatureBottomSheet setForceAbout() {
-        this.forceAbout = true;
-        premiumButtonView.clearOverlayText();
-        setButtonText();
-        return this;
-    }
 
-    private void setButtonText() {
-        if (forceAbout) {
-            premiumButtonView.buttonTextView.setText(LocaleController.getString(R.string.AboutTelegramPremium));
-        } else if (onlySelectedType) {
-            if (startType == PremiumPreviewFragment.PREMIUM_FEATURE_REACTIONS) {
-                premiumButtonView.buttonTextView.setText(LocaleController.getString(R.string.UnlockPremiumReactions));
-                premiumButtonView.setIcon(R.raw.unlock_icon);
-            } else if (startType == PremiumPreviewFragment.PREMIUM_FEATURE_APPLICATION_ICONS) {
-                premiumButtonView.buttonTextView.setText(LocaleController.getString(R.string.UnlockPremiumIcons));
-                premiumButtonView.setIcon(R.raw.unlock_icon);
-            } else {
-                premiumButtonView.buttonTextView.setText(LocaleController.getString(R.string.AboutTelegramPremium));
-            }
-        } else {
-            premiumButtonView.buttonTextView.setText(PremiumPreviewFragment.getPremiumButtonText(currentAccount, selectedTier));
-        }
-    }
+
+
 
     @Override
     public void show() {
@@ -588,8 +517,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.premiumPromoUpdated);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
+
 
         actionBar = new ActionBar(getContext()) {
             @Override
@@ -646,24 +574,12 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
     public void dismiss() {
         super.dismiss();
 
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.premiumPromoUpdated);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
+
 
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.startAllHeavyOperations, 16);
     }
 
-    @Override
-    public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.premiumPromoUpdated) {
-            setButtonText();
-        } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
-            if (UserConfig.getInstance(currentAccount).isPremium()) {
-                premiumButtonView.setOverlayText(LocaleController.getString(R.string.OK), false, true);
-            } else {
-                premiumButtonView.clearOverlayText();
-            }
-        }
-    }
+
 
 
     private class ViewPage extends LinearLayout {

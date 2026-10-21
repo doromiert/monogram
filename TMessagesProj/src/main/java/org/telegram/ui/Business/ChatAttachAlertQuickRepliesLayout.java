@@ -415,7 +415,7 @@ public class ChatAttachAlertQuickRepliesLayout extends ChatAttachAlert.AttachAle
             if (object instanceof QuickRepliesController.QuickReply) {
                 if (!UserConfig.getInstance(parentAlert.currentAccount).isPremium()) {
                     if (parentAlert.baseFragment != null) {
-                        new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), parentAlert.currentAccount, true, PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false, null).show();
+                        new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), parentAlert.currentAccount, true, PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false).show();
                     }
                     return;
                 }
