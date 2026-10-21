@@ -11,15 +11,11 @@ import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.GradientDrawable;
 import android.text.SpannableString;
-import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.style.DynamicDrawableSpan;
-import android.text.style.ForegroundColorSpan;
 import android.text.style.ImageSpan;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -27,30 +23,23 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.TextView;
 
 //import com.google.mlkit.nl.translate.TranslateLanguage;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
-import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.ChannelMonetizationLayout;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.RestrictedLanguagesSelectActivity;
-import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.HintView2;
 
 import java.util.ArrayList;
@@ -350,37 +339,6 @@ public class TranslateButton extends FrameLayout implements Theme.Colorable {
         });
         popupLayout.addView(hideButton);
 
-        popupLayout.addView(new ActionBarPopupWindow.GapView(getContext(), resourcesProvider), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
-
-        final LinkSpanDrawable.LinksTextView cocoonButton = new LinkSpanDrawable.LinksTextView(getContext());
-        cocoonButton.setPadding(dp(13), dp(8.33f), dp(13), dp(8.33f));
-        cocoonButton.setDisablePaddingsOffsetY(true);
-        cocoonButton.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-        cocoonButton.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-        cocoonButton.setEmojiColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-        CharSequence cocoonText = TextUtils.concat(AndroidUtilities.replaceTags(getString(R.string.CocoonPoweredBy)), " ", AndroidUtilities.premiumText(getString(R.string.CocoonPoweredByLink), () -> {
-            popupWindow.dismiss();
-            showCocoonAlert(getContext(), resourcesProvider);
-        }));
-        SpannableStringBuilder egg = new SpannableStringBuilder("🥚");
-        egg.setSpan(new AnimatedEmojiSpan(5197252827247841976L, cocoonButton.getPaint().getFontMetricsInt()), 0, egg.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        SpannableStringBuilder eggSpaced = new SpannableStringBuilder(egg);
-        eggSpaced.append(" ");
-        cocoonText = AndroidUtilities.replaceCharSequence("🥚 ", cocoonText, eggSpaced);
-        cocoonText = AndroidUtilities.replaceCharSequence("🥚", cocoonText, egg);
-        cocoonButton.setText(HintView2.cutInFancyHalfText(cocoonText, cocoonButton.getPaint()));
-        cocoonButton.setBackground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider), 0, 12));
-        cocoonButton.setOnClickListener(v -> {
-            popupWindow.dismiss();
-            showCocoonAlert(getContext(), resourcesProvider);
-        });
-        popupLayout.addView(cocoonButton);
-
-        popupWindow.setPauseNotifications(true);
-        popupWindow.setDismissAnimationDuration(220);
-        popupWindow.setOutsideTouchable(true);
-        popupWindow.setClippingEnabled(true);
-        popupWindow.setAnimationStyle(R.style.PopupContextAnimation);
         popupWindow.setFocusable(true);
         popupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NOT_NEEDED);
         popupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
@@ -415,96 +373,5 @@ public class TranslateButton extends FrameLayout implements Theme.Colorable {
         menuView.setImageResource(UserConfig.getInstance(currentAccount).isPremium() || chat != null && chat.autotranslation ? R.drawable.msg_mini_customize : R.drawable.msg_close);
     }
 
-    public static void showCocoonAlert(Context context, Theme.ResourcesProvider resourcesProvider) {
-        final BottomSheet.Builder builder = new BottomSheet.Builder(context, false, resourcesProvider);
-        builder.setApplyBottomPadding(false);
-        builder.setApplyTopPadding(false);
-        final BottomSheet[] sheet = new BottomSheet[1];
 
-        final LinearLayout layout = new LinearLayout(context);
-        layout.setOrientation(LinearLayout.VERTICAL);
-
-        final FrameLayout topView = new FrameLayout(context);
-        final GradientDrawable bg = new GradientDrawable();
-        bg.setGradientType(GradientDrawable.RADIAL_GRADIENT);
-        bg.setColors(new int[] { 0xFF0C2065, 0xFF06112A });
-        bg.setGradientRadius(dp(150));
-        final float r = dp(12);
-        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
-        topView.setBackground(bg);
-        final LinearLayout topViewLayout = new LinearLayout(context);
-        topViewLayout.setOrientation(LinearLayout.VERTICAL);
-        topView.addView(topViewLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
-
-        final ImageView logoView = new ImageView(context);
-        logoView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        logoView.setImageResource(R.drawable.cocoon_logo);
-        topViewLayout.addView(logoView, LayoutHelper.createLinear(132, 132, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 33, 0, 0));
-
-        final ImageView titleView = new ImageView(context);
-        titleView.setImageResource(R.drawable.cocoon_text);
-        topViewLayout.addView(titleView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 32, 12, 32, 0));
-
-        final TextView subtitleView = new TextView(context);
-        subtitleView.setTextColor(0xFFB8C9EF);
-        subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-        subtitleView.setGravity(Gravity.CENTER);
-        final SpannableStringBuilder subtitle = AndroidUtilities.replaceTags(getString(R.string.CocoonSubtitle));
-        final TypefaceSpan[] spans = subtitle.getSpans(0, subtitle.length(), TypefaceSpan.class);
-        for (int i = 0; i < spans.length; ++i) {
-            subtitle.setSpan(new ForegroundColorSpan(0xFFFFFFFF), subtitle.getSpanStart(spans[i]), subtitle.getSpanEnd(spans[i]), subtitle.getSpanFlags(spans[i]));
-        }
-        subtitleView.setText(subtitle);
-        topViewLayout.addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 32, 14, 32, 20));
-
-        layout.addView(topView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-        layout.addView(
-            new ChannelMonetizationLayout.FeatureCell(context, R.drawable.menu_privacy, getString(R.string.CocoonFeature1Title), AndroidUtilities.replaceSingleTag(getString(R.string.CocoonFeature1Text), () -> {
-                sheet[0].dismiss();
-                Browser.openUrl(context, getString(R.string.CocoonFeature1TextLink));
-            }), resourcesProvider),
-            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 32, 16, 32, 16)
-        );
-
-        layout.addView(
-            new ChannelMonetizationLayout.FeatureCell(context, R.drawable.msg_stats, getString(R.string.CocoonFeature2Title), getString(R.string.CocoonFeature2Text), resourcesProvider),
-            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 32, 0, 32, 16)
-        );
-
-        layout.addView(
-            new ChannelMonetizationLayout.FeatureCell(context, R.drawable.menu_gift, getString(R.string.CocoonFeature3Title), AndroidUtilities.replaceSingleTag(getString(R.string.CocoonFeature3Text), () -> {
-                sheet[0].dismiss();
-                Browser.openUrlInSystemBrowser(context, getString(R.string.CocoonFeature3TextLink));
-            }), resourcesProvider),
-            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 32, 0, 32, 16)
-        );
-
-        final View separatorView = new View(context);
-        separatorView.setBackgroundColor(Theme.getColor(Theme.key_divider, resourcesProvider));
-        layout.addView(separatorView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1.0f / AndroidUtilities.density, Gravity.FILL_HORIZONTAL, 24, 0, 24, 0));
-
-        final LinkSpanDrawable.LinksTextView footerView = new LinkSpanDrawable.LinksTextView(context);
-        footerView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-        footerView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-        footerView.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-        footerView.setGravity(Gravity.CENTER);
-        footerView.setText(AndroidUtilities.replaceSingleTag(getString(R.string.CocoonFooter), () -> {
-            sheet[0].dismiss();
-            Browser.openUrl(context, getString(R.string.CocoonFooterLink));
-        }));
-        footerView.setPadding(0, dp(18), 0, dp(18));
-        footerView.setDisablePaddingsOffsetY(true);
-        layout.addView(footerView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL, 32, 0, 32, 0));
-
-        final ButtonWithCounterView button = new ButtonWithCounterView(context, resourcesProvider).setRound();
-        button.setText(replaceUnderstood(getString(R.string.Understood)));
-        button.setOnClickListener(v -> sheet[0].dismiss());
-        layout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.FILL_HORIZONTAL, 16, 0, 16, 16));
-
-        builder.setCustomView(layout);
-        sheet[0] = builder.create();
-        sheet[0].fixNavigationBar();
-        sheet[0].show();
-    }
 }

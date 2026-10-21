@@ -26,7 +26,6 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_stats;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Business.BusinessLinksActivity;
 import org.telegram.ui.Business.QuickRepliesActivity;
@@ -48,7 +47,6 @@ import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Cells.TextRightIconCell;
 import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Cells.UserCell;
-import org.telegram.ui.ChannelMonetizationLayout;
 import org.telegram.ui.Charts.BaseChartView;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.StatisticActivity;
@@ -93,8 +91,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     public static final int VIEW_TYPE_CHART_STACK_LINEAR = 22;
     public static final int VIEW_TYPE_CHART_LINEAR_BAR = 23;
 
-    public static final int VIEW_TYPE_PROCEED_OVERVIEW = 24;
-    public static final int VIEW_TYPE_TRANSACTION = 25;
 
     public static final int VIEW_TYPE_LARGE_HEADER = 26;
     public static final int VIEW_TYPE_RADIO_USER = 27;
@@ -362,8 +358,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_CHART_BAR:
             case VIEW_TYPE_CHART_STACK_LINEAR:
             case VIEW_TYPE_CHART_LINEAR_BAR:
-            case VIEW_TYPE_TRANSACTION:
-            case VIEW_TYPE_PROCEED_OVERVIEW:
             case VIEW_TYPE_SPACE:
             case VIEW_TYPE_BUSINESS_LINK:
             case VIEW_TYPE_RIGHT_ICON_TEXT:
@@ -510,12 +504,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                     chartSharedUI = new BaseChartView.SharedUiComponents();
                 }
                 view = new StatisticActivity.UniversalChartCell(context, currentAccount, viewType - VIEW_TYPE_CHART_LINEAR, chartSharedUI, classGuid);
-                break;
-            case VIEW_TYPE_TRANSACTION:
-                view = new ChannelMonetizationLayout.TransactionCell(context, resourcesProvider);
-                break;
-            case VIEW_TYPE_PROCEED_OVERVIEW:
-                view = new ChannelMonetizationLayout.ProceedOverviewCell(context, resourcesProvider);
                 break;
             case VIEW_TYPE_SPACE:
                 view = new SpaceView(context);
@@ -904,12 +892,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                     }
                 );
                 break;
-            case VIEW_TYPE_TRANSACTION:
-                ((ChannelMonetizationLayout.TransactionCell) holder.itemView).set((TL_stats.BroadcastRevenueTransaction) item.object, divider);
-                break;
-            case VIEW_TYPE_PROCEED_OVERVIEW:
-                ((ChannelMonetizationLayout.ProceedOverviewCell) holder.itemView).set((ChannelMonetizationLayout.ProceedOverview) item.object);
-                break;
             case VIEW_TYPE_RADIO_USER:
                 StoryPrivacyBottomSheet.UserCell userCell1 = (StoryPrivacyBottomSheet.UserCell) holder.itemView;
                 final boolean animated = userCell1.dialogId == (item.object instanceof TLRPC.User ? ((TLRPC.User) item.object).id : (item.object instanceof TLRPC.Chat ? -((TLRPC.Chat) item.object).id : 0));
@@ -1143,7 +1125,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 viewType == VIEW_TYPE_LARGE_QUICK_REPLY ||
                 viewType == VIEW_TYPE_QUICK_REPLY ||
                 viewType == VIEW_TYPE_BUSINESS_LINK ||
-                viewType == VIEW_TYPE_TRANSACTION ||
                 viewType == VIEW_TYPE_RADIO_USER ||
                 viewType == VIEW_TYPE_PROFILE_CELL ||
                 viewType == VIEW_TYPE_SEARCH_MESSAGE ||

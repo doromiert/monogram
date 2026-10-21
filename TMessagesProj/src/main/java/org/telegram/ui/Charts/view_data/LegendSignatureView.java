@@ -18,19 +18,13 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.ChannelMonetizationLayout;
-import org.telegram.ui.Charts.data.ChartData;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.CombinedDrawable;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RadialProgressView;
-import org.telegram.ui.Stars.StarsIntroActivity;
 
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -177,7 +171,7 @@ public class LegendSignatureView extends FrameLayout {
         for (int i = 0; i < n; i++) {
             Holder h = holders[i];
             int formatterIndex = i % 2;
-            LineViewData l = lines.get(formatter == ChartData.FORMATTER_TON || formatter == ChartData.FORMATTER_XTR ? i / 2 : i);
+            LineViewData l = lines.get(i);
 
             if (!l.enabled) {
                 h.root.setVisibility(View.GONE);
@@ -187,13 +181,7 @@ public class LegendSignatureView extends FrameLayout {
                 }
                 h.root.setVisibility(View.VISIBLE);
                 h.value.setText(formatWholeNumber(l.line.y[index], formatter, formatterIndex, h.value, k));
-                if (formatter == ChartData.FORMATTER_TON) {
-                    h.signature.setText(LocaleController.formatString(formatterIndex == 0 ? R.string.ChartInTON : R.string.ChartInUSD, l.line.name));
-                } else if (formatter == ChartData.FORMATTER_XTR) {
-                    h.signature.setText(StarsIntroActivity.replaceStarsWithPlain(LocaleController.formatString(formatterIndex == 0 ? R.string.ChartInXTR : R.string.ChartInUSD, l.line.name), .7f));
-                } else {
-                    h.signature.setText(l.line.name);
-                }
+                h.signature.setText(l.line.name);
                 if (l.line.colorKey >= 0 && Theme.hasThemeKey(l.line.colorKey)) {
                     h.value.setTextColor(Theme.getColor(l.line.colorKey, resourcesProvider));
                 } else {
@@ -234,30 +222,8 @@ public class LegendSignatureView extends FrameLayout {
         return s;
     }
 
-    private DecimalFormat formatterTON;
     public CharSequence formatWholeNumber(long v, int formatter, int formatterIndex, TextView textView, float k) {
-        if (formatter == ChartData.FORMATTER_TON) {
-            if (formatterIndex == 0) {
-                if (formatterTON == null) {
-                    DecimalFormatSymbols symbols = new DecimalFormatSymbols(Locale.US);
-                    symbols.setDecimalSeparator('.');
-                    formatterTON = new DecimalFormat("#.##", symbols);
-                    formatterTON.setMinimumFractionDigits(2);
-                    formatterTON.setMaximumFractionDigits(6);
-                    formatterTON.setGroupingUsed(false);
-                }
-                formatterTON.setMaximumFractionDigits(v > 1_000_000_000 ? 2 : 6);
-                return ChannelMonetizationLayout.replaceTON("TON " + formatterTON.format(v / 1_000_000_000.), textView.getPaint(), .82f, false);
-            } else {
-                return "≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (v / k), "USD");
-            }
-        } else if (formatter == ChartData.FORMATTER_XTR) {
-            if (formatterIndex == 0) {
-                return StarsIntroActivity.replaceStarsWithPlain("XTR " + LocaleController.formatNumber(v, ' '), .7f);
-            } else {
-                return "≈" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (v / k), "USD");
-            }
-        }
+
         float num_ = v;
         int count = 0;
         if (v < 10_000) {

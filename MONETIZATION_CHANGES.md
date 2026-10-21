@@ -305,3 +305,11 @@ Removed StatisticActivity's monetization tab, revenue-layout construction, start
 Removed StarsIntroActivity's bot revenue/statistics button and deleted BotStarsActivity, including its Stars/TON charts, transaction loading and withdrawal UI/requests. Its duration-format helper was moved privately into ChannelMonetizationLayout for the latter's remaining references. ChannelMonetizationLayout and BotStarsController still have other consumers; no claim that their transaction/network implementations have been fully removed.
 
 Source-only inspection covers deleted class/tab state references, surviving pager positions/page count, edited Java boundaries and whitespace. No tests, build, APK or phone interaction. Source changes are unshipped; shared revenue components, Stars entry paths, boost/Business/Premium code and resources remain in scope.
+
+### Delete channel revenue implementation and monetary chart dependencies
+
+Deleted ChannelMonetizationLayout itself, including revenue/statistics requests, Stars/TON withdrawal/password flows, balance refresh timers, CPM adjustment, transaction sheets, TON address/CRC validation, revenue explanations and nested transaction/proceeds widgets. Removed its channel-update callback in BotStarsController, its UItem constructors and the UniversalAdapter revenue view types/create/bind branches.
+
+Removed TON/Stars currency chart formatting and duplicated currency/USD legend rows from the generic chart helpers; ordinary numeric charts retain their formatting/legend paths. Removed the Cocoon attribution/promotion and explanatory sheet from TranslateButton, which were the remaining consumers of the deleted revenue class's FeatureCell. Translation controls and provider selection remain. Pruned imports made unused by these removals, including the stale revenue import in SlideIntChooseView.
+
+Source-only inspection covers deleted class/constants/API references across Java/XML, edited class boundaries, ordinary numeric legend count/labels, adapter switch branches and whitespace. No tests, compilation, APK or phone interaction. BotStarsController still contains other Stars/revenue/affiliate consumers and StarsIntroActivity still needs cleanup; full monetization removal is incomplete and these changes remain unshipped.

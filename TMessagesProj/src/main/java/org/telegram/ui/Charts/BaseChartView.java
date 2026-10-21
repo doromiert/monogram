@@ -1212,11 +1212,7 @@ public abstract class BaseChartView<T extends ChartData, L extends LineViewData>
             pickerMaxHeight = 0;
             pickerMinHeight = Integer.MAX_VALUE;
             initPickerMaxHeight();
-            if (chartData.yTooltipFormatter == ChartData.FORMATTER_TON || chartData.yTooltipFormatter == ChartData.FORMATTER_XTR) {
-                legendSignatureView.setSize(2 * lines.size());
-            } else {
-                legendSignatureView.setSize(lines.size());
-            }
+            legendSignatureView.setSize(lines.size());
 
             invalidatePickerChart = true;
             updateLineSignature();

@@ -11,13 +11,11 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_stats;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Business.BusinessLinksActivity;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.Cells.SlideIntChooseView;
-import org.telegram.ui.ChannelMonetizationLayout;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.StatisticActivity;
 
@@ -357,11 +355,7 @@ public class UItem extends AdapterWithDiffUtils.Item {
         return i;
     }
 
-    public static UItem asProceedOverview(ChannelMonetizationLayout.ProceedOverview value) {
-        UItem i = new UItem(UniversalAdapter.VIEW_TYPE_PROCEED_OVERVIEW, false);
-        i.object = value;
-        return i;
-    }
+
 
     public static UItem asShadow(int id, CharSequence text) {
         UItem i = new UItem(UniversalAdapter.VIEW_TYPE_SHADOW, false);
@@ -451,11 +445,7 @@ public class UItem extends AdapterWithDiffUtils.Item {
         return item;
     }
 
-    public static UItem asTransaction(TL_stats.BroadcastRevenueTransaction transaction) {
-        UItem item = new UItem(UniversalAdapter.VIEW_TYPE_TRANSACTION, false);
-        item.object = transaction;
-        return item;
-    }
+
 
     public static UItem asRadioUser(Object object) {
         UItem item = new UItem(UniversalAdapter.VIEW_TYPE_RADIO_USER, false);

@@ -23,7 +23,6 @@ import org.telegram.tgnet.tl.TL_stars;
 import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.ChannelMonetizationLayout;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -167,12 +166,7 @@ public class BotStarsController {
     public void onUpdate(TL_update.TL_updateStarsRevenueStatus update) {
         if (update == null) return;
         long dialogId = DialogObject.getPeerDialogId(update.peer);
-        if (dialogId < 0) {
-            if (ChannelMonetizationLayout.instance != null && ChannelMonetizationLayout.instance.dialogId == DialogObject.getPeerDialogId(update.peer)) {
-                ChannelMonetizationLayout.instance.setupBalances(update.status.current_balance instanceof TL_stars.TL_starsTonAmount, update.status);
-                ChannelMonetizationLayout.instance.reloadTransactions();
-            }
-        } else {
+        if (dialogId > 0) {
             TLRPC.TL_payments_starsRevenueStats s = getStarsRevenueStats(dialogId, true);
             if (s != null) {
                 s.status = update.status;
