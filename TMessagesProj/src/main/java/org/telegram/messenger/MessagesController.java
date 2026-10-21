@@ -965,61 +965,9 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
 
-    public ArrayList<TLRPC.TL_messages_stickerSet> filterPremiumStickers(ArrayList<TLRPC.TL_messages_stickerSet> stickerSets) {
-        if (!premiumFeaturesBlocked()) {
-            return stickerSets;
-        }
-        for (int i = 0; i < stickerSets.size(); i++) {
-            TLRPC.TL_messages_stickerSet newSet = MessagesController.getInstance(currentAccount).filterPremiumStickers(stickerSets.get(i));
-            if (newSet == null) {
-                stickerSets.remove(i);
-                i--;
-            } else {
-                stickerSets.set(i, newSet);
-            }
-        }
-        return stickerSets;
-    }
 
-    public TLRPC.TL_messages_stickerSet filterPremiumStickers(TLRPC.TL_messages_stickerSet stickerSet) {
-        if (!premiumFeaturesBlocked() || stickerSet == null) {
-            return stickerSet;
-        }
-        try {
 
-            boolean hasPremiumSticker = false;
-            for (int i = 0; i < stickerSet.documents.size(); i++) {
-                if (MessageObject.isPremiumSticker(stickerSet.documents.get(i))) {
-                    hasPremiumSticker = true;
-                    break;
-                }
-            }
-            if (hasPremiumSticker) {
-                NativeByteBuffer nativeByteBuffer = new NativeByteBuffer(stickerSet.getObjectSize());
-                stickerSet.serializeToStream(nativeByteBuffer);
-                nativeByteBuffer.position(0);
-                TLRPC.TL_messages_stickerSet newStickersSet = new TLRPC.TL_messages_stickerSet();
-                nativeByteBuffer.readInt32(true);
-                newStickersSet.readParams(nativeByteBuffer, true);
-                nativeByteBuffer.reuse();
-                stickerSet = newStickersSet;
 
-                for (int i = 0; i < stickerSet.documents.size(); i++) {
-                    if (MessageObject.isPremiumSticker(stickerSet.documents.get(i))) {
-                        stickerSet.documents.remove(i);
-                        stickerSet.packs.remove(i);
-                        i--;
-                        if (stickerSet.documents.isEmpty()) {
-                            return null;
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return stickerSet;
-    }
 
     public TopicsController getTopicsController() {
         return topicsController;

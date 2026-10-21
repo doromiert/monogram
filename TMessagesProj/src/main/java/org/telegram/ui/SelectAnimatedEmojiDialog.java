@@ -119,8 +119,6 @@ import org.telegram.ui.Components.EmojiTabsStrip;
 import org.telegram.ui.Components.EmojiView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Premium.PremiumButtonView;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumLockIconView;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.Reactions.HwEmojis;
 import org.telegram.ui.Components.Reactions.ReactionsEffectOverlay;
@@ -1058,14 +1056,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                     } catch (Exception ignored) {}
                     ImageViewEmoji imageViewEmoji = (ImageViewEmoji) view;
-                    if (!imageViewEmoji.isDefaultReaction && !UserConfig.getInstance(currentAccount).isPremium()) {
-                        TLRPC.Document document = imageViewEmoji.span.document;
-                        if (document == null) {
-                            document = AnimatedEmojiDrawable.findDocument(currentAccount, imageViewEmoji.span.documentId);
-                        }
-                        onEmojiSelected(imageViewEmoji, imageViewEmoji.span.documentId, document, imageViewEmoji.starGift, null);
-                        return true;
-                    }
+
                     selectedReactionView = imageViewEmoji;
                     pressedProgress = 0f;
                     cancelPressed = false;
@@ -2386,10 +2377,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     imageView.span = null;
                     imageView.document = null;
                     imageView.setDrawable(null);
-                    if (imageView.premiumLockIconView != null) {
-                        imageView.premiumLockIconView.setVisibility(View.GONE);
-                        imageView.premiumLockIconView.setImageReceiver(null);
-                    }
+
                     if (reaction == null && currentReaction.isEffect) {
                         imageView.setDrawable(Emoji.getEmojiDrawable(currentReaction.emojicon));
                     }
@@ -2408,19 +2396,11 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     imageView.setDrawable(drawable);
                 }
 
-                if (!UserConfig.getInstance(currentAccount).isPremium() && type == TYPE_EFFECTS && currentReaction.isEffect && currentReaction.premium) {
-                    imageView.createPremiumLockView();
-                    imageView.premiumLockIconView.setVisibility(View.VISIBLE);
-                    imageView.setEmojicon(null);
+
+                if (currentReaction.sticker) {
+                    imageView.setEmojicon(currentReaction.emojicon);
                 } else {
-                    if (currentReaction.sticker) {
-                        imageView.setEmojicon(currentReaction.emojicon);
-                    } else {
-                        imageView.setEmojicon(null);
-                    }
-                    if (imageView.premiumLockIconView != null) {
-                        imageView.premiumLockIconView.setVisibility(View.INVISIBLE);
-                    }
+                    imageView.setEmojicon(null);
                 }
             } else if (holder.getItemViewType() == VIEW_TYPE_EMOJI) {
                 ImageViewEmoji imageView = (ImageViewEmoji) holder.itemView;
@@ -2443,14 +2423,9 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     } else {
                         documentId = visibleReaction.documentId;
                     }
-                    if (type == TYPE_EFFECTS && visibleReaction != null && !UserConfig.getInstance(currentAccount).isPremium() && visibleReaction.isEffect && visibleReaction.premium) {
-                        imageView.createPremiumLockView();
-                        imageView.premiumLockIconView.setVisibility(View.VISIBLE);
-                    } else {
-                        if (imageView.premiumLockIconView != null) {
-                            imageView.premiumLockIconView.setVisibility(View.INVISIBLE);
-                        }
-                    }
+
+
+
                 } else if (searchSets != null && (position - setsStartRow) >= 0 && (position - setsStartRow) < searchSets.size()) {
                     document = searchSets.get(position - setsStartRow);
                     if (document instanceof SetTitleDocument) {
@@ -2727,11 +2702,8 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                         MediaDataController.getInstance(currentAccount).getStickerSet(pack.needLoadSet, false);
                         pack.needLoadSet = null;
                     }
-                    boolean lock = false;
-                    if (type != TYPE_SET_REPLY_ICON && type != TYPE_SET_REPLY_ICON_BOTTOM && type != TYPE_CHAT_REACTIONS) {
-                        lock = !pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium();
-                    }
-                    header.setText(pack.set.title, lock);
+
+                    header.setText(pack.set.title, false);
                 } else {
                     header.setText(null, false);
                 }
@@ -2785,10 +2757,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     imageView.span = null;
                     imageView.document = null;
                     imageView.setDrawable(null);
-                    if (imageView.premiumLockIconView != null) {
-                        imageView.premiumLockIconView.setVisibility(View.GONE);
-                        imageView.premiumLockIconView.setImageReceiver(null);
-                    }
+
                 } else {
                     imageView.isDefaultReaction = false;
                     imageView.span = new AnimatedEmojiSpan(currentReaction.documentId, null);
@@ -2809,19 +2778,11 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                     imageView.setDrawable(drawable);
                 }
 
-                if (!UserConfig.getInstance(currentAccount).isPremium() && type == TYPE_EFFECTS && currentReaction.isEffect && currentReaction.premium) {
-                    imageView.createPremiumLockView();
-                    imageView.premiumLockIconView.setVisibility(View.VISIBLE);
-                    imageView.setEmojicon(null);
+
+                if (currentReaction.sticker) {
+                    imageView.setEmojicon(currentReaction.emojicon);
                 } else {
-                    if (currentReaction.sticker) {
-                        imageView.setEmojicon(currentReaction.emojicon);
-                    } else {
-                        imageView.setEmojicon(null);
-                    }
-                    if (imageView.premiumLockIconView != null) {
-                        imageView.premiumLockIconView.setVisibility(View.INVISIBLE);
-                    }
+                    imageView.setEmojicon(null);
                 }
             } else if (viewType == VIEW_TYPE_EXPAND) {
                 EmojiPackExpand button = (EmojiPackExpand) holder.itemView;
@@ -2848,17 +2809,8 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 if (packIndex >= 0 && packIndex < packs.size()) {
                     EmojiView.EmojiPack pack = packs.get(packIndex);
                     if (pack != null) {
-                        button.set(pack.set.title, !pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium(), pack.installed, e -> {
-                            if (!pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium()) {
-                                if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
-                                    if(baseFragment!=null) baseFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount,true));return;
-                                }
-                                BaseFragment fragment = LaunchActivity.getLastFragment();
-                                if (fragment != null) {
-                                    fragment.showDialog(new PremiumFeatureBottomSheet(baseFragment, getContext(), currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
-                                }
-                                return;
-                            }
+                        button.set(pack.set.title, false, pack.installed, e -> {
+
                             Integer p = null;
                             View expandButton = null;
                             for (int i = 0; i < emojiGridView.getChildCount(); ++i) {
@@ -3330,7 +3282,6 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
         public float bigReactionSelectedProgress;
         public boolean attached;
         ValueAnimator backAnimator;
-        PremiumLockIconView premiumLockIconView;
         Drawable emojiDrawable;
         public boolean selected;
         private boolean shouldSelected;
@@ -3640,24 +3591,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
             super.invalidate(l, t, r, b);
         }
 
-        public void createPremiumLockView() {
-            if (premiumLockIconView == null) {
-                premiumLockIconView = new PremiumLockIconView(getContext(), PremiumLockIconView.TYPE_REACTIONS_LOCK) {
-                    @Override
-                    public void invalidate() {
-                        super.invalidate();
-                        if (ImageViewEmoji.this.getParent() instanceof View) {
-                            ((View) ImageViewEmoji.this.getParent()).invalidate();
-                        }
-                    }
-                };
-                int measureSpec = MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(16.66f), MeasureSpec.EXACTLY);
-                premiumLockIconView.measure(measureSpec, measureSpec);
-                premiumLockIconView.layout(0, 0, premiumLockIconView.getMeasuredWidth(), premiumLockIconView.getMeasuredHeight());
-            } else {
-                premiumLockIconView.resetColor();
-            }
-        }
+
 
         public void setEmojicon(String emojicon) {
             if (TextUtils.isEmpty(emojicon)) {
@@ -4007,10 +3941,10 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 if (type == TYPE_EFFECTS) {
 
                 } else if (allRecentReactionsIsDefault) {
-                    if (UserConfig.getInstance(currentAccount).isPremium()) {
-                        popularSectionRow = totalCount++;
-                        rowHashCodes.add(5L);
-                    }
+
+                    popularSectionRow = totalCount++;
+                    rowHashCodes.add(5L);
+
                 } else {
                     recentReactionsSectionRow = totalCount++;
                     rowHashCodes.add(4L);
@@ -4617,11 +4551,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                             viewsGroupedByLines.put(top, arrayList);
                         }
                         arrayList.add(imageViewEmoji);
-                        if (imageViewEmoji.premiumLockIconView != null && imageViewEmoji.premiumLockIconView.getVisibility() == View.VISIBLE) {
-                            if (imageViewEmoji.premiumLockIconView.getImageReceiver() == null && imageViewEmoji.imageReceiverToDraw != null) {
-                                imageViewEmoji.premiumLockIconView.setImageReceiver(imageViewEmoji.imageReceiverToDraw);
-                            }
-                        }
+
                     }
                     if (drawButton && child != null) {
                         int position = getChildAdapterPosition(child);
@@ -4695,24 +4625,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                 View child = getChildAt(i);
                 if (child instanceof ImageViewEmoji) {
                     ImageViewEmoji imageViewEmoji = (ImageViewEmoji) child;
-                    if (imageViewEmoji.premiumLockIconView != null && imageViewEmoji.premiumLockIconView.getVisibility() == View.VISIBLE) {
-                        canvas.save();
-                        canvas.translate(
-                                (int) (imageViewEmoji.getX() + imageViewEmoji.getMeasuredWidth() - imageViewEmoji.premiumLockIconView.getMeasuredWidth()),
-                                (int) (imageViewEmoji.getY() + imageViewEmoji.getMeasuredHeight() - imageViewEmoji.premiumLockIconView.getMeasuredHeight())
-                        );
-                        ImageReceiver imageReceiver;
-                        if (imageViewEmoji.drawable instanceof AnimatedEmojiDrawable) {
-                            imageReceiver = ((AnimatedEmojiDrawable) imageViewEmoji.drawable).getImageReceiver();
-                        } else {
-                            imageReceiver = imageViewEmoji.imageReceiver;
-                        }
-                        if (!imageViewEmoji.premiumLockIconView.done()) {
-                            imageViewEmoji.premiumLockIconView.setImageReceiver(imageReceiver);
-                        }
-                        imageViewEmoji.premiumLockIconView.draw(canvas);
-                        canvas.restore();
-                    }
+
                     if (imageViewEmoji.emojiDrawable != null) {
                         canvas.save();
                         int sz = dp(17);

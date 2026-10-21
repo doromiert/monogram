@@ -26,10 +26,8 @@ import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
-import android.graphics.DashPathEffect;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.PorterDuffXfermode;
@@ -42,7 +40,6 @@ import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.ShapeDrawable;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.Editable;
 import android.text.Spannable;
@@ -71,12 +68,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.IntDef;
-import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.math.MathUtils;
-import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.GridLayoutManager;
@@ -90,7 +85,6 @@ import androidx.recyclerview.widget.SimpleItemAnimator;
 import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.CompoundEmoji;
@@ -106,7 +100,6 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
-import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
@@ -118,7 +111,6 @@ import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.utils.ViewOutlineProviderImpl;
 import org.telegram.tgnet.ConnectionsManager;
-import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -392,7 +384,6 @@ public class EmojiView extends FrameLayout implements
     private Object outlineProvider;
     private boolean forseMultiwindowLayout;
 
-    private Paint emojiLockPaint;
     private Drawable emojiLockDrawable;
 
     private int lastNotifyWidth;
@@ -648,9 +639,7 @@ public class EmojiView extends FrameLayout implements
 
         @Override
         public Boolean canSetAsStatus(TLRPC.Document document) {
-            if (!UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) {
-                return null;
-            }
+
             TLRPC.User user = UserConfig.getInstance(UserConfig.selectedAccount).getCurrentUser();
             if (user == null) {
                 return null;
@@ -662,7 +651,7 @@ public class EmojiView extends FrameLayout implements
         @Override
         public boolean needSend(int contentType) {
             if (contentType == ContentPreviewViewer.CONTENT_TYPE_EMOJI) {
-                return fragment instanceof ChatActivity && ((ChatActivity) fragment).canSendMessage() && ((UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) || ((ChatActivity) fragment).getCurrentUser() != null && UserObject.isUserSelf(((ChatActivity) fragment).getCurrentUser()));
+                return fragment instanceof ChatActivity && ((ChatActivity) fragment).canSendMessage();
             }
             return true;
         }
@@ -962,7 +951,7 @@ public class EmojiView extends FrameLayout implements
             });
             box.addView(clear, LayoutHelper.createFrame(36, 36, Gravity.RIGHT | Gravity.TOP));
 
-            if (type != 2 && (type != 1 || allowAnimatedEmoji && (UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)))) {
+            if (type != 2 && (type != 1 || allowAnimatedEmoji)) {
                 categoriesListView = new StickerCategoriesListView(context, null, type == 0 ? StickerCategoriesListView.CategoriesType.STICKERS : StickerCategoriesListView.CategoriesType.DEFAULT, resourcesProvider) {
                     @Override
                     public void selectCategory(int categoryIndex) {
@@ -1362,7 +1351,7 @@ public class EmojiView extends FrameLayout implements
             return;
         }
         if (imageViewEmoji.getSpan() != null) {
-//                if (pack != null && pack.set != null && (pack.free || UserConfig.getInstance(currentAccount).isPremium())) {
+
 //                    openEmojiPackAlert(pack.set);
 //                    return;
 //                }
@@ -1388,44 +1377,7 @@ public class EmojiView extends FrameLayout implements
                 if (emoticon == null && document != null) {
                     emoticon = MessageObject.findAnimatedEmojiEmoticon(document);
                 }
-                if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,document) && !MessageObject.isFreeEmoji(document) && !UserConfig.getInstance(currentAccount).isPremium() && !(delegate != null && delegate.isUserSelf()) && !allowEmojisForNonPremium && !isGroupEmojis) {
-                    showBottomTab(false, true);
-                    BulletinFactory factory = fragment != null ? BulletinFactory.of(fragment) : BulletinFactory.of(bulletinContainer, resourcesProvider);
-                    if (premiumBulletin || fragment == null) {
-                        factory.createEmojiBulletin(
-                                document,
-                                AndroidUtilities.replaceTags(getString(R.string.UnlockPremiumEmojiHint)),
-                                getString(R.string.PremiumMore),
-                                EmojiView.this::openPremiumAnimatedEmojiFeature
-                        ).show();
-                    } else {
-                        factory.createSimpleBulletin(
-                                R.raw.saved_messages,
-                                AndroidUtilities.replaceTags(getString(R.string.UnlockPremiumEmojiHint2)),
-                                getString(R.string.Open),
-                                () -> {
-                                    Bundle args = new Bundle();
-                                    args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());
-                                    fragment.presentFragment(new ChatActivity(args) {
-                                        @Override
-                                        public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
-                                            super.onTransitionAnimationEnd(isOpen, backward);
-                                            if (isOpen && chatActivityEnterView != null) {
-                                                chatActivityEnterView.showEmojiView();
-                                                chatActivityEnterView.postDelayed(() -> {
-                                                    if (chatActivityEnterView.getEmojiView() != null) {
-                                                        chatActivityEnterView.getEmojiView().scrollEmojisToAnimated();
-                                                    }
-                                                }, 100);
-                                            }
-                                        }
-                                    });
-                                }
-                        ).show();
-                    }
-                    premiumBulletin = !premiumBulletin;
-                    return;
-                }
+
                 shownBottomTabAfterClick = SystemClock.elapsedRealtime();
                 showBottomTab(true, true);
                 addEmojiToRecent("animated_" + documentId);
@@ -1876,7 +1828,7 @@ public class EmojiView extends FrameLayout implements
 
             @Override
             protected boolean doIncludeFeatured() {
-                return !(featuredEmojiSets.size() > 0 && featuredEmojiSets.get(0).set != null && MessagesController.getEmojiSettings(currentAccount).getLong("emoji_featured_hidden", 0) != featuredEmojiSets.get(0).set.id && UserConfig.getInstance(UserConfig.selectedAccount).isPremium());
+                return !(featuredEmojiSets.size() > 0 && featuredEmojiSets.get(0).set != null && MessagesController.getEmojiSettings(currentAccount).getLong("emoji_featured_hidden", 0) != featuredEmojiSets.get(0).set.id);
             }
 
             @Override
@@ -2342,10 +2294,7 @@ public class EmojiView extends FrameLayout implements
                     return;
                 }
                 StickerEmojiCell cell = (StickerEmojiCell) view;
-                if (cell.getSticker() != null && !org.telegram.messenger.xmpp.MonogramFreeFeatures.document(currentAccount,cell.getSticker()) && MessageObject.isPremiumSticker(cell.getSticker()) && !AccountInstance.getInstance(currentAccount).getUserConfig().isPremium()) {
-                    ContentPreviewViewer.getInstance().showMenuFor(cell);
-                    return;
-                }
+
                 ContentPreviewViewer.getInstance().reset();
 
                 if (cell.isDisabled()) {
@@ -3159,7 +3108,6 @@ public class EmojiView extends FrameLayout implements
                 updateEmojiDrawables();
                 lastChildCount = getChildCount();
             }
-//            drawDashedOutlines(canvas);
 
             for (int i = 0; i < viewsGroupedByLines.size(); i++) {
                 ArrayList<ImageViewEmoji> arrayList = viewsGroupedByLines.valueAt(i);
@@ -3651,143 +3599,8 @@ public class EmojiView extends FrameLayout implements
             return super.dispatchTouchEvent(ev) || !cancel && touches.size() > 0;
         }
 
-        private Path lockPath;
-        private SparseIntArray headerWidthsCache = new SparseIntArray();
-        private AnimatedFloat premiumT = new AnimatedFloat(this, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
 
-        public void drawDashedOutlines(Canvas canvas) {
-            if (emojiAdapter == null || emojiAdapter.packStartPosition == null) {
-                return;
-            }
 
-            final float r = AndroidUtilities.dp(20), p = AndroidUtilities.dp(5), sz = AndroidUtilities.dp(11);
-            final float itemSize = (getMeasuredWidth() - getPaddingLeft() - getPaddingRight()) / (float) emojiLayoutManager.getSpanCount();
-            for (int i = 0; i < emojiAdapter.packStartPosition.size(); ++i) {
-                EmojiPack pack = i < emojipacksProcessed.size() ? emojipacksProcessed.get(i) : null;
-                if (pack == null || !((pack.installed || installedEmojiSets.contains(pack.set.id)) && !pack.featured && !pack.free)) {
-                    continue;
-                }
-                int start = emojiAdapter.packStartPosition.get(i);
-                int end = i + 1 >= emojiAdapter.packStartPosition.size() ? emojiAdapter.getItemCount() : emojiAdapter.packStartPosition.get(i + 1) - 1;
-                int end2 = animateExpandFromPosition >= 0 && animateExpandFromPosition > start && animateExpandFromPosition < end ? animateExpandFromPosition - 1 : -1;
-                int childPosition = -1;
-                int lastPosition1 = -1, lastPosition2 = -1;
-                View child = null, lastView1 = null, lastView2 = null;
-                float clipTop = getMeasuredHeight(), clipBottom = 0;
-                for (int j = 0; j < getChildCount(); ++j) {
-                    View c = getChildAt(j);
-                    int position = getChildAdapterPosition(c);
-                    if (position < 0) {
-                        if (c instanceof ImageViewEmoji) {
-                            position = ((ImageViewEmoji) c).position;
-                        } else if (c instanceof StickerSetNameCell) {
-                            position = ((StickerSetNameCell) c).position;
-                        } else if (c instanceof EmojiPackButton) {
-                            position = ((EmojiPackButton) c).position;
-                        } else {
-                            position = getChildAdapterPosition(c);
-                        }
-                    }
-                    if (position >= start && position <= end) {
-                        if (child == null) {
-                            child = c;
-                            childPosition = position;
-                        }
-                        if (j > lastPosition1) {
-                            lastPosition1 = j;
-                            lastView1 = c;
-                        }
-                        if (j > lastPosition2 && position <= end2) {
-                            lastPosition2 = j;
-                            lastView2 = c;
-                        }
-                        clipTop = Math.min(clipTop, c.getTop() + c.getTranslationY());
-                        clipBottom = Math.max(clipBottom, c.getBottom() + c.getTranslationY());
-                    }
-                }
-                if (child == null) {
-                    continue;
-                }
-                clipBottom += AndroidUtilities.dp(6);
-
-                float lockT = premiumT.set(UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium ? 0f : 1f); // CubicBezierInterpolator.EASE_OUT_QUINT.getInterpolation(Math.min(now - appearTime, 550) / 550f);
-
-                int positionInGroup = childPosition - start;
-                float top;
-                if (positionInGroup == 0) {
-                    top = child.getTop() + child.getTranslationY() + AndroidUtilities.dp(25);
-                } else {
-                    top = child.getTop() + child.getTranslationY() - AndroidUtilities.dp(32 - 25)
-                        - (positionInGroup - 1) / Math.max(1, emojiLayoutManager.getSpanCount()) * itemSize - AndroidUtilities.dp(32-25);
-                }
-                float bottom;
-                if (lastView2 != null && lastView1 != null) {
-                    float t = MathUtils.clamp((SystemClock.elapsedRealtime() - animateExpandStartTime) / 220f, 0, 1);
-                    t = CubicBezierInterpolator.EASE_OUT.getInterpolation(t);
-                    bottom = AndroidUtilities.lerp(lastView2.getBottom() + lastView2.getTranslationY(), lastView1.getBottom() + lastView1.getTranslationY(), t);
-                } else if (lastView1 != null) {
-                    bottom = lastView1.getBottom() + lastView1.getTranslationY();
-                } else {
-                    bottom = getMeasuredHeight() + AndroidUtilities.dp(6);
-                }
-
-                canvas.save();
-                canvas.clipRect(0, Math.min(clipTop, clipBottom), getMeasuredWidth(), Math.max(clipTop, clipBottom));
-                if (lockT < 1) {
-                    canvas.scale(1.1f - .1f * lockT, 1.1f - .1f * lockT, getMeasuredWidth() / 2f, (bottom + top) / 2f);
-                }
-
-                if (emojiLockPaint == null) {
-                    emojiLockPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                    emojiLockPaint.setColor(getThemedColor(Theme.key_chat_emojiPanelStickerSetName));
-                    emojiLockPaint.setAlpha((int) (emojiLockPaint.getAlpha() * .5f));
-                    emojiLockPaint.setStrokeWidth(AndroidUtilities.dp(2));
-                    emojiLockPaint.setStyle(Paint.Style.STROKE);
-                    emojiLockPaint.setStrokeCap(Paint.Cap.ROUND);
-                    emojiLockPaint.setPathEffect(new DashPathEffect(new float[]{AndroidUtilities.dp(5.5f), AndroidUtilities.dp(7f)}, .5f));
-                }
-                int wasAlpha = emojiLockPaint.getAlpha();
-                emojiLockPaint.setAlpha((int) (wasAlpha * lockT));
-
-                if (lockPath == null) {
-                    lockPath = new Path();
-                } else {
-                    lockPath.rewind();
-                }
-
-                if (child instanceof EmojiPackHeader) {
-                    final float left =  getPaddingLeft() + ((EmojiPackHeader) child).headerView.getRight() + ((EmojiPackHeader) child).headerView.getTranslationX();
-                    final float right = getPaddingLeft() + ((EmojiPackHeader) child).buttonsView.getLeft() + ((EmojiPackHeader) child).premiumButtonView.getLeft();
-                    lockPath.moveTo(Math.min(left, right) + AndroidUtilities.dp(8), top);
-                    lockPath.lineTo(Math.max(left, right) - AndroidUtilities.dp(8), top);
-                    canvas.drawPath(lockPath, emojiLockPaint);
-                    lockPath.reset();
-                }
-
-                AndroidUtilities.rectTmp.set(p, top, p + r, top + r);
-                lockPath.arcTo(AndroidUtilities.rectTmp, 270 - 40, -90 + 40);
-                lockPath.moveTo(AndroidUtilities.rectTmp.left, AndroidUtilities.rectTmp.centerY());
-
-                AndroidUtilities.rectTmp.set(p, bottom - r, p + r, bottom);
-                lockPath.arcTo(AndroidUtilities.rectTmp, 180, -90);
-                lockPath.moveTo(AndroidUtilities.rectTmp.centerX(), AndroidUtilities.rectTmp.bottom);
-
-                AndroidUtilities.rectTmp.set(getMeasuredWidth() - p - r, bottom - r, getMeasuredWidth() - p, bottom);
-                lockPath.arcTo(AndroidUtilities.rectTmp, 90, -90);
-                float x = AndroidUtilities.rectTmp.right, y = AndroidUtilities.rectTmp.centerY();
-
-                AndroidUtilities.rectTmp.set(getMeasuredWidth() - p - r, top, getMeasuredWidth() - p, top + r);
-                lockPath.moveTo(AndroidUtilities.rectTmp.right, AndroidUtilities.rectTmp.centerY());
-                lockPath.lineTo(x, y);
-                lockPath.moveTo(AndroidUtilities.rectTmp.right, AndroidUtilities.rectTmp.centerY());
-                lockPath.arcTo(AndroidUtilities.rectTmp, 0, -45);
-
-                canvas.drawPath(lockPath, emojiLockPaint);
-                emojiLockPaint.setAlpha(wasAlpha);
-
-                canvas.restore();
-            }
-        }
     }
 
     private void createStickersChooseActionTracker() {
@@ -4305,9 +4118,7 @@ public class EmojiView extends FrameLayout implements
             }
             int state = BUTTON_STATE_EMPTY;
             boolean installed = pack.installed || installedEmojiSets.contains(pack.set.id);
-            if (!pack.free && !org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,pack.set.id) && !UserConfig.getInstance(currentAccount).isPremium() && !allowEmojisForNonPremium) {
-                state = BUTTON_STATE_LOCKED;
-            } else if (pack.featured) {
+            if (pack.featured) {
                 if (installed) {
                     state = BUTTON_STATE_REMOVE;
                 } else {
@@ -4431,9 +4242,7 @@ public class EmojiView extends FrameLayout implements
                 outRect.left = AndroidUtilities.dp(5);
                 outRect.right = AndroidUtilities.dp(5);
                 int position = parent.getChildAdapterPosition(view);
-                if (position + 1 > emojiAdapter.plainEmojisCount && !UserConfig.getInstance(currentAccount).isPremium() && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !allowEmojisForNonPremium) {
-                    outRect.top = AndroidUtilities.dp(10);
-                }
+
             } else if (view instanceof RecyclerListView || view instanceof EmojiPackHeader) {
                 outRect.left = -emojiGridView.getPaddingLeft();
                 outRect.right = -emojiGridView.getPaddingRight();
@@ -5691,7 +5500,7 @@ public class EmojiView extends FrameLayout implements
                 }
             }
         }
-        packs = MessagesController.getInstance(currentAccount).filterPremiumStickers(packs);
+
         for (int a = 0; a < packs.size(); a++) {
             TLRPC.TL_messages_stickerSet pack = packs.get(a);
             if (pack.set != null && pack.set.archived || pack.documents == null || pack.documents.isEmpty()) {
@@ -5968,10 +5777,7 @@ public class EmojiView extends FrameLayout implements
             Theme.setEmojiDrawableColor(searchIconDotDrawable, glassDesign ? getGlassIconColor(0.4f) : getThemedColor(Theme.key_chat_emojiPanelStickerPackSelectorLine), false);
             Theme.setEmojiDrawableColor(searchIconDotDrawable, glassDesign ? getGlassIconColor(0.8f) : getThemedColor(Theme.key_chat_emojiPanelStickerPackSelectorLine), true);
         }
-        if (emojiLockPaint != null) {
-            emojiLockPaint.setColor(getThemedColor(Theme.key_chat_emojiPanelStickerSetName));
-            emojiLockPaint.setAlpha((int) (emojiLockPaint.getAlpha() * .5f));
-        }
+
         if (emojiLockDrawable != null) {
             emojiLockDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_emojiPanelStickerSetName), PorterDuff.Mode.MULTIPLY));
         }
@@ -6242,11 +6048,9 @@ public class EmojiView extends FrameLayout implements
             int previousCount2 = favouriteStickers.size();
             recentStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_IMAGE, true);
             favouriteStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_FAVE);
-            if (UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
-                premiumStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_PREMIUM_STICKERS);
-            } else {
-                premiumStickers = new ArrayList<>();
-            }
+
+            premiumStickers = MediaDataController.getInstance(currentAccount).getRecentStickers(MediaDataController.TYPE_PREMIUM_STICKERS);
+
             for (int a = 0; a < favouriteStickers.size(); a++) {
                 TLRPC.Document favSticker = favouriteStickers.get(a);
                 for (int b = 0; b < recentStickers.size(); b++) {
@@ -6257,20 +6061,7 @@ public class EmojiView extends FrameLayout implements
                     }
                 }
             }
-            if (MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-                for (int a = 0; a < favouriteStickers.size(); a++) {
-                    if (MessageObject.isPremiumSticker(favouriteStickers.get(a))) {
-                        favouriteStickers.remove(a);
-                        a--;
-                    }
-                }
-                for (int a = 0; a < recentStickers.size(); a++) {
-                    if (MessageObject.isPremiumSticker(recentStickers.get(a))) {
-                        recentStickers.remove(a);
-                        a--;
-                    }
-                }
-            }
+
             if (previousCount != recentStickers.size() || previousCount2 != favouriteStickers.size()) {
                 updateStickerTabs(false);
             }
@@ -7462,12 +7253,12 @@ public class EmojiView extends FrameLayout implements
                                 count += size;
                             }
                             if (code == null) {
-                                final boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount);
+
                                 final int maxlen = emojiLayoutManager.getSpanCount() * 3;
                                 for (int b = 0; b < packStartPosition.size(); ++b) {
                                     EmojiPack pack = emojipacksProcessed.get(b);
                                     int start = packStartPosition.get(b) + 1;
-                                    int stickersCount = ((pack.installed && !pack.featured) && (pack.free || isPremium) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
+                                    int stickersCount = ((pack.installed && !pack.featured) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
                                     if (imageView.position >= start && imageView.position - start < stickersCount) {
                                         imageView.pack = pack;
                                         customEmoji = pack.documents.get(imageView.position - start);
@@ -7537,7 +7328,7 @@ public class EmojiView extends FrameLayout implements
 //                    index = positionToUnlock.get(position);
 //                    final EmojiPack expandPack = index >= 0 && index < emojipacksProcessed.size() ? emojipacksProcessed.get(index) : null;
 //                    if (expandPack != null && expandButton != null) {
-//                        final boolean unlock = !expandPack.free && !UserConfig.getInstance(currentAccount).isPremium();
+
 //                        final boolean installed = expandPack.installed || keepFeaturedDuplicate.contains(expandPack.set.id);
 //                        expandButton.set(expandPack.set.title, unlock, installed, e -> {
 //                            if (unlock) {
@@ -7574,7 +7365,7 @@ public class EmojiView extends FrameLayout implements
                     int a = section - emojiTitles.length;
                     EmojiPack pack2 = emojipacksProcessed.get(a);
                     EmojiPack before = a - 1 >= 0 ? emojipacksProcessed.get(a - 1) : null;
-                    boolean divider = pack2 != null && pack2.featured && !(before != null && !before.free && before.installed && !UserConfig.getInstance(currentAccount).isPremium());
+                    boolean divider = pack2 != null && pack2.featured;
                     if (pack2 != null && pack2.needLoadSet != null) {
                         MediaDataController.getInstance(currentAccount).getStickerSet(pack2.needLoadSet, false);
                         pack2.needLoadSet = null;
@@ -7623,7 +7414,7 @@ public class EmojiView extends FrameLayout implements
                 frozenEmojiPacks = new ArrayList<>(mediaDataController.getStickerSets(MediaDataController.TYPE_EMOJIPACKS));
             }
             ArrayList<TLRPC.TL_messages_stickerSet> installedEmojipacks = frozenEmojiPacks;
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium;
+
             int index = 0;
 
             if (info != null && info.emojiset != null) {
@@ -7643,74 +7434,24 @@ public class EmojiView extends FrameLayout implements
                 }
             }
 
-            if (!isPremium) {
-                for (int i = 0; i < installedEmojipacks.size(); ++i) {
-                    TLRPC.TL_messages_stickerSet set = installedEmojipacks.get(i);
-                    if (set != null && !MessageObject.isPremiumEmojiPack(set)) {
-                        EmojiPack pack = new EmojiPack();
-                        pack.index = index++;
-                        pack.set = set.set;
-                        pack.documents = new ArrayList<>(set.documents);
-                        pack.free = true;
-                        pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
-                        pack.featured = false;
-                        pack.expanded = true;
-                        emojipacksProcessed.add(pack);
-                        installedEmojipacks.remove(i--);
-                    }
-                }
-            }
+
             for (int i = 0; i < installedEmojipacks.size(); ++i) {
                 TLRPC.TL_messages_stickerSet set = installedEmojipacks.get(i);
-                if (isPremium || set!=null && set.set!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,set.set.id)) {
-                    EmojiPack pack = new EmojiPack();
-                    pack.index = index++;
-                    pack.set = set.set;
-                    pack.documents = set.documents;
-                    pack.free = org.telegram.messenger.xmpp.MonogramFreeFeatures.localPack(currentAccount,set.set.id);
-                    pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
-                    pack.featured = false;
-                    pack.expanded = true;
-                    emojipacksProcessed.add(pack);
-                } else {
-                    ArrayList<TLRPC.Document> freeEmojis = new ArrayList<>();
-                    ArrayList<TLRPC.Document> premiumEmojis = new ArrayList<>();
-                    if (set != null && set.documents != null) {
-                        for (int j = 0; j < set.documents.size(); ++j) {
-                            if (MessageObject.isFreeEmoji(set.documents.get(j))) {
-                                freeEmojis.add(set.documents.get(j));
-                            } else {
-                                premiumEmojis.add(set.documents.get(j));
-                            }
-                        }
-                    }
-                    if (freeEmojis.size() > 0) {
-                        EmojiPack pack = new EmojiPack();
-                        pack.index = index++;
-                        pack.set = set.set;
-                        pack.documents = new ArrayList<>(freeEmojis);
-                        pack.free = true;
-                        pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
-                        pack.featured = false;
-                        pack.expanded = true;
-                        emojipacksProcessed.add(pack);
-                    }
-                    if (premiumEmojis.size() > 0) {
-                        EmojiPack pack = new EmojiPack();
-                        pack.index = index++;
-                        pack.set = set.set;
-                        pack.documents = new ArrayList<>(premiumEmojis);
-                        pack.free = false;
-                        pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
-                        pack.featured = false;
-                        pack.expanded = expandedEmojiSets.contains(pack.set.id);
-                        emojipacksProcessed.add(pack);
-                    }
-                }
+                if (set == null || set.set == null || set.documents == null) continue;
+
+                EmojiPack pack = new EmojiPack();
+                pack.index = index++;
+                pack.set = set.set;
+                pack.documents = set.documents;
+                pack.free = true;
+                pack.installed = mediaDataController.isStickerPackInstalled(set.set.id);
+                pack.featured = false;
+                pack.expanded = true;
+                emojipacksProcessed.add(pack);
             }
             for (int i = 0; i < featuredEmojiSets.size(); ++i) {
                 TLRPC.StickerSetCovered set = featuredEmojiSets.get(i);
-//                if (!isPremium && !MessageObject.isPremiumEmojiPack(set) && mediaDataController.isStickerPackInstalled(set.set.id)) {
+
 //                    continue;
 //                }
                 EmojiPack pack = new EmojiPack();
@@ -7764,9 +7505,8 @@ public class EmojiView extends FrameLayout implements
             int start = packStartPosition.get(index);
             expandedEmojiSets.add(pack.set.id);
 
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium;
             int maxlen = emojiLayoutManager.getSpanCount() * 3;
-            int fromCount = ((pack.installed && !pack.featured) && (pack.free || isPremium) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
+            int fromCount = ((pack.installed && !pack.featured) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
             Integer from = null, count = null;
             if (pack.documents.size() > maxlen) {
                 from = start + 1 + fromCount;
@@ -7815,12 +7555,12 @@ public class EmojiView extends FrameLayout implements
             packStartPosition.clear();
             rowHashCodes.clear();
             itemCount = 0;
-            boolean isPremium = UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) || allowEmojisForNonPremium;
+
             if (needEmojiSearch) {
                 itemCount++;
                 rowHashCodes.add(-1);
             }
-            if (isPremium && allowAnimatedEmoji && featuredEmojiSets.size() > 0 && featuredEmojiSets.get(0).set != null && MessagesController.getEmojiSettings(currentAccount).getLong("emoji_featured_hidden", 0) != featuredEmojiSets.get(0).set.id && needEmojiSearch) {
+            if (allowAnimatedEmoji && featuredEmojiSets.size() > 0 && featuredEmojiSets.get(0).set != null && MessagesController.getEmojiSettings(currentAccount).getLong("emoji_featured_hidden", 0) != featuredEmojiSets.get(0).set.id && needEmojiSearch) {
                 trendingHeaderRow = itemCount++;
                 trendingRow = itemCount++;
                 rowHashCodes.add(324953);
@@ -7875,7 +7615,7 @@ public class EmojiView extends FrameLayout implements
                     if (pack.featured && firstTrendingRow < 0) {
                         firstTrendingRow = itemCount;
                     }
-                    int count = 1 + ((pack.installed && !pack.featured) && (pack.free || isPremium) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
+                    int count = 1 + ((pack.installed && !pack.featured) || pack.expanded ? pack.documents.size() : Math.min(maxlen, pack.documents.size()));
                     if (!pack.expanded && pack.documents.size() > maxlen) {
                         count--;
                     }
@@ -8487,10 +8227,10 @@ public class EmojiView extends FrameLayout implements
                                             resultPre.addAll(param);
 
                                             next.run();
-                                        }, null, SharedConfig.suggestAnimatedEmoji || UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount), false, true, 25);
+                                        }, null, SharedConfig.suggestAnimatedEmoji, false, true, 25);
                                 },
                                 next -> {
-                                    if (SharedConfig.suggestAnimatedEmoji || UserConfig.getInstance(currentAccount).isPremium() || org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                                    if (SharedConfig.suggestAnimatedEmoji) {
                                         final String q = translitSafe((query + "").toLowerCase());
                                         final ArrayList<TLRPC.TL_messages_stickerSet> sets = MediaDataController.getInstance(currentAccount).getStickerSets(MediaDataController.TYPE_EMOJIPACKS);
 
@@ -9290,7 +9030,7 @@ public class EmojiView extends FrameLayout implements
 
             private void addLocalPacks(Runnable finished) {
                 ArrayList<TLRPC.TL_messages_stickerSet> local = MediaDataController.getInstance(currentAccount).getStickerSets(MediaDataController.TYPE_IMAGE);
-                MessagesController.getInstance(currentAccount).filterPremiumStickers(local);
+
                 int index;
                 for (int a = 0, size = local.size(); a < size; a++) {
                     TLRPC.TL_messages_stickerSet set = local.get(a);
@@ -9307,7 +9047,7 @@ public class EmojiView extends FrameLayout implements
                     }
                 }
                 local = MediaDataController.getInstance(currentAccount).getStickerSets(MediaDataController.TYPE_FEATURED);
-                MessagesController.getInstance(currentAccount).filterPremiumStickers(local);
+
                 for (int a = 0, size = local.size(); a < size; a++) {
                     TLRPC.TL_messages_stickerSet set = local.get(a);
                     if ((index = AndroidUtilities.indexOfIgnoreCase(set.set.title, searchQuery)) >= 0) {

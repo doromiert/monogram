@@ -120,7 +120,6 @@ import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.ApplicationLoader;
-import org.telegram.messenger.BirthdayController;
 import org.telegram.messenger.BotForumHelper;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.BuildVars;
@@ -170,7 +169,6 @@ import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.BasePermissionsActivity;
@@ -178,8 +176,6 @@ import org.telegram.ui.Business.BusinessLinksController;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.Forum.ForumUtilities;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
-import org.telegram.ui.Components.Premium.boosts.BoostRepository;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProviderThemed;
@@ -194,11 +190,8 @@ import org.telegram.ui.LinkManager;
 import org.telegram.ui.MessageSendPreview;
 import org.telegram.ui.MultiContactsSelectorBottomSheet;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.StickersActivity;
 import org.telegram.ui.Stories.HighlightMessageSheet;
 import org.telegram.ui.Stories.recorder.CaptionContainerView;
 import org.telegram.ui.Stories.recorder.HintView2;
@@ -219,7 +212,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -465,7 +457,6 @@ public class ChatActivityEnterView extends FrameLayout implements
     public BotCommandsMenuContainer botCommandsMenuContainer;
     private BotCommandsMenuView.BotCommandsAdapter botCommandsAdapter;
 
-    private boolean captionLimitBulletinShown;
 
     // Send as... stuff
     @Nullable
@@ -2626,8 +2617,6 @@ public class ChatActivityEnterView extends FrameLayout implements
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.sendingMessagesChanged);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.audioRecordTooShort);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.updateBotMenuButton);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.didUpdatePremiumGiftFieldIcon);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
 
         parentActivity = context;
@@ -5928,14 +5917,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 }
                 checkBotMenu();
 
-                if (editingCaption && !org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount) && !captionLimitBulletinShown && !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !UserConfig.getInstance(currentAccount).isPremium() && codePointCount > MessagesController.getInstance(currentAccount).captionLengthLimitDefault && codePointCount < MessagesController.getInstance(currentAccount).captionLengthLimitPremium) {
-                    captionLimitBulletinShown = true;
-                    if (heightShouldBeChanged) {
-                        AndroidUtilities.runOnUIThread(() -> showCaptionLimitBulletin(), 300);
-                    } else {
-                        showCaptionLimitBulletin();
-                    }
-                }
+
 
                 showAiButton(lineCount > 2 && editable != null && !TextUtils.isEmpty(editable.toString().trim()));
                 checkIsEphemeralMessage(true);
@@ -6398,8 +6380,6 @@ public class ChatActivityEnterView extends FrameLayout implements
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.sendingMessagesChanged);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.audioRecordTooShort);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.updateBotMenuButton);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.didUpdatePremiumGiftFieldIcon);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.emojiLoaded);
         if (emojiView != null) {
             emojiView.onDestroy();
@@ -7118,14 +7098,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     public boolean sendMessage() {
-        if (richDraftActive && !UserConfig.getInstance(currentAccount).isPremium()) {
-            RichEditor.openConversionSheet(getContext(), this::openRichEditorWithoutFormatting, () -> {
-                if (parentFragment != null) {
-                    parentFragment.showDialog(new PremiumFeatureBottomSheet(parentFragment, PremiumPreviewFragment.PREMIUM_FEATURE_RICH_EDITOR, true));
-                }
-            }, resourcesProvider);
-            return true;
-        }
+
         if (isInScheduleMode()) {
             AlertsCreator.createScheduleDatePickerDialog(parentActivity, parentFragment.getDialogId(), new AlertsCreator.ScheduleDatePickerDelegate() {
                 @Override
@@ -7259,7 +7232,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     }
                 }
             }
-            if (checkPremiumAnimatedEmoji(currentAccount, dialog_id, parentFragment, null, message)) {
+            if (checkAnimatedEmojiAvailable(currentAccount, dialog_id, parentFragment, null, message)) {
                 return;
             }
             if (processSendingText(message, notify, scheduleDate, scheduleRepeatPeriod, payStars)) {
@@ -7325,12 +7298,11 @@ public class ChatActivityEnterView extends FrameLayout implements
         return false;
     }
 
-    public static boolean checkPremiumAnimatedEmoji(int currentAccount, long dialogId, BaseFragment parentFragment, FrameLayout container, CharSequence message) {
+    public static boolean checkAnimatedEmojiAvailable(int currentAccount, long dialogId, BaseFragment parentFragment, FrameLayout container, CharSequence message) {
         if (message == null || parentFragment == null) {
             return false;
         }
-        final boolean isPremium = UserConfig.getInstance(currentAccount).isPremium();
-        if (!isPremium && UserConfig.getInstance(currentAccount).getClientUserId() != dialogId && message instanceof Spanned) {
+        if (UserConfig.getInstance(currentAccount).getClientUserId() != dialogId && message instanceof Spanned) {
             AnimatedEmojiSpan[] animatedEmojis = ((Spanned) message).getSpans(0, message.length(), AnimatedEmojiSpan.class);
             if (animatedEmojis != null) {
                 for (int i = 0; i < animatedEmojis.length; ++i) {
@@ -7410,22 +7382,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                         }
 
                         if (!org.telegram.messenger.xmpp.MonogramFreeFeatures.emoji(currentAccount,documentId) && (emoji == null || !MessageObject.isFreeEmoji(emoji))) {
-                            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
-                                BulletinFactory.of(parentFragment).createErrorBulletin(getString(R.string.MonogramImportEmojiFirst)).show();return true;
-                            }
-                            BulletinFactory.of(parentFragment)
-                                .createEmojiBulletin(
-                                    emoji,
-                                    AndroidUtilities.replaceTags(getString("UnlockPremiumEmojiHint", R.string.UnlockPremiumEmojiHint)),
-                                    getString("PremiumMore", R.string.PremiumMore),
-                                    () -> {
-                                        if (parentFragment != null) {
-                                            new PremiumFeatureBottomSheet(parentFragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false).show();
-                                        } else if (parentFragment.getContext() instanceof LaunchActivity) {
-                                            ((LaunchActivity) parentFragment.getContext()).presentFragment(new PremiumPreviewFragment(null));
-                                        }
-                                    }
-                                ).show();
+                            BulletinFactory.of(parentFragment).createErrorBulletin(getString(R.string.MonogramImportEmojiFirst)).show();
                             return true;
                         }
                     }
@@ -7435,16 +7392,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         return false;
     }
 
-    private void showCaptionLimitBulletin() {
-        if (parentFragment == null || !ChatObject.isChannelAndNotMegaGroup(parentFragment.getCurrentChat())) {
-            return;
-        }
-        BulletinFactory.of(parentFragment).createCaptionLimitBulletin(MessagesController.getInstance(currentAccount).captionLengthLimitPremium, () -> {
-            if (parentFragment != null) {
-                parentFragment.presentFragment(new PremiumPreviewFragment("caption_limit"));
-            }
-        }).show();
-    }
+
 
     private static class BusinessLinkPresetMessage {
         public String text;
@@ -10610,7 +10558,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             }
             emojiButton.setVisibility(View.GONE);
             deleteRichDraftButton.setVisibility(View.VISIBLE);
-            sendButton.setLocked(!UserConfig.getInstance(currentAccount).isPremium());
+            sendButton.setLocked(false);
         } else {
             richDraftPreview.setVisibility(View.GONE);
             if (messageEditText != null) {
@@ -11683,15 +11631,8 @@ public class ChatActivityEnterView extends FrameLayout implements
 
             @Override
             public void onAnimatedEmojiUnlockClick() {
-                BaseFragment fragment = parentFragment;
-                if (fragment == null) {
-                    fragment = getLastFragment();
-                }
-                BottomSheet alert = new PremiumFeatureBottomSheet(fragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false);
-                if (fragment != null) {
-                    fragment.showDialog(alert);
-                } else {
-                    alert.show();
+                if (parentFragment != null) {
+                    parentFragment.presentFragment(new org.telegram.ui.MonogramPacksActivity(currentAccount, true));
                 }
             }
 
@@ -13345,11 +13286,6 @@ public class ChatActivityEnterView extends FrameLayout implements
                 }
 
                 updateBotButton(false);
-            }
-        } else if (id == NotificationCenter.didUpdatePremiumGiftFieldIcon) {
-        } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
-            if (richDraftActive && sendButton != null) {
-                sendButton.setLocked(!UserConfig.getInstance(currentAccount).isPremium());
             }
         }
     }
