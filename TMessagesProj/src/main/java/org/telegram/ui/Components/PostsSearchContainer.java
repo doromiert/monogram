@@ -6,7 +6,6 @@ import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.DialogsActivity.highlightFoundQuote;
 
-import android.app.Activity;
 import android.content.Context;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
@@ -35,12 +34,9 @@ import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
-import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PhotoViewer;
 import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.ArrayList;
@@ -338,14 +334,6 @@ public class PostsSearchContainer extends FrameLayout {
             } else if (err != null && "BALANCE_TOO_LOW".equalsIgnoreCase(err.text)) {
                 updateEmptyView();
                 listView.adapter.update(true);
-                StarsController.getInstance(currentAccount).getBalance(true, () -> {
-                    final Activity activity = AndroidUtilities.getActivity();
-                    final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                    final Theme.ResourcesProvider resourcesProvider = PhotoViewer.getInstance().isVisible() || lastFragment != null && lastFragment.hasShownSheet() ? new DarkThemeResourceProvider() : (lastFragment != null ? lastFragment.getResourceProvider() : null);
-                    new StarsIntroActivity.StarsNeededSheet(activity, resourcesProvider, paying, StarsIntroActivity.StarsNeededSheet.TYPE_SEARCH, "", () -> {
-                        load(true);
-                    }, 0).show();
-                }, true);
             }
         }), ConnectionsManager.RequestFlagDoNotWaitFloodWait);
 

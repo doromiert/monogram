@@ -337,3 +337,11 @@ Removed paid-media entries from attachment send-preview options and the gallery 
 Deleted the unused BalanceCloud Stars/TON top-up widget and its only host integration in AlertDialog: balance setter/getters, special fullscreen wrapper, purchase click action and fullscreen window branch. Repository reference inspection found no callers of those host APIs. Ordinary dialog custom-width, spinner and standard content/window paths remain.
 
 Source-only inspection covers deleted pricing/overlay APIs across Java/XML, surviving gallery selection/menu conditions, edited class boundaries, dialog content/window branches and whitespace. No tests, build, APK or phone interaction. These changes are unshipped; Stars top-ups elsewhere, paid transaction history/schema, Business/Premium/boost code and other monetization resources remain in scope.
+
+### Stars shortfall prompts and paid subscription management
+
+Deleted StarsNeededSheet, the paid subscription-management sheet and StarsSubscriptionView from StarsIntroActivity. Removed subscription rows/expand controls, subscription loading/observer hooks and related click actions from that screen. This removes its renewal/refulfillment/payment UI rather than presenting Telegram subscriptions on XMPP; separate invite-link subscription controls/controller APIs still remain for later cleanup.
+
+Removed the suggested-post low-balance action and helper in ChatActionCell, the send-error balance fetch/purchase prompt in AlertsCreator, and the search-error balance fetch/purchase callback in PostsSearchContainer. Search keeps its empty/list refresh for that error. Existing Monogram send/encryption diagnostics continue through their earlier error branch. Ordinary generic error handling is retained; no synthetic Stars entitlement or balance is introduced.
+
+Source-only inspection covers deleted class/method/constants across Java/XML, surviving click/error branches, observer registration, edited Java boundaries and whitespace. No tests, compilation, APK or phone interaction. Other Stars top-up/gifting screens, paid post search/transaction history and Business/Premium/boost code remain outstanding. Changes are unshipped and full removal remains incomplete.
