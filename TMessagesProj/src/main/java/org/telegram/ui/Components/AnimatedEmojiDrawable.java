@@ -48,7 +48,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.SelectAnimatedEmojiDialog;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -1216,19 +1215,19 @@ public class AnimatedEmojiDrawable extends Drawable {
         }
 
         private boolean hasParticles;
-        private StarsReactionsSheet.Particles particles;
+        private ReactionParticles particles;
         public void setParticles(boolean show, boolean animated) {
             if (hasParticles == show) return;
             if (animated) {
                 if (particles == null) {
-                    particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 8);
+                    particles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 8);
                 }
                 hasParticles = show;
                 invalidate();
             } else {
                 hasParticles = show;
                 if (show && particles == null) {
-                    particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 8);
+                    particles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 8);
                 } else if (!show && particles != null) {
                     particles = null;
                 }

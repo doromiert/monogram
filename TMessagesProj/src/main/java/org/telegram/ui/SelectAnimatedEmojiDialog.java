@@ -1,5 +1,6 @@
 package org.telegram.ui;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.translitSafe;
 import static org.telegram.ui.Stars.StarsController.findAttribute;
@@ -130,7 +131,6 @@ import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SearchStateDrawable;
 import org.telegram.ui.Components.StickerCategoriesListView;
 import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -3288,10 +3288,10 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
     private int animateExpandFromPosition = -1, animateExpandToPosition = -1;
     private long animateExpandStartTime = -1;
 
-    private StarsReactionsSheet.Particles collectionParticles;
-    public StarsReactionsSheet.Particles getCollectionParticles() {
+    private ReactionParticles collectionParticles;
+    public ReactionParticles getCollectionParticles() {
         if (collectionParticles == null) {
-            collectionParticles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 8);
+            collectionParticles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 8);
         }
         return collectionParticles;
     }
@@ -4585,7 +4585,7 @@ public class SelectAnimatedEmojiDialog extends FrameLayout implements Notificati
                         canvas.save();
                         canvas.translate(imageViewEmoji.getX(), imageViewEmoji.getY());
                         if (imageViewEmoji.particlesColor != null) {
-                            StarsReactionsSheet.Particles particles = getCollectionParticles();
+                            ReactionParticles particles = getCollectionParticles();
                             particles.setBounds(0, 0, imageViewEmoji.getWidth(), imageViewEmoji.getHeight());
                             if (!particlesUpdated) {
                                 particles.process();

@@ -1,5 +1,6 @@
 package org.telegram.ui.Gifts;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
@@ -131,7 +132,6 @@ import org.telegram.ui.Stars.StarGiftPatterns;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 import org.telegram.ui.Stories.recorder.HintView2;
 
 import java.util.ArrayList;
@@ -2049,7 +2049,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
         private final Paint particleMaskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private float scale;
-        private StarsReactionsSheet.Particles particles;
+        private ReactionParticles particles;
 
         public static void fillRibbonPath(Path path, float s, boolean left) {
             final Utilities.CallbackReturn<Float, Float> x = v -> left ? 48.0f - v : v;
@@ -2082,7 +2082,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
         public void setParticles(boolean p) {
             if (p == (particles != null)) return;
             if (p) {
-                particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL_INSIDE, 12);
+                particles = new ReactionParticles(ReactionParticles.TYPE_RADIAL_INSIDE, 12);
                 particles.setSpeed(5.0f);
             } else {
                 particles = null;
@@ -2322,7 +2322,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
             backgroundPaint.setColor(color);
 
             if (BatchParticlesDrawHelper.isAvailable()) {
-                particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 25);
+                particles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 25);
             } else {
                 particles = null;
             }
@@ -2331,7 +2331,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
         public final RectF rectF = new RectF();
         public final Path path = new Path();
         public final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        public final @Nullable StarsReactionsSheet.Particles particles;
+        public final @Nullable ReactionParticles particles;
 
         @Override
         public void draw(@NonNull Canvas canvas) {

@@ -79,7 +79,6 @@ import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stars.BalanceCloud;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.ArrayList;
@@ -96,7 +95,7 @@ public class AuctionBidSheet extends BottomSheetWithRecyclerListView implements 
     private final ButtonWithCounterView buttonView;
 
     private final CountdownTimer timer;
-    private final StarsReactionsSheet.StarsSlider slider;
+    private final AuctionBidSlider slider;
     private final InfoCell minimumBidCell;
     private final InfoCell nextRoundCell;
     private final InfoCell giftsLeftCell;
@@ -151,7 +150,7 @@ public class AuctionBidSheet extends BottomSheetWithRecyclerListView implements 
         headerItem = UItem.asCustom(-1, linearLayout);
 
 
-        slider = new StarsReactionsSheet.StarsSlider(context, resourcesProvider) {
+        slider = new AuctionBidSlider(context, resourcesProvider) {
             @Override
             public void onValueChanged(int value) {
                 super.onValueChanged(value);

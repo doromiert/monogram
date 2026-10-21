@@ -1,5 +1,6 @@
 package org.telegram.ui.Stars;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.lerp;
@@ -167,7 +168,7 @@ public class ProfileGiftsView extends View implements NotificationCenter.Notific
         public final long documentId;
         public final int color;
         public final String slug;
-        private StarsReactionsSheet.Particles particles;
+        private ReactionParticles particles;
 
         public int position = -1;
 
@@ -191,7 +192,7 @@ public class ProfileGiftsView extends View implements NotificationCenter.Notific
         }
 
         private void initParticles() {
-            particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 6);
+            particles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 6);
             final float gsz = dp(36);
             particles.bounds.set(-gsz / 2.0f, -gsz / 2.0f, gsz / 2.0f, gsz / 2.0f);
         }

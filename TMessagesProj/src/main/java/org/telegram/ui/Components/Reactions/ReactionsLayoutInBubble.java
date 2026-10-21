@@ -1,5 +1,6 @@
 package org.telegram.ui.Components.Reactions;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 
@@ -59,7 +60,6 @@ import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CounterView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.RLottieDrawable;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -842,7 +842,7 @@ public class ReactionsLayoutInBubble {
         private final Theme.ResourcesProvider resourcesProvider;
 
         public final ButtonBounce bounce;
-        private StarsReactionsSheet.Particles particles;
+        private ReactionParticles particles;
 
         private RLottieDrawable starDrawable;
 
@@ -925,7 +925,7 @@ public class ReactionsLayoutInBubble {
 //                    } else {
 //                        imageReceiver.setImageBitmap(ApplicationLoader.applicationContext.getResources().getDrawable(R.drawable.star_small_inner));
 //                    }
-                    particles = reuseFrom != null && reuseFrom.particles != null ? reuseFrom.particles : new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_HIGH ? 18 : 8);
+                    particles = reuseFrom != null && reuseFrom.particles != null ? reuseFrom.particles : new ReactionParticles(ReactionParticles.TYPE_RADIAL, SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_HIGH ? 18 : 8);
                 } else if (visibleReaction.emojicon != null) {
                     TLRPC.TL_availableReaction r = MediaDataController.getInstance(currentAccount).getReactionsMap().get(visibleReaction.emojicon);
                     if (r != null) {

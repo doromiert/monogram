@@ -1,5 +1,6 @@
 package org.telegram.ui.Stars;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.getString;
@@ -95,7 +96,7 @@ public class StarGiftUniqueActionLayout {
     private final RectF buttonRect = new RectF();
     private final Path buttonPath = new Path();
     private final Paint buttonBackgroundPaint = new Paint();
-    private final StarsReactionsSheet.Particles buttonParticles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 25);
+    private final ReactionParticles buttonParticles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 25);
     private final ButtonBounce buttonBounce;
 
     private final ButtonBounce bounce;

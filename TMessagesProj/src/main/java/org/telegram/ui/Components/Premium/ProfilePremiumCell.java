@@ -1,5 +1,6 @@
 package org.telegram.ui.Components.Premium;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
@@ -10,11 +11,10 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.utils.Choreographer60FpsContent;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextCell;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 
 public class ProfilePremiumCell extends TextCell {
 
-    private final StarsReactionsSheet.Particles particles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL, 15);
+    private final ReactionParticles particles = new ReactionParticles(ReactionParticles.TYPE_RADIAL, 15);
     private final int colorKey;
 
     private final Runnable invalidateRunnable = this::invalidate;

@@ -8,6 +8,7 @@
 
 package org.telegram.ui.Cells;
 
+import org.telegram.ui.Components.ReactionParticles;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.find;
@@ -239,7 +240,6 @@ import org.telegram.ui.Stars.StarGiftPatterns;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stars.StarsReactionsSheet;
 import org.telegram.ui.Stories.StoriesUtilities;
 import org.telegram.ui.Stories.StoryViewer;
 import org.telegram.ui.Stories.recorder.CaptionContainerView;
@@ -1653,7 +1653,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private Drawable groupCallDrawable;
 
     public boolean drawSummaryReply;
-    public StarsReactionsSheet.Particles summaryParticles;
+    public ReactionParticles summaryParticles;
     public int summarySelectorColor;
     public Drawable summaryReplySelector;
     public Text summaryTitle, summarySubtitle;
@@ -21197,7 +21197,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                 final int textColor = summaryLine.getColor();
                 if (summaryParticles == null) {
-                    summaryParticles = new StarsReactionsSheet.Particles(StarsReactionsSheet.Particles.TYPE_RADIAL_INSIDE, 30);
+                    summaryParticles = new ReactionParticles(ReactionParticles.TYPE_RADIAL_INSIDE, 30);
                 }
                 summaryParticles.setBounds(summarySelectorRect);
                 summaryParticles.process();

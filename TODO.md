@@ -766,3 +766,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [o] Monetization follow-up after 0.2.135: legacy profile settings sales/revenue rows, gift menu/actions, subscription grace and affiliate launch/binding paths removed; paid gift-overlay construction removed. Source-only; next APK release must verify compilation and normal profile/settings/QR/member behavior. Broader Stars/gift/status and Premium gates remain in progress.
 
 - [o] Monetization follow-up: paid chat reaction state machine, overlay, request/privacy backend and chat launch paths removed; ordinary reaction updates and delivery deduplication separated from Stars. Saved-message tag prompts and picker Premium filters/upsells removed. Source-only; verify at next APK delivery. Live-stream donations, remaining gift/Stars screens and the broader Premium audit still pending.
+
+- [o] Monetization follow-up: live donation controls and polling/undo/payment authorization removed, paid-reaction sheet deleted, paid highlighting chooser removed. Ordinary particle animations extracted; auction-only slider remains until auction cleanup. Source-only; verify at next APK delivery.
