@@ -13,7 +13,6 @@ import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -43,7 +42,6 @@ import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
-import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.SimpleTextView;
@@ -53,8 +51,6 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
-import org.telegram.ui.Components.Bulletin;
-import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CombinedDrawable;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.FolderBottomSheet;
@@ -62,8 +58,6 @@ import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.Components.LoadingDrawable;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.ProgressButton;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RecyclerListView;
@@ -82,9 +76,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
 
     private boolean ignoreUpdates;
 
-    private boolean canCustomizeFolders() {
-        return org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || getUserConfig().isPremium();
-    }
+
 
     private boolean highlightTags;
     public FiltersSetupActivity highlightTags() {
@@ -586,26 +578,20 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             filtersStartPosition = items.size();
             for (int i = 0; i < dialogFilters.size(); ++i) {
                 items.add(ItemInner.asFilter(dialogFilters.get(i)));
-                if (MessagesController.getInstance(currentAccount).folderTags && dialogFilters.get(i).color >= 0) {
-                    loadedColors = true;
-                }
+
             }
             filtersSectionEnd = items.size();
 
-            if (listView != null) listView.forcedSections.add(AndroidUtilities.pack(filtersSectionStart, filtersSectionEnd - 1 + ((org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || dialogFilters.size() < getMessagesController().dialogFiltersLimitPremium) ? 1 : 0)));
+            if (listView != null) listView.forcedSections.add(AndroidUtilities.pack(filtersSectionStart, filtersSectionEnd));
         } else {
             filtersSectionStart = filtersSectionEnd = -1;
         }
-        if ((org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || dialogFilters.size() < getMessagesController().dialogFiltersLimitPremium)) {
-            items.add(ItemInner.asButton(LocaleController.getString(R.string.CreateNewFilter)));
-        }
+        items.add(ItemInner.asButton(LocaleController.getString(R.string.CreateNewFilter)));
         items.add(ItemInner.asShadow(null));
         folderTagsPosition = items.size();
         showTagsRow = items.size();
         items.add(ItemInner.asCheck(LocaleController.getString(R.string.FolderShowTags)));
-        items.add(ItemInner.asShadow(!canCustomizeFolders() ? AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.FolderShowTagsInfoPremium), Theme.key_windowBackgroundWhiteBlueHeader, AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD, () -> {
-            presentFragment(new PremiumPreviewFragment("settings"));
-        }) : LocaleController.getString(R.string.FolderShowTagsInfo)));
+        items.add(ItemInner.asShadow(LocaleController.getString(R.string.FolderShowTagsInfo)));
 
         if (adapter != null) {
             if (animated) {
@@ -692,20 +678,8 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                 return;
             }
             if (item.viewType == VIEW_TYPE_CHECK) {
-                if (!canCustomizeFolders()) {
-                    showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_FOLDER_TAGS, true));
-                    return;
-                }
-                TLRPC.TL_messages_toggleDialogFilterTags req = new TLRPC.TL_messages_toggleDialogFilterTags();
-                req.enabled = !getMessagesController().folderTags;
-                getMessagesController().setFolderTags(req.enabled);
-                getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                    if (req.enabled && !loadedColors) {
-                        loadingFiltersForColors = true;
-                        getMessagesController().loadRemoteFilters(true);
-                        loadedColors = true;
-                    }
-                }));
+
+                getMessagesController().setFolderTags(!getMessagesController().folderTags);
                 ((TextCheckCell) view).setChecked(getMessagesController().folderTags);
                 adapter.notifyItemRangeChanged(filtersSectionStart, filtersSectionEnd - filtersSectionStart);
             } else if (item.viewType == VIEW_TYPE_FILTER) {
@@ -713,11 +687,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                 if (filter == null || filter.isDefault()) {
                     return;
                 }
-                if (filter.locked) {
-                    showDialog(new LimitReachedBottomSheet(this, context, LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
-                } else {
-                    presentFragment(new FilterCreateActivity(filter));
-                }
+                presentFragment(new FilterCreateActivity(filter));
             } else if (item.viewType == VIEW_TYPE_BUTTON) {
                 createFolder(getParentLayout());
             }
@@ -736,13 +706,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
     }
 
     public void createFolder(INavigationLayout navigationLayout) {
-        final int count = getMessagesController().getDialogFilters().size();
-        if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) && (
-            count - 1 >= getMessagesController().dialogFiltersLimitDefault && !canCustomizeFolders() ||
-            count >= getMessagesController().dialogFiltersLimitPremium
-        )) {
-            showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
-        } else if (navigationLayout != null) {
+        if (navigationLayout != null) {
             navigationLayout.presentFragment(new FilterCreateActivity());
         }
     }
@@ -766,8 +730,6 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         }
     }
 
-    private boolean loadingFiltersForColors;
-    private boolean loadedColors;
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
@@ -916,11 +878,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                         MessagesController.DialogFilter filter = cell.getCurrentFilter();
                         ItemOptions options = ItemOptions.makeOptions(FiltersSetupActivity.this, cell);
                         options.add(R.drawable.msg_edit, LocaleController.getString(R.string.FilterEditItem), () -> {
-                            if (filter.locked) {
-                                showDialog(new LimitReachedBottomSheet(FiltersSetupActivity.this, mContext, LimitReachedBottomSheet.TYPE_FOLDERS, currentAccount, null));
-                            } else {
-                                presentFragment(new FilterCreateActivity(filter));
-                            }
+                            presentFragment(new FilterCreateActivity(filter));
                         });
                         options.add(R.drawable.msg_delete, LocaleController.getString(R.string.FilterDeleteItem), true, () -> {
                             if (filter.isChatlist()) {
@@ -1096,7 +1054,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                 case VIEW_TYPE_CHECK: {
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
                     cell.setTextAndCheck(item.text, getMessagesController().folderTags, divider);
-                    cell.setCheckBoxIcon(!canCustomizeFolders() ? R.drawable.permission_locked : 0);
+                    cell.setCheckBoxIcon(0);
                     break;
                 }
                 case VIEW_TYPE_FILTER_SUGGESTION: {
@@ -1183,29 +1141,13 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
         }
 
-        private void resetDefaultPosition() {
-            if (canCustomizeFolders()) {
-                return;
-            }
-            ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();
-            for (int i = 0; i < filters.size(); ++i) {
-                if (filters.get(i).isDefault() && i != 0) {
-                    adapter.moveElementToStart(i);
-                    listView.scrollToPosition(0);
-                    onDefaultTabMoved();
-                    break;
-                }
-            }
-        }
+
 
         @Override
         public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
             if (actionState != ItemTouchHelper.ACTION_STATE_IDLE) {
                 listView.cancelClickRunnables(false);
                 viewHolder.itemView.setPressed(true);
-            } else {
-                AndroidUtilities.cancelRunOnUIThread(this::resetDefaultPosition);
-                AndroidUtilities.runOnUIThread(this::resetDefaultPosition, 320);
             }
             super.onSelectedChanged(viewHolder, actionState);
             if (viewHolder != null) {
@@ -1226,14 +1168,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         }
     }
 
-    protected void onDefaultTabMoved() {
-        try {
-            fragmentView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
-        } catch (Exception ignore) {}
-        BulletinFactory.of(this).createSimpleBulletin(R.raw.filter_reorder, AndroidUtilities.replaceTags(LocaleController.formatString("LimitReachedReorderFolder", R.string.LimitReachedReorderFolder, LocaleController.getString(R.string.FilterAllChats))), LocaleController.getString(R.string.PremiumMore), Bulletin.DURATION_PROLONG, () -> {
-            showDialog(new PremiumFeatureBottomSheet(FiltersSetupActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_ADVANCED_CHAT_MANAGEMENT, true));
-        }).show();
-    }
+
 
     @Override
     public ArrayList<ThemeDescription> getThemeDescriptions() {

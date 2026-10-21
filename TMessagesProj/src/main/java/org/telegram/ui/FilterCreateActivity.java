@@ -93,7 +93,6 @@ import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.QRCodeBottomSheet;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RecyclerListView;
@@ -179,9 +178,7 @@ public class FilterCreateActivity extends BaseFragment {
         }
     }
 
-    private boolean canCustomizeFolders() {
-        return org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || getUserConfig().isPremium();
-    }
+
 
     public FilterCreateActivity() {
         this(null, null);
@@ -362,7 +359,7 @@ public class FilterCreateActivity extends BaseFragment {
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FilterExcludeInfo)));
         }
 
-        if (getMessagesController().folderTags || !canCustomizeFolders()) {
+        if (getMessagesController().folderTags) {
             items.add(new ItemInner(VIEW_TYPE_HEADER_COLOR_PREVIEW, false));
             items.add(new ItemInner(VIEW_TYPE_COLOR, false));
             items.add(ItemInner.asShadow(LocaleController.getString(R.string.FolderTagColorInfo)));
@@ -690,7 +687,7 @@ public class FilterCreateActivity extends BaseFragment {
                 }
             }
 
-            final int maxCount = canCustomizeFolders() ? getMessagesController().dialogFiltersChatsLimitPremium : getMessagesController().dialogFiltersChatsLimitDefault;
+            final int maxCount = Math.max(getMessagesController().dialogFiltersChatsLimitPremium, getMessagesController().dialogFiltersChatsLimitDefault);
             if (peers.size() > maxCount) {
                 showDialog(new LimitReachedBottomSheet(this, getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
                 return;
@@ -1709,22 +1706,19 @@ public class FilterCreateActivity extends BaseFragment {
                 case VIEW_TYPE_HEADER_COLOR_PREVIEW: {
                     folderTagsHeader = (HeaderCellColorPreview) holder.itemView;
                     folderTagsHeader.setPreviewText(AnimatedEmojiSpan.cloneSpans(newFilterName, -1, folderTagsHeader.getPreviewTextPaint().getFontMetricsInt(), .5f), false);
-                    folderTagsHeader.setPreviewColor(!canCustomizeFolders() ? -1 : newFilterColor, false);
+                    folderTagsHeader.setPreviewColor(newFilterColor, false);
                     folderTagsHeader.setText(LocaleController.getString(R.string.FolderTagColor));
                     break;
                 }
                 case VIEW_TYPE_COLOR: {
                     PeerColorActivity.PeerColorGrid cell = (PeerColorActivity.PeerColorGrid) holder.itemView;
-                    cell.setCloseAsLock(!canCustomizeFolders());
-                    cell.setSelected(!canCustomizeFolders() ? -1 : newFilterColor, false);
+                    cell.setCloseAsLock(false);
+                    cell.setSelected(newFilterColor, false);
                     cell.setOnColorClick(color -> {
-                        if (!canCustomizeFolders()) {
-                            showDialog(new PremiumFeatureBottomSheet(FilterCreateActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_FOLDER_TAGS, true));
-                            return;
-                        }
+
                         cell.setSelected(newFilterColor = color, true);
                         if (folderTagsHeader != null) {
-                            folderTagsHeader.setPreviewColor(!canCustomizeFolders() ? -1 : newFilterColor, true);
+                            folderTagsHeader.setPreviewColor(newFilterColor, true);
                         }
                         checkDoneButton(true);
                     });
@@ -2832,7 +2826,7 @@ public class FilterCreateActivity extends BaseFragment {
             noTag = new TextView(getContext());
             noTag.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             noTag.setTextColor(FilterCreateActivity.this.getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
-            noTag.setText(LocaleController.getString(canCustomizeFolders() ? R.string.FolderTagNoColor : R.string.FolderTagNoColorPremium));
+            noTag.setText(LocaleController.getString(R.string.FolderTagNoColor));
             noTag.setGravity(Gravity.RIGHT);
             addView(noTag, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, padding, 16.66f, padding, bottomMargin));
             noTag.setAlpha(0f);
@@ -2859,7 +2853,7 @@ public class FilterCreateActivity extends BaseFragment {
 
         private boolean noTagShown;
         public void setPreviewColor(int colorId, boolean animated) {
-            noTag.setText(LocaleController.getString(canCustomizeFolders() ? R.string.FolderTagNoColor : R.string.FolderTagNoColorPremium));
+            noTag.setText(LocaleController.getString(R.string.FolderTagNoColor));
 
             final boolean noTag = colorId < 0;
             currentColor = noTag ? 0 : FilterCreateActivity.this.getThemedColor(Theme.keys_avatar_nameInMessage[colorId % Theme.keys_avatar_nameInMessage.length]);

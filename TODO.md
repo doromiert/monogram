@@ -796,3 +796,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [x] Source cleanup: free configured larger captions and story-editor link/reaction controls; replace media/caption upgrade flows with neutral limit feedback and native pack settings. Remove viewer ad menu/caption/button and attachment checklist entry/creation path. See MONETIZATION_CHANGES.md; no build/tests/install this pass.
 
 - [x] Source cleanup: delete obsolete emoji upgrade widgets/delegates; free shared message/bio/reaction limits, folder order/locks, rich-editor access and full-quality story editing. Remove subscription override/filtering from emoji suggestion APIs and migrate callers. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.
+
+- [x] Source cleanup: remove folder-settings tag/color/create/edit paywalls and default-folder reset; persist tags without Telegram RPC. Free avatar gradient/custom-gradient saving and remove lock UI. Remove Telegram shared-wallpaper purchase option while retaining local wallpapers. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.

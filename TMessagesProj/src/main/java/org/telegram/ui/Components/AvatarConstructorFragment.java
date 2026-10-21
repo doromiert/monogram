@@ -2,7 +2,6 @@ package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.lerp;
-import static org.telegram.messenger.AndroidUtilities.premiumText;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.Components.ImageUpdater.FOR_TYPE_CHANNEL;
 import static org.telegram.ui.Components.ImageUpdater.FOR_TYPE_COMMUNITY;
@@ -25,7 +24,6 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -51,7 +49,6 @@ import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SvgHelper;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stars;
@@ -64,7 +61,6 @@ import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.SelectAnimatedEmojiDialog;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
@@ -87,8 +83,7 @@ public class AvatarConstructorFragment extends BaseFragment {
     LinearLayout linearLayout;
 
     boolean forGroup;
-    private CharSequence buttonText, lockedButtonText;
-    private boolean buttonIsLocked;
+    private CharSequence buttonText;
     private ButtonWithCounterView button;
     private FrameLayout bottomBulletinContainer;
 
@@ -117,7 +112,7 @@ public class AvatarConstructorFragment extends BaseFragment {
             new int[]{ 0xFFEA5877, 0xFFE2724D, 0xFFF4AA49, 0xFFF08550 },
             new int[]{ 0xFFF07854, 0xFFED7E39, 0xFFF0C241, 0xFFF0B04A }
     };
-    public static final int[][] premiumColors = new int[][] {
+    public static final int[][] extraColors = new int[][] {
             new int[] { 0xFF94A3B0, 0xFF6C7B87 },
             new int[] { 0xFFEBA15B, 0xFFA16730 },
             new int[] { 0xFFE8B948, 0xFFB87C30 },
@@ -510,11 +505,6 @@ public class AvatarConstructorFragment extends BaseFragment {
             buttonText = getString(R.string.SetMyProfilePhotoAvatarConstructor);
         }
         buttonText = new SpannableStringBuilder(buttonText);
-        SpannableStringBuilder lockedButtonText = new SpannableStringBuilder(buttonText);
-        lockedButtonText.append(" l");
-        lockedButtonText.setSpan(new ColoredImageSpan(R.drawable.msg_mini_lock2), lockedButtonText.length() - 1, lockedButtonText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        this.lockedButtonText = lockedButtonText;
-        buttonIsLocked = false;
         button.setText(buttonText, false);
         button.setOnClickListener(v -> onDonePressed());
 
@@ -535,23 +525,9 @@ public class AvatarConstructorFragment extends BaseFragment {
         return fragmentView;
     }
 
-    private boolean isLocked() {
-        if (UserConfig.getInstance(currentAccount).isPremium()) return false;
-        if (previewView.backgroundGradient != null && previewView.backgroundGradient.premium || previewView.isCustomGradient) {
-            return true;
-        }
-        if (!previewView.freeEmoji) {
-            return false;
-        }
-        return false;
-    }
 
-    private void updateButton() {
-        final boolean locked = isLocked();
-        if (buttonIsLocked != locked) {
-            button.setText((buttonIsLocked = locked) ? lockedButtonText : buttonText, true);
-        }
-    }
+
+
 
     private void setPreview(boolean free, long docId, TLRPC.Document document) {
         previewView.documentId = docId;
@@ -572,7 +548,6 @@ public class AvatarConstructorFragment extends BaseFragment {
             previewView.getImageReceiver().getLottieAnimation().setCurrentFrame(0, false, true);
         }
         wasChanged = true;
-        updateButton();
     }
 
     private void discardEditor() {
@@ -644,12 +619,7 @@ public class AvatarConstructorFragment extends BaseFragment {
         if (previewView.getImageReceiver() == null || !previewView.getImageReceiver().hasImageLoaded()) {
             return;
         }
-        if (isLocked()) {
-            BulletinFactory.of(bottomBulletinContainer, resourceProvider).createSimpleBulletin(R.raw.star_premium_2, premiumText(getString(R.string.PremiumAvatarToast), () -> {
-                presentFragment(new PremiumPreviewFragment("avatar"));
-            })).show();
-            return;
-        }
+
         if (delegate != null) {
             delegate.onDone(previewView.backgroundGradient, previewView.documentId, previewView.document, previewView);
         }
@@ -735,7 +705,6 @@ public class AvatarConstructorFragment extends BaseFragment {
             return;
         }
         previewView.setGradient(gradient, false);
-        updateButton();
         if (previewCell.getAnimatedEmoji() != null) {
             long docId = previewCell.getAnimatedEmoji().getDocumentId();
             previewView.documentId = docId;
@@ -756,7 +725,6 @@ public class AvatarConstructorFragment extends BaseFragment {
         gradient.color4 = AvatarConstructorFragment.defaultColors[0][3];
 
         previewView.setGradient(gradient, false);
-        updateButton();
         previewView.documentId = docId;
         previewView.backupImageView.setAnimatedEmojiDrawable(new AnimatedEmojiDrawable(AnimatedEmojiDrawable.CACHE_TYPE_AVATAR_CONSTRUCTOR_PREVIEW, currentAccount, docId));
         backgroundSelectView.selectGradient(gradient);
@@ -770,7 +738,6 @@ public class AvatarConstructorFragment extends BaseFragment {
         gradient.color3 = emojiMarkup.background_colors.size() > 2 ? ColorUtils.setAlphaComponent(emojiMarkup.background_colors.get(2), 255) : 0;
         gradient.color4 = emojiMarkup.background_colors.size() > 3 ? ColorUtils.setAlphaComponent(emojiMarkup.background_colors.get(3), 255) : 0;
         previewView.setGradient(gradient, false);
-        updateButton();
 
 
         if (emojiMarkup instanceof TLRPC.TL_videoSizeEmojiMarkup) {
@@ -1004,14 +971,13 @@ public class AvatarConstructorFragment extends BaseFragment {
                 backgroundGradient.color4 = defaultColors[i][3];
                 gradients.add(backgroundGradient);
             }
-            for (int i = 0; i < premiumColors.length; i++) {
+            for (int i = 0; i < extraColors.length; i++) {
                 BackgroundGradient backgroundGradient = new BackgroundGradient();
                 backgroundGradient.stableId = stableIdPointer++;
-                backgroundGradient.color1 = premiumColors[i][0];
-                backgroundGradient.color2 = premiumColors[i][1];
+                backgroundGradient.color1 = extraColors[i][0];
+                backgroundGradient.color2 = extraColors[i][1];
                 backgroundGradient.color3 = 0;
                 backgroundGradient.color4 = 0;
-                backgroundGradient.premium = true;
                 gradients.add(backgroundGradient);
             }
             setPadding(dp(4), 0, dp(4), 0);
@@ -1024,7 +990,6 @@ public class AvatarConstructorFragment extends BaseFragment {
                     if (adapter != null) {
                         adapter.notifyDataSetChanged();
                     }
-                    updateButton();
                 } else {
                     if (selectedItemId != 1 && customSelectedGradient != null) {
                         selectedItemId = 1;
@@ -1032,7 +997,6 @@ public class AvatarConstructorFragment extends BaseFragment {
                         if (adapter != null) {
                             adapter.notifyDataSetChanged();
                         }
-                        updateButton();
                     } else {
                         showColorPicker();
                     }
@@ -1063,12 +1027,10 @@ public class AvatarConstructorFragment extends BaseFragment {
                     if (holder.getItemViewType() == VIEW_TYPE_GRADIENT) {
                         view.setCustom(false);
                         final BackgroundGradient gradient = gradients.get(position);
-                        view.setLocked(gradient.premium && !UserConfig.getInstance(currentAccount).isPremium());
                         view.setGradient(gradient);
                         view.setSelectedInternal(selectedItemId == gradients.get(position).stableId, true);
                     } else {
                         view.setCustom(true);
-                        view.setLocked(!UserConfig.getInstance(currentAccount).isPremium());
                         view.setGradient(customSelectedGradient);
                         view.setSelectedInternal(selectedItemId == 1, true);
                     }
@@ -1193,7 +1155,6 @@ public class AvatarConstructorFragment extends BaseFragment {
                     if (colorPickerGradient.color1 != color && (colorPickerGradient.color1 == 0 || color == 0)) {
                         colorPickerGradient = colorPickerGradient.copy();
                         previewView.setGradient(colorPickerGradient, true);
-                        updateButton();
                     }
                     colorPickerGradient.color1 = color;
                     break;
@@ -1201,7 +1162,6 @@ public class AvatarConstructorFragment extends BaseFragment {
                     if (colorPickerGradient.color2 != color && (colorPickerGradient.color2 == 0 || color == 0)) {
                         colorPickerGradient = colorPickerGradient.copy();
                         previewView.setGradient(colorPickerGradient, true);
-                        updateButton();
                     }
                     colorPickerGradient.color2 = color;
                     break;
@@ -1209,7 +1169,6 @@ public class AvatarConstructorFragment extends BaseFragment {
                     if (colorPickerGradient.color3 != color && (colorPickerGradient.color3 == 0 || color == 0)) {
                         colorPickerGradient = colorPickerGradient.copy();
                         previewView.setGradient(colorPickerGradient, true);
-                        updateButton();
                     }
                     colorPickerGradient.color3 = color;
                     break;
@@ -1217,7 +1176,6 @@ public class AvatarConstructorFragment extends BaseFragment {
                     if (colorPickerGradient.color4 != color && (colorPickerGradient.color4 == 0 || color == 0)) {
                         colorPickerGradient = colorPickerGradient.copy();
                         previewView.setGradient(colorPickerGradient, true);
-                        updateButton();
                     }
                     colorPickerGradient.color4 = color;
                     break;
@@ -1243,7 +1201,6 @@ public class AvatarConstructorFragment extends BaseFragment {
         colorPicker.setType(-1, true, 4, colorPickerGradient.colorsCount(), false, 0, false);
 
         previewView.setGradient(colorPickerGradient, true);
-        updateButton();
 
         LinearLayout colorPickerContainer = new LinearLayout(getContext());
         colorPickerContainer.setOrientation(LinearLayout.VERTICAL);
@@ -1277,7 +1234,6 @@ public class AvatarConstructorFragment extends BaseFragment {
     public static class BackgroundGradient {
 
         public int stableId;
-        public boolean premium;
 
         int color1;
         int color2;
@@ -1290,7 +1246,6 @@ public class AvatarConstructorFragment extends BaseFragment {
             backgroundGradient.color2 = color2;
             backgroundGradient.color3 = color3;
             backgroundGradient.color4 = color4;
-            backgroundGradient.premium = premium;
             return backgroundGradient;
         }
 
@@ -1345,8 +1300,6 @@ public class AvatarConstructorFragment extends BaseFragment {
 
         GradientTools gradientTools = new GradientTools();
         Drawable addIcon;
-        Drawable lockIcon;
-        boolean lockIconIsEmptyCustom;
         Paint optionsPaint;
         Paint defaultPaint;
 
@@ -1392,22 +1345,7 @@ public class AvatarConstructorFragment extends BaseFragment {
                 canvas.drawCircle(cx, cy, dp(10) + dp(5) * (1f - progressToSelect.get()), paint);
             }
 
-            if (isLocked) {
-                if (lockIcon == null || lockIconIsEmptyCustom != (isCustom && backgroundGradient == null)) {
-                    lockIcon = getContext().getResources().getDrawable(R.drawable.msg_mini_lock2).mutate();
-                    final int color = (lockIconIsEmptyCustom = isCustom && backgroundGradient == null) ? Theme.getColor(Theme.key_chat_emojiSearchIcon) : 0xFFFFFFFF;
-                    lockIcon.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN));
-                }
-                lockIcon.setBounds(
-                    (int) (cx - lockIcon.getIntrinsicWidth() / 2f), (int) (cy - lockIcon.getIntrinsicHeight() / 2f),
-                    (int) (cx + lockIcon.getIntrinsicWidth() / 2f), (int) (cy + lockIcon.getIntrinsicHeight() / 2f)
-                );
-                final float s = lerp(1.05f, 0.92f, progressToSelect.get());
-                canvas.save();
-                canvas.scale(s, s, cx, cy);
-                lockIcon.draw(canvas);
-                canvas.restore();
-            } else if (isCustom) {
+            if (isCustom) {
                 if (backgroundGradient == null) {
                     if (addIcon == null) {
                         addIcon = ContextCompat.getDrawable(getContext(), R.drawable.msg_filled_plus);
@@ -1431,12 +1369,7 @@ public class AvatarConstructorFragment extends BaseFragment {
             }
         }
 
-        private boolean isLocked;
-        void setLocked(boolean locked) {
-            if (this.isLocked == locked) return;
-            this.isLocked = locked;
-            invalidate();
-        }
+
 
         void setGradient(BackgroundGradient backgroundGradient) {
             this.backgroundGradient = backgroundGradient;
