@@ -62,6 +62,10 @@ Remaining before a release: finish removing TON/Stars/purchase screens, old tran
 
 Remaining: Stars/gift/auction/paid-media/message backends and their screens, old Premium upsell/marketing UI, ad reporting/settings remnants, crypto and monetary schema/presentation/configuration remnants, plus the remaining free-client-feature audit. No APK is ready or released from this branch yet.
 
+### Home title branding follow-up
+
+The home header's `AppName` string was already Monogram, but `DialogsActivity` replaced the whole title with an `ImageSpan` containing the upstream `telegram_logo_2` vector wordmark. Removed that overlay so the native action bar displays the real app name. The stories header had a second use of the same wordmark: replaced it with native bold text using its existing theme color, motion/visibility and status-icon placement. Its width now follows the label instead of a fixed 90dp image slot. Launcher/app icon artwork is unchanged. Source implementation only; no APK or phone visual verification yet.
+
 ### New user report tracked
 
 A contact on 0.2.133 reports failed OMEMO 2 sends (`Invalid OMEMO2 content`) and undecryptable incoming messages. 0.2.133 already includes the prior own-bundle/prekey patch, so the screenshot alone does not identify the cause. Detailed diagnostics were requested. No identity/trust reset, plaintext retry or speculative encryption change was made.
