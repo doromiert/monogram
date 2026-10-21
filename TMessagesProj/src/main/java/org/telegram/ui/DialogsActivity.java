@@ -158,7 +158,6 @@ import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Adapters.DialogsAdapter;
 import org.telegram.ui.Adapters.DialogsSearchAdapter;
 import org.telegram.ui.Adapters.FiltersView;
-import org.telegram.ui.Cells.ActiveGiftAuctionsHintCell;
 import org.telegram.ui.Cells.AnimatedStatusView;
 import org.telegram.ui.Cells.ArchiveHintInnerCell;
 import org.telegram.ui.Cells.DialogCell;
@@ -616,7 +615,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private FrameLayout fragmentContextViewWrapper;
     private DialogsActivityTopPanelLayout topPanelLayout;
     private DialogsActivityTopBubblesFadeView topBubblesFadeView;
-    private ActiveGiftAuctionsHintCell activeGiftAuctionsHintCell;
     private DialogsHintCell dialogsHintCell;
     private UnconfirmedAuthHintCell authHintCell;
     private Long cacheSize, deviceSize;
@@ -3211,7 +3209,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         AndroidUtilities.runOnUIThread(() -> Theme.createChatResources(context, false));
 
         authHintCell = null;
-        activeGiftAuctionsHintCell = null;
         dialogsHintCell = null;
         communityPendingRequests = null;
         topPanelLayout = null;
@@ -6271,7 +6268,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         checkCommunityPendingRequestsVisible(true);
         checkUnconfirmedAuthHintCellVisibility();
-        checkActiveGiftAuctionsHintCellVisibility();
     }
 
     private void checkUnconfirmedAuthHintCellVisibility() {
@@ -6297,25 +6293,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    private void checkActiveGiftAuctionsHintCellVisibility() {
-        if (fragmentView == null || topPanelLayout == null) {
-            return;
-        }
 
-        final boolean isVisible = !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && !isInPreviewMode()
-            && folderId == 0 && communityId == 0 && initialDialogsType == DIALOGS_TYPE_DEFAULT
-            && getGiftAuctionsController().hasActiveAuctions()
-            && (rightSlidingDialogContainer == null || !rightSlidingDialogContainer.hasFragment())
-            && !animatorSearchVisible.getValue();
-
-        if (isVisible && activeGiftAuctionsHintCell == null) {
-            activeGiftAuctionsHintCell = new ActiveGiftAuctionsHintCell(getContext(), currentAccount);
-            topPanelLayout.addView(activeGiftAuctionsHintCell);
-        }
-        if (activeGiftAuctionsHintCell != null) {
-            topPanelLayout.setViewVisible(activeGiftAuctionsHintCell, isVisible);
-        }
-    }
 
     private void createGroupForThis() {
         AlertDialog progress = new AlertDialog(getContext(), AlertDialog.ALERT_TYPE_SPINNER);
@@ -12455,9 +12433,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (authHintCell != null) {
             SimpleThemeDescription.add(arrayList, authHintCell::updateColors, Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhiteBlackText, Theme.key_windowBackgroundWhiteGrayText, Theme.key_windowBackgroundWhiteValueText, Theme.key_text_RedBold);
         }
-        if (activeGiftAuctionsHintCell != null) {
-            SimpleThemeDescription.add(arrayList, activeGiftAuctionsHintCell::updateColors, Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhiteBlackText, Theme.key_windowBackgroundWhiteGrayText, Theme.key_windowBackgroundWhiteValueText, Theme.key_text_RedBold);
-        }
+
 
         return arrayList;
     }

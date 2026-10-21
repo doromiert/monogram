@@ -111,7 +111,6 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.FingerprintController;
 import org.telegram.messenger.FlagSecureReason;
 import org.telegram.messenger.GenericProvider;
-import org.telegram.messenger.GiftAuctionController;
 import org.telegram.messenger.ILocationServiceProvider;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
@@ -217,8 +216,6 @@ import org.telegram.ui.Components.voip.RTMPStreamPipOverlay;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Gifts.GiftSheet;
 import org.telegram.ui.Stars.ISuperRipple;
-import org.telegram.ui.Gifts.AuctionJoinSheet;
-import org.telegram.ui.Stars.StarGiftPreviewSheet;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
@@ -4099,41 +4096,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     FileLog.e(e);
                 }
             }));
-        } else if (stargiftPreviewSlug != null) {
-            requestId[0] = GiftAuctionController.getInstance(currentAccount).requestGiftAuctionBySlug(stargiftPreviewSlug, (res, err) -> {
-                if (err != null) {
-                    BulletinFactory.of(mainFragmentsStack.get(mainFragmentsStack.size() - 1))
-                            .createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.GiftAuctionNotFound))
-                            .show();
-                } else if (res != null) {
-                    GiftAuctionController.Auction auction = GiftAuctionController.getInstance(currentAccount).getAuction(res.gift.id);
-                    if (auction != null) {
-                        new StarGiftPreviewSheet(LaunchActivity.this, null, currentAccount, auction.gift.title, auction.previewAttributes, false).show();
-                    }
-                }
-
-                try {
-                    dismissLoading.run();
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            });
-        } else if (auctionSlug != null) {
-            requestId[0] = GiftAuctionController.getInstance(currentAccount).requestGiftAuctionBySlug(auctionSlug, (res, err) -> {
-                if (err != null) {
-                    BulletinFactory.of(mainFragmentsStack.get(mainFragmentsStack.size() - 1))
-                            .createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.GiftAuctionNotFound))
-                            .show();
-                } else if (res != null) {
-                    AuctionJoinSheet.show(LaunchActivity.this, null, currentAccount, 0, res.gift.id, null);
-                }
-
-                try {
-                    dismissLoading.run();
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            });
+        } else if (stargiftPreviewSlug != null || auctionSlug != null) {
+            dismissLoading.run();
         } else if (uniqueGiftSlug != null) {
             TL_stars.getUniqueStarGift req = new TL_stars.getUniqueStarGift();
             req.slug = uniqueGiftSlug;

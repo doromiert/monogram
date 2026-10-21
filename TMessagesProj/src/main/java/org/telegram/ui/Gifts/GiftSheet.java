@@ -552,15 +552,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
                         lastFragment.showAsSheet(fragment, bottomSheetParams);
                         return;
                     }
-                    if (gift.auction) {
-                        AuctionJoinSheet.show(context, resourcesProvider, currentAccount, dialogId, gift.id, () -> {
-                            if (closeParentSheet != null) {
-                                closeParentSheet.run(false);
-                            }
-                            dismiss();
-                        });
-                        return;
-                    }
+
 
                     if (gift.sold_out) {
                         StarsIntroActivity.showSoldOutGiftSheet(context, currentAccount, gift, resourcesProvider);
@@ -902,6 +894,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
             if (userSettings == null || !userSettings.disallow_unique_stargifts) {
                 for (int i = 0; i < gifts.size(); ++i) {
                     final TL_stars.StarGift gift = gifts.get(i);
+                    if (gift.auction) continue;
                     prices.add(gift.stars);
                     if (gift.availability_resale > 0) {
                         hasResale = true;
@@ -939,6 +932,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
             int giftsCount = 0;
             for (int i = 0; i < finalGifts.size(); ++i) {
                 final TL_stars.StarGift gift = finalGifts.get(i);
+                if (gift.auction) continue;
                 if (
                     selectedTab == TAB_ALL ||
                     selectedTab == TAB_MY_GIFTS ||

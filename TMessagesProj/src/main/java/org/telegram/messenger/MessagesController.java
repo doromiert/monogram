@@ -20033,10 +20033,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         } else if (update.key instanceof TLRPC.TL_privacyKeyStarGiftsAutoSave) {
                             getContactsController().setPrivacyRules(update.rules, ContactsController.PRIVACY_RULES_TYPE_GIFTS);
                         }
-                    } else if (baseUpdate instanceof TL_update.TL_updateStarGiftAuctionState) {
-                        GiftAuctionController.getInstance(currentAccount).processUpdate((TL_update.TL_updateStarGiftAuctionState) baseUpdate);
-                    } else if (baseUpdate instanceof TL_update.TL_updateStarGiftAuctionUserState) {
-                        GiftAuctionController.getInstance(currentAccount).processUpdate((TL_update.TL_updateStarGiftAuctionUserState) baseUpdate);
                     } else if (baseUpdate instanceof TL_update.TL_updateStarsRevenueStatus) {
                         BotStarsController.getInstance(currentAccount).onUpdate((TL_update.TL_updateStarsRevenueStatus) baseUpdate);
                     } else if (baseUpdate instanceof TL_update.TL_updateUserStatus) {

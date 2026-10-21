@@ -93,7 +93,6 @@ import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ChatThemeController;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.Emoji;
-import org.telegram.messenger.GiftAuctionController;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
@@ -3299,21 +3298,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             final CharSequence rarity = getRarityName(attr.rarity, color);
             final Runnable onClick;
             if (attr.rarity instanceof TL_stars.TL_starGiftAttributeRarity) {
-                onClick = () -> {
-                    if (loading[0]) {
-                        return;
-                    }
-                    loading[0] = true;
-                    final TL_stars.StarGift gift = getGift();
-                    GiftAuctionController.getInstance(currentAccount).requestAuctionUpgrades(gift.gift_id, attrs -> {
-                        if (attrs != null) {
-                            new StarGiftPreviewSheet(getContext(), resourcesProvider, currentAccount, gift.title, attrs, false).show();
-                        } else {
-                            showHint(LocaleController.formatString(R.string.Gift2RarityHint, percents(attr.getRarityPermille())), textViewArr[0], false);
-                        }
-                        loading[0] = false;
-                    });
-                };
+                onClick = () -> showHint(LocaleController.formatString(R.string.Gift2RarityHint, percents(attr.getRarityPermille())), textViewArr[0], false);
             } else {
                 onClick = null;
             }
@@ -8951,35 +8936,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             buttonTitle.setTranslationY(0);
             buttonSubtitle.setAlpha(1.0f);
 
-            final long giftId = gift_id;
-            GiftAuctionController.getInstance(currentAccount).requestAuctionUpgrades(gift_id, attrs -> {
-                if (giftId != gift_id) return;
-                previewAttributes = attrs;
-                variantsButton.animate()
-                    .alpha(attributesTwoLines ? 0.0f : previewAttributes != null ? 1.0f : 0.25f)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
-                    .setDuration(420)
-                    .start();
 
-                final ArrayList<TL_stars.starGiftAttributeModel> models = new ArrayList<>();
-                for (int i = 0; i < attrs.size(); ++i) {
-                    if (attrs.get(i) instanceof TL_stars.starGiftAttributeModel && !(attrs.get(i).rarity instanceof TL_stars.TL_starGiftAttributeRarity)) {
-                        models.add((TL_stars.starGiftAttributeModel) attrs.get(i));
-                        if (models.size() >= 3) break;
-                    }
-                }
-                final SpannableStringBuilder ssb = new SpannableStringBuilder();
-                for (TL_stars.starGiftAttributeModel model : models) {
-                    ssb.append("x");
-                    ssb.setSpan(new AnimatedEmojiSpan(model.document, variantsButton.getPaint().getFontMetricsInt()), ssb.length() - 1, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    ssb.append(" ");
-                }
-                if (ssb.length() > 0) {
-                    ssb.append(" ");
-                }
-                ssb.append(replaceArrows(getString(R.string.GiftCraftViewAllVariants), false, dp(1), dp(1)));
-                variantsButton.setText(ssb);
-            });
         }
 
         private void setupGiftButtons() {
