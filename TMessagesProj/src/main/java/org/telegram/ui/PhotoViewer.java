@@ -5592,14 +5592,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         if (parentChatActivity != null && parentChatActivity.chatActivityEnterView != null) {
                             parentChatActivity.chatActivityEnterView.addRecentGif(document);
                         } else {
-                            MediaDataController.getInstance(currentAccount).addRecentGif(document, (int) (System.currentTimeMillis() / 1000), true);
+                            MediaDataController.getInstance(currentAccount).addRecentGif(document, (int) (System.currentTimeMillis() / 1000));
                         }
                         MessagesController.getInstance(currentAccount).saveGif(currentMessageObject, document);
                     } else if (pageBlocksAdapter != null) {
                         TLObject object = pageBlocksAdapter.getMedia(currentIndex);
                         if (object instanceof TLRPC.Document) {
                             TLRPC.Document document = (TLRPC.Document) object;
-                            MediaDataController.getInstance(currentAccount).addRecentGif(document, (int) (System.currentTimeMillis() / 1000), true);
+                            MediaDataController.getInstance(currentAccount).addRecentGif(document, (int) (System.currentTimeMillis() / 1000));
                             MessagesController.getInstance(currentAccount).saveGif(pageBlocksAdapter.getParentObject(), document);
                         }
                     } else {

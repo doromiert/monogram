@@ -8970,7 +8970,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         save = true;
                     }
                     if (save) {
-                        getMediaDataController().addRecentGif(sentMedia.document, sentMessage.date, true);
+                        getMediaDataController().addRecentGif(sentMedia.document, sentMessage.date);
                     }
                 } else if (MessageObject.isStickerDocument(sentMedia.document) || MessageObject.isAnimatedStickerDocument(sentMedia.document, true)) {
                     getMediaDataController().addRecentSticker(MediaDataController.TYPE_IMAGE, sentMessage, sentMedia.document, sentMessage.date, false);

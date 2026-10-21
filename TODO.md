@@ -847,3 +847,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [x] Source cleanup: delete Telegram Business chat-link service/screens and link-edit chat/composer mode, shared adapter rows, header/reaction exceptions and unused request/response classes; consume old Business link slugs without Telegram resolution. Preserve ordinary composer, quick replies and XMPP links. Source-only, unshipped; inert legacy plumbing/storage cleanup remains. See `MONETIZATION_CHANGES.md`.
 
 - [o] Round-video watermark: replace baked TELEGRAM wordmark with shared curved MONOGRAM alpha mask in both encoder paths, retaining plane logo. Source fix complete and obsolete PNG removed; verify new recordings visually at APK delivery. See `MONETIZATION_CHANGES.md`.
+
+- [x] Source cleanup: remove native recent-GIF count eviction and persistence truncation, unused sticker favorite-cap lookup, and favorite-sticker/GIF replacement-limit upgrade bulletins. Migrate addRecentGif callers after deleting its eviction-bulletin flag. Source-only, unshipped; large-library/restart verification pending. See `MONETIZATION_CHANGES.md`.

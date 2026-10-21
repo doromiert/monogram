@@ -7396,10 +7396,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         TLRPC.Document sticker = (TLRPC.Document) args[1];
                         int bulletinType = (int) args[2];
                         StickerSetBulletinLayout layout = new StickerSetBulletinLayout(this, null, bulletinType, sticker, null);
-                        int duration = Bulletin.DURATION_SHORT;
-                        if (bulletinType == StickerSetBulletinLayout.TYPE_REPLACED_TO_FAVORITES || bulletinType == StickerSetBulletinLayout.TYPE_REPLACED_TO_FAVORITES_GIFS) {
-                            duration = 3500;
-                        }
+                        final int duration = Bulletin.DURATION_SHORT;
+
                         if (fragment != null) {
                             Bulletin.make(fragment, layout, duration).show();
                         } else {

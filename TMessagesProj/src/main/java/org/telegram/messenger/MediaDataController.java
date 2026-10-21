@@ -836,7 +836,7 @@ public class MediaDataController extends BaseController {
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_ADDED_TO_FAVORITES);
             }
             // XMPP favorites use the native local cache; Telegram cannot save these document IDs.
-            maxCount = getMessagesController().maxFaveStickersCount;
+            maxCount = 0; // Favorites have no count cap.
         } else {
             if (type == TYPE_IMAGE && remove) {
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_REMOVED_FROM_RECENT);
@@ -921,7 +921,7 @@ public class MediaDataController extends BaseController {
         return false;
     }
 
-    public void addRecentGif(TLRPC.Document document, int date, boolean showReplaceBulletin) {
+    public void addRecentGif(TLRPC.Document document, int date) {
         if (document == null) {
             return;
         }
@@ -943,21 +943,7 @@ public class MediaDataController extends BaseController {
         if (!found) {
             recentGifs.add(0, document);
         }
-        if (recentGifs.size() > Math.max(getMessagesController().savedGifsLimitDefault, getMessagesController().savedGifsLimitPremium)) {
-            TLRPC.Document old = recentGifs.remove(recentGifs.size() - 1);
-            getMessagesStorage().getStorageQueue().postRunnable(() -> {
-                try {
-                    getMessagesStorage().getDatabase().executeFast("DELETE FROM web_recent_v3 WHERE id = '" + old.id + "' AND type = 2").stepThis().dispose();
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            });
-            if (showReplaceBulletin) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_STICKER, document, StickerSetBulletinLayout.TYPE_REPLACED_TO_FAVORITES_GIFS);
-                });
-            }
-        }
+
         ArrayList<TLRPC.Document> arrayList = new ArrayList<>();
         arrayList.add(document);
         processLoadedRecentDocuments(0, arrayList, true, date, false);
@@ -1933,18 +1919,12 @@ public class MediaDataController extends BaseController {
             getMessagesStorage().getStorageQueue().postRunnable(() -> {
                 try {
                     SQLiteDatabase database = getMessagesStorage().getDatabase();
-                    final boolean unlimited = !gif && (type == TYPE_IMAGE || type == TYPE_FAVE);
+                    final boolean unlimited = gif || type == TYPE_IMAGE || type == TYPE_FAVE;
                     int maxCount;
-                    if (gif) {
-                        maxCount = getMessagesController().maxRecentGifsCount;
+                    if (type == TYPE_GREETINGS || type == TYPE_PREMIUM_STICKERS) {
+                        maxCount = 200;
                     } else {
-                        if (type == TYPE_GREETINGS || type == TYPE_PREMIUM_STICKERS) {
-                            maxCount = 200;
-                        } else if (type == TYPE_FAVE) {
-                            maxCount = getMessagesController().maxFaveStickersCount;
-                        } else {
-                            maxCount = getMessagesController().maxRecentStickersCount;
-                        }
+                        maxCount = getMessagesController().maxRecentStickersCount;
                     }
                     database.beginTransaction();
 

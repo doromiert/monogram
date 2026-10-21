@@ -531,3 +531,11 @@ Source inspection checked removed modes/classes/methods/request identifiers acro
 The round-video watermark was a baked curved TELEGRAM PNG, referenced by both InstantCameraVideoEncoderOverlayHelper and RoundVideoOverlayRenderer. Replaced both uses with MonogramBranding.roundVideoWatermark, a shared native Canvas alpha-mask renderer drawing curved MONOGRAM text at the existing corner footprint/output sizes. Kept the plane animation unchanged as requested for logo branding. Removed the now-unused Telegram wordmark PNG. This affects newly encoded videos; text already baked into older files cannot change.
 
 Source review checked both encoder call sites, alpha-mask ownership/recycling, old-resource references, class boundaries and diff whitespace. No tests, build or phone actions; visual/recording verification remains for APK delivery.
+
+### Remove recent-GIF eviction and favorite-media upgrade bulletins
+
+Removed the native recent-GIF count eviction and its backing database deletion, and made GIF persistence/load processing bypass the legacy maxRecentGifsCount truncation. Regular sticker recents/favorites were already unlimited; removed their unused favorite-cap lookup from the add path and persistence logic. Masks and greeting/catalogue bounds retain their existing independent behavior. MonogramGiphy's metadata-size/HTTP-response safety bounds remain; they are not subscription tiers.
+
+Deleted favorite-sticker/GIF replacement-limit bulletin types and both Premium upgrade descriptions/actions, including the longer bulletin-duration branch. Removed addRecentGif's replacement-bulletin argument and migrated all native sender/receiver/viewer/composer callers; ordinary added/removed favorite notifications remain. Existing configuration fields/limit showcase code elsewhere remain for later removal.
+
+Source review checked the old cap/eviction conditions, unlimited persistence guards, every addRecentGif caller and removed bulletin identifiers, edited class boundaries and whitespace. No tests, package build or phone interaction; unshipped source work. Restart/large-library behavior still needs APK-delivery verification.

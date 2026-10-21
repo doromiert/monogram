@@ -10283,7 +10283,7 @@ public class MessagesController extends BaseController implements NotificationCe
 
     public void saveGif(Object parentObject, TLRPC.Document document) {
         if (!MessageObject.isGifDocument(document)) return;
-        getMediaDataController().addRecentGif(document, (int) (System.currentTimeMillis() / 1000), false);
+        getMediaDataController().addRecentGif(document, (int) (System.currentTimeMillis() / 1000));
         org.telegram.messenger.xmpp.MonogramGiphy.setFavorite(currentAccount,document,true);
         getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, true, 0);
     }
@@ -21761,7 +21761,7 @@ public class MessagesController extends BaseController implements NotificationCe
                             save = true;
                         }
                         if (save) {
-                            getMediaDataController().addRecentGif(message.messageOwner.media.document, message.messageOwner.date, message.wasJustSent);
+                            getMediaDataController().addRecentGif(message.messageOwner.media.document, message.messageOwner.date);
                         }
                     } else if (!message.isAnimatedEmoji() && (message.isSticker() || message.isAnimatedSticker())) {
                         getMediaDataController().addRecentSticker(MediaDataController.TYPE_IMAGE, message, message.messageOwner.media.document, message.messageOwner.date, false);

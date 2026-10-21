@@ -1121,7 +1121,7 @@ public class ContentPreviewViewer {
                         MediaDataController.getInstance(currentAccount).removeRecentGif(currentDocument);
                         delegate.gifAddedOrDeleted();
                     } else if (actions.get(which) == 2) {
-                        MediaDataController.getInstance(currentAccount).addRecentGif(currentDocument, (int) (System.currentTimeMillis() / 1000), true);
+                        MediaDataController.getInstance(currentAccount).addRecentGif(currentDocument, (int) (System.currentTimeMillis() / 1000));
                         MessagesController.getInstance(currentAccount).saveGif("gif", currentDocument);
                         delegate.gifAddedOrDeleted();
                     } else if (actions.get(which) == 3) {
