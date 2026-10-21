@@ -11383,50 +11383,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         } else if (buttonTypeRequestPeer != null) {
             if (buttonTypeRequestPeer.peer_type != null && messageObject != null && messageObject.messageOwner != null) {
                 if (buttonTypeRequestPeer.peer_type instanceof TLRPC.TL_requestPeerTypeCreateBot) {
-                    TLRPC.User bot;
-                    if (getParentFragment() != null) {
-                        bot = getParentFragment().getCurrentUser();
-                    } else {
-                        bot = MessagesController.getInstance(currentAccount).getUser(dialog_id);
-                    }
-                    if (bot == null) {
-                        return false;
-                    }
-                    CreateBotAlert.show(getContext(), currentAccount, bot, (TLRPC.TL_requestPeerTypeCreateBot) buttonTypeRequestPeer.peer_type, false, newBot -> {
-                        if (newBot != null) {
-                            final TLRPC.TL_messages_sendBotRequestedPeer req = new TLRPC.TL_messages_sendBotRequestedPeer();
-                            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(messageObject.messageOwner.peer_id);
-                            req.flags |= TLObject.FLAG_0;
-                            req.msg_id = messageObject.getId();
-                            req.button_id = buttonTypeRequestPeer.button_id;
-                            req.requested_peers.add(MessagesController.getInputPeer(newBot));
-                            ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);
-
-                            final long managerId = bot.id;
-                            final Bundle args = new Bundle();
-                            args.putLong("user_id", newBot.id);
-                            final ChatActivity chatActivity = new ChatActivity(args) {
-                                private boolean shownToast;
-                                @Override
-                                public void onBecomeFullyVisible() {
-                                    super.onBecomeFullyVisible();
-                                    if (!shownToast) {
-                                        shownToast = true;
-                                        BulletinFactory.of(this).createSimpleBulletin(
-                                                R.raw.contact_check,
-                                                formatString(R.string.CreateManagedBotCreatedTitle, UserObject.getUserName(newBot)),
-                                                AndroidUtilities.replaceSingleTag(
-                                                    formatString(R.string.CreateManagedBotCreatedText, UserObject.getUserName(bot)),
-                                                    () -> presentFragment(ChatActivity.of(managerId))
-                                                )
-                                        ).show();
-                                    }
-                                }
-                            };
-                            if (parentFragment != null)
-                                parentFragment.presentFragment(chatActivity);
-                        }
-                    }, resourcesProvider, null, false);
+                    BulletinFactory.of(sizeNotifierLayout, resourcesProvider).createErrorBulletin(LocaleController.getString(R.string.DialogNotAvailable)).show();
                     return false;
                 }
                 if (buttonTypeRequestPeer.peer_type instanceof TLRPC.TL_requestPeerTypeUser && buttonTypeRequestPeer.max_quantity > 1) {

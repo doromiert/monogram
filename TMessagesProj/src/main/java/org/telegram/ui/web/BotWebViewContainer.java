@@ -134,7 +134,6 @@ import org.telegram.ui.Components.AnimatedFileNative;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
-import org.telegram.ui.Components.CreateBotAlert;
 import org.telegram.ui.Components.EditTextCaption;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Paint.Views.LinkPreview;
@@ -2981,63 +2980,7 @@ public abstract class BotWebViewContainer extends FrameLayout implements Notific
                     final TL_keyboard.TL_buttonTypeRequestPeer buttonTypeRequestPeer = TLKeyboardHelper.getType(res, TL_keyboard.TL_buttonTypeRequestPeer.class);
                     if (buttonTypeRequestPeer != null) {
                         if (buttonTypeRequestPeer.peer_type instanceof TLRPC.TL_requestPeerTypeCreateBot) {
-                            final TLRPC.TL_requestPeerTypeCreateBot peerType = (TLRPC.TL_requestPeerTypeCreateBot) buttonTypeRequestPeer.peer_type;
-                            CreateBotAlert.show(getContext(), currentAccount, botUser, peerType, false, newBot -> {
-                                if (newBot == null) {
-                                    notifyEvent(requestContext, "requested_chat_failed", obj("req_id", requestId));
-                                    return;
-                                }
-
-                                final TLRPC.TL_messages_sendBotRequestedPeer req2 = new TLRPC.TL_messages_sendBotRequestedPeer();
-                                req2.peer = MessagesController.getInputPeer(botUser);
-                                req2.webapp_req_id = requestId;
-                                req2.button_id = buttonTypeRequestPeer.button_id;
-                                req2.requested_peers.add(MessagesController.getInputPeer(newBot));
-                                ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req2, AndroidUtilities::runOnUIThread, (updates, err2) -> {
-                                    if (updates != null) {
-                                        MessagesController.getInstance(currentAccount).processUpdates(updates, false);
-                                        notifyEvent(requestContext, "requested_chat_sent", obj("req_id", requestId));
-
-                                        final long managerId = botUser.id;
-                                        final Bundle args = new Bundle();
-                                        args.putLong("user_id", newBot.id);
-                                        final ChatActivity chatActivity = new ChatActivity(args) {
-                                            private boolean shownToast;
-                                            @Override
-                                            public void onBecomeFullyVisible() {
-                                                super.onBecomeFullyVisible();
-                                                if (!shownToast) {
-                                                    shownToast = true;
-                                                    BulletinFactory.of(this).createSimpleBulletin(
-                                                        R.raw.contact_check,
-                                                        formatString(R.string.CreateManagedBotCreatedTitle, UserObject.getUserName(newBot)),
-                                                        AndroidUtilities.replaceSingleTag(
-                                                            formatString(R.string.CreateManagedBotCreatedText, UserObject.getUserName(botUser)),
-                                                            () -> presentFragment(ChatActivity.of(managerId))
-                                                        )
-                                                    ).show();
-                                                }
-                                            }
-                                        };
-                                        final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                                        if (lastFragment != null)
-                                            lastFragment.presentFragment(chatActivity);
-
-                                        if (delegate != null) {
-                                            delegate.onCloseToTabs();
-                                        }
-                                        return;
-                                    }
-                                    if (err2 != null) {
-                                        BulletinFactory.of(this, resourcesProvider).showForError(err2);
-                                        notifyEvent(requestContext, "requested_chat_failed", obj("req_id", requestId));
-                                    } else {
-                                        BulletinFactory.of(this, resourcesProvider).showForError("UNKNOWN_BUTTON");
-                                        notifyEvent(requestContext, "requested_chat_failed", obj("req_id", requestId));
-                                    }
-                                });
-                                notifyEvent(requestContext, "requested_chat_sent", obj("req_id", requestId));
-                            }, resourcesProvider, BulletinFactory.of(this, resourcesProvider), true);
+                            notifyEvent(requestContext, "requested_chat_failed", obj("req_id", requestId));
                             return;
                         }
                         if (buttonTypeRequestPeer.peer_type instanceof TLRPC.TL_requestPeerTypeUser && buttonTypeRequestPeer.max_quantity > 1) {

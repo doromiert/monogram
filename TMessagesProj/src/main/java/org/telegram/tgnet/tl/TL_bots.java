@@ -1153,22 +1153,7 @@ public class TL_bots {
         }
     }
 
-    public static class checkUsername extends TLMethod<TLRPC.Bool> {
-        public static final int constructor = 0x87f2219b;
 
-        public String username;
-
-        @Override
-        public TLRPC.Bool deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeString(username);
-        }
-    }
 
     public static class requestedButton extends TLObject {
         public static final int constructor = 0xf13bbcd7;
@@ -1192,30 +1177,7 @@ public class TL_bots {
         }
     }
 
-    public static class createBot extends TLMethod<TLRPC.User> {
-        public static final int constructor = 0xe5b17f2b;
 
-        public int flags;
-        public boolean via_deeplink;
-        public String name;
-        public String username;
-        public TLRPC.InputUser manager_id;
-
-        @Override
-        public TLRPC.User deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.User.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            flags = setFlag(flags, FLAG_0, via_deeplink);
-            stream.writeInt32(flags);
-            stream.writeString(name);
-            stream.writeString(username);
-            manager_id.serializeToStream(stream);
-        }
-    }
 
     public static class exportBotToken extends TLMethod<TL_bots.exportedBotToken> {
         public static final int constructor = 0x63b089;
