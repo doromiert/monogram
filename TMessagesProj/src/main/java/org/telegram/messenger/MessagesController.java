@@ -548,7 +548,6 @@ public class MessagesController extends BaseController implements NotificationCe
     public boolean filtersEnabled;
     public boolean getfileExperimentalParams;
     public volatile boolean downloadImprovementKillswitch;
-    public boolean smsjobsStickyNotificationEnabled;
     public boolean collectDeviceStats;
     public boolean showFiltersTooltip;
     public String venueSearchBot;
@@ -1520,7 +1519,6 @@ public class MessagesController extends BaseController implements NotificationCe
         filtersEnabled = mainPreferences.getBoolean("filtersEnabled", false);
         getfileExperimentalParams = mainPreferences.getBoolean("getfileExperimentalParams", false);
         downloadImprovementKillswitch = mainPreferences.getBoolean("android_download_improvement_killswitch", false);
-        smsjobsStickyNotificationEnabled = mainPreferences.getBoolean("smsjobsStickyNotificationEnabled", false);
         showFiltersTooltip = mainPreferences.getBoolean("showFiltersTooltip", false);
         autoarchiveAvailable = mainPreferences.getBoolean("autoarchiveAvailable", false);
         groupCallVideoMaxParticipants = mainPreferences.getInt("groipCallVideoMaxParticipants", 30);
@@ -2798,17 +2796,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                     break;
                 }
-                case "smsjobs_sticky_notification_enabled": {
-                    if (value.value instanceof TLRPC.TL_jsonBool) {
-                        TLRPC.TL_jsonBool bool = (TLRPC.TL_jsonBool) value.value;
-                        if (bool.value != smsjobsStickyNotificationEnabled) {
-                            smsjobsStickyNotificationEnabled = bool.value;
-                            editor.putBoolean("smsjobsStickyNotificationEnabled", smsjobsStickyNotificationEnabled);
-                            changed = true;
-                        }
-                    }
-                    break;
-                }
+
                 case "dialog_filters_enabled": {
                     if (value.value instanceof TLRPC.TL_jsonBool) {
                         TLRPC.TL_jsonBool bool = (TLRPC.TL_jsonBool) value.value;
@@ -5395,7 +5383,6 @@ public class MessagesController extends BaseController implements NotificationCe
         getfileExperimentalParams = false;
         channelRevenueWithdrawalEnabled = false;
         collectDeviceStats = false;
-        smsjobsStickyNotificationEnabled = false;
         showAnnualPerMonth = false;
         canEditFactcheck = false;
         starsLocked = true;
@@ -5410,7 +5397,6 @@ public class MessagesController extends BaseController implements NotificationCe
         mainPreferences.edit()
             .remove("starsLocked")
             .remove("getfileExperimentalParams")
-            .remove("smsjobsStickyNotificationEnabled")
             .remove("channelRevenueWithdrawalEnabled")
             .remove("showAnnualPerMonth")
             .remove("canEditFactcheck")

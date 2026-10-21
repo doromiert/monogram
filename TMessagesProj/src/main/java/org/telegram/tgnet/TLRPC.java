@@ -68754,24 +68754,7 @@ public class TLRPC {
         }
     }
     
-    public static class TL_channels_toggleAutotranslation extends TLObject {
-        public static final int constructor = 0x167fc0a1;
 
-        public InputChannel channel;
-        public boolean enabled;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return Updates.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            channel.serializeToStream(stream);
-            stream.writeBool(enabled);
-        }
-    }
 
     public static class TL_channels_getMessageAuthor extends TLObject {
         public static final int constructor = 0xece2a0e6;

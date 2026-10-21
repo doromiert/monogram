@@ -28,8 +28,6 @@
     <permission android:name="${applicationId}.permission.MAPS_RECEIVE" android:protectionLevel="signature"/>
 
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
-    <uses-permission android:name="android.permission.SEND_SMS" />
 
     <application
         android:icon="@mipmap/ic_launcher_sa"
@@ -125,10 +123,6 @@
 
         <uses-library android:name="com.google.android.maps" android:required="false"/>
 
-        <receiver
-            android:name="org.telegram.messenger.SMSResultService"
-            android:exported="false">
-        </receiver>
 
     </application>
 

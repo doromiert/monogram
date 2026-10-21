@@ -221,6 +221,7 @@ public class PushListenerController {
                         FileLog.d(tag + " " + loc_key);
                     }
                     switch (loc_key) {
+                        case "SMSJOB": // Retired Telegram SMS reward jobs must never reach generic notifications.
                         case "MESSAGE_GRAM_TRANSFER":
                         case "MESSAGE_GRAM_TRANSFER_COMMENT":
                         case "MESSAGE_GRAM_TRANSFER_UNKNOWN":
