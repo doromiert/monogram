@@ -88,6 +88,12 @@ Release verification for 0.2.135 is recorded below. No phone UI actions were per
 - [x] Runtime dependency graph excludes Play Billing, Stripe and Google Wallet.
 - [x] Inspected all 59,218 defined APK DEX classes: Billing API/client/utilities, Stripe/Google Wallet, wallet/TON UI, PaymentFormActivity and VideoAds implementations absent. All three native libraries are arm64; main native library has no wallet-engine/JNI markers. Historical monetary schemas and remaining Stars/gift UI are still present.
 - [x] Signed APK matches the previously delivered signer; version 0.2.135, Android version code 73109. SHA-256: `195d357843037892b5461ae7238199838470251c63d901810c58f1515c959973`.
-- [ ] Phone runtime/visual acceptance: not performed. Last ADB endpoint `192.168.1.128:39413` refused connections and no phone was listed. APK link delivery via the configured bot is the authorized fallback.
+- [x] Installed via the updated wireless ADB endpoint `192.168.1.128:46869`; package manager confirms 0.2.135 / 73109. App was not opened or exercised.
+- [x] Merged into master, pushed and published https://github.com/doromiert/monogram/releases/tag/v0.2.135; release asset size/SHA-256 and anonymous download verified.
+- [ ] Phone runtime/visual acceptance remains unperformed.
 
 The overall monetization removal remains in progress; this release does not certify every Stars, gift, auction, promotional screen or frontend gate has been removed.
+
+### Ralu OMEMO2 diagnostics received after packaging
+
+The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse:63 → XmppOmemo2.bundle:131 → targets:105 → encrypt:209 → XmppSession.sendModern:960 → send:884 → MonogramController.handle:3587`. The failure is the signed-prekey ID parser, before bundle cryptographic verification/encryption, not a fingerprint trust rejection. The parser currently accepts only decimal IDs 1..2147483647. The rejected ID and owning device are still unknown; the trace alone does not distinguish zero, an out-of-range value, or missing/malformed input. Next step: inspect the offending bundle's `spk@id` and supported wire/native ranges before changing validation. No encryption change was included in 0.2.135.
