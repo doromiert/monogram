@@ -5581,24 +5581,6 @@ public class TL_stars {
         }
     }
 
-    public static class toggleStarGiftsPinnedToTop extends TLObject {
-        public static final int constructor = 0x1513e7b0;
-
-        public TLRPC.InputPeer peer;
-        public ArrayList<InputSavedStarGift> stargift = new ArrayList<>();
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-            Vector.serialize(stream, stargift);
-        }
-    }
 
     public static class updateStarGiftPrice extends TLMethod<TLRPC.Updates> {
         public static final int constructor = 0xedbe6ccb;
@@ -5840,82 +5822,6 @@ public class TL_stars {
         }
     }
 
-
-
-    public static class updateStarGiftCollection extends TLObject {
-        public static final int constructor = 0x4fddbee7;
-
-        public int flags;
-        public TLRPC.InputPeer peer;
-        public int collection_id;
-        public String title;
-        public ArrayList<InputSavedStarGift> delete_stargift = new ArrayList<>();
-        public ArrayList<InputSavedStarGift> add_stargift = new ArrayList<>();
-        public ArrayList<InputSavedStarGift> order = new ArrayList<>();
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_starGiftCollection.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            peer.serializeToStream(stream);
-            stream.writeInt32(collection_id);
-            if (hasFlag(flags, 1)) {
-                stream.writeString(title);
-            }
-            if (hasFlag(flags, 2)) {
-                Vector.serialize(stream, delete_stargift);
-            }
-            if (hasFlag(flags, 4)) {
-                Vector.serialize(stream, add_stargift);
-            }
-            if (hasFlag(flags, 8)) {
-                Vector.serialize(stream, order);
-            }
-        }
-    }
-
-    public static class reorderStarGiftCollections extends TLObject {
-        public static final int constructor = 0xc32af4cc;
-
-        public TLRPC.InputPeer peer;
-        public ArrayList<Integer> order = new ArrayList<>();
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-            Vector.serializeInt(stream, order);
-        }
-    }
-
-    public static class deleteStarGiftCollection extends TLObject {
-        public static final int constructor = 0xad5648e8;
-
-        public TLRPC.InputPeer peer;
-        public int collection_id;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-            stream.writeInt32(collection_id);
-        }
-    }
 
     public static class getStarGiftCollections extends TLObject {
         public static final int constructor = 0x981b91dd;
@@ -6547,26 +6453,7 @@ public class TL_stars {
         }
     }
 
-    public static class getCraftStarGifts extends TLMethod<TL_payments_savedStarGifts> {
-        public static final int constructor = 0xfd05dd00;
 
-        public long gift_id;
-        public String offset;
-        public int limit;
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt64(gift_id);
-            stream.writeString(offset);
-            stream.writeInt32(limit);
-        }
-
-        @Override
-        public TL_payments_savedStarGifts deserializeResponseT(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_payments_savedStarGifts.TLdeserialize(stream, constructor, exception);
-        }
-    }
 
     public static class craftStarGift extends TLMethod<TLRPC.Updates> {
         public static final int constructor = 0xb0f9684f;

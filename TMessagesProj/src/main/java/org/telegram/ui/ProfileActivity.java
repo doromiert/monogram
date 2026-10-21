@@ -4099,9 +4099,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (sharedMediaLayout.canEditStories() && sharedMediaLayout.isActionModeShown() && (sharedMediaLayout.getClosestTab() == SharedMediaLayout.TAB_STORIES || SharedMediaLayout.isStoryAlbumPageType(sharedMediaLayout.getClosestTab()))) {
                         return false;
                     }
-                    if (sharedMediaLayout.giftsContainer != null && sharedMediaLayout.giftsContainer.isReordering()) {
-                        return false;
-                    }
+
                     if (sharedMediaLayout.storiesContainer != null && sharedMediaLayout.storiesContainer.isReordering()) {
                         return false;
                     }

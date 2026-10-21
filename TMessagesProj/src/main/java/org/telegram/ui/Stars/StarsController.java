@@ -582,61 +582,7 @@ public class StarsController {
             return -1;
         }
 
-        public void removeCollection(int id) {
-            final int index = indexOf(id);
-            if (index == -1) return;
 
-            final TL_stars.TL_starGiftCollection collection = collections.remove(index);
-            gifts.remove(collection.collection_id);
-
-            final TL_stars.deleteStarGiftCollection req = new TL_stars.deleteStarGiftCollection();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            req.collection_id = collection.collection_id;
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);
-        }
-
-        public void updateIcon(int id) {
-            final GiftsList list = getListById(id);
-            final TL_stars.TL_starGiftCollection collection = findById(id);
-            if (list == null || collection == null) return;
-            final TL_stars.SavedStarGift firstGift = list.gifts.isEmpty() ? null : list.gifts.get(0);
-            if (firstGift == null) {
-                collection.flags &=~ 1;
-                collection.icon = null;
-            } else {
-                collection.flags |= 1;
-                collection.icon = firstGift.gift.getDocument();
-            }
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftCollectionsLoaded, dialogId, this);
-        }
-
-        public void reorder(ArrayList<Integer> collectionIds) {
-            final HashMap<Integer, TL_stars.TL_starGiftCollection> map = new HashMap<>();
-            for (final TL_stars.TL_starGiftCollection collection : collections) {
-                map.put(collection.collection_id, collection);
-            }
-            final ArrayList<TL_stars.TL_starGiftCollection> newCollections = new ArrayList<>();
-            for (final int id : collectionIds) {
-                final TL_stars.TL_starGiftCollection collection = map.get(id);
-                if (collection != null) {
-                    newCollections.add(collection);
-                }
-            }
-
-            collections.clear();
-            collections.addAll(newCollections);
-            refilterCollections();
-        }
-
-        public void sendOrder() {
-            final TL_stars.reorderStarGiftCollections req = new TL_stars.reorderStarGiftCollections();
-            req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-            for (final TL_stars.TL_starGiftCollection collection : collections) {
-                req.order.add(collection.collection_id);
-            }
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, null);
-            refilterCollections();
-        }
     }
 
     public interface IGiftsList {
@@ -856,10 +802,7 @@ public class StarsController {
             if (load || shown) load();
         }
 
-        private long craftingGiftId = 0;
-        public void forCrafting(long gift_id) {
-            craftingGiftId = gift_id;
-        }
+
 
         public void load() {
             if (loading || endReached) return;
@@ -867,35 +810,28 @@ public class StarsController {
             boolean first = lastOffset == null;
             loading = true;
             final TLObject request;
-            if (craftingGiftId != 0) {
-                final TL_stars.getCraftStarGifts req = new TL_stars.getCraftStarGifts();
-                req.gift_id = craftingGiftId;
-                req.offset = first ? "" : lastOffset;
-                req.limit = first ? 15 : 30;
-                request = req;
+            final TL_stars.getSavedStarGifts req = new TL_stars.getSavedStarGifts();
+            req.sort_by_value = !sort_by_date;
+            req.exclude_unupgradable = !isInclude_limited();
+            req.exclude_upgradable = !isInclude_upgradable();
+            req.exclude_unlimited = !isInclude_unlimited();
+            req.exclude_unique = !isInclude_unique();
+            req.exclude_saved = !isInclude_displayed();
+            req.exclude_unsaved = !isInclude_hidden();
+            req.peer_color_available = peer_color_available;
+            if (dialogId == 0) {
+                req.peer = new TLRPC.TL_inputPeerSelf();
             } else {
-                final TL_stars.getSavedStarGifts req = new TL_stars.getSavedStarGifts();
-                req.sort_by_value = !sort_by_date;
-                req.exclude_unupgradable = !isInclude_limited();
-                req.exclude_upgradable = !isInclude_upgradable();
-                req.exclude_unlimited = !isInclude_unlimited();
-                req.exclude_unique = !isInclude_unique();
-                req.exclude_saved = !isInclude_displayed();
-                req.exclude_unsaved = !isInclude_hidden();
-                req.peer_color_available = peer_color_available;
-                if (dialogId == 0) {
-                    req.peer = new TLRPC.TL_inputPeerSelf();
-                } else {
-                    req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-                }
-                req.offset = first ? "" : lastOffset;
-                req.limit = first ? Math.max(MessagesController.getInstance(currentAccount).stargiftsPinnedToTopLimit, 15) : 30;
-                if (isCollection) {
-                    req.flags |= 64;
-                    req.collection_id = collectionId;
-                }
-                request = req;
+                req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
             }
+            req.offset = first ? "" : lastOffset;
+            req.limit = first ? Math.max(MessagesController.getInstance(currentAccount).stargiftsPinnedToTopLimit, 15) : 30;
+            if (isCollection) {
+                req.flags |= 64;
+                req.collection_id = collectionId;
+            }
+            request = req;
+
             final int[] reqId = new int[1];
             reqId[0] = currentRequestId = ConnectionsManager.getInstance(currentAccount).sendRequest(request, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
                 if (reqId[0] != currentRequestId) return;
@@ -973,26 +909,6 @@ public class StarsController {
             return totalCount;
         }
 
-        public ArrayList<TL_stars.SavedStarGift> getPinned() {
-            final ArrayList<TL_stars.SavedStarGift> pinned = new ArrayList<>();
-            for (int i = 0; i < gifts.size(); ++i) {
-                final TL_stars.SavedStarGift gift = gifts.get(i);
-                if (gift.pinned_to_top && !gift.unsaved) {
-                    pinned.add(gift);
-                }
-            }
-            return pinned;
-        }
-
-        public boolean eq(ArrayList<TL_stars.SavedStarGift> a, ArrayList<TL_stars.SavedStarGift> b) {
-            if (a == null && b == null) return true;
-            if (a == null || b == null) return false;
-            if (a.size() != b.size()) return false;
-            for (int i = 0; i < a.size(); ++i) {
-                if (a.get(i) != b.get(i)) return false;
-            }
-            return true;
-        }
 
         public TL_stars.InputSavedStarGift getInput(TL_stars.SavedStarGift gift) {
             if (gift == null) return null;
@@ -1008,106 +924,6 @@ public class StarsController {
             }
         }
 
-        public void setPinned(ArrayList<TL_stars.SavedStarGift> newPinned) {
-            gifts.removeAll(newPinned);
-            if (sort_by_date && !isCollection) {
-                Collections.sort(gifts, (a, b) -> b.date - a.date);
-            }
-            gifts.addAll(0, newPinned);
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftsLoaded, dialogId, GiftsList.this);
-            sendPinnedOrder();
-        }
-
-        public boolean togglePinned(TL_stars.SavedStarGift gift, boolean pin, boolean fixLimit) {
-            if (gift == null) {
-                return false;
-            }
-            boolean hitLimit = false;
-            final ArrayList<TL_stars.SavedStarGift> pinned = getPinned();
-            if (pinned.contains(gift)) {
-                if (pin) {
-                    return false;
-                }
-                pinned.remove(gift);
-            } else {
-                if (!pin) {
-                    return false;
-                }
-                if (pinned.size() + 1 > MessagesController.getInstance(currentAccount).stargiftsPinnedToTopLimit) {
-                    if (fixLimit) {
-                        hitLimit = true;
-                        while (pinned.size() > 0 && pinned.size() + 1 > MessagesController.getInstance(currentAccount).stargiftsPinnedToTopLimit) {
-                            TL_stars.SavedStarGift pinnedGift = pinned.remove(pinned.size() - 1);
-                            pinnedGift.pinned_to_top = false;
-                        }
-                    } else {
-                        return true;
-                    }
-                }
-                pinned.add(gift);
-            }
-            gift.pinned_to_top = pin;
-            gifts.removeAll(pinned);
-            if (sort_by_date && !isCollection) {
-                Collections.sort(gifts, (a, b) -> b.date - a.date);
-            }
-            gifts.addAll(0, pinned);
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starUserGiftsLoaded, dialogId, GiftsList.this);
-            sendPinnedOrder();
-            return hitLimit;
-        }
-
-        private ArrayList<TL_stars.SavedStarGift> savedPinnedState;
-
-        public void reorderPinned(int fromPosition, int toPosition) {
-            if (savedPinnedState == null) {
-                savedPinnedState = getPinned();
-            }
-            reorder(fromPosition, toPosition);
-        }
-
-        public void reorder(int fromPosition, int toPosition) {
-            fromPosition = Utilities.clamp(fromPosition, gifts.size() - 1, 0);
-            if (fromPosition < 0 || fromPosition >= gifts.size()) return;
-
-            final TL_stars.SavedStarGift g = gifts.remove(fromPosition);
-
-            toPosition = Utilities.clamp(toPosition, gifts.size() - 1, 0);
-            if (toPosition < 0 || toPosition >= gifts.size()) return;
-
-            gifts.add(toPosition, g);
-        }
-
-        public void reorderDone() {
-            if (savedPinnedState == null || eq(savedPinnedState, getPinned())) {
-                savedPinnedState = null;
-                return;
-            }
-            sendPinnedOrder();
-            savedPinnedState = null;
-        }
-
-        public void sendPinnedOrder() {
-            if (isCollection) {
-                final TL_stars.updateStarGiftCollection req = new TL_stars.updateStarGiftCollection();
-                req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-                req.collection_id = collectionId;
-                req.flags |= 8;
-                for (TL_stars.SavedStarGift g : gifts) {
-                    req.order.add(getInput(g));
-                }
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, null, ConnectionsManager.RequestFlagInvokeAfter);
-            } else {
-                final TL_stars.toggleStarGiftsPinnedToTop req = new TL_stars.toggleStarGiftsPinnedToTop();
-                req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
-                for (TL_stars.SavedStarGift pinnedGift : getPinned()) {
-                    req.stargift.add(getInput(pinnedGift));
-                }
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> {
-
-                }, ConnectionsManager.RequestFlagInvokeAfter);
-            }
-        }
 
         public boolean contains(final TL_stars.SavedStarGift gift) {
             for (final TL_stars.SavedStarGift g : gifts) {

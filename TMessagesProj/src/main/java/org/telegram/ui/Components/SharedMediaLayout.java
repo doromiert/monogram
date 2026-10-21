@@ -410,9 +410,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         if (canEditStories() && (getClosestTab() == TAB_STORIES || getClosestTab() == TAB_BOT_PREVIEWS || isStoryAlbumPageType(getClosestTab())) && isActionModeShown()) {
             return false;
         }
-        if (giftsContainer != null && giftsContainer.isReordering()) {
-            return false;
-        }
+
         if (storiesContainer != null && storiesContainer.isReordering()) {
             return false;
         }
@@ -1920,15 +1918,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                         sorting = null;
                     }
 
-                    if (giftsContainer.collections.isMine()) {
-                        if (!list.getPinned().isEmpty() || page.isCollection) {
-                            o.add(R.drawable.tabs_reorder, getString(R.string.Gift2Reorder), () -> {
-                                giftsContainer.setReordering(true);
-                                o.dismiss();
-                            });
-                        }
-                        gap = true;
-                    }
+
                     if (gap) o.addGap();
                     final ActionBarMenuSubItem unlimited = o.addChecked();
                     unlimited.setText(getString(R.string.Gift2FilterUnlimited));
@@ -2548,9 +2538,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
             actionBar.addView(saveItem, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.RIGHT | Gravity.BOTTOM));
             saveItem.setOnClickListener(view -> {
                 if (saveItem.getAlpha() < 0.1f) return;
-                if (giftsContainer != null && giftsContainer.isReordering()) {
-                    giftsContainer.resetReordering();
-                }
+
                 if (storiesContainer != null && storiesContainer.isReordering()) {
                     saveAndStopAlbumsReorder();
                 }
@@ -2565,19 +2553,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                 protected int processColor(int color) {
                     return SharedMediaLayout.this.processColor(color);
                 }
-                @Override
-                protected void updatedReordering(boolean reordering) {
-                    saveItem.setVisibility(VISIBLE);
-                    saveItem.animate()
-                        .alpha(reordering ? 1.0f : 0.0f)
-                        .scaleX(reordering ? 1.0f : 0.4f)
-                        .scaleY(reordering ? 1.0f : 0.4f)
-                        .withEndAction(() -> {
-                            if (!reordering) saveItem.setVisibility(VISIBLE);
-                        })
-                        .start();
-                    updateOptionsSearch(true);
-                }
+
             };
             giftsContainer.setPaddingTop(
                 dp(48) +
@@ -5607,9 +5583,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
         if (isActionModeShowed && mediaPages[0] != null && mediaPages[0].selectedType == TAB_BOT_PREVIEWS) {
             return false;
         }
-        if (giftsContainer != null && giftsContainer.isReordering()) {
-            return false;
-        }
+
         if (storiesContainer != null && storiesContainer.isReordering()) {
             return false;
         }
@@ -7102,9 +7076,6 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
 
     private void switchToCurrentSelectedMode(boolean animated) {
         boolean sections = false;
-        if (giftsContainer != null) {
-            giftsContainer.resetReordering();
-        }
         for (int a = 0; a < mediaPages.length; a++) {
             mediaPages[a].listView.stopScroll();
         }
@@ -11791,7 +11762,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
     }
     private void updateOptionsSearch(boolean finish) {
         if (optionsSearchImageView == null) return;
-        optionsSearchImageView.setAlpha((searching || giftsContainer != null && giftsContainer.isReordering() || storiesContainer != null && storiesContainer.isReordering()) ? 0f : Utilities.clamp(searchAlpha + optionsAlpha, 1, 0));
+        optionsSearchImageView.setAlpha((searching || storiesContainer != null && storiesContainer.isReordering()) ? 0f : Utilities.clamp(searchAlpha + optionsAlpha, 1, 0));
         if (finish) {
             animateSearchToOptions(getPhotoVideoOptionsAlpha(1) > 0.5f, true);
         } else if (searchItemState == 2) {

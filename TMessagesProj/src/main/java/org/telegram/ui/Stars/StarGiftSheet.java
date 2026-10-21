@@ -13,7 +13,6 @@ import static org.telegram.messenger.LocaleController.formatPluralStringComma;
 import static org.telegram.messenger.LocaleController.formatSpannable;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
-import static org.telegram.messenger.MessagesController.findUpdates;
 import static org.telegram.ui.Stars.StarsController.findAttribute;
 import static org.telegram.ui.Stars.StarsController.findAttributes;
 import static org.telegram.ui.Stars.StarsIntroActivity.addAvailabilityRow;
@@ -140,7 +139,6 @@ import org.telegram.ui.Components.spoilers.SpoilersTextView;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.Gifts.GiftMessageView;
 import org.telegram.ui.Gifts.GiftVisuals;
-import org.telegram.ui.Gifts.ProfileGiftsContainer;
 import org.telegram.ui.GradientClip;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
@@ -207,16 +205,6 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
         return this;
     }
 
-    public interface BoughtGiftCallback {
-        void onBoughtGift(TL_stars.TL_starGiftUnique gift, long dialogId, boolean fragmentsImmediately);
-    }
-
-    private BoughtGiftCallback boughtGift;
-
-    public StarGiftSheet setOnBoughtGift(BoughtGiftCallback boughtGift) {
-        this.boughtGift = boughtGift;
-        return this;
-    }
 
     public StarGiftSheet(Context context, int currentAccount, long dialogId, Theme.ResourcesProvider resourcesProvider) {
         this(context, currentAccount, dialogId, resourcesProvider, null);
@@ -736,35 +724,8 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
 
     private void onMenuPressed(View btn) {
         final String link = getLink();
-        final TL_stars.TL_starGiftUnique giftUnique = getUniqueGift();
         ItemOptions.makeOptions(container, resourcesProvider, btn)
-            .addIf(getUniqueGift() != null && isMineWithActions(currentAccount, DialogObject.getPeerDialogId(getUniqueGift().owner_id)) && giftsList instanceof StarsController.GiftsList && savedStarGift != null && getInputStarGift() != null, (savedStarGift != null && savedStarGift.pinned_to_top) ? R.drawable.msg_unpin : R.drawable.msg_pin, getString((savedStarGift != null && savedStarGift.pinned_to_top) ? R.string.Gift2Unpin : R.string.Gift2Pin), () -> {
-                if (savedStarGift.unsaved) {
-                    savedStarGift.unsaved = false;
-                    final StarsController.GiftsCollections collections = StarsController.getInstance(currentAccount).getProfileGiftCollectionsList(dialogId, false);
-                    if (collections != null) {
-                        collections.updateGiftsUnsaved(savedStarGift, savedStarGift.unsaved);
-                    }
 
-                    final TL_stars.saveStarGift req = new TL_stars.saveStarGift();
-                    req.stargift = getInputStarGift();
-                    req.unsave = savedStarGift.unsaved;
-                    ConnectionsManager.getInstance(currentAccount).sendRequest(req, null, ConnectionsManager.RequestFlagInvokeAfter);
-                }
-
-                final boolean newPinned = !savedStarGift.pinned_to_top;
-                if (((StarsController.GiftsList) giftsList).togglePinned(savedStarGift, newPinned, false)) {
-                    new ProfileGiftsContainer.UnpinSheet(getContext(), dialogId, savedStarGift, resourcesProvider, this::getBulletinFactory).show();
-                } else if (newPinned) {
-                    getBulletinFactory()
-                        .createSimpleBulletin(R.raw.ic_pin, getString(R.string.Gift2PinnedTitle), getString(R.string.Gift2PinnedSubtitle))
-                        .show();
-                } else {
-                    getBulletinFactory()
-                        .createSimpleBulletin(R.raw.ic_unpin, getString(R.string.Gift2Unpinned))
-                        .show();
-                }
-            })
 
             .addIf(link != null, R.drawable.msg_link, getString(R.string.CopyLink), () -> {
                 AndroidUtilities.addToClipboard(link);
