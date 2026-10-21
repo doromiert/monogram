@@ -1,7 +1,6 @@
 package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.animation.LayoutTransition;
@@ -12,7 +11,6 @@ import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
-import android.icu.number.Scale;
 import android.os.Vibrator;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -21,16 +19,13 @@ import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.method.DigitsKeyListener;
-import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -39,21 +34,16 @@ import androidx.annotation.Nullable;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.Emoji;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
-import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_stars;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
-import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
@@ -65,7 +55,6 @@ import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.Components.SectionsScrollView;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
 import org.telegram.ui.Components.SlideChooseView;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.recorder.KeyboardNotifier;
 
 import java.util.ArrayList;
@@ -83,10 +72,6 @@ public class LinkEditActivity extends BaseFragment {
     TLRPC.TL_chatInviteExported inviteToEdit;
     private TextCheckCell approveCell;
     private TextInfoPrivacyCell approveHintCell;
-    private TextCheckCell subCell;
-    private EditTextCell subEditPriceCell;
-    private TextView subPriceView;
-    private TextInfoPrivacyCell subInfoCell;
     private TextView timeEditText;
     private HeaderCell timeHeaderCell;
     private TextInfoPrivacyCell divider;
@@ -100,7 +85,6 @@ public class LinkEditActivity extends BaseFragment {
     private EditText nameEditText;
     private TextInfoPrivacyCell dividerName;
     private TextView createTextView;
-    private int shakeDp = -3;
 
     private boolean ignoreSet;
     private boolean finished;
@@ -469,10 +453,7 @@ public class LinkEditActivity extends BaseFragment {
             if (approveRestricted) {
                 return;
             }
-            if (subCell != null && subCell.isChecked()) {
-                AndroidUtilities.shakeViewSpring(subCell, shakeDp = -shakeDp);
-                return;
-            }
+
 
             TextCheckCell cell = (TextCheckCell) view;
             boolean newIsChecked = !cell.isChecked();
@@ -480,15 +461,7 @@ public class LinkEditActivity extends BaseFragment {
             setUsesVisible(!newIsChecked);
             firstLayout = true;
 
-            if (subCell != null) {
-                if (cell.isChecked()) {
-                    subCell.setChecked(false);
-                    subCell.setCheckBoxIcon(R.drawable.permission_locked);
-                    subEditPriceCell.setVisibility(View.GONE);
-                } else if (inviteToEdit == null) {
-                    subCell.setCheckBoxIcon(0);
-                }
-            }
+
         });
         linearLayout.addView(approveCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
         approveHintCell = new TextInfoPrivacyCell(context, 12, resourceProvider);
@@ -500,105 +473,7 @@ public class LinkEditActivity extends BaseFragment {
         }
         linearLayout.addView(approveHintCell);
 
-        if (chatLocal == null || chatLocal.username == null) {
-            TLRPC.ChatFull chatFull = MessagesController.getInstance(currentAccount).getChatFull(chatId);
-            if (inviteToEdit == null && ChatObject.isChannelAndNotMegaGroup(MessagesController.getInstance(currentAccount).getChat(chatId)) && chatFull != null && chatFull.paid_media_allowed || inviteToEdit != null && inviteToEdit.subscription_pricing != null) {
-                subCell = new TextCheckCell(context);
-                subCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-                subCell.setDrawCheckRipple(true);
-                subCell.setTextAndCheck(getString(R.string.RequireMonthlyFee), false, true);
-                if (inviteToEdit != null) {
-                    subCell.setCheckBoxIcon(R.drawable.permission_locked);
-                    subCell.setEnabled(false);
-                }
-                final Runnable[] keyboardUpdate = new Runnable[1];
-                subCell.setOnClickListener(view -> {
-                    if (inviteToEdit != null) {
-                        return;
-                    }
-                    if (approveCell.isChecked()) {
-                        AndroidUtilities.shakeViewSpring(approveCell, shakeDp = -shakeDp);
-                        return;
-                    }
 
-                    TextCheckCell cell = (TextCheckCell) view;
-                    cell.setChecked(!cell.isChecked());
-                    subEditPriceCell.setVisibility(cell.isChecked() ? View.VISIBLE : View.GONE);
-                    AndroidUtilities.cancelRunOnUIThread(keyboardUpdate[0]);
-                    if (cell.isChecked()) {
-                        approveCell.setChecked(false);
-                        approveCell.setCheckBoxIcon(R.drawable.permission_locked);
-                        approveHintCell.setText(getString(R.string.ApproveNewMembersDescriptionFrozen));
-                        AndroidUtilities.runOnUIThread(keyboardUpdate[0] = () -> {
-                            subEditPriceCell.editText.requestFocus();
-                            AndroidUtilities.showKeyboard(subEditPriceCell.editText);
-                        }, 60);
-                    } else {
-                        approveCell.setCheckBoxIcon(0);
-                        approveHintCell.setText(getString(R.string.ApproveNewMembersDescription2));
-                        AndroidUtilities.runOnUIThread(keyboardUpdate[0] = () -> {
-                            subEditPriceCell.editText.clearFocus();
-                            AndroidUtilities.hideKeyboard(subEditPriceCell.editText);
-                        });
-                    }
-                });
-                linearLayout.addView(subCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-
-                subPriceView = new TextView(context);
-                subPriceView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-                subPriceView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
-                subEditPriceCell = new EditTextCell(context, getString(getConnectionsManager().isTestBackend() ? R.string.RequireMonthlyFeePriceHintTest5Minutes : R.string.RequireMonthlyFeePriceHint), false, false, -1, resourceProvider) {
-                    private boolean ignoreTextChanged;
-                    @Override
-                    protected void onTextChanged(CharSequence newText) {
-                        super.onTextChanged(newText);
-                        if (ignoreTextChanged) return;
-                        if (TextUtils.isEmpty(newText)) {
-                            subPriceView.setText("");
-                        } else {
-                            try {
-                                long stars = Long.parseLong(newText.toString());
-                                if (stars > getMessagesController().starsSubscriptionAmountMax) {
-                                    ignoreTextChanged = true;
-                                    stars = getMessagesController().starsSubscriptionAmountMax;
-                                    setText(Long.toString(stars));
-                                    ignoreTextChanged = false;
-                                }
-                                subPriceView.setText(formatString(
-                                        getConnectionsManager().isTestBackend() ? R.string.RequireMonthlyFeePriceTest5Minutes : R.string.RequireMonthlyFeePrice,
-                                        org.telegram.messenger.utils.CurrencyFormatter.formatCurrency((long) (stars / 1000.0 * MessagesController.getInstance(currentAccount).starsUsdWithdrawRate1000), "USD")
-                                ));
-                            } catch (Exception e) {
-                                FileLog.e(e);
-                            }
-                        }
-                    }
-                };
-                subEditPriceCell.editText.setInputType(InputType.TYPE_CLASS_NUMBER);
-                subEditPriceCell.editText.setRawInputType(InputType.TYPE_CLASS_NUMBER);
-                subEditPriceCell.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
-                subEditPriceCell.hideKeyboardOnEnter();
-                subEditPriceCell.addView(subPriceView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, 19, 0));
-
-                ImageView star = subEditPriceCell.setLeftDrawable(getContext().getResources().getDrawable(R.drawable.star_small_inner).mutate());
-                star.setScaleX(.83f);
-                star.setScaleY(.83f);
-                star.setTranslationY(dp(-1));
-                star.setTranslationX(dp(1));
-                linearLayout.addView(subEditPriceCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-                subEditPriceCell.setVisibility(View.GONE);
-
-                subInfoCell = new TextInfoPrivacyCell(context, 12, resourceProvider);
-                if (inviteToEdit != null) {
-                    subInfoCell.setText(getString(R.string.RequireMonthlyFeeInfoFrozen));
-                } else {
-                    subInfoCell.setText(AndroidUtilities.withLearnMore(getString(R.string.RequireMonthlyFeeInfo), () -> {
-                        Browser.openUrl(getContext(), getString(R.string.RequireMonthlyFeeInfoLink));
-                    }));
-                }
-                linearLayout.addView(subInfoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            }
-        }
 
         nameEditText = new EditText(context) {
             @SuppressLint("ClickableViewAccessibility")
@@ -708,14 +583,7 @@ public class LinkEditActivity extends BaseFragment {
             return;
         }
 
-        long stars = 0;
-        if (subCell != null && subCell.isChecked()) {
-            try {
-                stars = Long.parseLong(subEditPriceCell.editText.getText().toString());
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
-        }
+
 
         if (type == CREATE_TYPE) {
             if (progressDialog != null) {
@@ -754,12 +622,7 @@ public class LinkEditActivity extends BaseFragment {
                 req.flags |= 16;
             }
 
-            if (stars > 0) {
-                req.flags |= 32;
-                req.subscription_pricing = new TL_stars.TL_starsSubscriptionPricing();
-                req.subscription_pricing.period = getConnectionsManager().isTestBackend() ? StarsController.PERIOD_5MINUTES : StarsController.PERIOD_MONTHLY;
-                req.subscription_pricing.amount = stars;
-            }
+
 
             getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                 loading = false;
@@ -985,26 +848,9 @@ public class LinkEditActivity extends BaseFragment {
                 nameEditText.setText(builder);
             }
 
-            if (subCell != null) {
-                subCell.setChecked(invite.subscription_pricing != null);
-            }
-            if (invite.subscription_pricing != null) {
-                if (approveCell != null) {
-                    approveCell.setChecked(false);
-                    approveCell.setCheckBoxIcon(R.drawable.permission_locked);
-                }
-                if (approveHintCell != null) {
-                    approveHintCell.setText(getString(R.string.ApproveNewMembersDescriptionFrozen));
-                }
-            }
-            if (subEditPriceCell != null) {
-                subEditPriceCell.setVisibility(invite.subscription_pricing != null ? View.VISIBLE : View.GONE);
-                subEditPriceCell.setText(Long.toString(invite.subscription_pricing.amount));
-                subEditPriceCell.editText.setClickable(false);
-                subEditPriceCell.editText.setFocusable(false);
-                subEditPriceCell.editText.setFocusableInTouchMode(false);
-                subEditPriceCell.editText.setLongClickable(false);
-            }
+
+
+
         }
     }
 

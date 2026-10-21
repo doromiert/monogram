@@ -353,3 +353,11 @@ Deleted StarsOptionsSheet, GiftStarsSheet, StarTierView and the unused direct-pu
 Deleted its now-orphaned StarsBalanceView, StarsTransactionsLayout (including paged history/balance loading and observers) and unused sample Transaction model after checking Java/Kotlin/XML references. Retained shared particle/expand/transaction rendering helpers for existing historical-message/boost callers rather than preserving a constructible balance/purchase screen.
 
 Source-only inspection covers deleted constructors/types and direct checkout APIs, user-selector modes/callers, edited class boundaries and whitespace. No tests, build, APK or phone interaction. Remaining Stars controller APIs/history rendering, Premium/Business/boost features and resources still require cleanup; source changes remain unshipped and the full objective is incomplete.
+
+### Invite creation fees and orphaned bot revenue controller
+
+Removed monthly Stars subscription controls from LinkEditActivity: pricing input/USD conversion, fee explanation, fee/approval conflicts, amount parsing and export-invite subscription pricing flags/payload. Removed the paid-invite-specific approval lock/display restoration. Ordinary link title, expiry, usage-limit and approval editing/request construction remain; this does not convert existing Telegram subscription links into XMPP invites.
+
+Deleted BotStarsController after its revenue/transaction/affiliate UI consumers had been removed. Removed its only surviving MessagesController revenue-update hook. This removes the remaining bot Stars/TON revenue stats caches/loaders and transaction pagination/background requests in that class. Other StarsController APIs and subscription information in InviteLinkBottomSheet still remain for subsequent cleanup.
+
+Source-only inspection covers deleted controller references across Java/XML, invite editor pricing field/request references, surviving editor branches, Java class boundaries and whitespace. No tests, build, APK or phone interaction. Changes are unshipped; other Stars/history/schema, Premium/Business/boost code and resources remain outstanding.

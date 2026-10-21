@@ -108,7 +108,6 @@ import org.telegram.ui.MainTabsActivity;
 import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.SecretMediaViewer;
-import org.telegram.ui.Stars.BotStarsController;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stories.StoriesController;
 import org.telegram.ui.ThemeActivity;
@@ -19900,8 +19899,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         } else if (update.key instanceof TLRPC.TL_privacyKeyStarGiftsAutoSave) {
                             getContactsController().setPrivacyRules(update.rules, ContactsController.PRIVACY_RULES_TYPE_GIFTS);
                         }
-                    } else if (baseUpdate instanceof TL_update.TL_updateStarsRevenueStatus) {
-                        BotStarsController.getInstance(currentAccount).onUpdate((TL_update.TL_updateStarsRevenueStatus) baseUpdate);
                     } else if (baseUpdate instanceof TL_update.TL_updateUserStatus) {
                         TL_update.TL_updateUserStatus update = (TL_update.TL_updateUserStatus) baseUpdate;
                         TLRPC.User currentUser = getUser(update.user_id);
