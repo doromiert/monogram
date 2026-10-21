@@ -215,7 +215,6 @@ import org.telegram.ui.Components.spoilers.SpoilerEffect2;
 import org.telegram.ui.Components.voip.RTMPStreamPipOverlay;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Stars.ISuperRipple;
-import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stars.SuperRipple;
@@ -4037,47 +4036,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         } else if (stargiftPreviewSlug != null || auctionSlug != null) {
             dismissLoading.run();
         } else if (uniqueGiftSlug != null) {
-            TL_stars.getUniqueStarGift req = new TL_stars.getUniqueStarGift();
-            req.slug = uniqueGiftSlug;
-            requestId[0] = ConnectionsManager.getInstance(intentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                if (error != null) {
-                    final BaseFragment lastFragment = getSafeLastFragment();
-                    if (lastFragment == null) return;
-                    if ("STARGIFT_ALREADY_BURNED".equalsIgnoreCase(error.text)) {
-                        BulletinFactory.of(lastFragment)
-                            .createSimpleBulletin(R.raw.fire_on, LocaleController.getString(R.string.UniqueGiftNotFoundBurned))
-                            .show();
-                    } else {
-                        BulletinFactory.of(lastFragment)
-                            .createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.UniqueGiftNotFound))
-                            .show();
-                    }
-                } else if (response instanceof TL_stars.TL_payments_uniqueStarGift) {
-                    final TL_stars.TL_payments_uniqueStarGift r = (TL_stars.TL_payments_uniqueStarGift) response;
-                    MessagesController.getInstance(currentAccount).putUsers(r.users, false);
-                    MessagesController.getInstance(currentAccount).putChats(r.chats, false);
-                    BaseFragment lastFragment = getSafeLastFragment();
-                    if (r.gift instanceof TL_stars.TL_starGiftUnique) {
-                        final TL_stars.TL_starGiftUnique gift = (TL_stars.TL_starGiftUnique) r.gift;
-                        final StarGiftSheet sheet = new StarGiftSheet(this, intentAccount, 0, null).set(uniqueGiftSlug, gift, null);
-                        if (lastFragment != null) {
-                            if (lastFragment.getLastStoryViewer() != null && lastFragment.getLastStoryViewer().isFullyVisible()) {
-                                lastFragment.getLastStoryViewer().showDialog(sheet);
-                            } else {
-                                lastFragment.showDialog(sheet);
-                            }
-                        } else {
-                            sheet.show();
-                        }
-                    }
-                }
-
-                try {
-                    dismissLoading.run();
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            }));
+            dismissLoading.run();
         } else if (username != null) {
             if (progress != null) {
                 progress.init();

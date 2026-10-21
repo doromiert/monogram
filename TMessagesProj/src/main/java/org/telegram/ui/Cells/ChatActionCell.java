@@ -140,7 +140,6 @@ import org.telegram.ui.GradientClip;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
 import org.telegram.ui.ProfileActivity;
-import org.telegram.ui.Stars.GiftOfferSheet;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarGiftUniqueActionLayout;
 import org.telegram.ui.Stars.StarsIntroActivity;
@@ -825,11 +824,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
                     }
 
                     offerExpired = action.expires_at < ConnectionsManager.getInstance(currentAccount).getCurrentTime();
-                    if (!messageObject.isOut() && !action.accepted && !action.declined && !offerExpired) {
-                        final BotInlineKeyboard.Builder b = new BotInlineKeyboard.Builder();
-                        b.addGiftOfferKeyboard();
-                        botInlineButtons = b.build();
-                    }
+
                 } else if (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionSetChatTheme) {
                     final TLRPC.TL_messageActionSetChatTheme action = (TLRPC.TL_messageActionSetChatTheme) messageObject.messageOwner.action;
                     final TLRPC.TL_chatThemeUniqueGift chatThemeUniqueGift = (TLRPC.TL_chatThemeUniqueGift) action.theme;
@@ -3781,35 +3776,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
             return;
         }
 
-        if (button.id == BotInlineKeyboard.ButtonCustom.GIFT_OFFER_DECLINE) {
-            final BaseFragment fragment = delegate != null ? delegate.getBaseFragment() : null;
-            if (fragment != null && currentMessageObject != null) {
-                AlertsCreator.showSimpleConfirmAlert(fragment, getString(R.string.GiftOfferRejectConfirmTitle),
-                        replaceTags(formatString(R.string.GiftOfferRejectConfirmText, DialogObject.getShortName(currentMessageObject.getDialogId()))),
-                        getString(R.string.GiftOfferRejectConfirmConfirm), true,
-                () -> {
-                    TL_payments.TL_resolveStarGiftOffer req = new TL_payments.TL_resolveStarGiftOffer();
-                    req.offer_msg_id = getMessageObject().getId();
-                    req.decline = true;
-
-                    ConnectionsManager.getInstance(currentAccount).sendRequestTyped(req, (res, err) -> {
-                        if (res != null) {
-                            MessagesController.getInstance(currentAccount).processUpdates(res, false);
-                        }
-                        if (err != null) {
-                            AndroidUtilities.runOnUIThread(() -> {
-                                BulletinFactory.of(fragment).showForError(err);
-                            });
-                        }
-                    });
-                });
-            }
-        } else if (button.id == BotInlineKeyboard.ButtonCustom.GIFT_OFFER_ACCEPT) {
-            if (currentMessageObject != null && currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.action instanceof TLRPC.TL_messageActionStarGiftPurchaseOffer) {
-                TLRPC.TL_messageActionStarGiftPurchaseOffer offer = (TLRPC.TL_messageActionStarGiftPurchaseOffer) currentMessageObject.messageOwner.action;
-                GiftOfferSheet.openOfferAcceptAlert(LaunchActivity.getLastFragment(), getContext(), themeDelegate, currentAccount, currentMessageObject.getDialogId(), currentMessageObject.getId(), offer);
-            }
-        } else if (button.id == BotInlineKeyboard.ButtonCustom.SHARING_OFFER_DECLINE) {
+        if (button.id == BotInlineKeyboard.ButtonCustom.SHARING_OFFER_DECLINE) {
             final BaseFragment fragment = delegate != null ? delegate.getBaseFragment() : null;
             if (fragment != null && currentMessageObject != null && currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.action instanceof TLRPC.TL_messageActionNoForwardsRequest) {
                 final TLRPC.TL_messageActionNoForwardsRequest action = (TLRPC.TL_messageActionNoForwardsRequest) currentMessageObject.messageOwner.action;
