@@ -47,7 +47,7 @@ import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.Text;
 import org.telegram.ui.Gifts.GiftMessageDrawable;
-import org.telegram.ui.Gifts.GiftSheet;
+import org.telegram.ui.Gifts.GiftVisuals;
 import org.telegram.ui.LaunchActivity;
 
 import java.util.ArrayList;
@@ -67,7 +67,7 @@ public class StarGiftUniqueActionLayout {
     private RadialGradient gradient;
     private final Matrix matrix = new Matrix();
 
-    private final GiftSheet.RibbonDrawable ribbon;
+    private final GiftVisuals.RibbonDrawable ribbon;
 
     private TL_stars.starGiftAttributeBackdrop backdrop;
     private TL_stars.starGiftAttributePattern pattern;
@@ -122,7 +122,7 @@ public class StarGiftUniqueActionLayout {
         this.view = view;
         this.resourcesProvider = resourcesProvider;
 
-        ribbon = new GiftSheet.RibbonDrawable(view, 1.0f);
+        ribbon = new GiftVisuals.RibbonDrawable(view, 1.0f);
         buttonBounce = new ButtonBounce(view);
         bounce = new ButtonBounce(view);
         imageReceiver = new ImageReceiver(view);

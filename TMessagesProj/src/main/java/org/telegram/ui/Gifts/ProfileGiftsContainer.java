@@ -131,7 +131,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
     private final ViewPagerFixed.TabsView tabsView;
 
     private final FrameLayout buttonContainer;
-    private final CharSequence sendGiftsToFriendsText, addGiftsText;
+    private final CharSequence addGiftsText;
     private final ButtonWithCounterView button;
     private int buttonContainerHeightDp;
 
@@ -264,8 +264,8 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
 
             reorder = new ItemTouchHelper(new ItemTouchHelper.Callback() {
                 private TL_stars.SavedStarGift getSavedGift(RecyclerView.ViewHolder holder) {
-                    if (holder.itemView instanceof GiftSheet.GiftCell) {
-                        final GiftSheet.GiftCell cell = (GiftSheet.GiftCell) holder.itemView;
+                    if (holder.itemView instanceof GiftVisuals.GiftCell) {
+                        final GiftVisuals.GiftCell cell = (GiftVisuals.GiftCell) holder.itemView;
                         return cell.getSavedGift();
                     }
                     return null;
@@ -540,8 +540,8 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
             parent.updatedReordering(parent.isReordering());
             for (int i = 0; i < listView.getChildCount(); ++i) {
                 final View child = listView.getChildAt(i);
-                if (child instanceof GiftSheet.GiftCell) {
-                    ((GiftSheet.GiftCell) child).setReordering(reordering, true);
+                if (child instanceof GiftVisuals.GiftCell) {
+                    ((GiftVisuals.GiftCell) child).setReordering(reordering, true);
                 }
             }
             if (listView.adapter != null) {
@@ -582,7 +582,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
             for (int i = 0; i < listView.getChildCount(); ++i) {
                 final View child = listView.getChildAt(i);
                 final int position = listView.getChildAdapterPosition(child);
-                if (child instanceof GiftSheet.GiftCell) {
+                if (child instanceof GiftVisuals.GiftCell) {
                     if (position == 0) {
                         return Math.max(0, child.getY());
                     }
@@ -609,7 +609,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                 int spanCountLeft = 3;
                 for (TL_stars.SavedStarGift userGift : list.gifts) {
                     items.add(
-                        GiftSheet.GiftCell.Factory.asStarGift(0, userGift, true, false, isCollection)
+                        GiftVisuals.GiftCell.Factory.asStarGift(0, userGift, true, false, isCollection)
                             .setReordering(reordering && (list == parent.list ? userGift.pinned_to_top : true))
                     );
                     spanCountLeft--;
@@ -709,8 +709,8 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
 
         public boolean onItemLongPress(UItem item, View view, int position, float x, float y) {
             if (list == null) return false;
-            if (view instanceof GiftSheet.GiftCell && item.object instanceof TL_stars.SavedStarGift) {
-                final GiftSheet.GiftCell cell = (GiftSheet.GiftCell) view;
+            if (view instanceof GiftVisuals.GiftCell && item.object instanceof TL_stars.SavedStarGift) {
+                final GiftVisuals.GiftCell cell = (GiftVisuals.GiftCell) view;
                 final TL_stars.SavedStarGift savedStarGift = (TL_stars.SavedStarGift) item.object;
                 final ItemOptions o = ItemOptions.makeOptions(parent.fragment, view, true);
                 parent.currentMenu = o;
@@ -833,7 +833,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                             final boolean newPinned = !savedStarGift.pinned_to_top;
                             if (list.togglePinned(savedStarGift, newPinned, false)) {
                                 new UnpinSheet(getContext(), parent.dialogId, savedStarGift, resourcesProvider, () -> {
-                                    ((GiftSheet.GiftCell) view).setPinned(newPinned, true);
+                                    ((GiftVisuals.GiftCell) view).setPinned(newPinned, true);
                                     listView.scrollToPosition(0);
                                     return BulletinFactory.of(parent.fragment);
                                 }).show();
@@ -847,7 +847,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                                     .createSimpleBulletin(R.raw.ic_unpin, getString(R.string.Gift2Unpinned))
                                     .show();
                             }
-                            ((GiftSheet.GiftCell) view).setPinned(newPinned, true);
+                            ((GiftVisuals.GiftCell) view).setPinned(newPinned, true);
                             listView.scrollToPosition(0);
                         });
                         o.addIf(savedStarGift.pinned_to_top, R.drawable.tabs_reorder, getString(R.string.Gift2Reorder), () -> {
@@ -960,7 +960,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                 o.hideScrimUnder();
                 o.forceBottom(true);
                 o.show();
-                ((GiftSheet.GiftCell) view).imageView.getImageReceiver().startAnimation(true);
+                ((GiftVisuals.GiftCell) view).imageView.getImageReceiver().startAnimation(true);
                 return true;
             }
             return false;
@@ -1343,13 +1343,6 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
             checkbox.setChecked(list.chat_notifications_enabled, false);
         }
 
-        final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
-        final boolean sendToSpecificDialog = dialogId < 0 || user != null && !UserObject.isUserSelf(user) && !UserObject.isBot(user);
-
-        final SpannableStringBuilder sb = new SpannableStringBuilder("G " + (sendToSpecificDialog ? (dialogId < 0 ? getString(R.string.ProfileGiftsSendChannel) : formatString(R.string.ProfileGiftsSendUser, DialogObject.getShortName(dialogId))) : getString(R.string.ProfileGiftsSend)));
-        final ColoredImageSpan span = new ColoredImageSpan(R.drawable.filled_gift_simple);
-        sb.setSpan(span, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sendGiftsToFriendsText = sb;
 
         final SpannableStringBuilder sb2 = new SpannableStringBuilder("+ " + getString(R.string.ProfileGiftsAdd));
         final ColoredImageSpan span2 = new ColoredImageSpan(R.drawable.filled_add_album);
@@ -1360,21 +1353,11 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         button.setUseWrapContent(true);
         button.setPadding(dp(16), 0, dp(16), 0);
         button.setRoundRadius(dp(19));
-        button.setText(sendGiftsToFriendsText, false);
+        button.setText(addGiftsText, false);
         button.setStateListAnimator(null);
         button2.addView(button, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER));
         button2.setOnClickListener(v -> {
-            if (!collections.isMine() || viewPager.getCurrentPosition() == 0) {
-                if (sendToSpecificDialog) {
-                    new GiftSheet(getContext(), currentAccount, dialogId, null, null)
-                        .setBirthday(BirthdayController.getInstance(currentAccount).isToday(dialogId))
-                        .show();
-                } else {
-                    UserSelectorBottomSheet.open(UserSelectorBottomSheet.TYPE_STAR_GIFT, 0, BirthdayController.getInstance(currentAccount).getState());
-                }
-            } else {
-                addGifts();
-            }
+            if (collections.isMine() && viewPager.getCurrentPosition() > 0) addGifts();
         });
 
         button.setVisibility(canSwitchNotify() ? View.GONE : View.VISIBLE);
@@ -1522,7 +1505,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
     }
 
     private boolean shouldHideButton(int page) {
-        if (page == 0) return false;
+        if (!collections.isMine() || page == 0) return true;
         final int index = page - 1;
         if (index < 0 || index >= collections.getCollections().size()) return true;
         final StarsController.GiftsList list = collections.getListByIndex(index);
@@ -1558,7 +1541,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         buttonContainer.setTranslationY(ty - buttonContainerOffset);
         buttonContainer.setAlpha(factor);
         buttonContainer.setVisibility(factor > 0 ? View.VISIBLE : View.INVISIBLE);
-        button.setText(!collections.isMine() || viewPager.getPositionAnimated() < 0.5f ? sendGiftsToFriendsText : addGiftsText, true);
+        button.setText(addGiftsText, true);
         Bulletin.updateCurrentPosition();
     }
 

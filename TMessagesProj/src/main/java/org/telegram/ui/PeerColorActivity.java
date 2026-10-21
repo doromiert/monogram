@@ -146,7 +146,7 @@ import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceWrapped;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
-import org.telegram.ui.Gifts.GiftSheet;
+import org.telegram.ui.Gifts.GiftVisuals;
 import org.telegram.ui.Gifts.ResaleGiftsFragment;
 import org.telegram.ui.Stars.StarGiftPatterns;
 import org.telegram.ui.Stars.StarGiftSheet;
@@ -409,7 +409,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                             view = giftCell;
                             break;
                         case VIEW_TYPE_GIFT_FOREIGN:
-                            GiftSheet.GiftCell giftCell2 = new GiftSheet.GiftCell(getContext(), currentAccount, resourceProvider);
+                            GiftVisuals.GiftCell giftCell2 = new GiftVisuals.GiftCell(getContext(), currentAccount, resourceProvider);
                             giftCell2.setTag(RecyclerListView.TAG_NOT_SECTION);
                             view = giftCell2;
                             break;
@@ -542,7 +542,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                             giftCell.card.invalidate();
                             break;
                         case VIEW_TYPE_GIFT_FOREIGN:
-                            GiftSheet.GiftCell giftCell2 = (GiftSheet.GiftCell) holder.itemView;
+                            GiftVisuals.GiftCell giftCell2 = (GiftVisuals.GiftCell) holder.itemView;
                             final int index2 = position - giftsStartRow;
                             if (resaleGifts == null) return;
                             if (index2 < 0 || index2 >= uniqueGifts.size()) return;
@@ -628,7 +628,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                                 false
                         );
                     } else if (holder.getItemViewType() == VIEW_TYPE_GIFT_FOREIGN) {
-                        GiftSheet.GiftCell giftCell2 = (GiftSheet.GiftCell) holder.itemView;
+                        GiftVisuals.GiftCell giftCell2 = (GiftVisuals.GiftCell) holder.itemView;
                         final int index2 = holder.getAdapterPosition() - giftsStartRow;
                         if (resaleGifts == null) return;
                         if (index2 < 0 || index2 >= uniqueGifts.size()) return;
@@ -1179,8 +1179,8 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                                     selectedPeerCollectible != null && selectedPeerCollectible.collectible_id == cell.getGiftId(),
                             true
                     );
-                } else if (child instanceof GiftSheet.GiftCell) {
-                    final GiftSheet.GiftCell cell = (GiftSheet.GiftCell) child;
+                } else if (child instanceof GiftVisuals.GiftCell) {
+                    final GiftVisuals.GiftCell cell = (GiftVisuals.GiftCell) child;
                     cell.setSelected(
                             selectedEmojiCollectible != null && selectedEmojiCollectible.collectible_id == cell.getGiftId() ||
                                     selectedPeerCollectible != null && selectedPeerCollectible.collectible_id == cell.getGiftId(),
@@ -3775,17 +3775,17 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         public TL_stars.starGiftAttributePattern pattern;
 
         public final FrameLayout card;
-        public final GiftSheet.CardBackground cardBackground;
+        public final GiftVisuals.CardBackground cardBackground;
         public final BackupImageView imageView;
 
         @Nullable
-        private final GiftSheet.Ribbon ribbon;
+        private final GiftVisuals.Ribbon ribbon;
 
         public GiftCell(Context context, boolean withRibbon, Theme.ResourcesProvider resourcesProvider) {
             super(context);
 
             card = new FrameLayout(context);
-            card.setBackground(cardBackground = new GiftSheet.CardBackground(card, resourcesProvider, false));
+            card.setBackground(cardBackground = new GiftVisuals.CardBackground(card, resourcesProvider, false));
             addView(card, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
             ScaleStateListAnimator.apply(card, 0.025f, 1.25f);
 
@@ -3793,7 +3793,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
             card.addView(imageView, LayoutHelper.createFrame(80, 80, Gravity.CENTER, 0, 12, 0, 12));
 
             if (withRibbon) {
-                ribbon = new GiftSheet.Ribbon(context);
+                ribbon = new GiftVisuals.Ribbon(context);
                 addView(ribbon, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.RIGHT | Gravity.TOP, 0, 2, 1, 0));
             } else {
                 ribbon = null;

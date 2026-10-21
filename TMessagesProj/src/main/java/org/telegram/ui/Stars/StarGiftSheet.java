@@ -162,7 +162,7 @@ import org.telegram.ui.Components.spoilers.SpoilersTextView;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.Gifts.GiftMessageBottomSheet;
 import org.telegram.ui.Gifts.GiftMessageView;
-import org.telegram.ui.Gifts.GiftSheet;
+import org.telegram.ui.Gifts.GiftVisuals;
 import org.telegram.ui.Gifts.ProfileGiftsContainer;
 import org.telegram.ui.Gifts.ResaleGiftsFragment;
 import org.telegram.ui.GradientClip;
@@ -1987,7 +1987,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
         private final LinearLayout[] layout = new LinearLayout[5];
         private final FrameLayout.LayoutParams[] layoutLayoutParams = new FrameLayout.LayoutParams[5];
 
-        private final GiftSheet.Ribbon ribbon;
+        private final GiftVisuals.Ribbon ribbon;
         private final LinkSpanDrawable.LinksTextView[] titleView = new LinkSpanDrawable.LinksTextView[5];
         private final LinkSpanDrawable.LinksTextView releasedView;
         private final TextView collectionReleasedView;
@@ -2260,7 +2260,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             optionsView.setOnClickListener(onMenuClick);
             optionsView.setVisibility(View.GONE);
 
-            ribbon = new GiftSheet.Ribbon(context);
+            ribbon = new GiftVisuals.Ribbon(context);
             ribbon.setText(getString(R.string.GiftCrafted), true);
             ribbon.drawable.setParticles(true);
             ribbon.drawable.setLeft(true);
@@ -4667,9 +4667,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
 
             if (selfId != fromId || isForChannel) {
                 final TLRPC.User fromUser = MessagesController.getInstance(currentAccount).getUser(fromId);
-                tableView.addRowUser(getString(R.string.Gift2From), currentAccount, fromId, () -> openProfile(fromId), fromId != selfId && fromId != UserObject.ANONYMOUS && !fromBot && !UserObject.isDeleted(fromUser) && !isForChannel ? getString(R.string.Gift2ButtonSendGift) : null, () -> {
-                    new GiftSheet(getContext(), currentAccount, fromId, this::dismiss).show();
-                });
+                tableView.addRowUser(getString(R.string.Gift2From), currentAccount, fromId, () -> openProfile(fromId), null, null);
             }
             tableView.addRow(getString(R.string.StarsTransactionDate), LocaleController.formatString(R.string.formatDateAtTime, LocaleController.getInstance().getFormatterGiveawayCard().format(new Date(savedStarGift.date * 1000L)), LocaleController.getInstance().getFormatterDay().format(new Date(savedStarGift.date * 1000L))));
             tableView.addRow(getString(R.string.Gift2Value), replaceStarsWithPlain(TextUtils.concat("⭐️ " + LocaleController.formatNumber(savedStarGift.gift.stars + savedStarGift.upgrade_stars, ','), " ", canConvert() && !refunded ? ButtonSpan.make(formatPluralStringComma("Gift2ButtonSell", (int) savedStarGift.convert_stars), this::convert, resourcesProvider) : ""), .8f));
@@ -5010,19 +5008,13 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             final TLRPC.User fromUser = MessagesController.getInstance(currentAccount).getUser(fromId);
             if (auctionPeer != null) {
                 long auctionToDid = DialogObject.getPeerDialogId(auctionPeer);
-                tableView.addRowUser(getString(R.string.Gift2To), currentAccount, auctionToDid, () -> openProfile(auctionToDid), null, isForChannel ? null : () -> {
-                    new GiftSheet(getContext(), currentAccount, auctionToDid, this::dismiss).show();
-                });
+                tableView.addRowUser(getString(R.string.Gift2To), currentAccount, auctionToDid, () -> openProfile(auctionToDid), null, null);
             } else {
                 if (fromId != selfId || prepaid_upgrade || isForChannel) {
-                    tableView.addRowUser(getString(R.string.Gift2From), currentAccount, fromId, () -> openProfile(fromId), fromId != selfId && fromId != UserObject.ANONYMOUS && !UserObject.isDeleted(fromUser) && !fromBot && !isForChannel ? getString(R.string.Gift2ButtonSendGift) : null, isForChannel ? null : () -> {
-                        new GiftSheet(getContext(), currentAccount, fromId, this::dismiss).show();
-                    });
+                    tableView.addRowUser(getString(R.string.Gift2From), currentAccount, fromId, () -> openProfile(fromId), null, null);
                 }
                 if (toId != selfId || isForChannel) {
-                    tableView.addRowUser(getString(R.string.Gift2To), currentAccount, toId, () -> openProfile(toId), null, isForChannel ? null : () -> {
-                        new GiftSheet(getContext(), currentAccount, toId, this::dismiss).show();
-                    });
+                    tableView.addRowUser(getString(R.string.Gift2To), currentAccount, toId, () -> openProfile(toId), null, null);
                 }
             }
             tableView.addRowDateTime(getString(R.string.StarsTransactionDate), date);
@@ -8593,7 +8585,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
         private final TextView failedTitle;
         private final TextView failedSubtitle;
         private final LinearLayout failedGiftsLayout;
-        private GiftSheet.GiftCell[] failedGifts;
+        private GiftVisuals.GiftCell[] failedGifts;
 
         private final FrameLayout buttonsLayout;
         private final FrameLayout precraftingLayout;
@@ -9152,10 +9144,10 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                                 failedGifts = null;
                             }
 
-                            failedGifts = new GiftSheet.GiftCell[gifts.size()];
+                            failedGifts = new GiftVisuals.GiftCell[gifts.size()];
                             for (int i = 0; i < gifts.size(); ++i) {
                                 final TL_stars.StarGift gift = gifts.get(i);
-                                final GiftSheet.GiftCell cell = new GiftSheet.GiftCell(getContext(), currentAccount, resourcesProvider);
+                                final GiftVisuals.GiftCell cell = new GiftVisuals.GiftCell(getContext(), currentAccount, resourcesProvider);
 
                                 cell.setStarsGift(gift, false, false, false, false, true);
                                 cell.chanceTextView.setVisibility(View.GONE);
@@ -9468,7 +9460,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
 
             private final FrameLayout layout;
             private final ImageView plus;
-            private final GiftSheet.CardBackground giftBackground;
+            private final GiftVisuals.CardBackground giftBackground;
             private final FrameLayout giftLayout;
             private final BackupImageView giftImage;
 
@@ -9492,7 +9484,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                 layout.addView(plus, LayoutHelper.createFrame(24, 24, Gravity.CENTER));
 
                 giftLayout = new FrameLayout(context);
-                giftLayout.setBackground(giftBackground = new GiftSheet.CardBackground(giftLayout, null, false));
+                giftLayout.setBackground(giftBackground = new GiftVisuals.CardBackground(giftLayout, null, false));
                 giftBackground.setRoundRadius(dp(18));
                 giftBackground.setPadding(false);
                 layout.addView(giftLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));

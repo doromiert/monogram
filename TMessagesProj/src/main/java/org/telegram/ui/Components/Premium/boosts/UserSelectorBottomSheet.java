@@ -74,7 +74,6 @@ import org.telegram.ui.Components.Premium.boosts.cells.selector.SelectorSearchCe
 import org.telegram.ui.Components.Premium.boosts.cells.selector.SelectorUserCell;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
-import org.telegram.ui.Gifts.GiftSheet;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PrivacyControlActivity;
 import org.telegram.ui.ProfileActivity;
@@ -450,18 +449,7 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
                     sheet.show();
                     return;
                 }
-                if (type == TYPE_PREMIUM || type == TYPE_STAR_GIFT) {
-                    if (UserObject.areGiftsDisabled(id)) {
-                        BulletinFactory.of(container, resourcesProvider).createSimpleBulletin(R.raw.error, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserDisallowedGifts, DialogObject.getShortName(id)))).show();
-                        return;
-                    }
-                    List<TLRPC.TL_premiumGiftCodeOption> options = BoostRepository.filterGiftOptions(paymentOptions, 1);
-                    options = BoostRepository.filterGiftOptionsByBilling(options);
-                    new GiftSheet(getContext(), currentAccount, id, options, this::dismiss)
-                        .setBirthday(birthdays != null && birthdays.contains(id))
-                        .show();
-                    return;
-                }
+
                 if (type == TYPE_CALL && selectedIds.isEmpty()) {
                     selectedIds.add(id);
                     if (onUsersSelectedListener != null) {
@@ -646,18 +634,7 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
             dismiss();
             return;
         }
-        List<TLRPC.TL_premiumGiftCodeOption> options = BoostRepository.filterGiftOptions(paymentOptions, selectedUsers.size());
-        options = BoostRepository.filterGiftOptionsByBilling(options);
-        if (selectedUsers.size() == 1) {
-            final long userId = selectedUsers.get(0).id;
-            if (UserObject.areGiftsDisabled(userId)) {
-                BulletinFactory.of(container, resourcesProvider).createSimpleBulletin(R.raw.error, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.UserDisallowedGifts, DialogObject.getShortName(userId)))).show();
-                return;
-            }
-            new GiftSheet(getContext(), currentAccount, userId, options, this::dismiss)
-                .setBirthday(birthdays != null && birthdays.contains(userId))
-                .show();
-        }
+
     }
 
     public void scrollToTop(boolean animate) {

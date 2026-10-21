@@ -135,7 +135,7 @@ import org.telegram.ui.Components.TopicSeparator;
 import org.telegram.ui.Components.TypefaceSpan;
 import org.telegram.ui.Components.URLSpanNoUnderline;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
-import org.telegram.ui.Gifts.GiftSheet;
+import org.telegram.ui.Gifts.GiftVisuals;
 import org.telegram.ui.GradientClip;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PhotoViewer;
@@ -373,7 +373,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
     private MessageObject currentMessageObject;
     private int customDate;
     private CharSequence customText;
-    private GiftSheet.CardBackground cardBackground;
+    private GiftVisuals.CardBackground cardBackground;
 
     private int overrideBackground = -1;
     private int overrideText = -1;
@@ -818,7 +818,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
                     if (gift != null) {
                         document = TlUtils.getGiftDocument(gift);
                         if (cardBackground == null) {
-                            cardBackground = new GiftSheet.CardBackground(this, themeDelegate, false);
+                            cardBackground = new GiftVisuals.CardBackground(this, themeDelegate, false);
                         }
                         cardBackground.setBackdrop(findAttribute(gift.attributes, TL_stars.starGiftAttributeBackdrop.class));
                         cardBackground.setPattern(findAttribute(gift.attributes, TL_stars.starGiftAttributePattern.class));
@@ -837,7 +837,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
                     if (gift != null) {
                         document = TlUtils.getGiftDocument(gift);
                         if (cardBackground == null) {
-                            cardBackground = new GiftSheet.CardBackground(this, themeDelegate, false);
+                            cardBackground = new GiftVisuals.CardBackground(this, themeDelegate, false);
                         }
                         cardBackground.setBackdrop(findAttribute(gift.attributes, TL_stars.starGiftAttributeBackdrop.class));
                         cardBackground.setPattern(findAttribute(gift.attributes, TL_stars.starGiftAttributePattern.class));
@@ -2733,7 +2733,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
             }
             if (giftRibbonPath == null) {
                 giftRibbonPath = new Path();
-                GiftSheet.RibbonDrawable.fillRibbonPath(giftRibbonPath, 1.35f, false);
+                GiftVisuals.RibbonDrawable.fillRibbonPath(giftRibbonPath, 1.35f, false);
             }
             giftRibbonText = new Text(ribbon, ribbonTextDp, AndroidUtilities.bold());
             giftRibbonText.ellipsize(dp(62));
@@ -2846,10 +2846,10 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
         } else if (isButtonLayout(messageObject) || (messageObject != null && messageObject.type == MessageObject.TYPE_ACTION_PHOTO)) {
             if (cardBackground != null && (messageObject.type == MessageObject.TYPE_GIFT_THEME_UPDATE || messageObject.type == MessageObject.TYPE_COMMUNITY_CHANGED || messageObject.type == MessageObject.TYPE_GIFT_OFFER)) {
                 cardBackground.setBounds(
-                    (int) (imageReceiver.getImageX() - dp(10 + GiftSheet.CardBackground.PADDING_HORIZONTAL_DP)),
-                    (int) (imageReceiver.getImageY() - dp(10 + GiftSheet.CardBackground.PADDING_VERTICAL_DP)),
-                    (int) (imageReceiver.getImageX() + imageReceiver.getImageWidth() + dp(10 + GiftSheet.CardBackground.PADDING_HORIZONTAL_DP)),
-                    (int) (imageReceiver.getImageY() + imageReceiver.getImageHeight() + dp(10 + GiftSheet.CardBackground.PADDING_VERTICAL_DP))
+                    (int) (imageReceiver.getImageX() - dp(10 + GiftVisuals.CardBackground.PADDING_HORIZONTAL_DP)),
+                    (int) (imageReceiver.getImageY() - dp(10 + GiftVisuals.CardBackground.PADDING_VERTICAL_DP)),
+                    (int) (imageReceiver.getImageX() + imageReceiver.getImageWidth() + dp(10 + GiftVisuals.CardBackground.PADDING_HORIZONTAL_DP)),
+                    (int) (imageReceiver.getImageY() + imageReceiver.getImageHeight() + dp(10 + GiftVisuals.CardBackground.PADDING_VERTICAL_DP))
                 );
                 cardBackground.draw(canvas);
             }

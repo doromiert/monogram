@@ -142,7 +142,6 @@ import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.Components.ViewPagerFixed;
 import org.telegram.ui.Components.spoilers.SpoilerEffect2;
-import org.telegram.ui.Gifts.GiftSheet;
 import org.telegram.ui.GradientHeaderActivity;
 import org.telegram.ui.ImageReceiverSpan;
 import org.telegram.ui.LaunchActivity;
@@ -4228,9 +4227,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
                                     lastFragment.presentFragment(ChatActivity.of(did));
                                 }
                             }
-                        }, didUser != null && !UserObject.isDeleted(didUser) && !UserObject.areGiftsDisabled(did) ? getString(R.string.Gift2ButtonSendGift) : null, () -> {
-                            new GiftSheet(context, currentAccount, did, sheet[0]::dismiss).show();
-                        });
+                        }, null, null);
                     }
                     tableView.addRowUser(getString(R.string.StarGiveawayPrizeTo), currentAccount, selfId, () -> {
                         sheet[0].dismiss();
@@ -4267,9 +4264,7 @@ public class StarsIntroActivity extends GradientHeaderActivity implements Notifi
                                 lastFragment.presentFragment(ChatActivity.of(did));
                             }
                         }
-                    }, didUser != null && !UserObject.isDeleted(didUser) && !UserObject.areGiftsDisabled(did) ? getString(R.string.Gift2ButtonSendGift) : null, () -> {
-                        new GiftSheet(context, currentAccount, did, sheet[0]::dismiss).show();
-                    });
+                    }, null, null);
                 }
             }
         } else if (transaction.peer instanceof TL_stars.TL_starsTransactionPeer) {

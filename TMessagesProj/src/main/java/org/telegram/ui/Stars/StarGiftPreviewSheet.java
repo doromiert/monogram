@@ -71,7 +71,7 @@ import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.glass.GlassTabView;
 import org.telegram.ui.Components.glass.GlassTabsView;
-import org.telegram.ui.Gifts.GiftSheet;
+import org.telegram.ui.Gifts.GiftVisuals;
 import org.telegram.ui.bots.AffiliateProgramFragment;
 
 import java.util.ArrayList;
@@ -593,7 +593,7 @@ public class StarGiftPreviewSheet extends BottomSheetWithRecyclerListView {
         private final Theme.ResourcesProvider resourcesProvider;
 
         private final FrameLayout cardBackgroundView;
-        private final GiftSheet.CardBackground cardBackground;
+        private final GiftVisuals.CardBackground cardBackground;
         private final BackupImageView imageView;
         private final TextView textView;
         private final TextView percentageView;
@@ -605,7 +605,7 @@ public class StarGiftPreviewSheet extends BottomSheetWithRecyclerListView {
             this.resourcesProvider = resourcesProvider;
 
             cardBackgroundView = new FrameLayout(context);
-            cardBackgroundView.setBackground(cardBackground = new GiftSheet.CardBackground(cardBackgroundView, resourcesProvider, true));
+            cardBackgroundView.setBackground(cardBackground = new GiftVisuals.CardBackground(cardBackgroundView, resourcesProvider, true));
             cardBackground.selectionStyle = 1;
             addView(cardBackgroundView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 

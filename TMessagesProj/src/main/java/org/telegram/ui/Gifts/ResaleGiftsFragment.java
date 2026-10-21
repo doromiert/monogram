@@ -793,7 +793,7 @@ public class ResaleGiftsFragment extends BaseFragment implements FactorAnimator.
 
     private void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         for (TL_stars.TL_starGiftUnique gift : list.gifts) {
-            items.add(GiftSheet.GiftCell.Factory.asStarGift(0, gift, false, false, false, true, false));
+            items.add(GiftVisuals.GiftCell.Factory.asStarGift(0, gift, false, false, false, true, false));
         }
         if (list.loading || !list.endReached) {
             items.add(UItem.asFlicker(-1, FlickerLoadingView.STAR_GIFT).setSpanCount(1));
@@ -2246,7 +2246,7 @@ public class ResaleGiftsFragment extends BaseFragment implements FactorAnimator.
             for (final TL_stars.SavedStarGift gift : state.list.gifts) {
                 if (without.contains(gift.gift.id)) continue;
                 final boolean canCraft = gift.can_craft_at <= now;
-                items.add(GiftSheet.GiftCell.Factory.asStarGift(0, gift.gift, false, true, false, false, true).setEnabled(canCraft));
+                items.add(GiftVisuals.GiftCell.Factory.asStarGift(0, gift.gift, false, true, false, false, true).setEnabled(canCraft));
                 giftsEmpty = false;
                 count++;
             }
@@ -2267,7 +2267,7 @@ public class ResaleGiftsFragment extends BaseFragment implements FactorAnimator.
                     items.add(UItem.asCustom(-3, filterScrollView));
                 }
                 for (final TL_stars.TL_starGiftUnique gift : state.resaleList.gifts) {
-                    items.add(GiftSheet.GiftCell.Factory.asStarGift(0, gift, false, true, false, true, true));
+                    items.add(GiftVisuals.GiftCell.Factory.asStarGift(0, gift, false, true, false, true, true));
                 }
                 if (state.resaleList.loading || !state.resaleList.endReached) {
                     items.add(UItem.asFlicker(10 + 0, FlickerLoadingView.STAR_GIFT_SELECT).setSpanCount(1));
