@@ -187,9 +187,6 @@ public class MessagesController extends BaseController implements NotificationCe
     private SparseArray<ChatlistUpdatesStat> chatlistFoldersUpdates = new SparseArray<>();
     public int largeQueueMaxActiveOperations = 2;
     public int smallQueueMaxActiveOperations = 5;
-    public int stealthModeFuture;
-    public int stealthModePast;
-    public int stealthModeCooldown;
     public StoriesController storiesController;
     public SavedMessagesController savedMessagesController;
     public UnconfirmedAuthController unconfirmedAuthController;
@@ -1598,15 +1595,14 @@ public class MessagesController extends BaseController implements NotificationCe
         checkResetLangpack = mainPreferences.getInt("checkResetLangpack", 0);
         smallQueueMaxActiveOperations = mainPreferences.getInt("smallQueueMaxActiveOperations", 5);
         largeQueueMaxActiveOperations = mainPreferences.getInt("largeQueueMaxActiveOperations", 2);
-        stealthModeFuture = mainPreferences.getInt("stories_stealth_future_period", 25 * 60);
+
         storiesChangelogUserId = mainPreferences.getLong("stories_changelog_user_id", 777000);
         giveawayAddPeersMax = mainPreferences.getLong("giveaway_add_peers_max", 10);
         giveawayCountriesMax = mainPreferences.getLong("giveaway_countries_max", 10);
         giveawayBoostsPerPremium = mainPreferences.getLong("giveaway_boosts_per_premium", 4);
         boostsPerSentGift = mainPreferences.getLong("boosts_per_sent_gift", 3);
         giveawayPeriodMax = mainPreferences.getLong("giveaway_period_max", 7);
-        stealthModePast = mainPreferences.getInt("stories_stealth_past_period", 5 * 60);
-        stealthModeCooldown = mainPreferences.getInt("stories_stealth_cooldown_period", 60 * 60);
+
         boolean isTest = false;
         chatlistInvitesLimitDefault = mainPreferences.getInt("chatlistInvitesLimitDefault", 3);
         storyExpiringLimitDefault = mainPreferences.getInt("storyExpiringLimitDefault", 50);
@@ -2616,27 +2612,9 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                     break;
                 }
-                case "stories_stealth_future_period": {
-                    if (value.value instanceof TLRPC.TL_jsonNumber) {
-                        stealthModeFuture = (int) ((TLRPC.TL_jsonNumber) value.value).value;
-                        editor.putInt("stories_stealth_future_period", stealthModeFuture);
-                    }
-                    break;
-                }
-                case "stories_stealth_past_period": {
-                    if (value.value instanceof TLRPC.TL_jsonNumber) {
-                        stealthModePast = (int) ((TLRPC.TL_jsonNumber) value.value).value;
-                        editor.putInt("stories_stealth_past_period", stealthModePast);
-                    }
-                    break;
-                }
-                case "stories_stealth_cooldown_period": {
-                    if (value.value instanceof TLRPC.TL_jsonNumber) {
-                        stealthModeCooldown = (int) ((TLRPC.TL_jsonNumber) value.value).value;
-                        editor.putInt("stories_stealth_cooldown_period", stealthModeCooldown);
-                    }
-                    break;
-                }
+
+
+
                 case "large_queue_max_active_operations_count": {
                     if (value.value instanceof TLRPC.TL_jsonNumber) {
                         largeQueueMaxActiveOperations = (int) ((TLRPC.TL_jsonNumber) value.value).value;
@@ -20328,9 +20306,6 @@ public class MessagesController extends BaseController implements NotificationCe
                             DialogObject.getPeerDialogId(update.saved_peer_id): update.top_msg_id;
 
                         getMediaDataController().saveDraft(did, threadId, update.draft, null, true);
-                    } else if (baseUpdate instanceof TL_stories.TL_updateStoriesStealthMode) {
-                        TL_stories.TL_updateStoriesStealthMode storiesStealthModeUpdate = (TL_stories.TL_updateStoriesStealthMode) baseUpdate;
-                        getStoriesController().setStealthMode(storiesStealthModeUpdate.stealth_mode);
                     } else if (baseUpdate instanceof TL_update.TL_updateReadFeaturedStickers) {
                         getMediaDataController().markFeaturedStickersAsRead(false, false);
                     } else if (baseUpdate instanceof TL_update.TL_updateReadFeaturedEmojiStickers) {

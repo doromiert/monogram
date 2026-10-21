@@ -1074,24 +1074,7 @@ public class TL_stories {
         }
     }
 
-    public static class TL_stories_activateStealthMode extends TLObject {
-        public static final int constructor = 0x57bbd166;
 
-        public int flags;
-        public boolean past;
-        public boolean future;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Updates.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            flags = setFlag(flags, 1, past);
-            flags = setFlag(flags, 2, future);
-            stream.writeInt32(flags);
-        }
-    }
 
     public static class TL_stories_sendReaction extends TLObject {
         public static final int constructor = 0x7fd736b2;

@@ -38,14 +38,12 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.Timer;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.RequestDelegate;
-import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.Vector;
@@ -58,11 +56,9 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionImageHolder;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.StatisticActivity;
 import org.telegram.ui.Stories.bots.BotPreviewsEditContainer;
 import org.telegram.ui.Stories.recorder.DraftsController;
@@ -135,7 +131,6 @@ public class StoriesController {
     private String stateHidden;
     private boolean hasMoreHidden = true;
     private boolean firstLoad = true;
-    private TL_stories.TL_storiesStealthMode stealthMode;
 
     public StoriesController(int currentAccount) {
         this.currentAccount = currentAccount;
@@ -147,7 +142,6 @@ public class StoriesController {
         totalStoriesCount = mainSettings.getInt("total_stores", 0);
         storiesReadLoaded = mainSettings.getBoolean("read_loaded", false);
         unsupportedStoriesChecked = new HashSet<>(mainSettings.getStringSet("unsupported_stories_checked", new HashSet<>()));
-        stealthMode = readStealthMode(mainSettings.getString("stories_stealth_mode", null));
         storiesStorage.getMaxReadIds(longSparseIntArray -> dialogIdToMaxReadId = longSparseIntArray);
 
         sortStoriesRunnable = () -> {
@@ -159,31 +153,9 @@ public class StoriesController {
         draftsController = new DraftsController(currentAccount);
     }
 
-    private TL_stories.TL_storiesStealthMode readStealthMode(String string) {
-        if (string == null) {
-            return null;
-        }
-        SerializedData serializedData = new SerializedData(Utilities.hexToBytes(string));
-        try {
-            TL_stories.TL_storiesStealthMode storiesStealthMode = TL_stories.TL_storiesStealthMode.TLdeserialize(serializedData, serializedData.readInt32(true), true);
 
-            return storiesStealthMode;
-        } catch (Throwable e) {
-            FileLog.e(e);
-        }
-        return null;
-    }
 
-    private void writeStealthMode(TL_stories.TL_storiesStealthMode mode) {
-        SharedPreferences.Editor editor = MessagesController.getInstance(currentAccount).getMainSettings().edit();
-        if (mode == null) {
-            editor.remove("stories_stealth_mode").apply();
-            return;
-        }
-        SerializedData data = new SerializedData(mode.getObjectSize());
-        mode.serializeToStream(data);
-        editor.putString("stories_stealth_mode", Utilities.bytesToHex(data.toByteArray())).apply();
-    }
+
 
     public void loadAllStories() {
         if (!firstLoad) {
@@ -1812,15 +1784,9 @@ public class StoriesController {
         return loadingDialogsStories.size() > 0;
     }
 
-    public TL_stories.TL_storiesStealthMode getStealthMode() {
-        return stealthMode;
-    }
 
-    public void setStealthMode(TL_stories.TL_storiesStealthMode stealthMode) {
-        this.stealthMode = stealthMode;
-        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.stealthModeChanged);
-        writeStealthMode(stealthMode);
-    }
+
+
 
     public void setStoryReaction(long dialogId, TL_stories.StoryItem storyItem, ReactionsLayoutInBubble.VisibleReaction visibleReaction) {
         if (storyItem == null) {
@@ -2248,7 +2214,7 @@ public class StoriesController {
             }
             TLObject req;
 
-            final int captionLimit = UserConfig.getInstance(currentAccount).isPremium() ? MessagesController.getInstance(currentAccount).storyCaptionLengthLimitPremium : MessagesController.getInstance(currentAccount).storyCaptionLengthLimitDefault;
+            final int captionLimit = MessagesController.getInstance(currentAccount).storyCaptionLengthLimitPremium;
             if (edit) {
                 if (entry.botId != 0) {
                     TL_bots.editPreviewMedia editPreviewMedia = new TL_bots.editPreviewMedia();
@@ -4230,42 +4196,18 @@ public class StoriesController {
         if (hasLive1 != hasLive2) {
             return (hasLive2 ? 1 : 0) - (hasLive1 ? 1 : 0);
         }
-        if (hasUploading1 == hasUploading2) {
-            if (hasUnread1 == hasUnread2) {
-                int service1 = UserObject.isService(dialogId1) ? 1 : 0;
-                int service2 = UserObject.isService(dialogId2) ? 1 : 0;
-                if (service1 == service2) {
-                    int i1 = isPremium(dialogId1) ? 1 : 0;
-                    int i2 = isPremium(dialogId2) ? 1 : 0;
-                    if (i1 == i2) {
-                        int date1 = o1.stories.isEmpty() ? 0 : o1.stories.get(o1.stories.size() - 1).date;
-                        int date2 = o2.stories.isEmpty() ? 0 : o2.stories.get(o2.stories.size() - 1).date;
-                        return date2 - date1;
-                    } else {
-                        return i2 - i1;
-                    }
-                } else {
-                    return service2 - service1;
-                }
-            } else {
-                int i1 = hasUnread1 ? 1 : 0;
-                int i2 = hasUnread2 ? 1 : 0;
-                return i2 - i1;
-            }
-        } else {
-            int i1 = hasUploading1 ? 1 : 0;
-            int i2 = hasUploading2 ? 1 : 0;
-            return i2 - i1;
+        if (hasUploading1 != hasUploading2) {
+            return Boolean.compare(hasUploading2, hasUploading1);
         }
+        if (hasUnread1 != hasUnread2) {
+            return Boolean.compare(hasUnread2, hasUnread1);
+        }
+        int date1 = o1.stories.isEmpty() ? 0 : o1.stories.get(o1.stories.size() - 1).date;
+        int date2 = o2.stories.isEmpty() ? 0 : o2.stories.get(o2.stories.size() - 1).date;
+        return Integer.compare(date2, date1);
     };
 
-    private boolean isPremium(long uid) {
-        TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(uid);
-        if (user == null) {
-            return false;
-        }
-        return user.premium;
-    }
+
 
     final Runnable sortStoriesRunnable;
 
@@ -4473,14 +4415,6 @@ public class StoriesController {
     private StoryLimit storyLimitCached;
 
     public StoryLimit checkStoryLimit() {
-        final int countLimit = UserConfig.getInstance(currentAccount).isPremium() ?
-            MessagesController.getInstance(currentAccount).storyExpiringLimitPremium :
-            MessagesController.getInstance(currentAccount).storyExpiringLimitDefault;
-
-        if (getMyStoriesCount() >= countLimit) {
-            return new StoryLimit(StoryLimit.LIMIT_COUNT, 0, 0);
-        }
-
         if (storyLimitFetched) {
             return storyLimitCached;
         }
@@ -4555,12 +4489,6 @@ public class StoriesController {
                             .setMessage(getString(R.string.LiveStoryAlreadyStreaming))
                             .setPositiveButton(getString(R.string.OK), null)
                             .show();
-                    }
-                    consumer.run(false);
-                } else if (err.text.equalsIgnoreCase("PREMIUM_ACCOUNT_REQUIRED")) {
-                    BaseFragment lastFragment = LaunchActivity.getLastFragment();
-                    if (showLimitsBottomSheet && lastFragment != null) {
-                        lastFragment.showDialog(new PremiumFeatureBottomSheet(lastFragment, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, true));
                     }
                     consumer.run(false);
                 } else {

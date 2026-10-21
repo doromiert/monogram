@@ -17,7 +17,6 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
@@ -149,7 +148,6 @@ import org.telegram.ui.Components.LoadingDrawable;
 import org.telegram.ui.Components.MediaActivity;
 import org.telegram.ui.Components.MentionsContainerView;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RadialProgress;
@@ -186,11 +184,8 @@ import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MessageStatisticActivity;
 import org.telegram.ui.NotificationsCustomSettingsActivity;
 import org.telegram.ui.PinchToZoomHelper;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.ReportBottomSheet;
-import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.CaptionContainerView;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Stories.recorder.StoryEntry;
@@ -379,7 +374,6 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
     boolean checkBlackoutMode;
     private boolean messageSent;
     private boolean isCaptionPartVisible;
-    private boolean stealthModeIsActive;
     private ImageReceiver reactionEffectImageReceiver;
     private AnimatedEmojiEffect emojiReactionEffect;
     private ImageReceiver reactionMoveImageReceiver;
@@ -1818,9 +1812,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                             });
                         }
 
-                        if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !currentStory.isLive && !isChannel) {
-                            createStealthModeItem(popupLayout);
-                        }
+
 
                         if (isChannel && allowShareLink) {
                             ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_link, getString(R.string.CopyLink), false, resourcesProvider).setOnClickListener(v -> {
@@ -2051,50 +2043,21 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                             });
                         }
 
-                        if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && currentStory.isVideo) {
+                        if (currentStory.isVideo) {
                             createQualityItem(popupLayout);
                         }
 
                         if (!unsupported && allowShare && !currentStory.isLive) {
-                            if (UserConfig.getInstance(currentAccount).isPremium()) {
-                                ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_gallery, getString(R.string.SaveToGallery), false, resourcesProvider).setOnClickListener(v -> {
-                                    saveToGallery();
-                                    if (popupMenu != null) {
-                                        popupMenu.dismiss();
-                                    }
-                                });
-                            } else if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-                                Drawable lockIcon = ContextCompat.getDrawable(context, R.drawable.msg_gallery_locked2);
-                                lockIcon.setColorFilter(new PorterDuffColorFilter(ColorUtils.blendARGB(Color.WHITE, Color.BLACK, 0.5f), PorterDuff.Mode.MULTIPLY));
-                                CombinedDrawable combinedDrawable = new CombinedDrawable(
-                                        ContextCompat.getDrawable(context, R.drawable.msg_gallery_locked1),
-                                        lockIcon
-                                ) {
-                                    @Override
-                                    public void setColorFilter(ColorFilter colorFilter) {
+                            ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_gallery, getString(R.string.SaveToGallery), false, resourcesProvider).setOnClickListener(v -> {
+                                saveToGallery();
+                                if (popupMenu != null) {
+                                    popupMenu.dismiss();
+                                }
+                            });
 
-                                    }
-                                };
-                                ActionBarMenuSubItem item = ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_gallery, getString(R.string.SaveToGallery), false, resourcesProvider);
-                                item.setIcon(combinedDrawable);
-                                item.setOnClickListener(v -> {
-                                    item.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                                    BulletinFactory bulletinFactory = BulletinFactory.global();
-                                    if (bulletinFactory != null) {
-                                        bulletinFactory.createSimpleBulletin(R.raw.ic_save_to_gallery, AndroidUtilities.replaceSingleTag(
-                                                getString(R.string.SaveStoryToGalleryPremiumHint),
-                                                () -> {
-                                                    PremiumFeatureBottomSheet sheet = new PremiumFeatureBottomSheet(storyViewer.fragment, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, false);
-                                                    delegate.showDialog(sheet);
-                                                })).show();
-                                    }
-                                });
-                            }
                         }
 
-                        if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && !isChannel) {
-                            createStealthModeItem(popupLayout);
-                        }
+
                         if (allowShareLink) {
                             ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_link2, getString(R.string.CopyLink), false, resourcesProvider).setOnClickListener(v -> {
                                 AndroidUtilities.addToClipboard(currentStory.createLink());
@@ -2384,128 +2347,25 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         storyCaptionView.textSelectionHelper.setParentView(this);
     }
 
-    private void createStealthModeItem(ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout) {
-        if (isBotsPreview() || currentStory.isLive) return;
-        if (UserConfig.getInstance(currentAccount).isPremium()) {
-            ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_stories_stealth2, getString(R.string.StealthModeButton), false, resourcesProvider).setOnClickListener(v -> {
-                if (stealthModeIsActive) {
-                    StealthModeAlert.showStealthModeEnabledBulletin();
-                } else {
-                    StealthModeAlert stealthModeAlert = new StealthModeAlert(getContext(), getY() + storyContainer.getY(), StealthModeAlert.TYPE_FROM_STORIES, resourcesProvider);
-                    delegate.showDialog(stealthModeAlert);
-                }
-                if (popupMenu != null) {
-                    popupMenu.dismiss();
-                }
-            });
-        } else {
-            Drawable lockIcon2 = ContextCompat.getDrawable(getContext(), R.drawable.msg_gallery_locked2);
-            lockIcon2.setColorFilter(new PorterDuffColorFilter(ColorUtils.blendARGB(Color.WHITE, Color.BLACK, 0.5f), PorterDuff.Mode.MULTIPLY));
-            CombinedDrawable combinedDrawable2 = new CombinedDrawable(
-                    ContextCompat.getDrawable(getContext(), R.drawable.msg_stealth_locked),
-                    lockIcon2
-            ) {
-                @Override
-                public void setColorFilter(ColorFilter colorFilter) {
 
-                }
-            };
-            ActionBarMenuSubItem item2 = ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_stories_stealth2, getString(R.string.StealthModeButton), false, resourcesProvider);
-            item2.setOnClickListener(v -> {
-                StealthModeAlert stealthModeAlert = new StealthModeAlert(getContext(), getY() + storyContainer.getY(), StealthModeAlert.TYPE_FROM_STORIES, resourcesProvider);
-                delegate.showDialog(stealthModeAlert);
-                if (popupMenu != null) {
-                    popupMenu.dismiss();
-                }
-            });
-            item2.setIcon(combinedDrawable2);
-        }
-    }
 
     private void createQualityItem(ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout) {
         final boolean qualityFull = MessagesController.getInstance(currentAccount).storyQualityFull;
-        if (UserConfig.getInstance(currentAccount).isPremium()) {
-            ActionBarMenuItem.addItem(popupLayout, qualityFull ? R.drawable.menu_quality_sd : R.drawable.menu_quality_hd, getString(qualityFull ? R.string.StoryQualityDecrease : R.string.StoryQualityIncrease), false, resourcesProvider).setOnClickListener(v -> {
-                final boolean newQualityFull = !qualityFull;
-                MessagesController.getInstance(currentAccount).setStoryQuality(newQualityFull);
-                BulletinFactory.of(storyContainer, resourcesProvider)
-                    .createSimpleBulletin(
-                        R.raw.chats_infotip,
-                        getString(newQualityFull ? R.string.StoryQualityIncreasedTitle : R.string.StoryQualityDecreasedTitle),
-                        getString(newQualityFull ? R.string.StoryQualityIncreasedMessage : R.string.StoryQualityDecreasedMessage)
-                    )
-                    .show();
-                if (popupMenu != null) {
-                    popupMenu.dismiss();
-                }
-            });
-        } else {
-            Drawable lockIcon2 = ContextCompat.getDrawable(getContext(), R.drawable.msg_gallery_locked2);
-            lockIcon2.setColorFilter(new PorterDuffColorFilter(ColorUtils.blendARGB(Color.WHITE, Color.BLACK, 0.5f), PorterDuff.Mode.MULTIPLY));
-            CombinedDrawable combinedDrawable2 = new CombinedDrawable(
-                    ContextCompat.getDrawable(getContext(), R.drawable.menu_quality_hd2),
-                    lockIcon2
-            ) {
-                @Override
-                public void setColorFilter(ColorFilter colorFilter) {
+        ActionBarMenuItem.addItem(popupLayout, qualityFull ? R.drawable.menu_quality_sd : R.drawable.menu_quality_hd, getString(qualityFull ? R.string.StoryQualityDecrease : R.string.StoryQualityIncrease), false, resourcesProvider).setOnClickListener(v -> {
+            final boolean newQualityFull = !qualityFull;
+            MessagesController.getInstance(currentAccount).setStoryQuality(newQualityFull);
+            BulletinFactory.of(storyContainer, resourcesProvider)
+                .createSimpleBulletin(
+                    R.raw.chats_infotip,
+                    getString(newQualityFull ? R.string.StoryQualityIncreasedTitle : R.string.StoryQualityDecreasedTitle),
+                    getString(newQualityFull ? R.string.StoryQualityIncreasedMessage : R.string.StoryQualityDecreasedMessage)
+                )
+                .show();
+            if (popupMenu != null) {
+                popupMenu.dismiss();
+            }
+        });
 
-                }
-            };
-            combinedDrawable2.setIconSize(dp(24), dp(24));
-            combinedDrawable2.setIconOffset(dp(1), -dp(2));
-            ActionBarMenuSubItem item2 = ActionBarMenuItem.addItem(popupLayout, R.drawable.menu_quality_hd, getString(R.string.StoryQualityIncrease), false, resourcesProvider);
-            item2.setOnClickListener(v -> {
-                BottomSheet sheet = new BottomSheet(getContext(), false, resourcesProvider);
-                sheet.fixNavigationBar(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
-
-                LinearLayout layout = new LinearLayout(getContext());
-                layout.setOrientation(LinearLayout.VERTICAL);
-                layout.setPadding(dp(16), 0, dp(16), 0);
-
-                BackupImageView imageView = new BackupImageView(getContext());
-                imageView.getImageReceiver().setAutoRepeat(1);
-//                imageView.setScaleType(ImageView.ScaleType.CENTER);
-//                imageView.setAutoRepeat(true);
-//                imageView.setAnimation(R.raw.utyan_cache, 150, 150);
-                MediaDataController.getInstance(currentAccount).setPlaceholderImage(imageView, AndroidUtilities.STICKERS_PLACEHOLDER_PACK_NAME_2, "😎", "150_150");
-                layout.addView(imageView, LayoutHelper.createLinear(150, 150, Gravity.CENTER_HORIZONTAL, 0, 16, 0, 16));
-
-                TextView headerView = new TextView(getContext());
-                headerView.setTypeface(AndroidUtilities.bold());
-                headerView.setGravity(Gravity.CENTER);
-                headerView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-                headerView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-                headerView.setText(getString(R.string.StoryQualityPremium));
-                layout.addView(headerView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 12, 0, 12, 0));
-
-                TextView descriptionView = new TextView(getContext());
-                descriptionView.setGravity(Gravity.CENTER);
-                descriptionView.setTextColor(Theme.getColor(Theme.key_dialogTextGray3, resourcesProvider));
-                descriptionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                descriptionView.setText(AndroidUtilities.replaceTags(getString(R.string.StoryQualityPremiumText)));
-                layout.addView(descriptionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 9, 32, 19));
-
-                ButtonWithCounterView button = new ButtonWithCounterView(getContext(), resourcesProvider);
-                button.setText(getString(R.string.StoryQualityIncrease), false);
-                SpannableStringBuilder lock = new SpannableStringBuilder("l");
-                ColoredImageSpan coloredImageSpan = new ColoredImageSpan(R.drawable.mini_switch_lock);
-                coloredImageSpan.setTopOffset(1);
-                lock.setSpan(coloredImageSpan, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                button.setSubText(new SpannableStringBuilder().append(lock).append(getString(R.string.OptionPremiumRequiredTitle)), false);
-                layout.addView(button, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER_HORIZONTAL));
-                button.setOnClickListener(view -> {
-                    delegate.showDialog(new PremiumFeatureBottomSheet(storyViewer.fragment, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, false));
-                    sheet.dismiss();
-                });
-
-                sheet.setCustomView(layout);
-                delegate.showDialog(sheet);
-                if (popupMenu != null) {
-                    popupMenu.dismiss();
-                }
-            });
-            item2.setIcon(combinedDrawable2);
-        }
     }
 
     private void showLikesReaction(boolean show) {
@@ -2987,7 +2847,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                     liveCommentsView.send(text);
                     messageEditText.setText("");
                     AndroidUtilities.hideKeyboard(this);
-                    checkStealthMode(true);
+                    updateReplyInputState(true);
                     checkSendButton(true);
 
                     return true;
@@ -3187,7 +3047,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                     if (storyViewer.livePlayer != null) {
                         storyViewer.livePlayer.setDefaultSendAs(MessagesController.getInstance(currentAccount).getPeer(newPeer));
                     }
-                    checkStealthMode(true);
+                    updateReplyInputState(true);
                     chatActivityEnterView.updateSendAsButton(true);
                     chatActivityEnterView.checkSendButton(true);
                     updatePosition();
@@ -3404,7 +3264,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         if (attachedToWindow) {
             chatActivityEnterView.onResume();
         }
-        checkStealthMode(false);
+        updateReplyInputState(false);
 
         if (isBotsPreview()) {
             chatActivityEnterView.setVisibility(View.GONE);
@@ -3493,20 +3353,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
             AccountFrozenAlert.show(currentAccount);
             return true;
         }
-        if (SharedConfig.stealthModeSendMessageConfirm > 0 && stealthModeIsActive) {
-            SharedConfig.stealthModeSendMessageConfirm--;
-            SharedConfig.updateStealthModeSendMessageConfirm(SharedConfig.stealthModeSendMessageConfirm);
-            AlertDialog alertDialog = new AlertDialog(getContext(), 0, resourcesProvider);
-            alertDialog.setTitle(getString(R.string.StealthModeConfirmTitle));
-            alertDialog.setMessage(getString(R.string.StealthModeConfirmMessage));
-            alertDialog.setPositiveButton(getString(R.string.Proceed), (dialog, which) -> {
-                runnable.run();
-            });
-            alertDialog.setNegativeButton(getString(R.string.Cancel), (dialog, which) -> dialog.dismiss());
-            alertDialog.show();
-        } else {
-            runnable.run();
-        }
+        runnable.run();
         return true;
     }
 
@@ -4144,7 +3991,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
             storyContainer.invalidate();
             invalidate();
         }
-        checkStealthMode(false);
+        updateReplyInputState(false);
     }
 
     private void createUnsupportedContainer() {
@@ -4517,7 +4364,6 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.storiesUpdated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.storyQualityUpdate);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.storiesListUpdated);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.stealthModeChanged);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.storiesLimitUpdate);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.didLoadSendAsPeers);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
@@ -4552,7 +4398,6 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.storiesUpdated);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.storyQualityUpdate);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.storiesListUpdated);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.stealthModeChanged);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.storiesLimitUpdate);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.didLoadSendAsPeers);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.emojiLoaded);
@@ -4593,8 +4438,6 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
             updatePosition();
         } else if (id == NotificationCenter.emojiLoaded) {
             storyCaptionView.captionTextview.invalidate();
-        } else if (id == NotificationCenter.stealthModeChanged) {
-            checkStealthMode(true);
         } else if (id == NotificationCenter.storiesLimitUpdate) {
             StoriesController.StoryLimit storyLimit = MessagesController.getInstance(currentAccount).getStoriesController().checkStoryLimit();
             if (storyLimit == null || !storyLimit.active(currentAccount) || delegate == null) {
@@ -4617,7 +4460,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                 if (chatActivityEnterView != null) {
                     chatActivityEnterView.checkSendButton(true);
                     chatActivityEnterView.updateSendAsButton(true);
-                    checkStealthMode(true);
+                    updateReplyInputState(true);
                 }
 
                 if (liveCommentsView != null) {
@@ -4647,49 +4490,19 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         }
     }
 
-    Runnable updateStealthModeTimer = () -> checkStealthMode(true);
 
-    private void checkStealthMode(boolean animated) {
+    private void updateReplyInputState(boolean animated) {
         if (chatActivityEnterView == null || !isVisible || !attachedToWindow) {
             return;
         }
-        AndroidUtilities.cancelRunOnUIThread(updateStealthModeTimer);
-        final TL_stories.TL_storiesStealthMode stealthMode = storiesController.getStealthMode();
         chatActivityEnterView.checkSendButton(true);
         if (isReplyRestricted && !currentStory.isLive || areLiveCommentsDisabled) {
-            stealthModeIsActive = false;
             chatActivityEnterView.setEnabled(false);
             chatActivityEnterView.setOverrideHint(" ", animated);
-        } else if (!currentStory.isLive && stealthMode != null && ConnectionsManager.getInstance(currentAccount).getCurrentTime() < stealthMode.active_until_date) {
-            stealthModeIsActive = true;
-            int time = stealthMode.active_until_date - ConnectionsManager.getInstance(currentAccount).getCurrentTime();
-            int minutes = time / 60;
-            int seconds = time % 60;
-            String textToMeasure = LocaleController.formatString(R.string.StealthModeActiveHintShort, String.format(Locale.US, "%02d:%02d", 99, 99));
-            int w = (int) chatActivityEnterView.getEditField().getPaint().measureText(textToMeasure);
-            chatActivityEnterView.setEnabled(true);
-            if (w * 1.2f >= chatActivityEnterView.getEditField().getMeasuredWidth()) {
-                chatActivityEnterView.setOverrideHint(LocaleController.formatString(R.string.StealthModeActiveHintShort, ""), String.format(Locale.US, "%02d:%02d", minutes, seconds), animated);
-            } else {
-                chatActivityEnterView.setOverrideHint(LocaleController.formatString(R.string.StealthModeActiveHint, String.format(Locale.US, "%02d:%02d", minutes, seconds)), animated);
-            }
-            AndroidUtilities.runOnUIThread(updateStealthModeTimer, 1000);
         } else {
-            stealthModeIsActive = false;
             chatActivityEnterView.setEnabled(true);
-            if (currentStory.isLive) {
-                final long stars = chatActivityEnterView.getStarsPrice();
-                if (stars > 0) {
-                    chatActivityEnterView.setOverrideHint(StarsIntroActivity.replaceStars(LocaleController.formatString(R.string.CommentFor, LocaleController.formatNumber((int) stars, ',')), chatActivityEnterView.spans), animated);
-                    if (chatActivityEnterView.spans[0] != null) {
-                        chatActivityEnterView.spans[0].spaceScaleX = 0.9f;
-                    }
-                } else {
-                    chatActivityEnterView.setOverrideHint(getString(R.string.Comment), animated);
-                }
-            } else {
-                chatActivityEnterView.setOverrideHint(getString(isGroup ? R.string.ReplyToGroupStory : R.string.ReplyPrivately), animated);
-            }
+            chatActivityEnterView.setOverrideHint(getString(currentStory.isLive ? R.string.Comment :
+                    isGroup ? R.string.ReplyToGroupStory : R.string.ReplyPrivately), animated);
         }
     }
 
@@ -5124,7 +4937,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                 chatActivityEnterView.setEnabled(!(isReplyRestricted && !currentStory.isLive || areLiveCommentsDisabled));
                 chatActivityEnterView.updateSendAsButton();
             }
-            checkStealthMode(true);
+            updateReplyInputState(true);
         }
         if (replyRestrictedText != null) {
             replyRestrictedText.setVisibility(isReplyRestricted && !currentStory.isLive || areLiveCommentsDisabled ? View.VISIBLE : View.GONE);
@@ -5225,7 +5038,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                 if (chatActivityEnterView != null) {
                     chatActivityEnterView.checkSendButton(true);
                     chatActivityEnterView.updateSendButtonPaid();
-                    checkStealthMode(true);
+                    updateReplyInputState(true);
                 }
             }
             liveCommentsView.setVisibility(View.VISIBLE);
@@ -6164,7 +5977,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         isVisible = visible;
         if (visible) {
             imageReceiver.setCurrentAlpha(1f);
-            checkStealthMode(false);
+            updateReplyInputState(false);
         }
     }
 

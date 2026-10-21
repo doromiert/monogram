@@ -4690,8 +4690,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                                 SharedConfig.emojiInteractionsHintCount = 3;
                                 SharedConfig.dayNightThemeSwitchHintCount = 3;
                                 SharedConfig.fastScrollHintCount = 3;
-                                SharedConfig.stealthModeSendMessageConfirm = 2;
-                                SharedConfig.updateStealthModeSendMessageConfirm(2);
+
+
                                 SharedConfig.setStoriesReactionsLongPressHintUsed(false);
                                 SharedConfig.setStoriesIntroShown(false);
 

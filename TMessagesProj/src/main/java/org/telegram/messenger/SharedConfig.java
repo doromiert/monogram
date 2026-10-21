@@ -267,7 +267,6 @@ public class SharedConfig {
     public static boolean useSurfaceInStories;
     public static boolean photoViewerBlur = true;
     public static boolean payByInvoice;
-    public static int stealthModeSendMessageConfirm = 2;
     private static int lastLocalId = -210000;
     public static boolean walletUseFingerprintLock = true;
 
@@ -662,7 +661,7 @@ public class SharedConfig {
             messageSeenHintCount = preferences.getInt("messageSeenCount", 3);
             emojiInteractionsHintCount = preferences.getInt("emojiInteractionsHintCount", 3);
             dayNightThemeSwitchHintCount = preferences.getInt("dayNightThemeSwitchHintCount", 3);
-            stealthModeSendMessageConfirm = preferences.getInt("stealthModeSendMessageConfirm", 2);
+
             mediaColumnsCount = preferences.getInt("mediaColumnsCount", 3);
             storiesColumnsCount = preferences.getInt("storiesColumnsCount", 3);
             fastScrollHintCount = preferences.getInt("fastScrollHintCount", 3);
@@ -892,7 +891,7 @@ public class SharedConfig {
         messageSeenHintCount = 3;
         emojiInteractionsHintCount = 3;
         dayNightThemeSwitchHintCount = 3;
-        stealthModeSendMessageConfirm = 2;
+
         dayNightWallpaperSwitchHint = 0;
         saveConfig();
     }
@@ -1595,11 +1594,7 @@ public class SharedConfig {
         preferences.edit().putInt("dayNightThemeSwitchHintCount", dayNightThemeSwitchHintCount).apply();
     }
 
-    public static void updateStealthModeSendMessageConfirm(int count) {
-        stealthModeSendMessageConfirm = count;
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        preferences.edit().putInt("stealthModeSendMessageConfirm", stealthModeSendMessageConfirm).apply();
-    }
+
 
     public final static int PERFORMANCE_CLASS_LOW = 0;
     public final static int PERFORMANCE_CLASS_AVERAGE = 1;

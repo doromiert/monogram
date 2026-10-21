@@ -82,7 +82,6 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.math.MathUtils;
@@ -138,7 +137,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_chatlists;
 import org.telegram.tgnet.tl.TL_stars;
-import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -208,14 +206,12 @@ import org.telegram.ui.Components.chat.layouts.ChatActivityFadeView;
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stories.StealthModeAlert;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ChatActivityEnterView;
 import org.telegram.ui.Components.ChatAvatarContainer;
-import org.telegram.ui.Components.CombinedDrawable;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.DialogsItemAnimator;
 import org.telegram.ui.Components.FilterTabsView;
@@ -5151,23 +5147,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
                     final String key = NotificationsController.getSharedPrefKey(dialogId, 0);
                     boolean muted = !NotificationsCustomSettingsActivity.areStoriesNotMuted(currentAccount, dialogId);
-                    boolean isPremiumBlocked = MessagesController.getInstance(currentAccount).premiumFeaturesBlocked();
-                    boolean isPremium = UserConfig.getInstance(currentAccount).isPremium();
-                    boolean isUnread = MessagesController.getInstance(currentAccount).getStoriesController().hasUnreadStories(dialogId);
-                    boolean isLive = MessagesController.getInstance(currentAccount).getStoriesController().hasLiveStory(dialogId);
-                    CombinedDrawable stealthModeLockedDrawable = null;
-                    if (!isPremiumBlocked && dialogId > 0 && !isPremium) {
-                        Drawable lockIcon = ContextCompat.getDrawable(getContext(), R.drawable.msg_gallery_locked2);
-                        if (lockIcon != null) {
-                            Drawable stealthDrawable = ContextCompat.getDrawable(getContext(), R.drawable.msg_stealth_locked);
-                            if (stealthDrawable != null) {
-                                stealthDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_actionBarDefaultSubmenuItemIcon), PorterDuff.Mode.MULTIPLY));
-                            }
-
-                            lockIcon.setColorFilter(new PorterDuffColorFilter(ColorUtils.blendARGB(Color.WHITE, Color.BLACK, 0.5f), PorterDuff.Mode.MULTIPLY));
-                            stealthModeLockedDrawable = new CombinedDrawable(stealthDrawable, lockIcon);
-                        }
-                    }
                     if (dialogId < 0 && getStoriesController().canPostStories(dialogId)) {
                         filterOptions.add(R.drawable.msg_stories_add, LocaleController.getString(R.string.AddStory), Theme.key_actionBarDefaultSubmenuItemIcon, Theme.key_actionBarDefaultSubmenuItem, () -> {
                             dialogStoriesCell.openStoryRecorder(dialogId);
@@ -5201,35 +5180,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                     name = name.substring(0, index);
                                 }
                                 BulletinFactory.of(DialogsActivity.this).createUsersBulletin(Arrays.asList(user), AndroidUtilities.replaceTags(LocaleController.formatString("NotificationsStoryUnmutedHint", R.string.NotificationsStoryUnmutedHint, name))).show();
-                            }).makeMultiline(false).addIf(!isPremiumBlocked && dialogId > 0 && isPremium && isUnread && !isLive, R.drawable.msg_stories_stealth2, LocaleController.getString(R.string.ViewAnonymously), () -> {
-                                TL_stories.TL_storiesStealthMode stealthMode = MessagesController.getInstance(UserConfig.selectedAccount).getStoriesController().getStealthMode();
-                                if (stealthMode != null && ConnectionsManager.getInstance(currentAccount).getCurrentTime() < stealthMode.active_until_date) {
-                                    if (view instanceof StoryCell) {
-                                        dialogStoriesCell.openStoryForCell((StoryCell) view);
-                                    }
-                                } else {
-                                    StealthModeAlert stealthModeAlert = new StealthModeAlert(getContext(), 0, StealthModeAlert.TYPE_FROM_DIALOGS, resourceProvider);
-                                    stealthModeAlert.setListener(isStealthModeEnabled -> {
-                                        if (view instanceof StoryCell) {
-                                            dialogStoriesCell.openStoryForCell((StoryCell) view);
-                                            if (isStealthModeEnabled) {
-                                                AndroidUtilities.runOnUIThread(StealthModeAlert::showStealthModeEnabledBulletin, 500);
-                                            }
-                                        }
-                                    });
-                                    showDialog(stealthModeAlert);
-                                }
-                            }).makeMultiline(false).addIf(!isPremiumBlocked && dialogId > 0 && !isPremium && isUnread && !isLive, R.drawable.msg_stories_stealth2, stealthModeLockedDrawable, LocaleController.getString(R.string.ViewAnonymously), () -> {
-                                StealthModeAlert stealthModeAlert = new StealthModeAlert(getContext(), 0, StealthModeAlert.TYPE_FROM_DIALOGS, resourceProvider);
-                                stealthModeAlert.setListener(isStealthModeEnabled -> {
-                                    if (view instanceof StoryCell) {
-                                        dialogStoriesCell.openStoryForCell((StoryCell) view);
-                                        if (isStealthModeEnabled) {
-                                            AndroidUtilities.runOnUIThread(StealthModeAlert::showStealthModeEnabledBulletin, 500);
-                                        }
-                                    }
-                                });
-                                showDialog(stealthModeAlert);
                             }).makeMultiline(false).addIf(!fromTopPeer && !isArchive(), R.drawable.msg_archive, LocaleController.getString(R.string.ArchivePeerStories), () -> {
                                 toggleArciveForStory(dialogId);
                             }).makeMultiline(false).addIf(!fromTopPeer && isArchive(), R.drawable.msg_unarchive, LocaleController.getString(R.string.UnarchiveStories), () -> {
