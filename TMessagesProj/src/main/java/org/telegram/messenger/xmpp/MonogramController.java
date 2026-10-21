@@ -70,6 +70,8 @@ public final class MonogramController {
     private final java.util.concurrent.atomic.AtomicLong displayedRequests=new java.util.concurrent.atomic.AtomicLong();
     private final MonogramStore store;
     public final MonogramLinkPreviews linkPreviews;
+    private final MonogramEncryptionPolicy encryptionPolicy;
+    private volatile long encryptionPolicyEpoch;
     private final MonogramOmemo2Store modernStore;
     private final MonogramLegacyOmemoStore legacyStore;
     private final AccountVault vault;
@@ -101,6 +103,7 @@ public final class MonogramController {
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
         store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account);
         linkPreviews=new MonogramLinkPreviews(account,preferences,store);
+        encryptionPolicy=new MonogramEncryptionPolicy(preferences);
         privateReads=new MonogramReadSyncState(store,preferences);
         legacyStore=MonogramLegacyOmemoStore.application();vault = new AccountVault(account);
         if (preferences.contains("jid")) self = store.knownPeer(accountJid());
@@ -466,7 +469,7 @@ public final class MonogramController {
     }
     public void chatOpened(long peer) {
         presencePeer=peer; chatState(peer, 0);
-        worker.execute(() -> { XmppSession expected=session; if(expected!=null) presenceChanged(peer,expected,sessionEpoch,true); });
+        worker.execute(() -> { XmppSession expected=session; if(expected!=null) presenceChanged(peer,expected,sessionEpoch,true); warnIfPlain(peer); });
     }
     public void typingInput(long peer, boolean composing) { chatState(peer, composing ? 1 : 0); }
     public void chatInactive(long peer) { chatState(peer, 2); }
@@ -1994,8 +1997,41 @@ public final class MonogramController {
         return !encrypted(peer) ? XmppMessage.Encryption.PLAIN : modernEncryption(peer)
                 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO;
     }
+    public boolean automaticEncryption(long peer) { return peer!=0 && encryptionPolicy.automatic(accountJid(),store.jid(peer)); }
+    public void setAutomaticEncryption(long peer,boolean enabled) {
+        encryptionPolicy.automatic(accountJid(),store.jid(peer),enabled);encryptionPolicyEpoch++;
+    }
+    private void selectDailyEncryption(XmppSession expected,long peer,long owner) throws Exception {
+        if(!automaticEncryption(peer)) return;
+        final String own=accountJid(),address=store.jid(peer);
+        final long revision=encryptionPolicyEpoch,now=System.currentTimeMillis();
+        XmppMessage.Encryption mode=encryptionPolicy.cached(own,address,now);
+        if(mode==null) {
+            mode=com.negzero.monogram.xmpp.EncryptionFallback.select(candidate -> expected.probeEncryption(address,candidate,peer<0,excludedRoomRecipients(peer),automaticRoomRecipients(peer)));
+            if(owner!=accountEpoch || session!=expected || !expected.connection().isAuthenticated()) throw new IllegalStateException("Account connection changed");
+            if(revision!=encryptionPolicyEpoch || !automaticEncryption(peer)) throw new IllegalStateException("Encryption setting changed");
+            encryptionPolicy.selected(own,address,peer,mode,System.currentTimeMillis());
+        }
+        if(mode==XmppMessage.Encryption.PLAIN) warnIfPlain(peer);
+    }
+    private void warnIfPlain(long peer) {
+        if(peer==0 || !automaticEncryption(peer) || encryption(peer)!=XmppMessage.Encryption.PLAIN) return;
+        final long owner=accountEpoch,now=System.currentTimeMillis();
+        final String own=accountJid(),address=store.jid(peer);
+        if(encryptionPolicy.cached(own,address,now)!=XmppMessage.Encryption.PLAIN || !encryptionPolicy.needsWarning(own,address,now)) return;
+        AndroidUtilities.runOnUIThread(() -> {
+            if(owner!=accountEpoch || encryption(peer)!=XmppMessage.Encryption.PLAIN || !encryptionPolicy.needsWarning(own,address,System.currentTimeMillis())) return;
+            org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getSafeLastFragment();
+            if(fragment instanceof org.telegram.ui.ChatActivity && fragment.getCurrentAccount()==account
+                    && ((org.telegram.ui.ChatActivity)fragment).getDialogId()==peer && org.telegram.ui.Components.BulletinFactory.canShowBulletin(fragment)) {
+                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(R.raw.chats_infotip,"Sending without end-to-end encryption in this conversation.").show();
+                encryptionPolicy.warned(own,address,System.currentTimeMillis());
+            }
+        },200);
+    }
     public void setEncryption(long peer,XmppMessage.Encryption mode) {
         if (peer<0 && mode==XmppMessage.Encryption.OMEMO2) throw new UnsupportedOperationException("OMEMO 2 rooms are not implemented");
+        setAutomaticEncryption(peer,false);
         if (!preferences.edit().putBoolean("omemo-"+peer,mode!=XmppMessage.Encryption.PLAIN)
                 .putInt("omemo-version-"+peer,mode==XmppMessage.Encryption.OMEMO2 ? 2 : 1).commit()) throw new IllegalStateException("Cannot save encryption preference");
     }
@@ -2030,6 +2066,7 @@ public final class MonogramController {
         });
     }
     public void setEncrypted(long peer, boolean encrypted) {
+        setAutomaticEncryption(peer,false);
         if (!preferences.edit().putBoolean("omemo-" + peer, encrypted).commit()) throw new IllegalStateException("Cannot save encryption preference");
     }
     private int now() { return (int) (System.currentTimeMillis() / 1000); }
@@ -2901,7 +2938,29 @@ public final class MonogramController {
                 if(preferences.contains("jid")) restore();
                 return;
             }
-            if(!pending.encryption.equals(encryption(peer).name())) {
+            try { selectDailyEncryption(expected,peer,pending.owner); }
+            catch(Exception failed) {
+                if(pending.owner!=accountEpoch) { pendingSends.remove(pending.token,pending);return; }
+                if(session!=expected || !expected.connection().isAuthenticated()) {
+                    pending.scheduled.set(false);restore();return;
+                }
+                if(pendingSends.remove(pending.token,pending)) {
+                    if(pending.request instanceof MonogramFileRequest) {
+                        MonogramFileRequest file=(MonogramFileRequest)pending.request;
+                        finishUpload(file.localId,file.message.attachPath,file.job);
+                    }
+                    TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;
+                    error.text="MONOGRAM_XMPP_FAILED|"+com.negzero.monogram.xmpp.XmppRequestException.describe(failed);
+                    Utilities.stageQueue.postRunnable(() -> { if(pending.owner==accountEpoch) pending.completed.run(null,error); });
+                }
+                return;
+            }
+            if(automaticEncryption(peer) && pending.request instanceof MonogramFileRequest) {
+                MonogramFileRequest file=(MonogramFileRequest)pending.request;
+                if(file.message.params==null) file.message.params=new java.util.HashMap<>();
+                file.message.params.put(QUEUED_ENCRYPTION,encryption(peer).name());
+            }
+            if(!automaticEncryption(peer) && !pending.encryption.equals(encryption(peer).name())) {
                 if(pendingSends.remove(pending.token,pending)) {
                     if(pending.request instanceof MonogramFileRequest) {
                         MonogramFileRequest file=(MonogramFileRequest)pending.request;

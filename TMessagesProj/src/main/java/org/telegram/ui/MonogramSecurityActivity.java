@@ -188,6 +188,8 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         MonogramController controller = MonogramController.get(currentAccount);
         if(fingerprintsPage) { fillFingerprints(items);return; }
         items.add(UItem.asHeader("Encryption"));
+        items.add(UItem.asCheck(25,"Choose encryption automatically").setChecked(controller.automaticEncryption(peer)));
+
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
@@ -232,12 +234,14 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
             showDialog(new AlertDialog.Builder(getContext()).setTitle("About encryption")
                     .setMessage(controller.jid(peer)+"\n\nCompare fingerprints through another trusted channel. New devices and changed keys need review before they are trusted.\n\n"
                             +(peer<0 ? "Room encryption uses legacy OMEMO in members-only rooms that reveal participant addresses. Automatic skipping sends to available trusted devices; unavailable, inactive, unverified or distrusted devices are omitted and cannot read that message. Skipping never approves fingerprints. Turn it off to require every selected recipient.\n\n" : "")
-                            +"Legacy OMEMO reactions are visible to the server. OMEMO 2 direct chats encrypt reactions. Reaction permissions never change message encryption.")
+                            +"Automatic mode checks OMEMO 2, then legacy OMEMO, then unencrypted sending once every 24 hours per conversation. Only unencrypted selection shows a warning. Connection failures keep encryption unchanged. Manual encryption choices disable automatic selection.\n\nLegacy OMEMO reactions are visible to the server. OMEMO 2 direct chats encrypt reactions. Reaction permissions never change message encryption.")
                     .setPositiveButton("Close",null).create());
         } else if(item.id==11) {
             String details=diagnostics();
             showDialog(new AlertDialog.Builder(getContext()).setTitle("Diagnostics").setMessage(details)
                     .setPositiveButton("Close",null).setNeutralButton("Copy",(dialog,which) -> AndroidUtilities.addToClipboard(details)).create());
+        } else if(item.id==25) {
+            controller.setAutomaticEncryption(peer,!controller.automaticEncryption(peer));refresh();
         } else if(item.id==12) {
             showRecipients=!showRecipients;refresh();
         } else if(item.id==9) {

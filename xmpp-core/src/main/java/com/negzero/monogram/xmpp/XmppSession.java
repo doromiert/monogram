@@ -985,28 +985,7 @@ public final class XmppSession implements AutoCloseable {
         if (reply != null) body = reply.wireBody(body);
         Message message;
         if (encrypted) {
-            try {
-                if (sendingDevices(recipient.toString()).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
-            } catch (org.jivesoftware.smack.XMPPException.XMPPErrorException e) {
-                if (e.getStanzaError().getCondition() == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
-                    throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
-                }
-                throw e;
-            }
-            OmemoMessage.Sent ciphertext = omemo.encrypt(recipient, body);
-            for (OmemoDevice skipped : ciphertext.getSkippedDevices().keySet()) {
-                // Smack intentionally excludes devices silent for 400 sends, including our own old clients.
-                if (ciphertext.getSkippedDevices().get(skipped) instanceof ReadOnlyDeviceException) continue;
-                if (trust.getTrust(skipped, omemo.getFingerprint(skipped)) != org.jivesoftware.smackx.omemo.trust.TrustState.untrusted) {
-                    throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,
-                            "Device "+skipped.getDeviceId()+": "+ciphertext.getSkippedDevices().get(skipped).getClass().getSimpleName());
-                }
-            }
-            boolean recipientIncluded = false;
-            for (OmemoDevice intended : ciphertext.getIntendedDevices()) {
-                if (intended.getJid().equals(recipient) && !ciphertext.getSkippedDevices().containsKey(intended)) recipientIncluded = true;
-            }
-            if (!recipientIncluded) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
+            OmemoMessage.Sent ciphertext = encryptLegacy(recipient,body);
             message = ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.chat), recipient);
         } else {
             message = new Message(recipient, Message.Type.chat);
@@ -1061,6 +1040,47 @@ public final class XmppSession implements AutoCloseable {
         wire.addExtension(new OriginIdElement(id));
         wire.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         connection.sendStanza(wire); return id;
+    }
+    private OmemoMessage.Sent encryptLegacy(EntityBareJid recipient,String body) throws Exception {
+        try {
+            if (sendingDevices(recipient.toString()).isEmpty()) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
+        } catch (org.jivesoftware.smack.XMPPException.XMPPErrorException e) {
+            if (e.getStanzaError().getCondition() == org.jivesoftware.smack.packet.StanzaError.Condition.item_not_found) {
+                throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
+            }
+            throw e;
+        }
+        OmemoMessage.Sent ciphertext = omemo.encrypt(recipient, body);
+        for (OmemoDevice skipped : ciphertext.getSkippedDevices().keySet()) {
+            // Smack intentionally excludes devices silent for 400 sends, including our own old clients.
+            if (ciphertext.getSkippedDevices().get(skipped) instanceof ReadOnlyDeviceException) continue;
+            if (trust.getTrust(skipped, omemo.getFingerprint(skipped)) != org.jivesoftware.smackx.omemo.trust.TrustState.untrusted) {
+                throw new OmemoSendException(OmemoSendException.Reason.DEVICE_FAILURE,
+                    "Device "+skipped.getDeviceId()+": "+ciphertext.getSkippedDevices().get(skipped).getClass().getSimpleName());
+            }
+        }
+        boolean recipientIncluded = false;
+        for (OmemoDevice intended : ciphertext.getIntendedDevices()) {
+            if (intended.getJid().equals(recipient) && !ciphertext.getSkippedDevices().containsKey(intended)) recipientIncluded = true;
+        }
+        if (!recipientIncluded) throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
+        return ciphertext;
+    }
+    /** Exercise encryption locally, without transmitting a probe message or its ciphertext. */
+    public boolean probeEncryption(String jid,XmppMessage.Encryption mode,boolean room,java.util.Set<String> excluded,boolean automatic) throws Exception {
+        if(!connection.isAuthenticated()) throw new org.jivesoftware.smack.SmackException.NotConnectedException();
+        if(room) {
+            if(mode==XmppMessage.Encryption.OMEMO2) return false;
+            rooms.probeEncryption(jid,excluded,automatic);return true;
+        }
+        if(mode==XmppMessage.Encryption.OMEMO2) {
+            awaitModernSetup();
+            if(!modernAvailable()) return false;
+            Message clear=new Message(directRecipient(jid),Message.Type.chat);clear.setFrom(connection.getUser());
+            clear.setStanzaId(java.util.UUID.randomUUID().toString());clear.setBody("Monogram encryption check");
+            modern.encrypt(clear);return true;
+        }
+        encryptLegacy(directRecipient(jid),"Monogram encryption check");return true;
     }
     private EntityBareJid directRecipient(String address) throws Exception {
         org.jxmpp.jid.Jid jid=JidCreate.from(address);

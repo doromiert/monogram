@@ -683,6 +683,12 @@ public final class XmppRooms implements AutoCloseable {
         chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
         } finally { if(automatic && encrypted) recoverUnavailable(failures); }
     }
+    /** Encrypt and discard a local check; never send or await a room echo. */
+    public void probeEncryption(String jid,Set<String> excluded,boolean automatic) throws Exception {
+        MultiUserChat chat=chat(jid);
+        if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        roomMessage(chat,jid,"Monogram encryption check",true,excluded,automatic,new TreeMap<>(),new LinkedHashMap<>());
+    }
     private Message roomMessage(MultiUserChat chat,String jid,String wireBody,boolean encrypted,Set<String> excluded,boolean automatic,Map<String,String> skipped,Map<String,Unavailable> failures) throws Exception {
         Message message;
         if (encrypted) {
