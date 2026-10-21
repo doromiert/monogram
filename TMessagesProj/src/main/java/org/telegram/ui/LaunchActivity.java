@@ -5213,30 +5213,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             }
         } else if (chatLinkSlug != null) {
-            TL_account.resolveBusinessChatLink req = new TL_account.resolveBusinessChatLink();
-            req.slug = chatLinkSlug;
-
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                if (res instanceof TL_account.resolvedBusinessChatLinks) {
-                    TL_account.resolvedBusinessChatLinks resolvedLink = (TL_account.resolvedBusinessChatLinks) res;
-
-                    MessagesController.getInstance(currentAccount).putUsers(resolvedLink.users, false);
-                    MessagesController.getInstance(currentAccount).putChats(resolvedLink.chats, false);
-                    MessagesStorage.getInstance(currentAccount).putUsersAndChats(resolvedLink.users, resolvedLink.chats, true, true);
-
-                    Bundle args = new Bundle();
-                    if (resolvedLink.peer instanceof TLRPC.TL_peerUser) {
-                        args.putLong("user_id", resolvedLink.peer.user_id);
-                    } else if (resolvedLink.peer instanceof TLRPC.TL_peerChat || resolvedLink.peer instanceof TLRPC.TL_peerChannel) {
-                        args.putLong("chat_id", resolvedLink.peer.channel_id);
-                    }
-                    ChatActivity chatActivity = new ChatActivity(args);
-                    chatActivity.setResolvedChatLink(resolvedLink);
-                    presentFragment(chatActivity, false, true);
-                } else {
-                    showAlertDialog(AlertsCreator.createSimpleAlert(LaunchActivity.this, LocaleController.getString(R.string.BusinessLink), LocaleController.getString(R.string.BusinessLinkInvalid)));
-                }
-            }));
+            // Retired Telegram Business chat links have no action in Monogram.
         }
 
         if (requestId[0] != 0) {

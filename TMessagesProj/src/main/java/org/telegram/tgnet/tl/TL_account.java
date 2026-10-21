@@ -3072,224 +3072,23 @@ public class TL_account {
         }
     }
 
-    public static class TL_inputBusinessChatLink extends TLObject {
-        public static final int constructor = 0x11679fa7;
 
-        public int flags;
-        public String message;
-        public ArrayList<TLRPC.MessageEntity> entities = new ArrayList<>();
-        public String title;
 
-        public static TL_inputBusinessChatLink TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final TL_inputBusinessChatLink result = TL_inputBusinessChatLink.constructor != constructor ? null : new TL_inputBusinessChatLink();
-            return TLdeserialize(TL_inputBusinessChatLink.class, result, stream, constructor, exception);
-        }
 
-        public void readParams(InputSerializedData stream, boolean exception) {
-            flags = stream.readInt32(exception);
-            message = stream.readString(exception);
-            if (hasFlag(flags, 1)) {
-                entities = Vector.deserialize(stream, TLRPC.MessageEntity::TLdeserialize, exception);
-            }
-            if (hasFlag(flags, 2)) {
-                title = stream.readString(exception);
-            }
-        }
 
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            stream.writeString(message);
-            if (hasFlag(flags, 1)) {
-                Vector.serialize(stream, entities);
-            }
-            if (hasFlag(flags, 2)) {
-                stream.writeString(title);
-            }
-        }
-    }
 
-    public static class TL_businessChatLink extends TLObject {
-        public static final int constructor = 0xb4ae666f;
 
-        public int flags;
-        public String link;
-        public String message;
-        public ArrayList<TLRPC.MessageEntity> entities = new ArrayList<>();
-        public String title;
-        public int views;
 
-        public static TL_businessChatLink TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final TL_businessChatLink result = TL_businessChatLink.constructor != constructor ? null : new TL_businessChatLink();
-            return TLdeserialize(TL_businessChatLink.class, result, stream, constructor, exception);
-        }
 
-        public void readParams(InputSerializedData stream, boolean exception) {
-            flags = stream.readInt32(exception);
-            link = stream.readString(exception);
-            message = stream.readString(exception);
-            if (hasFlag(flags, 1)) {
-                entities = Vector.deserialize(stream, TLRPC.MessageEntity::TLdeserialize, exception);
-            }
-            if (hasFlag(flags, 2)) {
-                title = stream.readString(exception);
-            }
-            views = stream.readInt32(exception);
-        }
 
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            stream.writeString(link);
-            stream.writeString(message);
-            if (hasFlag(flags, 1)) {
-                Vector.serialize(stream, entities);
-            }
-            if (hasFlag(flags, 2)) {
-                stream.writeString(title);
-            }
-            stream.writeInt32(views);
-        }
-    }
 
-    public static class businessChatLinks extends TLObject {
-        public static final int constructor = 0xec43a2d1;
 
-        public ArrayList<TL_businessChatLink> links = new ArrayList<>();
-        public ArrayList<TLRPC.Chat> chats = new ArrayList<>();
-        public ArrayList<TLRPC.User> users = new ArrayList<>();
 
-        public static businessChatLinks TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final businessChatLinks result = businessChatLinks.constructor != constructor ? null : new businessChatLinks();
-            return TLdeserialize(businessChatLinks.class, result, stream, constructor, exception);
-        }
 
-        public void readParams(InputSerializedData stream, boolean exception) {
-            links = Vector.deserialize(stream, TL_businessChatLink::TLdeserialize, exception);
-            chats = Vector.deserialize(stream, TLRPC.Chat::TLdeserialize, exception);
-            users = Vector.deserialize(stream, TLRPC.User::TLdeserialize, exception);
-        }
 
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            Vector.serialize(stream, links);
-            Vector.serialize(stream, chats);
-            Vector.serialize(stream, users);
-        }
-    }
 
-    public static class resolvedBusinessChatLinks extends TLObject {
-        public static final int constructor = 0x9a23af21;
 
-        public int flags;
-        public TLRPC.Peer peer;
-        public String message;
-        public ArrayList<TLRPC.MessageEntity> entities = new ArrayList<>();
-        public ArrayList<TLRPC.Chat> chats = new ArrayList<>();
-        public ArrayList<TLRPC.User> users = new ArrayList<>();
 
-        public static resolvedBusinessChatLinks TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
-            final resolvedBusinessChatLinks result = resolvedBusinessChatLinks.constructor != constructor ? null : new resolvedBusinessChatLinks();
-            return TLdeserialize(resolvedBusinessChatLinks.class, result, stream, constructor, exception);
-        }
-
-        public void readParams(InputSerializedData stream, boolean exception) {
-            flags = stream.readInt32(exception);
-            peer = TLRPC.Peer.TLdeserialize(stream, stream.readInt32(exception), exception);
-            message = stream.readString(exception);
-            if (hasFlag(flags, 1)) {
-                entities = Vector.deserialize(stream, TLRPC.MessageEntity::TLdeserialize, exception);
-            }
-            chats = Vector.deserialize(stream, TLRPC.Chat::TLdeserialize, exception);
-            users = Vector.deserialize(stream, TLRPC.User::TLdeserialize, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            peer.serializeToStream(stream);
-            stream.writeString(message);
-            if (hasFlag(flags, 1)) {
-                Vector.serialize(stream, entities);
-            }
-            Vector.serialize(stream, chats);
-            Vector.serialize(stream, users);
-        }
-    }
-
-    public static class createBusinessChatLink extends TLObject {
-        public static final int constructor = 0x8851e68e;
-
-        public TL_inputBusinessChatLink link;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_businessChatLink.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            link.serializeToStream(stream);
-        }
-    }
-
-    public static class editBusinessChatLink extends TLObject {
-        public static final int constructor = 0x8c3410af;
-
-        public String slug;
-        public TL_inputBusinessChatLink link;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_businessChatLink.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeString(slug);
-            link.serializeToStream(stream);
-        }
-    }
-
-    public static class deleteBusinessChatLink extends TLObject {
-        public static final int constructor = 0x60073674;
-
-        public String slug;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeString(slug);
-        }
-    }
-
-    public static class getBusinessChatLinks extends TLObject {
-        public static final int constructor = 0x6f70dde1;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return businessChatLinks.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-        }
-    }
-
-    public static class resolveBusinessChatLink extends TLObject {
-        public static final int constructor = 0x5492e5ee;
-
-        public String slug;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return resolvedBusinessChatLinks.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeString(slug);
-        }
-    }
 
 
 

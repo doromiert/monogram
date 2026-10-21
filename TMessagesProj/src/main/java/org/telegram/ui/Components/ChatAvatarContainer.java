@@ -58,7 +58,6 @@ import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Business.BusinessLinksController;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.ProfileActivity;
@@ -247,15 +246,14 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             }
         };
         if (baseFragment instanceof ChatActivity || baseFragment instanceof TopicsFragment) {
-            if (parentFragment == null || (parentFragment.getChatMode() != ChatActivity.MODE_QUICK_REPLIES && parentFragment.getChatMode() != ChatActivity.MODE_WELCOME_MESSAGES && parentFragment.getChatMode() != ChatActivity.MODE_EDIT_BUSINESS_LINK) && parentFragment.getChatMode() != ChatActivity.MODE_SUGGESTIONS && !parentFragment.isInBotForumMode()) {
+            if (parentFragment == null || (parentFragment.getChatMode() != ChatActivity.MODE_QUICK_REPLIES && parentFragment.getChatMode() != ChatActivity.MODE_WELCOME_MESSAGES) && parentFragment.getChatMode() != ChatActivity.MODE_SUGGESTIONS && !parentFragment.isInBotForumMode()) {
                 sharedMediaPreloader = new SharedMediaLayout.SharedMediaPreloader(baseFragment);
             }
             avatarImageIsHidden = parentFragment != null && (
                 parentFragment.isThreadChat() && !parentFragment.isReplyChatComment() ||
                 parentFragment.getChatMode() == ChatActivity.MODE_PINNED ||
                 parentFragment.getChatMode() == ChatActivity.MODE_QUICK_REPLIES ||
-                parentFragment.getChatMode() == ChatActivity.MODE_WELCOME_MESSAGES ||
-                parentFragment.getChatMode() == ChatActivity.MODE_EDIT_BUSINESS_LINK
+                parentFragment.getChatMode() == ChatActivity.MODE_WELCOME_MESSAGES
             );
             if (avatarImageIsHidden) {
                 avatarImageView.setVisibility(GONE);
@@ -1088,10 +1086,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         if (parentFragment == null) {
             return;
         }
-        if (parentFragment.getChatMode() == ChatActivity.MODE_EDIT_BUSINESS_LINK) {
-            setSubtitle(BusinessLinksController.stripHttps(parentFragment.businessLink.link));
-            return;
-        }
+
         TLRPC.User user = parentFragment.getCurrentUser();
         TLRPC.Chat chat = parentFragment.getCurrentChat();
         boolean showSavedMessagesHint = (

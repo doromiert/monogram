@@ -225,9 +225,6 @@ import org.telegram.ui.ActionBar.theme.ThemeKey;
 import org.telegram.ui.Adapters.FiltersView;
 import org.telegram.ui.Adapters.MentionsAdapter;
 import org.telegram.ui.Adapters.MessagesSearchAdapter;
-import org.telegram.ui.Business.BusinessLinksActivity;
-import org.telegram.ui.Business.BusinessLinksController;
-import org.telegram.ui.Business.BusinessLinksEmptyView;
 import org.telegram.ui.Business.QuickRepliesActivity;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.Business.QuickRepliesEmptyView;
@@ -340,7 +337,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
@@ -473,7 +469,6 @@ public class ChatActivity extends BaseFragment implements
     private ChatGreetingsView greetingsViewContainer;
     private ChatActionCell greetingsInfo;
     private QuickRepliesEmptyView quickRepliesEmptyView;
-    private BusinessLinksEmptyView businessLinksEmptyView;
     private ViewPositionWatcher viewPositionWatcher;
     public ChatActivityFragmentView contentView;
     private ChatBigEmptyView bigEmptyView;
@@ -657,7 +652,6 @@ public class ChatActivity extends BaseFragment implements
     public static final int MODE_PINNED = 2;
     public static final int MODE_SAVED = 3;
     public static final int MODE_QUICK_REPLIES = 5;
-    public static final int MODE_EDIT_BUSINESS_LINK = 6;
     public static final int MODE_SEARCH = 7;
     public static final int MODE_SUGGESTIONS = 8;
     public static final int MODE_WELCOME_MESSAGES = 9;
@@ -668,7 +662,6 @@ public class ChatActivity extends BaseFragment implements
     public static final int SEARCH_CHANNEL_POSTS = 3;
     private int searchType;
 
-    public TL_account.TL_businessChatLink businessLink = null;
 
     public String quickReplyShortcut;
     private int chatMode;
@@ -1188,7 +1181,6 @@ public class ChatActivity extends BaseFragment implements
     private final ChatMessagesMetadataController chatMessagesMetadataController = new ChatMessagesMetadataController(this);
     private TLRPC.TL_channels_sendAsPeers sendAsPeersObj;
 
-    private TL_account.resolvedBusinessChatLinks resolvedChatLink;
 
     private boolean switchFromTopics;
     private boolean switchingFromTopics;
@@ -1669,10 +1661,6 @@ public class ChatActivity extends BaseFragment implements
     private final static int scheduled = 63;
     private final static int edit_quick_reply = 64;
 
-    private final static int copy_business_link = 65;
-    private final static int share_business_link = 66;
-    private final static int rename_business_link = 67;
-    private final static int delete_business_link = 68;
 
     private final static int share = 69;
     private final static int open_direct = 70;
@@ -2393,7 +2381,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void needSendTyping() {
-            if (isQuickRepliesOrWelcomeMessagesMode() || chatMode == MODE_EDIT_BUSINESS_LINK || chatMode == MODE_SUGGESTIONS) return;
+            if (isQuickRepliesOrWelcomeMessagesMode() || chatMode == MODE_SUGGESTIONS) return;
             if (dialog_id > 0) return; // XMPP uses actual input changes, excluding draft restoration.
             getMessagesController().sendTyping(dialog_id, threadMessageId, 0, classGuid);
         }
@@ -2959,16 +2947,6 @@ public class ChatActivity extends BaseFragment implements
             dialog_id = DialogObject.makeEncryptedDialogId(encId);
             maxMessageId[0] = maxMessageId[1] = Integer.MIN_VALUE;
             minMessageId[0] = minMessageId[1] = Integer.MAX_VALUE;
-        } else if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            String businessLinkArgument = arguments.getString("business_link");
-            if (businessLinkArgument == null) {
-                return false;
-            }
-            businessLink = BusinessLinksController.getInstance(currentAccount).findLink(businessLinkArgument);
-            if (businessLink == null) {
-                return false;
-            }
-            forceEmptyHistory();
         } else if (chatMode == MODE_SEARCH) {
             searchType = arguments.getInt("searchType", 0);
             searchingHashtag = arguments.getString("searchHashtag", null);
@@ -3114,9 +3092,7 @@ public class ChatActivity extends BaseFragment implements
             .addGlobal(NotificationCenter.didApplyNewTheme)
             .addGlobal(NotificationCenter.goingToPreviewTheme);
 
-        if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            observersGroup.add(NotificationCenter.businessLinksUpdated);
-        }
+
         if (chatMode == MODE_SEARCH) {
             observersGroup.add(NotificationCenter.hashtagSearchUpdated);
         }
@@ -3293,9 +3269,8 @@ public class ChatActivity extends BaseFragment implements
         if (isTopic || getMessagesController().isMonoForumWithManageRights(dialog_id) && getTopicId() != 0) {
             getMessagesController().getTopicsController().getTopicRepliesCount(dialog_id, getTopicId());
         }
-        if (chatMode != MODE_EDIT_BUSINESS_LINK) {
-            getMessagesController().getSavedMessagesController().preloadDialogs(false);
-        }
+        getMessagesController().getSavedMessagesController().preloadDialogs(false);
+
         if (chatMode == MODE_SAVED) {
             getMessagesController().getSavedMessagesController().checkSavedDialogCount(getTopicId());
         }
@@ -3825,12 +3800,7 @@ public class ChatActivity extends BaseFragment implements
                             showQuickRepliesRemoveAlert();
                             return;
                         }
-                        if (chatMode == MODE_EDIT_BUSINESS_LINK && chatActivityEnterView.businessLinkHasChanges()) {
-                            showBusinessLinksDiscardAlert(() -> {
-                                finishFragment();
-                            });
-                            return;
-                        }
+
                         if (!checkRecordLocked(true, true)) {
                             finishFragment();
                         }
@@ -4123,39 +4093,6 @@ public class ChatActivity extends BaseFragment implements
 //                    Bundle bundle = new Bundle();
 //                    bundle.putLong("chat_id", -dialog_id);
 //                    presentFragment(new TopicsFragment(bundle));
-                } else if (id == copy_business_link) {
-                    AndroidUtilities.addToClipboard(businessLink.link);
-                    BulletinFactory.of(LaunchActivity.getLastFragment()).createCopyLinkBulletin().show();
-                } else if (id == share_business_link) {
-                    Runnable shareTask = () -> {
-                        Intent intent = new Intent(getContext(), LaunchActivity.class);
-                        intent.setAction(Intent.ACTION_SEND);
-                        intent.setType("text/plain");
-                        intent.putExtra(Intent.EXTRA_TEXT, businessLink.link);
-                        startActivityForResult(intent, 500);
-                    };
-                    if (chatActivityEnterView.businessLinkHasChanges()) {
-                        showBusinessLinksDiscardAlert(shareTask);
-                    } else {
-                        shareTask.run();
-                    }
-                } else if (id == rename_business_link) {
-                    BusinessLinksActivity.openRenameAlert(getContext(), currentAccount, businessLink, resourceProvider, false);
-                } else if (id == delete_business_link) {
-                    AlertDialog dialog = new AlertDialog.Builder(getContext(), getResourceProvider())
-                            .setTitle(getString(R.string.BusinessLinksDeleteTitle))
-                            .setMessage(getString(R.string.BusinessLinksDeleteMessage))
-                            .setPositiveButton(getString(R.string.Remove), (di, w) -> {
-                                finishFragment();
-                                getNotificationCenter().postNotificationName(NotificationCenter.needDeleteBusinessLink, businessLink);
-                            })
-                            .setNegativeButton(getString(R.string.Cancel), null)
-                            .create();
-                    showDialog(dialog);
-                    TextView button = (TextView) dialog.getButton(DialogInterface.BUTTON_POSITIVE);
-                    if (button != null) {
-                        button.setTextColor(getThemedColor(Theme.key_text_RedBold));
-                    }
                 } else if (id == chat_menu_topic_create) {
                     presentFragment(TopicCreateFragment.create(-dialog_id, 0).setOpenInChatActivity(ChatActivity.this));
                 } else if (id == 888) {
@@ -4565,15 +4502,6 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
 
-        } else if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            headerItem = menu.addItem(chat_menu_options, otherIcon);
-            otherIcon.addView(headerItem.getIconView());
-            headerItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
-
-            headerItem.lazilyAddSubItem(copy_business_link, R.drawable.msg_copy, getString(R.string.Copy));
-            headerItem.lazilyAddSubItem(share_business_link, R.drawable.msg_share, getString(R.string.LinkActionShare));
-            headerItem.lazilyAddSubItem(rename_business_link, R.drawable.msg_edit, getString(R.string.Rename));
-            headerItem.lazilyAddSubItem(delete_business_link, R.drawable.msg_delete, getString(R.string.Delete)).setColors(Theme.getColor(Theme.key_text_RedRegular), Theme.getColor(Theme.key_text_RedRegular));
         }
         if (ChatObject.isForum(currentChat) && isTopic && getParentLayout() != null && getParentLayout().getFragmentStack() != null && chatMode == MODE_DEFAULT) {
             boolean hasMyForum = false;
@@ -7667,7 +7595,7 @@ public class ChatActivity extends BaseFragment implements
 
         instantCameraView = null;
 
-        chatActivityEnterView = new ChatActivityEnterView(getParentActivity(), contentView, this, chatMode != MODE_EDIT_BUSINESS_LINK, themeDelegate) {
+        chatActivityEnterView = new ChatActivityEnterView(getParentActivity(), contentView, this, true, themeDelegate) {
 
             int lastContentViewHeight;
             int messageEditTextPredrawHeigth;
@@ -7832,81 +7760,8 @@ public class ChatActivity extends BaseFragment implements
         };
         chatActivityEnterView.setVisibility(View.VISIBLE);
         chatActivityEnterView.getEditField().adaptiveCreateLinkDialog = true;
-        if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            chatActivityEnterView.setDelegate(new ChatActivityEnterView.ChatActivityEnterViewDelegate() {
-                @Override
-                public void onMessageSend(CharSequence message, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long payStars) {}
+        chatActivityEnterView.setDelegate(new ChatActivityEnterViewDelegate());
 
-                @Override
-                public void needSendTyping() {}
-
-                @Override
-                public void onTextChanged(CharSequence text, boolean bigChange, boolean fromDraft) {}
-                 @Override
-                public void onTextSelectionChanged(int start, int end) {}
-
-                @Override
-                public void onTextSpansChanged(CharSequence text) {}
-
-                @Override
-                public void onAttachButtonHidden() {}
-
-                @Override
-                public void onAttachButtonShow() {}
-
-                @Override
-                public void onWindowSizeChanged(int size) {}
-
-                @Override
-                public void onStickersTab(boolean opened) {}
-
-                @Override
-                public void onMessageEditEnd(boolean loading) {}
-
-                @Override
-                public void didPressAttachButton() {}
-
-                @Override
-                public void needStartRecordVideo(int state, boolean notify, int scheduleDate, int scheduleRepeatPeriod, int ttl, long effectId, long stars) {}
-
-                @Override
-                public void toggleVideoRecordingPause() {}
-
-                @Override
-                public boolean isVideoRecordingPaused() {
-                    return false;
-                }
-
-                @Override
-                public void needChangeVideoPreviewState(int state, float seekProgress) {}
-
-                @Override
-                public void onSwitchRecordMode(boolean video) {}
-
-                @Override
-                public void onPreAudioVideoRecord() {}
-
-                @Override
-                public void needStartRecordAudio(int state) {}
-
-                @Override
-                public void needShowMediaBanHint() {}
-
-                @Override
-                public void onStickersExpandedChange() {}
-
-                @Override
-                public void onUpdateSlowModeButton(View button, boolean show, CharSequence time) {}
-
-                @Override
-                public void onSendLongClick() {}
-
-                @Override
-                public void onAudioVideoInterfaceUpdated() {}
-            });
-        } else {
-            chatActivityEnterView.setDelegate(new ChatActivityEnterViewDelegate());
-        }
         if (chatMode == MODE_SCHEDULED || isComments) {
             chatActivityEnterView.setSideButtonsForAttach(sideControlsButtonsLayout);
         }
@@ -7950,9 +7805,8 @@ public class ChatActivity extends BaseFragment implements
         contentView.addView(roundVideoRecordBackground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         contentView.addView(chatInputViewsContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        if (chatMode != MODE_EDIT_BUSINESS_LINK) {
-            chatActivityEnterView.checkChannelRights();
-        }
+        chatActivityEnterView.checkChannelRights();
+
 
         actionsButtonsLayout = new ChatActivityActionsButtonsLayout(context, resourceProvider, blurredBackgroundColorProvider, glassBackgroundDrawableFactory);
         actionsButtonsLayout.setForwardButtonOnClickListener(v -> openForward(false));
@@ -8017,9 +7871,7 @@ public class ChatActivity extends BaseFragment implements
         };
         chatActivityEnterView.addTopView(chatActivityEnterTopView, 48);
 
-        if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            chatActivityEnterView.setEditingBusinessLink(businessLink);
-        }
+
 
         replyLayout = new ChatReplyContainer(context, themeDelegate);
         chatActivityEnterTopView.addReplyView(replyLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.NO_GRAVITY, 0, 0, 52, 0));
@@ -13028,7 +12880,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void showScheduledOrNoSoundHint() {
-        boolean disableNoSound = UserObject.isUserSelf(currentUser) || (chatInfo != null && chatInfo.slowmode_next_send_date > 0) && chatMode == 0 || chatMode == MODE_EDIT_BUSINESS_LINK;
+        boolean disableNoSound = UserObject.isUserSelf(currentUser) || (chatInfo != null && chatInfo.slowmode_next_send_date > 0) && chatMode == 0;
         long scheduledOrNoSoundHintTimeFromLastSeen = System.currentTimeMillis() - SharedConfig.scheduledOrNoSoundHintSeenAt;
         long scheduledHintTimeFromLastSeen = System.currentTimeMillis() - SharedConfig.scheduledHintSeenAt;
         if (disableNoSound || SharedConfig.scheduledOrNoSoundHintShows >= 3 || scheduledOrNoSoundHintTimeFromLastSeen < 86400000L || scheduledHintTimeFromLastSeen < 86400000L || chatActivityEnterView.isEditingMessage()) {
@@ -19386,12 +19238,6 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 avatarContainer.setTitle(quickReplyShortcut);
             }
-        } else if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            if (!TextUtils.isEmpty(businessLink.title)) {
-                avatarContainer.setTitle(businessLink.title);
-            } else {
-                avatarContainer.setTitle(LocaleController.getString(R.string.BusinessLink));
-            }
         } else if (chatMode == MODE_SAVED) {
             long dialogId = threadMessageId;
             TLRPC.User user = null;
@@ -24342,15 +24188,6 @@ public class ChatActivity extends BaseFragment implements
 //            if (chatActivityEnterView != null) {
 //                chatActivityEnterView.setBotsCount(botsCount, hasBotsCommands, hasQuickReplies, true);
 //            }
-        } else if (id == NotificationCenter.businessLinksUpdated) {
-            String businessLinkArgument = arguments.getString("business_link");
-            if (businessLinkArgument != null) {
-                TL_account.TL_businessChatLink link = BusinessLinksController.getInstance(currentAccount).findLink(businessLinkArgument);
-                if (link != null) {
-                    businessLink = link;
-                    updateTitle(true);
-                }
-            }
         } else if (id == NotificationCenter.updatedChatRanks) {
             final long chatId = (long) args[0];
             final long userId = (long) args[1];
@@ -27192,7 +27029,7 @@ public class ChatActivity extends BaseFragment implements
             showScheduledOrNoSoundHint();
 
             if (!backward && firstOpen) {
-                if (chatActivityEnterView != null && (threadMessageObject != null && threadMessageObject.getRepliesCount() == 0 && ChatObject.canSendMessages(currentChat) && !isTopic || chatMode == MODE_EDIT_BUSINESS_LINK)) {
+                if (chatActivityEnterView != null && (threadMessageObject != null && threadMessageObject.getRepliesCount() == 0 && ChatObject.canSendMessages(currentChat) && !isTopic)) {
                     chatActivityEnterView.setFieldFocused();
                     chatActivityEnterView.openKeyboard();
                 }
@@ -29521,7 +29358,6 @@ public class ChatActivity extends BaseFragment implements
 
         fixLayout();
         applyDraftMaybe(false);
-        applyChatLinkMessageMaybe();
         if (bottomChannelButtonsLayout != null && bottomChannelButtonsLayout.getVisibility() != View.VISIBLE && !actionBar.isSearchFieldVisible() && chatMode != MODE_SEARCH && !BaseFragment.hasSheets(this)) {
             chatActivityEnterView.setFieldFocused(true);
         }
@@ -29753,112 +29589,9 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
-    public void setResolvedChatLink(TL_account.resolvedBusinessChatLinks resolvedChatLink) {
-        this.resolvedChatLink = resolvedChatLink;
-    }
 
-    public void applyChatLinkMessageMaybe() {
-        if (chatActivityEnterView == null || chatMode != 0 || resolvedChatLink == null) {
-            return;
-        }
 
-        ArrayList<TLRPC.MessageEntity> entities;
-        final boolean isPremium = UserConfig.getInstance(currentAccount).isPremium();
-        if (!isPremium && UserConfig.getInstance(currentAccount).getClientUserId() != dialog_id && resolvedChatLink.entities != null) {
-            entities = resolvedChatLink.entities.stream().filter(entity -> {
-                if (entity instanceof TLRPC.TL_messageEntityCustomEmoji) {
-                    TLRPC.TL_messageEntityCustomEmoji emojiEntity = (TLRPC.TL_messageEntityCustomEmoji) entity;
-                    long documentId = emojiEntity.document_id;
 
-                    TLRPC.Document emoji = emojiEntity.document;
-                    if (emoji == null) {
-                        emoji = AnimatedEmojiDrawable.findDocument(currentAccount, documentId);
-                    }
-                    if (emoji == null) {
-                        ArrayList<TLRPC.TL_messages_stickerSet> sets1 = MediaDataController.getInstance(currentAccount).getStickerSets(MediaDataController.TYPE_EMOJIPACKS);
-                        for (TLRPC.TL_messages_stickerSet set : sets1) {
-                            if (set != null && set.documents != null && !set.documents.isEmpty()) {
-                                for (TLRPC.Document document : set.documents) {
-                                    if (document.id == documentId) {
-                                        emoji = document;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (emoji != null) {
-                                break;
-                            }
-                        }
-                    }
-                    if (emoji == null) {
-                        ArrayList<TLRPC.StickerSetCovered> sets2 = MediaDataController.getInstance(currentAccount).getFeaturedEmojiSets();
-                        for (TLRPC.StickerSetCovered set : sets2) {
-                            if (set != null && set.covers != null && !set.covers.isEmpty()) {
-                                for (TLRPC.Document document : set.covers) {
-                                    if (document.id == documentId) {
-                                        emoji = document;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (emoji != null) {
-                                break;
-                            }
-                            ArrayList<TLRPC.Document> documents = null;
-                            if (set instanceof TLRPC.TL_stickerSetFullCovered) {
-                                documents = ((TLRPC.TL_stickerSetFullCovered) set).documents;
-                            } else if (set instanceof TLRPC.TL_stickerSetNoCovered && set.set != null) {
-                                TLRPC.TL_inputStickerSetID inputStickerSetID = new TLRPC.TL_inputStickerSetID();
-                                inputStickerSetID.id = set.set.id;
-                                TLRPC.TL_messages_stickerSet fullSet = MediaDataController.getInstance(currentAccount).getStickerSet(inputStickerSetID, true);
-                                if (fullSet != null && fullSet.documents != null) {
-                                    documents = fullSet.documents;
-                                }
-                            }
-                            if (documents != null && !documents.isEmpty()) {
-                                for (TLRPC.Document document : documents) {
-                                    if (document.id == documentId) {
-                                        emoji = document;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (emoji != null) {
-                                break;
-                            }
-                        }
-                    }
-                    if (emoji != null) {
-                        TLRPC.ChatFull chatFull = MessagesController.getInstance(currentAccount).getChatFull(-dialog_id);
-                        if (chatFull != null && chatFull.emojiset != null) {
-                            TLRPC.TL_messages_stickerSet stickerSet = MediaDataController.getInstance(currentAccount).getGroupStickerSetById(chatFull.emojiset);
-                            if (stickerSet != null) {
-                                for (TLRPC.Document document : stickerSet.documents) {
-                                    if (document.id == documentId) {
-                                        return true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return !(emoji == null || !MessageObject.isFreeEmoji(emoji));
-                } else {
-                    return true;
-                }
-            }).collect(Collectors.toCollection(ArrayList::new));
-        } else {
-            entities = resolvedChatLink.entities;
-        }
-
-        CharSequence message = ChatActivityEnterView.applyMessageEntities(entities, resolvedChatLink.message, chatActivityEnterView.getEditField().getPaint().getFontMetricsInt());
-        if (message != null && message.length() > 0 && message.charAt(0) == '@') {
-            message = TextUtils.concat(" ", message);
-        }
-
-        chatActivityEnterView.setFieldText(message, true, true);
-
-        resolvedChatLink = null;
-    }
 
     public void applyDraftMaybe(boolean canClear) {
         applyDraftMaybe(canClear, false);
@@ -32173,10 +31906,6 @@ public class ChatActivity extends BaseFragment implements
             quickRepliesEmptyView.setBackground(Theme.createServiceDrawable(AndroidUtilities.dp(24), quickRepliesEmptyView, contentView, getThemedPaint(Theme.key_paint_chatActionBackground)));
             emptyViewContainer.addView(quickRepliesEmptyView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
             viewPositionWatcher.subscribe(quickRepliesEmptyView, contentView, (v, r) -> v.invalidate());
-        } else if (chatMode == MODE_EDIT_BUSINESS_LINK) {
-            businessLinksEmptyView = new BusinessLinksEmptyView(getContext(), this, businessLink, getResourceProvider());
-            businessLinksEmptyView.setBackground(Theme.createServiceDrawable(AndroidUtilities.dp(24), businessLinksEmptyView, contentView, getThemedPaint(Theme.key_paint_chatActionBackground)));
-            emptyViewContainer.addView(businessLinksEmptyView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
         } else if (preloadedGreetingsSticker != null && currentUser != null && !userBlocked) {
             greetingsViewContainer = new ChatGreetingsView(getContext(), currentUser, currentAccount, preloadedGreetingsSticker, themeDelegate) {
                 @Override
@@ -34113,16 +33842,11 @@ public class ChatActivity extends BaseFragment implements
             return false;
         } else if (chatActivityEnterView != null && chatActivityEnterView.closeCreationLinkDialog(invoked)) {
             return false;
-        } else if (chatMode == MODE_EDIT_BUSINESS_LINK && BusinessLinksActivity.closeRenameAlert(invoked)) {
-            return false;
         } else if (ChatObject.isMonoForum(currentChat) && !isSubscriberSuggestions && topicsTabs != null && getTopicId() != 0) {
             if (invoked) topicsTabs.selectTopic(0, topicChangedFromMessage);
             return false;
         } else if (chatMode == MODE_QUICK_REPLIES && !(QuickRepliesController.GREETING.equalsIgnoreCase(quickReplyShortcut) || QuickRepliesController.AWAY.equalsIgnoreCase(quickReplyShortcut)) && (messages.isEmpty() || threadMessageId == 0)) {
             if (invoked) showQuickRepliesRemoveAlert();
-            return false;
-        } else if (chatMode == MODE_EDIT_BUSINESS_LINK && chatActivityEnterView.businessLinkHasChanges()) {
-            if (invoked) showBusinessLinksDiscardAlert(this::finishFragment);
             return false;
         } else if (actionBar != null && actionBar.isSearchFieldVisible()) {
             if (invoked) actionBar.closeSearchField();
@@ -34156,21 +33880,7 @@ public class ChatActivity extends BaseFragment implements
         );
     }
 
-    private void showBusinessLinksDiscardAlert(Runnable onDiscard) {
-        AlertDialog dialog = new AlertDialog.Builder(getContext(), getResourceProvider())
-                .setTitle(LocaleController.getString(R.string.BusinessLinkDiscardChangesTitle))
-                .setMessage(LocaleController.getString(R.string.BusinessLinkDiscardChangesMessage))
-                .setPositiveButton(LocaleController.getString(R.string.Discard), (di, w) -> {
-                    onDiscard.run();
-                })
-                .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
-                .create();
-        showDialog(dialog);
-        TextView button = (TextView) dialog.getButton(DialogInterface.BUTTON_POSITIVE);
-        if (button != null) {
-            button.setTextColor(getThemedColor(Theme.key_text_RedBold));
-        }
-    }
+
 
     public void clearSelectionMode() {
         clearSelectionMode(false);

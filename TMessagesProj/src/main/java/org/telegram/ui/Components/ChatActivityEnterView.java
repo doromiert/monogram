@@ -158,7 +158,6 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_bots;
 import org.telegram.tgnet.tl.TL_keyboard;
 import org.telegram.tgnet.tl.TL_iv;
@@ -172,7 +171,6 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.BasePermissionsActivity;
-import org.telegram.ui.Business.BusinessLinksController;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.Forum.ForumUtilities;
@@ -672,9 +670,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     private MessageObject editingMessageObject;
     private boolean editingCaption;
 
-    private TL_account.TL_businessChatLink editingBusinessLink;
 
-    private BusinessLinkPresetMessage lastSavedBusinessLinkMessage;
 
     private TLRPC.ChatFull info;
 
@@ -5234,7 +5230,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 return null;
             }
             try {
-                if (isEditingBusinessLink() || isLiveComment) {
+                if (isLiveComment) {
                     EditorInfoCompat.setContentMimeTypes(editorInfo, null);
                 } else {
                     EditorInfoCompat.setContentMimeTypes(editorInfo, new String[]{"image/gif", "image/*", "image/jpg", "image/png", "image/webp"});
@@ -5398,7 +5394,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
                 ClipData clipData = clipboard.getPrimaryClip();
                 if (clipData != null) {
-                    if (clipData.getItemCount() == 1 && clipData.getDescription().hasMimeType("image/*") && !isEditingBusinessLink()) {
+                    if (clipData.getItemCount() == 1 && clipData.getDescription().hasMimeType("image/*")) {
                         editPhoto(clipData.getItemAt(0).getUri(), clipData.getDescription().getMimeType(0));
                     }
                 }
@@ -6691,8 +6687,6 @@ public class ChatActivityEnterView extends FrameLayout implements
             if (spans[0] != null) {
                 spans[0].spaceScaleX = 0.9f;
             }
-        } else if (isEditingBusinessLink()) {
-            messageEditText.setHintText(getString(R.string.BusinessLinksEnter));
         } else if (replyingMessageObject != null && replyingMessageObject.messageOwner.reply_markup != null && !TextUtils.isEmpty(replyingMessageObject.messageOwner.reply_markup.placeholder)) {
             messageEditText.setHintText(replyingMessageObject.messageOwner.reply_markup.placeholder, animated);
         } else if (editingMessageObject != null) {
@@ -7388,66 +7382,13 @@ public class ChatActivityEnterView extends FrameLayout implements
 
 
 
-    private static class BusinessLinkPresetMessage {
-        public String text;
-        public ArrayList<TLRPC.MessageEntity> entities;
-    }
 
-    private BusinessLinkPresetMessage calculateBusinessLinkPresetMessage() {
-        CharSequence text = messageEditText == null ? "" : messageEditText.getTextToUse();
-        text = AndroidUtilities.getTrimmedString(text);
 
-        CharSequence[] message = new CharSequence[]{text};
-        ArrayList<TLRPC.MessageEntity> entities = MediaDataController.getInstance(currentAccount).getEntities(message, true);
-        text = message[0];
-        for (int a = 0, N = entities.size(); a < N; a++) {
-            TLRPC.MessageEntity entity = entities.get(a);
-            if (entity.offset + entity.length > text.length()) {
-                entity.length = text.length() - entity.offset;
-            }
-        }
 
-        BusinessLinkPresetMessage presetMessage = new BusinessLinkPresetMessage();
-        presetMessage.text = text.toString();
-        presetMessage.entities = entities;
-        return presetMessage;
-    }
 
-    public boolean businessLinkHasChanges() {
-        BusinessLinkPresetMessage currentMessage = calculateBusinessLinkPresetMessage();
-        if (!TextUtils.equals(currentMessage.text, lastSavedBusinessLinkMessage.text)) {
-            return true;
-        }
 
-        if (!MediaDataController.entitiesEqual(lastSavedBusinessLinkMessage.entities, currentMessage.entities)) {
-            return true;
-        }
 
-        return false;
-    }
 
-    private void saveBusinessLink() {
-        if (!isEditingBusinessLink()) {
-            return;
-        }
-
-        if (currentLimit - codePointCount < 0) {
-            if (captionLimitView != null) {
-                AndroidUtilities.shakeViewSpring(captionLimitView, 3.5f);
-                try {
-                    captionLimitView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                } catch (Exception ignored) {
-                }
-            }
-            return;
-        }
-
-        BusinessLinkPresetMessage message = calculateBusinessLinkPresetMessage();
-        lastSavedBusinessLinkMessage = message;
-        BusinessLinksController.getInstance(currentAccount).editLinkMessage(editingBusinessLink.link, message.text, message.entities, () -> {
-            BulletinFactory.of(parentFragment).createSuccessBulletin(getString(R.string.BusinessLinkSaved)).show();
-        });
-    }
 
     public void doneEditingMessage() {
         if (editingMessageObject == null) {
@@ -9603,64 +9544,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         }
     }
 
-    public void setEditingBusinessLink(TL_account.TL_businessChatLink businessLink) {
-        editingBusinessLink = businessLink;
-        updateFieldHint(false);
-        if (editingBusinessLink != null) {
-            if (doneButtonAnimation != null) {
-                doneButtonAnimation.cancel();
-                doneButtonAnimation = null;
-            }
-            createDoneButton(true);
-            doneButton.setOnClickListener(view -> saveBusinessLink());
 
-            doneButton.setContentDescription(getString(R.string.Done));
-            doneButton.setVisibility(View.VISIBLE);
-            doneButton.setScaleX(0.1f);
-            doneButton.setScaleY(0.1f);
-            doneButton.setAlpha(0.0f);
-            doneButton.animate().alpha(1f).scaleX(1).scaleY(1).setDuration(150).setInterpolator(CubicBezierInterpolator.DEFAULT).start();
-
-            currentLimit = accountInstance.getMessagesController().getMaxMessageLength();
-            final Paint.FontMetricsInt fontMetricsInt;
-            Paint paint = null;
-            if (messageEditText != null) {
-                paint = messageEditText.getPaint();
-            }
-            if (paint == null) {
-                paint = new TextPaint();
-                paint.setTextSize(dp(18));
-            }
-            fontMetricsInt = paint.getFontMetricsInt();
-
-            ArrayList<TLRPC.MessageEntity> entities = editingBusinessLink.entities;
-            if (entities != null && businessLink.message != null) {
-                CharSequence spannableText = applyMessageEntities(entities, businessLink.message, fontMetricsInt);
-                setFieldText(spannableText);
-            } else if (businessLink.message != null) {
-                setFieldText(businessLink.message);
-            }
-            lastSavedBusinessLinkMessage = calculateBusinessLinkPresetMessage();
-
-            setAllowStickersAndGifs(true, false, false);
-            getSendButtonInternal().setVisibility(GONE);
-            setSlowModeButtonVisible(false);
-            cancelBotButton.setVisibility(GONE);
-            audioVideoButtonContainer.setVisibility(GONE);
-            if (attachLayout != null) {
-                attachLayout.setVisibility(GONE);
-            }
-            if (attachButton != null) {
-                attachButton.setAlpha(attachButtonAlpha = 0.0f);
-                attachButton.setScaleX(0.5f);
-                attachButton.setScaleY(0.5f);
-            }
-            sendButtonContainer.setVisibility(GONE);
-            if (scheduledButton != null) {
-                scheduledButton.setVisibility(GONE);
-            }
-        }
-    }
 
     private boolean captionAbove;
     private long effectId;
@@ -12279,9 +12163,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         return parentFragment != null && parentFragment.isInScheduleMode();
     }
 
-    private boolean isEditingBusinessLink() {
-        return editingBusinessLink != null;
-    }
+
 
     public void addStickerToRecent(TLRPC.Document sticker) {
         createEmojiView();

@@ -27,7 +27,6 @@ import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Business.BusinessLinksActivity;
 import org.telegram.ui.Business.QuickRepliesActivity;
 import org.telegram.ui.Business.QuickRepliesController;
 import org.telegram.ui.Cells.CheckBoxCell;
@@ -96,7 +95,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     public static final int VIEW_TYPE_RADIO_USER = 27;
     public static final int VIEW_TYPE_SPACE = 28;
 
-    public static final int VIEW_TYPE_BUSINESS_LINK = 29;
 
     public static final int VIEW_TYPE_RIGHT_ICON_TEXT = 30;
 
@@ -359,7 +357,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_CHART_STACK_LINEAR:
             case VIEW_TYPE_CHART_LINEAR_BAR:
             case VIEW_TYPE_SPACE:
-            case VIEW_TYPE_BUSINESS_LINK:
             case VIEW_TYPE_RIGHT_ICON_TEXT:
             case VIEW_TYPE_PROFILE_CELL:
             case VIEW_TYPE_SEARCH_MESSAGE:
@@ -507,9 +504,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 break;
             case VIEW_TYPE_SPACE:
                 view = new SpaceView(context);
-                break;
-            case VIEW_TYPE_BUSINESS_LINK:
-                view = new BusinessLinksActivity.BusinessLinkView(context, resourcesProvider);
                 break;
             case VIEW_TYPE_RIGHT_ICON_TEXT:
                 view = new TextRightIconCell(context, resourcesProvider);
@@ -911,12 +905,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 holder.itemView.setId(item.id);
                 ((SpaceView) holder.itemView).setHeight(item.intValue);
                 break;
-            case VIEW_TYPE_BUSINESS_LINK:
-                BusinessLinksActivity.BusinessLinkView businessLinkView = (BusinessLinksActivity.BusinessLinkView) holder.itemView;
-                if (item.object instanceof BusinessLinksActivity.BusinessLinkWrapper) {
-                    businessLinkView.set((BusinessLinksActivity.BusinessLinkWrapper) item.object, divider);
-                }
-                break;
             case VIEW_TYPE_RIGHT_ICON_TEXT:
                 TextRightIconCell textCell = (TextRightIconCell) holder.itemView;
                 textCell.setTextAndIcon(item.text, item.iconResId);
@@ -1124,7 +1112,6 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 viewType == VIEW_TYPE_FILTER_CHAT_CHECK ||
                 viewType == VIEW_TYPE_LARGE_QUICK_REPLY ||
                 viewType == VIEW_TYPE_QUICK_REPLY ||
-                viewType == VIEW_TYPE_BUSINESS_LINK ||
                 viewType == VIEW_TYPE_RADIO_USER ||
                 viewType == VIEW_TYPE_PROFILE_CELL ||
                 viewType == VIEW_TYPE_SEARCH_MESSAGE ||
