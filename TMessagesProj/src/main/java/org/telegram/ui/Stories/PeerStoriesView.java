@@ -147,7 +147,6 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LoadingDrawable;
 import org.telegram.ui.Components.MediaActivity;
 import org.telegram.ui.Components.MentionsContainerView;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.RadialProgress;
@@ -2692,61 +2691,9 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         }
     }
 
-    private Activity findActivity() {
-        Activity _activity;
-        if (storyViewer != null && storyViewer.parentActivity != null) {
-            _activity = storyViewer.parentActivity;
-        } else {
-            _activity = AndroidUtilities.findActivity(getContext());
-        }
-        if (_activity == null) {
-            return LaunchActivity.instance;
-        }
-        return _activity;
-    }
 
-    private BaseFragment fragmentForLimit() {
-        return new BaseFragment() {
-            @Override
-            public boolean isLightStatusBar() {
-                return false;
-            }
 
-            @Override
-            public Activity getParentActivity() {
-                return findActivity();
-            }
 
-            @Override
-            public Theme.ResourcesProvider getResourceProvider() {
-                return new WrappedResourceProvider(resourcesProvider) {
-                    @Override
-                    public void appendColors() {
-                        sparseIntArray.append(Theme.key_dialogBackground, 0xFF1F1F1F);
-                        sparseIntArray.append(Theme.key_windowBackgroundGray, 0xFF333333);
-                    }
-                };
-            }
-
-            @Override
-            public boolean presentFragment(BaseFragment fragment) {
-                if (PeerStoriesView.this.storyViewer != null) {
-                    PeerStoriesView.this.storyViewer.presentFragment(fragment);
-                }
-                return true;
-            }
-
-            @Override
-            public Dialog showDialog(Dialog dialog) {
-                if (PeerStoriesView.this.storyViewer != null) {
-                    PeerStoriesView.this.storyViewer.showDialog(dialog);
-                } else if (dialog != null) {
-                    dialog.show();
-                }
-                return dialog;
-            }
-        };
-    }
 
 
     private void showReplyRestrictedNotice() {
@@ -4443,7 +4390,10 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
             if (storyLimit == null || !storyLimit.active(currentAccount) || delegate == null) {
                 return;
             }
-            final LimitReachedBottomSheet sheet = new LimitReachedBottomSheet(fragmentForLimit(), findActivity(), storyLimit.getLimitReachedType(), currentAccount, null);
+            final AlertDialog sheet = new AlertDialog.Builder(getContext(), resourcesProvider)
+                    .setTitle(getString(R.string.LimitReached))
+                    .setMessage(storyLimit.getMessage(currentAccount))
+                    .setPositiveButton(getString(R.string.OK), null).create();
             delegate.showDialog(sheet);
         } else if (id == NotificationCenter.chatInfoDidLoad) {
             if (args[0] instanceof TLRPC.ChatFull) {

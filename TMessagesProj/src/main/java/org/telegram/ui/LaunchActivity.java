@@ -5952,7 +5952,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
         final StoriesController.StoryLimit storyLimit = MessagesController.getInstance(currentAccount).getStoriesController().checkStoryLimit();
         if (dialogsFragment != null && storyLimit != null && storyLimit.active(currentAccount, 1)) {
-            dialogsFragment.showDialog(new LimitReachedBottomSheet(dialogsFragment, this, storyLimit.getLimitReachedType(), currentAccount, null));
+            dialogsFragment.showDialog(new AlertDialog.Builder(this, dialogsFragment.getResourceProvider())
+                    .setTitle(getString(R.string.LimitReached))
+                    .setMessage(storyLimit.getMessage(currentAccount))
+                    .setPositiveButton(getString(R.string.OK), null).create());
             return false;
         }
 

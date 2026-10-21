@@ -52,7 +52,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
@@ -497,7 +496,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ProxyDrawable proxyDrawable;
     private ActionBarMenuSubItem proxyMenuSubItem;
     private HintView2 storyHint;
-    private HintView2 storyPremiumHint;
     private boolean canShowStoryHint;
     private boolean storyHintShown;
     private FragmentFloatingButton floatingButton3;
@@ -736,7 +734,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private int debugLastUpdateAction = -1;
     private boolean slowedReloadAfterDialogClick;
 
-    private boolean isPremiumHintUpgrade;
 
     private Long statusDrawableGiftId;
     private AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable statusDrawable;
@@ -1277,9 +1274,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (hasStories && child == fragmentSearchField) {
                         childTop += dp(DialogStoriesCell.HEIGHT_IN_DP);
                     }
-                    if (child == dialogStoriesCell && dialogStoriesCell.getPremiumHint() != null) {
-                        dialogStoriesCell.getPremiumHint().layout(childLeft, childTop - dp(24 + 8 + 22) + height, childLeft + width, childTop - dp(24 + 8 + 22) + height + dialogStoriesCell.getPremiumHint().getMeasuredHeight());
-                    }
+
                     if (child == searchTabsAndFiltersLayout) {
                         // childTop -= dp(4);
                     }
@@ -1295,8 +1290,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 } else if (child == topPanelLayout || child == topBubblesFadeView || child == filterTabsView) {
                     childTop += actionBar.getMeasuredHeight();
                     childTop += dp(SEARCH_FIELD_HEIGHT);
-                } else if (dialogStoriesCell != null && dialogStoriesCell.getPremiumHint() == child) {
-                    continue;
                 }
                 child.layout(childLeft, childTop, childLeft + width, childTop + height);
             }
@@ -3315,14 +3308,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         if (storyHint != null) {
                             storyHint.hide();
                         }
-                        if (storyPremiumHint != null) {
-                            storyPremiumHint.hide();
-                        }
+
                     }
                 }
-                if (dialogStoriesCell != null && dialogStoriesCell.getPremiumHint() != null) {
-                    dialogStoriesCell.getPremiumHint().hide();
-                }
+
                 if (!hasStories) {
                     setScrollY(0);
                 }
@@ -4548,9 +4537,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     if (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment() && viewPage.listView != null) {
                         viewPage.listView.invalidate();
                     }
-                    if (dialogStoriesCell != null && dialogStoriesCell.getPremiumHint() != null && dialogStoriesCell.getPremiumHint().shown()) {
-                        dialogStoriesCell.getPremiumHint().hide();
-                    }
+
 
                     final int topIndex = hasHiddenArchive() ? 1 : 0;
                     final View topChild = viewPage.listView.getChildAt(topIndex);
@@ -5120,9 +5107,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 } catch (Exception ignored) {}
                 if (dialogId == UserConfig.getInstance(currentAccount).getClientUserId()) {
                     if (!storiesEnabled) {
-                        if (dialogStoriesCell != null) {
-                            dialogStoriesCell.showPremiumHint();
-                        }
+
                         return;
                     }
                     filterOptions.add(R.drawable.msg_stories_add, LocaleController.getString(R.string.AddStory), Theme.key_actionBarDefaultSubmenuItemIcon, Theme.key_actionBarDefaultSubmenuItem, () -> {
@@ -6877,9 +6862,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (storyHint != null) {
             storyHint.hide();
         }
-        if (storyPremiumHint != null) {
-            storyPremiumHint.hide();
-        }
+
         Bulletin.hideVisible();
         return b;
     }
@@ -10702,9 +10685,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (storyHint != null) {
                 storyHint.hide();
             }
-            if (storyPremiumHint != null) {
-                storyPremiumHint.hide();
-            }
+
         }
     }
 
@@ -13018,30 +12999,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     private void openStoriesRecorder() {
         if (!storiesEnabled) {
-            if (storyPremiumHint != null) {
-                if (storyPremiumHint.shown()) {
-                    return;
-                }
-                AndroidUtilities.removeFromParent(storyPremiumHint);
-            }
-            Spannable text = AndroidUtilities.replaceSingleTag(LocaleController.getString("StoriesPremiumHint2").replace('\n', ' '), Theme.key_undo_cancelColor, 0, () -> {
-                if (storyPremiumHint != null) {
-                    storyPremiumHint.hide();
-                }
-                presentFragment(new PremiumPreviewFragment("stories"));
-            });
-            storyPremiumHint = new HintView2(getContext(), HintView2.DIRECTION_RIGHT)
-                .setRounding(8)
-                .setDuration(8_000)
-                .setCloseButton(true)
-                .setMultilineText(true)
-                .setMaxWidthPx(AndroidUtilities.displaySize.x - dp(72 + 12 + 64))
-                .setText(text)
-                .setJoint(1, -40)
-                .setBgColor(getThemedColor(Theme.key_undo_background));
-            storyPremiumHint.setTranslationY(-navigationBarHeight - additionNavigationBarHeight);
-            ((ViewGroup) fragmentView).addView(storyPremiumHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 240, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL, 12, 0, 68, 40));
-            storyPremiumHint.show();
             return;
         }
 
@@ -13051,7 +13008,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         final StoriesController.StoryLimit storyLimit = MessagesController.getInstance(currentAccount).getStoriesController().checkStoryLimit();
         if (storyLimit != null && storyLimit.active(currentAccount, 1)) {
-            showDialog(new LimitReachedBottomSheet(this, getContext(), storyLimit.getLimitReachedType(), currentAccount, null));
+            showDialog(new AlertDialog.Builder(getContext(), resourceProvider)
+                    .setTitle(getString(R.string.LimitReached))
+                    .setMessage(storyLimit.getMessage(currentAccount))
+                    .setPositiveButton(getString(R.string.OK), null).create());
             return;
         }
 

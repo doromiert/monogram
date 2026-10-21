@@ -4570,16 +4570,12 @@ public class StoriesController {
             this.remains_count = remains_count;
         }
 
-        public int getLimitReachedType() {
-            switch (type) {
-                case LIMIT_WEEK:
-                    return LimitReachedBottomSheet.TYPE_STORIES_WEEK;
-                case LIMIT_MONTH:
-                    return LimitReachedBottomSheet.TYPE_STORIES_MONTH;
-                default:
-                case LIMIT_COUNT:
-                    return LimitReachedBottomSheet.TYPE_STORIES_COUNT;
+        public CharSequence getMessage(int currentAccount) {
+            if (until > ConnectionsManager.getInstance(currentAccount).getCurrentTime()) {
+                return LocaleController.formatString(R.string.MonogramStoryServiceLimitUntil,
+                        LocaleController.formatDateTime((int) until, true));
             }
+            return LocaleController.getString(R.string.MonogramStoryServiceLimit);
         }
 
         public boolean active(int currentAccount) {

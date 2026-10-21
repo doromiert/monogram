@@ -12,7 +12,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
-import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.util.SparseArray;
 import android.util.TypedValue;
@@ -68,7 +67,6 @@ import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.MessageContainsEmojiButton;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.RecyclerAnimationScrollHelper;
 import org.telegram.ui.Components.RecyclerItemsEnterAnimator;
@@ -77,7 +75,6 @@ import org.telegram.ui.Components.ReplaceableIconDrawable;
 import org.telegram.ui.Components.SearchField;
 import org.telegram.ui.Components.StickerEmptyView;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.RecyclerListViewScroller;
 import org.telegram.ui.Stories.recorder.StoryPrivacyBottomSheet;
@@ -105,7 +102,6 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
     private static final int FLICKER_LOADING_ITEM_FULL = 6;
     private static final int LAST_PADDING_VIEW = 9;
     private static final int EMPTY_VIEW_SERVER_CANT_RETURN = 10;
-    private static final int SUBSCRIBE_TO_PREMIUM_TEXT_HINT = 11;
     private static final int SERVER_CANT_RETURN_TEXT_HINT = 12;
 
     private CustomPopupMenu popupMenu;
@@ -609,7 +605,7 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
             if (currentModel != null && isAttachedToWindow) {
                 currentModel.addListener(this);
             }
-            if ((currentModel != null && currentModel.isExpiredViews && !UserConfig.getInstance(currentAccount).isPremium()) || (!currentModel.loading && !currentModel.hasNext && currentModel.views.isEmpty() && currentModel.reactions.isEmpty() && TextUtils.isEmpty(currentModel.state.searchQuery))) {
+            if (!currentModel.loading && !currentModel.hasNext && currentModel.views.isEmpty() && currentModel.reactions.isEmpty() && TextUtils.isEmpty(currentModel.state.searchQuery)) {
                 showSearch = false;
                 showReactionsSort = false;
                 showContactsFilter = false;
@@ -627,24 +623,18 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                 TOP_PADDING = 46;
             } else {
                 headerView.setVisibility(View.VISIBLE);
-                if (currentModel.showReactionOnly) {
-                    titleView.setText(LocaleController.getString(currentModel.isChannel ? R.string.Reactions : R.string.Viewers));
+                if (currentModel.getCount() < 20 && currentModel.getCount() < serverItem.views.views_count && !currentModel.loading && !currentModel.hasNext) {
                     showSearch = false;
                     showReactionsSort = false;
                     showContactsFilter = false;
+                    showServerErrorText = true;
                 } else {
-                    if (currentModel.getCount() < 20 && currentModel.getCount() < serverItem.views.views_count && !currentModel.loading && !currentModel.hasNext) {
-                        showSearch = false;
-                        showReactionsSort = false;
-                        showContactsFilter = false;
-                        showServerErrorText = true;
-                    } else {
-                        showSearch = !currentModel.isChannel && serverItem.views.views_count >= 15;
-                        showReactionsSort = serverItem.views.reactions_count >= (BuildVars.DEBUG_VERSION ? 5 : 10);
-                        showContactsFilter = serverItem.dialogId >= 0 && serverItem.views.views_count >= 20 && !serverItem.contacts && !serverItem.close_friends && !serverItem.selected_contacts;
-                    }
-                    titleView.setText(LocaleController.getString(currentModel.isChannel ? R.string.Reactions : R.string.Viewers));
+                    showSearch = !currentModel.isChannel && serverItem.views.views_count >= 15;
+                    showReactionsSort = serverItem.views.reactions_count >= (BuildVars.DEBUG_VERSION ? 5 : 10);
+                    showContactsFilter = serverItem.dialogId >= 0 && serverItem.views.views_count >= 20 && !serverItem.contacts && !serverItem.close_friends && !serverItem.selected_contacts;
                 }
+                titleView.setText(LocaleController.getString(currentModel.isChannel ? R.string.Reactions : R.string.Viewers));
+
                 searchField.setVisibility(showSearch ? View.VISIBLE : View.GONE);
                 TOP_PADDING = showSearch ? 96 : 46;
 
@@ -911,7 +901,6 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                     view = loadingView;
                     break;
                 case SERVER_CANT_RETURN_TEXT_HINT:
-                case SUBSCRIBE_TO_PREMIUM_TEXT_HINT:
                     LinkSpanDrawable.LinksTextView textView = new LinkSpanDrawable.LinksTextView(getContext());
                     textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
                     textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
@@ -922,13 +911,8 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                     textView.setMaxLines(Integer.MAX_VALUE);
                     textView.setGravity(Gravity.CENTER);
                     textView.setDisablePaddingsOffsetY(true);
-                    if (viewType == SUBSCRIBE_TO_PREMIUM_TEXT_HINT) {
-                        textView.setText(AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.StoryViewsPremiumHint), () -> {
-                            showPremiumAlert();
-                        }));
-                    } else {
-                        textView.setText(LocaleController.getString(R.string.ServerErrorViewersFull));
-                    }
+                    textView.setText(LocaleController.getString(R.string.ServerErrorViewersFull));
+
                     textView.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     view = textView;
                     break;
@@ -949,14 +933,7 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                 case EMPTY_VIEW_SEARCH:
                 case EMPTY_VIEW:
                 case EMPTY_VIEW_SERVER_CANT_RETURN:
-                    int stickerType;
-                    if (defaultModel.isExpiredViews) {
-                        stickerType = StickerEmptyView.STICKER_TYPE_PRIVACY;
-                    } else if (viewType == EMPTY_VIEW_SERVER_CANT_RETURN || viewType == EMPTY_VIEW_SEARCH || viewType == EMPTY_VIEW_NO_CONTACTS || viewType == EMPTY_VIEW) {
-                        stickerType = StickerEmptyView.STICKER_TYPE_SEARCH;
-                    } else {
-                        stickerType = StickerEmptyView.STICKER_TYPE_NO_CONTACTS;
-                    }
+                    int stickerType = StickerEmptyView.STICKER_TYPE_SEARCH;
                     StickerEmptyView emptyView = new StickerEmptyView(getContext(), null, stickerType, resourcesProvider) {
                         @Override
                         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -973,16 +950,6 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                         emptyView.title.setVisibility(View.VISIBLE);
                         emptyView.title.setText(LocaleController.getString(R.string.ServerErrorViewersTitle));
                         emptyView.setSubtitle(LocaleController.getString(R.string.ServerErrorViewers));
-                    } else if (defaultModel.isExpiredViews) {
-                        emptyView.title.setVisibility(View.GONE);
-                        SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder();
-                        spannableStringBuilder.append(AndroidUtilities.replaceTags(LocaleController.getString(R.string.ExpiredViewsStub)));
-                        if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-                            spannableStringBuilder.append("\n\n");
-                            spannableStringBuilder.append(AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.ExpiredViewsStubPremiumDescription), SelfStoryViewsPage.this::showPremiumAlert));
-                            emptyView.createButtonLayout(LocaleController.getString(R.string.LearnMore), SelfStoryViewsPage.this::showPremiumAlert);
-                        }
-                        emptyView.subtitle.setText(spannableStringBuilder);
                     } else {
                         emptyView.title.setVisibility(View.VISIBLE);
                         if (defaultModel.isChannel) {
@@ -1049,7 +1016,7 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                         view.setUserReaction(user, null, like ? null : item.view.reaction, like, item.view.date, null, false, true, animated);
                     }
                     int nextItemType = position < items.size() - 1 ? items.get(position + 1).viewType : -1;
-                    view.drawDivider = nextItemType == USER_ITEM || nextItemType == SUBSCRIBE_TO_PREMIUM_TEXT_HINT || nextItemType == SERVER_CANT_RETURN_TEXT_HINT;
+                    view.drawDivider = nextItemType == USER_ITEM || nextItemType == SERVER_CANT_RETURN_TEXT_HINT;
                     view.animateAlpha(isStoryShownToUser(item.view) ? 1f : .5f, false);
                 } else if (item.reaction != null) {
                     TL_stories.StoryReaction peerReaction = item.reaction;
@@ -1072,7 +1039,7 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                     }
 
                     int nextItemType = position < items.size() - 1 ? items.get(position + 1).viewType : -1;
-                    view.drawDivider = nextItemType == USER_ITEM || nextItemType == SUBSCRIBE_TO_PREMIUM_TEXT_HINT || nextItemType == SERVER_CANT_RETURN_TEXT_HINT;
+                    view.drawDivider = nextItemType == USER_ITEM || nextItemType == SERVER_CANT_RETURN_TEXT_HINT;
                     view.animateAlpha(1f, false);
                 }
             }
@@ -1096,11 +1063,9 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                 items.add(new Item(FLICKER_LOADING_ITEM_FULL));
             } else {
                 items.add(new Item(FIRST_PADDING_ITEM));
-                if (model != null && model.getCount() <= 0 && (model.isExpiredViews || (!model.loading && !model.hasNext))) {
+                if (model != null && model.getCount() <= 0 && (!model.loading && !model.hasNext)) {
                     if (!TextUtils.isEmpty(model.state.searchQuery)) {
                         items.add(new Item(EMPTY_VIEW_SEARCH));
-                    } else if (model.isExpiredViews) {
-                        items.add(new Item(EMPTY_VIEW));
                     } else if (model.totalCount > 0 && model.state.contactsOnly) {
                         items.add(new Item(EMPTY_VIEW_NO_CONTACTS));
                     } else if (model.totalCount > 0) {
@@ -1126,8 +1091,6 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
                         } else {
                             items.add(new Item(FLICKER_LOADING_ITEM));
                         }
-                    } else if (model != null && model.showReactionOnly) {
-                        items.add(new Item(SUBSCRIBE_TO_PREMIUM_TEXT_HINT));
                     } else if (model != null && model.getCount() < model.totalCount && TextUtils.isEmpty(model.state.searchQuery) && !model.state.contactsOnly) {
                         items.add(new Item(SERVER_CANT_RETURN_TEXT_HINT));
                     }
@@ -1143,10 +1106,7 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
         }
     }
 
-    private void showPremiumAlert() {
-        PremiumFeatureBottomSheet sheet = new PremiumFeatureBottomSheet(storyViewer.fragment, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, false);
-        sheet.show();
-    }
+
 
     private static class Item {
         final int viewType;
@@ -1183,8 +1143,6 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
         ArrayList<TL_stories.StoryView> views = new ArrayList<>();
         ArrayList<TL_stories.StoryView> originalViews = new ArrayList<>();
         ArrayList<TL_stories.StoryReaction> reactions = new ArrayList<>();
-        boolean isExpiredViews;
-        boolean showReactionOnly;
         boolean initial;
         boolean hasNext = true;
         String offset;
@@ -1208,30 +1166,24 @@ public class SelfStoryViewsPage extends FrameLayout implements NotificationCente
             if (totalCount < 200) {
                 useLocalFilters = true;
             }
-            isExpiredViews = StoriesUtilities.hasExpiredViews(storyItem) && !UserConfig.getInstance(currentAccount).isPremium();
-            if (isExpiredViews && storyItem.views != null && storyItem.views.reactions_count > 0) {
-                isExpiredViews = false;
-                showReactionOnly = true;
-            }
-            if (!isExpiredViews) {
-                initial = true;
-                if (storyItem.views != null && isDefault) {
-                    for (int i = 0; i < storyItem.views.recent_viewers.size(); i++) {
-                        long uid = storyItem.views.recent_viewers.get(i);
-                        if (MessagesController.getInstance(currentAccount).getUser(uid) == null) {
-                            continue;
-                        }
-                        TL_stories.TL_storyView storyView = new TL_stories.TL_storyView();
-                        storyView.user_id = uid;
-                        storyView.date = 0;
-                        views.add(storyView);
+
+            initial = true;
+            if (storyItem.views != null && isDefault) {
+                for (int i = 0; i < storyItem.views.recent_viewers.size(); i++) {
+                    long uid = storyItem.views.recent_viewers.get(i);
+                    if (MessagesController.getInstance(currentAccount).getUser(uid) == null) {
+                        continue;
                     }
+                    TL_stories.TL_storyView storyView = new TL_stories.TL_storyView();
+                    storyView.user_id = uid;
+                    storyView.date = 0;
+                    views.add(storyView);
                 }
             }
         }
 
         public void loadNext() {
-            if (loading || !hasNext || isExpiredViews) {
+            if (loading || !hasNext) {
                 return;
             }
             if (isChannel) {

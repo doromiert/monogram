@@ -7406,13 +7406,9 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
         if (shownLimitReached) {
             return;
         }
-        CharSequence message = storyLimit.until > ConnectionsManager.getInstance(currentAccount).getCurrentTime()
-                ? LocaleController.formatString(R.string.MonogramStoryServiceLimitUntil,
-                        LocaleController.formatDateTime((int) storyLimit.until, true))
-                : getString(R.string.MonogramStoryServiceLimit);
         AlertDialog dialog = new AlertDialog.Builder(activity, resourcesProvider)
                 .setTitle(getString(R.string.LimitReached))
-                .setMessage(message)
+                .setMessage(storyLimit.getMessage(currentAccount))
                 .setPositiveButton(getString(R.string.OK), null)
                 .create();
         dialog.setOnDismissListener(e -> {
