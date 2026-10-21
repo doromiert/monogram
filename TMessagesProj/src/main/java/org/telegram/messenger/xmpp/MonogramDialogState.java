@@ -26,6 +26,68 @@ public final class MonogramDialogState {
         if (!owner.isEmpty()) save(preferences(account), owner, dialog);
     }
 
+    public static TLRPC.GlobalPrivacySettings archiveSettings(int account, String owner) {
+        SharedPreferences prefs = preferences(account);
+        String key = owner + "\narchive-policy:";
+        TLRPC.GlobalPrivacySettings settings = new TLRPC.TL_globalPrivacySettings();
+        settings.keep_archived_unmuted = prefs.getBoolean(key + "unmuted", false);
+        settings.keep_archived_folders = prefs.getBoolean(key + "folders", false);
+        settings.archive_and_mute_new_noncontact_peers = prefs.getBoolean(key + "unknown", false);
+        return settings;
+    }
+
+    public static boolean saveArchiveSettings(int account, String owner, TLRPC.GlobalPrivacySettings settings) {
+        if (owner.isEmpty() || !owner.equals(MonogramController.get(account).accountJid())) return false;
+        String key = owner + "\narchive-policy:";
+        return preferences(account).edit()
+                .putBoolean(key + "unmuted", settings.keep_archived_unmuted)
+                .putBoolean(key + "folders", settings.keep_archived_folders)
+                .putBoolean(key + "unknown", settings.archive_and_mute_new_noncontact_peers).commit();
+    }
+
+    /** Runs on the UI thread before publishing a fresh live message and its notification. */
+    static void incoming(int account, String owner, long peer, int messageId, boolean newUnknownChat) {
+        try {
+            applyIncoming(account, owner, peer, messageId, newUnknownChat);
+        } catch (Exception error) {
+            // Archive bookkeeping must never prevent delivery of the incoming message.
+            org.telegram.messenger.FileLog.e(error);
+        }
+    }
+
+    private static void applyIncoming(int account, String owner, long peer, int messageId, boolean newUnknownChat) {
+        if (owner.isEmpty() || !owner.equals(MonogramController.get(account).accountJid()) || messageId <= 0) return;
+        SharedPreferences prefs = preferences(account);
+        String key = owner + "\n" + peer;
+        if (prefs.getInt(key + ":archive-seen", 0) >= messageId) return;
+        TLRPC.GlobalPrivacySettings rules = archiveSettings(account, owner);
+        org.telegram.messenger.MessagesController controller = org.telegram.messenger.MessagesController.getInstance(account);
+        TLRPC.Dialog dialog = controller.dialogs_dict.get(peer);
+        // An explicit folder choice, including a manual unarchive, takes precedence for an existing chat.
+        if (newUnknownChat && rules.archive_and_mute_new_noncontact_peers && !prefs.contains(key + ":folder")) {
+            if (!prefs.edit().putInt(key + ":folder", 1).putInt(key + ":pin", 0).putInt(key + ":archive-seen", messageId).commit()) return;
+            org.telegram.messenger.NotificationsController.getInstance(account).muteDialog(peer, 0, true);
+            if (dialog != null) controller.addDialogToFolder(peer, 1, 0, 0);
+            return;
+        }
+        if (dialog == null || dialog.folder_id != 1 || controller.isDialogMuted(peer, 0)) return;
+        prefs.edit().putInt(key + ":archive-seen", messageId).apply();
+        boolean inFolder = false;
+        TLRPC.TL_dialog unarchived = new TLRPC.TL_dialog();
+        unarchived.id = dialog.id;
+        unarchived.unread_count = dialog.unread_count;
+        unarchived.unread_mark = dialog.unread_mark;
+        unarchived.unread_mentions_count = dialog.unread_mentions_count;
+        for (org.telegram.messenger.MessagesController.DialogFilter filter : controller.getDialogFilters()) {
+            if (filter.id != 0 && filter.includesDialog(org.telegram.messenger.AccountInstance.getInstance(account), peer, unarchived)) {
+                inFolder = true;
+                break;
+            }
+        }
+        if (inFolder ? rules.keep_archived_folders : rules.keep_archived_unmuted) return;
+        controller.addDialogToFolder(peer, 0, 0, 0);
+    }
+
     public static void clear(int account, String owner) {
         if (owner.isEmpty()) return;
         SharedPreferences prefs = preferences(account);

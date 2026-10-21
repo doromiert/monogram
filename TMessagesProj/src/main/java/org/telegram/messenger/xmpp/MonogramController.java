@@ -1066,15 +1066,24 @@ public final class MonogramController {
         }
         if(updates.isEmpty()) return;
         ArrayList<TLRPC.User> users=roomUpdateUsers(updates); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(store.roomChat(dialog,self));
+        final long archiveOwner = accountEpoch;
+        final String archiveJid = accountJid();
+        final boolean archiveIncoming = id > 0 && !store.hiddenMessage(id) && !store.getMessage(id, self).out
+                && message.correction == null && message.retraction == null;
         long epoch=sessionEpoch;
-        Utilities.stageQueue.postRunnable(() -> {
-            MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now());
-            AndroidUtilities.runOnUIThread(() -> {
-                if(sessionEpoch!=epoch) return;
-                ArrayList<MessageObject> changed=new ArrayList<>();
-                if(id!=0 && !store.hiddenMessage(id)) changed.add(new MessageObject(account,store.getMessage(id,self),true,true));
-                for(int edited:corrections.edited) changed.add(new MessageObject(account,store.getMessage(edited,self),true,true));
-                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,dialog,changed);
+        AndroidUtilities.runOnUIThread(() -> {
+            if (!sameAccount(archiveOwner, archiveJid)) return;
+            if (archiveIncoming) MonogramDialogState.incoming(account, archiveJid, dialog, id, false);
+            Utilities.stageQueue.postRunnable(() -> {
+                if (!sameAccount(archiveOwner, archiveJid)) return;
+                MessagesController.getInstance(account).processUpdateArray(updates,users,chats,false,now());
+                AndroidUtilities.runOnUIThread(() -> {
+                    if(sessionEpoch!=epoch) return;
+                    ArrayList<MessageObject> changed=new ArrayList<>();
+                    if(id!=0 && !store.hiddenMessage(id)) changed.add(new MessageObject(account,store.getMessage(id,self),true,true));
+                    for(int edited:corrections.edited) changed.add(new MessageObject(account,store.getMessage(edited,self),true,true));
+                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,dialog,changed);
+                });
             });
         });
     }
@@ -2110,6 +2119,19 @@ public final class MonogramController {
         long peer = store.peer(message.peer.toString());
         if(message.reactions!=null) { publishReactions(peer,store.reactions.save(message,self)); return; }
         if (store.profile(peer) == null) refreshProfile(peer);
+        final long archiveOwner = accountEpoch;
+        final String archiveJid = accountJid();
+        boolean unknown = false;
+        if (!message.outgoing && peer != self && message.correction == null && message.retraction == null
+                && MonogramDialogState.archiveSettings(account, archiveJid).archive_and_mute_new_noncontact_peers
+                && store.history(peer, self, 0, 1).isEmpty()) {
+            XmppSession connected = session;
+            if (connected != null && connected.connection().isAuthenticated()) {
+                Roster roster = Roster.getInstanceFor(connected.connection());
+                unknown = roster.isLoaded() && roster.getEntry(message.peer) == null;
+            }
+        }
+        final boolean newUnknownChat = unknown;
         int date = (int) (message.timestamp / 1000);
         java.util.Set<Integer> replaced = new java.util.HashSet<>();
         int id = store.save(message,replaced);
@@ -2129,7 +2151,16 @@ public final class MonogramController {
         if (updates.isEmpty()) return;
         if (!UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.User> users = new ArrayList<>(); users.add(store.user(peer, self)); users.add(ownUser());
-        Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date));
+        final boolean archiveIncoming = id > 0 && !store.hiddenMessage(id) && !store.getMessage(id, self).out
+                && message.correction == null && message.retraction == null;
+        AndroidUtilities.runOnUIThread(() -> {
+            if (!sameAccount(archiveOwner, archiveJid)) return;
+            if (archiveIncoming)
+                MonogramDialogState.incoming(account, archiveJid, peer, id, newUnknownChat);
+            Utilities.stageQueue.postRunnable(() -> {
+                if (sameAccount(archiveOwner, archiveJid)) MessagesController.getInstance(account).processUpdateArray(updates, users, new ArrayList<>(), false, date);
+            });
+        });
         if (typingPeers.contains(peer)) publishTyping(peer, true);
         if (id != 0 && !store.hiddenMessage(id)) maybeAutoDownload(store.getMessage(id, self));
     }

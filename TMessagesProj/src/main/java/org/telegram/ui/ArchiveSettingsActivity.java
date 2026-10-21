@@ -1,6 +1,5 @@
 package org.telegram.ui;
 
-import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
 import android.text.TextUtils;
@@ -13,20 +12,16 @@ import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
-import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
@@ -43,7 +38,7 @@ public class ArchiveSettingsActivity extends BaseFragment implements Notificatio
     private boolean changed = false;
     private TLRPC.GlobalPrivacySettings settings;
     
-    private int shiftDp = -3;
+    private String archiveOwner;
 
     @Override
     public View createView(Context context) {
@@ -96,31 +91,16 @@ public class ArchiveSettingsActivity extends BaseFragment implements Notificatio
                 ((TextCheckCell) view).setChecked(settings.keep_archived_folders);
                 changed = true;
             } else if (item.id == 7) {
-                if (!getUserConfig().isPremium() && !getMessagesController().autoarchiveAvailable && !settings.archive_and_mute_new_noncontact_peers) {
-                    final Bulletin.SimpleLayout layout = new Bulletin.SimpleLayout(getContext(), getResourceProvider());
-                    layout.textView.setText(AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.UnlockPremium), Theme.key_undo_cancelColor, 0, () -> {
-                        presentFragment(new PremiumPreviewFragment("settings"));
-                    }));
-                    layout.textView.setSingleLine(false);
-                    layout.textView.setPadding(0, dp(4), 0, dp(4));
-                    layout.imageView.setImageResource(R.drawable.msg_settings_premium);
-                    Bulletin.make(this, layout, 3500).show();
 
-                    AndroidUtilities.shakeViewSpring(view, shiftDp = -shiftDp);
-                    BotWebViewVibrationEffect.APP_ERROR.vibrate();
-                    return;
-                }
                 settings.archive_and_mute_new_noncontact_peers = !settings.archive_and_mute_new_noncontact_peers;
                 ((TextCheckCell) view).setChecked(settings.archive_and_mute_new_noncontact_peers);
                 changed = true;
             }
+            if (changed && org.telegram.messenger.xmpp.MonogramDialogState.saveArchiveSettings(currentAccount, archiveOwner, settings)) changed = false;
         });
 
-        getContactsController().loadGlobalPrivacySetting();
-        settings = getContactsController().getGlobalPrivacySettings();
-        if (settings == null) {
-            settings = new TLRPC.TL_globalPrivacySettings();
-        }
+        archiveOwner = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid();
+        settings = org.telegram.messenger.xmpp.MonogramDialogState.archiveSettings(currentAccount, archiveOwner);
         updateItems(false);
 
         return fragmentView;
@@ -146,7 +126,7 @@ public class ArchiveSettingsActivity extends BaseFragment implements Notificatio
 
         items.add(new ItemInner(VIEW_TYPE_HEADER, 6, LocaleController.getString("NewChatsFromNonContacts")));
         items.add(new ItemInner(VIEW_TYPE_CHECK, 7, LocaleController.getString("NewChatsFromNonContactsCheck")));
-        items.add(new ItemInner(VIEW_TYPE_SHADOW, 8, LocaleController.getString("ArchiveAndMuteInfo")));
+        items.add(new ItemInner(VIEW_TYPE_SHADOW, 8, LocaleController.getString(R.string.MonogramArchiveAndMuteInfo)));
 
         if (adapter == null) {
             return;
@@ -224,7 +204,7 @@ public class ArchiveSettingsActivity extends BaseFragment implements Notificatio
                     cell.setCheckBoxIcon(0);
                 } else if (item.id == 7) {
                     checked = settings.archive_and_mute_new_noncontact_peers;
-                    cell.setCheckBoxIcon(getUserConfig().isPremium() || getMessagesController().autoarchiveAvailable ? 0 : R.drawable.permission_locked);
+                    cell.setCheckBoxIcon(0);
                 } else {
                     return;
                 }
@@ -253,51 +233,21 @@ public class ArchiveSettingsActivity extends BaseFragment implements Notificatio
 
     @Override
     public boolean onFragmentCreate() {
-        getNotificationCenter().addObserver(this, NotificationCenter.privacyRulesUpdated);
+        getNotificationCenter().addObserver(this, NotificationCenter.dialogFiltersUpdated);
         return super.onFragmentCreate();
     }
 
     @Override
     public void onFragmentDestroy() {
-        getNotificationCenter().removeObserver(this, NotificationCenter.privacyRulesUpdated);
+        getNotificationCenter().removeObserver(this, NotificationCenter.dialogFiltersUpdated);
         super.onFragmentDestroy();
 
-        if (changed) {
-            TL_account.setGlobalPrivacySettings req = new TL_account.setGlobalPrivacySettings();
-            req.settings = settings;
-            getConnectionsManager().sendRequest(req, (response, error) -> {});
-            changed = false;
-        }
+        if (changed) org.telegram.messenger.xmpp.MonogramDialogState.saveArchiveSettings(currentAccount, archiveOwner, settings);
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.privacyRulesUpdated) {
-            settings = getContactsController().getGlobalPrivacySettings();
-            if (settings == null) {
-                settings = new TLRPC.TL_globalPrivacySettings();
-            }
-            if (listView != null) {
-                for (int i = 0; i < listView.getChildCount(); ++i) {
-                    View child = listView.getChildAt(i);
-                    int position = listView.getChildAdapterPosition(child);
-                    if (position < 0 || position >= items.size()) {
-                        continue;
-                    }
-                    ItemInner item = items.get(position);
-                    if (item.id == 1) {
-                        ((TextCheckCell) child).setChecked(settings.keep_archived_unmuted);
-                    } else if (item.id == 4) {
-                        ((TextCheckCell) child).setChecked(settings.keep_archived_folders);
-                    } else if (item.id == 7) {
-                        ((TextCheckCell) child).setChecked(settings.archive_and_mute_new_noncontact_peers);
-                    }
-                }
-            }
-            changed = false;
-        } else if (id == NotificationCenter.dialogFiltersUpdated) {
-            updateItems(true);
-        }
+        if (id == NotificationCenter.dialogFiltersUpdated && listView != null) updateItems(true);
     }
 
     @Override

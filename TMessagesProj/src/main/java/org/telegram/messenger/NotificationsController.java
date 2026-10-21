@@ -6088,6 +6088,7 @@ public class NotificationsController extends BaseController implements Notificat
         if (post) {
             getNotificationCenter().postNotificationName(NotificationCenter.notificationsSettingsUpdated);
         }
+        if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return;
         if (DialogObject.isEncryptedDialog(dialogId)) {
             return;
         }

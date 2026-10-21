@@ -21798,20 +21798,27 @@ public class MessagesController extends BaseController implements NotificationCe
                 sortDialogs(null);
                 getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
             }
-            TLRPC.Dialog dialogFinal = dialog;
-            getMessagesStorage().getDialogFolderId(dialogId, param -> {
-                if (param != -1) {
-                    if (param != 0) {
-                        dialogFinal.folder_id = param;
-                        sortDialogs(null);
-                        getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload, true);
+            if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                org.telegram.messenger.xmpp.MonogramDialogState.apply(currentAccount,
+                        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid(), dialog);
+                if (dialog.folder_id == 1) ensureFolderDialogExists(1, new boolean[1]);
+                getMessagesStorage().setDialogsFolderId(null, null, dialogId, dialog.folder_id);
+            } else {
+                TLRPC.Dialog dialogFinal = dialog;
+                getMessagesStorage().getDialogFolderId(dialogId, param -> {
+                    if (param != -1) {
+                        if (param != 0) {
+                            dialogFinal.folder_id = param;
+                            sortDialogs(null);
+                            getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload, true);
+                        }
+                    } else if (mid > 0) {
+                        if (!DialogObject.isEncryptedDialog(dialogId)) {
+                            loadUnknownDialog(getInputPeer(dialogId), 0);
+                        }
                     }
-                } else if (mid > 0) {
-                    if (!DialogObject.isEncryptedDialog(dialogId)) {
-                        loadUnknownDialog(getInputPeer(dialogId), 0);
-                    }
-                }
-            });
+                });
+            }
         } else {
             if ((dialogId <= 0 && dialog.top_message > 0 && lastMessage.getId() > 0 && lastMessage.getId() > dialog.top_message) ||
                     (dialog.top_message < 0 && lastMessage.getId() < 0 && lastMessage.getId() < dialog.top_message) ||
