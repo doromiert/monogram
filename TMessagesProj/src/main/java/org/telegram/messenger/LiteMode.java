@@ -24,15 +24,11 @@ public class LiteMode {
     public static final int FLAG_ANIMATED_STICKERS_CHAT = 2;
     public static final int FLAGS_ANIMATED_STICKERS = FLAG_ANIMATED_STICKERS_KEYBOARD | FLAG_ANIMATED_STICKERS_CHAT;
 
-    public static final int FLAG_ANIMATED_EMOJI_KEYBOARD_PREMIUM = 4;
-    public static final int FLAG_ANIMATED_EMOJI_KEYBOARD_NOT_PREMIUM = 16384;
-    public static final int FLAG_ANIMATED_EMOJI_KEYBOARD = FLAG_ANIMATED_EMOJI_KEYBOARD_PREMIUM | FLAG_ANIMATED_EMOJI_KEYBOARD_NOT_PREMIUM;
-    public static final int FLAG_ANIMATED_EMOJI_REACTIONS_PREMIUM = 8;
-    public static final int FLAG_ANIMATED_EMOJI_REACTIONS_NOT_PREMIUM = 8192;
-    public static final int FLAG_ANIMATED_EMOJI_REACTIONS = FLAG_ANIMATED_EMOJI_REACTIONS_PREMIUM | FLAG_ANIMATED_EMOJI_REACTIONS_NOT_PREMIUM;
-    public static final int FLAG_ANIMATED_EMOJI_CHAT_PREMIUM = 16;
-    public static final int FLAG_ANIMATED_EMOJI_CHAT_NOT_PREMIUM = 4096;
-    public static final int FLAG_ANIMATED_EMOJI_CHAT = FLAG_ANIMATED_EMOJI_CHAT_PREMIUM | FLAG_ANIMATED_EMOJI_CHAT_NOT_PREMIUM;
+    // Keep the existing Monogram preference bits; discard obsolete upstream tier slots.
+    private static final int OBSOLETE_ANIMATED_EMOJI_BITS = 4 | 8 | 16;
+    public static final int FLAG_ANIMATED_EMOJI_KEYBOARD = 16384;
+    public static final int FLAG_ANIMATED_EMOJI_REACTIONS = 8192;
+    public static final int FLAG_ANIMATED_EMOJI_CHAT = 4096;
     public static final int FLAGS_ANIMATED_EMOJI = FLAG_ANIMATED_EMOJI_KEYBOARD | FLAG_ANIMATED_EMOJI_REACTIONS | FLAG_ANIMATED_EMOJI_CHAT;
 
     public static final int FLAG_CHAT_BACKGROUND = 32;
@@ -50,17 +46,12 @@ public class LiteMode {
     public static final int FLAG_PARTICLES = 1 << 17;
 
     public static int PRESET_LOW = (
-        FLAG_ANIMATED_EMOJI_CHAT_PREMIUM |
-        FLAG_ANIMATED_EMOJI_KEYBOARD_PREMIUM |
-        FLAG_ANIMATED_EMOJI_REACTIONS_PREMIUM |
         FLAG_AUTOPLAY_GIFS |
         FLAG_CHAT_THANOS |
         FLAG_PARTICLES
-    ); // 198684
+    );
     public static int PRESET_MEDIUM = (
         FLAGS_ANIMATED_STICKERS |
-        FLAG_ANIMATED_EMOJI_KEYBOARD_PREMIUM |
-        FLAG_ANIMATED_EMOJI_REACTIONS_PREMIUM |
         FLAG_ANIMATED_EMOJI_CHAT |
         FLAG_CHAT_FORUM_TWOCOLUMN |
         FLAG_CALLS_ANIMATIONS |
@@ -68,7 +59,7 @@ public class LiteMode {
         FLAG_AUTOPLAY_GIFS |
         FLAG_CHAT_THANOS |
         FLAG_PARTICLES
-    ); // 204383
+    );
     public static int PRESET_HIGH = (
         FLAGS_ANIMATED_STICKERS |
         FLAGS_ANIMATED_EMOJI |
@@ -82,7 +73,7 @@ public class LiteMode {
         FLAG_AUTOPLAY_VIDEOS |
         FLAG_AUTOPLAY_GIFS |
         FLAG_PARTICLES
-    ); // 262143
+    );
     public static int PRESET_POWER_SAVER = 0;
 
     private static int BATTERY_LOW = 10;
@@ -133,25 +124,14 @@ public class LiteMode {
         return lastBatteryLevelCached;
     }
 
-    private static int preprocessFlag(int flag) {
-        if ((flag & FLAG_ANIMATED_EMOJI_KEYBOARD) > 0) {
-            flag = flag & ~FLAG_ANIMATED_EMOJI_KEYBOARD | (UserConfig.hasPremiumOnAccounts() ? FLAG_ANIMATED_EMOJI_KEYBOARD_PREMIUM : FLAG_ANIMATED_EMOJI_KEYBOARD_NOT_PREMIUM);
-        }
-        if ((flag & FLAG_ANIMATED_EMOJI_REACTIONS) > 0) {
-            flag = flag & ~FLAG_ANIMATED_EMOJI_REACTIONS | (UserConfig.hasPremiumOnAccounts() ? FLAG_ANIMATED_EMOJI_REACTIONS_PREMIUM : FLAG_ANIMATED_EMOJI_REACTIONS_NOT_PREMIUM);
-        }
-        if ((flag & FLAG_ANIMATED_EMOJI_CHAT) > 0) {
-            flag = flag & ~FLAG_ANIMATED_EMOJI_CHAT | (UserConfig.hasPremiumOnAccounts() ? FLAG_ANIMATED_EMOJI_CHAT_PREMIUM : FLAG_ANIMATED_EMOJI_CHAT_NOT_PREMIUM);
-        }
-        return flag;
-    }
+
 
     public static boolean isEnabled(int flag) {
         if (flag == FLAG_CHAT_FORUM_TWOCOLUMN && AndroidUtilities.isTablet()) {
             // always enabled for tablets
             return true;
         }
-        return (getValue() & preprocessFlag(flag)) > 0;
+        return (getValue() & flag) > 0;
     }
 
     public static boolean isEnabledSetting(int flag) {
@@ -169,7 +149,7 @@ public class LiteMode {
     public static void setAllFlags(int flags) {
         // in settings it is already handled. would you handle it? 🫵
         // onFlagsUpdate(value, flags);
-        value = flags;
+        value = flags & ~OBSOLETE_ANIMATED_EMOJI_BITS;
         savePreference();
     }
 
@@ -179,9 +159,9 @@ public class LiteMode {
             if ("settings_mask".equals(kv.key) && kv.value instanceof TLRPC.TL_jsonArray) {
                 ArrayList<TLRPC.JSONValue> array = ((TLRPC.TL_jsonArray) kv.value).value;
                 try {
-                    PRESET_LOW = (int) ((TLRPC.TL_jsonNumber) array.get(0)).value;
-                    PRESET_MEDIUM = (int) ((TLRPC.TL_jsonNumber) array.get(1)).value;
-                    PRESET_HIGH = (int) ((TLRPC.TL_jsonNumber) array.get(2)).value;
+                    PRESET_LOW = (int) ((TLRPC.TL_jsonNumber) array.get(0)).value & ~OBSOLETE_ANIMATED_EMOJI_BITS;
+                    PRESET_MEDIUM = (int) ((TLRPC.TL_jsonNumber) array.get(1)).value & ~OBSOLETE_ANIMATED_EMOJI_BITS;
+                    PRESET_HIGH = (int) ((TLRPC.TL_jsonNumber) array.get(2)).value & ~OBSOLETE_ANIMATED_EMOJI_BITS;
                 } catch (Exception e) {
                     FileLog.e(e);
                 }
@@ -277,7 +257,7 @@ public class LiteMode {
         }
 
         int prevValue = value;
-        value = preferences.getInt("lite_mode6", defaultValue);
+        value = preferences.getInt("lite_mode6", defaultValue) & ~OBSOLETE_ANIMATED_EMOJI_BITS;
         if (loaded) {
             onFlagsUpdate(prevValue, value);
         }
