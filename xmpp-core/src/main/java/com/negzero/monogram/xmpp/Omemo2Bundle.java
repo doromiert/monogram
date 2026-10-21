@@ -50,9 +50,15 @@ public final class Omemo2Bundle {
         if (!"bundle".equals(root.getElementName()) || !NS.equals(root.getNamespace()) || root.toXML().length() > 256*1024) throw invalid();
         StandardExtensionElement signed = single(root,"spk",NS), keys = single(root,"prekeys",NS);
         TreeMap<Integer,byte[]> preKeys = new TreeMap<>();
+        int count=0;
         for (StandardExtensionElement key : keys.getElements()) {
             if (!"pk".equals(key.getElementName()) || !NS.equals(key.getNamespace())) continue;
-            if (preKeys.size() >= 1000 || preKeys.put(positive(key.getAttributeValue("id")),base64(key.getText(),32)) != null) throw invalid();
+            if(++count>1000) throw invalid();
+            final int id;
+            try { id=positive(key.getAttributeValue("id")); }
+            catch(GeneralSecurityException unusableId) { continue; }
+            // A key with an unusable ID cannot participate in X3DH. Keep valid keys from the same bundle.
+            if(preKeys.put(id,base64(key.getText(),32))!=null) throw invalid();
         }
         return new Omemo2Bundle(base64(single(root,"ik",NS).getText(),32),positive(signed.getAttributeValue("id")),
                 base64(signed.getText(),32),base64(single(root,"spks",NS).getText(),64),preKeys);

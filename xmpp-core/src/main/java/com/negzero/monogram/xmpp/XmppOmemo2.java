@@ -97,11 +97,17 @@ public final class XmppOmemo2 implements AutoCloseable {
         for (int id : new java.util.TreeSet<>(fetchDevices(peer))) if (!peer.equals(device.jid) || id != device.id) result.put(id,bundle(peer,id,true));
         return result;
     }
-    private synchronized Map<Integer,Omemo2Bundle> targets(String peer) throws Exception {
+    private synchronized Map<Integer,Omemo2Bundle> targets(String peer,boolean optionalOwnCopy) throws Exception {
         Set<Integer> ids = fresh(peer+"\n"+DEVICES_NODE) ? lists.get(peer) : null;
         if (ids == null) ids = fetchDevices(peer);
         Map<Integer,Omemo2Bundle> result = new LinkedHashMap<>();
-        for (int id : new java.util.TreeSet<>(ids)) if (!peer.equals(device.jid) || id != device.id) result.put(id,bundle(peer,id,false));
+        for (int id : new java.util.TreeSet<>(ids)) if (!peer.equals(device.jid) || id != device.id) {
+            try { result.put(id,bundle(peer,id,false)); }
+            catch(java.security.GeneralSecurityException invalidBundle) {
+                if(!optionalOwnCopy || !peer.equals(device.jid)) throw invalidBundle;
+                lastError=invalidBundle;
+            }
+        }
         return result;
     }
     private String bare(String jid) throws Exception { if (jid == null || jid.indexOf('/') >= 0) throw new IllegalArgumentException("Bare peer required"); return JidCreate.entityBareFrom(jid).toString(); }
@@ -200,7 +206,7 @@ public final class XmppOmemo2 implements AutoCloseable {
         if (!plaintext.getFrom().asBareJid().toString().equals(device.jid)) throw Omemo2Bundle.invalid();
         String peer = plaintext.getTo().asBareJid().toString();
         Map<String,Map<Integer,Omemo2Bundle>> recipients = new LinkedHashMap<>();
-        recipients.put(peer,targets(peer)); if (!peer.equals(device.jid)) recipients.put(device.jid,targets(device.jid));
+        recipients.put(peer,targets(peer,false)); if (!peer.equals(device.jid)) recipients.put(device.jid,targets(device.jid,true));
         if (recipients.get(peer).isEmpty() && !peer.equals(device.jid)) throw new OmemoSendException(OmemoSendException.Reason.NO_DEVICES);
         int count = recipients.values().stream().mapToInt(Map::size).sum(); if (count == 0 || count > 1000) throw Omemo2Bundle.invalid();
         byte[] envelope = Omemo2Payload.envelope(plaintext,random);

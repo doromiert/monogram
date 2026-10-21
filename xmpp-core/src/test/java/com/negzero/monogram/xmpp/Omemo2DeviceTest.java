@@ -10,6 +10,29 @@ import static com.negzero.monogram.xmpp.Omemo2Records.*;
 
 @EnabledIfEnvironmentVariable(named="MONOGRAM_OMEMO2",matches="1")
 class Omemo2DeviceTest {
+    private Omemo2Bundle parse(String xml) throws Exception {
+        return Omemo2Bundle.parse(StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(xml)));
+    }
+    @Test void unusablePrekeyIdsDoNotInvalidateOtherSignedBundleKeys() throws Exception {
+        Omemo2Bundle original=new Omemo2Device("alice@example.org",101,new Omemo2TestDatabase()).prepare();
+        String xml=original.xml().toXML().toString();
+        String bad="<pk id='0'>not-a-valid-key</pk><pk id='2147483648'>invalid</pk><pk>invalid</pk>";
+        xml=xml.replaceFirst("(<prekeys[^>]*>)","$1"+bad);
+        Omemo2Bundle parsed=parse(xml);
+        assertArrayEquals(original.identity(),parsed.identity());assertEquals(original.signedId,parsed.signedId);
+        assertArrayEquals(original.preKeys(),parsed.preKeys());
+        for(int id:parsed.preKeys()) assertTrue(id>0);
+    }
+    @Test void invalidOnlyBundlesDuplicateIdsAndInvalidSignedKeysRemainRejected() throws Exception {
+        Omemo2Bundle original=new Omemo2Device("alice@example.org",101,new Omemo2TestDatabase()).prepare();
+        String xml=original.xml().toXML().toString();
+        String none=xml.replaceAll("(<pk[^>]*?id=)['\"][0-9]+['\"]","$1'0'");
+        assertThrows(java.security.GeneralSecurityException.class,()->parse(none));
+        String signed=xml.replaceAll("(<spk[^>]*?id=)['\"][0-9]+['\"]","$1'0'");
+        assertThrows(java.security.GeneralSecurityException.class,()->parse(signed));
+        String duplicate=xml.replaceFirst("(<prekeys[^>]*>)","$1<pk id='1'>"+java.util.Base64.getEncoder().encodeToString(original.preKey(1))+"</pk>");
+        assertThrows(java.security.GeneralSecurityException.class,()->parse(duplicate));
+    }
     @Test void identitySurvivesReopenAndConsumedPrekeysAreReplenishedWithoutReuse() throws Exception {
         Omemo2TestDatabase database = new Omemo2TestDatabase(); Omemo2Device first = new Omemo2Device("alice@example.org",101,database);
         Omemo2Bundle bundle = first.prepare(1000000); assertEquals(100,bundle.preKeys().length);

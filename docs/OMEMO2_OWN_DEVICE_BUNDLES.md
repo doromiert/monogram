@@ -1,0 +1,13 @@
+# OMEMO 2 sending blocked by an own-device bundle
+
+On 2026-10-21, the phone on 0.2.132 saved `Invalid OMEMO2 content` for a failed DM send. A read-only public-bundle discovery probe on the existing connection reproduced it: contact discovery succeeded, but own-account discovery failed at `Omemo2Bundle.positive` from the prekey loop in `parse`. No real message, identity reset or trust change was used for the reproduction. This identifies an unusable prekey ID in an own-device bundle; the precise ID value was not captured.
+
+Every outgoing encrypted DM also prepares encrypted copies for other devices of the sending account. The invalid own bundle therefore aborted the whole send, even though the intended contact's bundle was valid. This explains how the same problem can affect multiple contacts without their fingerprints changing.
+
+[XEP-0384 §5.3.2](https://xmpp.org/extensions/xep-0384.html#usecases-announcing-bundles) requires key IDs in the range 1 through 2^31−1. Device IDs and signed-prekey IDs still use the original strict validation. Parsing now discards individual prekeys with unusable IDs and retains other valid prekeys; it still rejects a bundle with no usable prekeys, duplicate valid IDs, invalid key material or an invalid signed-key signature. The number of examined prekeys and total XML size remain bounded.
+
+If an auxiliary own-device bundle is still cryptographically unusable, preparing that copy no longer aborts delivery to the separate contact. This exception is restricted to own-account copies: the primary recipient path (including self-chat/Saved Messages destinations) remains strict. Existing trust decisions and key/session transactions are unchanged. No plaintext fallback is introduced. An omitted own device does not receive that encrypted copy; the existing `lastError` retains the failure for diagnostics.
+
+The earlier diagnostics were flooded by unsupported background requests. Message/security failures are now the only request failures captured, and the latest captured failure remains available within the bounded debug snapshot after ordinary XML entries rotate out. Disabling capture or clearing the log removes it.
+
+Validation: 16 focused native-backed bundle/device/trust, payload-validation and debug-retention checks pass. New fixtures cover unusable zero/out-of-range/missing prekey IDs alongside valid keys, unchanged identities, invalid-only bundles, signed-key IDs and duplicate IDs. The reported failure was reproduced using live public discovery; successful sending after the patch still requires user confirmation. No live message was sent for verification.
