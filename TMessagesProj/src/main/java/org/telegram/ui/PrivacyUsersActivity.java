@@ -207,11 +207,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
                     } else if (currentType == TYPE_FILTER) {
                         args.putInt("chatAddType", 2);
                     }
-                    if (isAlwaysShare && rulesType == PrivacyControlActivity.PRIVACY_RULES_TYPE_INVITE) {
-                        args.putBoolean("allowPremium", true);
-                    } else if (rulesType == PrivacyControlActivity.PRIVACY_RULES_TYPE_GIFTS) {
-                        args.putBoolean("allowMiniapps", true);
-                    }
+
                     GroupCreateActivity fragment = new GroupCreateActivity(args);
                     fragment.setDelegate((premium, miniapps, ids) -> {
                         for (Long id1 : ids) {

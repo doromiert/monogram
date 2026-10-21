@@ -835,3 +835,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [ ] Finish privacy monetization cleanup: remove legacy gift/paid-message editor branches and controller rule loading, voice-message subscription gates and paid-user exception rules; preserve or implement relevant XMPP privacy behavior without exposing unsupported Telegram controls.
 
 - [x] Source cleanup: delete the legacy paid-message privacy editor, charge/fee-exemption save and load requests, price controls, purchase prompts and paid-contact cross-promotion; remove Premium-user exception selection/state/rule emission. Keep ordinary user/group privacy exceptions and three ordinary privacy choices. Source-only, unshipped; see `MONETIZATION_CHANGES.md`.
+
+- [x] Source cleanup: delete gift acceptance privacy editor, gift-only miniapp/channel exceptions, secondary Premium/gift exception selector routes, gift/fee privacy-rule loading/storage/update forwarding and paid-category privacy summaries. Preserve remaining privacy rule indices and concrete user/group exceptions. Source-only, unshipped; see `MONETIZATION_CHANGES.md`.
