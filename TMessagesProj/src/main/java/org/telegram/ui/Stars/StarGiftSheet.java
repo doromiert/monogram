@@ -78,7 +78,6 @@ import androidx.core.graphics.ColorUtils;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ChatThemeController;
 import org.telegram.messenger.DialogObject;
@@ -102,7 +101,6 @@ import org.telegram.tgnet.tl.TL_stars;
 import org.telegram.ui.AccountFrozenAlert;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.theme.ThemeKey;
@@ -111,7 +109,6 @@ import org.telegram.ui.Cells.ShareDialogCell;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
-import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AvatarDrawable;
@@ -126,7 +123,6 @@ import org.telegram.ui.Components.CompatDrawable;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.EllipsizeSpanAnimator;
 import org.telegram.ui.Components.FireworksOverlay;
-import org.telegram.ui.Components.HorizontalRoundTabsLayout;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkPath;
@@ -146,7 +142,6 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.Gifts.GiftMessageView;
 import org.telegram.ui.Gifts.GiftVisuals;
 import org.telegram.ui.Gifts.ProfileGiftsContainer;
-import org.telegram.ui.Gifts.ResaleGiftsFragment;
 import org.telegram.ui.GradientClip;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
@@ -160,8 +155,6 @@ import org.telegram.ui.bots.AffiliateProgramFragment;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
 
 public class StarGiftSheet extends BottomSheetWithRecyclerListView implements NotificationCenter.NotificationCenterDelegate {
 
@@ -2064,47 +2057,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             }
         };
 
-        public void setPreviewAttributes(StarGiftPreviewSheet.Attributes attributes) {
-            if (currentPage == null || currentPage.to != PAGE_UPGRADE || !isAttachedToWindow()) {
-                return;
-            }
-            AndroidUtilities.cancelRunOnUIThread(checkToRotateRunnable);
-            if (rotationAnimator != null) {
-                rotationAnimator.cancel();
-                rotationAnimator = null;
-            }
 
-            toggled = 1 - toggled;
-
-            final RLottieDrawable fromAnimation = imageView[1 + (1 - toggled)].getImageReceiver().getLottieAnimation();
-            final RLottieDrawable toAnimation = imageView[1 + toggled].getImageReceiver().getLottieAnimation();
-            if (toAnimation != null && fromAnimation != null) {
-                toAnimation.setProgress(fromAnimation.getProgress(), false);
-            }
-
-            setBackdropPaint(1 + toggled, backdrop[1 + toggled] = attributes.backdrop);
-            setPattern(1, attributes.pattern, true);
-            imageViewAttributes[1 + toggled] = attributes.model;
-            setGiftImage(imageView[1 + toggled].getImageReceiver(), imageViewAttributes[1 + toggled].document, 160);
-
-            animateSwitch();
-
-            rotationAnimator = ValueAnimator.ofFloat(1.0f - toggled, toggled);
-            rotationAnimator.addUpdateListener(anm -> {
-                toggleBackdrop = (float) anm.getAnimatedValue();
-                onSwitchPage(currentPage);
-            });
-            rotationAnimator.addListener(new AnimatorListenerAdapter() {
-                @Override
-                public void onAnimationEnd(Animator animation) {
-                    toggleBackdrop = toggled;
-                    onSwitchPage(currentPage);
-                }
-            });
-            rotationAnimator.setDuration(320);
-            rotationAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
-            rotationAnimator.start();
-        }
 
         private void rotateAttributes() {
             if (currentPage == null || currentPage.to != PAGE_UPGRADE || !isAttachedToWindow()) {
@@ -3548,13 +3501,7 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
             } else {
                 tableView.addRow(getString(R.string.Gift2Quantity), formatPluralStringComma("Gift2QuantityIssued1", gift.availability_issued) + formatPluralStringComma("Gift2QuantityIssued2", gift.availability_total));
             }
-            if (!TextUtils.isEmpty(gift.slug) && (gift.flags & 256) != 0) {
-                final String roundedValue = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency, org.telegram.messenger.utils.CurrencyFormatter.getCurrencyExp(gift.value_currency), true);
-                final String value = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency);
-                tableView.addRow(getString(R.string.GiftValue2), "~" + roundedValue, getString(R.string.GiftValue2LearnMore), () -> {
-                    openValueStats(gift.gift_id, gift.title, getGiftName(), value, gift.getDocument(), gift.slug);
-                });
-            }
+
         }
         final TL_stars.starGiftAttributeOriginalDetails details = findAttribute(gift.attributes, TL_stars.starGiftAttributeOriginalDetails.class);
         if (details != null) {
@@ -5260,423 +5207,6 @@ public class StarGiftSheet extends BottomSheetWithRecyclerListView implements No
                 updateViewPager();
             }
         }
-    }
-
-    public static class PaymentFormState {
-        public final AmountUtils.Currency currency;
-        public final TLRPC.TL_payments_paymentFormStarGift form;
-        public final AmountUtils.Amount amount;
-
-        public PaymentFormState(
-                AmountUtils.Currency currency,
-                TLRPC.TL_payments_paymentFormStarGift paymentForm
-        ) {
-            this.currency = currency;
-            this.form = paymentForm;
-
-            final long amountForm = StarsController.getFormStarsPrice(paymentForm);
-            if (currency == AmountUtils.Currency.STARS) {
-                this.amount = AmountUtils.Amount.fromDecimal(amountForm, AmountUtils.Currency.STARS);
-            } else if (currency == AmountUtils.Currency.TON) {
-                this.amount = AmountUtils.Amount.fromNano(amountForm, AmountUtils.Currency.TON);
-            } else {
-                this.amount = AmountUtils.Amount.fromNano(0, AmountUtils.Currency.STARS);
-            }
-        }
-    }
-
-    public static class ResaleBuyTransferAlert {
-        public final TL_stars.TL_starGiftUnique gift;
-        public final Context context;
-        public final int currentAccount;
-        public final long dialogId;
-        private final String giftName;
-        private final boolean canSwitchToTON;
-        private final Theme.ResourcesProvider resourcesProvider;
-
-        public final AlertDialog alertDialog;
-        private final @Nullable HorizontalRoundTabsLayout currencyTabsView;
-        private final TextView textInfoView;
-        private BalanceCloud balanceCloud;
-        private TextView positiveButton;
-        private FrameLayout rootView;
-
-        private Browser.Progress lastPositiveButtonProgress;
-        private final HashMap<AmountUtils.Currency, PaymentFormState> forms = new HashMap<>();
-        private final HashSet<AmountUtils.Currency> loadingForms = new HashSet<>();
-        private AmountUtils.Currency selectedCurrency;
-        private @Nullable  HintView2 tonHint;
-
-        public ResaleBuyTransferAlert(
-            Context context,
-            Theme.ResourcesProvider resourcesProvider,
-            TL_stars.TL_starGiftUnique gift,
-            PaymentFormState initialState,
-            int currentAccount,
-            long dialogId,
-            String giftName,
-            boolean withTable,
-            Utilities.Callback2<PaymentFormState, Browser.Progress> confirmed
-        ) {
-            this.context = context;
-            this.gift = gift;
-            this.dialogId = dialogId;
-            this.currentAccount = currentAccount;
-            this.selectedCurrency = initialState.currency;
-            this.forms.put(initialState.currency, initialState);
-            this.resourcesProvider = resourcesProvider;
-            this.giftName = giftName;
-
-            final boolean isTonOnly = gift.resale_ton_only;
-            this.canSwitchToTON = !isTonOnly;
-
-            final TLObject obj = dialogId >= 0 ?
-                MessagesController.getInstance(currentAccount).getUser(dialogId):
-                MessagesController.getInstance(currentAccount).getChat(-dialogId);
-
-            LinearLayout topView = new LinearLayout(context);
-            topView.setOrientation(LinearLayout.VERTICAL);
-
-            FrameLayout frameView = new FrameLayout(context) {
-                private final int[] c = new int[2];
-                @Override
-                protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-                    super.onLayout(changed, left, top, right, bottom);
-                    if (currencyTabsView != null && currencyTabsView.linearLayout.getChildCount() >= 2 && tonHint != null && rootView != null) {
-
-                        rootView.getLocationInWindow(c);
-                        float px = c[0] - rootView.getTranslationX();
-                        float py = c[1] - rootView.getTranslationY();
-
-                        View child = currencyTabsView.linearLayout.getChildAt(1);
-                        child.getLocationInWindow(c);
-                        float cx = c[0] - child.getTranslationX();
-                        float cy = c[1] - child.getTranslationY();
-
-                        tonHint.setTranslationY(cy - py - tonHint.getMeasuredHeight() - currencyTabsView.getMeasuredHeight());
-                        tonHint.setJointPx(0f, cx - px + child.getMeasuredWidth() / 2f - dp(12));
-                    }
-                }
-            };
-            frameView.addView(topView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-            if (!isTonOnly) {
-                currencyTabsView = new HorizontalRoundTabsLayout(context, resourcesProvider);
-                ArrayList<CharSequence> tabs = new ArrayList<>();
-                tabs.add(getString(R.string.Gift2BuyInStars));
-                tabs.add(getString(R.string.Gift2BuyInTON));
-                currencyTabsView.setTabs(tabs, x -> {
-                    selectedCurrency = x == 0 ?
-                            AmountUtils.Currency.STARS :
-                            AmountUtils.Currency.TON;
-
-                    onUpdateCurrency(true);
-                });
-                topView.addView(currencyTabsView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 18, 0, 18, 12));
-            } else {
-                currencyTabsView = null;
-
-                TextView textTonOnlyView = new TextView(context);
-                textTonOnlyView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-                textTonOnlyView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                textTonOnlyView.setText(getString(R.string.Gift2BuyPriceOnlyTON));
-                textTonOnlyView.setGravity(Gravity.CENTER);
-                topView.addView(textTonOnlyView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 24, 4, 24, 4));
-            }
-            topView.addView(new GiftTransferTopView(context, gift, obj), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 0, -4, 0, 0));
-
-            textInfoView = new TextView(context);
-            textInfoView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-            textInfoView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-            topView.addView(textInfoView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 24, 4, 24, 4));
-
-            if (withTable) {
-                final TableView tableView = new TableView(context, resourcesProvider);
-                addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributeModel.class));
-                addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributeBackdrop.class));
-                addAttributeRow(tableView, findAttribute(gift.attributes, TL_stars.starGiftAttributePattern.class));
-                if (!TextUtils.isEmpty(gift.slug) && (gift.flags & 256) != 0) {
-                    final String roundedValue = org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(gift.value_amount, gift.value_currency, org.telegram.messenger.utils.CurrencyFormatter.getCurrencyExp(gift.value_currency), true);
-                    tableView.addRow(getString(R.string.GiftValue2), "~" + roundedValue);
-                }
-                topView.addView(tableView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 23, 16, 23, 4));
-            }
-
-            alertDialog = new AlertDialog.Builder(context, resourcesProvider)
-                .setView(frameView)
-                .setPositiveButton("_", (di, w) -> {
-                    PaymentFormState state = forms.get(selectedCurrency);
-                    if (state == null) {
-                        return;
-                    }
-
-                    final StarsController starsController = StarsController.getInstance(currentAccount, selectedCurrency);
-                    final AmountUtils.Amount balance = starsController.balanceAvailable() ?
-                            AmountUtils.Amount.of(starsController.getBalance()) : null;
-
-                    if (balance != null && state.amount.asNano() > balance.asNano()) {
-                        if (selectedCurrency == AmountUtils.Currency.STARS) {
-                            new StarsIntroActivity.StarsNeededSheet(context, resourcesProvider, state.amount.asDecimal(), StarsIntroActivity.StarsNeededSheet.TYPE_STAR_GIFT_BUY_RESALE, null, null, 0).show();
-                        }
-                        return;
-                    }
-
-                    if (lastPositiveButtonProgress != null) {
-                        lastPositiveButtonProgress.cancel();
-                        lastPositiveButtonProgress = null;
-                    }
-
-                    confirmed.run(state, di.makeButtonLoading(w));
-                })
-                .setNegativeButton(getString(R.string.Cancel), null)
-                .create();
-        }
-
-        public void show() {
-            alertDialog.setShowStarsBalance(true).show();
-            positiveButton = (TextView) alertDialog.getButton(Dialog.BUTTON_POSITIVE);
-            balanceCloud = alertDialog.getStarsBalanceCloud();
-            rootView = alertDialog.getFullscreenContainerView();
-
-            if (rootView != null && canSwitchToTON) {
-                tonHint = new HintView2(context, HintView2.DIRECTION_BOTTOM)
-                        .setMultilineText(true)
-                        .setTextAlign(Layout.Alignment.ALIGN_NORMAL)
-                        .setDuration(5000)
-                        .setText(getString(R.string.Gift2BuyPricePayHintTON)).show();
-                tonHint.setPadding(dp(7.33f), 0, dp(7.33f), 0);
-                rootView.addView(tonHint, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 100, Gravity.TOP, 0, 26, 0, 0));
-            }
-
-            onUpdateCurrency(false);
-        }
-
-        private void onUpdateCurrency(boolean animated) {
-            final AmountUtils.Currency currency = selectedCurrency;
-            final PaymentFormState state = forms.get(currency);
-
-            textInfoView.animate().alpha(state != null ? 1f : 0.25f).start();
-            textInfoView.setEnabled(state != null);
-            positiveButton.setEnabled(state != null);
-            balanceCloud.setCurrency(currency, animated);
-            if (currencyTabsView != null) {
-                currencyTabsView.setSelectedIndex(currency == AmountUtils.Currency.TON ? 1 : 0, animated);
-            }
-            if (currency == AmountUtils.Currency.TON && tonHint != null && tonHint.shown()) {
-                tonHint.hide();
-            }
-
-            if (balanceCloud != null) {
-                if (currency == AmountUtils.Currency.STARS) {
-                    balanceCloud.setOnClickListener(v -> {
-                        new StarsIntroActivity.StarsOptionsSheet(context, resourcesProvider).show();
-                    });
-                } else {
-                    balanceCloud.setOnClickListener(v -> {});
-                }
-            }
-
-            if (lastPositiveButtonProgress != null) {
-                lastPositiveButtonProgress.cancel();
-                lastPositiveButtonProgress = null;
-            }
-
-            if (state != null) {
-                final boolean isSelf = dialogId == UserConfig.getInstance(currentAccount).getClientUserId();
-
-                if (state.currency == AmountUtils.Currency.STARS) {
-                    positiveButton.setText(replaceStars(formatPluralStringComma("Gift2BuyDoPrice2", (int) state.amount.asDecimal())));
-                    textInfoView.setText(AndroidUtilities.replaceTags(isSelf ?
-                        formatPluralStringComma("Gift2BuyPriceSelfText", (int) state.amount.asDecimal(), giftName) :
-                        formatPluralStringComma("Gift2BuyPriceText", (int) state.amount.asDecimal(), giftName, DialogObject.getShortName(dialogId))
-                    ));
-                }
-                if (state.currency == AmountUtils.Currency.TON) {
-                    positiveButton.setText(replaceStars(true, LocaleController.formatString(R.string.Gift2BuyDoPrice2TON, state.amount.asFormatString())));
-                    textInfoView.setText(AndroidUtilities.replaceTags(isSelf ?
-                        LocaleController.formatString(R.string.Gift2BuyPriceSelfTextTON, state.amount.asFormatString(), giftName):
-                        LocaleController.formatString(R.string.Gift2BuyPriceTextTON, state.amount.asFormatString(), giftName, DialogObject.getShortName(dialogId))
-                    ));
-                }
-            } else {
-                lastPositiveButtonProgress = alertDialog.makeButtonLoading(Dialog.BUTTON_POSITIVE, false, false);
-                lastPositiveButtonProgress.init();
-
-                if (loadingForms.add(currency)) {
-                    StarsController.getInstance(currentAccount, currency).getResellingGiftForm(gift, dialogId, form -> {
-                        if (lastPositiveButtonProgress != null && currency == selectedCurrency) {
-                            lastPositiveButtonProgress.end();
-                        }
-                        loadingForms.remove(currency);
-                        if (form != null) {
-                            forms.put(currency, new PaymentFormState(currency, form));
-                            onUpdateCurrency(true);
-                        }
-                    });
-                }
-            }
-        }
-    }
-
-    private void openValueStats(
-        long giftId,
-        String collectionTitle,
-        String giftName,
-        String valuePrice,
-        TLRPC.Document sticker,
-        String slug
-    ) {
-        final AlertDialog progressDialog = new AlertDialog(ApplicationLoader.applicationContext, AlertDialog.ALERT_TYPE_SPINNER);
-        progressDialog.showDelayed(500);
-
-        final TL_stars.getUniqueStarGiftValueInfo req = new TL_stars.getUniqueStarGiftValueInfo();
-        req.slug = slug;
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-            progressDialog.dismiss();
-            if (res instanceof TL_stars.UniqueStarGiftValueInfo) {
-                final TL_stars.UniqueStarGiftValueInfo info = (TL_stars.UniqueStarGiftValueInfo) res;
-
-                final BottomSheet.Builder b = new BottomSheet.Builder(getContext(), false, resourcesProvider);
-
-                final LinearLayout linearLayout = new LinearLayout(getContext());
-                linearLayout.setOrientation(LinearLayout.VERTICAL);
-                linearLayout.setPadding(dp(16), dp(20), dp(16), dp(8));
-                linearLayout.setClipChildren(false);
-                linearLayout.setClipToPadding(false);
-
-                final BackupImageView imageView = new BackupImageView(getContext());
-                StarsIntroActivity.setGiftImage(imageView.getImageReceiver(), sticker, 160);
-                linearLayout.addView(imageView, LayoutHelper.createLinear(160, 160, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 0));
-
-                final TextView priceTextView = new TextView(getContext());
-                priceTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-                priceTextView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText, resourcesProvider));
-                priceTextView.setTypeface(AndroidUtilities.bold());
-                priceTextView.setPadding(dp(20), 0, dp(20), 0);
-                priceTextView.setBackground(Theme.createRoundRectDrawable(dp(21), Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider)));
-                priceTextView.setGravity(Gravity.CENTER);
-                linearLayout.addView(priceTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 42, Gravity.CENTER_HORIZONTAL, 0, 12, 0, 15));
-                priceTextView.setText(valuePrice);
-
-                final TextView textView = new TextView(getContext());
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-                textView.setGravity(Gravity.CENTER);
-                linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 16, 0, 16, 19));
-                if (info.value_is_average) {
-                    textView.setText(AndroidUtilities.replaceTags(formatString(R.string.GiftValueAverage, collectionTitle)));
-                } else if (info.last_sale_on_fragment) {
-                    textView.setText(AndroidUtilities.replaceTags(formatString(R.string.GiftValueLastFragment, giftName)));
-                } else {
-                    textView.setText(AndroidUtilities.replaceTags(formatString(R.string.GiftValueLastTelegram, giftName)));
-                }
-
-                final FrameLayout tableLayout = new FrameLayout(getContext());
-                tableLayout.setClipChildren(false);
-                tableLayout.setClipToPadding(false);
-                final HintView2[] hintView = new HintView2[1];
-                final Utilities.Callback2<View, CharSequence> showHint = (view, text) -> {
-                    if (hintView[0] != null) {
-                        hintView[0].hide();
-                    }
-                    text = AndroidUtilities.replaceTags(text);
-                    float x = view.getX() + ((View) view.getParent()).getX() + ((View) ((View) view.getParent()).getParent()).getX();
-                    float y = view.getY() + ((View) view.getParent()).getY() + ((View) ((View) view.getParent()).getParent()).getY();
-                    if (view instanceof ButtonSpan.TextViewButtons) {
-                        final ButtonSpan.TextViewButtons textView2 = (ButtonSpan.TextViewButtons) view;
-                        final Layout layout = textView2.getLayout();
-                        final CharSequence viewText = layout.getText();
-                        if (viewText instanceof Spanned) {
-                            ButtonSpan[] spans = ((Spanned) viewText).getSpans(0, viewText.length(), ButtonSpan.class);
-                            if (spans.length > 0 && spans[0] != null) {
-                                final int offset = ((Spanned) viewText).getSpanStart(spans[0]);
-                                x += layout.getPrimaryHorizontal(offset) + spans[0].getSize() / 2;
-                                y += layout.getLineTop(layout.getLineForOffset(offset));
-                            }
-                        }
-                    }
-
-                    final HintView2 thisHintView = hintView[0] = new HintView2(getContext(), HintView2.DIRECTION_BOTTOM);
-                    thisHintView.setMultilineText(true);
-                    thisHintView.setInnerPadding(11, 8, 11, 7);
-                    thisHintView.setRounding(10);
-                    thisHintView.setText(text);
-                    thisHintView.setOnHiddenListener(() -> AndroidUtilities.removeFromParent(thisHintView));
-                    thisHintView.setTranslationY(-dp(100) + y);
-                    thisHintView.setMaxWidthPx(dp(300));
-                    thisHintView.setPadding(dp(4), dp(4), dp(4), dp(4));
-                    thisHintView.setJointPx(0, x - dp(4));
-                    tableLayout.addView(thisHintView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 100, Gravity.TOP | Gravity.FILL_HORIZONTAL));
-                    thisHintView.show();
-                };
-
-                final TableView tableView = new TableView(getContext(), resourcesProvider);
-                tableLayout.addView(tableView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
-                tableView.addRow(getString(R.string.GiftValueInitialSale), LocaleController.formatYearMonthDay(info.initial_sale_date, true));
-                tableView.addRow(getString(R.string.GiftValueInitialPrice), StarsIntroActivity.replaceStarsWithPlain("⭐️" + info.initial_sale_stars + " (~" + org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.initial_sale_price, info.currency) + ")", .8f));
-                if (info.hasFlag(info.flags, TLObject.FLAG_0)) {
-                    tableView.addRow(getString(R.string.GiftValueLastSale), LocaleController.formatYearMonthDay(info.last_sale_date, true));
-                    int morePercent = (int) (Math.round(((double) info.last_sale_price / info.initial_sale_price) * 1000) / 10) - 100;
-                    if (morePercent > 0) {
-                        tableView.addRow(getString(R.string.GiftValueLastPrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.last_sale_price, info.currency), "+" + LocaleController.formatNumber(morePercent, ' ') + "%", null);
-                    } else {
-                        tableView.addRow(getString(R.string.GiftValueLastPrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.last_sale_price, info.currency));
-                    }
-                }
-                if (info.hasFlag(info.flags, TLObject.FLAG_2)) {
-                    final ButtonSpan.TextViewButtons[] view = new ButtonSpan.TextViewButtons[1];
-                    final Runnable hint = () -> showHint.run(view[0], LocaleController.formatString(R.string.GiftValueMinPriceInfo, org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.floor_price, info.currency), collectionTitle));
-                    TableRow row = tableView.addRow(getString(R.string.GiftValueMinPrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.floor_price, info.currency), "?", hint);
-                    view[0] = (ButtonSpan.TextViewButtons) ((TableView.TableRowContent) row.getChildAt(1)).getChildAt(0);
-                    row.setOnClickListener(v -> hint.run());
-                }
-                if (info.hasFlag(info.flags, TLObject.FLAG_3)) {
-                    final ButtonSpan.TextViewButtons[] view = new ButtonSpan.TextViewButtons[1];
-                    final Runnable hint = () -> showHint.run(view[0], LocaleController.formatString(R.string.GiftValueAveragePriceInfo, org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.average_price, info.currency), collectionTitle));
-                    TableRow row = tableView.addRow(getString(R.string.GiftValueAveragePrice), org.telegram.messenger.utils.CurrencyFormatter.formatCurrency(info.average_price, info.currency), "?", hint);
-                    view[0] = (ButtonSpan.TextViewButtons) ((TableView.TableRowContent) row.getChildAt(1)).getChildAt(0);
-                    row.setOnClickListener(v -> hint.run());
-                }
-                linearLayout.addView(tableLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL, 0, 0, 0, 12));
-
-                if (info.listed_count > 0) {
-                    final ButtonWithCounterView button1 = new ButtonWithCounterView(getContext(), false, resourcesProvider);
-                    SpannableStringBuilder sb = new SpannableStringBuilder();
-                    sb.append(LocaleController.formatNumber(info.listed_count, ' '));
-                    sb.append(" ");
-                    sb.append("e");
-                    sb.setSpan(new AnimatedEmojiSpan(sticker, 1.5f, button1.getTextPaint().getFontMetricsInt()), sb.length() - 1, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    sb.append(" ");
-                    sb.append(getString(R.string.GiftValueOnSaleTelegram));
-                    button1.setText(AndroidUtilities.replaceArrows(sb, false, dp(2), dp(1)), false);
-                    button1.setOnClickListener(v -> {
-                        final BaseFragment lastFragment = LaunchActivity.getLastFragment();
-                        if (lastFragment == null) return;
-                        final BaseFragment.BottomSheetParams bottomSheetParams = new BaseFragment.BottomSheetParams();
-                        bottomSheetParams.transitionFromLeft = true;
-                        bottomSheetParams.allowNestedScroll = false;
-                        final ResaleGiftsFragment fragment = new ResaleGiftsFragment(dialogId, collectionTitle, giftId, resourcesProvider);
-                        fragment.setCloseParentSheet((fragmentsImmediately) -> {
-                            if (closeParentSheet != null) {
-                                closeParentSheet.run(fragmentsImmediately);
-                            }
-                            if (fragmentsImmediately) {
-                                skipDismissAnimation();
-                            }
-                            dismiss();
-                        });
-                        lastFragment.showAsSheet(fragment, bottomSheetParams);
-                    });
-                    linearLayout.addView(button1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 42, Gravity.FILL_HORIZONTAL, 0, 0, 0, 2));
-                }
-
-                b.setCustomView(linearLayout);
-
-                b.show();
-            } else if (err != null) {
-                getBulletinFactory().showForError(err);
-            }
-        }));
     }
 
     public static CharSequence replaceUnderstood(CharSequence cs) {

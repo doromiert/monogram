@@ -9,76 +9,45 @@ import static org.telegram.messenger.MediaDataController.calcHash;
 
 import android.app.Activity;
 import android.content.Context;
-import android.graphics.drawable.Drawable;
-import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.LongSparseArray;
-import android.view.Gravity;
-import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-
-import org.json.JSONObject;
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLitePreparedStatement;
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.AppGlobalConfig;
 import org.telegram.messenger.ApplicationLoader;
-import org.telegram.messenger.BirthdayController;
-import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
-import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.FileRefController;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.SendMessagesHelper;
-import org.telegram.messenger.TopicsController;
 import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.Vector;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_stars;
-import org.telegram.tgnet.tl.TL_update;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.ChatActivity;
-import org.telegram.ui.Components.AlertsCreator;
-import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
-import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.SharedMediaLayout;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.ProfileActivity;
-import org.telegram.ui.bots.BotWebViewSheet;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class StarsController {
 
@@ -679,40 +648,6 @@ public class StarsController {
 //            progressDialog.dismissUnless(500);
             NotificationCenter.getInstance(currentAccount).removeObserver(observer[0], NotificationCenter.starGiftsLoaded);
         };
-    }
-
-
-
-    public void buyStarGift(TL_stars.StarGift gift, boolean anonymous, boolean upgraded, long dialogId, TLRPC.TL_textWithEntities text, Utilities.Callback2<Boolean, String> whenDone) {
-        if (whenDone != null) AndroidUtilities.runOnUIThread(() -> whenDone.run(false, "MONOGRAM_FEATURE_UNAVAILABLE"));
-    }
-
-    @Deprecated
-    public void getResellingGiftForm(TL_stars.StarGift gift, long dialogId, Utilities.Callback<TLRPC.TL_payments_paymentFormStarGift> whenDone) {
-        getResellingGiftForm(gift, dialogId, null, true, whenDone);
-    }
-
-    public void getResellingGiftForm(TL_stars.StarGift gift, long dialogId, TLRPC.TL_textWithEntities message, boolean hideMyName, Utilities.Callback<TLRPC.TL_payments_paymentFormStarGift> whenDone) {
-        if (whenDone != null) AndroidUtilities.runOnUIThread(() -> whenDone.run(null));
-    }
-
-    public static long getFormStarsPrice(TLRPC.PaymentForm form) {
-        long stars = 0;
-        if (form != null) {
-            for (TLRPC.TL_labeledPrice price : form.invoice.prices) {
-                stars += price.amount;
-            }
-        }
-        return stars;
-    }
-
-    @Deprecated
-    public void buyResellingGift(TLRPC.TL_payments_paymentFormStarGift form, TL_stars.StarGift gift, long dialogId, Utilities.Callback2<Boolean, String> whenDone) {
-        buyResellingGift(form, gift, dialogId, null, true, whenDone);
-    }
-
-    public void buyResellingGift(TLRPC.TL_payments_paymentFormStarGift form, TL_stars.StarGift gift, long dialogId, TLRPC.TL_textWithEntities message, boolean hideMyName, Utilities.Callback2<Boolean, String> whenDone) {
-        if (whenDone != null) AndroidUtilities.runOnUIThread(() -> whenDone.run(false, "MONOGRAM_FEATURE_UNAVAILABLE"));
     }
 
     public final LongSparseArray<GiftsCollections> giftCollections = new LongSparseArray<>();
@@ -1666,27 +1601,8 @@ public class StarsController {
         return result;
     }
 
-    private ConcurrentHashMap<Long, TL_stars.starGiftUpgradePreview> giftPreviews = new ConcurrentHashMap<>();
 
-    public void getStarGiftPreview(long gift_id, Utilities.Callback<TL_stars.starGiftUpgradePreview> got) {
-        if (got == null) return;
-        TL_stars.starGiftUpgradePreview cached = giftPreviews.get(gift_id);
-        if (cached != null) {
-            got.run(cached);
-            return;
-        }
 
-        TL_stars.getStarGiftUpgradePreview req = new TL_stars.getStarGiftUpgradePreview();
-        req.gift_id = gift_id;
-        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-            if (res instanceof TL_stars.starGiftUpgradePreview) {
-                giftPreviews.put(gift_id, (TL_stars.starGiftUpgradePreview) res);
-                got.run((TL_stars.starGiftUpgradePreview) res);
-            } else {
-                got.run(null);
-            }
-        }));
-    }
 
     public void getUserStarGift(TL_stars.InputSavedStarGift inputSavedStarGift, Utilities.Callback<TL_stars.SavedStarGift> got) {
         if (got == null) return;

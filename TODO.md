@@ -785,3 +785,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 
 - [x] Source cleanup: remove StarGiftSheet gift upgrades/prepayment, price refresh timers/sheet, crafting transaction and nested UI, resale checkout and paid original-description removal; update shared preview constructor. No tests/build/install this pass. See MONETIZATION_CHANGES.md.
 - [ ] Continue monetization purge: remaining gift history/profile management/market browsers, shared collectible rendering/page slots, Stars/Premium/backend/schema/assets; audit the full source and packaged APK before declaring completion.
+
+- [x] Source cleanup: delete gift resale browser, purchase-message sheet and collectible preview; remove market value query/confirmation/currency UI and unused purchase/preview controller methods. Remove profile-color marketplace paths and Premium apply gates while keeping local colors. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.

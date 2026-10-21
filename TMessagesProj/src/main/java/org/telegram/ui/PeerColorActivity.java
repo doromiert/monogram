@@ -36,17 +36,14 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ReplacementSpan;
-import android.util.Log;
 import android.util.SparseIntArray;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -86,11 +83,9 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.utils.DrawableUtils;
-import org.telegram.messenger.utils.GradientProtectionDrawable;
 import org.telegram.messenger.utils.OnPostDrawView;
 import org.telegram.messenger.utils.RectFMergeBounding;
 import org.telegram.messenger.utils.ViewOutlineProviderImpl;
-import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_stars;
@@ -109,7 +104,6 @@ import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Cells.ThemePreviewMessagesCell;
 import org.telegram.ui.Components.AnimatedColor;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
-import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
@@ -123,7 +117,6 @@ import org.telegram.ui.Components.FilledTabsView;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumGradient;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RecyclerListView;
@@ -143,22 +136,16 @@ import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceWrapped;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Gifts.GiftVisuals;
-import org.telegram.ui.Gifts.ResaleGiftsFragment;
 import org.telegram.ui.Stars.StarGiftPatterns;
-import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.StoriesUtilities;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
-import org.telegram.ui.iv.RichCommand;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 import me.vkryl.core.BitwiseUtils;
@@ -224,14 +211,10 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         private View giftTabsPlaceholder;
         private boolean drawGiftTabsInList;
         private boolean giftTabsPinned;
-        private TL_stars.TL_starGiftUnique selectedResaleGift;
-        private ResaleGiftsFragment.ResaleGiftsList resaleGifts;
-        private TL_stars.StarGift selectedTabGift = null;
 
         private final ArrayList<CharSequence> tabs = new ArrayList<>();
-        private final HashMap<Integer, TL_stars.StarGift> index2gift = new HashMap<>();
 
-        private CharSequence buttonLocked, buttonUnlocked, buttonCollectible;
+        private CharSequence buttonUnlocked, buttonCollectible;
 
         int colorPickerRow = -1;
         int infoRow = -1;
@@ -264,7 +247,6 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         private static final int VIEW_TYPE_FLICKER = 9;
         private static final int VIEW_TYPE_TABS = 10;
         private static final int VIEW_TYPE_GIFTS_EMPTY = 11;
-        private static final int VIEW_TYPE_GIFT_FOREIGN = 12;
 
         public void setupValues() {
             if(localColors()) {
@@ -324,15 +306,10 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                 protected void onLayout(boolean changed, int l, int t, int r, int b) {
                     super.onLayout(changed, l, t, r, b);
                     updateGiftTabsPosition();
-                    if (selectedTabGift != null) {
-                        if (resaleGifts != null && seesLoading()) {
-                            resaleGifts.load();
-                        }
-                    } else {
-                        final StarsController.GiftsList giftsList = type == PAGE_NAME ? giftsWithPeerColor : gifts;
-                        if (giftsList != null && seesLoading()) {
-                            giftsList.load();
-                        }
+
+                    final StarsController.GiftsList giftsList = type == PAGE_NAME ? giftsWithPeerColor : gifts;
+                    if (giftsList != null && seesLoading()) {
+                        giftsList.load();
                     }
                 }
 
@@ -390,7 +367,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
             listView.setAdapter(listAdapter = new RecyclerListView.SelectionAdapter() {
                 @Override
                 public boolean isEnabled(RecyclerView.ViewHolder holder) {
-                    return holder.getItemViewType() == VIEW_TYPE_ICON || holder.getItemViewType() == VIEW_TYPE_TEXT || holder.getItemViewType() == VIEW_TYPE_GIFT || holder.getItemViewType() == VIEW_TYPE_GIFT_FOREIGN;
+                    return holder.getItemViewType() == VIEW_TYPE_ICON || holder.getItemViewType() == VIEW_TYPE_TEXT || holder.getItemViewType() == VIEW_TYPE_GIFT;
                 }
 
                 @NonNull
@@ -407,70 +384,6 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                             GiftCell giftCell = new GiftCell(getContext(), false, resourceProvider);
                             giftCell.setTag(RecyclerListView.TAG_NOT_SECTION);
                             view = giftCell;
-                            break;
-                        case VIEW_TYPE_GIFT_FOREIGN:
-                            GiftVisuals.GiftCell giftCell2 = new GiftVisuals.GiftCell(getContext(), currentAccount, resourceProvider);
-                            giftCell2.setTag(RecyclerListView.TAG_NOT_SECTION);
-                            view = giftCell2;
-                            break;
-                        case VIEW_TYPE_FLICKER:
-                            FlickerLoadingView flickerLoadingView = new FlickerLoadingView(context, resourceProvider);
-                            flickerLoadingView.setIsSingleCell(true);
-                            flickerLoadingView.setViewType(FlickerLoadingView.STAR_GIFT_SELECT);
-                            flickerLoadingView.setTag(RecyclerListView.TAG_NOT_SECTION);
-                            view = flickerLoadingView;
-                            break;
-                        default:
-                        case VIEW_TYPE_INFO:
-                            TextInfoPrivacyCell cell = new TextInfoPrivacyCell(getContext(), getResourceProvider());
-                            view = cell;
-                            break;
-                        case VIEW_TYPE_COLOR_PICKER:
-                            PeerColorGrid colorPicker = peerColorPicker = new PeerColorGrid(getContext(), type, currentAccount, resourceProvider);
-                            colorPicker.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
-                            colorPicker.setSelected(selectedColor, false);
-                            colorPicker.setOnColorClick(colorId -> {
-                                selectedColor = colorId;
-                                selectedEmojiCollectible = null;
-                                selectedPeerCollectible = null;
-                                selectedResaleGift = null;
-                                updateProfilePreview(true);
-                                updateMessages();
-                                updateButton(true);
-                                if (setReplyIconCell != null) {
-                                    setReplyIconCell.invalidate();
-                                }
-                                if (profilePage != null && profilePage.profilePreview != null && namePage != null) {
-                                    profilePage.profilePreview.overrideAvatarColor(namePage.selectedColor);
-                                }
-                            });
-                            view = colorPicker;
-                            break;
-                        case VIEW_TYPE_BUTTONPAD:
-                            view = new View(getContext());
-                            view.setTag(RecyclerListView.TAG_NOT_SECTION);
-                            break;
-                        case VIEW_TYPE_ICON:
-                            SetReplyIconCell setcell = setReplyIconCell = new SetReplyIconCell(getContext());
-                            setcell.update(false);
-                            view = setcell;
-                            break;
-                        case VIEW_TYPE_TEXT:
-                            TextCell textCell = new TextCell(getContext(), getResourceProvider());
-                            textCell.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
-                            view = textCell;
-                            break;
-                        case 4:
-                            view = new View(getContext()) {
-                                @Override
-                                protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                                    super.onMeasure(
-                                            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
-                                            MeasureSpec.makeMeasureSpec(dp(12), MeasureSpec.EXACTLY)
-                                    );
-                                }
-                            };
-                            view.setTag(RecyclerListView.TAG_NOT_SECTION);
                             break;
                         case VIEW_TYPE_TABS:
                             view = new View(getContext()) {
@@ -541,60 +454,12 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                             );
                             giftCell.card.invalidate();
                             break;
-                        case VIEW_TYPE_GIFT_FOREIGN:
-                            GiftVisuals.GiftCell giftCell2 = (GiftVisuals.GiftCell) holder.itemView;
-                            final int index2 = position - giftsStartRow;
-                            if (resaleGifts == null) return;
-                            if (index2 < 0 || index2 >= uniqueGifts.size()) return;
-                            final TL_stars.TL_starGiftUnique gift2 = uniqueGifts.get(index2);
-                            giftCell2.setStarsGift(gift2, false, false, false, true, false);
-                            giftCell2.setSelected(
-                                    selectedEmojiCollectible != null && selectedEmojiCollectible.collectible_id == gift2.id ||
-                                            selectedPeerCollectible != null && selectedPeerCollectible.collectible_id == gift2.id,
-                                    false
-                            );
-                            break;
                         case VIEW_TYPE_TABS:
                             giftTabsPlaceholder = holder.itemView;
-                            final Tabs tabsView = giftTabsView;
                             tabs.clear();
-                            index2gift.clear();
-                            final ArrayList<TL_stars.StarGift> gifts = StarsController.getInstance(currentAccount).sortedGifts;
                             tabs.add(getString(R.string.Gift2TabMine));
-                            int selectedTab = 0;
-                            for (int i = 0; i < gifts.size(); ++i) {
-                                final TL_stars.StarGift starGift = gifts.get(i);
-                                if ((type == PAGE_PROFILE || type == PAGE_NAME && starGift.peer_color_available) && starGift.availability_resale > 0) {
-                                    if (selectedTabGift == starGift) {
-                                        selectedTab = tabs.size();
-                                    }
-                                    index2gift.put(tabs.size(), starGift);
-                                    final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                                    textPaint.setTextSize(dp(14));
-                                    final SpannableStringBuilder sb = new SpannableStringBuilder("x ");
-                                    final AnimatedEmojiSpan span = new AnimatedEmojiSpan(starGift.getDocument(), textPaint.getFontMetricsInt());
-                                    span.size = dp(14);
-                                    sb.setSpan(span, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                                    sb.append(starGift.title);
-                                    tabs.add(sb);
-                                }
-                            }
-                            tabsView.set(0, tabs, selectedTab, tabIndex -> {
-                                selectedTabGift = tabIndex == 0 ? null : index2gift.get(tabIndex);
-                                if (selectedTabGift == null) {
-                                    if (resaleGifts != null) {
-                                        resaleGifts.cancel();
-                                        resaleGifts = null;
-                                    }
-                                } else if (resaleGifts == null || resaleGifts.gift_id != selectedTabGift.id) {
-                                    resaleGifts = new ResaleGiftsFragment.ResaleGiftsList(currentAccount, selectedTabGift.id, first -> update());
-                                    resaleGifts.load();
-                                }
-                                updateAfterGiftTabSelected();
-                                final Page otherPage = viewPager.getCurrentPosition() == PAGE_NAME ? profilePage : namePage;
-                                otherPage.update();
-                            });
-                            updateTabsColors(tabsView);
+                            giftTabsView.set(0, tabs, 0, tabIndex -> {});
+                            updateTabsColors(giftTabsView);
                             holder.itemView.post(Page.this::updateGiftTabsPosition);
                             break;
                         case VIEW_TYPE_COLOR_PICKER:
@@ -625,18 +490,6 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                         giftCell.setSelected(
                                 selectedEmojiCollectible != null && selectedEmojiCollectible.collectible_id == gift.id ||
                                         selectedPeerCollectible != null && selectedPeerCollectible.collectible_id == gift.id,
-                                false
-                        );
-                    } else if (holder.getItemViewType() == VIEW_TYPE_GIFT_FOREIGN) {
-                        GiftVisuals.GiftCell giftCell2 = (GiftVisuals.GiftCell) holder.itemView;
-                        final int index2 = holder.getAdapterPosition() - giftsStartRow;
-                        if (resaleGifts == null) return;
-                        if (index2 < 0 || index2 >= uniqueGifts.size()) return;
-                        final TL_stars.TL_starGiftUnique gift2 = uniqueGifts.get(index2);
-                        giftCell2.setStarsGift(gift2, false, false, false, true, false);
-                        giftCell2.setSelected(
-                                selectedEmojiCollectible != null && selectedEmojiCollectible.collectible_id == gift2.id ||
-                                        selectedPeerCollectible != null && selectedPeerCollectible.collectible_id == gift2.id,
                                 false
                         );
                     }
@@ -674,11 +527,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                         return VIEW_TYPE_HEADER;
                     }
                     if (position >= giftsStartRow && position < giftsEndRow) {
-                        if (selectedTabGift == null) {
-                            return VIEW_TYPE_GIFT;
-                        } else {
-                            return VIEW_TYPE_GIFT_FOREIGN;
-                        }
+                        return VIEW_TYPE_GIFT;
                     }
                     if (position >= giftsLoadingStartRow && position < giftsLoadingEndRow) {
                         return VIEW_TYPE_FLICKER;
@@ -697,7 +546,6 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                     selectedEmoji = 0;
                     selectedEmojiCollectible = null;
                     selectedPeerCollectible = null;
-                    selectedResaleGift = null;
                     updateMessages();
                     if (type == PAGE_PROFILE) {
                         namePage.updateMessages();
@@ -712,51 +560,25 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                     }
                 } else if (position >= giftsStartRow && position < giftsEndRow) {
                     final int index = position - giftsStartRow;
-                    if (selectedTabGift == null) {
-                        if (index < 0 || index >= uniqueGifts.size()) return;
-                        final TL_stars.TL_starGiftUnique gift = uniqueGifts.get(index);
-                        if (type == PAGE_NAME) {
-                            if (!(gift.peer_color instanceof TLRPC.TL_peerColorCollectible)) return;
-                            selectedEmoji = 0;
-                            selectedColor = -1;
-                            selectedResaleGift = null;
-                            selectedEmojiCollectible = null;
-                            selectedPeerCollectible = (TLRPC.TL_peerColorCollectible) gift.peer_color;
-                        } else {
-                            selectedEmoji = 0;
-                            selectedColor = -1;
-                            selectedResaleGift = null;
-                            selectedEmojiCollectible = MessagesController.emojiStatusCollectibleFromGift(gift);
-                            selectedPeerCollectible = null;
-                        }
-                        updateProfilePreview(true);
-                        updateMessages();
-                        updateButton(true);
-                        if (setReplyIconCell != null) {
-                            setReplyIconCell.update(true);
-                        }
-                    } else if (resaleGifts != null) {
-                        if (index < 0 || index >= uniqueGifts.size()) return;
-                        final TL_stars.TL_starGiftUnique gift = uniqueGifts.get(index);
-                        if (type == PAGE_NAME) {
-                            if (!(gift.peer_color instanceof TLRPC.TL_peerColorCollectible)) return;
-                            selectedEmoji = 0;
-                            selectedColor = -1;
-                            selectedEmojiCollectible = null;
-                            selectedPeerCollectible = (TLRPC.TL_peerColorCollectible) gift.peer_color;
-                        } else {
-                            selectedEmoji = 0;
-                            selectedColor = -1;
-                            selectedEmojiCollectible = MessagesController.emojiStatusCollectibleFromGift(gift);
-                            selectedPeerCollectible = null;
-                        }
-                        selectedResaleGift = gift;
-                        updateProfilePreview(true);
-                        updateMessages();
-                        updateButton(true);
-                        if (setReplyIconCell != null) {
-                            setReplyIconCell.update(true);
-                        }
+                    if (index < 0 || index >= uniqueGifts.size()) return;
+                    final TL_stars.TL_starGiftUnique gift = uniqueGifts.get(index);
+                    if (type == PAGE_NAME) {
+                        if (!(gift.peer_color instanceof TLRPC.TL_peerColorCollectible)) return;
+                        selectedEmoji = 0;
+                        selectedColor = -1;
+                        selectedEmojiCollectible = null;
+                        selectedPeerCollectible = (TLRPC.TL_peerColorCollectible) gift.peer_color;
+                    } else {
+                        selectedEmoji = 0;
+                        selectedColor = -1;
+                        selectedEmojiCollectible = MessagesController.emojiStatusCollectibleFromGift(gift);
+                        selectedPeerCollectible = null;
+                    }
+                    updateProfilePreview(true);
+                    updateMessages();
+                    updateButton(true);
+                    if (setReplyIconCell != null) {
+                        setReplyIconCell.update(true);
                     }
                 }
             });
@@ -773,24 +595,16 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                     }
 
                     updateGiftTabsPosition();
-                    if (selectedTabGift != null) {
-                        if (resaleGifts != null && seesLoading()) {
-                            resaleGifts.load();
-                        }
-                    } else {
-                        final StarsController.GiftsList giftsList = type == PAGE_NAME ? giftsWithPeerColor : gifts;
-                        if (giftsList != null && seesLoading()) {
-                            giftsList.load();
-                        }
+
+                    final StarsController.GiftsList giftsList = type == PAGE_NAME ? giftsWithPeerColor : gifts;
+                    if (giftsList != null && seesLoading()) {
+                        giftsList.load();
                     }
                 }
             });
             addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-            SpannableStringBuilder buttonLock = new SpannableStringBuilder("l");
-            buttonLock.setSpan(new ColoredImageSpan(R.drawable.msg_mini_lock2), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             buttonUnlocked = getString(isChannel ? R.string.ChannelColorApply : R.string.UserColorApply);
-            buttonLocked = new SpannableStringBuilder(buttonLock).append(" ").append(buttonUnlocked);
             buttonCollectible = getString(R.string.UserColorApplyCollectible);
 
             updateButton(false);
@@ -869,7 +683,6 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
             private final BackupImageView imageView;
             private final TextView title;
-            private final TextView subtitle;
 
             public EmptyView(Context context) {
                 super(context);
@@ -886,34 +699,11 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                 title.setText(getString(type == PAGE_PROFILE ? R.string.Gift2PeerColorProfileEmptyTitle : R.string.Gift2PeerColorReplyEmptyTitle));
                 addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 64, 8, 64, 8));
 
-                subtitle = TextHelper.makeLinkTextView(getContext(), 14, Theme.key_chat_messageLinkIn, false, resourceProvider);
-                subtitle.setGravity(Gravity.CENTER);
-                subtitle.setText(AndroidUtilities.replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.Gift2PeerColorEmptyButton), () -> {
-                    if (giftTabsView != null && Page.this.tabs.size() > 1) {
-                        giftTabsView.setSelected(1, true);
-                        selectedTabGift = index2gift.get(1);
-                        if (selectedTabGift == null) {
-                            if (resaleGifts != null) {
-                                resaleGifts.cancel();
-                                resaleGifts = null;
-                            }
-                        } else if (resaleGifts == null || resaleGifts.gift_id != selectedTabGift.id) {
-                            resaleGifts = new ResaleGiftsFragment.ResaleGiftsList(currentAccount, selectedTabGift.id, first -> update());
-                            resaleGifts.load();
-                        }
-                        updateAfterGiftTabSelected();
-                        final Page otherPage = viewPager.getCurrentPosition() == PAGE_NAME ? profilePage : namePage;
-                        otherPage.update();
-                    }
-                }), true, dp(8f / 3f), dp(1.33f), 1.0f));
-                addView(subtitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 32, 4, 32, 24));
             }
 
             public void updateColors() {
                 setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
                 title.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
-                subtitle.setTextColor(getThemedColor(Theme.key_chat_messageLinkIn));
-                subtitle.setLinkTextColor(getThemedColor(Theme.key_chat_messageLinkIn));
             }
         }
 
@@ -1116,13 +906,11 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
                             selectedPeerCollectible = null;
                             selectedEmojiCollectible = MessagesController.emojiStatusCollectibleFromGift(gift);
                         }
-                        selectedResaleGift = null;
                         selectedColor = -1;
                     } else {
                         selectedEmoji = documentId == null ? 0 : documentId;
                         selectedEmojiCollectible = null;
                         selectedPeerCollectible = null;
-                        selectedResaleGift = null;
                     }
                     if (cell != null) {
                         cell.update(true);
@@ -1216,54 +1004,29 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
             final StarsController.GiftsList giftsList = type == PAGE_NAME ? giftsWithPeerColor : gifts;
             if ((type == PAGE_PROFILE || type == PAGE_NAME) && giftsList != null) {
                 giftsTabsRow = rowCount++;
-                if (selectedTabGift == null) {
-                    for (int i = 0; i < giftsList.gifts.size(); ++i) {
-                        TL_stars.SavedStarGift savedGift = giftsList.gifts.get(i);
-                        if (savedGift.gift instanceof TL_stars.TL_starGiftUnique) {
-                            uniqueGifts.add((TL_stars.TL_starGiftUnique) savedGift.gift);
-                        }
+                for (int i = 0; i < giftsList.gifts.size(); ++i) {
+                    TL_stars.SavedStarGift savedGift = giftsList.gifts.get(i);
+                    if (savedGift.gift instanceof TL_stars.TL_starGiftUnique) {
+                        uniqueGifts.add((TL_stars.TL_starGiftUnique) savedGift.gift);
                     }
-                    giftsStartRow = rowCount;
-                    rowCount += uniqueGifts.size();
-                    giftsCount += uniqueGifts.size();
-                    giftsEndRow = rowCount;
-                    if (gifts.loading || !gifts.endReached) {
-                        giftsLoadingStartRow = rowCount;
-                        final int spanCountLeft = 3 - (giftsCount % 3);
-                        final int loadingCells = giftsCount <= 0 ? 9 : spanCountLeft <= 0 ? 3 : spanCountLeft;
-                        rowCount += loadingCells;
-                        giftsCount += loadingCells;
-                        giftsLoadingEndRow = rowCount;
-                    } else if (uniqueGifts.isEmpty()) {
-                        giftsEmptyRowGap = rowCount++;
-                        giftsEmptyRow = rowCount++;
-                    }
-                    if (giftsList != null && seesLoading()) {
-                        giftsList.load();
-                    }
-                } else if (selectedTabGift != null && resaleGifts != null) {
-                    final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-                    for (int i = 0; i < resaleGifts.gifts.size(); ++i) {
-                        TL_stars.TL_starGiftUnique g = resaleGifts.gifts.get(i);
-                        if (DialogObject.getPeerDialogId(g.owner_id) != selfId && DialogObject.getPeerDialogId(g.host_id) != selfId) {
-                            uniqueGifts.add(g);
-                        }
-                    }
-                    giftsStartRow = rowCount;
-                    rowCount += uniqueGifts.size();
-                    giftsCount += uniqueGifts.size();
-                    giftsEndRow = rowCount;
-                    if (resaleGifts.loading || !resaleGifts.endReached) {
-                        giftsLoadingStartRow = rowCount;
-                        final int spanCountLeft = 3 - (giftsCount % 3);
-                        final int loadingCells = giftsCount <= 0 ? 9 : spanCountLeft <= 0 ? 3 : spanCountLeft;
-                        rowCount += loadingCells;
-                        giftsCount += loadingCells;
-                        giftsLoadingEndRow = rowCount;
-                    }
-                    if (resaleGifts != null && seesLoading()) {
-                        resaleGifts.load();
-                    }
+                }
+                giftsStartRow = rowCount;
+                rowCount += uniqueGifts.size();
+                giftsCount += uniqueGifts.size();
+                giftsEndRow = rowCount;
+                if (gifts.loading || !gifts.endReached) {
+                    giftsLoadingStartRow = rowCount;
+                    final int spanCountLeft = 3 - (giftsCount % 3);
+                    final int loadingCells = giftsCount <= 0 ? 9 : spanCountLeft <= 0 ? 3 : spanCountLeft;
+                    rowCount += loadingCells;
+                    giftsCount += loadingCells;
+                    giftsLoadingEndRow = rowCount;
+                } else if (uniqueGifts.isEmpty()) {
+                    giftsEmptyRowGap = rowCount++;
+                    giftsEmptyRow = rowCount++;
+                }
+                if (giftsList != null && seesLoading()) {
+                    giftsList.load();
                 }
                 giftsInfoRow = rowCount++;
             }
@@ -1285,21 +1048,10 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         }
 
         public void updateButton(boolean animated) {
-            if (selectedResaleGift != null) {
-                final TL_stars.TL_starGiftUnique gift = selectedResaleGift;
-                final AmountUtils.Amount stars = gift.getResellAmount(AmountUtils.Currency.STARS);
-                if (gift.resale_ton_only) {
-                    final AmountUtils.Amount ton = gift.getResellAmount(AmountUtils.Currency.TON);
-                    buttonState.text = StarsIntroActivity.replaceStars(true, LocaleController.formatString(R.string.ResellGiftBuyTON, ton.asFormatString()));
-                    buttonState.subText = StarsIntroActivity.replaceStars(formatPluralStringComma("ResellGiftBuyEq", (int) stars.asDecimal()));
-                } else {
-                    buttonState.text = StarsIntroActivity.replaceStars(formatPluralStringComma("ResellGiftBuy", (int) stars.asDecimal()));
-                    buttonState.subText = null;
-                }
-            } else {
-                buttonState.text = !localColors() && !getUserConfig().isPremium() && !isChannel ? buttonLocked : (selectedEmojiCollectible != null ? buttonCollectible : buttonUnlocked);
-                buttonState.subText = null;
-            }
+
+            buttonState.text = selectedEmojiCollectible != null ? buttonCollectible : buttonUnlocked;
+            buttonState.subText = null;
+
             if (getButtonPage() == this) {
                 applyButtonState(this, animated);
             }
@@ -1415,7 +1167,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
             );
         }
 
-        public void premiumChanged() {
+        public void refreshApplyButton() {
             updateButton(true);
         }
 
@@ -1918,7 +1670,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
     @Override
     public boolean onBackPressed(boolean invoked) {
-        if (!isChannel && hasUnsavedChanged() && (localColors() || getUserConfig().isPremium())) {
+        if (!isChannel && hasUnsavedChanged()) {
             if (invoked) showUnsavedAlert();
             return false;
         }
@@ -1927,7 +1679,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
 
     @Override
     public boolean isSwipeBackEnabled(MotionEvent event) {
-        if (!isChannel && hasUnsavedChanged() && (localColors() || getUserConfig().isPremium())) {
+        if (!isChannel && hasUnsavedChanged()) {
             return false;
         }
         return super.isSwipeBackEnabled(event);
@@ -1958,70 +1710,11 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
         if(localColors()) { applyLocalColors();return; }
         if (isChannel) {
             finishFragment();
-        } else {
-            if (!getUserConfig().isPremium()) {
-                showDialog(new PremiumFeatureBottomSheet(PeerColorActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_NAME_COLOR, true));
-                return;
-            }
-        }
-
-        final Page page = getButtonPage();
-        if (page.selectedResaleGift != null) {
-            final Page otherPage = page == namePage ? profilePage : namePage;
-            otherPage.setupValues();
-
-            loading = true;
-            button.setLoading(true);
-            buy(page.selectedResaleGift, bought -> {
-                loading = false;
-                button.setLoading(false);
-                if (bought) {
-                    apply();
-                    finishFragment();
-                    showBulletin();
-                }
-            });
-            return;
-        } else {
-            final Page otherPage = page == namePage ? profilePage : namePage;
-            if (otherPage.selectedResaleGift != null) {
-                otherPage.setupValues();
-            }
         }
 
         apply();
         finishFragment();
         showBulletin();
-    }
-
-    public void buy(TL_stars.TL_starGiftUnique gift, Utilities.Callback<Boolean> bought) {
-        if(localColors()) { if(bought!=null) bought.run(false);return; }
-        final long to = UserConfig.getInstance(currentAccount).getClientUserId();
-        final AmountUtils.Currency currency = gift.resale_ton_only ?
-                AmountUtils.Currency.TON : AmountUtils.Currency.STARS;
-        StarsController.getInstance(currentAccount, currency).getResellingGiftForm(gift, to, form -> {
-            if (form == null) return;
-            final StarGiftSheet.PaymentFormState initial = new StarGiftSheet.PaymentFormState(currency, form);
-            final String giftName = gift.title + " #" + LocaleController.formatNumber(gift.num, ',');
-            final boolean[] buying = new boolean[1];
-            final StarGiftSheet.ResaleBuyTransferAlert sheet = new StarGiftSheet.ResaleBuyTransferAlert(getContext(), resourceProvider, gift, initial, currentAccount, to, giftName, false, (state, progress) -> {
-                buying[0] = true;
-                progress.init();
-                StarsController.getInstance(currentAccount, state.currency).buyResellingGift(state.form, gift, to, (status, err) -> {
-                    progress.end();
-                    if (bought != null) {
-                        bought.run(status);
-                    }
-                });
-            });
-            sheet.alertDialog.setOnDismissListener(di -> {
-                if (buying[0]) return;
-                if (bought != null) {
-                    bought.run(false);
-                }
-            });
-            sheet.show();
-        });
     }
 
     private void applyLocalColors() {
@@ -2041,7 +1734,7 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     private boolean applying;
     private void apply() {
         if(localColors()) { applyLocalColors();return; }
-        if (applying || !isChannel && !getUserConfig().isPremium()) {
+        if (applying) {
             return;
         }
 
@@ -2292,8 +1985,8 @@ public class PeerColorActivity extends BaseFragment implements NotificationCente
     public void didReceivedNotification(int id, int account, Object... args) {
         if (account != currentAccount) return;
         if (id == NotificationCenter.currentUserPremiumStatusChanged) {
-            namePage.premiumChanged();
-            profilePage.premiumChanged();
+            namePage.refreshApplyButton();
+            profilePage.refreshApplyButton();
         } else if (id == NotificationCenter.starUserGiftsLoaded) {
             namePage.update();
             profilePage.update();
