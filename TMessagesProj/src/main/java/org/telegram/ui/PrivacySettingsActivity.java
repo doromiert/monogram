@@ -106,8 +106,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     @Keep
     private int musicRow;
     @Keep
-    private int giftsRow;
-    @Keep
     private int birthdayRow;
     @Keep
     private int forwardsRow;
@@ -115,8 +113,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     private int callsRow;
     @Keep
     private int voicesRow;
-    @Keep
-    private int noncontactsRow;
     @Keep
     private int emailLoginRow;
     private int privacyShadowRow;
@@ -175,8 +171,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     private boolean currentSuggest;
     private boolean newSuggest;
     private boolean archiveChats;
-    private boolean noncontactsValue;
-    private boolean feeValue;
 
     private boolean[] clear = new boolean[2];
     private SessionsActivity devicesActivityPreload;
@@ -193,8 +187,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         TLRPC.GlobalPrivacySettings privacySettings = getContactsController().getGlobalPrivacySettings();
         if (privacySettings != null) {
             archiveChats = privacySettings.archive_and_mute_new_noncontact_peers;
-            noncontactsValue = privacySettings.new_noncontact_peers_require_premium;
-            feeValue = (privacySettings.flags & 32) != 0;
         }
 
         updateRows();
@@ -449,14 +441,10 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                 presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_MUSIC));
             } else if (position == birthdayRow) {
                 presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_BIRTHDAY));
-            } else if (position == giftsRow) {
-                presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_GIFTS));
             } else if (position == forwardsRow) {
                 presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_FORWARDS));
             } else if (position == voicesRow) {
                 presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_VOICE_MESSAGES));
-            } else if (position == noncontactsRow) {
-                presentFragment(new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_MESSAGES));
             } else if (position == emailLoginRow) {
                 if (currentPassword == null || currentPassword.login_email_pattern == null) {
                     return;
@@ -699,8 +687,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
             TLRPC.GlobalPrivacySettings privacySettings = getContactsController().getGlobalPrivacySettings();
             if (privacySettings != null) {
                 archiveChats = privacySettings.archive_and_mute_new_noncontact_peers;
-                noncontactsValue = privacySettings.new_noncontact_peers_require_premium;
-                feeValue = (privacySettings.flags & 32) != 0;
             }
             if (listAdapter != null) {
                 listAdapter.notifyDataSetChanged();
@@ -769,13 +755,10 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         groupsDetailRow = -1;
         if (!getMessagesController().premiumFeaturesBlocked() || getUserConfig().isPremium()) {
             voicesRow = rowCount++;
-            noncontactsRow = rowCount++;
         } else {
             voicesRow = -1;
-            noncontactsRow = -1;
         }
         birthdayRow = rowCount++;
-        giftsRow = rowCount++;
         bioRow = rowCount++;
         musicRow = rowCount++;
         groupsRow = rowCount++;
@@ -1056,11 +1039,9 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                     position == bioRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_BIO) ||
                     position == musicRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_MUSIC) ||
                     position == birthdayRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_BIRTHDAY) ||
-                    position == giftsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_GIFTS) ||
                     position == forwardsRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_FORWARDS) ||
                     position == phoneNumberRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_PHONE) ||
                     position == voicesRow && !getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_VOICE_MESSAGES) ||
-                    position == noncontactsRow ||
                     position == deleteAccountRow && !getContactsController().getLoadingDeleteInfo() ||
                     position == newChatsRow && !getContactsController().getLoadingGlobalSettings() ||
                     position == emailLoginRow || position == paymentsClearRow || position == secretMapRow ||
@@ -1177,14 +1158,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                             value = formatRulesString(getAccountInstance(), ContactsController.PRIVACY_RULES_TYPE_BIRTHDAY);
                         }
                         textCell.setTextAndValue(getString(R.string.PrivacyBirthday), value, true);
-                    } else if (position == giftsRow) {
-                        if (getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_GIFTS)) {
-                            showLoading = true;
-                            loadingLen = 30;
-                        } else {
-                            value = formatRulesString(getAccountInstance(), ContactsController.PRIVACY_RULES_TYPE_GIFTS);
-                        }
-                        textCell.setTextAndValue(getString(R.string.PrivacyGifts), value, true);
                     } else if (position == forwardsRow) {
                         if (getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_FORWARDS)) {
                             showLoading = true;
@@ -1202,12 +1175,9 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                         } else {
                             value = formatRulesString(getAccountInstance(), ContactsController.PRIVACY_RULES_TYPE_VOICE_MESSAGES);
                         }
-                        textCell.setTextAndValue(addPremiumStar(getString(R.string.PrivacyVoiceMessages)), value, noncontactsRow != -1);
+                        textCell.setTextAndValue(addPremiumStar(getString(R.string.PrivacyVoiceMessages)), value, true);
                         ImageView imageView = textCell.getValueImageView();
                         imageView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
-                    } else if (position == noncontactsRow) {
-                        value = getString(feeValue ? R.string.ContactsAndFee : noncontactsValue ? R.string.ContactsAndPremium : R.string.P2PEverybody);
-                        textCell.setTextAndValue(getMessagesController().newNoncontactPeersRequirePremiumWithoutOwnpremium && !getMessagesController().starsPaidMessagesAvailable ? getString(R.string.PrivacyMessages) : addPremiumStar(getString(R.string.PrivacyMessages)), value, musicRow != -1);
                     } else if (position == passportRow) {
                         textCell.setText(getString("TelegramPassport", R.string.TelegramPassport), true);
                     } else if (position == deleteAccountRow) {

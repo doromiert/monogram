@@ -802,18 +802,20 @@ public class LinkManager {
 //                    scrollTo("");
                 return true;
             }
+            // Paid contact requirements and Telegram gifts have no XMPP settings counterpart.
+            if ("gifts".equalsIgnoreCase(second) || "messages".equalsIgnoreCase(second)) {
+                return true;
+            }
             if (!TextUtils.isEmpty(third) && (
                 "phone-number".equalsIgnoreCase(second) ||
                 "last-seen".equalsIgnoreCase(second) ||
                 "profile-photos".equalsIgnoreCase(second) ||
                 "bio".equalsIgnoreCase(second) ||
-                "gifts".equalsIgnoreCase(second) ||
                 "birthday".equalsIgnoreCase(second) ||
                 "saved-music".equalsIgnoreCase(second) ||
                 "forwards".equalsIgnoreCase(second) ||
                 "calls".equalsIgnoreCase(second) ||
                 "voice".equalsIgnoreCase(second) ||
-                "messages".equalsIgnoreCase(second) ||
                 "invites".equalsIgnoreCase(second)
             )) {
                 int type = 0;
@@ -821,7 +823,6 @@ public class LinkManager {
                 else if ("last-seen".equalsIgnoreCase(second))      type = ContactsController.PRIVACY_RULES_TYPE_LASTSEEN;
                 else if ("profile-photos".equalsIgnoreCase(second)) type = ContactsController.PRIVACY_RULES_TYPE_PHOTO;
                 else if ("bio".equalsIgnoreCase(second))            type = ContactsController.PRIVACY_RULES_TYPE_BIO;
-                else if ("gifts".equalsIgnoreCase(second))          type = ContactsController.PRIVACY_RULES_TYPE_GIFTS;
                 else if ("birthday".equalsIgnoreCase(second))       type = ContactsController.PRIVACY_RULES_TYPE_BIRTHDAY;
                 else if ("saved-music".equalsIgnoreCase(second))    type = ContactsController.PRIVACY_RULES_TYPE_MUSIC;
                 else if ("forwards".equalsIgnoreCase(second))       type = ContactsController.PRIVACY_RULES_TYPE_FORWARDS;
@@ -829,7 +830,6 @@ public class LinkManager {
                     if ("p2p".equalsIgnoreCase(third))             type = ContactsController.PRIVACY_RULES_TYPE_P2P;
                     else                                            type = ContactsController.PRIVACY_RULES_TYPE_CALLS;
                 else if ("voice".equalsIgnoreCase(second))          type = ContactsController.PRIVACY_RULES_TYPE_VOICE_MESSAGES;
-                else if ("messages".equalsIgnoreCase(second))       type = ContactsController.PRIVACY_RULES_TYPE_MESSAGES;
                 else if ("invites".equalsIgnoreCase(second))        type = ContactsController.PRIVACY_RULES_TYPE_INVITE;
 
                 presentFragment(new PrivacyControlActivity(type));
@@ -842,14 +842,6 @@ public class LinkManager {
                 if ("never-share".equalsIgnoreCase(third) || "never-share".equalsIgnoreCase(fourth) ||
                     "never".equalsIgnoreCase(third) || "never".equalsIgnoreCase(fourth))
                     scrollTo("nobodyRow");
-                if ("gifts".equalsIgnoreCase(second) && "show-icon".equalsIgnoreCase(third))
-                    scrollTo("showGiftIconRow");
-                if ("gifts".equalsIgnoreCase(second) && "accepted-types".equalsIgnoreCase(third))
-                    scrollTo("giftTypesHeaderRow");
-                if ("messages".equalsIgnoreCase(second) && "set-price".equalsIgnoreCase(third))
-                    scrollTo("priceRow");
-                if ("messages".equalsIgnoreCase(second) && "remove-fee".equalsIgnoreCase(third))
-                    scrollTo("alwaysShareRow");
                 if ("last-seen".equalsIgnoreCase(second) && "hide-read-time".equalsIgnoreCase(third))
                     scrollTo("readRow");
                 if ("profile-photos".equalsIgnoreCase(second)) {
