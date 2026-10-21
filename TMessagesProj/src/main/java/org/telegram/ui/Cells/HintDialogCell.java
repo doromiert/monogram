@@ -12,11 +12,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
-import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -29,21 +25,16 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
-import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CheckBox2;
 import org.telegram.ui.Components.CounterView;
-import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumGradient;
 
 public class HintDialogCell extends FrameLayout {
 
@@ -64,16 +55,6 @@ public class HintDialogCell extends FrameLayout {
     CounterView counterView;
     CheckBox2 checkBox;
     private final boolean drawCheckbox;
-
-    private boolean showPremiumBlocked;
-    private final AnimatedFloat premiumBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private boolean premiumBlocked;
-    private final AnimatedFloat starsBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private long starsPriceBlocked;
-
-    public boolean isBlocked() {
-        return premiumBlocked;
-    }
 
     public HintDialogCell(Context context, boolean drawCheckbox, Theme.ResourcesProvider resourcesProvider) {
         super(context);
@@ -121,27 +102,6 @@ public class HintDialogCell extends FrameLayout {
         }
     }
 
-    public void showPremiumBlocked() {
-        if (showPremiumBlocked) return;
-        showPremiumBlocked = true;
-        NotificationCenter.getInstance(currentAccount).listen(this, NotificationCenter.userIsPremiumBlockedUpadted, args -> {
-            updatePremiumBlocked(true);
-        });
-    }
-
-    private void updatePremiumBlocked(boolean animated) {
-        final TL_account.RequirementToContact r = showPremiumBlocked && currentUser != null ? MessagesController.getInstance(currentAccount).isUserContactBlocked(currentUser.id) : null;
-        if (premiumBlocked != DialogObject.isPremiumBlocked(r) || starsPriceBlocked != DialogObject.getMessagesStarsPrice(r)) {
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
-            if (!animated) {
-                premiumBlockedT.set(premiumBlocked, true);
-                starsBlockedT.set(starsPriceBlocked > 0, true);
-            }
-            invalidate();
-        }
-    }
-
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(86), MeasureSpec.EXACTLY));
@@ -180,7 +140,7 @@ public class HintDialogCell extends FrameLayout {
             avatarDrawable.setInfo(currentAccount, chat);
             currentUser = null;
         }
-        updatePremiumBlocked(true);
+
     }
 
     public void setColors(int textColorKey, int backgroundColorKey) {
@@ -219,7 +179,7 @@ public class HintDialogCell extends FrameLayout {
             currentUser = null;
             imageView.setForUserOrChat(chat, avatarDrawable);
         }
-        updatePremiumBlocked(false);
+
         if (counter) {
             update(0);
         }
@@ -227,14 +187,11 @@ public class HintDialogCell extends FrameLayout {
 
     private int backgroundColorKey = Theme.key_windowBackgroundWhite;
 
-    private PremiumGradient.PremiumGradientTools premiumGradient;
-    private Drawable lockDrawable;
-
     @Override
     protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
         boolean result = super.drawChild(canvas, child, drawingTime);
         if (child == imageView) {
-            boolean showOnline = !premiumBlocked && currentUser != null && !currentUser.bot && (currentUser.status != null && currentUser.status.expires > ConnectionsManager.getInstance(currentAccount).getCurrentTime() || MessagesController.getInstance(currentAccount).onlinePrivacy.containsKey(currentUser.id));
+            boolean showOnline = currentUser != null && !currentUser.bot && (currentUser.status != null && currentUser.status.expires > ConnectionsManager.getInstance(currentAccount).getCurrentTime() || MessagesController.getInstance(currentAccount).onlinePrivacy.containsKey(currentUser.id));
             if (!wasDraw) {
                 showOnlineProgress = showOnline ? 1f : 0f;
             }
@@ -252,33 +209,7 @@ public class HintDialogCell extends FrameLayout {
                 invalidate();
             }
 
-            final float lockT = premiumBlockedT.set(premiumBlocked);
-            if (lockT > 0) {
-                float top = child.getY() + child.getHeight() / 2f + dp(18);
-                float left = child.getX() + child.getWidth() / 2f + dp(18);
-
-                canvas.save();
-                Theme.dialogs_onlineCirclePaint.setColor(Theme.getColor(backgroundColorKey, resourcesProvider));
-                canvas.drawCircle(left, top, dp(10 + 1.33f) * lockT, Theme.dialogs_onlineCirclePaint);
-                if (premiumGradient == null) {
-                    premiumGradient = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradient1, Theme.key_premiumGradient2, -1, -1, -1, resourcesProvider);
-                }
-                premiumGradient.gradientMatrix((int) (left - dp(10)), (int) (top - dp(10)), (int) (left + dp(10)), (int) (top + dp(10)), 0, 0);
-                canvas.drawCircle(left, top, dp(10) * lockT, premiumGradient.paint);
-                if (lockDrawable == null) {
-                    lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock2).mutate();
-                    lockDrawable.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
-                }
-                lockDrawable.setBounds(
-                        (int) (left - lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                        (int) (top  - lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT),
-                        (int) (left + lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                        (int) (top  + lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT)
-                );
-                lockDrawable.setAlpha((int) (0xFF * lockT));
-                lockDrawable.draw(canvas);
-                canvas.restore();
-            } else if (showOnlineProgress != 0) {
+            if (showOnlineProgress != 0) {
                 int top = AndroidUtilities.dp(53);
                 int left = AndroidUtilities.dp(59);
                 canvas.save();

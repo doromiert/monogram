@@ -12863,10 +12863,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 searchViewPager.dialogsSearchAdapter.clickedSponsoredPeer(peer);
                 return;
             }
-            if (view instanceof ProfileSearchCell && ((ProfileSearchCell) view).isBlocked()) {
-                showPremiumBlockedToast(view, ((ProfileSearchCell) view).getDialogId());
-                return;
-            }
+
             if (initialDialogsType == DIALOGS_TYPE_WIDGET) {
                 onItemLongClick(searchViewPager.searchListView, view, position, x, y, -1, searchViewPager.dialogsSearchAdapter);
                 return;
@@ -12876,10 +12873,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         searchViewPager.searchListView.setOnItemLongClickListener(new RecyclerListView.OnItemLongClickListenerExtended() {
             @Override
             public boolean onItemClick(View view, int position, float x, float y) {
-                if (view instanceof ProfileSearchCell && ((ProfileSearchCell) view).isBlocked()) {
-                    showPremiumBlockedToast(view, ((ProfileSearchCell) view).getDialogId());
-                    return true;
-                }
+
                 return onItemLongClick(searchViewPager.searchListView, view, position, x, y, -1, searchViewPager.dialogsSearchAdapter);
             }
 

@@ -51,22 +51,16 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CheckBox2;
-import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumGradient;
 import org.telegram.ui.Components.RLottieDrawable;
-import org.telegram.ui.Components.Text;
-import org.telegram.ui.Stars.StarsIntroActivity;
 
-public class ShareDialogCell extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
+public class ShareDialogCell extends FrameLayout {
 
     private final BackupImageView imageView;
     private final TextView nameTextView;
@@ -88,19 +82,6 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
 
     public static final int TYPE_SHARE = 0;
     public static final int TYPE_CREATE = 2;
-
-    private final AnimatedFloat premiumBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private boolean premiumBlocked;
-    private final AnimatedFloat starsBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private long starsPriceBlocked;
-
-    public boolean isBlocked() {
-        return premiumBlocked;
-    }
-
-    public long getStarsPrice() {
-        return starsPriceBlocked;
-    }
 
     public BackupImageView getImageView() {
         return imageView;
@@ -137,7 +118,7 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
             }
         };
         NotificationCenter.listenEmojiLoading(nameTextView);
-        nameTextView.setTextColor(getThemedColor(premiumBlocked ? Theme.key_windowBackgroundWhiteGrayText5 : Theme.key_dialogTextBlack));
+        nameTextView.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
         nameTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
         nameTextView.setMaxLines(2);
         nameTextView.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
@@ -169,32 +150,6 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
     }
 
     @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.userIsPremiumBlockedUpadted);
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.userIsPremiumBlockedUpadted);
-    }
-
-    @Override
-    public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.userIsPremiumBlockedUpadted) {
-            final TL_account.RequirementToContact r = user != null ? MessagesController.getInstance(currentAccount).isUserContactBlocked(user.id) : null;
-            final long starsPrice = currentDialog < 0 ? MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(currentDialog) : DialogObject.getMessagesStarsPrice(r);
-            if (premiumBlocked != DialogObject.isPremiumBlocked(r) || starsPriceBlocked != starsPrice) {
-                premiumBlocked = DialogObject.isPremiumBlocked(r);
-                starsPriceBlocked = starsPrice;
-                nameTextView.setTextColor(getThemedColor(premiumBlocked ? Theme.key_windowBackgroundWhiteGrayText5 : Theme.key_dialogTextBlack));
-                invalidate();
-            }
-        }
-    }
-
-    @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(currentType == TYPE_CREATE ? 95 : 103), MeasureSpec.EXACTLY));
     }
@@ -213,12 +168,9 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
             imageView.setImage(null, null, repostStoryDrawable, null);
         } else if (DialogObject.isUserDialog(uid)) {
             user = MessagesController.getInstance(currentAccount).getUser(uid);
-            final TL_account.RequirementToContact r = MessagesController.getInstance(currentAccount).isUserContactBlocked(uid);
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
-            nameTextView.setTextColor(getThemedColor(premiumBlocked ? Theme.key_windowBackgroundWhiteGrayText5 : Theme.key_dialogTextBlack));
-            premiumBlockedT.force(premiumBlocked);
-            starsBlockedT.force(starsPriceBlocked > 0);
+
+            nameTextView.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
+
             invalidate();
             avatarDrawable.setInfo(currentAccount, user);
             if (currentType != TYPE_CREATE && UserObject.isReplyUser(user)) {
@@ -242,10 +194,7 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
             imageView.setRoundRadius(dp(28));
         } else {
             user = null;
-            premiumBlocked = false;
-            premiumBlockedT.force(0);
-            starsPriceBlocked = MessagesController.getInstance(currentAccount).getSendPaidMessagesStars(uid);
-            starsBlockedT.force(false);
+
             TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-uid);
             if (name != null) {
                 nameTextView.setText(name);
@@ -339,13 +288,6 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
         }
     }
 
-    private PremiumGradient.PremiumGradientTools premiumGradient;
-    private Drawable lockDrawable;
-
-    private final Paint priceBackgroundPaint = new Paint();
-    private long priceTextValue;
-    private Text priceText;
-
     @Override
     protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
         boolean result = super.drawChild(canvas, child, drawingTime);
@@ -358,65 +300,14 @@ public class ShareDialogCell extends FrameLayout implements NotificationCenter.N
                 }
                 lastUpdateTime = newTime;
 
-                final float priceT = starsBlockedT.set(starsPriceBlocked > 0);
-                if (priceT > 0) {
-                    float cx = imageView.getLeft() + imageView.getMeasuredWidth() / 2.0f + dp(18);
-                    float cy = imageView.getTop() + imageView.getMeasuredHeight() / 2.0f - dp(20.83f);
-
-                    if (priceText == null || priceTextValue != starsPriceBlocked && starsPriceBlocked > 0) {
-                        priceText = new Text(StarsIntroActivity.replaceStars("⭐️" + AndroidUtilities.formatWholeNumber((int) (priceTextValue = starsPriceBlocked), 0), .65f), 9.33f, AndroidUtilities.bold());
-                    }
-                    final float w = (priceText == null ? 0 : priceText.getCurrentWidth()) + dp(10);
-                    final float h = dp(14.33f);
-
-                    AndroidUtilities.rectTmp.set(cx - w / 2.0f, cy - h / 2.0f, cx + w / 2.0f, cy + h / 2.0f);
-                    AndroidUtilities.rectTmp.inset(-dp(1.33f), dp(-1.33f));
-                    priceBackgroundPaint.setColor(getThemedColor(Theme.key_dialogBackground));
-                    canvas.drawRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.rectTmp.height() / 2.0f, AndroidUtilities.rectTmp.height() / 2.0f, priceBackgroundPaint);
-                    AndroidUtilities.rectTmp.inset(dp(1.33f), dp(1.33f));
-                    priceBackgroundPaint.setColor(getThemedColor(Theme.key_dialogRoundCheckBox));
-                    canvas.drawRoundRect(AndroidUtilities.rectTmp, AndroidUtilities.rectTmp.height() / 2.0f, AndroidUtilities.rectTmp.height() / 2.0f, priceBackgroundPaint);
-
-                    if (priceText != null) {
-                        priceText.draw(canvas, cx - w / 2.0f + dp(5), cy, Color.WHITE, 1.0f);
-                    }
-                }
-                final float lockT = premiumBlockedT.set(premiumBlocked);
-                if (lockT > 0) {
-                    int top = imageView.getBottom() - dp(9);
-                    int left = imageView.getRight() - dp(9.33f);
-
-                    canvas.save();
-                    Theme.dialogs_onlineCirclePaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
-                    canvas.drawCircle(left, top, dp(12) * lockT, Theme.dialogs_onlineCirclePaint);
-                    if (premiumGradient == null) {
-                        premiumGradient = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradient1, Theme.key_premiumGradient2, -1, -1, -1, resourcesProvider);
-                    }
-                    premiumGradient.gradientMatrix(left - dp(10), top - dp(10), left + dp(10), top + dp(10), 0, 0);
-                    canvas.drawCircle(left, top, dp(10) * lockT, premiumGradient.paint);
-                    if (lockDrawable == null) {
-                        lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock2).mutate();
-                        lockDrawable.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
-                    }
-                    lockDrawable.setBounds(
-                        (int) (left - lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                        (int) (top  - lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT),
-                        (int) (left + lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                        (int) (top  + lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT)
-                    );
-                    lockDrawable.setAlpha((int) (0xFF * lockT));
-                    lockDrawable.draw(canvas);
-                    canvas.restore();
-                }
-
-                boolean isOnline = !premiumBlocked && !user.self && !user.bot && (user.status != null && user.status.expires > ConnectionsManager.getInstance(currentAccount).getCurrentTime() || MessagesController.getInstance(currentAccount).onlinePrivacy.containsKey(user.id));
+                boolean isOnline = !user.self && !user.bot && (user.status != null && user.status.expires > ConnectionsManager.getInstance(currentAccount).getCurrentTime() || MessagesController.getInstance(currentAccount).onlinePrivacy.containsKey(user.id));
                 if (isOnline || onlineProgress != 0) {
                     int top = imageView.getBottom() - dp(6);
                     int left = imageView.getRight() - dp(10);
                     Theme.dialogs_onlineCirclePaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
-                    canvas.drawCircle(left, top, dp(7) * onlineProgress * (1.0f - lockT) * (1.0f - priceT), Theme.dialogs_onlineCirclePaint);
+                    canvas.drawCircle(left, top, dp(7) * onlineProgress, Theme.dialogs_onlineCirclePaint);
                     Theme.dialogs_onlineCirclePaint.setColor(getThemedColor(Theme.key_chats_onlineCircle));
-                    canvas.drawCircle(left, top, dp(5) * onlineProgress * (1.0f - lockT) * (1.0f - priceT), Theme.dialogs_onlineCirclePaint);
+                    canvas.drawCircle(left, top, dp(5) * onlineProgress, Theme.dialogs_onlineCirclePaint);
                     if (isOnline) {
                         if (onlineProgress < 1.0f) {
                             onlineProgress += dt / 150.0f;

@@ -483,14 +483,7 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
                 }
                 GroupCreateUserCell cell = (GroupCreateUserCell) view;
                 Object object = cell.getObject();
-                if (cell.isBlocked()) {
-                    long dialogId;
-                    if (object instanceof TLRPC.User) {
-                        dialogId = ((TLRPC.User) object).id;
-                    } else return;
-                    showPremiumBlockedToast(cell, dialogId);
-                    return;
-                }
+
                 if (selectedChats.contains(object)) {
                     selectedChats.remove(object);
                 } else {
@@ -1398,14 +1391,7 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
                             cell.setChecked(selectedChats.contains(chat), false);
                         } else if (type == TYPE_ADD_MEMBERS_RESTRICTED || type == TYPE_CALL_RESTRICTED) {
                             TLRPC.User user = restrictedUsers.get(position - chatStartRow);
-                            final boolean premiumBlocked = premiumMessagingBlockedUsers != null && premiumMessagingBlockedUsers.contains(user.id);
-                            cell.overridePremiumBlocked(premiumBlocked ? new TL_account.requirementToContactPremium() : null, false);
-                            String signature;
-                            if (premiumBlocked) {
-                                signature = getString(R.string.InvitePremiumBlockedUser);
-                            } else {
-                                signature = LocaleController.formatUserStatus(currentAccount, user, null, null);
-                            }
+                            String signature = LocaleController.formatUserStatus(currentAccount, user, null, null);
                             cell.setObject(user, ContactsController.formatName(user.first_name, user.last_name), signature, position != chatEndRow - 1f);
                             cell.setChecked(selectedChats.contains(user), false);
                         }

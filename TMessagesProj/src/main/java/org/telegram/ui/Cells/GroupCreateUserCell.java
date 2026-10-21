@@ -15,12 +15,9 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -32,7 +29,6 @@ import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
-import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
@@ -43,10 +39,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CheckBox2;
@@ -88,44 +82,6 @@ public class GroupCreateUserCell extends FrameLayout {
 
     private boolean showSelfAsSaved;
     Theme.ResourcesProvider resourcesProvider;
-
-    private final AnimatedFloat premiumBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private boolean premiumBlocked;
-    private final AnimatedFloat starsBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private long starsPriceBlocked;
-    private TL_account.RequirementToContact blockedOverridden;
-    private boolean showPremiumBlocked;
-
-    public boolean isBlocked() {
-        return premiumBlocked;
-    }
-
-    public GroupCreateUserCell showPremiumBlocked() {
-        if (showPremiumBlocked) return this;
-        showPremiumBlocked = true;
-        NotificationCenter.getInstance(currentAccount).listen(this, NotificationCenter.userIsPremiumBlockedUpadted, args -> {
-            updatePremiumBlocked(true);
-        });
-        return this;
-    }
-
-    private void updatePremiumBlocked(boolean animated) {
-        final TL_account.RequirementToContact r = showPremiumBlocked ? (blockedOverridden != null ? blockedOverridden : currentObject instanceof TLRPC.User ? MessagesController.getInstance(currentAccount).isUserContactBlocked(((TLRPC.User) currentObject).id) : null) : null;
-        if (premiumBlocked != DialogObject.isPremiumBlocked(r) || starsPriceBlocked != DialogObject.getMessagesStarsPrice(r)) {
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
-            if (!animated) {
-                premiumBlockedT.set(premiumBlocked, true);
-            }
-            invalidate();
-        }
-    }
-
-    public void overridePremiumBlocked(TL_account.RequirementToContact blocked, boolean animated) {
-        showPremiumBlocked = true;
-        blockedOverridden = blocked;
-        updatePremiumBlocked(animated);
-    }
 
     public GroupCreateUserCell(Context context, int checkBoxType, int pad, boolean selfAsSaved) {
         this(context, checkBoxType, pad, selfAsSaved, false, null);
@@ -548,20 +504,13 @@ public class GroupCreateUserCell extends FrameLayout {
             statusTextView.setEmojiColor(statusTextView.getTextColor());
         }
 
-        updatePremiumBlocked(false);
     }
-
-    private PremiumGradient.PremiumGradientTools premiumGradient;
-    private Drawable lockDrawable;
-    private Paint lockBackgroundPaint;
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        float lockT = premiumBlockedT.set(premiumBlocked);
-        if (lockT > 0) {
 
-        } else if (checkBoxType == 2 && (isChecked || checkProgress > 0.0f)) {
+        if (checkBoxType == 2 && (isChecked || checkProgress > 0.0f)) {
             paint.setColor(Theme.getColor(Theme.key_checkboxSquareBackground, resourcesProvider));
             float cx = avatarImageView.getLeft() + avatarImageView.getMeasuredWidth() / 2;
             float cy = avatarImageView.getTop() + avatarImageView.getMeasuredHeight() / 2;
@@ -576,49 +525,6 @@ public class GroupCreateUserCell extends FrameLayout {
             } else {
                 canvas.drawRect(start, getMeasuredHeight() - 1, end, getMeasuredHeight(), Theme.getThemePaint(Theme.key_paint_divider, resourcesProvider));
             }
-        }
-    }
-
-    @Override
-    protected void dispatchDraw(Canvas canvas) {
-        super.dispatchDraw(canvas);
-
-        float lockT = premiumBlockedT.set(premiumBlocked);
-        if (lockT > 0) {
-            float top =  avatarImageView.getY() + avatarImageView.getHeight() / 2f + dp(18);
-            float left = avatarImageView.getX() + avatarImageView.getWidth() / 2f + dp(18);
-
-            canvas.save();
-            Theme.dialogs_onlineCirclePaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
-            canvas.drawCircle(left, top, dp(10 + 1.33f) * lockT, Theme.dialogs_onlineCirclePaint);
-            Paint paint;
-            if (blockedOverridden == null) {
-                if (premiumGradient == null) {
-                    premiumGradient = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradient1, Theme.key_premiumGradient2, -1, -1, -1, resourcesProvider);
-                }
-                premiumGradient.gradientMatrix((int) (left - dp(10)), (int) (top - dp(10)), (int) (left + dp(10)), (int) (top + dp(10)), 0, 0);
-                paint = premiumGradient.paint;
-            } else {
-                if (lockBackgroundPaint == null) {
-                    lockBackgroundPaint = new Paint();
-                }
-                lockBackgroundPaint.setColor(Theme.getColor(Theme.key_avatar_backgroundGray, resourcesProvider));
-                paint = lockBackgroundPaint;
-            }
-            canvas.drawCircle(left, top, dp(10) * lockT, paint);
-            if (lockDrawable == null) {
-                lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock2).mutate();
-                lockDrawable.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
-            }
-            lockDrawable.setBounds(
-                    (int) (left - lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                    (int) (top  - lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT),
-                    (int) (left + lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                    (int) (top  + lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT)
-            );
-            lockDrawable.setAlpha((int) (0xFF * lockT));
-            lockDrawable.draw(canvas);
-            canvas.restore();
         }
     }
 

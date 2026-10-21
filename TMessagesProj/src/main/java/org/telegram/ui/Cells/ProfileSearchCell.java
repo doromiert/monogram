@@ -13,14 +13,10 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.text.Layout;
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.StaticLayout;
@@ -49,17 +45,14 @@ import org.telegram.messenger.Utilities;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
-import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CanvasButton;
 import org.telegram.ui.Components.CheckBox2;
 import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CombinedDrawable;
-import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.PhotoBubbleClip;
 import org.telegram.ui.Components.Premium.PremiumGradient;
@@ -68,7 +61,6 @@ import org.telegram.ui.Components.Text;
 import org.telegram.ui.FilterCreateActivity;
 import org.telegram.ui.NotificationsSettingsActivity;
 import org.telegram.ui.Stories.StoriesUtilities;
-import org.telegram.ui.community.CommunityUtils;
 
 import java.util.Locale;
 
@@ -125,11 +117,6 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
     private boolean drawCheck;
     private boolean drawPremium;
 
-    private boolean showPremiumBlocked;
-    private final AnimatedFloat premiumBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private boolean premiumBlocked;
-    private final AnimatedFloat starsBlockedT = new AnimatedFloat(this, 0, 350, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private long starsPriceBlocked;
     private boolean openBot;
 
     private int statusLeft;
@@ -185,11 +172,6 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
         this.onSponsoredOptionsClick = onOptionsClick;
     }
 
-    public ProfileSearchCell showPremiumBlock(boolean show) {
-        showPremiumBlocked = show;
-        return this;
-    }
-
     private boolean customPaints;
     private TextPaint namePaint, statusPaint;
     public ProfileSearchCell useCustomPaints() {
@@ -216,25 +198,19 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
             user = (TLRPC.User) object;
             chat = null;
             contact = null;
-            final TL_account.RequirementToContact r = showPremiumBlocked && user != null ? MessagesController.getInstance(currentAccount).isUserContactBlocked(user.id) : null;
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
+
             setOpenBotButton(allowBotOpenButton && user.bot_has_main_app);
         } else if (object instanceof TLRPC.Chat) {
             chat = (TLRPC.Chat) object;
             user = null;
             contact = null;
-            final TL_account.RequirementToContact r = ChatObject.getRequirementToContact(chat);
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
+
             setOpenBotButton(false);
         } else if (object instanceof ContactsController.Contact) {
             contact = (ContactsController.Contact) object;
             chat = null;
             user = null;
-            final TL_account.RequirementToContact r = showPremiumBlocked && contact != null && contact.user != null ? MessagesController.getInstance(currentAccount).isUserContactBlocked(contact.user.id) : null;
-            premiumBlocked = DialogObject.isPremiumBlocked(r);
-            starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
+
             setOpenBotButton(false);
         } else {
             setOpenBotButton(false);
@@ -335,9 +311,7 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
         super.onDetachedFromWindow();
         avatarImage.onDetachedFromWindow();
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.emojiLoaded);
-        if (showPremiumBlocked) {
-            NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.userIsPremiumBlockedUpadted);
-        }
+
         statusDrawable.detach();
         botVerificationDrawable.detach();
     }
@@ -347,9 +321,7 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
         super.onAttachedToWindow();
         avatarImage.onAttachedToWindow();
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.emojiLoaded);
-        if (showPremiumBlocked) {
-            NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.userIsPremiumBlockedUpadted);
-        }
+
         statusDrawable.attach();
         botVerificationDrawable.attach();
     }
@@ -358,20 +330,6 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.emojiLoaded) {
             invalidate();
-        } else if (id == NotificationCenter.userIsPremiumBlockedUpadted) {
-            final TL_account.RequirementToContact r;
-            if (user != null) {
-                r = showPremiumBlocked ? MessagesController.getInstance(currentAccount).isUserContactBlocked(user.id) : null;
-            } else if (chat != null) {
-                r = ChatObject.getRequirementToContact(chat);
-            } else if (contact != null) {
-                r = showPremiumBlocked && contact.user != null ? MessagesController.getInstance(currentAccount).isUserContactBlocked(contact.user.id) : null;
-            } else return;
-            if (premiumBlocked != DialogObject.isPremiumBlocked(r) || starsPriceBlocked != DialogObject.getMessagesStarsPrice(r)) {
-                premiumBlocked = DialogObject.isPremiumBlocked(r);
-                starsPriceBlocked = DialogObject.getMessagesStarsPrice(r);
-                invalidate();
-            }
         }
     }
 
@@ -932,9 +890,6 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
         postInvalidate();
     }
 
-    private PremiumGradient.PremiumGradientTools premiumGradient;
-    private Drawable lockDrawable;
-
     @Override
     protected void onDraw(Canvas canvas) {
         if (user == null && chat == null && encryptedChat == null && contact == null) {
@@ -1078,34 +1033,6 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
             avatarImage.draw(canvas);
         }
 
-        final float lockT = premiumBlockedT.set(premiumBlocked);
-        if (lockT > 0) {
-            final float top = avatarImage.getCenterY() + dp(14);
-            final float left = avatarImage.getCenterX() + dp(16);
-
-            canvas.save();
-            Theme.dialogs_onlineCirclePaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
-            canvas.drawCircle(left, top, dp(10 + 1.33f) * lockT, Theme.dialogs_onlineCirclePaint);
-            if (premiumGradient == null) {
-                premiumGradient = new PremiumGradient.PremiumGradientTools(Theme.key_premiumGradient1, Theme.key_premiumGradient2, -1, -1, -1, resourcesProvider);
-            }
-            premiumGradient.gradientMatrix((int) (left - dp(10)), (int) (top - dp(10)), (int) (left + dp(10)), (int) (top + dp(10)), 0, 0);
-            canvas.drawCircle(left, top, dp(10) * lockT, premiumGradient.paint);
-            if (lockDrawable == null) {
-                lockDrawable = getContext().getResources().getDrawable(R.drawable.msg_mini_lock2).mutate();
-                lockDrawable.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
-            }
-            lockDrawable.setBounds(
-                    (int) (left - lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                    (int) (top  - lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT),
-                    (int) (left + lockDrawable.getIntrinsicWidth() / 2f * .875f * lockT),
-                    (int) (top  + lockDrawable.getIntrinsicHeight() / 2f * .875f * lockT)
-            );
-            lockDrawable.setAlpha((int) (0xFF * lockT));
-            lockDrawable.draw(canvas);
-            canvas.restore();
-        }
-
         if (openBot && openButtonText != null) {
             final float buttonWidth = dp(14 + 14) + openButtonText.getCurrentWidth();
             final float x = LocaleController.isRTL ? dp(15) : getWidth() - buttonWidth - dp(15);
@@ -1120,10 +1047,6 @@ public class ProfileSearchCell extends BaseCell implements NotificationCenter.No
             openButtonText.draw(canvas, x + dp(14), getHeight() / 2.0f, 0xFFFFFFFF, 1.0f);
             canvas.restore();
         }
-    }
-
-    public boolean isBlocked() {
-        return premiumBlocked;
     }
 
     @Override

@@ -3463,7 +3463,7 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
                     };
                     layoutManager.setOrientation(LinearLayoutManager.HORIZONTAL);
                     horizontalListView.setLayoutManager(layoutManager);
-                    horizontalListView.setAdapter(categoryAdapter = new DialogsSearchAdapter.CategoryAdapterRecycler(context, currentAccount, true, true, resourcesProvider) {
+                    horizontalListView.setAdapter(categoryAdapter = new DialogsSearchAdapter.CategoryAdapterRecycler(context, currentAccount, true, resourcesProvider) {
                         @Override
                         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
                             HintDialogCell cell = (HintDialogCell) holder.itemView;
