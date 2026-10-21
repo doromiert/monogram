@@ -787,3 +787,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [ ] Continue monetization purge: remaining gift history/profile management/market browsers, shared collectible rendering/page slots, Stars/Premium/backend/schema/assets; audit the full source and packaged APK before declaring completion.
 
 - [x] Source cleanup: delete gift resale browser, purchase-message sheet and collectible preview; remove market value query/confirmation/currency UI and unused purchase/preview controller methods. Remove profile-color marketplace paths and Premium apply gates while keeping local colors. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.
+
+- [x] Source cleanup: remove owned collectible management/catalogue requests/observers and Telegram color/status apply path from PeerColorActivity; preserve local colors, ordinary emoji, account ownership checks and unsaved-change handling. Restore ordinary row factories accidentally removed in the previous unshipped source commit. Build/UI verification deferred until APK delivery.
