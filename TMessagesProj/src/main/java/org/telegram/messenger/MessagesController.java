@@ -21683,20 +21683,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (mode == ChatActivity.MODE_QUICK_REPLIES) {
             QuickRepliesController.getInstance(currentAccount).checkLocalMessages(messages);
         }
-        if (mode == ChatActivity.MODE_DEFAULT) {
-            ArrayList<MessageObject> gramMessages = null;
-            for (MessageObject message : messages) {
-                if (message.getId() > 0 && message.messageOwner.action instanceof TLRPC.TL_messageActionGramTransfer) {
-                    if (gramMessages == null) gramMessages = new ArrayList<>();
-                    gramMessages.add(message);
-                }
-            }
-            if (gramMessages != null) {
-                // updateMessageID may have already assigned this ID to a local service message.
-                // Refresh its action before normal new-message deduplication skips the existing ID.
-                getNotificationCenter().postNotificationName(NotificationCenter.replaceMessagesObjects, dialogId, gramMessages);
-            }
-        }
+
         getNotificationCenter().postNotificationName(NotificationCenter.didReceiveNewMessages, dialogId, messages, scheduled, mode);
 
         if (lastMessage == null || scheduled) {

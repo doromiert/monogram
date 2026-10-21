@@ -24710,8 +24710,7 @@ public class TLRPC {
                     return new TL_messageActionGameScore();
                 case TL_messageActionGroupCallScheduled.constructor:
                     return new TL_messageActionGroupCallScheduled();
-                case TL_messageActionWalletTonConnectRequest.constructor:
-                    return new TL_messageActionWalletTonConnectRequest();
+
                 case TL_messageActionBoostApply.constructor:
                     return new TL_messageActionBoostApply();
                 case TL_messageActionPaymentSentMe.constructor:
@@ -24800,8 +24799,7 @@ public class TLRPC {
                     return new TL_messageActionChangeCommunity();
                 case TL_messageActionChatJoinedViaCommunity.constructor:
                     return new TL_messageActionChatJoinedViaCommunity();
-                case TL_messageActionGramTransfer.constructor:
-                    return new TL_messageActionGramTransfer();
+
                 default:
                     return null;
             }
@@ -26012,57 +26010,7 @@ public class TLRPC {
         }
     }
 
-    public static class TL_messageActionWalletTonConnectRequest extends MessageAction {
-        public static final int constructor = 0x69b8c4bf;
 
-        public boolean accepted;
-        public boolean declined;
-        public long session_id;
-        public int expires;
-        public String topic;
-        public String trace_id;
-        public String dapp_name;
-
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            flags = stream.readInt32(exception);
-            accepted = hasFlag(flags, FLAG_2);
-            declined = hasFlag(flags, FLAG_3);
-            session_id = stream.readInt64(exception);
-            expires = stream.readInt32(exception);
-            if (hasFlag(flags, FLAG_0)) {
-                topic = stream.readString(exception);
-            }
-            if (hasFlag(flags, FLAG_1)) {
-                trace_id = stream.readString(exception);
-            }
-            if (hasFlag(flags, FLAG_4)) {
-                dapp_name = stream.readString(exception);
-            }
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            flags = setFlag(flags, FLAG_0, topic != null);
-            flags = setFlag(flags, FLAG_1, trace_id != null);
-            flags = setFlag(flags, FLAG_2, accepted);
-            flags = setFlag(flags, FLAG_3, declined);
-            flags = setFlag(flags, FLAG_4, dapp_name != null);
-            stream.writeInt32(flags);
-            stream.writeInt64(session_id);
-            stream.writeInt32(expires);
-            if (hasFlag(flags, FLAG_0)) {
-                stream.writeString(topic);
-            }
-            if (hasFlag(flags, FLAG_1)) {
-                stream.writeString(trace_id);
-            }
-            if (hasFlag(flags, FLAG_4)) {
-                stream.writeString(dapp_name);
-            }
-        }
-    }
 
     public static class TL_messageActionBoostApply extends MessageAction {
         public static final int constructor = 0xcc02aa6d;
@@ -63457,42 +63405,7 @@ public class TLRPC {
         }
     }
 
-    public static class TL_messageActionGramTransfer extends MessageAction {
-        public static final int constructor = 0x9329ea33;
 
-        public boolean comment_encrypted_preparing; // custom
-        public boolean comment_encrypted;
-        public String peer_address;
-        public String transaction_id;
-        public String comment;
-
-        @Override
-        public void readParams(InputSerializedData stream, boolean exception) {
-            int flags = stream.readInt32(exception);
-            comment_encrypted = hasFlag(flags, FLAG_1);
-            amount = stream.readInt64(exception);
-            peer_address = stream.readString(exception);
-            transaction_id = stream.readString(exception);
-            if (hasFlag(flags, FLAG_0)) {
-                comment = stream.readString(exception);
-            }
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            int flags = 0;
-            flags = setFlag(flags, FLAG_0, comment != null);
-            flags = setFlag(flags, FLAG_1, comment_encrypted);
-            stream.writeInt32(flags);
-            stream.writeInt64(amount);
-            stream.writeString(peer_address);
-            stream.writeString(transaction_id);
-            if (hasFlag(flags, FLAG_0)) {
-                stream.writeString(comment);
-            }
-        }
-    }
 
     public static class TL_photos_uploadContactProfilePhoto extends TLObject {
         public static final int constructor = 0xe14c4a71;

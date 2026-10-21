@@ -4923,24 +4923,6 @@ public class MessageObject {
                     } else {
                         messageText = formatString(isChannel ? R.string.BoostingGiveawayJustStarted : R.string.BoostingGiveawayJustStartedGroup, chat != null ? chat.title : "");
                     }
-                } else if (messageOwner.action instanceof TLRPC.TL_messageActionWalletTonConnectRequest) {
-                    final TLRPC.TL_messageActionWalletTonConnectRequest request = (TLRPC.TL_messageActionWalletTonConnectRequest) messageOwner.action;
-                    if (!TextUtils.isEmpty(request.dapp_name)) {
-                        messageText = formatString(
-                              request.declined ? R.string.WalletTonConnectRequestAppDeclined
-                            : request.accepted ? R.string.WalletTonConnectRequestAppProcessed
-                            : request.expires <= ConnectionsManager.getInstance(currentAccount).getCurrentTime()
-                            ? R.string.WalletTonConnectRequestAppExpired : R.string.WalletTonConnectRequestAppPending,
-                            request.dapp_name
-                        );
-                    } else {
-                        messageText = getString(
-                              request.declined ? R.string.WalletTonConnectRequestDeclined
-                            : request.accepted ? R.string.WalletTonConnectRequestProcessed
-                            : request.expires <= ConnectionsManager.getInstance(currentAccount).getCurrentTime()
-                            ? R.string.WalletTonConnectRequestExpired : R.string.WalletTonConnectRequestPending
-                        );
-                    }
                 } else if (messageOwner.action instanceof TLRPC.TL_messageActionBoostApply) {
                     TLRPC.Chat chat = messageOwner.peer_id != null && messageOwner.peer_id.channel_id != 0 ? getChat(chats, sChats, messageOwner.peer_id.channel_id) : null;
                     boolean isChannel = ChatObject.isChannelAndNotMegaGroup(chat);

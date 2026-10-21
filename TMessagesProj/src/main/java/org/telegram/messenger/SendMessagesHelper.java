@@ -1746,17 +1746,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
             return false;
         }
-        if (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionGramTransfer) {
-            // Never reinterpret a legacy wallet operation as an ordinary message.
-            if (unsent) {
-                getMessagesStorage().markMessageAsSendError(messageObject.messageOwner, 0);
-                messageObject.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
-                getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, messageObject.getId());
-                processSentMessage(messageObject.getId());
-                removeFromSendingMessages(messageObject.getId(), false);
-            }
-            return false;
-        }
+
         if (messageObject.messageOwner.action instanceof TLRPC.TL_messageEncryptedAction) {
             int enc_id = DialogObject.getEncryptedChatId(messageObject.getDialogId());
             TLRPC.EncryptedChat encryptedChat = getMessagesController().getEncryptedChat(enc_id);

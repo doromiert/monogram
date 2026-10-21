@@ -221,6 +221,10 @@ public class PushListenerController {
                         FileLog.d(tag + " " + loc_key);
                     }
                     switch (loc_key) {
+                        case "MESSAGE_GRAM_TRANSFER":
+                        case "MESSAGE_GRAM_TRANSFER_COMMENT":
+                        case "MESSAGE_GRAM_TRANSFER_UNKNOWN":
+                        case "MESSAGE_GRAM_TRANSFER_UNKNOWN_COMMENT":
                         case "MESSAGE_WALLET_TONCONNECT_REQUEST":
                         case "MESSAGE_WALLET_TONCONNECT_REQUEST_DAPP":
                             countDownLatch.countDown();
@@ -561,22 +565,7 @@ public class PushListenerController {
                                             message1 = getString(R.string.PaymentInvoice);
                                             break;
                                         }
-                                        case "MESSAGE_GRAM_TRANSFER":
-                                        case "MESSAGE_GRAM_TRANSFER_COMMENT":
-                                        case "MESSAGE_GRAM_TRANSFER_UNKNOWN":
-                                        case "MESSAGE_GRAM_TRANSFER_UNKNOWN_COMMENT": {
-                                            boolean unknown = loc_key.startsWith("MESSAGE_GRAM_TRANSFER_UNKNOWN");
-                                            boolean comment = loc_key.endsWith("_COMMENT");
-                                            if (args == null || args.length < (comment ? 3 : 2)) {
-                                                break;
-                                            }
-                                            int stringId = unknown
-                                                    ? (comment ? R.string.NotificationGramTransferUnknownComment : R.string.NotificationGramTransferUnknown)
-                                                    : (comment ? R.string.NotificationGramTransferComment : R.string.NotificationGramTransfer);
-                                            messageText = LocaleController.formatString(stringId, (Object[]) args);
-                                            message1 = messageText;
-                                            break;
-                                        }
+
                                         case "MESSAGE_TEXT":
                                         case "CHANNEL_MESSAGE_TEXT": {
                                             messageText = LocaleController.formatString("NotificationMessageText", R.string.NotificationMessageText, args[0], args[1]);
@@ -1709,15 +1698,9 @@ public class PushListenerController {
             case "REACT_STARGIFT_UNPACK_UPGRADE": {
                 return LocaleController.formatString(R.string.PushReactStarGiftUnpackUpgrade, args);
             }
-            case "REACT_GRAM_TRANSFER": {
-                return LocaleController.formatString(R.string.PushReactGramTransfer, args);
-            }
-            case "REACT_GRAM_TRANSFER_COMMENT": {
-                return LocaleController.formatString(R.string.PushReactGramTransferComment, args);
-            }
-            case "REACT_WALLET_TONCONNECT_REQUEST": {
-                return LocaleController.formatString(R.string.PushReactWalletTonConnectRequest, args);
-            }
+
+
+
             case "REACT_PROXIMITY": {
                 return LocaleController.formatString(R.string.PushReactProximity, args);
             }
