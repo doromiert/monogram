@@ -36,7 +36,6 @@ import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.ChatAttachAlert;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.FragmentSearchField;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.FillLastLinearLayoutManager;
 import org.telegram.ui.Components.EmptyTextProgressView;
@@ -46,7 +45,6 @@ import org.telegram.ui.Components.CheckBox2;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
-import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -407,12 +405,7 @@ public class ChatAttachAlertQuickRepliesLayout extends ChatAttachAlert.AttachAle
                 object = listAdapter.getItem(section, row);
             }
             if (object instanceof QuickRepliesController.QuickReply) {
-                if (!UserConfig.getInstance(parentAlert.currentAccount).isPremium()) {
-                    if (parentAlert.baseFragment != null) {
-                        new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), parentAlert.currentAccount, true, FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false).show();
-                    }
-                    return;
-                }
+
                 AlertsCreator.ensurePaidMessageConfirmation(parentAlert.currentAccount, parentAlert.getDialogId(), ((QuickRepliesController.QuickReply) object).getMessagesCount(), payStars -> {
                     QuickRepliesController.getInstance(UserConfig.selectedAccount).sendQuickReplyTo(parentAlert.getDialogId(), (QuickRepliesController.QuickReply) object);
                     parentAlert.dismiss();

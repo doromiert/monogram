@@ -105,7 +105,6 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.EditWidgetActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MainTabsActivity;
-import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.SecretMediaViewer;
 import org.telegram.ui.Stars.StarsController;
@@ -280,8 +279,6 @@ public class MessagesController extends BaseController implements NotificationCe
     private LongSparseArray<SparseArray<MessageObject>> pollsToCheck = new LongSparseArray<>();
     private int pollsToCheckSize;
     private long lastViewsCheckTime;
-    public SparseIntArray premiumFeaturesTypesToPosition = new SparseIntArray();
-    public SparseIntArray businessFeaturesTypesToPosition = new SparseIntArray();
     
     public ArrayList<DialogFilter> dialogFilters = new ArrayList<>();
     public ArrayList<DialogFilter> frozenDialogFilters = null;
@@ -1729,8 +1726,6 @@ public class MessagesController extends BaseController implements NotificationCe
             directPaymentsCurrency.addAll(currencySet);
         }
 
-        loadPremiumFeaturesPreviewOrder(premiumFeaturesTypesToPosition, mainPreferences.getString("premiumFeaturesTypesToPosition", null));
-        loadPremiumFeaturesPreviewOrder(businessFeaturesTypesToPosition, mainPreferences.getString("businessFeaturesTypesToPosition", null));
         if (pendingSuggestions != null) {
             pendingSuggestions = new HashSet<>(pendingSuggestions);
         } else {
@@ -2773,20 +2768,8 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                     break;
                 }
-                case "premium_promo_order": {
-                    if (value.value instanceof TLRPC.TL_jsonArray) {
-                        TLRPC.TL_jsonArray order = (TLRPC.TL_jsonArray) value.value;
-                        changed = savePremiumFeaturesPreviewOrder("premiumFeaturesTypesToPosition", premiumFeaturesTypesToPosition, editor, order.value);
-                    }
-                    break;
-                }
-                case "business_promo_order": {
-                    if (value.value instanceof TLRPC.TL_jsonArray) {
-                        TLRPC.TL_jsonArray order = (TLRPC.TL_jsonArray) value.value;
-                        changed = savePremiumFeaturesPreviewOrder("businessFeaturesTypesToPosition", businessFeaturesTypesToPosition, editor, order.value);
-                    }
-                    break;
-                }
+
+
                 case "emojies_animated_zoom": {
                     if (value.value instanceof TLRPC.TL_jsonNumber) {
                         TLRPC.TL_jsonNumber number = (TLRPC.TL_jsonNumber) value.value;
@@ -5442,48 +5425,9 @@ public class MessagesController extends BaseController implements NotificationCe
             .apply();
     }
 
-    private boolean savePremiumFeaturesPreviewOrder(String key, SparseIntArray array, SharedPreferences.Editor editor, ArrayList<TLRPC.JSONValue> value) {
-        StringBuilder stringBuilder = new StringBuilder();
-        array.clear();
-        for (int i = 0; i < value.size(); i++) {
-            String s = null;
-            if (value.get(i) instanceof TLRPC.TL_jsonString) {
-                s = ((TLRPC.TL_jsonString) value.get(i)).value;
-            }
-            if (s != null) {
-                int type = FeaturePreviewResources.serverStringToFeatureType(s);
-                if (type >= 0) {
-                    array.put(type, i);
-                    if (stringBuilder.length() > 0) {
-                        stringBuilder.append('_');
-                    }
-                    stringBuilder.append(type);
-                }
-            }
-        }
 
-        boolean changed;
-        if (stringBuilder.length() > 0) {
-            String string = stringBuilder.toString();
-            changed = !string.equals(mainPreferences.getString(key, null));
-            editor.putString(key, string);
-        } else {
-            editor.remove(key);
-            changed = mainPreferences.getString(key, null) != null;
-        }
-        return changed;
-    }
 
-    private void loadPremiumFeaturesPreviewOrder(SparseIntArray array, String string) {
-        array.clear();
-        if (string != null) {
-            String[] types = string.split("_");
-            for (int i = 0; i < types.length; i++) {
-                int type = Integer.parseInt(types[i]);
-                array.put(type, i);
-            }
-        }
-    }
+
 
     public void removeSuggestion(long did, String suggestion) {
         if (TextUtils.isEmpty(suggestion)) {

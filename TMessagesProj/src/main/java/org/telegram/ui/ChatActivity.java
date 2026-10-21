@@ -8,7 +8,6 @@
 
 package org.telegram.ui;
 
-import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.lerp;
@@ -252,7 +251,6 @@ import org.telegram.ui.Components.*;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
 import org.telegram.ui.Components.Forum.ForumUtilities;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.EmojiStatusPreviewSheet;
 import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
 import org.telegram.ui.Components.Reactions.ChatSelectionReactionMenuOverlay;
@@ -467,7 +465,6 @@ public class ChatActivity extends BaseFragment implements
     private FrameLayout emptyViewContainer;
     private LinearLayout emptyViewContent;
     private ChatGreetingsView greetingsViewContainer;
-    private ChatActionCell greetingsInfo;
     private QuickRepliesEmptyView quickRepliesEmptyView;
     private ViewPositionWatcher viewPositionWatcher;
     public ChatActivityFragmentView contentView;
@@ -7073,10 +7070,7 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
             if (object instanceof QuickRepliesController.QuickReply) {
-                if (!getUserConfig().isPremium()) {
-                    showDialog(new PremiumFeatureBottomSheet(this, getContext(), currentAccount, true, FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false));
-                    return;
-                }
+
                 AlertsCreator.ensurePaidMessageConfirmation(currentAccount, dialog_id, Math.max(1, ((QuickRepliesController.QuickReply) object).getMessagesCount()), payStars -> {
                     TLRPC.TL_messages_sendQuickReplyMessages req = new TLRPC.TL_messages_sendQuickReplyMessages();
                     req.peer = getMessagesController().getInputPeer(dialog_id);
@@ -23689,7 +23683,7 @@ public class ChatActivity extends BaseFragment implements
             if (currentUser != null && currentUser.id == uid) {
                 userInfo = (TLRPC.UserFull) args[1];
                 updateGreetingLock();
-                updateGreetInfo();
+
                 updateBottomOverlay();
                 checkThemeEmoticonOrWallpaper();
                 if (chatActivityEnterView != null) {
@@ -23734,7 +23728,7 @@ public class ChatActivity extends BaseFragment implements
                     greetingsViewContainer.setPreview(userInfo.business_intro.title, userInfo.business_intro.description);
                     greetingsViewContainer.setSticker(userInfo.business_intro.sticker);
                 }
-                updateGreetInfo();
+
                 if (profileChannelMessageFetcher == null) {
                     profileChannelMessageFetcher = new ProfileChannelCell.ChannelMessageFetcher(currentAccount);
                     profileChannelMessageFetcher.fetch(userInfo);
@@ -31878,7 +31872,7 @@ public class ChatActivity extends BaseFragment implements
                 greetingsViewContainer.setPreview(userInfo.business_intro.title, userInfo.business_intro.description);
                 greetingsViewContainer.setSticker(userInfo.business_intro.sticker);
             }
-            updateGreetInfo();
+
         } else if (currentEncryptedChat == null) {
             if (isTopic && chatMode == 0) {
                 CreateTopicEmptyView createTopicEmptyView = new CreateTopicEmptyView(getContext(), contentView, themeDelegate);
@@ -31927,7 +31921,7 @@ public class ChatActivity extends BaseFragment implements
                     emptyViewContent.setGravity(Gravity.CENTER);
                     emptyViewContent.addView(greetingsViewContainer, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
                     emptyViewContainer.addView(emptyViewContent, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
-                    updateGreetInfo();
+
                 } else {
                     emptyView = new TextView(getContext());
                     emptyView.setText(emptyMessage);
@@ -31984,60 +31978,9 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
-    private void updateGreetInfo() {
-        showGreetInfo(
-            getDialogId() != getUserConfig().getClientUserId() &&
-            userInfo != null && userInfo.business_intro != null
-        );
-    }
 
-    private void showGreetInfo(boolean show) {
-        if (emptyViewContent == null) return;
-        if (show && greetingsInfo == null) {
-            greetingsInfo = new ChatActionCell(getContext(), false, getResourceProvider()) {
-                @Override
-                protected void onLayout(boolean changed, int l, int t, int r, int b) {
-                    super.onLayout(changed, l, t, r, b);
-                    setVisiblePart(getY() + emptyViewContent.getY(), getServiceHeight(this));
-                }
-            };
-            ScaleStateListAnimator.apply(greetingsInfo, .02f, 1.2f);
-            greetingsInfo.setOnClickListener(v -> {
-                showDialog(new PremiumFeatureBottomSheet(this, FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS, true));
-            });
-        }
-        if (greetingsInfo == null) return;
-        if (!show) {
-            greetingsInfo.setVisibility(View.GONE);
-            return;
-        } else {
-            greetingsInfo.setVisibility(View.VISIBLE);
-        }
-        String string = LocaleController.formatString(userInfo != null && userInfo.business_intro != null && TextUtils.isEmpty(userInfo.business_intro.title) && TextUtils.isEmpty(userInfo.business_intro.title) ? R.string.GreetingHowSticker : R.string.GreetingHow, UserObject.getFirstName(currentUser));
-        int fromIndex = string.indexOf("**"), toIndex;
-        SpannableStringBuilder ssb = new SpannableStringBuilder(string);
-        if (fromIndex > 0) {
-            string = string.substring(0, fromIndex) + string.substring(fromIndex + 2);
-            toIndex = string.indexOf("**");
-            if (toIndex > 0) {
-                string = string.substring(0, toIndex) + string.substring(toIndex + 2);
-                ssb = new SpannableStringBuilder(string);
-                ProfileActivity.ShowDrawable drawable = new ProfileActivity.ShowDrawable(string.substring(fromIndex, toIndex));
-                drawable.setTextColor(Color.WHITE);
-                drawable.setBackgroundColor(0x1e000000);
-                drawable.setBounds(0, 0, drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
-                ssb.setSpan(new ImageSpan(drawable), fromIndex, toIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-        }
-        greetingsInfo.setCustomText(ssb);
-        greetingsInfo.setOverrideTextMaxWidth(HintView2.cutInFancyHalf(string, (TextPaint) getThemedPaint(Theme.key_paint_chatActionText)));
-        if (greetingsInfo.getParent() != null && (!show || greetingsInfo.getParent() != emptyViewContent)) {
-            ((ViewGroup) greetingsInfo.getParent()).removeView(greetingsInfo);
-        }
-        if (show && greetingsInfo.getParent() != emptyViewContent) {
-            emptyViewContent.addView(greetingsInfo, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM, 0, 10, 0, 0));
-        }
-    }
+
+
 
     Runnable updateReactionRunnable;
 
@@ -33256,56 +33199,53 @@ public class ChatActivity extends BaseFragment implements
             }
             case OPTION_EDIT_TODO:
             case OPTION_ADD_TO_TODO: {
-                if (!getUserConfig().isPremium()) {
-                    showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_TODO, false));
+                final MessageObject object = selectedObject;
+                final boolean adding = option == OPTION_ADD_TO_TODO;
+                final int oldAnswersCount;
+                if (MessageObject.getMedia(object) instanceof TLRPC.TL_messageMediaToDo) {
+                    final TLRPC.TL_messageMediaToDo m = (TLRPC.TL_messageMediaToDo) MessageObject.getMedia(object);
+                    oldAnswersCount = m.todo.list.size();
                 } else {
-                    final MessageObject object = selectedObject;
-                    final boolean adding = option == OPTION_ADD_TO_TODO;
-                    final int oldAnswersCount;
-                    if (MessageObject.getMedia(object) instanceof TLRPC.TL_messageMediaToDo) {
-                        final TLRPC.TL_messageMediaToDo m = (TLRPC.TL_messageMediaToDo) MessageObject.getMedia(object);
-                        oldAnswersCount = m.todo.list.size();
-                    } else {
-                        oldAnswersCount = 0;
-                    }
-                    PollCreateActivity pollCreateActivity = new PollCreateActivity(ChatActivity.this, true, false);
-                    pollCreateActivity.setEditing(MessageObject.getMedia(object), adding);
-                    pollCreateActivity.setDelegate((poll, params, notify, scheduleDate) -> {
-                        if (adding) {
-                            int maxUsedId = 0;
-                            final TLRPC.TL_messages_appendTodoList req = new TLRPC.TL_messages_appendTodoList();
-                            req.peer = getMessagesController().getInputPeer(object.getDialogId());
-                            req.msg_id = object.getId();
-                            if (poll instanceof TLRPC.TL_messageMediaToDo) {
-                                final TLRPC.TL_messageMediaToDo m = (TLRPC.TL_messageMediaToDo) poll;
-                                for (int i = 0; i < oldAnswersCount; ++i) {
-                                    final TLRPC.TodoItem item = m.todo.list.get(i);
-                                    maxUsedId = Math.max(maxUsedId, item.id);
-                                }
-                                for (int i = oldAnswersCount; i < m.todo.list.size(); ++i) {
-                                    final TLRPC.TodoItem item = m.todo.list.get(i);
-                                    if (item.id <= maxUsedId) {
-                                        item.id = maxUsedId + 1;
-                                    }
-                                    req.list.add(item);
-                                    maxUsedId = Math.max(maxUsedId, item.id);
-                                }
-                                if (object.messageOwner.media instanceof TLRPC.TL_messageMediaToDo) {
-                                    m.completions = ((TLRPC.TL_messageMediaToDo) object.messageOwner.media).completions;
-                                }
-                            }
-                            object.messageOwner.media = poll;
-                            getConnectionsManager().sendRequest(req, null);
-                        } else {
-                            if (poll instanceof TLRPC.TL_messageMediaToDo && object.messageOwner.media instanceof TLRPC.TL_messageMediaToDo) {
-                                ((TLRPC.TL_messageMediaToDo) poll).completions = ((TLRPC.TL_messageMediaToDo) object.messageOwner.media).completions;
-                            }
-                            object.messageOwner.media = poll;
-                            getSendMessagesHelper().editMessage(object, null, null, null, null, null, null, false, false, null);
-                        }
-                    });
-                    presentFragment(pollCreateActivity);
+                    oldAnswersCount = 0;
                 }
+                PollCreateActivity pollCreateActivity = new PollCreateActivity(ChatActivity.this, true, false);
+                pollCreateActivity.setEditing(MessageObject.getMedia(object), adding);
+                pollCreateActivity.setDelegate((poll, params, notify, scheduleDate) -> {
+                    if (adding) {
+                        int maxUsedId = 0;
+                        final TLRPC.TL_messages_appendTodoList req = new TLRPC.TL_messages_appendTodoList();
+                        req.peer = getMessagesController().getInputPeer(object.getDialogId());
+                        req.msg_id = object.getId();
+                        if (poll instanceof TLRPC.TL_messageMediaToDo) {
+                            final TLRPC.TL_messageMediaToDo m = (TLRPC.TL_messageMediaToDo) poll;
+                            for (int i = 0; i < oldAnswersCount; ++i) {
+                                final TLRPC.TodoItem item = m.todo.list.get(i);
+                                maxUsedId = Math.max(maxUsedId, item.id);
+                            }
+                            for (int i = oldAnswersCount; i < m.todo.list.size(); ++i) {
+                                final TLRPC.TodoItem item = m.todo.list.get(i);
+                                if (item.id <= maxUsedId) {
+                                    item.id = maxUsedId + 1;
+                                }
+                                req.list.add(item);
+                                maxUsedId = Math.max(maxUsedId, item.id);
+                            }
+                            if (object.messageOwner.media instanceof TLRPC.TL_messageMediaToDo) {
+                                m.completions = ((TLRPC.TL_messageMediaToDo) object.messageOwner.media).completions;
+                            }
+                        }
+                        object.messageOwner.media = poll;
+                        getConnectionsManager().sendRequest(req, null);
+                    } else {
+                        if (poll instanceof TLRPC.TL_messageMediaToDo && object.messageOwner.media instanceof TLRPC.TL_messageMediaToDo) {
+                            ((TLRPC.TL_messageMediaToDo) poll).completions = ((TLRPC.TL_messageMediaToDo) object.messageOwner.media).completions;
+                        }
+                        object.messageOwner.media = poll;
+                        getSendMessagesHelper().editMessage(object, null, null, null, null, null, null, false, false, null);
+                    }
+                });
+                presentFragment(pollCreateActivity);
+
                 break;
             }
             case OPTION_STOP_POLL_OR_QUIZ: {
@@ -39045,51 +38985,20 @@ public class ChatActivity extends BaseFragment implements
 
 
         @Override
-        public void needShowPremiumBulletin(int type) {
-            if (type == 0) {
-                checkTopUndoView();
-                if (topUndoView == null) {
-                    return;
-                }
-                topUndoView.showWithAction(0, UndoView.ACTION_PREMIUM_TRANSCRIPTION, null, () -> {
-                    new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
-                    getMessagesController().pressTranscribeButton();
-                });
-                try {
-                    topUndoView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                } catch (Exception ignored) {}
-            } else if (type == 1) {
+        public void showTranscriptionNotice(int type) {
+            final CharSequence text;
+            if (type == 1) {
                 String until = LocaleController.formatDateTime(getMessagesController().transcribeAudioTrialCooldownUntil, true);
-                CharSequence text = getMessagesController().transcribeAudioTrialCooldownUntil > 0 ?
+                text = getMessagesController().transcribeAudioTrialCooldownUntil > 0 ?
                     AndroidUtilities.replaceTags(LocaleController.formatPluralString("TranscriptionTrialLeftUntil", TranscribeButton.getTranscribeTrialCount(currentAccount), until)) :
                     AndroidUtilities.replaceTags(LocaleController.formatPluralString("TranscriptionTrialLeft", TranscribeButton.getTranscribeTrialCount(currentAccount)));
-                BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.raw.transcribe, text, 6).show(true);
-                try {
-                    fragmentView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                } catch (Exception ignored) {}
-            } else if (type == 2 || type == 3) {
-                String until = LocaleController.formatDateTime(getMessagesController().transcribeAudioTrialCooldownUntil, true);
-                BulletinFactory.of(ChatActivity.this).createSimpleBulletin(
-                    R.raw.transcribe,
-                    new SpannableStringBuilder().append(
-                        AndroidUtilities.replaceTags(LocaleController.formatPluralString("TranscriptionTrialEnd", getMessagesController().transcribeAudioTrialWeeklyNumber))
-                    ).append(" ").append(
-                        type == 2 ?
-                        AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.TranscriptionTrialEndBuy), () -> {
-                            new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
-                            getMessagesController().pressTranscribeButton();
-                        }) :
-                        getMessagesController().transcribeAudioTrialCooldownUntil <= 0 ? "" :
-                        AndroidUtilities.replaceSingleTag(LocaleController.formatString(R.string.TranscriptionTrialEndWaitOrBuy, until), () -> {
-                            new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
-                            getMessagesController().pressTranscribeButton();
-                        })
-                    ),
-                    6,
-                    7000
-                ).show(true);
-                BotWebViewVibrationEffect.APP_ERROR.vibrate();
+            } else if (getMessagesController().transcribeAudioTrialCooldownUntil > 0) {
+                text = formatString(R.string.MonogramTranscriptionRetryAt,
+                        LocaleController.formatDateTime(getMessagesController().transcribeAudioTrialCooldownUntil, true));
+            } else {
+                text = getString(R.string.MonogramTranscriptionUnavailable);
             }
+            BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.raw.transcribe, text, 6).show(true);
         }
 
         @Override
@@ -39535,13 +39444,6 @@ public class ChatActivity extends BaseFragment implements
                 final long fromId = DialogObject.getPeerDialogId(cell.getMessageObject().getFromPeer());
                 BulletinFactory.of(ChatActivity.this)
                     .createSimpleBulletin(R.raw.passcode_lock_close, AndroidUtilities.replaceTags(formatString(R.string.TodoCompleteForbidden, DialogObject.getName(currentAccount, fromId))))
-                    .show(true);
-                return false;
-            } else if (!getUserConfig().isPremium()) {
-                BulletinFactory.of(ChatActivity.this)
-                    .createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.premiumText(getString(R.string.TodoPremiumRequired), () -> {
-                        showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_TODO, false));
-                    }))
                     .show(true);
                 return false;
             } else {

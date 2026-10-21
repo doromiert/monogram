@@ -1,6 +1,5 @@
 package org.telegram.ui;
 
-import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
@@ -11,7 +10,6 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -19,17 +17,10 @@ import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.UserObject;
-import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.UItem;
-import org.telegram.ui.Components.UniversalAdapter;
-import org.telegram.ui.Components.UniversalRecyclerView;
 
 public class PremiumFeatureCell extends FrameLayout {
 
@@ -38,7 +29,6 @@ public class PremiumFeatureCell extends FrameLayout {
     public ImageView imageView;
     public final ImageView nextIcon;
     boolean drawDivider;
-    public FeaturePreviewResources.PremiumFeatureData data;
 
     public AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable imageDrawable;
 
@@ -79,31 +69,7 @@ public class PremiumFeatureCell extends FrameLayout {
         addView(nextIcon, LayoutHelper.createFrame(24, 24, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 0, 0, 18, 0));
     }
 
-    public void setData(FeaturePreviewResources.PremiumFeatureData data, boolean drawDivider) {
-        if (UserConfig.getInstance(UserConfig.selectedAccount).isPremium() && data.type == FeaturePreviewResources.PREMIUM_FEATURE_EMOJI_STATUS && data.icon == R.drawable.filled_premium_status2) {
-            nextIcon.setVisibility(View.GONE);
-            if (imageDrawable == null) {
-                imageDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(this, false, dp(24), AnimatedEmojiDrawable.CACHE_TYPE_ALERT_PREVIEW_STATIC);
-                if (isAttachedToWindow()) {
-                    imageDrawable.attach();
-                }
-            }
-            TLRPC.User user = UserConfig.getInstance(UserConfig.selectedAccount).getCurrentUser();
-            Long emojiStatusDocumentId = UserObject.getEmojiStatusDocumentId(user);
-            setEmoji(emojiStatusDocumentId == null ? 0 : emojiStatusDocumentId, false);
-        } else {
-            nextIcon.setVisibility(View.VISIBLE);
-            if (imageDrawable != null){
-                imageDrawable.detach();
-                imageDrawable = null;
-            }
-        }
-        this.data = data;
-        title.setText(data.title);
-        description.setText(data.description);
-        imageView.setImageResource(data.icon);
-        this.drawDivider = drawDivider;
-    }
+
 
     private Drawable premiumStar;
     public void setEmoji(long documentId, boolean animated) {
@@ -162,23 +128,5 @@ public class PremiumFeatureCell extends FrameLayout {
         super.onDetachedFromWindow();
     }
 
-    public static class Factory extends UItem.UItemFactory<PremiumFeatureCell> {
-        static { setup(new Factory()); }
 
-        @Override
-        public PremiumFeatureCell createView(Context context, RecyclerListView listView, int currentAccount, int classGuid, Theme.ResourcesProvider resourcesProvider) {
-            return new PremiumFeatureCell(context, resourcesProvider);
-        }
-
-        @Override
-        public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, UniversalRecyclerView listView) {
-            ((PremiumFeatureCell) view).setData((FeaturePreviewResources.PremiumFeatureData) item.object, divider);
-        }
-
-        public static UItem of(FeaturePreviewResources.PremiumFeatureData data) {
-            UItem item = UItem.ofFactory(Factory.class);
-            item.object = data;
-            return item;
-        }
-    }
 }

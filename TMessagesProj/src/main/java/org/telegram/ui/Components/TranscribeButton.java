@@ -229,9 +229,9 @@ public class TranscribeButton {
                 } else {
                     if (parent.getDelegate() != null) {
                         if (MessagesController.getInstance(parent.currentAccount).transcribeAudioTrialWeeklyNumber > 0) {
-                            parent.getDelegate().needShowPremiumBulletin(3);
+                            parent.getDelegate().showTranscriptionNotice(3);
                         } else {
-                            parent.getDelegate().needShowPremiumBulletin(0);
+                            parent.getDelegate().showTranscriptionNotice(0);
                         }
                     }
                 }
@@ -715,7 +715,7 @@ public class TranscribeButton {
                             MessagesController.getInstance(account).updateTranscribeAudioTrialCooldownUntil(r.trial_remains_until_date);
                             AndroidUtilities.runOnUIThread(() -> {
                                 if (delegate != null) {
-                                    delegate.needShowPremiumBulletin(r.trial_remains_num > 0 ? 1 : 2);
+                                    delegate.showTranscriptionNotice(r.trial_remains_num > 0 ? 1 : 2);
                                 }
                             });
                         }
@@ -734,7 +734,7 @@ public class TranscribeButton {
                                         transcribeOperationsByDialogPosition.remove((Integer) reqInfoHash(messageObject));
                                     }
                                     if (delegate != null) {
-                                        delegate.needShowPremiumBulletin(3);
+                                        delegate.showTranscriptionNotice(3);
                                     }
                                     NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject);
                                     NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateTranscriptionLock);

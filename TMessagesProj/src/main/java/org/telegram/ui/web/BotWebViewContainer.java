@@ -136,18 +136,15 @@ import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.EditTextCaption;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Paint.Views.LinkPreview;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.voip.AnimatedFileInfo;
 import org.telegram.ui.Components.voip.CellFlickerDrawable;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MultiContactsSelectorBottomSheet;
 import org.telegram.ui.OAuthSheet;
-import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
-import org.telegram.ui.WrappedResourceProvider;
 import org.telegram.ui.bots.BotBiometry;
 import org.telegram.ui.bots.BotDownloads;
 import org.telegram.ui.bots.BotLocation;
@@ -2463,35 +2460,7 @@ public abstract class BotWebViewContainer extends FrameLayout implements Notific
                 final String finalLink = widget_link;
                 final String finalLinkName = widget_link_name;
 
-                if (!MessagesController.getInstance(currentAccount).storiesEnabled()) {
-                    new PremiumFeatureBottomSheet(new BaseFragment() {
-                        { this.currentAccount = BotWebViewContainer.this.currentAccount; }
-                        @Override
-                        public Dialog showDialog(Dialog dialog) {
-                            dialog.show();
-                            return dialog;
-                        }
-                        @Override
-                        public Activity getParentActivity() {
-                            return BotWebViewContainer.this.parentActivity;
-                        }
-                        @Override
-                        public Theme.ResourcesProvider getResourceProvider() {
-                            return new WrappedResourceProvider(resourcesProvider) {
-                                @Override
-                                public void appendColors() {
-                                    sparseIntArray.append(Theme.key_dialogBackground, 0xFF1E1E1E);
-                                    sparseIntArray.append(Theme.key_windowBackgroundGray, 0xFF000000);
-                                }
-                            };
-                        }
-                        @Override
-                        public boolean isLightStatusBar() {
-                            return false;
-                        }
-                    }, FeaturePreviewResources.PREMIUM_FEATURE_STORIES, true).show();
-                    return;
-                }
+                if (!MessagesController.getInstance(currentAccount).storiesEnabled()) return;
 
                 AlertDialog progressDialog = new AlertDialog(parentActivity, AlertDialog.ALERT_TYPE_SPINNER);
                 new HttpGetFileTask(file -> {

@@ -54,7 +54,6 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SavedMessagesController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
-import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -184,7 +183,6 @@ public class UndoView extends FrameLayout {
 
     public final static int ACTION_PREVIEW_MEDIA_DESELECTED = 82;
     public static int ACTION_RINGTONE_ADDED = 83;
-    public final static int ACTION_PREMIUM_TRANSCRIPTION = 84;
     public final static int ACTION_HINT_SWIPE_TO_REPLY = 85;
     public final static int ACTION_PREMIUM_ALL_FOLDER = 86;
 
@@ -1339,27 +1337,6 @@ public class UndoView extends FrameLayout {
             undoTextView.setVisibility(GONE);
             undoButton.setVisibility(VISIBLE);
             leftImageView.setVisibility(VISIBLE);
-        } else if (currentAction == ACTION_PREMIUM_TRANSCRIPTION) {
-            infoTextView.setVisibility(VISIBLE);
-            infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            infoTextView.setTypeface(Typeface.DEFAULT);
-            infoTextView.setText(AndroidUtilities.replaceTags(LocaleController.getString(R.string.UnlockPremiumTranscriptionHint)));
-            leftImageView.setVisibility(VISIBLE);
-            leftImageView.setAnimation(R.raw.voice_to_text, 36, 36);
-            leftImageView.setProgress(0);
-            leftImageView.playAnimation();
-
-            undoTextView.setText(LocaleController.getString(R.string.PremiumMore));
-            layoutParams.leftMargin = AndroidUtilities.dp(58);
-            layoutParams.rightMargin = (int) Math.ceil(undoTextView.getPaint().measureText(undoTextView.getText().toString())) + AndroidUtilities.dp(26);
-            layoutParams.topMargin = layoutParams.bottomMargin = AndroidUtilities.dp(6);
-            layoutParams.height = TableLayout.LayoutParams.WRAP_CONTENT;
-
-            avatarImageView.setVisibility(GONE);
-            subinfoTextView.setVisibility(GONE);
-            undoTextView.setVisibility(VISIBLE);
-            undoButton.setVisibility(VISIBLE);
-            undoImageView.setVisibility(GONE);
         } else if (currentAction == ACTION_HINT_SWIPE_TO_REPLY) {
             infoTextView.setVisibility(VISIBLE);
             infoTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
@@ -1551,7 +1528,7 @@ public class UndoView extends FrameLayout {
             }
             width -= AndroidUtilities.dp(16);
             measureChildWithMargins(infoTextView, MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), 0, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), 0);
-            undoViewHeight = infoTextView.getMeasuredHeight() + AndroidUtilities.dp(currentAction == ACTION_DICE_INFO || currentAction == ACTION_DICE_NO_SEND_INFO || currentAction == ACTION_TEXT_INFO || currentAction == ACTION_PREMIUM_TRANSCRIPTION || currentAction == ACTION_PREMIUM_ALL_FOLDER ? 14 : 28);
+            undoViewHeight = infoTextView.getMeasuredHeight() + AndroidUtilities.dp(currentAction == ACTION_DICE_INFO || currentAction == ACTION_DICE_NO_SEND_INFO || currentAction == ACTION_TEXT_INFO || currentAction == ACTION_PREMIUM_ALL_FOLDER ? 14 : 28);
             if (currentAction == ACTION_TEXT_INFO) {
                 undoViewHeight = Math.max(undoViewHeight, AndroidUtilities.dp(52));
             } else if (currentAction == ACTION_PROXIMITY_REMOVED) {
