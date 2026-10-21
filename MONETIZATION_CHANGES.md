@@ -361,3 +361,11 @@ Removed monthly Stars subscription controls from LinkEditActivity: pricing input
 Deleted BotStarsController after its revenue/transaction/affiliate UI consumers had been removed. Removed its only surviving MessagesController revenue-update hook. This removes the remaining bot Stars/TON revenue stats caches/loaders and transaction pagination/background requests in that class. Other StarsController APIs and subscription information in InviteLinkBottomSheet still remain for subsequent cleanup.
 
 Source-only inspection covers deleted controller references across Java/XML, invite editor pricing field/request references, surviving editor branches, Java class boundaries and whitespace. No tests, build, APK or phone interaction. Changes are unshipped; other Stars/history/schema, Premium/Business/boost code and resources remain outstanding.
+
+### Invite subscription detail and revenue removal
+
+Removed InviteLinkBottomSheet's subscription detail sheet and per-member subscription/revenue cells. Joined/requested/creator rows now use the ordinary UserCell and open the existing profile action directly, without the extra channel-participant fetch for a subscription detail sheet. Removed revenue headers/rows/adapter types and subscription-specific price/period/earnings labels.
+
+Removed expired-subscriber row/list state and its pagination pass/request flag. Retained ordinary joined/requested-user pagination and combined has-more handling, creator/member role rendering, invite expiry/revocation information and usage/approval controls. Invite expiry itself is distinct from a paid subscription and remains supported.
+
+Source-only inspection covers removed subscription/revenue identifiers and APIs across Java/XML, ordinary UserCell constructor/role methods, retained list indexes/pagination/profile click callbacks, edited Java boundaries and whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; StarsController, transaction history/schema, other Premium/Business/boost screens and resources still require cleanup.
