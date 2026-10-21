@@ -522,7 +522,6 @@ public class ChatActivity extends BaseFragment implements
     private TextView addProfilePictureButton;
     public TopicsTabsView topicsTabs;
     @Nullable
-    @Nullable
     private LinkSpanDrawable.LinksTextView emojiStatusSpamHint;
     @Nullable
     private ImageView closeReportSpam;

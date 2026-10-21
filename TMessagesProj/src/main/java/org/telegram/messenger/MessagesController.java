@@ -20559,10 +20559,6 @@ public class MessagesController extends BaseController implements NotificationCe
                     } else if (baseUpdate instanceof TL_update.TL_updateChatParticipantRank) {
                         final TL_update.TL_updateChatParticipantRank update = (TL_update.TL_updateChatParticipantRank) baseUpdate;
                         updateRank(update.chat_id, update.user_id, update.rank);
-                    } else if (baseUpdate instanceof TL_update.TL_updateAiComposeTones) {
-                        if (tonesController != null) {
-                            tonesController.invalidate();
-                        }
                     } else if (baseUpdate instanceof TL_update.TL_updateWebBrowserSettings) {
                         applyWebBrowserUpdate((TL_update.TL_updateWebBrowserSettings) baseUpdate);
                     } else if (baseUpdate instanceof TL_update.TL_updateWebBrowserException) {

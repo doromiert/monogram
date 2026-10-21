@@ -724,14 +724,7 @@ public class TL_update {
         }
     }
 
-    public static class TL_updateAiComposeTones extends TLRPC.Update {
-        public static final int constructor = 0x8c0f91fb;
 
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-        }
-    }
 
     public static class TL_updateDialogPinned extends TLRPC.Update {
         public static final int constructor = 0x6e6fe51c;

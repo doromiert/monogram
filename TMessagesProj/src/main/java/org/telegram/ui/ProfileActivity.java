@@ -680,7 +680,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @Keep
     private int botPermissionLocation;
     @Keep
-    @Keep
     private int botPermissionBiometry;
     private int botPermissionsDivider;
 
@@ -15168,7 +15167,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    private float lastOnlineTextViewX;
+
     private float getOnlineTextViewTranslationXWithOffsets(float onlineX) {
+        lastOnlineTextViewX = onlineX;
         final float expanded = Utilities.clamp01(playProfileAnimation == 2 ? 1 : avatarAnimationProgress >= 1 || playProfileAnimation == 0 ? currentExpandAnimatorValue : 0);
         return onlineX + Math.max(0, customPhotoOffset * expanded);
     }

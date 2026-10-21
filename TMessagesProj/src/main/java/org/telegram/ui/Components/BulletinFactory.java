@@ -1483,9 +1483,6 @@ public final class BulletinFactory {
     }
 
     @CheckResult
-
-
-    @CheckResult
     public Bulletin createBanBulletin(boolean banned) {
         final Bulletin.LottieLayout layout = new Bulletin.LottieLayout(getContext(), resourcesProvider);
         final String text;

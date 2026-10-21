@@ -3812,8 +3812,6 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
         }
         currentImageTime = 0;
         switchEventSent = false;
-        boostsStatus = null;
-        canApplyBoost = null;
         if (isChannel) {
             createSelfPeerView();
             if (chatActivityEnterView == null && (isGroup || currentStory.isLive)) {

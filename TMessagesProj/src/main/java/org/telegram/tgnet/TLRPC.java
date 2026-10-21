@@ -30884,8 +30884,6 @@ public class TLRPC {
                     return new TL_update.TL_updateChatParticipantRank();
                 case TL_update.TL_updateManagedBot.constructor:
                     return new TL_update.TL_updateManagedBot();
-                case TL_update.TL_updateAiComposeTones.constructor:
-                    return new TL_update.TL_updateAiComposeTones();
                 case TL_update.TL_updateJoinChatWebViewDecision.constructor:
                     return new TL_update.TL_updateJoinChatWebViewDecision();
                 case TL_update.TL_updateWebBrowserSettings.constructor:

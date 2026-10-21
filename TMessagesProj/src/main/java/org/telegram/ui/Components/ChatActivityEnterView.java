@@ -7283,9 +7283,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 } catch (Exception ignored) {}
             }
 
-            if (!MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() && MessagesController.getInstance(currentAccount).captionLengthLimitPremium > codePointCount) {
-                showCaptionLimitBulletin();
-            }
+
             return;
         }
         if (searchingType != 0) {

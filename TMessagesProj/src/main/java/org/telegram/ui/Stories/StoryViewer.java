@@ -1031,7 +1031,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
                                     peerView.cancelTextSelection();
                                 }
                                 boolean viewsAllowed = peerView != null && peerView.viewsAllowed();
-                                allowSwipeToReply = !viewsAllowed && peerView != null && !peerView.isChannel && !peerView.isPremiumBlocked && storiesIntro == null;
+                                allowSwipeToReply = !viewsAllowed && peerView != null && !peerView.isChannel && storiesIntro == null;
                                 allowSelfStoriesView = viewsAllowed && !peerView.unsupported && peerView.currentStory.storyItem != null && storiesIntro == null;
                                 if (allowSelfStoriesView && keyboardHeight != 0) {
                                     allowSelfStoriesView = false;

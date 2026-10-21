@@ -155,7 +155,7 @@ public class EmojiStatusPreviewSheet extends BottomSheetWithRecyclerListView {
                     linearLayout.setOrientation(LinearLayout.VERTICAL);
                     if (overrideTitleIcon == null) {
                         android.widget.ImageView icon = new android.widget.ImageView(context);
-                        icon.setImageResource(R.drawable.msg_emoji);
+                        icon.setImageResource(R.drawable.msg_emoji_smiles);
                         icon.setScaleType(android.widget.ImageView.ScaleType.CENTER);
                         overrideTitleIcon = icon;
                     }

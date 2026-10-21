@@ -1430,35 +1430,7 @@ public final class StarsIntroActivity {
             textView.setText(s);
             linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 36, 0, 36, 4));
 
- else if (!(transaction.amount instanceof TL_stars.TL_starsTonAmount) && (giveaway || transaction.gift)) {
-                final TLRPC.User user =   transaction.sent_by == null ? null : MessagesController.getInstance(currentAccount).getUser(DialogObject.getPeerDialogId(transaction.sent_by));
-                final TLRPC.User received = transaction.sent_by == null ? null : MessagesController.getInstance(currentAccount).getUser(DialogObject.getPeerDialogId(transaction.received_by));
-                final boolean self = UserObject.isUserSelf(user);
-
-                if (self) {
-                    textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-                    textView.setText(replaceStarsWithPlain(transaction.amount, TextUtils.concat(formatStarsAmount(transaction.amount), " ⭐️"), .8f));
-                }
-
-                textView = new LinkSpanDrawable.LinksTextView(context);
-                textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
-                textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-                textView.setGravity(Gravity.CENTER);
-                textView.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
-                ((LinkSpanDrawable.LinksTextView) textView).setDisablePaddingsOffsetY(true);
-                textView.setText(TextUtils.concat(
-                    AndroidUtilities.replaceTags(self ? formatString(R.string.ActionGiftStarsSubtitle, UserObject.getForcedFirstName(received)) : getString(R.string.ActionGiftStarsSubtitleYou)),
-                    " ",
-                    AndroidUtilities.replaceArrows(AndroidUtilities.replaceSingleTag(getString(R.string.GiftStarsSubtitleLinkName).replace(' ', ' '), () -> {
-                        StarAppsSheet sheet1 = new StarAppsSheet(context);
-                        if (!AndroidUtilities.isTablet() && !AndroidUtilities.hasDialogOnTop(sheet[0].attachedFragment) && sheet[0] != null && sheet[0].attachedFragment != null) {
-                            sheet1.makeAttached(sheet[0].attachedFragment);
-                        }
-                        sheet1.show();
-                    }), true)
-                ));
-                linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 36, 0, 36, 4));
-            } else if (transaction.description != null && transaction.extended_media.isEmpty()) {
+            if (transaction.description != null && transaction.extended_media.isEmpty()) {
                 textView = new TextView(context);
                 textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
