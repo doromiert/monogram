@@ -2356,6 +2356,13 @@ public final class MonogramController {
             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,updated.dialog_id,objects);
         });
     }
+    public void refreshLinkPreviews() {
+        final long owner=accountEpoch;
+        worker.execute(() -> {
+            if(owner!=accountEpoch || mediaHistoryPeer==0) return;
+            for(TLRPC.Message message:store.history(mediaHistoryPeer,self,0,150)) maybeLinkPreview(message);
+        });
+    }
     public void clearLinkPreviews() {
         final long owner=accountEpoch;
         worker.execute(() -> { if(owner!=accountEpoch) return;linkPreviews.clear();
@@ -3040,6 +3047,15 @@ public final class MonogramController {
             TLObject response = null; TLRPC.TL_error error = null;
             try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request); }
             catch (Exception e) {
+                if(debugLog.enabled()) {
+                    StringBuilder detail=new StringBuilder(com.negzero.monogram.xmpp.XmppRequestException.describe(e));
+                    for(StackTraceElement frame:e.getStackTrace()) {
+                        if(frame.getClassName().startsWith("com.negzero.monogram.") || frame.getClassName().startsWith("org.telegram.messenger.xmpp."))
+                            detail.append("\n").append(frame);
+                        if(detail.length()>4096) break;
+                    }
+                    debugLog.record("Request failure",detail.toString());
+                }
                 error = new TLRPC.TL_error(); error.code = 400;
                 if(roomMutation(request)) error.text="MONOGRAM_XMPP_ROOM: "+roomError(e);
                 else if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";

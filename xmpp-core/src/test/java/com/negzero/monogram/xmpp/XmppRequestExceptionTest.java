@@ -6,6 +6,11 @@ import org.jivesoftware.smack.packet.StanzaError;
 import static org.junit.jupiter.api.Assertions.*;
 
 class XmppRequestExceptionTest {
+    @Test void preservesKnownOmemoFailuresWithoutExposingArbitraryCryptoDetails() {
+        assertEquals("Invalid OMEMO2 content",XmppRequestException.describe(new java.security.GeneralSecurityException("Invalid OMEMO2 content")));
+        assertEquals("OMEMO2 bundle unavailable",XmppRequestException.describe(new java.security.GeneralSecurityException("OMEMO2 bundle unavailable")));
+        assertEquals("GeneralSecurityException",XmppRequestException.describe(new java.security.GeneralSecurityException("secret key material")));
+    }
     @Test void keepsRejectedOperationAndConditionWithoutEchoingServerContent() {
         XMPPErrorException rejected=new XMPPErrorException(null,StanzaError.getBuilder(StanzaError.Condition.forbidden)
                 .setDescriptiveEnText("private server details").build());

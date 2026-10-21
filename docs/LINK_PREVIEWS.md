@@ -1,6 +1,6 @@
 # Client-side link previews
 
-Settings → XMPP connection → Link previews controls direct fetching. It is off for a new account. A separate, default-off permission is required for encrypted conversations. Enabling either permission displays a consent dialog explaining that the destination and thumbnail host see the user's IP address and requested URL. Disabling fetching does not hide an already cached preview.
+Settings → Chat Settings → Chat behavior → Automatic link embeds controls direct fetching (also available under XMPP connection). It is off for a new account. A separate, default-off permission is required for encrypted conversations. Enabling either permission displays a consent dialog explaining that the destination and thumbnail host see the user's IP address and requested URL. Disabling fetching does not hide an already cached preview. Enabling fetching refreshes the latest 150 messages of the current conversation without requiring you to leave and reopen it.
 
 Monogram fetches only the first HTTPS URL in a saved message after decryption, on live message delivery or native chat-history loading. It never sends message text, fingerprints, keys, or preview metadata to Telegram, an XMPP server, or a preview service. The URL itself (including its query) is necessarily sent to its destination; fragments are removed. Metadata and thumbnails stay local and are not added to outgoing XMPP messages.
 

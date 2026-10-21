@@ -11,6 +11,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
     public MonogramChatBehaviorActivity(int account) { currentAccount=account; }
     @Override protected CharSequence getTitle() { return "Chat behavior"; }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
+        items.add(UItem.asButton(14,"Automatic link embeds"));
+        items.add(UItem.asShadow("Create link previews on this device, including an optional setting for encrypted chats."));
         items.add(UItem.asHeader("Keyboard"));
         items.add(UItem.asCheck(1,"Hide keyboard on scroll").setChecked(MonogramChatBehavior.hideKeyboardOnScroll(currentAccount)));
         items.add(UItem.asShadow("Dragging the conversation closes the keyboard or emoji panel."));
@@ -43,6 +45,7 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
                 : org.telegram.messenger.R.string.MonogramMapsOsmInfo)));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
+        if(item.id==14) { presentFragment(new MonogramLinkPreviewsActivity(currentAccount));return; }
         if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
         else if(item.id==2) MonogramChatBehavior.commaAfterMention(currentAccount,!MonogramChatBehavior.commaAfterMention(currentAccount));
         else if(item.id==3) MonogramChatBehavior.showSaveButton(currentAccount,!MonogramChatBehavior.showSaveButton(currentAccount));
