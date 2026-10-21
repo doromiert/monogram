@@ -345,3 +345,11 @@ Deleted StarsNeededSheet, the paid subscription-management sheet and StarsSubscr
 Removed the suggested-post low-balance action and helper in ChatActionCell, the send-error balance fetch/purchase prompt in AlertsCreator, and the search-error balance fetch/purchase callback in PostsSearchContainer. Search keeps its empty/list refresh for that error. Existing Monogram send/encryption diagnostics continue through their earlier error branch. Ordinary generic error handling is retained; no synthetic Stars entitlement or balance is introduced.
 
 Source-only inspection covers deleted class/method/constants across Java/XML, surviving click/error branches, observer registration, edited Java boundaries and whitespace. No tests, compilation, APK or phone interaction. Other Stars top-up/gifting screens, paid post search/transaction history and Business/Premium/boost code remain outstanding. Changes are unshipped and full removal remains incomplete.
+
+### Delete Stars catalogue, gifting checkout and balance activity
+
+Deleted StarsOptionsSheet, GiftStarsSheet, StarTierView and the unused direct-purchase/paid-channel-invite checkout sheets from StarsIntroActivity. Removed the Stars-gift mode and its launch/layout/title branches from the shared user selector. No external callers remained for the root Stars balance activity after those flows were deleted, so removed its activity lifecycle, balance/buy/gift UI, purchase handlers, observers and loading hooks. StarsIntroActivity is now a non-instantiable static helper holder while surviving message-rendering callers are migrated in subsequent cleanup.
+
+Deleted its now-orphaned StarsBalanceView, StarsTransactionsLayout (including paged history/balance loading and observers) and unused sample Transaction model after checking Java/Kotlin/XML references. Retained shared particle/expand/transaction rendering helpers for existing historical-message/boost callers rather than preserving a constructible balance/purchase screen.
+
+Source-only inspection covers deleted constructors/types and direct checkout APIs, user-selector modes/callers, edited class boundaries and whitespace. No tests, build, APK or phone interaction. Remaining Stars controller APIs/history rendering, Premium/Business/boost features and resources still require cleanup; source changes remain unshipped and the full objective is incomplete.

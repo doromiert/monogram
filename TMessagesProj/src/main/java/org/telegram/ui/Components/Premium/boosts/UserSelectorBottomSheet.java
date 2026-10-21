@@ -78,7 +78,6 @@ import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PrivacyControlActivity;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.ArrayList;
@@ -94,7 +93,6 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
     public int type;
 
     public static final int TYPE_PREMIUM = 0;
-    public static final int TYPE_STARS = 1;
     public static final int TYPE_STAR_GIFT = 2;
     public static final int TYPE_TRANSFER = 3;
     public static final int TYPE_CALL = 4;
@@ -248,7 +246,7 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
     }
 
     private void checkEditTextHint() {
-        if (!selectedIds.isEmpty() || type == TYPE_STARS || type == TYPE_STAR_GIFT || type == TYPE_TRANSFER || type == TYPE_CALL) {
+        if (!selectedIds.isEmpty() || type == TYPE_STAR_GIFT || type == TYPE_TRANSFER || type == TYPE_CALL) {
             if (!isHintSearchText) {
                 isHintSearchText = true;
                 AndroidUtilities.runOnUIThread(() -> searchField.setHintText(getString(R.string.Search), true), 10);
@@ -334,7 +332,7 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
         };
         searchField.setBackgroundColor(getThemedColor(Theme.key_dialogBackground));
         searchField.setOnSearchTextChange(this::onSearch);
-        searchField.setHintText(getString(!selectedIds.isEmpty() || type == TYPE_STARS || type == TYPE_STAR_GIFT || type == TYPE_TRANSFER || type == TYPE_CALL ? R.string.Search : R.string.GiftPremiumUsersSearchHint), false);
+        searchField.setHintText(getString(!selectedIds.isEmpty() || type == TYPE_STAR_GIFT || type == TYPE_TRANSFER || type == TYPE_CALL ? R.string.Search : R.string.GiftPremiumUsersSearchHint), false);
 
         sectionCell = new View(getContext()) {
             @Override
@@ -401,7 +399,7 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
         containerView.addView(bulletinContainer, LayoutHelper.createFrameMarginPx(LayoutHelper.MATCH_PARENT, 300, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL, backgroundPaddingLeft, 0, backgroundPaddingLeft, dp(68)));
 
         selectorAdapter.setData(items, recyclerListView);
-        recyclerListView.setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, dp(type != TYPE_STARS ? BOTTOM_HEIGHT_DP : 0));
+        recyclerListView.setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, dp(BOTTOM_HEIGHT_DP));
         recyclerListView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
@@ -437,16 +435,6 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
                     if (onUserSelectedListener != null) {
                         onUserSelectedListener.run(id);
                     }
-                    return;
-                } else if (type == TYPE_STARS) {
-                    if (searchField != null) {
-                        AndroidUtilities.hideKeyboard(searchField.getEditText());
-                    }
-                    StarsIntroActivity.GiftStarsSheet sheet = new StarsIntroActivity.GiftStarsSheet(getContext(), resourcesProvider, user, this::dismiss);
-                    if (!AndroidUtilities.isTablet()) {
-                        sheet.makeAttached(attachedFragment);
-                    }
-                    sheet.show();
                     return;
                 }
 
@@ -623,9 +611,7 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
             }
         }
         AndroidUtilities.hideKeyboard(searchField.getEditText());
-        if (type == TYPE_STARS) {
-            return;
-        }
+
         if (type == TYPE_CALL) {
             if (onUsersSelectedListener != null) {
                 onUsersSelectedListener.run(videoCheckbox != null && videoCheckbox.isChecked(), selectedIds);
@@ -1110,8 +1096,6 @@ public class UserSelectorBottomSheet extends BottomSheetWithRecyclerListView imp
         switch (type) {
             case TYPE_CALL:
                 return getString(R.string.VoipConferenceAddPeople);
-            case TYPE_STARS:
-                return getString(R.string.GiftStarsTitle);
             case TYPE_STAR_GIFT:
             case TYPE_PREMIUM:
                 return getString(R.string.GiftTelegramPremiumOrStarsTitle);
