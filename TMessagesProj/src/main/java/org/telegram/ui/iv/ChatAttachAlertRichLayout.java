@@ -62,16 +62,14 @@ import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.EmojiView;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.MessageSendPreview;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.ArrayList;
 
 import org.telegram.ui.iv.Latex;
 
-public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout implements NotificationCenter.NotificationCenterDelegate {
+public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout {
 
     private final int currentAccount;
     private final RichEditorListView listView;
@@ -110,8 +108,8 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         listView = new RichEditorListView(context, currentAccount, resourcesProvider, new RichEditorListView.Delegate() {
             @Override public ItemOptions makeMenu(View anchor) { return menu = ItemOptions.makeOptions(ChatAttachAlertRichLayout.this, resourcesProvider, anchor, false, false, true); }
             @Override public void onSelectionChanged() { updateFormattingPanel(); updateToolbarBlockType(); }
-            @Override public void onContentChanged() { updateSendButtonLoading(); updateSendButtonLocked(); scheduleLimitCheck(); }
-            @Override public void onHistoryChanged() { updateHistoryButtons(); updateSendButtonLocked(); }
+            @Override public void onContentChanged() { updateSendButtonLoading();  scheduleLimitCheck(); }
+            @Override public void onHistoryChanged() { updateHistoryButtons();  }
             @Override public void onOpenAttachRequest(int a, int b) { openAttach(a, b); }
             @Override public void onOpenLocationRequest(BlockRow row) { openLocationPicker(row); }
             @Override public void onSlashSuggest(RichTextCell cell, String query) {
@@ -158,7 +156,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         toolbar = new RichEditorToolbar(context, toolbarDelegate);
         toolbar.setBackVisible(false);
         toolbar.setTopGradientVisible(false);
-        updateSendButtonLocked();
+
         addView(toolbar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
         updateHistoryButtons();
@@ -336,7 +334,6 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         }
         final ItemOptions o = ItemOptions.makeOptions(this, resourcesProvider, v, true).dontFocus();
         final ItemOptions headers = o.makeSwipeback();
-        final boolean premiumLock = !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium();
 
         headers.add(R.drawable.ic_ab_back, getString(R.string.Back), () -> o.closeSwipeback());
         headers.addGap();
@@ -347,12 +344,12 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         addHeadingItem(headers, row, new TL_iv.pageBlockHeading5(), R.drawable.iv_h5, getString(R.string.ArticleHeading5), SharedConfig.fontSize - 2, o);
         addHeadingItem(headers, row, new TL_iv.pageBlockHeading6(), R.drawable.iv_h6, getString(R.string.ArticleHeading6), SharedConfig.fontSize - 3, o);
 
-        o.addChecked(row != null && RichEditorListView.isHeading(row.block), new RichEditor.RequiresPremiumDrawable(getContext(), R.drawable.iv_h1).setPremium(premiumLock), getString(R.string.ArticleHeading), () -> o.openSwipeback(headers));
+        o.addChecked(row != null && RichEditorListView.isHeading(row.block), getContext().getResources().getDrawable(R.drawable.iv_h1), getString(R.string.ArticleHeading), () -> o.openSwipeback(headers));
         o.addChecked(row != null && row.block instanceof TL_iv.pageBlockParagraph, R.drawable.iv_text, getString(R.string.ArticleText), () -> listView.turnIntoKeepList(row, new TL_iv.pageBlockParagraph()));
         o.addChecked(row != null && row.block instanceof TL_iv.pageBlockBlockquote, R.drawable.iv_quote, getString(R.string.ArticleQuote), () -> listView.turnInto(row, RichEditorListView.newBlockquote(), 0, 0, false, false));
-        o.addChecked(row != null && row.block instanceof TL_iv.pageBlockPullquote, new RichEditor.RequiresPremiumDrawable(getContext(), R.drawable.iv_pullquote).setPremium(premiumLock), getString(R.string.ArticlePullquote), () -> listView.turnInto(row, RichEditorListView.newPullquote(), 0, 0, false, false));
+        o.addChecked(row != null && row.block instanceof TL_iv.pageBlockPullquote, getContext().getResources().getDrawable(R.drawable.iv_pullquote), getString(R.string.ArticlePullquote), () -> listView.turnInto(row, RichEditorListView.newPullquote(), 0, 0, false, false));
         o.addChecked(row != null && row.block instanceof TL_iv.pageBlockPreformatted, R.drawable.iv_code, getString(R.string.ArticleCode), () -> listView.turnIntoKeepList(row, new TL_iv.pageBlockPreformatted()));
-        o.addChecked(row != null && row.block instanceof TL_iv.pageBlockFooter, new RichEditor.RequiresPremiumDrawable(getContext(), R.drawable.iv_footer).setPremium(premiumLock), getString(R.string.ArticleFooter), () -> listView.turnIntoKeepList(row, new TL_iv.pageBlockFooter()));
+        o.addChecked(row != null && row.block instanceof TL_iv.pageBlockFooter, getContext().getResources().getDrawable(R.drawable.iv_footer), getString(R.string.ArticleFooter), () -> listView.turnIntoKeepList(row, new TL_iv.pageBlockFooter()));
         menu = o.show();
     }
 
@@ -809,10 +806,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     }
 
     public boolean sendSelectedItems(boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia) {
-        if (isSendLocked()) {
-            showConversionSheet();
-            return false;
-        }
+
         if (!listView.hasAnyText()) {
             return false;
         }
@@ -823,18 +817,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
             updateSendButtonEnabled();
             return false;
         }
-        if (!MessagesController.getInstance(currentAccount).richEditorAllowed()) {
-            // non-premium user with non-lossy content: send it as a simple message via the composer
-            if (parentAlert.baseFragment instanceof ChatActivity) {
-                final ChatActivityEnterView enterView = ((ChatActivity) parentAlert.baseFragment).getChatActivityEnterView();
-                if (enterView != null) {
-                    enterView.sendConvertedRichAsSimple(listView.toSimpleMessage(), notify, scheduleDate, scheduleRepeatPeriod);
-                    parentAlert.dismiss(true);
-                    return true;
-                }
-            }
-            return false;
-        }
+
         ArrayList<TL_iv.PageBlock> sendBlocks = listView.flattenRowsToBlocks();
         if (sendBlocks.isEmpty()) {
             return false;
@@ -878,10 +861,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     private MessageSendPreview messageSendPreview;
 
     private boolean showSendPreview(View view) {
-        if (!UserConfig.getInstance(currentAccount).isPremium()) {
-            new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_RICH_EDITOR, true).show();
-            return true;
-        }
+
         if (!listView.hasAnyText()) return false;
         if (listView.hasPendingUploads()) return false;
         if (!listView.isWithinLimits()) { updateSendButtonEnabled(); return false; }
@@ -1134,48 +1114,17 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         if (toolbar != null) toolbar.setSendEnabled(listView.isWithinLimits());
     }
 
-    private void updateSendButtonLocked() {
-        if (toolbar != null) {
-            final boolean premiumLocked = !MessagesController.getInstance(currentAccount).richEditorAllowed()
-                && !UserConfig.getInstance(currentAccount).isPremium();
-            toolbar.getSendButton().setLocked(premiumLocked && listView.isLossy());
-            toolbar.setPremiumLocked(premiumLocked);
-        }
-    }
 
-    private boolean isSendLocked() {
-        return !MessagesController.getInstance(currentAccount).richEditorAllowed()
-            && !UserConfig.getInstance(currentAccount).isPremium()
-            && listView.isLossy();
-    }
 
-    private void showConversionSheet() {
-        RichEditor.openConversionSheet(getContext(), listView::convertToSimple, () -> {
-            if (!UserConfig.getInstance(currentAccount).isPremium()) {
-                new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_RICH_EDITOR, true).show();
-            }
-        }, resourcesProvider);
-    }
 
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
-        updateSendButtonLocked();
-    }
 
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
-    }
 
-    @Override
-    public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.currentUserPremiumStatusChanged) {
-            updateSendButtonLocked();
-        }
-    }
+
+
+
+
+
+
 
     private int getEmojiPanelHeight() {
         int h = parentAlert.sizeNotifierFrameLayout.measureKeyboardHeight();

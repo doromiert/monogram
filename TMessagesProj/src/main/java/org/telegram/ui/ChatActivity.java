@@ -49,7 +49,6 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.Region;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
@@ -59,7 +58,6 @@ import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Looper;
 import android.os.SystemClock;
 import android.os.Vibrator;
 import android.provider.ContactsContract;
@@ -38551,9 +38549,7 @@ public class ChatActivity extends BaseFragment implements
             if (cell == null || getParentActivity() == null) {
                 return false;
             }
-            if (!MessagesController.getInstance(currentAccount).richEditorAllowed()) {
-                return false;
-            }
+
             final MessageObject messageObject = cell.getMessageObject();
             if (messageObject == null || messageObject.messageOwner == null || messageObject.messageOwner.rich_message == null) {
                 return false;

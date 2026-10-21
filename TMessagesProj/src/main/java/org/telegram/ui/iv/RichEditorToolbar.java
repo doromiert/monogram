@@ -18,7 +18,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AiButtonDrawable;
 import org.telegram.ui.Components.ChatActivityEnterView;
@@ -92,7 +91,6 @@ public class RichEditorToolbar extends FrameLayout {
 
     private final ArrayList<RichEditor.Button> blockButtons = new ArrayList<>();
     private final ArrayList<RichEditor.Button> formattingButtons = new ArrayList<>();
-    private final ArrayList<RichEditor.Button> premiumButtons = new ArrayList<>();
 
     private boolean sendLoading;
 
@@ -230,10 +228,10 @@ public class RichEditorToolbar extends FrameLayout {
         emojiButton.setContentDescription("Emoji");
         emojiButton.setOnClickListener(v -> delegate.onEmoji());
 
-        addBlockButton(R.drawable.iv_text, BLOCK_TEXT, false);
-        addBlockButton(R.drawable.iv_lists, BLOCK_LIST, true);
-        addBlockButton(R.drawable.iv_table, BLOCK_TABLE, true);
-        addBlockButton(R.drawable.iv_math, BLOCK_MATH, true);
+        addBlockButton(R.drawable.iv_text, BLOCK_TEXT);
+        addBlockButton(R.drawable.iv_lists, BLOCK_LIST);
+        addBlockButton(R.drawable.iv_table, BLOCK_TABLE);
+        addBlockButton(R.drawable.iv_math, BLOCK_MATH);
 
         addButton = new ImageView(context);
         addButton.setImageResource(R.drawable.outline_poll_attach_24);
@@ -344,8 +342,8 @@ public class RichEditorToolbar extends FrameLayout {
         addFormattingButton(R.drawable.formatting_strikethrough, RichTextStyle.STRIKE);
         addFormattingButton(R.drawable.formatting_spoiler, RichTextStyle.SPOILER);
         addFormattingButton(R.drawable.iv_code, RichTextStyle.MONO);
-        addFormattingButton(R.drawable.iv_sub, RichTextStyle.SUBSCRIPT, true);
-        addFormattingButton(R.drawable.iv_super, RichTextStyle.SUPERSCRIPT, true);
+        addFormattingButton(R.drawable.iv_sub, RichTextStyle.SUBSCRIPT);
+        addFormattingButton(R.drawable.iv_super, RichTextStyle.SUPERSCRIPT);
 
         quoteButton = new RichEditor.Button(context, R.drawable.iv_quote, resourcesProvider);
         quoteButton.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
@@ -384,8 +382,6 @@ public class RichEditorToolbar extends FrameLayout {
 
         mathButton = new RichEditor.Button(context, R.drawable.iv_math, resourcesProvider);
         mathButton.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
-        mathButton.setPremium();
-        premiumButtons.add(mathButton);
         mathButton.setContentDescription(getString(R.string.AccDescrIVFormula));
         mathButton.setOnClickListener(v -> delegate.onMath());
         formattingLayout3.addView(mathButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL));
@@ -419,13 +415,10 @@ public class RichEditorToolbar extends FrameLayout {
         updatePanel(PANEL_TOOLBAR, false);
     }
 
-    private RichEditor.Button addBlockButton(int icon, int flag, boolean premium) {
+    private RichEditor.Button addBlockButton(int icon, int flag) {
         final RichEditor.Button button = new RichEditor.Button(blocksLayout.getContext(), icon, resourcesProvider);
         button.setBackgroundColorKey(Theme.key_windowBackgroundWhite);
-        if (premium) {
-            button.setPremium();
-            premiumButtons.add(button);
-        }
+
         button.setTag(flag);
         button.setContentDescription(RichEditor.blockButtonContentDescription(flag));
         button.setOnClickListener(v -> delegate.onBlockButton(flag, v));
@@ -435,16 +428,9 @@ public class RichEditorToolbar extends FrameLayout {
     }
 
     private void addFormattingButton(int icon, int styleFlag) {
-        addFormattingButton(icon, styleFlag, false);
-    }
-
-    private void addFormattingButton(int icon, int styleFlag, boolean premium) {
         final RichEditor.Button button = new RichEditor.Button(getContext(), icon, resourcesProvider);
         button.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
-        if (premium) {
-            button.setPremium();
-            premiumButtons.add(button);
-        }
+
         button.setTag(styleFlag);
         button.setContentDescription(RichEditor.formattingButtonContentDescription(styleFlag));
         button.setOnClickListener(v -> delegate.onFormatting(styleFlag));
@@ -452,11 +438,7 @@ public class RichEditorToolbar extends FrameLayout {
         formattingPanelLayout.addView(button, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL, formattingPanelLayout.getChildCount() == 0 ? 0 : 2, 0, 0, 0));
     }
 
-    public void setPremiumLocked(boolean locked) {
-        for (final RichEditor.Button button : premiumButtons) {
-            button.setPremiumLocked(locked);
-        }
-    }
+
 
     // ---- public state setters ----
 

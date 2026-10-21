@@ -23586,9 +23586,7 @@ public class MessagesController extends BaseController implements NotificationCe
         return true;
     }
 
-    public boolean richEditorAllowed() {
-        return true;
-    }
+
 
     public boolean storyEntitiesAllowed() {
         switch (storiesEntities) {

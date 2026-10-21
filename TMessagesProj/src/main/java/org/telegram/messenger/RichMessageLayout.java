@@ -91,7 +91,6 @@ import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.ForegroundColorSpanThemable;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LoadingDrawable;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ReplyMessageLine;
 import org.telegram.ui.Components.TornEdge;
@@ -125,7 +124,6 @@ import org.telegram.ui.Components.spoilers.SpoilerEffect2;
 import org.telegram.ui.iv.RichHtml;
 import org.telegram.ui.iv.RichTextStyle;
 import org.telegram.ui.iv.Latex;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.web.WebInstantView;
 import org.telegram.utils.code.highlight.CodeHighlighting;
 
@@ -9609,10 +9607,7 @@ public class RichMessageLayout {
 
         private void toggleCheckbox() {
             if (!canToggleCheckbox()) return;
-            if (!MessagesController.getInstance(root.currentAccount).richEditorAllowed()) {
-                new PremiumFeatureBottomSheet(root.cell.getContext(), PremiumPreviewFragment.PREMIUM_FEATURE_RICH_EDITOR, true, root.resourcesProvider).show();
-                return;
-            }
+
             final boolean newChecked = !getCheckboxChecked();
             setCheckboxChecked(newChecked);
             if (root.view != null) checkbox.setParentView(root.view);
