@@ -4,6 +4,16 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class XmppDebugLogTest {
+    @Test void latestFailureSurvivesXmlFloodButClearsWithCapture() {
+        XmppDebugLog log=new XmppDebugLog();log.enabled(true);
+        log.record("Request failure","Invalid OMEMO2 content");
+        for(int i=0;i<200;i++) log.record("Received XML","<message id='"+i+"'/>");
+        assertEquals(100,log.snapshot().size());assertEquals("Invalid OMEMO2 content",log.snapshot().get(0).text);
+        log.record("Request failure","OMEMO2 bundle unavailable");
+        assertEquals(1,log.snapshot().stream().filter(e->e.phase.equals("Request failure")).count());
+        log.enabled(false);assertTrue(log.snapshot().isEmpty());
+        log.enabled(true);assertTrue(log.snapshot().isEmpty());
+    }
     @Test void captureIsOptInBoundedAndClearedOnDisableWithoutChangingExistingSnapshots() {
         XmppDebugLog log=new XmppDebugLog();log.record("Received XML","private");assertTrue(log.snapshot().isEmpty());
         log.enabled(true);

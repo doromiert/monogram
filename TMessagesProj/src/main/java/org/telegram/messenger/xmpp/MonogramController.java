@@ -3053,7 +3053,8 @@ public final class MonogramController {
             TLObject response = null; TLRPC.TL_error error = null;
             try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request); }
             catch (Exception e) {
-                if(debugLog.enabled()) {
+                if(debugLog.enabled() && (sendingPeer(request)!=0 || e instanceof java.security.GeneralSecurityException
+                        || request instanceof TLRPC.TL_messages_sendReaction)) {
                     StringBuilder detail=new StringBuilder(com.negzero.monogram.xmpp.XmppRequestException.describe(e));
                     for(StackTraceElement frame:e.getStackTrace()) {
                         if(frame.getClassName().startsWith("com.negzero.monogram.") || frame.getClassName().startsWith("org.telegram.messenger.xmpp."))

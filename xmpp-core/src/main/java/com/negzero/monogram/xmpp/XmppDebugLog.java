@@ -15,16 +15,27 @@ public final class XmppDebugLog {
     }
     private final ArrayDeque<Entry> entries=new ArrayDeque<>();
     private volatile boolean enabled;
+    private Entry lastFailure;
     private int characters;
     private long sequence;
     public boolean enabled() { return enabled; }
     public synchronized void enabled(boolean value) { enabled=value;if(!value) clear(); }
-    public synchronized void clear() { entries.clear();characters=0; }
+    public synchronized void clear() { entries.clear();lastFailure=null;characters=0; }
     public synchronized void record(String phase,String text) {
         if(!enabled || text==null) return;
         if(text.length()>MAX_ENTRY) text=text.substring(0,MAX_ENTRY)+"\n[truncated]";
-        entries.addLast(new Entry(++sequence,phase,text));characters+=text.length();
+        Entry entry=new Entry(++sequence,phase,text);
+        if("Request failure".equals(phase)) lastFailure=entry;
+        entries.addLast(entry);characters+=text.length();
         while(entries.size()>MAX_ENTRIES || characters>MAX_TEXT) characters-=entries.removeFirst().text.length();
     }
-    public synchronized List<Entry> snapshot() { return new ArrayList<>(entries); }
+    public synchronized List<Entry> snapshot() {
+        List<Entry> result=new ArrayList<>(entries);
+        if(lastFailure!=null && !result.contains(lastFailure)) {
+            result.add(0,lastFailure);
+            int total=characters+lastFailure.text.length();
+            while(result.size()>MAX_ENTRIES || total>MAX_TEXT) total-=result.remove(1).text.length();
+        }
+        return result;
+    }
 }
