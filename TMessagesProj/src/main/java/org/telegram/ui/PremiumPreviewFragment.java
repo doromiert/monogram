@@ -170,7 +170,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
     public final static int FEATURES_PREMIUM = 0;
     public final static int FEATURES_BUSINESS = 1;
 
-    public final static int PREMIUM_FEATURE_LIMITS = 0;
     public final static int PREMIUM_FEATURE_UPLOAD_LIMIT = 1;
     public final static int PREMIUM_FEATURE_DOWNLOAD_SPEED = 2;
     public final static int PREMIUM_FEATURE_ADS = 3;
@@ -242,8 +241,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
 
     public static int serverStringToFeatureType(String s) {
         switch (s) {
-            case "double_limits":
-                return PREMIUM_FEATURE_LIMITS;
             case "more_upload":
                 return PREMIUM_FEATURE_UPLOAD_LIMIT;
             case "faster_download":
@@ -339,8 +336,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
 
     public static String featureTypeToServerString(int type) {
         switch (type) {
-            case PREMIUM_FEATURE_LIMITS:
-                return "double_limits";
             case PREMIUM_FEATURE_UPLOAD_LIMIT:
                 return "more_upload";
             case PREMIUM_FEATURE_DOWNLOAD_SPEED:
@@ -938,8 +933,6 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
     public static void fillPremiumFeaturesList(ArrayList<PremiumFeatureData> premiumFeatures, int currentAccount, boolean all) {
         MessagesController messagesController = MessagesController.getInstance(currentAccount);
 
-        premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_LIMITS, R.drawable.msg_premium_limits, getString(R.string.PremiumPreviewLimits), LocaleController.formatString(R.string.PremiumPreviewLimitsDescription,
-                messagesController.channelsLimitPremium, messagesController.dialogFiltersLimitPremium, messagesController.dialogFiltersPinnedLimitPremium, messagesController.publicLinksLimitPremium, 4)));
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_STORIES, R.drawable.msg_filled_stories, getString(R.string.PremiumPreviewStories), LocaleController.formatString(R.string.PremiumPreviewStoriesDescription)));
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_UPLOAD_LIMIT, R.drawable.msg_premium_uploads, getString(R.string.PremiumPreviewUploads), getString(R.string.PremiumPreviewUploadsDescription)));
         premiumFeatures.add(new PremiumFeatureData(PREMIUM_FEATURE_DOWNLOAD_SPEED, R.drawable.msg_premium_speed, getString(R.string.PremiumPreviewDownloadSpeed), getString(R.string.PremiumPreviewDownloadSpeedDescription)));

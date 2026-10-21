@@ -619,3 +619,11 @@ Removed the PREMIUM_GIFT_SELF_REQUIRED clickable route into the Premium storefro
 Capability inspection also found that native schedule_date sends and checklist mutations have not been bridged to XMPP in the current controller; merely removing subscription UI gates would not make them usable. Existing helper/scheduling history is not runtime proof of native recurring scheduling. These remain explicit capability work, not completed/free-working features in this pass.
 
 Source inspection checked all deleted menu/callback/keyboard/result identifiers across Java, both remaining group-setting callers, group request update/error continuation, historical sharing display, gift error-route removal, ordinary account error/logout handling, class boundaries and diff whitespace. No tests, Nix build or device actions. Source-only, unshipped; compile and verify profile/menu/service-message/group-setting behavior at next APK. README remains untouched.
+
+### Delete doubled-limits sales page and orphan gift sheets
+
+Deleted DoubledLimitsBottomSheet and DoubleLimitsPageView, including their subscription button, account-tier/price comparison adapter and gradient measurement. Removed the doubled-limits feature from the remaining Premium catalogue, its feature constant and server-name conversion cases, feature-sheet page construction/title/full-height branches. The remaining sheet’s fallback title uses the selected feature title. This removes sales presentation, not actual application limits; the wider limit/capability audit remains unfinished.
+
+Deleted CraftGiftSheet and SellGiftEnterPriceSheet after confirming no remaining source callers. They were orphaned remnants of retired gift crafting/pricing flows; this does not claim the remaining StarGiftSheet, collectible/history presentation or main Premium storefront has been removed.
+
+Source inspection checked removed class/constant references across Java/XML, catalogue construction and page/title branches, feature-name mapping, class boundaries and diff whitespace. No tests, Nix build or phone actions. Unshipped source cleanup; next APK must verify compilation and surviving native controls. Remaining storefront/tier metadata, service-specific feature routes, gift/Stars/backend/schema/assets and final capability/release verification are still pending. README remains untouched.

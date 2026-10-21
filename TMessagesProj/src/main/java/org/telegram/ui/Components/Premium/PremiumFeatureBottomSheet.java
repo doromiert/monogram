@@ -324,10 +324,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
 
             @Override
             public void onPageSelected(int i) {
-                if (premiumFeatures.get(i).type == PremiumPreviewFragment.PREMIUM_FEATURE_LIMITS) {
-                    actionBar.setTitle(LocaleController.getString(R.string.DoubledLimits));
-                    actionBar.requestLayout();
-                } else if (premiumFeatures.get(i).type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES) {
+                if (premiumFeatures.get(i).type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES) {
                     actionBar.setTitle(LocaleController.getString(R.string.UpgradedStories));
                     actionBar.requestLayout();
                 } else if (premiumFeatures.get(i).type == PremiumPreviewFragment.FEATURE_GIFTS) {
@@ -549,7 +546,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
     }
 
     private boolean isFullscreenType(int type) {
-        return type == PremiumPreviewFragment.PREMIUM_FEATURE_LIMITS || type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES || type == PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS;
+        return type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES || type == PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS;
     }
 
     public void hideButton() {
@@ -640,7 +637,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
             actionBar.setTitle(LocaleController.getString(R.string.FeaturePreviewGifts));
             actionBar.requestLayout();
         } else {
-            actionBar.setTitle(LocaleController.getString(R.string.DoubledLimits));
+            actionBar.setTitle(premiumFeatures.get(selectedPosition).title);
             actionBar.requestLayout();
         }
     }
@@ -749,7 +746,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
         }
 
         void setFeatureDate(PremiumPreviewFragment.PremiumFeatureData featureData) {
-            if (featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_LIMITS || featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES || featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS) {
+            if (featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES || featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS) {
                 title.setText("");
                 description.setText("");
                 topViewOnFullHeight = true;
@@ -833,18 +830,7 @@ public class PremiumFeatureBottomSheet extends BottomSheet implements Notificati
 
     View getViewForPosition(Context context, int position) {
         PremiumPreviewFragment.PremiumFeatureData featureData = premiumFeatures.get(position);
-        if (featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_LIMITS) {
-            DoubleLimitsPageView doubleLimitsPagerView = new DoubleLimitsPageView(context, resourcesProvider);
-            doubleLimitsPagerView.recyclerListView.setOnScrollListener(new RecyclerView.OnScrollListener() {
-                @Override
-                public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                    super.onScrolled(recyclerView, dx, dy);
-                    containerView.invalidate();
-                    checkTopOffset();
-                }
-            });
-            return doubleLimitsPagerView;
-        }
+
         if (featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_STORIES || featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS) {
             final int type;
             if (featureData.type == PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS) {
