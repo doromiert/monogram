@@ -401,3 +401,11 @@ Deleted BoostViaGiftsBottomSheet and BoostPagerBottomSheet. Removed giveaway hea
 Deleted the now-unused StarsController giveaway option cache/accessors and buyGiveaway stub. Deleted BoostRepository.payGiftCode/payGiveAway stubs and launchPreparedGiveaway, including its Telegram prepaid-giveaway launch request. Other boost repository methods and historical giveaway rendering remain for later cleanup.
 
 Source inspection caught and corrected an orphaned else branch when removing the giveaway purchase row. Reviewed surviving boost-header/list/footer branches, deleted API references across Java/XML, Java class boundaries and whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; wider boost/Premium/Business/Stars and resource/schema cleanup remains incomplete.
+
+### Appearance boost-level gates
+
+Removed ChannelColorActivity/GroupColorActivity's required-level calculations and lock labels, boost-count load/watch/refresh paths, Apply waiting for boost status, pack-selection level rejection and boost/limit prompts. Unsaved-change/back handling now depends on edits rather than subscription/boost level. Retained normal preview/color/emoji/wallpaper controls and generic save error reporting. Removed the group preview boost-count/promotion row while retaining its collapsing title/header behavior.
+
+Important unfinished work: these legacy group/channel save paths still construct Telegram color/status/wallpaper requests. Removing the paywall does not establish working XMPP/local persistence for them. Existing local self-profile colors use a separate owner-scoped implementation; group presentation needs its own local storage/projection or a suitable XMPP mapping before full feature completion can be claimed. No artificial boost level or entitlement was written.
+
+Source-only inspection covers deleted boost fields/methods/observers across both classes and callers, retained header animation targets, pack/preview selection paths, Java boundaries and whitespace. No tests, build, APK or phone interaction. Changes remain unshipped and the overall goal remains incomplete.

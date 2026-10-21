@@ -14,11 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.ChannelBoostsController;
 import org.telegram.messenger.ChatObject;
-import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 
@@ -26,44 +22,27 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ThemePreviewMessagesCell;
 import org.telegram.ui.Components.CombinedDrawable;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
 
 public class GroupColorActivity extends ChannelColorActivity {
 
     private ChannelColorActivity.ProfilePreview profilePreview;
     private float profilePreviewPercent;
-    private boolean isLoading;
 
     public GroupColorActivity(long dialogId) {
         super(dialogId);
         isGroup = true;
     }
 
-    @Override
-    protected int getProfileIconLevelMin() {
-        return getMessagesController().groupProfileBgIconLevelMin;
-    }
 
-    @Override
-    protected int getCustomWallpaperLevelMin() {
-        return getMessagesController().groupCustomWallpaperLevelMin;
-    }
 
-    @Override
-    protected int getWallpaperLevelMin() {
-        return getMessagesController().groupWallpaperLevelMin;
-    }
 
-    @Override
-    protected int getEmojiStatusLevelMin() {
-        return getMessagesController().groupEmojiStatusLevelMin;
-    }
 
-    @Override
-    protected int getEmojiStickersLevelMin() {
-        return getMessagesController().groupEmojiStickersLevelMin;
-    }
+
+
+
+
+
 
     @Override
     protected void updateRows() {
@@ -107,13 +86,7 @@ public class GroupColorActivity extends ChannelColorActivity {
         wallpaperHintRow = rowsCount++;
     }
 
-    @Override
-    public void updateButton(boolean animated) {
-        super.updateButton(animated);
-        if (profilePreview != null) {
-            profilePreview.textInfo1.setText(AndroidUtilities.replaceTags(LocaleController.formatPluralString("BoostingGroupBoostCount", boostsStatus != null ? boostsStatus.boosts : 0)));
-        }
-    }
+
 
     @Override
     protected int getEmojiPackStrRes() {
@@ -179,14 +152,13 @@ public class GroupColorActivity extends ChannelColorActivity {
             public void onGlobalLayout() {
                 view.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                 initProfilePreview();
-                profilePreview.infoLayout.setOnClickListener(v -> openBoostDialog(LimitReachedBottomSheet.TYPE_BOOSTS_FOR_USERS));
             }
         });
         return view;
     }
 
     @Override
-    protected boolean needBoostInfoSection() {
+    protected boolean needsProfileHeader() {
         return true;
     }
 
@@ -223,7 +195,6 @@ public class GroupColorActivity extends ChannelColorActivity {
                 float profileAlphaPercent = Math.min(profilePreviewPercent * 2f, 1f);
                 float titleAlphaPercent = Math.min(Math.max(profilePreviewPercent - 0.45f, 0f) * 2f, 1f);
                 profilePreview.profileView.setAlpha(AndroidUtilities.lerp(1f, 0f, profileAlphaPercent));
-                profilePreview.infoLayout.setAlpha(AndroidUtilities.lerp(1f, 0f, profileAlphaPercent));
                 profilePreview.title.setAlpha(AndroidUtilities.lerp(0f, 1f, titleAlphaPercent));
                 if (profilePreviewPercent >= 1f) {
                     profilePreview.setTranslationY(y - max);
@@ -261,35 +232,7 @@ public class GroupColorActivity extends ChannelColorActivity {
         listView.setSections(true);
     }
 
-    protected void openBoostDialog(int type) {
-        if (boostsStatus == null || isLoading) {
-            return;
-        }
-        isLoading = true;
-        ChannelBoostsController boostsController = MessagesController.getInstance(currentAccount).getBoostsController();
-        boostsController.userCanBoostChannel(dialogId, boostsStatus, canApplyBoost -> {
-            if (canApplyBoost == null || getContext() == null) {
-                isLoading = false;
-                return;
-            }
-            LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(this, getContext(), type, currentAccount, resourceProvider) {
-                @Override
-                public void onOpenAnimationEnd() {
-                    isLoading = false;
-                }
 
-                @Override
-                public void dismiss() {
-                    super.dismiss();
-                    isLoading = false;
-                }
-            };
-            limitReachedBottomSheet.setCanApplyBoost(canApplyBoost);
-            limitReachedBottomSheet.setBoostsStats(boostsStatus, true);
-            limitReachedBottomSheet.setDialogId(dialogId);
-            limitReachedBottomSheet.show();
-        });
-    }
 
     @Override
     public void updateColors(boolean onlyActionBar) {
