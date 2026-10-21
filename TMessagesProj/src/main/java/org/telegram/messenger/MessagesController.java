@@ -191,7 +191,6 @@ public class MessagesController extends BaseController implements NotificationCe
     private boolean hasArchivedChats;
     private boolean hasStories;
     public long storiesChangelogUserId = 777000;
-    private ChannelBoostsController channelBoostsControler;
     public long giveawayAddPeersMax = 10;
     public long giveawayPeriodMax = 7;
     public long giveawayCountriesMax = 10;
@@ -214,18 +213,7 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
-    public ChannelBoostsController getBoostsController() {
-        if (channelBoostsControler != null) {
-            return channelBoostsControler;
-        }
-        synchronized (lockObjects[currentAccount]) {
-            if (channelBoostsControler != null) {
-                return channelBoostsControler;
-            }
-            channelBoostsControler = new ChannelBoostsController(currentAccount);
-        }
-        return channelBoostsControler;
-    }
+
 
     class ChatlistUpdatesStat {
         public ChatlistUpdatesStat() {

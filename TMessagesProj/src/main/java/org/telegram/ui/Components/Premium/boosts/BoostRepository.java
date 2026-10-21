@@ -1,14 +1,9 @@
 package org.telegram.ui.Components.Premium.boosts;
 
 import android.os.Build;
-import android.text.TextUtils;
 import android.util.Pair;
 
-
-import org.json.JSONObject;
-import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DialogObject;
@@ -21,17 +16,10 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
-import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.Vector;
-import org.telegram.tgnet.tl.TL_stories;
-import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.bots.BotWebViewSheet;
-import org.telegram.ui.LaunchActivity;
 
 import java.text.Collator;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -433,42 +421,4 @@ public class BoostRepository {
         }));
     }
 
-    public static void getMyBoosts(Utilities.Callback<TL_stories.TL_premium_myBoosts> onDone, Utilities.Callback<TLRPC.TL_error> onError) {
-        ConnectionsManager connection = ConnectionsManager.getInstance(UserConfig.selectedAccount);
-        MessagesController controller = MessagesController.getInstance(UserConfig.selectedAccount);
-        TL_stories.TL_premium_getMyBoosts req = new TL_stories.TL_premium_getMyBoosts();
-        int reqId = connection.sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (error != null) {
-                onError.run(error);
-                return;
-            }
-            if (response instanceof TL_stories.TL_premium_myBoosts) {
-                TL_stories.TL_premium_myBoosts myBoosts = (TL_stories.TL_premium_myBoosts) response;
-                controller.putUsers(myBoosts.users, false);
-                controller.putChats(myBoosts.chats, false);
-                onDone.run(myBoosts);
-            }
-        }));
-    }
-
-    public static void applyBoost(long dialogId, List<Integer> slots, Utilities.Callback<TL_stories.TL_premium_myBoosts> onDone, Utilities.Callback<TLRPC.TL_error> onError) {
-        ConnectionsManager connection = ConnectionsManager.getInstance(UserConfig.selectedAccount);
-        MessagesController controller = MessagesController.getInstance(UserConfig.selectedAccount);
-        TL_stories.TL_premium_applyBoost req = new TL_stories.TL_premium_applyBoost();
-        req.peer = controller.getInputPeer(-dialogId);
-        req.flags |= 1;
-        req.slots.addAll(slots);
-        connection.sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (error != null) {
-                onError.run(error);
-                return;
-            }
-            if (response instanceof TL_stories.TL_premium_myBoosts) {
-                TL_stories.TL_premium_myBoosts myBoosts = (TL_stories.TL_premium_myBoosts) response;
-                controller.putUsers(myBoosts.users, false);
-                controller.putChats(myBoosts.chats, false);
-                onDone.run(myBoosts);
-            }
-        }), ConnectionsManager.RequestFlagInvokeAfter | ConnectionsManager.RequestFlagFailOnServerErrors);
-    }
 }

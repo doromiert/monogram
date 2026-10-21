@@ -1180,18 +1180,7 @@ public class TL_stories {
         }
     }
 
-    public static class TL_premium_getMyBoosts extends TLObject {
-        public static int constructor = 0xbe77b4a;
 
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_premium_myBoosts.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-        }
-    }
 
     public static class TL_premium_boostsStatus extends TLObject {
         public static int constructor = 0x4959427a;
@@ -1263,41 +1252,9 @@ public class TL_stories {
         }
     }
 
-    public static class TL_premium_getBoostsStatus extends TLObject {
-        public static int constructor = 0x42f1f61;
 
-        public TLRPC.InputPeer peer;
 
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_premium_boostsStatus.TLdeserialize(stream, constructor, exception);
-        }
 
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            peer.serializeToStream(stream);
-        }
-    }
-
-    public static class TL_premium_applyBoost extends TLObject {
-        public static int constructor = 0x6b7da746;
-
-        public int flags;
-        public ArrayList<Integer> slots = new ArrayList<>();
-        public TLRPC.InputPeer peer;
-
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TL_premium_myBoosts.TLdeserialize(stream, constructor, exception);
-        }
-
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            stream.writeInt32(flags);
-            if (hasFlag(flags, 1)) {
-                Vector.serializeInt(stream, slots);
-            }
-            peer.serializeToStream(stream);
-        }
-    }
 
     public static class Boost extends TLObject {
         public static final long NO_USER_ID = -1L; //custom
