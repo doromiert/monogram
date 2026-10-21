@@ -7,12 +7,10 @@ import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.messenger.MediaDataController.calcHash;
 
-import android.app.Activity;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.LongSparseArray;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.telegram.SQLite.SQLiteCursor;
@@ -24,14 +22,12 @@ import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
@@ -47,7 +43,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.List;
 
 public class StarsController {
 
@@ -58,117 +53,27 @@ public class StarsController {
     public static final int PERIOD_MINUTE = 60;
     public static final int PERIOD_5MINUTES = 300;
 
-    private static volatile StarsController[][] Instance = new StarsController[2][UserConfig.MAX_ACCOUNT_COUNT];
-    private static final Object[][] lockObjects = new Object[2][UserConfig.MAX_ACCOUNT_COUNT];
+    private static final StarsController[] instances = new StarsController[UserConfig.MAX_ACCOUNT_COUNT];
+    private static final Object[] instanceLocks = new Object[UserConfig.MAX_ACCOUNT_COUNT];
     static {
-        for (int a = 0; a < 2; ++a) {
-            for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
-                lockObjects[a][i] = new Object();
-            }
+        for (int i = 0; i < instanceLocks.length; i++) {
+            instanceLocks[i] = new Object();
         }
     }
 
-    public static StarsController getTonInstance(int num) {
-        return getInstance(num, true);
-    }
-
-    public static StarsController getInstance(int num) {
-        return getInstance(num, false);
-    }
-
-    public static StarsController getInstance(int num, AmountUtils.Currency currency) {
-        return getInstance(num, currency == AmountUtils.Currency.TON);
-    }
-
-    public static StarsController getInstance(int num, boolean ton) {
-        StarsController localInstance = Instance[ton ? 1 : 0][num];
-        if (localInstance == null) {
-            synchronized (lockObjects[ton ? 1 : 0][num]) {
-                localInstance = Instance[ton ? 1 : 0][num];
-                if (localInstance == null) {
-                    Instance[ton ? 1 : 0][num] = localInstance = new StarsController(num, ton);
-                }
+    public static StarsController getInstance(int account) {
+        synchronized (instanceLocks[account]) {
+            if (instances[account] == null) {
+                instances[account] = new StarsController(account);
             }
+            return instances[account];
         }
-        return localInstance;
     }
 
     public final int currentAccount;
-    public final boolean ton;
 
-    private StarsController(int account, boolean ton) {
-        this.currentAccount = account;
-        this.ton = ton;
-    }
-
-    // ===== STAR BALANCE =====
-
-    private long lastBalanceLoaded;
-    private boolean balanceLoading, balanceLoaded;
-    @NonNull
-    public TL_stars.StarsAmount balance = TL_stars.StarsAmount.ofStars(0);
-    public long minus;
-
-    public TL_stars.StarsAmount getBalance() {
-        return getBalance(null);
-    }
-
-    @NonNull
-    public AmountUtils.Amount getBalanceAmount() {
-        AmountUtils.Amount amount = AmountUtils.Amount.of(getBalance());
-        if (amount == null) {
-            amount = AmountUtils.Amount.fromNano(0, ton ? AmountUtils.Currency.TON : AmountUtils.Currency.STARS);
-        }
-
-        return amount;
-    }
-
-    public long getBalance(boolean withMinus) {
-        return getBalance(withMinus, null, false).amount;
-    }
-
-    public TL_stars.StarsAmount getBalance(Runnable loaded) {
-        return getBalance(true, loaded, false);
-    }
-
-    public TL_stars.StarsAmount getBalance(boolean withMinus, Runnable loaded, boolean force) {
-        balance = TL_stars.StarsAmount.ofStars(0);
-        minus = 0;
-        balanceLoading = false;
-        balanceLoaded = true;
-        if (loaded != null) AndroidUtilities.runOnUIThread(loaded);
-        return balance;
-    }
-
-    public boolean canUseTon() {
-        return false;
-    }
-
-    public void invalidateBalance() {
-        balanceLoaded = false;
-        getBalance();
-        balanceLoaded = true;
-    }
-
-    public void invalidateBalance(Runnable loaded) {
-        balanceLoaded = false;
-        getBalance(false, loaded, true);
-        balanceLoaded = true;
-    }
-
-    public void updateBalance(TL_stars.StarsAmount balance) {
-        if (!this.balance.equals(balance)) {
-            this.balance = balance;
-            this.minus = 0;
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starBalanceUpdated);
-        } else if (this.minus != 0) {
-            this.minus = 0;
-            NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.starBalanceUpdated);
-        }
-    }
-
-    public boolean balanceAvailable() {
-        return balanceLoaded;
+    private StarsController(int account) {
+        currentAccount = account;
     }
 
     private void bulletinError(TLRPC.TL_error err, String str) {
@@ -1489,59 +1394,15 @@ public class StarsController {
 
 
 
-    // returns true if request should be sent
 
 
 
 
-    public static long getAllowedPaidStars(TLObject req) {
-        if (req instanceof TLRPC.TL_messages_sendMessage) {
-            return ((TLRPC.TL_messages_sendMessage) req).allow_paid_stars;
-        } else if (req instanceof TLRPC.TL_messages_sendMultiMedia) {
-            return ((TLRPC.TL_messages_sendMultiMedia) req).allow_paid_stars;
-        } else if (req instanceof TLRPC.TL_messages_sendInlineBotResult) {
-            return ((TLRPC.TL_messages_sendInlineBotResult) req).allow_paid_stars;
-        } else if (req instanceof TLRPC.TL_messages_forwardMessages) {
-            return ((TLRPC.TL_messages_forwardMessages) req).allow_paid_stars / ((TLRPC.TL_messages_forwardMessages) req).id.size();
-        } else if (req instanceof TLRPC.TL_messages_sendMedia) {
-            return ((TLRPC.TL_messages_sendMedia) req).allow_paid_stars;
-        }
-        return 0;
-    }
 
-    public static long getPeer(TLObject req) {
-        if (req instanceof TLRPC.TL_messages_sendMessage) {
-            return DialogObject.getPeerDialogId(((TLRPC.TL_messages_sendMessage) req).peer);
-        } else if (req instanceof TLRPC.TL_messages_sendMultiMedia) {
-            return DialogObject.getPeerDialogId(((TLRPC.TL_messages_sendMultiMedia) req).peer);
-        } else if (req instanceof TLRPC.TL_messages_sendInlineBotResult) {
-            return DialogObject.getPeerDialogId(((TLRPC.TL_messages_sendInlineBotResult) req).peer);
-        } else if (req instanceof TLRPC.TL_messages_forwardMessages) {
-            return DialogObject.getPeerDialogId(((TLRPC.TL_messages_forwardMessages) req).to_peer);
-        } else if (req instanceof TLRPC.TL_messages_sendMedia) {
-            return DialogObject.getPeerDialogId(((TLRPC.TL_messages_sendMedia) req).peer);
-        }
-        return 0;
-    }
 
-    public void showPriceChangedToast(List<MessageObject> msgs) {
-        if (msgs == null || msgs.isEmpty()) return;
-        final MessageObject msg = msgs.get(0);
-        final long dialogId = msg.getDialogId();
-        if (dialogId >= 0) {
-            MessagesController.getInstance(currentAccount).loadFullUser(MessagesController.getInstance(currentAccount).getUser(dialogId), 0, true);
-        } else {
-            MessagesController.getInstance(currentAccount).loadFullChat(-dialogId, 0, true);
-        }
-        final CharSequence text = StarsIntroActivity.replaceStars(TextUtils.concat(
-            LocaleController.formatPluralString("PaidMessagesSendErrorToast1", (int) msg.messageOwner.errorAllowedPriceStars),
-            " ",
-            LocaleController.formatPluralString("PaidMessagesSendErrorToast2", (int) msg.messageOwner.errorNewPriceStars)
-        ));
-        BulletinFactory.of(LaunchActivity.getSafeLastFragment())
-            .createSimpleBulletin(R.raw.error, text)
-            .show();
-    }
+
+
+
 
 
 }

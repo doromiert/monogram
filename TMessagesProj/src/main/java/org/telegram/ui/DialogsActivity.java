@@ -2915,8 +2915,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             .add(NotificationCenter.storiesEnabledUpdate)
             .add(NotificationCenter.unconfirmedAuthUpdate)
             .add(NotificationCenter.premiumPromoUpdated)
-            .add(NotificationCenter.starBalanceUpdated)
-            .add(NotificationCenter.starSubscriptionsLoaded)
             .add(NotificationCenter.communityPendingRequestsUpdate)
             .add(NotificationCenter.communitySwitchedCollapsed)
             .add(NotificationCenter.appConfigUpdated)
@@ -10370,8 +10368,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (id == NotificationCenter.unconfirmedAuthUpdate) {
             updateDialogsHint();
         } else if (id == NotificationCenter.premiumPromoUpdated) {
-            updateDialogsHint();
-        } else if (id == NotificationCenter.starBalanceUpdated || id == NotificationCenter.starSubscriptionsLoaded) {
             updateDialogsHint();
         } else if (id == NotificationCenter.appConfigUpdated) {
             updateDialogsHint();

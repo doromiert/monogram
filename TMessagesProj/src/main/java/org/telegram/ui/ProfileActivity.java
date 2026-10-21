@@ -2226,7 +2226,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         getNotificationCenter().addObserver(this, NotificationCenter.storiesUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.storiesReadUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
-        getNotificationCenter().addObserver(this, NotificationCenter.starBalanceUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.botStarsUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.botStarsTransactionsLoaded);
         getNotificationCenter().addObserver(this, NotificationCenter.dialogDeleted);
@@ -2366,7 +2365,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         getNotificationCenter().removeObserver(this, NotificationCenter.storiesUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.storiesReadUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
-        getNotificationCenter().removeObserver(this, NotificationCenter.starBalanceUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.botStarsUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.botStarsTransactionsLoaded);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogDeleted);
@@ -9088,8 +9086,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
         } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
             updateEditColorIcon();
-        } else if (id == NotificationCenter.starBalanceUpdated) {
-            updateListAnimated(false);
         } else if (id == NotificationCenter.botStarsUpdated) {
             updateListAnimated(false);
         } else if (id == NotificationCenter.botStarsTransactionsLoaded) {

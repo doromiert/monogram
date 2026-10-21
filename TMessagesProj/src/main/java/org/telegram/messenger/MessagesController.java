@@ -19998,10 +19998,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         }
                         messageObjects.add(message);
                         getNotificationsController().processNewMessages(messageObjects, true, false, null);
-                    } else if (baseUpdate instanceof TL_update.TL_updateStarsBalance) {
-                        TL_update.TL_updateStarsBalance update = (TL_update.TL_updateStarsBalance) baseUpdate;
-                        final boolean ton = update.balance instanceof TL_stars.TL_starsTonAmount;
-                        StarsController.getInstance(currentAccount, ton).updateBalance(update.balance);
                     } else if (baseUpdate instanceof TL_update.TL_updateUser) {
                         TL_update.TL_updateUser update = (TL_update.TL_updateUser) baseUpdate;
                         TLRPC.User currentUser = getUser(update.user_id);

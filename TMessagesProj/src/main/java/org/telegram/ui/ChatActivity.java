@@ -3081,7 +3081,6 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.quickRepliesUpdated)
             .add(NotificationCenter.factCheckLoaded)
             .add(NotificationCenter.messagesFeeUpdated)
-            .add(NotificationCenter.starBalanceUpdated)
             .add(NotificationCenter.botForumTopicDidCreate)
             .add(NotificationCenter.botForumDraftUpdate)
             .add(NotificationCenter.botForumDraftDelete)
@@ -3261,10 +3260,7 @@ public class ChatActivity extends BaseFragment implements
             }, timeout * 1000L);
         }
 
-        if (ChatObject.isMonoForum(currentChat)) {
-            // reload balance if needed
-            StarsController.getTonInstance(currentAccount).canUseTon();
-        }
+
 
         if (isTopic || getMessagesController().isMonoForumWithManageRights(dialog_id) && getTopicId() != 0) {
             getMessagesController().getTopicsController().getTopicRepliesCount(dialog_id, getTopicId());
@@ -24251,11 +24247,6 @@ public class ChatActivity extends BaseFragment implements
             if (getSendMonoForumPeerId() != 0 && getSendMonoForumPeerId() != did) return;
             updateTopPanel(true);
             updateBottomOverlay(true);
-        } else if (id == NotificationCenter.starBalanceUpdated) {
-            updateTopPanel(true);
-            updateBottomOverlay(true);
-            updateGreetingLock();
-            updateGreetInfo();
         } else if (id == NotificationCenter.botForumTopicDidCreate) {
             final BotForumHelper.BotForumTopicCreateNotification arg = (BotForumHelper.BotForumTopicCreateNotification) args[0];
             if (dialog_id != arg.dialogId) return;

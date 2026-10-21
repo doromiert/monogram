@@ -51,11 +51,9 @@ import androidx.annotation.UiThread;
 import androidx.collection.LongSparseArray;
 import androidx.core.view.inputmethod.InputContentInfoCompat;
 
-import org.json.JSONObject;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.support.SparseLongArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
-import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.tgnet.ConnectionsManager;
@@ -92,12 +90,8 @@ import org.telegram.ui.Components.poll.attached.PollAttachedMediaSticker;
 import org.telegram.ui.Components.voip.AnimatedFileInfo;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.OAuthSheet;
-import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stars.StarsIntroActivity;
-import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.Reactions.ReactionsUtils;
 import org.telegram.ui.Stories.MessageMediaStoryFull;
@@ -113,7 +107,6 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -2813,11 +2806,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             for (int a1 = 0; a1 < newMsgObjArr.size(); a1++) {
                                 final TLRPC.Message newMsgObj1 = newMsgObjArr.get(a1);
                                 getMessagesStorage().markMessageAsSendError(newMsgObj1, scheduleDate != 0 ? 1 : 0);
-                                if (error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {
-                                    newMsgObj1.errorAllowedPriceStars = StarsController.getInstance(currentAccount).getAllowedPaidStars(req);
-                                    newMsgObj1.errorNewPriceStars = Long.parseLong(error.text.substring("ALLOW_PAYMENT_REQUIRED_".length())) / req.id.size();
-                                    getMessagesStorage().updateMessageCustomParams(MessageObject.getDialogId(newMsgObj1), newMsgObj1);
-                                }
+
                                 AndroidUtilities.runOnUIThread(() -> {
                                     newMsgObj1.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                                     getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj1.id);
@@ -2825,11 +2814,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                     removeFromSendingMessages(newMsgObj1.id, scheduleDate != 0);
                                 });
                             }
-                            if (error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {
-                                AndroidUtilities.runOnUIThread(() -> {
-                                    StarsController.getInstance(currentAccount).showPriceChangedToast(newMsgArr);
-                                });
-                            }
+
                         }, ConnectionsManager.RequestFlagCanCompress | ConnectionsManager.RequestFlagInvokeAfter);
                     };
 
@@ -7900,12 +7885,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         TLRPC.Message newMsgObj = msgObj.messageOwner;
                         getMessagesStorage().markMessageAsSendError(newMsgObj, scheduled ? 1 : 0);
                         newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
-                        if (!scheduled && error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {
-                            newMsgObj.errorAllowedPriceStars = StarsController.getInstance(currentAccount).getAllowedPaidStars(request);
-                            newMsgObj.errorNewPriceStars = Long.parseLong(error.text.substring("ALLOW_PAYMENT_REQUIRED_".length()));
-                            StarsController.getInstance(currentAccount).showPriceChangedToast(Arrays.asList(msgObj));
-                            getMessagesStorage().updateMessageCustomParams(MessageObject.getDialogId(newMsgObj), newMsgObj);
-                        }
+
                         getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj.id);
                         processSentMessage(newMsgObj.id);
                         removeFromSendingMessages(newMsgObj.id, scheduled);
@@ -8414,12 +8394,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     if (isSentError) {
                         getMessagesStorage().markMessageAsSendError(newMsgObj, scheduled ? 1 : 0);
                         newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
-                        if (error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {
-                            newMsgObj.errorAllowedPriceStars = StarsController.getInstance(currentAccount).getAllowedPaidStars(req);
-                            newMsgObj.errorNewPriceStars = Long.parseLong(error.text.substring("ALLOW_PAYMENT_REQUIRED_".length()));
-                            StarsController.getInstance(currentAccount).showPriceChangedToast(Arrays.asList(msgObj));
-                            getMessagesStorage().updateMessageCustomParams(MessageObject.getDialogId(newMsgObj), newMsgObj);
-                        }
+
                         getNotificationCenter().postNotificationName(NotificationCenter.messageSendError, newMsgObj.id);
                         processSentMessage(newMsgObj.id);
                         removeFromSendingMessages(newMsgObj.id, scheduled);
@@ -8544,7 +8519,6 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 mediaDice.value = mediaDiceNew.value;
                 mediaDice.flags = mediaDiceNew.flags;
                 mediaDice.game_outcome = mediaDiceNew.game_outcome;
-                StarsController.getInstance(currentAccount, true).invalidateBalance();
             } else if (newMsg.media.photo != null) {
                 strippedOld = FileLoader.getClosestPhotoSizeWithSize(newMsg.media.photo.sizes, 40);
                 if (sentMessage != null && sentMessage.media != null && sentMessage.media.photo != null) {

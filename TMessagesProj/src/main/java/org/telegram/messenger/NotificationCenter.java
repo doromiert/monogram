@@ -255,9 +255,7 @@ public class NotificationCenter {
     public static final int starOptionsLoaded = totalEvents++;
     public static final int starGiftOptionsLoaded = totalEvents++;
     public static final int starGiveawayOptionsLoaded = totalEvents++;
-    public static final int starBalanceUpdated = totalEvents++;
     public static final int starTransactionsLoaded = totalEvents++;
-    public static final int starSubscriptionsLoaded = totalEvents++;
     public static final int factCheckLoaded = totalEvents++;
     public static final int botStarsUpdated = totalEvents++;
     public static final int botStarsTransactionsLoaded = totalEvents++;

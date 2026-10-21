@@ -201,7 +201,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
-        getNotificationCenter().addObserver(this, NotificationCenter.starBalanceUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.newSuggestionsAvailable);
 
         if (arguments != null) {
@@ -495,18 +494,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         super.onFragmentDestroy();
 
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
-        getNotificationCenter().removeObserver(this, NotificationCenter.starBalanceUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.newSuggestionsAvailable);
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.starBalanceUpdated) {
-            setInfo();
-            if (listView != null) {
-                listView.adapter.update(true);
-            }
-        } else if (id == NotificationCenter.updateInterfaces) {
+        if (id == NotificationCenter.updateInterfaces) {
             setInfo();
         } else if (id == NotificationCenter.newSuggestionsAvailable) {
             if (listView != null) {

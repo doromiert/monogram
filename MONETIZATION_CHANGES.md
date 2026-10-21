@@ -637,3 +637,11 @@ Removed tier parameters/state from PremiumFeatureBottomSheet constructors and mi
 The main PremiumPreviewFragment feature catalogue and its remaining navigation/shared metadata still exist. This is removal of the subscription purchase/tier subsystem, not a claim that the storefront or all upsells have been purged. Wider capability/limit/schema/resource audit and final release verification remain pending.
 
 Source inspection checked deleted tier/class/purchase APIs across Java, migrated constructor signatures, tier touch/drawing/inset references, close-button overlay/click behavior, notification registration removal, remaining catalogue layout, class boundaries and diff whitespace. No tests, Nix build or phone actions. Source-only and unshipped; compilation and remaining native layout/navigation need validation at the next APK. README remains untouched.
+
+### Remove Stars/TON balance state and paid-send error plumbing
+
+Deleted StarsController balance/available/loading/minus state, zero-balance stubs, amount/currency accessor, invalidation/update methods and canUseTon. Removed the separate TON/currency factories and dual singleton array; remaining historical gift data uses one synchronized controller instance per account. Removed Stars-balance update dispatch, dice-result TON invalidation and the chat-open TON probe. Deleted balance/subscription notification events and their home/chat/profile/settings listeners after checking no remaining producers/consumers.
+
+Removed four ALLOW_PAYMENT_REQUIRED price-specific send-error branches, amount parsing/custom price persistence and price-change profile refresh/toast. Deleted getAllowedPaidStars, unused request-peer helper and showPriceChangedToast. Ordinary error processing, failed-message persistence, messageSendError notifications, sent-message cleanup and retry paths remain. Historical TL amount/message custom fields and remaining gift/catalogue service code still need separate cleanup.
+
+Source inspection checked all deleted balance/factory/event/fee identifiers across Java, remaining singleton callers, send-error fallthrough and notifications, class boundaries and diff whitespace. No tests, Nix build or phone actions. Source-only and unshipped; compile and verify ordinary send/retry/settings behavior at the next APK. README remains untouched.
