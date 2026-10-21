@@ -8,6 +8,8 @@
 
 package org.telegram.ui;
 
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.ilerp;
@@ -2782,7 +2784,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(new UserInfoActivity());
                 } else if (id == edit_color) {
 //                    if (!getUserConfig().isPremium()) {
-//                        showDialog(new PremiumFeatureBottomSheet(ProfileActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_NAME_COLOR, true));
+//                        showDialog(new PremiumFeatureBottomSheet(ProfileActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_NAME_COLOR, true));
 //                        return;
 //                    }
                     presentFragment(new PeerColorActivity(currentAccount,0).startOnProfile().setOnApplied(ProfileActivity.this));
@@ -3504,7 +3506,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             sharedMediaLayout.openAddStoriesToAlbumSheet(this, getDialogId(), albumId);
                         } else {
                             if (!getMessagesController().storiesEnabled()) {
-                                showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, true));
+                                showDialog(new PremiumFeatureBottomSheet(this, FeaturePreviewResources.PREMIUM_FEATURE_STORIES, true));
                                 return;
                             }
                             getMessagesController().getMainSettings().edit().putBoolean("story_keep", true).apply();

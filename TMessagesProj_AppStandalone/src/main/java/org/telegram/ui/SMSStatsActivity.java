@@ -314,7 +314,6 @@ public class SMSStatsActivity extends GradientHeaderActivity implements Notifica
     }
 
     public final static int BUTTON_TERMS = 1;
-    public final static int BUTTON_PREMIUM = 2;
     public final static int BUTTON_ALLOW_INTERNATIONAL = 3;
     public final static int BUTTON_SIM = 4;
     public final static int BUTTON_HISTORY = 5;
@@ -332,7 +331,6 @@ public class SMSStatsActivity extends GradientHeaderActivity implements Notifica
         items.add(new Item(VIEW_TYPE_TABLE));
         items.add(Item.asShadow(null));
         items.add(Item.asButton(BUTTON_TERMS, org.telegram.messenger.R.drawable.menu_intro, LocaleController.getString(R.string.SmsToS)));
-        items.add(Item.asButton(BUTTON_PREMIUM, R.drawable.menu_premium_main, LocaleController.getString(R.string.SmsPremiumBenefits)));
         if (state == SMSJobController.STATE_JOINED && !SMSJobController.getInstance(currentAccount).journal.isEmpty()) {
             items.add(Item.asButton(BUTTON_HISTORY, R.drawable.menu_sms_history, LocaleController.getString(R.string.SmsHistory)).setError(SMSJobController.getInstance(currentAccount).hasError()));
         }
@@ -415,8 +413,6 @@ public class SMSStatsActivity extends GradientHeaderActivity implements Notifica
                 }
                 SMSJobController.getInstance(currentAccount).toggleAllowInternational(allowInternational = !allowInternational);
                 ((TextCell) view).setChecked(allowInternational);
-            } else if (item.id == BUTTON_PREMIUM) {
-                presentFragment(new PremiumPreviewFragment("sms"));
             } else if (item.id == BUTTON_DEACTIVATE) {
                 AlertDialog d = new AlertDialog.Builder(getContext(), getResourceProvider())
                     .setTitle(LocaleController.getString(R.string.SmsDeactivateTitle))

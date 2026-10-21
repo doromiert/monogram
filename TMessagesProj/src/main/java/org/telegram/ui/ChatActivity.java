@@ -8,6 +8,8 @@
 
 package org.telegram.ui;
 
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.formatString;
@@ -7072,7 +7074,7 @@ public class ChatActivity extends BaseFragment implements
             }
             if (object instanceof QuickRepliesController.QuickReply) {
                 if (!getUserConfig().isPremium()) {
-                    showDialog(new PremiumFeatureBottomSheet(this, getContext(), currentAccount, true, PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false));
+                    showDialog(new PremiumFeatureBottomSheet(this, getContext(), currentAccount, true, FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false));
                     return;
                 }
                 AlertsCreator.ensurePaidMessageConfirmation(currentAccount, dialog_id, Math.max(1, ((QuickRepliesController.QuickReply) object).getMessagesCount()), payStars -> {
@@ -32001,7 +32003,7 @@ public class ChatActivity extends BaseFragment implements
             };
             ScaleStateListAnimator.apply(greetingsInfo, .02f, 1.2f);
             greetingsInfo.setOnClickListener(v -> {
-                showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS, true));
+                showDialog(new PremiumFeatureBottomSheet(this, FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS, true));
             });
         }
         if (greetingsInfo == null) return;
@@ -33255,7 +33257,7 @@ public class ChatActivity extends BaseFragment implements
             case OPTION_EDIT_TODO:
             case OPTION_ADD_TO_TODO: {
                 if (!getUserConfig().isPremium()) {
-                    showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_TODO, false));
+                    showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_TODO, false));
                 } else {
                     final MessageObject object = selectedObject;
                     final boolean adding = option == OPTION_ADD_TO_TODO;
@@ -39050,7 +39052,7 @@ public class ChatActivity extends BaseFragment implements
                     return;
                 }
                 topUndoView.showWithAction(0, UndoView.ACTION_PREMIUM_TRANSCRIPTION, null, () -> {
-                    new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
+                    new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
                     getMessagesController().pressTranscribeButton();
                 });
                 try {
@@ -39074,12 +39076,12 @@ public class ChatActivity extends BaseFragment implements
                     ).append(" ").append(
                         type == 2 ?
                         AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.TranscriptionTrialEndBuy), () -> {
-                            new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
+                            new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
                             getMessagesController().pressTranscribeButton();
                         }) :
                         getMessagesController().transcribeAudioTrialCooldownUntil <= 0 ? "" :
                         AndroidUtilities.replaceSingleTag(LocaleController.formatString(R.string.TranscriptionTrialEndWaitOrBuy, until), () -> {
-                            new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
+                            new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_VOICE_TO_TEXT, true).show();
                             getMessagesController().pressTranscribeButton();
                         })
                     ),
@@ -39538,7 +39540,7 @@ public class ChatActivity extends BaseFragment implements
             } else if (!getUserConfig().isPremium()) {
                 BulletinFactory.of(ChatActivity.this)
                     .createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.premiumText(getString(R.string.TodoPremiumRequired), () -> {
-                        showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_TODO, false));
+                        showDialog(new PremiumFeatureBottomSheet(ChatActivity.this, FeaturePreviewResources.PREMIUM_FEATURE_TODO, false));
                     }))
                     .show(true);
                 return false;

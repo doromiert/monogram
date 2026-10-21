@@ -40,7 +40,7 @@ import org.telegram.ui.Components.Premium.GLIcon.GLIconRenderer;
 import org.telegram.ui.Components.Premium.GLIcon.GLIconTextureView;
 import org.telegram.ui.Components.Premium.GLIcon.Icon3D;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.PremiumPreviewFragment;
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -71,84 +71,84 @@ public class FeaturesPageView extends BaseListPageView {
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_order,
                     LocaleController.getString(R.string.PremiumStoriesPriority),
                     LocaleController.getString(R.string.PremiumStoriesPriorityDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_PRIORITY_ORDER
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_PRIORITY_ORDER
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_stealth,
                     LocaleController.getString(R.string.PremiumStoriesStealth),
                     LocaleController.getString(R.string.PremiumStoriesStealthDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_STEALTH_MODE
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_STEALTH_MODE
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_quality_hd,
                     LocaleController.getString(R.string.PremiumStoriesQuality),
                     LocaleController.getString(R.string.PremiumStoriesQualityDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_QUALITY
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_QUALITY
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_views,
                     LocaleController.getString(R.string.PremiumStoriesViews),
                     LocaleController.getString(R.string.PremiumStoriesViewsDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_VIEWS_HISTORY
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_VIEWS_HISTORY
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_timer,
                     LocaleController.getString(R.string.PremiumStoriesExpiration),
                     LocaleController.getString(R.string.PremiumStoriesExpirationDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_EXPIRATION_DURATION
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_EXPIRATION_DURATION
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_save,
                     LocaleController.getString(R.string.PremiumStoriesSaveToGallery),
                     LocaleController.getString(R.string.PremiumStoriesSaveToGalleryDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_SAVE_TO_GALLERY
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_SAVE_TO_GALLERY
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_caption,
                     LocaleController.getString(R.string.PremiumStoriesCaption),
                     LocaleController.getString(R.string.PremiumStoriesCaptionDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_CAPTION
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_CAPTION
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.msg_stories_link,
                     LocaleController.getString(R.string.PremiumStoriesFormatting),
                     LocaleController.getString(R.string.PremiumStoriesFormattingDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_STORIES_LINKS_AND_FORMATTING
+                    FeaturePreviewResources.PREMIUM_FEATURE_STORIES_LINKS_AND_FORMATTING
             ));
         } else if (type == FEATURES_BUSINESS) {
             order = messagesController.businessFeaturesTypesToPosition;
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_premium_location,
                     LocaleController.getString(R.string.PremiumBusinessLocation),
                     LocaleController.getString(R.string.PremiumBusinessLocationDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_LOCATION
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_LOCATION
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_premium_clock,
                     LocaleController.getString(R.string.PremiumBusinessOpeningHours),
                     LocaleController.getString(R.string.PremiumBusinessOpeningHoursDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_OPENING_HOURS
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_OPENING_HOURS
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_quickreply,
                     LocaleController.getString(R.string.PremiumBusinessQuickReplies),
                     LocaleController.getString(R.string.PremiumBusinessQuickRepliesDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_feature_status,
                     LocaleController.getString(R.string.PremiumBusinessGreetingMessages),
                     LocaleController.getString(R.string.PremiumBusinessGreetingMessagesDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_GREETING_MESSAGES
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_GREETING_MESSAGES
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_premium_away,
                     LocaleController.getString(R.string.PremiumBusinessAwayMessages),
                     LocaleController.getString(R.string.PremiumBusinessAwayMessagesDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_AWAY_MESSAGES
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_AWAY_MESSAGES
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_premium_chatbot,
                     LocaleController.getString(R.string.PremiumBusinessChatbots2),
                     LocaleController.getString(R.string.PremiumBusinessChatbotsDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_CHATBOTS
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_CHATBOTS
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_feature_intro,
                     LocaleController.getString(R.string.PremiumBusinessIntro),
                     LocaleController.getString(R.string.PremiumBusinessIntroDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_INTRO
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_INTRO
             ));
             itemsTmp.add(new Item(VIEW_TYPE_ITEM, R.drawable.menu_premium_chatlink,
                     LocaleController.getString(R.string.PremiumBusinessChatLinks),
                     LocaleController.getString(R.string.PremiumBusinessChatLinksDescription),
-                    PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_CHAT_LINKS
+                    FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_CHAT_LINKS
             ));
         }
         if (order != null) {
@@ -310,7 +310,7 @@ public class FeaturesPageView extends BaseListPageView {
                         drawable.randLifeTime = 3000;
                         drawable.size1 = 16;
                         drawable.useRotate = false;
-                        drawable.type = PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS;
+                        drawable.type = FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS;
                         drawable.colorKey = Theme.key_premiumGradient2;
                         drawable.init();
                     }

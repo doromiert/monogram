@@ -8,8 +8,10 @@
 
 package org.telegram.ui.Adapters;
 
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
-import static org.telegram.ui.PremiumPreviewFragment.applyNewSpan;
+import static org.telegram.ui.Components.Premium.FeaturePreviewResources.applyNewSpan;
 
 import android.Manifest;
 import android.content.Context;

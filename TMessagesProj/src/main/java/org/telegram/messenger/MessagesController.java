@@ -105,7 +105,7 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.EditWidgetActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MainTabsActivity;
-import org.telegram.ui.PremiumPreviewFragment;
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.SecretMediaViewer;
 import org.telegram.ui.Stars.StarsController;
@@ -5451,7 +5451,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 s = ((TLRPC.TL_jsonString) value.get(i)).value;
             }
             if (s != null) {
-                int type = PremiumPreviewFragment.serverStringToFeatureType(s);
+                int type = FeaturePreviewResources.serverStringToFeatureType(s);
                 if (type >= 0) {
                     array.put(type, i);
                     if (stringBuilder.length() > 0) {

@@ -5,18 +5,13 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Rect;
 import android.text.Editable;
 import android.text.TextUtils;
-import android.text.TextWatcher;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.LinearSmoothScroller;
 import androidx.recyclerview.widget.RecyclerView;
@@ -51,11 +46,10 @@ import org.telegram.ui.Components.CheckBox2;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
-import org.telegram.ui.PremiumPreviewFragment;
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Locale;
 
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
@@ -415,7 +409,7 @@ public class ChatAttachAlertQuickRepliesLayout extends ChatAttachAlert.AttachAle
             if (object instanceof QuickRepliesController.QuickReply) {
                 if (!UserConfig.getInstance(parentAlert.currentAccount).isPremium()) {
                     if (parentAlert.baseFragment != null) {
-                        new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), parentAlert.currentAccount, true, PremiumPreviewFragment.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false).show();
+                        new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), parentAlert.currentAccount, true, FeaturePreviewResources.PREMIUM_FEATURE_BUSINESS_QUICK_REPLIES, false).show();
                     }
                     return;
                 }

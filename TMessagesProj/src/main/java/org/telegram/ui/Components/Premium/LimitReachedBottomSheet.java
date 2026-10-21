@@ -17,13 +17,10 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.text.Layout;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.TextPaint;
 import android.text.TextUtils;
-import android.text.style.ClickableSpan;
 import android.transition.TransitionManager;
 import android.transition.TransitionSet;
 import android.transition.TransitionValues;
@@ -45,11 +42,9 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.ChannelBoostsController;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ContactsController;
-import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
@@ -60,7 +55,6 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.tgnet.tl.TL_account;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -74,21 +68,16 @@ import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.ChannelColorActivity;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.ChatEditActivity;
-import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AvatarDrawable;
-import org.telegram.ui.Components.AvatarsImageView;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.BottomSheetWithRecyclerListView;
-import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ColoredImageSpan;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.FireworksOverlay;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.Loadable;
-import org.telegram.ui.Components.LoginOrView;
 import org.telegram.ui.Components.Premium.boosts.BoostCounterView;
 import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
 import org.telegram.ui.Components.Premium.boosts.BoostRepository;
@@ -101,7 +90,6 @@ import org.telegram.ui.Components.TypefaceSpan;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.GroupColorActivity;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.StatisticActivity;
 import org.telegram.ui.Stories.ChannelBoostUtilities;
@@ -111,7 +99,6 @@ import org.telegram.ui.Stories.recorder.StoryRecorder;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 
@@ -304,7 +291,6 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
     TextView actionBtn;
     ButtonWithCounterView boostMiniBtn;
     public Runnable onSuccessRunnable;
-    public Runnable onShowPremiumScreenRunnable;
     private boolean loading = false;
     RecyclerItemsEnterAnimator enterAnimator;
     BaseFragment parentFragment;
@@ -505,20 +491,7 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
             }
             if (type == TYPE_BOOSTS_FOR_USERS || type == TYPE_BOOSTS_FOR_REMOVE_RESTRICTIONS || isMiniBoostBtnForAdminAvailable()) {
                 if (canApplyBoost.empty) {
-                    if (UserConfig.getInstance(currentAccount).isPremium() && BoostRepository.isMultiBoostsAvailable()) {
-                        BoostDialogs.showMoreBoostsNeeded(dialogId, this);
-                    } else {
-                        AlertDialog.Builder builder = new AlertDialog.Builder(context, resourcesProvider);
-                        builder.setTitle(getString(R.string.PremiumNeeded));
-                        builder.setMessage(AndroidUtilities.replaceTags(getString(isGroup() ? R.string.PremiumNeededForBoostingGroup : R.string.PremiumNeededForBoosting)));
-                        builder.setPositiveButton(getString(R.string.CheckPhoneNumberYes), (dialog, which) -> {
-                            parentFragment.presentFragment(new PremiumPreviewFragment(null));
-                            LimitReachedBottomSheet.this.dismiss();
-                            dialog.dismiss();
-                        });
-                        builder.setNegativeButton(getString(R.string.Cancel), (dialog, which) -> dialog.dismiss());
-                        builder.show();
-                    }
+                    dismiss();
                 } else if (canApplyBoost.canApply && canApplyBoost.replaceDialogId == 0) {
                     if (canApplyBoost.needSelector && BoostRepository.isMultiBoostsAvailable()) {
                         lockInvalidation = true;
@@ -623,20 +596,6 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
                 AndroidUtilities.addToClipboard(getBoostLink());
                 dismiss();
                 return;
-            }
-            if (UserConfig.getInstance(currentAccount).isPremium() || MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() || isVeryLargeFile) {
-                dismiss();
-                return;
-            }
-            if (parentFragment == null) {
-                return;
-            }
-            if (parentFragment.getVisibleDialog() != null) {
-                parentFragment.getVisibleDialog().dismiss();
-            }
-            parentFragment.presentFragment(new PremiumPreviewFragment(limitTypeToServerString(type)));
-            if (onShowPremiumScreenRunnable != null) {
-                onShowPremiumScreenRunnable.run();
             }
             dismiss();
         });
@@ -874,26 +833,9 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
             spannableStringBuilder.setSpan(new ColoredImageSpan(R.drawable.msg_copy_filled), 0, 1, 0);
             spannableStringBuilder.append(getString(R.string.CopyLink));
             premiumButtonView.buttonTextView.setText(spannableStringBuilder);
-        } else if (UserConfig.getInstance(currentAccount).isPremium() || MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() || isVeryLargeFile) {
+        } else {
             premiumButtonView.buttonTextView.setText(getString(R.string.OK));
             premiumButtonView.hideIcon();
-        } else {
-            premiumButtonView.buttonTextView.setText(getString(R.string.IncreaseLimit));
-            if (limitParams != null) {
-                if (limitParams.defaultLimit + 1 == limitParams.premiumLimit) {
-                    premiumButtonView.setIcon(R.raw.addone_icon);
-                } else if (
-                        limitParams.defaultLimit != 0 && limitParams.premiumLimit != 0 &&
-                                limitParams.premiumLimit / (float) limitParams.defaultLimit >= 1.6f &&
-                                limitParams.premiumLimit / (float) limitParams.defaultLimit <= 2.5f
-                ) {
-                    premiumButtonView.setIcon(R.raw.double_icon);
-                } else {
-                    premiumButtonView.hideIcon();
-                }
-            } else {
-                premiumButtonView.hideIcon();
-            }
         }
     }
 

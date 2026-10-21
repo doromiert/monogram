@@ -136,7 +136,6 @@ import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.LoginActivity;
 import org.telegram.ui.NotificationsCustomSettingsActivity;
 import org.telegram.ui.NotificationsSettingsActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.PrivacyControlActivity;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.ProfileNotificationsActivity;
@@ -4605,19 +4604,7 @@ public class AlertsCreator {
 
         if (repeatTextView != null) {
             repeatTextView.setOnClickListener(v -> {
-                if (!UserConfig.getInstance(UserConfig.selectedAccount).isPremium()) {
-                    BulletinFactory.of(bulletinContainer, resourcesProvider)
-                        .createSimpleBulletin(R.raw.star_premium_2, AndroidUtilities.premiumText(LocaleController.getString(R.string.MessageScheduledRepeatPremium), () -> {
-                            final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                            if (lastFragment == null) return;
-                            BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();
-                            params.transitionFromLeft = true;
-                            params.allowNestedScroll = false;
-                            lastFragment.showAsSheet(new PremiumPreviewFragment("schedule_repeat"), params);
-                        }))
-                        .show();
-                    return;
-                }
+
 
                 final ItemOptions o = ItemOptions.makeOptions(bottomSheet.container, resourcesProvider, repeatContainer);
                 for (int i = 0; i < repeatValues.length; ++i) {

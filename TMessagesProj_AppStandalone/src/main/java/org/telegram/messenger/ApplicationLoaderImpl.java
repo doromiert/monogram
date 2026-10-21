@@ -1,7 +1,7 @@
 package org.telegram.messenger;
 
 import static org.telegram.messenger.AndroidUtilities.isInAirplaneMode;
-import static org.telegram.ui.PremiumPreviewFragment.applyNewSpan;
+import static org.telegram.ui.Components.Premium.FeaturePreviewResources.applyNewSpan;
 
 import android.app.Activity;
 import android.content.Context;

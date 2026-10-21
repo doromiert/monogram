@@ -143,7 +143,7 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MultiContactsSelectorBottomSheet;
 import org.telegram.ui.OAuthSheet;
-import org.telegram.ui.PremiumPreviewFragment;
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Stories.recorder.StoryEntry;
 import org.telegram.ui.Stories.recorder.StoryRecorder;
@@ -2489,7 +2489,7 @@ public abstract class BotWebViewContainer extends FrameLayout implements Notific
                         public boolean isLightStatusBar() {
                             return false;
                         }
-                    }, PremiumPreviewFragment.PREMIUM_FEATURE_STORIES, true).show();
+                    }, FeaturePreviewResources.PREMIUM_FEATURE_STORIES, true).show();
                     return;
                 }
 

@@ -85,17 +85,8 @@ public class SMSSubscribeSheet {
         textView.setText(AndroidUtilities.replaceTags(getString(R.string.SmsSubscribeMessage)));
         layout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 30, 0, 30, 14));
 
-        final Runnable openPremium = () -> {
-            BaseFragment fragment = LaunchActivity.getLastFragment();
-            if (fragment != null) {
-                BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();
-                params.transitionFromLeft = true;
-                params.allowNestedScroll = false;
-                fragment.showAsSheet(new PremiumPreviewFragment("sms"), params);
-            }
-        };
+
         layout.addView(new FeatureCell(context, R.drawable.menu_feature_sms,     getString(R.string.SmsSubscribeFeature1Title), formatPluralString("SmsSubscribeFeature1Message", isEligible == null ? 100 : isEligible.monthly_sent_sms), resourcesProvider), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 30, 16, 30, 0));
-        layout.addView(new FeatureCell(context, org.telegram.messenger.R.drawable.menu_feature_premium, getString(R.string.SmsSubscribeFeature2Title), AndroidUtilities.replaceSingleTag(getString(R.string.SmsSubscribeFeature2Message), openPremium), resourcesProvider), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 30, 16, 30, 0));
         layout.addView(new FeatureCell(context, R.drawable.menu_feature_gift,    getString(R.string.SmsSubscribeFeature3Title), getString(R.string.SmsSubscribeFeature3Message), resourcesProvider), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 30, 16, 30, 0));
 
         final Runnable openTOS = () -> {

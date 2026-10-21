@@ -36,7 +36,6 @@ import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.TranslateAlert2;
 import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.RestrictedLanguagesSelectActivity;
 
 import java.util.ArrayList;
@@ -980,9 +979,7 @@ public class TranslateController extends BaseController {
                     final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
                     if (lastFragment != null) {
                         BulletinFactory.of(lastFragment)
-                            .createSimpleBulletin(R.raw.star_premium_2, getString(R.string.SummaryLimit), getString(R.string.SummaryLimitUpgrade), () -> {
-                                lastFragment.presentFragment(new PremiumPreviewFragment("summarize_limit"));
-                            })
+                            .createSimpleBulletin(R.raw.error, getString(R.string.SummaryLimit))
                             .setDuration(Bulletin.DURATION_PROLONG)
                             .show(true);
                     }

@@ -1,5 +1,7 @@
 package org.telegram.ui;
 
+import org.telegram.ui.Components.Premium.FeaturePreviewResources;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
@@ -36,7 +38,7 @@ public class PremiumFeatureCell extends FrameLayout {
     public ImageView imageView;
     public final ImageView nextIcon;
     boolean drawDivider;
-    public PremiumPreviewFragment.PremiumFeatureData data;
+    public FeaturePreviewResources.PremiumFeatureData data;
 
     public AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable imageDrawable;
 
@@ -77,8 +79,8 @@ public class PremiumFeatureCell extends FrameLayout {
         addView(nextIcon, LayoutHelper.createFrame(24, 24, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 0, 0, 18, 0));
     }
 
-    public void setData(PremiumPreviewFragment.PremiumFeatureData data, boolean drawDivider) {
-        if (UserConfig.getInstance(UserConfig.selectedAccount).isPremium() && data.type == PremiumPreviewFragment.PREMIUM_FEATURE_EMOJI_STATUS && data.icon == R.drawable.filled_premium_status2) {
+    public void setData(FeaturePreviewResources.PremiumFeatureData data, boolean drawDivider) {
+        if (UserConfig.getInstance(UserConfig.selectedAccount).isPremium() && data.type == FeaturePreviewResources.PREMIUM_FEATURE_EMOJI_STATUS && data.icon == R.drawable.filled_premium_status2) {
             nextIcon.setVisibility(View.GONE);
             if (imageDrawable == null) {
                 imageDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(this, false, dp(24), AnimatedEmojiDrawable.CACHE_TYPE_ALERT_PREVIEW_STATIC);
@@ -170,10 +172,10 @@ public class PremiumFeatureCell extends FrameLayout {
 
         @Override
         public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, UniversalRecyclerView listView) {
-            ((PremiumFeatureCell) view).setData((PremiumPreviewFragment.PremiumFeatureData) item.object, divider);
+            ((PremiumFeatureCell) view).setData((FeaturePreviewResources.PremiumFeatureData) item.object, divider);
         }
 
-        public static UItem of(PremiumPreviewFragment.PremiumFeatureData data) {
+        public static UItem of(FeaturePreviewResources.PremiumFeatureData data) {
             UItem item = UItem.ofFactory(Factory.class);
             item.object = data;
             return item;
