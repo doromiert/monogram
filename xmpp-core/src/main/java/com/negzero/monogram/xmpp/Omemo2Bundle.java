@@ -60,8 +60,18 @@ public final class Omemo2Bundle {
             // A key with an unusable ID cannot participate in X3DH. Keep valid keys from the same bundle.
             if(preKeys.put(id,base64(key.getText(),32))!=null) throw invalid();
         }
-        return new Omemo2Bundle(base64(single(root,"ik",NS).getText(),32),positive(signed.getAttributeValue("id")),
+        return new Omemo2Bundle(base64(single(root,"ik",NS).getText(),32),signedPreKeyId(signed.getAttributeValue("id")),
                 base64(signed.getText(),32),base64(single(root,"spks",NS).getText(),64),preKeys);
+    }
+    private static int signedPreKeyId(String value) throws GeneralSecurityException {
+        try {
+            return positive(value);
+        } catch (GeneralSecurityException error) {
+            // Report only bounded numeric metadata, never arbitrary XML or key material.
+            String detail = value == null ? "missing" : value.matches("[0-9]{1,10}") ? value : "malformed";
+            throw new GeneralSecurityException("Invalid OMEMO2 signed-prekey ID: " + detail
+                    + " (expected 1..2147483647)", error);
+        }
     }
     static int positive(String value) throws GeneralSecurityException {
         try { if (value == null || !value.matches("[0-9]{1,10}")) throw invalid(); int id = Integer.parseInt(value); if (id <= 0) throw invalid(); return id; }

@@ -189,3 +189,7 @@ The supplied 0.2.133 trace is `Omemo2Bundle.invalid:82 → positive:67 → parse
 - Removed explicit blockchain explorer banners, wallet-address copy rows and the external Fragment marketplace control from the remaining gift sheet. Historical raw owner/address fields may still deserialize; they no longer construct these controls.
 - Remaining resale browsing/buy UI, crafting/upgrade, collectible wear/share and controller/schema/data code still require removal. Source review confirms no references to deleted transfer/export/conversion APIs or their RPC constructors in the edited sheet.
 - No build/tests/phone actions. At next APK delivery verify compilation, preview action layout and historical gift/profile rendering, plus ordinary media/file transfers as regression checks.
+
+### OMEMO2 signed-prekey diagnostic follow-up
+
+Verified the signed-prekey ID range against XEP-0384 §5.3.2: 1..2147483647. The supplied trace does not establish which value was rejected. `Omemo2Bundle.parse` now reports a specific signed-prekey-ID error with missing/malformed status or a bounded decimal value, preserving the cause and all existing validation. No key material or arbitrary XML enters the new error. This is diagnostic instrumentation, not a delivery fix; no identity, trust or encryption-mode changes. Source-only: tests/build/install deferred until APK delivery, per user instruction.
