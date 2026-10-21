@@ -4,8 +4,6 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.text.SpannableString;
-import android.text.Spanned;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
@@ -23,7 +21,6 @@ import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.FileLoader;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
@@ -32,7 +29,6 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
-import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -41,7 +37,6 @@ import org.telegram.ui.Cells.SharedAudioCell;
 import org.telegram.ui.Cells.SharedDocumentCell;
 import org.telegram.ui.FilteredSearchView;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.PremiumPreviewFragment;
 
 import java.util.ArrayList;
 
@@ -90,7 +85,6 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
             @Override
             protected void onLayout(boolean changed, int l, int t, int r, int b) {
                 super.onLayout(changed, l, t, r, b);
-                checkItemsFloodWait();
             }
         };
         ItemTouchHelper itemTouchHelper = new ItemTouchHelper(new TouchHelperCallback());
@@ -109,7 +103,6 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
                 if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
                     AndroidUtilities.hideKeyboard(parentActivity.getCurrentFocus());
                 }
-                checkItemsFloodWait();
             }
         });
         DefaultItemAnimator defaultItemAnimator = new DefaultItemAnimator();
@@ -631,7 +624,6 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.onDownloadingFilesChanged);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.premiumFloodWaitReceived);
         if (getVisibility() == View.VISIBLE) {
             DownloadController.getInstance(currentAccount).clearUnviewedDownloads();
         }
@@ -643,7 +635,6 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.onDownloadingFilesChanged);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.premiumFloodWaitReceived);
     }
 
 
@@ -654,8 +645,6 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
                 DownloadController.getInstance(currentAccount).clearUnviewedDownloads();
             }
             update(true);
-        } else if (id == NotificationCenter.premiumFloodWaitReceived) {
-            checkItemsFloodWait();
         }
     }
 
@@ -757,56 +746,7 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
         }
     }
 
-    public void checkItemsFloodWait() {
-        if (UserConfig.getInstance(currentAccount).isPremium()) return;
-        if (recyclerListView == null) return;
-        for (int i = 0; i < recyclerListView.getChildCount(); ++i) {
-            try {
-                View child = recyclerListView.getChildAt(i);
-                if (!(child instanceof Cell)) continue;
-                MessageObject messageObject = ((Cell) child).sharedDocumentCell.getMessage();
-                if (messageObject == null) continue;
-                if (FileLoader.getInstance(currentAccount).checkLoadCaughtPremiumFloodWait(messageObject.getFileName())) {
-                    showPremiumFloodWaitBulletin(false);
-                    return;
-                } else if (FileLoader.getInstance(currentAccount).checkLoadCaughtPremiumFloodWait(messageObject.getFileName())) {
-                    showPremiumFloodWaitBulletin(true);
-                    return;
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
-        }
-    }
 
-    public void showPremiumFloodWaitBulletin(final boolean isUpload) {
-        if (parentFragment == null || !recyclerListView.isAttachedToWindow()) return;
 
-        final long now = System.currentTimeMillis();
-        if (now - ConnectionsManager.lastPremiumFloodWaitShown < 1000L * MessagesController.getInstance(currentAccount).uploadPremiumSpeedupNotifyPeriod) {
-            return;
-        }
-        ConnectionsManager.lastPremiumFloodWaitShown = now;
-        if (UserConfig.getInstance(currentAccount).isPremium() || MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-            return;
-        }
 
-        final float n;
-        if (isUpload) {
-            n = MessagesController.getInstance(currentAccount).uploadPremiumSpeedupUpload;
-        } else {
-            n = MessagesController.getInstance(currentAccount).uploadPremiumSpeedupDownload;
-        }
-        SpannableString boldN = new SpannableString(Double.toString(Math.round(n * 10) / 10.0).replaceAll("\\.0$", ""));
-        boldN.setSpan(new TypefaceSpan(AndroidUtilities.bold()), 0, boldN.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-        if (parentFragment.hasStoryViewer()) return;
-        BulletinFactory.of(parentFragment).createSimpleBulletin(
-                R.raw.speed_limit,
-                LocaleController.getString(isUpload ? R.string.UploadSpeedLimited : R.string.DownloadSpeedLimited),
-                AndroidUtilities.replaceCharSequence("%d", AndroidUtilities.premiumText(LocaleController.getString(isUpload ? R.string.UploadSpeedLimitedMessage : R.string.DownloadSpeedLimitedMessage), () -> {
-                    parentFragment.presentFragment(new PremiumPreviewFragment(isUpload ? "upload_speed" : "download_speed"));
-                }), boldN)
-        ).setDuration(8000).show(false);
-    }
 }

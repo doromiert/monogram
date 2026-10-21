@@ -425,3 +425,11 @@ Deleted BoostsActivity and ChannelBoostLayout, including their boost/gift partic
 Removed BoostDialogs' boost-success link into the deleted statistics activity while retaining its remaining success bulletin text for consumers still being cleaned. Ordinary statistics loading and its remaining callers are preserved; broader Telegram analytics and remaining boost restriction/controller/schema code are separate outstanding work.
 
 Source-only inspection covers deleted classes/navigation/fields across Java/XML, remaining factory callers, ordinary statistics adapter page count and action-bar/notification branches, Java boundaries and whitespace. No tests, build, APK or phone interaction. These changes remain unshipped and full monetization removal remains incomplete.
+
+### Remove chat permission boost upsells and transfer-speed promotions
+
+Removed chat/topic boost-status and can-boost queries, cached eligibility fields and boosted-event observers. Removed chat service-message/boost-counter actions into boost dialogs, composer/attachment/emoji early-return detours that opened boost prompts, and the corresponding delegate/helper APIs. Preserved the underlying send/media permission checks and their normal error bulletins. The restricted-message overlay now displays the ordinary restriction text instead of a boost-to-send action.
+
+Removed Premium transfer-speed upgrade bulletins and premium-flood-wait-driven visible-row scanning from ChatActivity and SearchDownloadsContainer, including notification subscriptions. Deleted the unused shared-media version of the same promotion. Transfer progress, real failure handling and ordinary download/media lists remain; no network speed or paid entitlement is fabricated.
+
+Source-only inspection covers removed helpers/delegate/callers and fields across Java/XML, retained restriction error paths, remaining event branches, edited Java boundaries and whitespace. No tests, compilation, APK or phone interaction. Other boost restriction/controller/schema code and Premium/Business/Stars/resources remain in scope; changes are unshipped and the full goal remains incomplete.

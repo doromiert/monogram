@@ -75,7 +75,6 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
-import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -217,7 +216,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
     private ActionBarMenuSubItem reportSubmenu;
     private boolean bottomPannelVisible = true;
     private float searchAnimationProgress = 0f;
-    private TL_stories.TL_premium_boostsStatus boostsStatus;
 
     private long startArchivePullingTime;
     private boolean scrollingManually;
@@ -1491,9 +1489,7 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
         updateChatInfo();
         updateColors();
 
-        if (ChatObject.isBoostSupported(getCurrentChat())) {
-            getMessagesController().getBoostsController().getBoostsStats(-chatId, boostsStatus -> this.boostsStatus = boostsStatus);
-        }
+
 
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onApplyWindowInsets);
         return fragmentView;
@@ -2674,7 +2670,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
     public boolean onFragmentCreate() {
         getMessagesController().loadFullChat(chatId, 0, true);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.storiesUpdated);
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.chatWasBoostedByUser);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.chatInfoDidLoad);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.topicsDidLoaded);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.updateInterfaces);
@@ -2708,7 +2703,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
     public void onFragmentDestroy() {
         notificationsLocker.unlock();
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.storiesUpdated);
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.chatWasBoostedByUser);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.chatInfoDidLoad);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.topicsDidLoaded);
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.updateInterfaces);
@@ -2803,10 +2797,6 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
             }
         } else if (id == NotificationCenter.storiesUpdated) {
             updateChatInfo();
-        } else if (id == NotificationCenter.chatWasBoostedByUser) {
-            if (chatId == -(long) args[2]) {
-                boostsStatus = (TL_stories.TL_premium_boostsStatus) args[0];
-            }
         } else if (id == NotificationCenter.topicsDidLoaded) {
             Long chatId = (Long) args[0];
             if (this.chatId == chatId) {

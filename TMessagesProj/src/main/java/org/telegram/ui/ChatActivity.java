@@ -112,7 +112,6 @@ import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
-import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
@@ -140,7 +139,6 @@ import org.telegram.messenger.BotInlineKeyboard;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.ChannelBoostsController;
 import org.telegram.messenger.ChatMessageSharedResources;
 import org.telegram.messenger.ChatMessagesMetadataController;
 import org.telegram.messenger.ChatObject;
@@ -257,7 +255,6 @@ import org.telegram.ui.Components.*;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
 import org.telegram.ui.Components.Forum.ForumUtilities;
-import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumPreviewBottomSheet;
 import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
@@ -513,8 +510,6 @@ public class ChatActivity extends BaseFragment implements
     private HintView2 videoConversionTimeHint;
     private float videoConversionTimeHintY;
 
-    private TL_stories.TL_premium_boostsStatus boostsStatus;
-    private ChannelBoostsController.CanApplyBoost canApplyBoosts;
 
     private boolean showTapForForwardingOptionsHit;
     private Runnable tapForForwardingOptionsHitRunnable;
@@ -1848,10 +1843,7 @@ public class ChatActivity extends BaseFragment implements
                 presentFragment(calendarActivity);
                 return;
             }
-            if (view instanceof ChatActionCell && ((ChatActionCell) view).getMessageObject() != null && ((ChatActionCell) view).getMessageObject().messageOwner.action instanceof TLRPC.TL_messageActionBoostApply) {
-                getNotificationCenter().postNotificationName(NotificationCenter.openBoostForUsersDialog, dialog_id);
-                return;
-            }
+
             if (view instanceof ChatActionCell && ((ChatActionCell) view).getMessageObject() != null && ((ChatActionCell) view).getMessageObject().messageOwner.action instanceof TLRPC.TL_messageActionSetSameChatWallPaper) {
                 int messageId = ((ChatActionCell) view).getMessageObject().getReplyMsgId();
                 AndroidUtilities.runOnUIThread(() -> {
@@ -2240,10 +2232,7 @@ public class ChatActivity extends BaseFragment implements
             }
         }
 
-        @Override
-        public boolean checkCanRemoveRestrictionsByBoosts() {
-            return ChatActivity.this.checkCanRemoveRestrictionsByBoosts();
-        }
+
 
         @Override
         public void onTextSelectionChanged(int start, int end) {
@@ -3051,7 +3040,6 @@ public class ChatActivity extends BaseFragment implements
         }
         observersGroup
             .add(NotificationCenter.updatedChatRanks)
-            .add(NotificationCenter.premiumFloodWaitReceived)
             .add(NotificationCenter.messagesDidLoad)
             .add(NotificationCenter.loadingMessagesFailed)
             .add(NotificationCenter.didUpdateConnectionState)
@@ -3090,7 +3078,6 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.userInfoDidLoad)
             .add(NotificationCenter.pinnedInfoDidLoad)
             .add(NotificationCenter.topicsDidLoaded)
-            .add(NotificationCenter.chatWasBoostedByUser)
             .add(NotificationCenter.channelRightsUpdated)
             .add(NotificationCenter.audioRecordTooShort)
             .add(NotificationCenter.didUpdateReactions)
@@ -13097,9 +13084,7 @@ public class ChatActivity extends BaseFragment implements
         if (userInfo != null && userInfo.voice_messages_forbidden) {
             mediaBanTooltip.setText(AndroidUtilities.replaceTags(LocaleController.formatString(chatActivityEnterView.isInVideoMode() ? R.string.VideoMessagesRestrictedByPrivacy : R.string.VoiceMessagesRestrictedByPrivacy, currentUser.first_name)));
         } else if (!ChatObject.canSendVoice(currentChat) && !ChatObject.canSendRoundVideo(currentChat)) {
-            if (checkCanRemoveRestrictionsByBoosts()) {
-                return;
-            }
+
             if (chatActivityEnterView.isInVideoMode()) {
                 mediaBanTooltip.setText(ChatObject.getRestrictedErrorText(currentChat, ChatObject.ACTION_SEND_ROUND));
             } else {
@@ -15868,7 +15853,6 @@ public class ChatActivity extends BaseFragment implements
         float clipTopFinal = clipTop - chatListViewPaddingVisibleOffset;
         float clipBottomFinal = chatListView.getMeasuredHeight() - blurredViewBottomOffset;
 
-        boolean checkPremiumFloodWait = !UserConfig.getInstance(currentAccount).isPremium();
 
         for (int a = 0; a < count; a++) {
             View view = chatListView.getChildAt(a);
@@ -15917,15 +15901,7 @@ public class ChatActivity extends BaseFragment implements
             }
             if (messageCell != null) {
                 messageCell.setVisibleOnScreen(true, clipTopFinal - top, bottom - clipBottomFinal);
-                if (checkPremiumFloodWait) {
-                    if (messageCell.checkLoadCaughtPremiumFloodWait()) {
-                        showPremiumFloodWaitBulletin(false);
-                        checkPremiumFloodWait = false;
-                    } else if (messageCell.checkUploadCaughtPremiumFloodWait()) {
-                        showPremiumFloodWaitBulletin(true);
-                        checkPremiumFloodWait = false;
-                    }
-                }
+
             }
 
             int viewTop = top >= 0 ? 0 : -top;
@@ -18694,26 +18670,7 @@ public class ChatActivity extends BaseFragment implements
             }
         } else if (currentChat != null && !ChatObject.canSendMessages(currentChat) && !ChatObject.canSendAnyMedia(currentChat) && !currentChat.gigagroup && (!ChatObject.isChannel(currentChat) || currentChat.megagroup)) {
             if (currentChat.default_banned_rights != null && currentChat.default_banned_rights.send_messages) {
-                boolean unlockByBoosts = ChatObject.isPossibleRemoveChatRestrictionsByBoosts(currentChat);
-                if (unlockByBoosts) {
-                    Drawable drawable = ContextCompat.getDrawable(getContext(), R.drawable.filled_limit_boost).mutate();
-                    DrawableCompat.setTint(drawable, getThemedColor(Theme.key_featuredStickers_addButton));
-                    drawable.setBounds(0, 0, dp(14), dp(14));
-                    CombinedDrawable combinedDrawable = new CombinedDrawable(null, drawable, dp(-6), dp(-6));
-                    combinedDrawable.setIconSize(dp(14), dp(14));
-                    combinedDrawable.setCustomSize(dp(14), dp(14));
-
-                    SpannableStringBuilder builder = new SpannableStringBuilder("d " + LocaleController.getString(R.string.BoostingBoostToSendMessages));
-                    builder.setSpan(new ForegroundColorSpan(getThemedColor(Theme.key_featuredStickers_addButton)), 0, builder.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    builder.setSpan(new TypefaceSpan(AndroidUtilities.bold()), 0, builder.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    builder.setSpan(new ImageSpan(combinedDrawable, ImageSpan.ALIGN_BASELINE), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-                    bottomOverlayText.setBackground(Theme.createSelectorWithBackgroundDrawable(0, Theme.getColor(Theme.key_listSelector)));
-                    bottomOverlayText.setText(builder);
-                    bottomOverlayText.setOnClickListener(v -> LimitReachedBottomSheet.openBoostsForRemoveRestrictions(this, boostsStatus, canApplyBoosts, dialog_id, false));
-                } else {
-                    bottomOverlayText.setText(LocaleController.getString(R.string.GlobalSendMessageRestricted));
-                }
+                bottomOverlayText.setText(LocaleController.getString(R.string.GlobalSendMessageRestricted));
             } else if (AndroidUtilities.isBannedForever(currentChat.banned_rights)) {
                 bottomOverlayText.setText(LocaleController.getString(R.string.SendMessageRestrictedForever));
             } else {
@@ -22547,15 +22504,7 @@ public class ChatActivity extends BaseFragment implements
                 long prevLinkedChatId = chatInfo != null ? chatInfo.linked_chat_id : 0;
                 chatInfo = chatFull;
                 gotChatInfo();
-                if (ChatObject.isBoostSupported(currentChat) && !ChatObject.isMonoForum(currentChat) /*chatMode != MODE_SUGGESTIONS*/) {
-                    getMessagesController().getBoostsController().getBoostsStats(dialog_id, boostsStatus -> {
-                        if (boostsStatus == null) {
-                            return;
-                        }
-                        this.boostsStatus = boostsStatus;
-                        getMessagesController().getBoostsController().userCanBoostChannel(dialog_id, boostsStatus, canApplyBoost -> this.canApplyBoosts = canApplyBoost);
-                    });
-                }
+
                 groupCall = getMessagesController().getGroupCall(currentChat.id, true);
                 if (ChatObject.isChannel(currentChat) && currentChat.megagroup && fragmentContextView != null) {
                     fragmentContextView.checkCall(openAnimationStartTime == 0 || SystemClock.elapsedRealtime() < openAnimationStartTime + 150);
@@ -24215,11 +24164,6 @@ public class ChatActivity extends BaseFragment implements
                 }
                 updateReactionsMentionButton(true);
             }
-        } else if (id == NotificationCenter.chatWasBoostedByUser) {
-            if (dialog_id == (long) args[2]) {
-                boostsStatus = (TL_stories.TL_premium_boostsStatus) args[0];
-                canApplyBoosts = (ChannelBoostsController.CanApplyBoost) args[1];
-            }
         } else if (id == NotificationCenter.topicsDidLoaded) {
             if (getMessagesController().isMonoForumWithManageRights(dialog_id)) {
                 if (avatarContainer != null) {
@@ -24428,8 +24372,6 @@ public class ChatActivity extends BaseFragment implements
                     updateTitle(true);
                 }
             }
-        } else if (id == NotificationCenter.premiumFloodWaitReceived) {
-            invalidateMessagesVisiblePart();
         } else if (id == NotificationCenter.updatedChatRanks) {
             final long chatId = (long) args[0];
             final long userId = (long) args[1];
@@ -40478,10 +40420,7 @@ public class ChatActivity extends BaseFragment implements
             }
         }
 
-        @Override
-        public void didPressBoostCounter(ChatMessageCell cell) {
-            getNotificationCenter().postNotificationName(NotificationCenter.openBoostForUsersDialog, dialog_id, cell);
-        }
+
 
         @Override
         public void didStartVideoStream(MessageObject message) {
@@ -43783,43 +43722,9 @@ public class ChatActivity extends BaseFragment implements
 
 
 
-    public boolean checkCanRemoveRestrictionsByBoosts() {
-        boolean result = ChatObject.isPossibleRemoveChatRestrictionsByBoosts(chatInfo);
-        if (result) {
-            AndroidUtilities.hideKeyboard(getParentActivity().getCurrentFocus());
-            LimitReachedBottomSheet.openBoostsForRemoveRestrictions(ChatActivity.this, boostsStatus, canApplyBoosts, dialog_id, false);
-        }
-        return result;
-    }
 
-    public void showPremiumFloodWaitBulletin(final boolean isUpload) {
-        final long now = System.currentTimeMillis();
-        if (now - ConnectionsManager.lastPremiumFloodWaitShown < 1000L * MessagesController.getInstance(currentAccount).uploadPremiumSpeedupNotifyPeriod) {
-            return;
-        }
-        ConnectionsManager.lastPremiumFloodWaitShown = now;
-        if (UserConfig.getInstance(currentAccount).isPremium() || MessagesController.getInstance(currentAccount).premiumFeaturesBlocked()) {
-            return;
-        }
 
-        final float n;
-        if (isUpload) {
-            n = MessagesController.getInstance(currentAccount).uploadPremiumSpeedupUpload;
-        } else {
-            n = MessagesController.getInstance(currentAccount).uploadPremiumSpeedupDownload;
-        }
-        SpannableString boldN = new SpannableString(Double.toString(Math.round(n * 10) / 10.0).replaceAll("\\.0$", ""));
-        boldN.setSpan(new TypefaceSpan(AndroidUtilities.bold()), 0, boldN.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
 
-        if (hasStoryViewer()) return;
-        BulletinFactory.of(this).createSimpleBulletin(
-            R.raw.speed_limit,
-            LocaleController.getString(isUpload ? R.string.UploadSpeedLimited : R.string.DownloadSpeedLimited),
-            AndroidUtilities.replaceCharSequence("%d", AndroidUtilities.premiumText(LocaleController.getString(isUpload ? R.string.UploadSpeedLimitedMessage : R.string.DownloadSpeedLimitedMessage), () -> {
-                presentFragment(new PremiumPreviewFragment(isUpload ? "upload_speed" : "download_speed"));
-            }), boldN)
-        ).setDuration(8000).show(true);
-    }
 
     public void didLongPressLink(ChatMessageCell cell, MessageObject messageObject, CharacterStyle span, String str) {
         final ItemOptions options = ItemOptions.makeOptions(ChatActivity.this, cell, true);

@@ -5949,9 +5949,7 @@ public class EmojiView extends FrameLayout implements
 
         if (show) {
             if (!ChatObject.hasAdminRights(chat) && chat.default_banned_rights != null && (chat.default_banned_rights.send_stickers || (emoji && chat.default_banned_rights.send_plain))) {
-                if (fragment instanceof ChatActivity && ((ChatActivity) fragment).checkCanRemoveRestrictionsByBoosts()) {
-                    return;
-                }
+
                 if (emoji) {
                     mediaBanTooltip.setText(getString(R.string.GlobalAttachEmojiRestricted));
                 } else if (gif) {

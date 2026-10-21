@@ -334,9 +334,7 @@ public class ChatActivityEnterView extends FrameLayout implements
 
         void onUpdateSlowModeButton(View button, boolean show, CharSequence time);
 
-        default boolean checkCanRemoveRestrictionsByBoosts() {
-            return false;
-        }
+
 
         default void scrollToSendingMessage() {
 
@@ -3534,9 +3532,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         sendButtonContainer.addView(slowModeButton, LayoutHelper.createFrame(74, DEFAULT_HEIGHT, Gravity.RIGHT | Gravity.BOTTOM));
         slowModeButton.setOnClickListener(v -> {
             if (delegate != null) {
-                if (delegate.checkCanRemoveRestrictionsByBoosts()) {
-                    return;
-                }
+
                 delegate.onUpdateSlowModeButton(slowModeButton, true, slowModeButton.getText());
             }
         });
@@ -4430,9 +4426,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     private void showRestrictedHint() {
-        if (delegate != null && delegate.checkCanRemoveRestrictionsByBoosts()) {
-            return;
-        }
+
         if (DialogObject.isChatDialog(dialog_id)) {
             TLRPC.Chat chat = accountInstance.getMessagesController().getChat(-dialog_id);
             BulletinFactory.of(parentFragment).createSimpleBulletin(R.raw.passcode_lock_close, LocaleController.formatString("SendPlainTextRestrictionHint", R.string.SendPlainTextRestrictionHint, ChatObject.getAllowedSendString(chat)), 3).show();

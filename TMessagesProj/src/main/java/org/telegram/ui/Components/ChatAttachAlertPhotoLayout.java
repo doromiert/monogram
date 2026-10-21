@@ -1757,17 +1757,13 @@ public class ChatAttachAlertPhotoLayout extends ChatAttachAlert.AttachAlertLayou
 
     private boolean checkSendMediaEnabled(MediaController.PhotoEntry photoEntry) {
         if (!videoEnabled && photoEntry.isVideo) {
-            if (parentAlert.checkCanRemoveRestrictionsByBoosts()) {
-                return true;
-            }
+
             BulletinFactory.of(parentAlert.sizeNotifierFrameLayout, resourcesProvider).createErrorBulletin(
                 LocaleController.getString(R.string.GlobalAttachVideoRestricted)
             ).show();
             return true;
         } else if (!photoEnabled && !photoEntry.isVideo) {
-            if (parentAlert.checkCanRemoveRestrictionsByBoosts()) {
-                return true;
-            }
+
             BulletinFactory.of(parentAlert.sizeNotifierFrameLayout, resourcesProvider).createErrorBulletin(
                 LocaleController.getString(R.string.GlobalAttachPhotoRestricted)
             ).show();
