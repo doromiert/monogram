@@ -4442,46 +4442,7 @@ public class StoriesController {
         tl_stories_canSendStory.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);
         ConnectionsManager.getInstance(currentAccount).sendRequest(tl_stories_canSendStory, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
             if (err != null) {
-                if (err.text.contains("BOOSTS_REQUIRED")) {
-                    if (showLimitsBottomSheet) {
-                        MessagesController messagesController = MessagesController.getInstance(currentAccount);
-                        messagesController.getBoostsController().getBoostsStats(dialogId, boostsStatus -> {
-                            if (boostsStatus == null) {
-                                consumer.run(false);
-                                return;
-                            }
-                            messagesController.getBoostsController().userCanBoostChannel(dialogId, boostsStatus, canApplyBoost -> {
-                                if (canApplyBoost == null) {
-                                    consumer.run(false);
-                                    return;
-                                }
-                                BaseFragment lastFragment = LaunchActivity.getLastFragment();
-                                Runnable runnable = null;
-                                if (canPostStories(dialogId)) {
-                                    runnable = () -> {
-                                        TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
-                                        BaseFragment fragment = StatisticActivity.create(chat);
-                                        BaseFragment lastFragment1 = LaunchActivity.getLastFragment();
-                                        if (lastFragment1 != null) {
-                                            if (StoryRecorder.isVisible()) {
-                                                BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();
-                                                params.transitionFromLeft = true;
-                                                lastFragment1.showAsSheet(fragment, params);
-                                            } else {
-                                                lastFragment1.presentFragment(fragment);
-                                            }
-                                        }
-                                    };
-                                }
-                                LimitReachedBottomSheet.openBoostsForPostingStories(lastFragment, dialogId, canApplyBoost, boostsStatus, runnable);
-                                consumer.run(false);
-                            });
-                            consumer.run(false);
-                        });
-                    } else {
-                        consumer.run(false);
-                    }
-                } else if (err.text.startsWith("STORY_LIVE_ALREADY_")) {
+                if (err.text.startsWith("STORY_LIVE_ALREADY_")) {
                     BaseFragment lastFragment = LaunchActivity.getLastFragment();
                     if (showLimitsBottomSheet && lastFragment != null) {
                         new AlertDialog.Builder(lastFragment.getContext(), resourcesProvider)

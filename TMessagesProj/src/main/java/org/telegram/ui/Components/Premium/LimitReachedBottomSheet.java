@@ -2529,43 +2529,9 @@ public class LimitReachedBottomSheet extends BottomSheetWithRecyclerListView imp
         }
     }
 
-    public static LimitReachedBottomSheet openBoostsForRemoveRestrictions(BaseFragment baseFragment, TL_stories.TL_premium_boostsStatus boostsStatus, ChannelBoostsController.CanApplyBoost canApplyBoos, long dialogId, boolean inFragment) {
-        if (baseFragment == null || boostsStatus == null || canApplyBoos == null || baseFragment.getContext() == null) {
-            return null;
-        }
-        LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(baseFragment, baseFragment.getContext(), TYPE_BOOSTS_FOR_REMOVE_RESTRICTIONS, baseFragment.getCurrentAccount(), baseFragment.getResourceProvider());
-        limitReachedBottomSheet.setCanApplyBoost(canApplyBoos);
-        limitReachedBottomSheet.setBoostsStats(boostsStatus, true);
-        limitReachedBottomSheet.setDialogId(dialogId);
-        if (inFragment) {
-            baseFragment.showDialog(limitReachedBottomSheet);
-        } else {
-            limitReachedBottomSheet.show();
-        }
-        return limitReachedBottomSheet;
-    }
 
-    public static void openBoostsForUsers(BaseFragment baseFragment, boolean isCurrentChat, long dialogId, ChannelBoostsController.CanApplyBoost canApplyBoost, TL_stories.TL_premium_boostsStatus boostsStatus, ChatMessageCell chatMessageCell) {
-        if (baseFragment == null || canApplyBoost == null || boostsStatus == null || baseFragment.getContext() == null) {
-            return;
-        }
-        LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(baseFragment, baseFragment.getContext(), TYPE_BOOSTS_FOR_USERS, baseFragment.getCurrentAccount(), baseFragment.getResourceProvider());
-        limitReachedBottomSheet.setCanApplyBoost(canApplyBoost);
-        limitReachedBottomSheet.setBoostsStats(boostsStatus, isCurrentChat);
-        limitReachedBottomSheet.setDialogId(dialogId);
-        limitReachedBottomSheet.setChatMessageCell(chatMessageCell);
-        baseFragment.showDialog(limitReachedBottomSheet);
-    }
 
-    public static void openBoostsForPostingStories(BaseFragment baseFragment, long dialogId, ChannelBoostsController.CanApplyBoost canApplyBoost, TL_stories.TL_premium_boostsStatus boostsStatus, Runnable statisticAction) {
-        if (baseFragment == null || canApplyBoost == null || boostsStatus == null || baseFragment.getContext() == null) {
-            return;
-        }
-        LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(baseFragment, baseFragment.getContext(), LimitReachedBottomSheet.TYPE_BOOSTS_FOR_POSTING, baseFragment.getCurrentAccount(), baseFragment.getResourceProvider());
-        limitReachedBottomSheet.setCanApplyBoost(canApplyBoost);
-        limitReachedBottomSheet.setBoostsStats(boostsStatus, true);
-        limitReachedBottomSheet.setDialogId(dialogId);
-        limitReachedBottomSheet.showStatisticButtonInLink(statisticAction);
-        limitReachedBottomSheet.show();
-    }
+
+
+
 }

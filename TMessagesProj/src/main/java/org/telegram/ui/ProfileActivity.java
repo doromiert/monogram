@@ -2173,8 +2173,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             getNotificationCenter().addObserver(this, NotificationCenter.chatOnlineCountDidLoad);
             getNotificationCenter().addObserver(this, NotificationCenter.groupCallUpdated);
             getNotificationCenter().addObserver(this, NotificationCenter.channelRightsUpdated);
-            getNotificationCenter().addObserver(this, NotificationCenter.chatWasBoostedByUser);
-            NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.uploadStoryEnd);
             sortedUsers = new ArrayList<>();
             updateOnlineCount(true);
             if (chatInfo == null) {
@@ -2382,8 +2380,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.reloadInterface);
             getMessagesController().cancelLoadFullUser(userId);
         } else if (chatId != 0) {
-            NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.uploadStoryEnd);
-            getNotificationCenter().removeObserver(this, NotificationCenter.chatWasBoostedByUser);
             getNotificationCenter().removeObserver(this, NotificationCenter.chatInfoDidLoad);
             getNotificationCenter().removeObserver(this, NotificationCenter.chatOnlineCountDidLoad);
             getNotificationCenter().removeObserver(this, NotificationCenter.groupCallUpdated);
@@ -5914,14 +5910,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    private void checkCanSendStoryForPosting() {
-        TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(chatId);
-        if (!ChatObject.isBoostSupported(chat)) {
-            return;
-        }
-        StoriesController storiesController = getMessagesController().getStoriesController();
-        storiesController.canSendStoryFor(getDialogId(), canSend -> {}, false, resourcesProvider);
-    }
+
 
     private void updateAvatarRoundRadius() {
         avatarImage.setRoundRadiusForExpand((int) AndroidUtilities.lerp(getSmallAvatarRoundRadius(), 0f, currentExpandAnimatorValue));
@@ -8728,9 +8717,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @SuppressWarnings("unchecked")
     @Override
     public void didReceivedNotification(int id, int account, final Object... args) {
-        if (id == NotificationCenter.uploadStoryEnd || id == NotificationCenter.chatWasBoostedByUser) {
-            checkCanSendStoryForPosting();
-        } else if (id == NotificationCenter.updateInterfaces) {
+        if (id == NotificationCenter.updateInterfaces) {
             int mask = (Integer) args[0];
             boolean infoChanged = (mask & MessagesController.UPDATE_MASK_AVATAR) != 0 || (mask & MessagesController.UPDATE_MASK_NAME) != 0 || (mask & MessagesController.UPDATE_MASK_STATUS) != 0 || (mask & MessagesController.UPDATE_MASK_EMOJI_STATUS) != 0;
             if (userId != 0) {

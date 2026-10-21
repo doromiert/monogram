@@ -11,7 +11,6 @@ package org.telegram.ui;
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.formatPluralString;
 import static org.telegram.messenger.LocaleController.formatString;
-import static org.telegram.ui.Components.Premium.LimitReachedBottomSheet.TYPE_BOOSTS_FOR_USERS;
 
 import android.Manifest;
 import android.animation.Animator;
@@ -97,7 +96,6 @@ import org.telegram.messenger.BotGuardHelper;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.ChannelBoostsController;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.ContactsLoadingObserver;
@@ -1300,7 +1298,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         currentAccount = UserConfig.selectedAccount;
         observersGroup = NotificationCenter.getInstance(currentAccount)
             .createObserversGroup(this)
-            .add(NotificationCenter.openBoostForUsersDialog)
             .add(NotificationCenter.appDidLogout)
             .add(NotificationCenter.mainUserInfoChanged)
             .add(NotificationCenter.attachMenuBotsDidLoad)
@@ -3907,8 +3904,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         boolean openDirect,
         byte[] pollOptionId
     ) {
+        if (isBoost) {
+            rejectMonogramPurchase(progress);
+            return;
+        }
         if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(intentAccount)
-                && (inputInvoiceSlug!=null || uniqueGiftSlug!=null || auctionSlug!=null || stargiftPreviewSlug!=null || giftCollectionId>0 || isBoost
+                && (inputInvoiceSlug!=null || uniqueGiftSlug!=null || auctionSlug!=null || stargiftPreviewSlug!=null || giftCollectionId>0
                     || "sendgrams".equalsIgnoreCase(username) || "premiumbot".equalsIgnoreCase(username))) {
             rejectMonogramPurchase(progress);return;
         }
@@ -4189,13 +4190,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             }
                         }
 
-                        if (isBoost) {
-                            TLRPC.Chat chat = MessagesController.getInstance(intentAccount).getChat(-peerId);
-                            if (ChatObject.isBoostSupported(chat)) {
-                                processBoostDialog(peerId, dismissLoading, progress);
-                                return;
-                            }
-                        }
+
 
                         if (botAppStartParam != null) {
                             TLRPC.User user = MessagesController.getInstance(intentAccount).getUser(peerId);
@@ -5150,9 +5145,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     args.putByteArray("poll_option_id", pollOptionId);
                 }
                 TLRPC.Chat chatLocal = MessagesController.getInstance(currentAccount).getChat(channelId);
-                if (chatLocal != null && ChatObject.isBoostSupported(chatLocal) && isBoost) {
-                    processBoostDialog(-channelId, dismissLoading, progress);
-                } else if (chatLocal != null && chatLocal.forum) {
+                if (chatLocal != null && chatLocal.forum) {
                     openForumFromLink(-channelId, messageId, null, taskId, pollOptionId, () -> {
                         try {
                             dismissLoading.run();
@@ -5182,9 +5175,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                             notFound = false;
                                             MessagesController.getInstance(currentAccount).putChats(res.chats, false);
                                             TLRPC.Chat chat = res.chats.get(0);
-                                            if (chat != null && isBoost && ChatObject.isBoostSupported(chat)) {
-                                                processBoostDialog(-channelId, null, progress);
-                                            } else if (chat != null && chat.forum) {
+                                            if (chat != null && chat.forum) {
                                                 if (threadId != null) {
                                                     openForumFromLink(-channelId, messageId, null, taskId, pollOptionId, null, 0, -1);
                                                 } else {
@@ -5410,65 +5401,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         });
     }
 
-    private void processBoostDialog(Long peerId, Runnable dismissLoading, Browser.Progress progress) {
-        processBoostDialog(peerId, dismissLoading, progress, null);
-    }
 
-    private void processBoostDialog(Long peerId, Runnable dismissLoading, Browser.Progress progress, ChatMessageCell chatMessageCell) {
-        if(org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
-            if(dismissLoading!=null) dismissLoading.run();rejectMonogramPurchase(progress);return;
-        }
-        ChannelBoostsController boostsController = MessagesController.getInstance(currentAccount).getBoostsController();
-        if (progress != null) {
-            progress.init();
-        }
-        boostsController.getBoostsStats(peerId, boostsStatus -> {
-            if (boostsStatus == null) {
-                if (progress != null) {
-                    progress.end();
-                }
-                if (dismissLoading != null) {
-                    dismissLoading.run();
-                }
-                return;
-            }
-            boostsController.userCanBoostChannel(peerId, boostsStatus, canApplyBoost -> {
-                if (progress != null) {
-                    progress.end();
-                }
-                final BaseFragment lastFragment = getLastFragmentIncludeMainTabs();
-                if (lastFragment == null) {
-                    return;
-                }
-                Theme.ResourcesProvider resourcesProvider = lastFragment.getResourceProvider();
-                if (lastFragment.getLastStoryViewer() != null && lastFragment.getLastStoryViewer().isFullyVisible()) {
-                    resourcesProvider = lastFragment.getLastStoryViewer().getResourceProvider();
-                }
-                LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(lastFragment, this, TYPE_BOOSTS_FOR_USERS, currentAccount, resourcesProvider);
-                limitReachedBottomSheet.setCanApplyBoost(canApplyBoost);
 
-                boolean isCurrentChat = false;
-                if (lastFragment instanceof ChatActivity) {
-                    isCurrentChat = ((ChatActivity) lastFragment).getDialogId() == peerId;
-                } else if (lastFragment instanceof DialogsActivity) {
-                    DialogsActivity dialogsActivity = ((DialogsActivity) lastFragment);
-                    isCurrentChat = dialogsActivity.rightSlidingDialogContainer != null && dialogsActivity.rightSlidingDialogContainer.getCurrentFragmetDialogId() == peerId;
-                }
-                limitReachedBottomSheet.setBoostsStats(boostsStatus, isCurrentChat);
-                limitReachedBottomSheet.setDialogId(peerId);
-                limitReachedBottomSheet.setChatMessageCell(chatMessageCell);
 
-                lastFragment.showDialog(limitReachedBottomSheet);
-                try {
-                    if (dismissLoading != null) {
-                        dismissLoading.run();
-                    }
-                } catch (Exception e) {
-                    FileLog.e(e);
-                }
-            });
-        });
-    }
 
     private void processAttachMenuBot(int intentAccount, long peerId, String attachMenuBotChoose, TLRPC.User user,  String setAsAttachBot, String startAppParam) {
         TLRPC.TL_messages_getAttachMenuBot getAttachMenuBot = new TLRPC.TL_messages_getAttachMenuBot();
@@ -6943,13 +6878,6 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     public void didReceivedNotification(int id, final int account, Object... args) {
         if (id == NotificationCenter.appDidLogout) {
             switchToAvailableAccountOrLogout();
-        } else if (id == NotificationCenter.openBoostForUsersDialog) {
-            long dialogId = (long) args[0];
-            ChatMessageCell chatMessageCell = null;
-            if (args.length > 1) {
-                chatMessageCell = (ChatMessageCell) args[1];
-            }
-            processBoostDialog(dialogId, null, null, chatMessageCell);
         } else if (id == NotificationCenter.closeOtherAppActivities) {
             if (args[0] != this) {
                 onFinish();
