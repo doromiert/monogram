@@ -800,3 +800,5 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [x] Source cleanup: remove folder-settings tag/color/create/edit paywalls and default-folder reset; persist tags without Telegram RPC. Free avatar gradient/custom-gradient saving and remove lock UI. Remove Telegram shared-wallpaper purchase option while retaining local wallpapers. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.
 
 - [x] Source cleanup: remove rich-editor/attachment-editor send and preview subscription gates, formatting badges, observer/toolbar lock state and conversion/subscribe sheet. Free rich forwarding sender-name controls and checklist toggles while preserving edit permissions. Logged in MONETIZATION_CHANGES.md; no build/tests/install this pass.
+
+- [x] Source cleanup: remove home/search speed-upgrade icons and promo-video prefetch, search ad menu/screen, folder-tab drag/snap-back restrictions and reaction-picker subscription split. Keep XMPP custom-reaction availability warning and standard reaction selection. Logged in MONETIZATION_CHANGES.md; unbuilt/unshipped.

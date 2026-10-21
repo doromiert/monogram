@@ -44,7 +44,6 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -58,7 +57,6 @@ import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
-import android.text.style.ImageSpan;
 import android.util.LongSparseArray;
 import android.util.Property;
 import android.util.StateSet;
@@ -210,7 +208,6 @@ import org.telegram.ui.Components.chat.layouts.ChatActivityFadeView;
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder;
 import org.telegram.ui.Stars.StarGiftSheet;
 import org.telegram.ui.Stars.StarsController;
-import org.telegram.ui.Stars.StarsIntroActivity;
 import org.telegram.ui.Stories.StealthModeAlert;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.bots.BotWebViewSheet;
@@ -238,8 +235,6 @@ import org.telegram.ui.Components.MediaActivity;
 import org.telegram.ui.Components.NumberTextView;
 import org.telegram.ui.Components.PacmanAnimation;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
-import org.telegram.ui.Components.Premium.boosts.UserSelectorBottomSheet;
 import org.telegram.ui.Components.ProxyDrawable;
 import org.telegram.ui.Components.PullForegroundDrawable;
 import org.telegram.ui.Components.RLottieDrawable;
@@ -294,7 +289,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     private static final int ANIMATOR_ID_SEARCH_VISIBLE = 1;
     private static final int ANIMATOR_ID_DONE_BUTTON_VISIBLE = 2;
-    private static final int ANIMATOR_ID_SPEED_BUTTON_VISIBLE = 3;
     private static final int ANIMATOR_ID_SHADOW_VISIBLE = 4;
     private static final int ANIMATOR_ID_SEARCH_BUTTON_VISIBLE = 5;
     private static final int ANIMATOR_ID_ACTION_MODE_VISIBLE = 6;
@@ -305,8 +299,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private final BoolAnimator animatorSearchVisible = new BoolAnimator(ANIMATOR_ID_SEARCH_VISIBLE,
             this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
     private final BoolAnimator animatorDoneButtonVisible = new BoolAnimator(ANIMATOR_ID_DONE_BUTTON_VISIBLE,
-            this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
-    private final BoolAnimator animatorSpeedButtonVisible = new BoolAnimator(ANIMATOR_ID_SPEED_BUTTON_VISIBLE,
             this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
     private final BoolAnimator animatorShadowVisible = new BoolAnimator(ANIMATOR_ID_SHADOW_VISIBLE,
             this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
@@ -504,7 +496,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ActionBarMenuItem optionsItem;
     private ActionBarMenuItem monogramReconnectItem;
     private ActionBarMenuItem monogramContactRequestsItem;
-    private ActionBarMenuItem speedItem;
     public static boolean switchingTheme;
     private ActionBarMenuItem doneItem;
     private ProxyDrawable proxyDrawable;
@@ -3292,14 +3283,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         fragmentSearchField.setPadding(dp(4), dp(4), dp(4), dp(4));
         fragmentSearchField.setPivotX(0);
         fragmentSearchField.setPivotY(0);
-        if (initialDialogsType == DIALOGS_TYPE_DEFAULT && !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount)) {
-            speedItem = menu.addItem(-47, R.drawable.avd_speed);
-            AndroidUtilities.removeFromParent(speedItem);
-            speedItem.setOnClickListener(v -> showDialog(new PremiumFeatureBottomSheet(DialogsActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED, true)));
 
-            fragmentSearchField.addAdditionalIcon(speedItem);
-            fragmentSearchField.updateColors();
-        }
 
         fragmentSearchField.setCloseButtonOnClickListener(() -> {
             if (searchViewPager != null && searchViewPager.actionModeShowing()) {
@@ -3550,19 +3534,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     return super.onInterceptTouchEvent(ev);
                 }
 
-                @Override
-                protected void onDefaultTabMoved() {
-                    if (!getMessagesController().premiumFeaturesBlocked()) {
-                        try {
-                            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
-                        } catch (Exception ignore) {}
-                        topBulletin = BulletinFactory.of(DialogsActivity.this).createSimpleBulletin(R.raw.filter_reorder, AndroidUtilities.replaceTags(LocaleController.formatString(R.string.LimitReachedReorderFolder, LocaleController.getString(R.string.FilterAllChats))), LocaleController.getString(R.string.PremiumMore), Bulletin.DURATION_PROLONG, () -> {
-                            showDialog(new PremiumFeatureBottomSheet(DialogsActivity.this, PremiumPreviewFragment.PREMIUM_FEATURE_ADVANCED_CHAT_MANAGEMENT, true));
-                            filterTabsView.setIsEditing(false);
-                            showDoneItem(false);
-                        }).show(true);
-                    }
-                }
+
             };
             filterTabsView.setVisibility(View.GONE);
             canShowFilterTabsView = false;
@@ -3867,7 +3839,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     return;
                 }
                 if(id==91003) { presentFragment(new MonogramContactActivity(currentAccount,null)); return; }
-                if ((id == SearchViewPager.forwardItemId || id == SearchViewPager.gotoItemId || id == SearchViewPager.deleteItemId || id == SearchViewPager.speedItemId) && searchViewPager != null) {
+                if ((id == SearchViewPager.forwardItemId || id == SearchViewPager.gotoItemId || id == SearchViewPager.deleteItemId) && searchViewPager != null) {
                     searchViewPager.onActionBarItemClick(id);
                     return;
                 }
@@ -6490,27 +6462,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         updateFiltersView(true, null, null, false, true);
     }
 
-    public void updateSpeedItem(boolean visibleByPosition) {
-        if (speedItem == null) {
-            return;
-        }
 
-        boolean visibleByDownload = false;
-        for (MessageObject obj : getDownloadController().downloadingFiles) {
-            if (obj.getDocument() != null && obj.getDocument().size >= 150 * 1024 * 1024) {
-                visibleByDownload = true;
-                break;
-            }
-        }
-        for (MessageObject obj : getDownloadController().recentDownloadingFiles) {
-            if (obj.getDocument() != null && obj.getDocument().size >= 150 * 1024 * 1024) {
-                visibleByDownload = true;
-                break;
-            }
-        }
-        boolean visible = !org.telegram.messenger.xmpp.MonogramFreeFeatures.purchasesUnavailable(currentAccount) && !getUserConfig().isPremium() && !getMessagesController().premiumFeaturesBlocked() && visibleByDownload && visibleByPosition;
-        animatorSpeedButtonVisible.setValue(visible, true);
-    }
 
     private void createActionMode(String tag) {
         if (actionBar.actionModeIsExist(tag)) {
@@ -7269,7 +7221,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         animatorSearchVisible.setValue(show, animated);
 
         if (!show) {
-            updateSpeedItem(false);
         } else {
             createSearchViewPager();
         }
@@ -7506,7 +7457,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
         if (show && startFromDownloads && searchViewPager != null) {
             searchViewPager.showDownloads();
-            updateSpeedItem(true);
         }
 
         checkUi_searchFiltersVisibility();
@@ -10487,7 +10437,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (id == NotificationCenter.onDownloadingFilesChanged) {
             updateProxyButton(true, false);
             if (searchViewPager != null) {
-                updateSpeedItem(searchViewPager.isDownloadsTab(searchViewPager.getCurrentPosition()));
             }
         } else if (id == NotificationCenter.needDeleteDialog) {
             if (fragmentView == null) {
@@ -11990,10 +11939,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 if (actionMode != null) {
                     actionMode.setBackgroundColor(getThemedColor(Theme.key_actionBarActionModeDefault));
                 }
-                ActionBarMenuItem speedItem = searchViewPager.getSpeedItem();
-                if (speedItem != null) {
-                    speedItem.getIconView().setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_actionBarActionModeDefaultIcon), PorterDuff.Mode.SRC_IN));
-                }
+
             }
         }, Theme.key_actionBarActionModeDefault, Theme.key_actionBarActionModeDefaultIcon));
 
@@ -12731,7 +12677,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }) {
             @Override
             protected void onTabPageSelected(int position) {
-                updateSpeedItem(isDownloadsTab(position));
             }
 
             @Override
@@ -13657,8 +13602,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (id == ANIMATOR_ID_DONE_BUTTON_VISIBLE) {
             checkUi_menuItems();
             checkUi_searchFieldVisibility();
-        } else if (id == ANIMATOR_ID_SPEED_BUTTON_VISIBLE) {
-            checkUi_itemSpeedVisibility();
         } else if (id == ANIMATOR_ID_SHADOW_VISIBLE) {
             if (fragmentView != null) {
                 fragmentView.invalidate();
@@ -13680,34 +13623,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onFactorChangeFinished(int id, float finalFactor, FactorAnimator callee) {
-        if (id == ANIMATOR_ID_SPEED_BUTTON_VISIBLE && speedItem != null) {
-            final AnimatedVectorDrawable drawable = (AnimatedVectorDrawable) speedItem.getIconView().getDrawable();
-            if (animatorSpeedButtonVisible.getValue()) {
-                drawable.start();
-                if (SharedConfig.getDevicePerformanceClass() != SharedConfig.PERFORMANCE_CLASS_LOW) {
-                    TLRPC.TL_help_premiumPromo premiumPromo = MediaDataController.getInstance(currentAccount).getPremiumPromo();
-                    String typeString = PremiumPreviewFragment.featureTypeToServerString(PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED);
-                    if (premiumPromo != null) {
-                        int index = -1;
-                        for (int i = 0; i < premiumPromo.video_sections.size(); i++) {
-                            if (premiumPromo.video_sections.get(i).equals(typeString)) {
-                                index = i;
-                                break;
-                            }
-                        }
-                        if (index != -1) {
-                            FileLoader.getInstance(currentAccount).loadFile(premiumPromo.videos.get(index), premiumPromo, FileLoader.PRIORITY_HIGH, 0);
-                        }
-                    }
-                }
-            } else {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    drawable.reset();
-                } else {
-                    drawable.setVisible(false, true);
-                }
-            }
-        }
     }
 
     private void checkUi_communityAvatarImageVisibility() {
@@ -13873,7 +13788,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         checkUi_itemBackButtonVisibility();
         checkUi_itemOptionsVisibility();
         checkUi_itemDownloadsVisibility();
-        checkUi_itemSpeedVisibility();
         checkUi_itemPasscodeVisibility();
         checkUi_itemSearchVisibility();
     }
@@ -13926,14 +13840,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         FragmentFloatingButton.setAnimatedVisibility(downloadsItem, factor);
     }
 
-    private void checkUi_itemSpeedVisibility() {
-        final float factor1 = animatorSearchVisible.getFloatValue();
-        final float factor2 = 1f - getRightSlidingProgress();
-        final float factor3 = 1f - animatorDoneButtonVisible.getFloatValue();
-        final float factor4 = animatorSpeedButtonVisible.getFloatValue();
-        final float factor = factor1 * factor2 * factor3 * factor4;
-        FragmentFloatingButton.setAnimatedVisibility(speedItem, factor);
-    }
+
 
     private void checkUi_itemSearchVisibility() {
         final float factor0 = isSupportSearch() ? 1 : 0;

@@ -22,19 +22,16 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stars;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
-import org.telegram.ui.Cells.AvailableReactionCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Cells.ThemePreviewMessagesCell;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SimpleThemeDescription;
@@ -50,8 +47,7 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
 
     int previewRow;
     int infoRow;
-    int reactionsStartRow = -1;
-    int premiumReactionRow;
+    int reactionPickerRow;
     int rowCount;
 
     public ReactionsDoubleTapManageActivity() {
@@ -61,7 +57,6 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.reactionsDidLoad);
-        getNotificationCenter().addObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
         return super.onFragmentCreate();
     }
 
@@ -117,6 +112,7 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
                         setcell.update(false);
                         view = setcell;
                         break;
+                    default:
                     case 4:
                         view = new View(context) {
                             @Override
@@ -129,29 +125,17 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
                         };
                         view.setTag(RecyclerListView.TAG_NOT_SECTION);
                         break;
-                    default:
-                    case 1: {
-                        view = new AvailableReactionCell(context, true, true);
-                    }
-                    break;
                 }
                 return new RecyclerListView.Holder(view);
             }
 
             @Override
             public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-                switch (getItemViewType(position)) {
-                    case 1:
-                        AvailableReactionCell reactionCell = (AvailableReactionCell) holder.itemView;
-                        TLRPC.TL_availableReaction react = getAvailableReactions().get(position - reactionsStartRow);
-                        reactionCell.bind(react, react.reaction.contains(MediaDataController.getInstance(currentAccount).getDoubleTapReaction()), currentAccount);
-                        break;
-                }
             }
 
             @Override
             public int getItemCount() {
-                return rowCount + (premiumReactionRow < 0 ? getAvailableReactions().size() : 0) + 1;
+                return rowCount + 1;
             }
 
             @Override
@@ -162,25 +146,17 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
                 if (position == infoRow) {
                     return 2;
                 }
-                if (position == premiumReactionRow) {
+                if (position == reactionPickerRow) {
                     return 3;
                 }
                 if (position == getItemCount() - 1) {
                     return 4;
                 }
-                return 1;
+                return 4;
             }
         });
         listView.setOnItemClickListener((view, position) -> {
-            if (view instanceof AvailableReactionCell) {
-                AvailableReactionCell cell = (AvailableReactionCell) view;
-                if (cell.locked && !getUserConfig().isPremium()) {
-                    showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_REACTIONS, true));
-                    return;
-                }
-                MediaDataController.getInstance(currentAccount).setDoubleTapReaction(cell.react.reaction);
-                listView.getAdapter().notifyItemRangeChanged(0, listView.getAdapter().getItemCount());
-            } else if (view instanceof SetDefaultReactionCell) {
+            if (view instanceof SetDefaultReactionCell) {
                 showSelectStatusDialog((SetDefaultReactionCell) view);
             }
         });
@@ -289,6 +265,11 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
                 if (documentId == null) {
                     return;
                 }
+                if (org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+                    org.telegram.ui.Components.BulletinFactory.of(ReactionsDoubleTapManageActivity.this)
+                            .createErrorBulletin(LocaleController.getString(R.string.MonogramCustomReactionsUnavailable)).show();
+                    return;
+                }
                 MediaDataController.getInstance(currentAccount).setDoubleTapReaction("animated_" + documentId);
                 if (cell != null) {
                     cell.update(true);
@@ -343,20 +324,13 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
         rowCount = 0;
         previewRow = rowCount++;
         infoRow = rowCount++;
-        if (UserConfig.getInstance(currentAccount).isPremium()) {
-            reactionsStartRow = -1;
-            premiumReactionRow = rowCount++;
-        } else {
-            premiumReactionRow = -1;
-            reactionsStartRow = rowCount;
-        }
+        reactionPickerRow = rowCount++;
     }
 
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
         getNotificationCenter().removeObserver(this, NotificationCenter.reactionsDidLoad);
-        getNotificationCenter().removeObserver(this, NotificationCenter.currentUserPremiumStatusChanged);
     }
 
     private List<TLRPC.TL_availableReaction> getAvailableReactions() {
@@ -393,9 +367,6 @@ public class ReactionsDoubleTapManageActivity extends BaseFragment implements No
     public void didReceivedNotification(int id, int account, Object... args) {
         if (account != currentAccount) return;
         if (id == NotificationCenter.reactionsDidLoad) {
-            listAdapter.notifyDataSetChanged();
-        } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
-            updateRows();
             listAdapter.notifyDataSetChanged();
         }
     }

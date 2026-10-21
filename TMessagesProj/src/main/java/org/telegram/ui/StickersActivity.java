@@ -65,7 +65,6 @@ import org.telegram.ui.Components.EmojiPacksAlert;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.NumberTextView;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.ReorderingBulletinLayout;
 import org.telegram.ui.Components.ReorderingHintDrawable;
 import org.telegram.ui.Components.ShareAlert;
@@ -675,8 +674,7 @@ public class StickersActivity extends BaseFragment implements NotificationCenter
         } else if (cell.removeButtonView == view) {
             MediaDataController.getInstance(currentAccount).toggleStickerSet(getParentActivity(), set, 0, this, false, true);
         } else if (cell.premiumButtonView == view) {
-            if(org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) { presentFragment(new MonogramPacksActivity(currentAccount,true));return; }
-            showDialog(new PremiumFeatureBottomSheet(this, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
+            presentFragment(new MonogramPacksActivity(currentAccount, true));
         }
     }
 

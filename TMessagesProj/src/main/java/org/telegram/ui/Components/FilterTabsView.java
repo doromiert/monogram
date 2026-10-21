@@ -34,11 +34,9 @@ import android.text.SpannableStringBuilder;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
-import android.util.Log;
 import android.util.Property;
 import android.util.SparseIntArray;
 import android.view.HapticFeedbackConstants;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -70,7 +68,6 @@ import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Stories.recorder.HintView2;
 
 import java.util.ArrayList;
-import java.util.Map;
 
 @SuppressLint("ViewConstructor")
 public class FilterTabsView extends FrameLayout {
@@ -1912,34 +1909,19 @@ public class FilterTabsView extends FrameLayout {
 
         @Override
         public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
-            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && (!isEditing || (viewHolder.getAdapterPosition() == 0 && tabs.get(0).isDefault && !(org.telegram.messenger.xmpp.MonogramDialogState.local(UserConfig.selectedAccount) || UserConfig.getInstance(UserConfig.selectedAccount).isPremium())))) {
-                return makeMovementFlags(0, 0);
-            }
+            if (!isEditing) return makeMovementFlags(0, 0);
+
             return makeMovementFlags(ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT, 0);
         }
 
         @Override
         public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder source, @NonNull RecyclerView.ViewHolder target) {
-            if (MessagesController.getInstance(UserConfig.selectedAccount).premiumFeaturesBlocked() && ((source.getAdapterPosition() == 0 || target.getAdapterPosition() == 0) && !(org.telegram.messenger.xmpp.MonogramDialogState.local(UserConfig.selectedAccount) || UserConfig.getInstance(UserConfig.selectedAccount).isPremium()))) {
-                return false;
-            }
+
             adapter.swapElements(source.getAdapterPosition(), target.getAdapterPosition());
             return true;
         }
 
-        private final Runnable resetDefaultPosition = () ->  {
-            if ((org.telegram.messenger.xmpp.MonogramDialogState.local(UserConfig.selectedAccount) || UserConfig.getInstance(UserConfig.selectedAccount).isPremium())) {
-                return;
-            }
-            for (int i = 0; i < tabs.size(); ++i) {
-                if (tabs.get(i).isDefault && i != 0) {
-                    adapter.moveElementToStart(i);
-                    listView.scrollToPosition(0);
-                    onDefaultTabMoved();
-                    break;
-                }
-            }
-        };
+
 
         @Override
         public void onSelectedChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
@@ -1947,9 +1929,6 @@ public class FilterTabsView extends FrameLayout {
                 listView.cancelClickRunnables(false);
                 viewHolder.itemView.setPressed(true);
                 viewHolder.itemView.setBackgroundColor(Theme.getColor(backgroundColorKey, resourcesProvider));
-            } else {
-                AndroidUtilities.cancelRunOnUIThread(resetDefaultPosition);
-                AndroidUtilities.runOnUIThread(resetDefaultPosition, 320);
             }
             super.onSelectedChanged(viewHolder, actionState);
             if (viewHolder != null) {
@@ -2026,8 +2005,6 @@ public class FilterTabsView extends FrameLayout {
         }
     }
 
-    protected void onDefaultTabMoved() {
 
-    }
 
 }

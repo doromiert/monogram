@@ -26,7 +26,6 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -60,14 +59,11 @@ import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.EmojiTabsStrip;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.ReactionsContainerLayout;
 import org.telegram.ui.Components.StableAnimator;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundProvider;
-import org.telegram.ui.LaunchActivity;
-import org.telegram.ui.PremiumPreviewFragment;
 import org.telegram.ui.SelectAnimatedEmojiDialog;
 
 import java.util.ArrayList;
@@ -212,18 +208,7 @@ public class CustomEmojiReactionsWindow {
                 if(baseFragment!=null && org.telegram.messenger.xmpp.MonogramFreeFeatures.local(baseFragment.getCurrentAccount()) && reactionsContainerLayout.getWindowType()!=SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI) {
                     BulletinFactory.of(windowView,null).createErrorBulletin(LocaleController.getString(org.telegram.messenger.R.string.MonogramCustomReactionsUnavailable)).show();return;
                 }
-                if (baseFragment != null && !reactionsContainerLayout.channelReactions && reactionsContainerLayout.getWindowType() != SelectAnimatedEmojiDialog.TYPE_STICKER_SET_EMOJI && !UserConfig.getInstance(baseFragment.getCurrentAccount()).isPremium()) {
-                    try {
-                        windowView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                    } catch (Exception ignored) {}
-                    BulletinFactory.of(windowView, null).createEmojiBulletin(
-                            document,
-                            AndroidUtilities.replaceTags(LocaleController.getString(R.string.UnlockPremiumEmojiReaction)),
-                            LocaleController.getString(R.string.PremiumMore),
-                            () -> showUnlockPremiumAlert()
-                    ).show();
-                    return;
-                }
+
                 if (documentId == null && document == null) return;
                 if (document != null) {
                     AnimatedEmojiDrawable.getDocumentFetcher(UserConfig.selectedAccount).putDocument(document);
@@ -366,16 +351,7 @@ public class CustomEmojiReactionsWindow {
         return lp;
     }
 
-    private void showUnlockPremiumAlert() {
-        if (baseFragment instanceof ChatActivity) {
-            baseFragment.showDialog(new PremiumFeatureBottomSheet(baseFragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
-        } else {
-            BaseFragment fragment = LaunchActivity.getLastFragment();
-            if (fragment != null) {
-                fragment.showDialog(new PremiumFeatureBottomSheet(baseFragment, PremiumPreviewFragment.PREMIUM_FEATURE_ANIMATED_EMOJI, false));
-            }
-        }
-    }
+
 
     int[] location = new int[2];
     final AnimationNotificationsLocker notificationsLocker = new AnimationNotificationsLocker();
