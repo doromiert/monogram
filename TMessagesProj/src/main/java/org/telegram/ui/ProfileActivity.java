@@ -294,7 +294,6 @@ import org.telegram.ui.bots.BotBiometry;
 import org.telegram.ui.bots.BotDownloads;
 import org.telegram.ui.bots.BotLocation;
 import org.telegram.ui.bots.BotWebViewAttachedSheet;
-import org.telegram.ui.bots.SetupEmojiStatusSheet;
 import org.telegram.ui.community.CommunitySheet;
 
 import java.io.BufferedInputStream;
@@ -690,8 +689,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @Keep
     private int botPermissionLocation;
     @Keep
-    private int botPermissionEmojiStatus;
-    private int botPermissionEmojiStatusReqId;
     @Keep
     private int botPermissionBiometry;
     private int botPermissionsDivider;
@@ -4568,26 +4565,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     botBiometry.setGranted(!botBiometry.granted());
                     ((TextCell) view).setChecked(botBiometry.granted());
                 }
-            } else if (position == botPermissionEmojiStatus) {
-                ((TextCell) view).setChecked(!((TextCell) view).isChecked());
-                if (botPermissionEmojiStatusReqId > 0) {
-                    getConnectionsManager().cancelRequest(botPermissionEmojiStatusReqId, true);
-                }
-                TL_bots.toggleUserEmojiStatusPermission req = new TL_bots.toggleUserEmojiStatusPermission();
-                req.bot = getMessagesController().getInputUser(userId);
-                req.enabled = ((TextCell) view).isChecked();
-                if (userInfo != null) {
-                    userInfo.bot_can_manage_emoji_status = req.enabled;
-                }
-                final int[] reqId = new int[1];
-                reqId[0] = botPermissionEmojiStatusReqId = getConnectionsManager().sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                    if (!(res instanceof TLRPC.TL_boolTrue)) {
-                        BulletinFactory.of(ProfileActivity.this).showForError(err);
-                    }
-                    if (botPermissionEmojiStatusReqId == reqId[0]) {
-                        botPermissionEmojiStatusReqId = 0;
-                    }
-                }));
             } else if (position == bizHoursRow) {
                 hoursExpanded = !hoursExpanded;
                 saveScrollPosition();
@@ -4950,7 +4927,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                                 BotBiometry.clear();
                                 BotLocation.clear();
                                 BotDownloads.clear();
-                                SetupEmojiStatusSheet.clear();
                             } else if (which == 30) {
                                 AuthTokensHelper.clearLogInTokens();
                             } else if (which == 31) {
@@ -10305,7 +10281,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         botAppRow = -1;
         botPermissionsHeader = -1;
         botPermissionBiometry = -1;
-        botPermissionEmojiStatus = -1;
         botPermissionLocation = -1;
         botPermissionsDivider = -1;
         unofficialSecurityRiskRow = -1;
@@ -10538,13 +10513,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         botBiometry = BotBiometry.get(getContext(), currentAccount, userId);
                     final boolean containsPermissionLocation = botLocation != null && botLocation.asked();
                     final boolean containsPermissionBiometry = botBiometry != null && botBiometry.asked();
-                    final boolean containsPermissionEmojiStatus = userInfo != null && userInfo.bot_can_manage_emoji_status || SetupEmojiStatusSheet.getAccessRequested(getContext(), currentAccount, userId);
 
-                    if (containsPermissionEmojiStatus || containsPermissionLocation || containsPermissionBiometry) {
+                    if (containsPermissionLocation || containsPermissionBiometry) {
                         botPermissionsHeader = rowCount++;
-                        if (containsPermissionEmojiStatus) {
-                            botPermissionEmojiStatus = rowCount++;
-                        }
+
                         if (containsPermissionLocation) {
                             botPermissionLocation = rowCount++;
                         }
@@ -13492,8 +13464,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         textCell.setTextAndCheckAndColorfulIcon(LocaleController.getString(R.string.BotProfilePermissionLocation), botLocation != null && botLocation.granted(), R.drawable.filled_access_location, getThemedColor(Theme.key_color_green), botPermissionBiometry != -1);
                     } else if (position == botPermissionBiometry) {
                         textCell.setTextAndCheckAndColorfulIcon(LocaleController.getString(R.string.BotProfilePermissionBiometry), botBiometry != null && botBiometry.granted(), R.drawable.filled_access_fingerprint, getThemedColor(Theme.key_color_orange), false);
-                    } else if (position == botPermissionEmojiStatus) {
-                        textCell.setTextAndCheckAndColorfulIcon(LocaleController.getString(R.string.BotProfilePermissionEmojiStatus), userInfo != null && userInfo.bot_can_manage_emoji_status, R.drawable.filled_access_sleeping, getThemedColor(Theme.key_color_lightblue), botPermissionLocation != -1 || botPermissionBiometry != -1);
                     }
                     textCell.valueTextView.setTextColor(dontApplyPeerColor(getThemedColor(Theme.key_windowBackgroundWhiteValueText), false));
                     break;
@@ -13887,7 +13857,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     position == clearLogsRow || position == switchBackendRow || position == setAvatarRow || position == addToGroupButtonRow ||
                     position == addToContactsRow || position == liteModeRow || position == premiumGiftingRow || position == businessRow ||
                     position == botStarsBalanceRow || position == botTonBalanceRow || position == channelBalanceRow || position == botPermissionLocation ||
-                    position == botPermissionBiometry || position == botPermissionEmojiStatus || position == tonRow
+                    position == botPermissionBiometry || position == tonRow
             ) {
                 return VIEW_TYPE_TEXT;
             } else if (position == notificationsDividerRow) {
@@ -15274,7 +15244,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             put(++pointer, botAppRow, sparseIntArray);
             put(++pointer, botPermissionsHeader, sparseIntArray);
             put(++pointer, botPermissionLocation, sparseIntArray);
-            put(++pointer, botPermissionEmojiStatus, sparseIntArray);
             put(++pointer, botPermissionBiometry, sparseIntArray);
             put(++pointer, botPermissionsDivider, sparseIntArray);
             put(++pointer, channelDividerRow, sparseIntArray);

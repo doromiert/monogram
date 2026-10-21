@@ -127,7 +127,6 @@ import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.CameraScanActivity;
-import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedFileDrawable;
 import org.telegram.ui.Components.AnimatedFileNative;
@@ -157,7 +156,6 @@ import org.telegram.ui.bots.BotShareSheet;
 import org.telegram.ui.bots.BotStorage;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.ChatAttachAlertBotWebViewLayout;
-import org.telegram.ui.bots.SetupEmojiStatusSheet;
 import org.telegram.ui.bots.WebViewRequestProps;
 
 import java.io.File;
@@ -2693,42 +2691,11 @@ public abstract class BotWebViewContainer extends FrameLayout implements Notific
                 break;
             }
             case "web_app_set_emoji_status": {
-                if (isRequestingPageOpen || botUser == null || System.currentTimeMillis() - lastClickMs > 10_000) {
-                    return;
-                }
-                long custom_emoji_id = 0;
-                int duration = 0;
-                try {
-                    JSONObject o = new JSONObject(eventData);
-                    custom_emoji_id = Long.parseLong(o.getString("custom_emoji_id"));
-                    duration = o.getInt("duration");
-                } catch (Exception e) {}
-                if (botUser == null) {
-                    notifyEvent(requestContext, "emoji_status_failed", obj("error", "UNKNOWN_ERROR"));
-                    return;
-                }
-                SetupEmojiStatusSheet.show(currentAccount, botUser, custom_emoji_id, duration, (error, document) -> {
-                    if (error == null) {
-                        notifyEvent(requestContext, "emoji_status_set", null);
-                        if (delegate != null) {
-                            delegate.onEmojiStatusSet(document);
-                        }
-                    } else {
-                        notifyEvent(requestContext, "emoji_status_failed", obj("error", error));
-                    }
-                });
+                notifyEvent(requestContext, "emoji_status_failed", obj("error", "UNSUPPORTED"));
                 break;
             }
             case "web_app_request_emoji_status_access": {
-                if (isRequestingPageOpen || botUser == null || System.currentTimeMillis() - lastClickMs > 10_000) {
-                    return;
-                }
-                SetupEmojiStatusSheet.askPermission(currentAccount, botUser.id, (shownDialog, status) -> {
-                    notifyEmojiStatusAccess(requestContext, status);
-                    if (shownDialog && "allowed".equalsIgnoreCase(status) && delegate != null) {
-                        delegate.onEmojiStatusGranted(true);
-                    }
-                });
+                notifyEmojiStatusAccess(requestContext, "denied");
                 break;
             }
             case "web_app_request_safe_area": {
@@ -3286,9 +3253,7 @@ public abstract class BotWebViewContainer extends FrameLayout implements Notific
         lastInsetsTopMargin = topContentMargin;
     }
 
-    public void notifyEmojiStatusAccess(String status) {
-        notifyEvent("emoji_status_access_requested", obj("status", status));
-    }
+
 
     private void notifyEmojiStatusAccess(WebRequestContext requestContext, String status) {
         notifyEvent(requestContext, "emoji_status_access_requested", obj("status", status));
@@ -3647,8 +3612,6 @@ public abstract class BotWebViewContainer extends FrameLayout implements Notific
         default void onWebAppBackgroundChanged(boolean actionBarColor, int color) {};
 
         default void onLocationGranted(boolean granted) {}
-        default void onEmojiStatusGranted(boolean granted) {}
-        default void onEmojiStatusSet(TLRPC.Document document) {}
 
         /**
          * Called when WebView requests to set background color

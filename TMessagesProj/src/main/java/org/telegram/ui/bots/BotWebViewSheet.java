@@ -71,7 +71,6 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
-import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_bots;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -100,7 +99,6 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.ReportBottomSheet;
-import org.telegram.ui.Stars.StarsController;
 import org.telegram.ui.web.BotWebViewContainer;
 
 import java.io.File;
@@ -654,35 +652,9 @@ public class BotWebViewSheet extends Dialog implements NotificationCenter.Notifi
                 }
             }
 
-            @Override
-            public void onEmojiStatusGranted(boolean granted) {
-                final TLRPC.User bot = MessagesController.getInstance(currentAccount).getUser(botId);
-                if (granted) {
-                    BulletinFactory.UndoObject undo = new BulletinFactory.UndoObject();
-                    undo.onUndo = () -> {
-                        TL_bots.toggleUserEmojiStatusPermission req = new TL_bots.toggleUserEmojiStatusPermission();
-                        req.bot = MessagesController.getInstance(currentAccount).getInputUser(botId);
-                        req.enabled = false;
-                        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
-                            if (res instanceof TLRPC.TL_boolTrue) {
-                                webViewContainer.notifyEmojiStatusAccess("cancelled");
-                            } else {
-                                showBulletin(b -> b.makeForError(err));
-                            }
-                        }));
-                    };
-                    showBulletin(b ->
-                            b
-                                    .createUsersBulletin(Arrays.asList(bot), AndroidUtilities.replaceTags(LocaleController.formatString(R.string.BotEmojiStatusPermissionRequestGranted, UserObject.getUserName(bot))), null, undo)
-                                    .setDuration(DURATION_PROLONG)
-                    );
-                }
-            }
 
-            @Override
-            public void onEmojiStatusSet(TLRPC.Document document) {
-                showBulletin(b -> b.createEmojiBulletin(document, LocaleController.getString(R.string.BotEmojiStatusUpdated)));
-            }
+
+
 
             @Override
             public void onSetBackButtonVisible(boolean visible) {

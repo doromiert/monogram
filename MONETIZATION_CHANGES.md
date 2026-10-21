@@ -461,3 +461,11 @@ Deleted CreateBotAlert, including Premium upgrade prompts, Telegram managed-bot 
 Legacy keyboard and webview request-peer handlers now explicitly reject the Telegram create-bot subtype: native keyboard shows the standard unavailable bulletin; webview reports requested_chat_failed with the request ID. Other peer-selection branches remain. This removes the paid Telegram creation service without claiming to implement XMPP bot provisioning or leaving a waiting webview after its creation sheet is removed. Bot-controlled emoji-status setup is a separate remaining Telegram integration.
 
 Source-only inspection covers deleted creation classes/API references across Java/XML, retained peer-selection branches, request-failure reply and URL dispatch, Java boundaries and whitespace. No tests, build, APK or phone interaction. Changes remain unshipped; broader Premium/Business/boost/Stars/resource cleanup remains incomplete.
+
+### Remove Telegram bot-managed emoji status service
+
+Deleted SetupEmojiStatusSheet, including its subscription prompts, remote emoji-status update/request flow, bot-grant UI and remote status catalogue helpers. Removed the bot status permission row/toggle/request tracking from ProfileActivity and obsolete debug reset hooks from profile/settings. Deleted the now-unreferenced TL_bots.toggleUserEmojiStatusPermission request type.
+
+Webview status-setting calls now receive emoji_status_failed/UNSUPPORTED, and permission requests receive a denied status without prompting or changing any account status. Removed the grant/set delegate methods, host success/undo bulletins and public permission-notification helper used only by the deleted flows. Ordinary local profile/group emoji status controls and unrelated webview permissions remain.
+
+Source-only inspection covers deleted service/delegate/request references across Java/XML, remaining profile permission row/header conditions and indexing, webview failure replies, Java boundaries and whitespace. No tests, build, APK or phone interaction. These changes remain unshipped; other Premium/Business/boost/Stars and schema/resource work remains outstanding.

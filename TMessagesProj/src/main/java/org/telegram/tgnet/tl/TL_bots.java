@@ -912,24 +912,7 @@ public class TL_bots {
         }
     }
 
-    public static class toggleUserEmojiStatusPermission extends TLObject {
-        public static final int constructor = 0x6de6392;
 
-        public TLRPC.InputUser bot;
-        public boolean enabled;
-
-        @Override
-        public TLObject deserializeResponse(InputSerializedData stream, int constructor, boolean exception) {
-            return TLRPC.Bool.TLdeserialize(stream, constructor, exception);
-        }
-
-        @Override
-        public void serializeToStream(OutputSerializedData stream) {
-            stream.writeInt32(constructor);
-            bot.serializeToStream(stream);
-            stream.writeBool(enabled);
-        }
-    }
 
     public static class checkDownloadFileParams extends TLObject {
         public static final int constructor = 0x50077589;
