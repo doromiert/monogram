@@ -3890,21 +3890,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     FiltersListBottomSheet sheet = new FiltersListBottomSheet(DialogsActivity.this, selectedDialogs);
                     sheet.setDelegate((filter, checked) -> {
                         ArrayList<Long> alwaysShow = FiltersListBottomSheet.getDialogsCount(DialogsActivity.this, filter, selectedDialogs, true, false);
-                        if (!checked) {
-                            int currentCount;
-                            if (filter != null) {
-                                currentCount = filter.alwaysShow.size();
-                            } else {
-                                currentCount = 0;
-                            }
-                            int totalCount = currentCount + alwaysShow.size();
-                            if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)
-                                    && ((totalCount > getMessagesController().dialogFiltersChatsLimitDefault && !getUserConfig().isPremium())
-                                    || totalCount > getMessagesController().dialogFiltersChatsLimitPremium)) {
-                                showDialog(new LimitReachedBottomSheet(DialogsActivity.this, fragmentView.getContext(), LimitReachedBottomSheet.TYPE_CHATS_IN_FOLDER, currentAccount, null));
-                                return;
-                            }
-                        }
+
                         if (filter != null) {
                             if (checked) {
                                 for (int a = 0; a < selectedDialogs.size(); a++) {
@@ -8402,125 +8388,74 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             previewMenu[0].addView(markAsUnreadItem);
         }
 
-        final boolean[] hasPinAction = new boolean[1];
-        hasPinAction[0] = true;
         TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(dialogId);
         boolean containsFilter;
         final MessagesController.DialogFilter filter = (
                 (containsFilter = (viewPages[0].dialogsType == 7 || viewPages[0].dialogsType == 8) && (!actionBar.isActionModeShowed() || actionBar.isActionModeShowed(null))) ?
                         getMessagesController().selectedDialogFilter[viewPages[0].dialogsType == 8 ? 1 : 0] : null
         );
-        if (!isDialogPinned(dialog)) {
-            int pinnedCount = 0;
-            int pinnedSecretCount = 0;
-            int newPinnedCount = 0;
-            int newPinnedSecretCount = 0;
-            ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getDialogs(folderId);
-            for (int a = 0, N = dialogs.size(); a < N; a++) {
-                TLRPC.Dialog dialog1 = dialogs.get(a);
-                if (dialog1 instanceof TLRPC.TL_dialogFolder) {
-                    continue;
-                }
-                if (isDialogPinned(dialog1)) {
-                    if (DialogObject.isEncryptedDialog(dialog1.id)) {
-                        pinnedSecretCount++;
-                    } else {
-                        pinnedCount++;
-                    }
-                } else if (!getMessagesController().isPromoDialog(dialog1.id, false)) {
-                    break;
-                }
-            }
-            int alreadyAdded = 0;
-            if (dialog != null && !isDialogPinned(dialog)) {
-                if (DialogObject.isEncryptedDialog(dialogId)) {
-                    newPinnedSecretCount++;
-                } else {
-                    newPinnedCount++;
-                }
-                if (filter != null && filter.alwaysShow.contains(dialogId)) {
-                    alreadyAdded++;
-                }
-            }
-            int maxPinnedCount;
-            if (containsFilter && filter != null) {
-                maxPinnedCount = 100 - filter.alwaysShow.size();
-            } else if (folderId != 0 || filter != null) {
-                if (getUserConfig().isPremium()) {
-                    maxPinnedCount = getMessagesController().maxFolderPinnedDialogsCountPremium;
-                } else {
-                    maxPinnedCount = getMessagesController().maxFolderPinnedDialogsCountDefault;
-                }
-            } else {
-                if (getUserConfig().isPremium()) {
-                    maxPinnedCount = getMessagesController().maxPinnedDialogsCountPremium;
-                } else {
-                    maxPinnedCount = getMessagesController().maxPinnedDialogsCountDefault;
-                }
-            }
-            hasPinAction[0] = !(newPinnedSecretCount + pinnedSecretCount > maxPinnedCount || newPinnedCount + pinnedCount - alreadyAdded > maxPinnedCount);
-        }
 
-        if (hasPinAction[0]) {
-            ActionBarMenuSubItem unpinItem = new ActionBarMenuSubItem(getParentActivity(), false, false);
-            if (isDialogPinned(dialog)) {
-                unpinItem.setTextAndIcon(LocaleController.getString(R.string.UnpinMessage), R.drawable.msg_unpin);
-            } else {
-                unpinItem.setTextAndIcon(LocaleController.getString(R.string.PinMessage), R.drawable.msg_pin);
-            }
-            unpinItem.setMinimumWidth(160);
-            unpinItem.setOnClickListener(e -> {
-                finishPreviewFragment();
-                AndroidUtilities.runOnUIThread(() -> {
-                    int minPinnedNum = Integer.MAX_VALUE;
-                    if (filter != null && isDialogPinned(dialog)) {
-                        for (int c = 0, N = filter.pinnedDialogs.size(); c < N; c++) {
-                            minPinnedNum = Math.min(minPinnedNum, filter.pinnedDialogs.valueAt(c));
-                        }
-                        minPinnedNum -= canPinCount;
+
+
+        ActionBarMenuSubItem unpinItem = new ActionBarMenuSubItem(getParentActivity(), false, false);
+        if (isDialogPinned(dialog)) {
+            unpinItem.setTextAndIcon(LocaleController.getString(R.string.UnpinMessage), R.drawable.msg_unpin);
+        } else {
+            unpinItem.setTextAndIcon(LocaleController.getString(R.string.PinMessage), R.drawable.msg_pin);
+        }
+        unpinItem.setMinimumWidth(160);
+        unpinItem.setOnClickListener(e -> {
+            finishPreviewFragment();
+            AndroidUtilities.runOnUIThread(() -> {
+                int minPinnedNum = Integer.MAX_VALUE;
+                if (filter != null && isDialogPinned(dialog)) {
+                    for (int c = 0, N = filter.pinnedDialogs.size(); c < N; c++) {
+                        minPinnedNum = Math.min(minPinnedNum, filter.pinnedDialogs.valueAt(c));
                     }
-                    TLRPC.EncryptedChat encryptedChat = null;
-                    if (DialogObject.isEncryptedDialog(dialogId)) {
-                        encryptedChat = getMessagesController().getEncryptedChat(DialogObject.getEncryptedChatId(dialogId));
-                    }
-                    UndoView undoView = getUndoView();
-                    if (undoView == null) {
-                        return;
-                    }
-                    if (!isDialogPinned(dialog)) {
-                        pinDialog(dialogId, true, filter, minPinnedNum, true);
-                        undoView.showWithAction(0, UndoView.ACTION_PIN_DIALOGS, 1, 1600, null, null);
-                        if (filter != null) {
-                            if (encryptedChat != null) {
-                                if (!filter.alwaysShow.contains(encryptedChat.user_id)) {
-                                    filter.alwaysShow.add(encryptedChat.user_id);
-                                }
-                            } else {
-                                if (!filter.alwaysShow.contains(dialogId)) {
-                                    filter.alwaysShow.add(dialogId);
-                                }
+                    minPinnedNum -= canPinCount;
+                }
+                TLRPC.EncryptedChat encryptedChat = null;
+                if (DialogObject.isEncryptedDialog(dialogId)) {
+                    encryptedChat = getMessagesController().getEncryptedChat(DialogObject.getEncryptedChatId(dialogId));
+                }
+                UndoView undoView = getUndoView();
+                if (undoView == null) {
+                    return;
+                }
+                if (!isDialogPinned(dialog)) {
+                    pinDialog(dialogId, true, filter, minPinnedNum, true);
+                    undoView.showWithAction(0, UndoView.ACTION_PIN_DIALOGS, 1, 1600, null, null);
+                    if (filter != null) {
+                        if (encryptedChat != null) {
+                            if (!filter.alwaysShow.contains(encryptedChat.user_id)) {
+                                filter.alwaysShow.add(encryptedChat.user_id);
+                            }
+                        } else {
+                            if (!filter.alwaysShow.contains(dialogId)) {
+                                filter.alwaysShow.add(dialogId);
                             }
                         }
-                    } else {
-                        pinDialog(dialogId, false, filter, minPinnedNum, true);
-                        undoView.showWithAction(0, UndoView.ACTION_UNPIN_DIALOGS, 1, 1600, null, null);
                     }
-                    if (filter != null) {
-                        FilterCreateActivity.saveFilterToServer(filter, filter.flags, filter.name, filter.entities, filter.title_noanimate, filter.color, filter.alwaysShow, filter.neverShow, filter.pinnedDialogs, false, false, true, true, false, DialogsActivity.this, null);
+                } else {
+                    pinDialog(dialogId, false, filter, minPinnedNum, true);
+                    undoView.showWithAction(0, UndoView.ACTION_UNPIN_DIALOGS, 1, 1600, null, null);
+                }
+                if (filter != null) {
+                    FilterCreateActivity.saveFilterToServer(filter, filter.flags, filter.name, filter.entities, filter.title_noanimate, filter.color, filter.alwaysShow, filter.neverShow, filter.pinnedDialogs, false, false, true, true, false, DialogsActivity.this, null);
+                }
+                getMessagesController().reorderPinnedDialogs(folderId, null, 0);
+                updateCounters(true);
+                if (viewPages != null) {
+                    for (int a = 0; a < viewPages.length; a++) {
+                        viewPages[a].dialogsAdapter.onReorderStateChanged(false);
                     }
-                    getMessagesController().reorderPinnedDialogs(folderId, null, 0);
-                    updateCounters(true);
-                    if (viewPages != null) {
-                        for (int a = 0; a < viewPages.length; a++) {
-                            viewPages[a].dialogsAdapter.onReorderStateChanged(false);
-                        }
-                    }
-                    updateVisibleRows(MessagesController.UPDATE_MASK_REORDER | MessagesController.UPDATE_MASK_CHECK);
+                }
+                updateVisibleRows(MessagesController.UPDATE_MASK_REORDER | MessagesController.UPDATE_MASK_CHECK);
 
-                }, 100);
-            });
-            previewMenu[0].addView(unpinItem);
-        }
+            }, 100);
+        });
+        previewMenu[0].addView(unpinItem);
+
 
         if (!DialogObject.isUserDialog(dialogId) || !UserObject.isUserSelf(getMessagesController().getUser(dialogId))) {
             ActionBarMenuSubItem muteItem = new ActionBarMenuSubItem(getParentActivity(), false, false);
@@ -8941,64 +8876,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
             hideActionMode(false);
             return;
-        } else if ((action == pin || action == pin2) && canPinCount != 0) {
-            int pinnedCount = 0;
-            int pinnedSecretCount = 0;
-            int newPinnedCount = 0;
-            int newPinnedSecretCount = 0;
-            ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getDialogs(folderId);
-            for (int a = 0, N = dialogs.size(); a < N; a++) {
-                TLRPC.Dialog dialog = dialogs.get(a);
-                if (dialog instanceof TLRPC.TL_dialogFolder) {
-                    continue;
-                }
-                if (isDialogPinned(dialog)) {
-                    if (DialogObject.isEncryptedDialog(dialog.id)) {
-                        pinnedSecretCount++;
-                    } else {
-                        pinnedCount++;
-                    }
-                } else if (!getMessagesController().isPromoDialog(dialog.id, false)) {
-                    break;
-                }
-            }
-            int alreadyAdded = 0;
-            for (int a = 0; a < count; a++) {
-                long selectedDialog = selectedDialogs.get(a);
-                TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(selectedDialog);
-                if (dialog == null || isDialogPinned(dialog)) {
-                    continue;
-                }
-                if (DialogObject.isEncryptedDialog(selectedDialog)) {
-                    newPinnedSecretCount++;
-                } else {
-                    newPinnedCount++;
-                }
-                if (filter != null && filter.alwaysShow.contains(selectedDialog)) {
-                    alreadyAdded++;
-                }
-            }
-            int maxPinnedCount;
-            if (containsFilter) {
-                maxPinnedCount = 100 - filter.alwaysShow.size();
-            } else if (folderId != 0 || filter != null) {
-                if (UserConfig.getInstance(currentAccount).isPremium()) {
-                    maxPinnedCount = getMessagesController().maxFolderPinnedDialogsCountPremium;
-                } else {
-                    maxPinnedCount = getMessagesController().maxFolderPinnedDialogsCountDefault;
-                }
-            } else {
-                maxPinnedCount = getUserConfig().isPremium() ? getMessagesController().dialogFiltersPinnedLimitPremium : getMessagesController().dialogFiltersPinnedLimitDefault;
-            }
-            if (newPinnedSecretCount + pinnedSecretCount > maxPinnedCount || newPinnedCount + pinnedCount - alreadyAdded > maxPinnedCount) {
-                if (folderId != 0 || filter != null) {
-                    AlertsCreator.showSimpleAlert(DialogsActivity.this, LocaleController.formatString("PinFolderLimitReached", R.string.PinFolderLimitReached, LocaleController.formatPluralString("Chats", maxPinnedCount)));
-                } else {
-                    LimitReachedBottomSheet limitReachedBottomSheet = new LimitReachedBottomSheet(this, getParentActivity(), LimitReachedBottomSheet.TYPE_PIN_DIALOGS, currentAccount, null);
-                    showDialog(limitReachedBottomSheet);
-                }
-                return;
-            }
         } else if (action == community_ungroup) {
             if (alert) {
                 AlertsCreator.showSimpleConfirmAlert(this,

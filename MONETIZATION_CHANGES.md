@@ -321,3 +321,11 @@ Deleted AffiliateProgramFragment, ChannelAffiliateProgramsFragment and Suggested
 Moved the generic icon/title/description cell into Components.FeatureInfoCell for its surviving gift/feature-info callers and moved the generic permille percentage formatter into CurrencyFormatter. Neither helper has referral service behavior. Migrated all consumers before deleting the affiliate screens; their decorative helpers no longer keep affiliate connection/network code alive.
 
 Source-only inspection covers deleted screen/controller/API references, surviving helper imports/callers, edited class boundaries, remaining notification branches and whitespace. No tests, compilation, APK or phone interaction. Changes are unshipped; historical affiliate transaction descriptions/schema, other Stars operations and Business/Premium/boost code remain in scope.
+
+### Free folder membership, pin actions and topic emoji icons
+
+Removed the chat-home folder membership tier check and its upgrade sheet. Removed repeated subscription-based pin counters/ceilings from the preview menu and bulk pin action, including the folder-specific hardcoded cap and upgrade/limit dialog. Ordinary pin/unpin actions, ordering, folder persistence, unread actions and community operations remain. Local Monogram state owns these operations; no paid entitlement is synthesized.
+
+Removed TopicCreateFragment's paid emoji rejection/upgrade bulletin and simplified its private selectEmoji signature/callers. Existing topic icon rendering and selection continue through the same native emoji picker; this is frontend functionality available without a subscription, not an implementation of XMPP topic synchronization.
+
+Source-only inspection covers the retained pin action callbacks/order handling, surviving folder operations, topic selection callers and imports, edited class boundaries and whitespace. No tests, compilation, APK or phone interaction. These changes remain unshipped. Other story/Business/Premium/Stars/boost controls and legacy limit metadata remain outstanding.
