@@ -371,12 +371,29 @@ public class Switch extends View {
         invalidate();
     }
 
+    private void drawMaterialSwitch(Canvas canvas) {
+        float width=Math.min(AndroidUtilities.dp(48),getWidth()-AndroidUtilities.dp(2));
+        float height=Math.min(AndroidUtilities.dp(28),getHeight()-AndroidUtilities.dp(2));
+        float left=(getWidth()-width)/2f,top=(getHeight()-height)/2f;
+        int off=Theme.getColor(trackColorKey,resourcesProvider),on=Theme.getColor(trackCheckedColorKey,resourcesProvider);
+        paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(off,on,progress));
+        rectF.set(left,top,left+width,top+height);canvas.drawRoundRect(rectF,height/2,height/2,paint);
+        float radius=height*(.27f+.09f*progress),cx=left+height/2+(width-height)*progress,cy=getHeight()/2f;
+        paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(Theme.getColor(thumbColorKey,resourcesProvider),Theme.getColor(thumbCheckedColorKey,resourcesProvider),progress));
+        canvas.drawCircle(cx,cy,radius,paint);
+        if(progress>.5f){paint2.setColor(on);paint2.setAlpha((int)((progress-.5f)*510));canvas.drawLine(cx-radius*.45f,cy,cx-radius*.1f,cy+radius*.3f,paint2);canvas.drawLine(cx-radius*.1f,cy+radius*.3f,cx+radius*.5f,cy-radius*.4f,paint2);paint2.setAlpha(255);}
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (getVisibility() != VISIBLE) {
             return;
         }
 
+        if (org.telegram.utils.settings.MonogramAppearance.switches.get()) {
+            drawMaterialSwitch(canvas);
+            return;
+        }
         int width = AndroidUtilities.dp(31);
         int thumb = AndroidUtilities.dp(20);
         int x = (getMeasuredWidth() - width) / 2;

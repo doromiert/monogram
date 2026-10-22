@@ -2389,6 +2389,12 @@ public class AndroidUtilities {
     }
 
     public static Typeface getTypeface(String assetPath) {
+        if (ApplicationLoader.applicationContext != null && org.telegram.utils.settings.MonogramAppearance.systemFonts.get()
+                && assetPath.startsWith("fonts/r") && !assetPath.contains("mono")) {
+            boolean bold=assetPath.contains("medium") || assetPath.contains("bold");
+            boolean italic=assetPath.contains("italic");
+            return Typeface.create("sans-serif", (bold ? Typeface.BOLD : Typeface.NORMAL) | (italic ? Typeface.ITALIC : 0));
+        }
         synchronized (typefaceCache) {
             if (!typefaceCache.containsKey(assetPath)) {
                 try {
@@ -2968,6 +2974,10 @@ public class AndroidUtilities {
     }
 
     public static boolean isTablet() {
+        if (ApplicationLoader.applicationContext != null) {
+            int mode=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.tablet,2);
+            if (mode != 0) return mode == 1;
+        }
         return isTabletInternal() && !SharedConfig.forceDisableTabletMode;
     }
 

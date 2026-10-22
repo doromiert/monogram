@@ -163,10 +163,21 @@ public class FragmentFloatingButton extends FrameLayout implements FactorAnimato
         } else {
             imageView.setColorFilter(Theme.getColor(Theme.key_chats_actionIcon, resourcesProvider), PorterDuff.Mode.SRC_IN);
             progressView.setProgressColor(Theme.getColor(Theme.key_chats_actionIcon, resourcesProvider));
-            setBackground(Theme.createSimpleSelectorCircleDrawable(dp(48),
-                Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider),
-                Theme.getColor(Theme.key_featuredStickers_addButtonPressed, resourcesProvider)
-            ));
+            if (org.telegram.utils.settings.MonogramAppearance.squareFab.get() || org.telegram.utils.settings.MonogramAppearance.fabStyle.get()) {
+                setOutlineProvider(new android.view.ViewOutlineProvider() {
+                    @Override public void getOutline(View view, android.graphics.Outline outline) {
+                        outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),dp(16));
+                    }
+                });
+                setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(16),
+                    Theme.getColor(Theme.key_featuredStickers_addButton,resourcesProvider),
+                    Theme.getColor(Theme.key_featuredStickers_addButtonPressed,resourcesProvider)));
+            } else {
+                setOutlineProvider(ViewOutlineProviderImpl.BOUNDS_OVAL);
+                setBackground(Theme.createSimpleSelectorCircleDrawable(dp(48),
+                    Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider),
+                    Theme.getColor(Theme.key_featuredStickers_addButtonPressed, resourcesProvider)));
+            }
         }
     }
 

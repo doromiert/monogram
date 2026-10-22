@@ -32,6 +32,10 @@ import org.telegram.ui.Components.LayoutHelper;
 import java.util.ArrayList;
 
 public class HeaderCell extends FrameLayout {
+    @Override public void setBackgroundColor(int color) {
+        super.setBackgroundColor(org.telegram.utils.settings.MonogramAppearance.separateHeaders.get()?Theme.getColor(Theme.key_windowBackgroundGray):color);
+    }
+
 
     public int id;
 

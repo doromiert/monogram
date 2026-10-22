@@ -1567,7 +1567,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
 
     public void onBackProgress(float t) {
         if (!predictiveInput) return;
-        final float dx = dp(56) * CubicBezierInterpolator.StandardDecelerate.getInterpolation(t);
+        final float dx = dp(56) * Math.max(0,Math.min(2,org.telegram.utils.settings.MonogramAppearance.predictiveBack.get())) * CubicBezierInterpolator.StandardDecelerate.getInterpolation(t);
         predictiveBackHasProgress = t > 0;
         containerView.setTranslationX(dx);
         setInnerTranslationX(dx);
@@ -1827,7 +1827,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
                     dt = 18;
                 }
                 lastFrameTime = newTime;
-                float duration = preview && open ? 190.0f : 150.0f;
+                int appearanceTransition=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.transitions,2);
+                float duration = preview && open ? 190.0f : appearanceTransition==2?320f:appearanceTransition==1?220f:150f;
                 animationProgress += dt / duration;
                 if (animationProgress > 1.0f) {
                     animationProgress = 1.0f;
@@ -1870,7 +1871,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
                         interpolated = CubicBezierInterpolator.EASE_OUT_QUINT.getInterpolation(animationProgress);
                     }
                 } else {
-                    interpolated = decelerateInterpolator.getInterpolation(animationProgress);
+                    int style=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.transitions,2);
+                    interpolated = style==2 ? CubicBezierInterpolator.EASE_OUT_BACK.getInterpolation(animationProgress) : style==1 ? CubicBezierInterpolator.EASE_OUT_QUINT.getInterpolation(animationProgress) : decelerateInterpolator.getInterpolation(animationProgress);
                 }
                 if (open) {
                     float clampedInterpolated = MathUtils.clamp(interpolated, 0, 1);

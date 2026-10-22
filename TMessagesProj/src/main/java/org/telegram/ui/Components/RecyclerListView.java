@@ -3281,14 +3281,14 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
     }
 
     public void setSections() {
-        setSections(dp(12), dp(16), false);
+        setSections(dp(12), dp(org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.sectionRadius,28)), false);
     }
     public void setSections(boolean topPadding) {
-        setSections(dp(12), dp(16), topPadding);
+        setSections(dp(12), dp(org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.sectionRadius,28)), topPadding);
     }
     public void setSections(int padding, float roundRadius, boolean topPadding) {
         setSections(
-            view -> !(view instanceof TextInfoPrivacyCell || view instanceof ShadowSectionCell || view instanceof FiltersSetupActivity.HintInnerCell || view instanceof GraySectionCell || view instanceof CollapseTextCell) && !Objects.equals(view.getTag(), TAG_NOT_SECTION),
+            view -> !(view instanceof TextInfoPrivacyCell || view instanceof ShadowSectionCell || view instanceof FiltersSetupActivity.HintInnerCell || view instanceof GraySectionCell || view instanceof CollapseTextCell || org.telegram.utils.settings.MonogramAppearance.separateHeaders.get() && view instanceof org.telegram.ui.Cells.HeaderCell) && !Objects.equals(view.getTag(), TAG_NOT_SECTION),
             padding,
             roundRadius,
             this::drawBackgroundRect,
@@ -3392,6 +3392,7 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         ) {
             if (isSectionItem.run(view)) {
                 outRect.left = outRect.right = padding;
+                if(org.telegram.utils.settings.MonogramAppearance.dividers.get()==2) outRect.bottom=dp(6);
 
                 final ViewHolder viewHolder = parent.getChildViewHolder(view);
                 final Adapter adapter = parent.getAdapter();
@@ -3475,6 +3476,13 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
     }
     public void drawSectionsBackgrounds(Canvas canvas) {
         if (drawSectionBackground == null) return;
+        if(org.telegram.utils.settings.MonogramAppearance.dividers.get()==2) {
+            for(int i=0;i<getChildCount();i++) {
+                View child=getChildAt(i);
+                if(child!=emptyView && child.getVisibility()==VISIBLE && sectionsItemDecoration.isSectionItem.run(child)) drawSectionBackground(canvas,child,child,false,false);
+            }
+            return;
+        }
 
         if (isAnimating()) {
             if (sections == null) {

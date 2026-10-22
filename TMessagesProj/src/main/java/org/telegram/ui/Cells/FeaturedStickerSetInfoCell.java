@@ -323,7 +323,7 @@ public class FeaturedStickerSetInfoCell extends FrameLayout {
             paint.setColor(getThemedColor(Theme.key_featuredStickers_unread));
             canvas.drawCircle(nameTextView.getRight() + AndroidUtilities.dp(12), AndroidUtilities.dp(20), AndroidUtilities.dp(4) * unreadProgress, paint);
         }
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             canvas.drawLine(0, 0, getWidth(), 0, Theme.getThemePaint(Theme.key_paint_divider, resourcesProvider));
         }
     }

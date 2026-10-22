@@ -213,7 +213,7 @@ public class ShareDialogCell extends FrameLayout {
                 avatarDrawable.setInfo(currentAccount, chat);
                 imageView.setForUserOrChat(chat, avatarDrawable);
             }
-            imageView.setRoundRadius(chat != null && (chat.forum || chat.monoforum)? dp(16) : dp(28));
+            imageView.setRoundRadius(chat != null && (chat.forum || chat.monoforum) && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get()? dp(16) : dp(28));
         }
         currentDialog = uid;
         checkBox.setChecked(checked, false);

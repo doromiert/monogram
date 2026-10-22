@@ -475,7 +475,7 @@ public class SessionCell extends FrameLayout {
                 canvas.restore();
             }
         }
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             int margin = currentType == 1 ? 49 : 72;
             canvas.drawLine(LocaleController.isRTL ? 0 : dp(margin), getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? dp(margin) : 0), getMeasuredHeight() - 1, Theme.dividerPaint);
         }

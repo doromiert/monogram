@@ -228,14 +228,33 @@ public class RadialProgressView extends View {
         int x = (getMeasuredWidth() - size) / 2;
         int y = (getMeasuredHeight() - size) / 2;
         cicleRect.set(x, y, x + size, y + size);
-        canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
+        if(org.telegram.utils.settings.MonogramAppearance.loading.get() && noProgress && toCircleProgress == 0f) {
+            drawingCircleLenght = currentCircleLength;
+            drawMaterialIndicator(canvas,cicleRect);
+        } else canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
         updateAnimation();
     }
 
     public void draw(Canvas canvas, float cx, float cy) {
         cicleRect.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy +  size / 2f);
-        canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
+        if(org.telegram.utils.settings.MonogramAppearance.loading.get() && noProgress && toCircleProgress == 0f) {
+            drawingCircleLenght = currentCircleLength;
+            drawMaterialIndicator(canvas,cicleRect);
+        } else canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
         updateAnimation();
+    }
+
+    private final android.graphics.Path materialPath=new android.graphics.Path();
+    private void drawMaterialIndicator(Canvas canvas,RectF bounds) {
+        materialPath.rewind();
+        float cx=bounds.centerX(),cy=bounds.centerY(),radius=bounds.width()/2f;
+        for(int i=0;i<=96;i++) {
+            double angle=Math.PI*2*i/96.0+Math.toRadians(radOffset);
+            float r=radius*(.78f+.15f*(float)Math.sin(angle*5+Math.toRadians(radOffset)*2));
+            float x=cx+r*(float)Math.cos(angle),y=cy+r*(float)Math.sin(angle);
+            if(i==0)materialPath.moveTo(x,y);else materialPath.lineTo(x,y);
+        }
+        materialPath.close();canvas.drawPath(materialPath,progressPaint);
     }
 
     public boolean isCircle() {

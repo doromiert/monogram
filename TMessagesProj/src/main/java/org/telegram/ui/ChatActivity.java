@@ -4554,7 +4554,9 @@ public class ChatActivity extends BaseFragment implements
 
         contentView.setOccupyStatusBar(!inBubbleMode && !isInsideContainer && !inPreviewMode);
 
-        actionBar.setupGlass(
+        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()) {
+            actionBar.setBackgroundColor(getThemedColor(Theme.key_actionBarDefault));
+        } else actionBar.setupGlass(
             glassBackgroundDrawableFactory,
             BlurredBackgroundProviderImpl.topPanelChatActivity(themeDelegate),
             ChatObject.isForum(currentChat));
@@ -30331,10 +30333,11 @@ public class ChatActivity extends BaseFragment implements
 
             updateScrimSourceBitmap();
 
-            popupLayout.setBackground(scrimBlur3Factory.create(popupLayout, true)
+            if(org.telegram.utils.settings.MonogramAppearance.glassMenu.get()) popupLayout.setBackground(scrimBlur3Factory.create(popupLayout, true)
                 .setColorProvider(BlurredBackgroundProviderImpl.messageMenuBackground(resourceProvider))
                 .setRadius(dp(12))
                 .setPadding(dp(8)));
+            else popupLayout.setBackground(Theme.createRoundRectDrawable(dp(12),getThemedColor(Theme.key_actionBarDefaultSubmenuBackground)));
 
             boolean addGap = false;
 
@@ -41989,7 +41992,7 @@ public class ChatActivity extends BaseFragment implements
 
     private void checkThemeEmoticonOrWallpaper() {
         getNotificationCenter().doOnIdle(() -> {
-            EmojiThemes localTheme=ChatThemeController.getInstance(currentAccount).getDialogTheme(dialog_id);
+            EmojiThemes localTheme=org.telegram.utils.settings.MonogramAppearance.customThemes.get()?ChatThemeController.getInstance(currentAccount).getDialogTheme(dialog_id):null;
             setChatThemeEmoticon(localTheme==null ? null : localTheme.getChatTheme());
 //            if (emoticon == null && chatInfo != null) {
 //                emoticon = chatInfo.theme_emoticon;
@@ -42003,7 +42006,7 @@ public class ChatActivity extends BaseFragment implements
         }
         ThemeKey key = ThemeKey.of(theme);
         ChatThemeController chatThemeController = ChatThemeController.getInstance(currentAccount);
-        chatThemeController.setDialogTheme(dialog_id, theme, false);
+        if(org.telegram.utils.settings.MonogramAppearance.customThemes.get()) chatThemeController.setDialogTheme(dialog_id, theme, false);
 
         if (theme instanceof TLRPC.TL_chatThemeUniqueGift) {
             chatThemeController.putThemeIfNeeded(theme);

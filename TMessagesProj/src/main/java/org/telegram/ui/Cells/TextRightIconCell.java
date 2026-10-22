@@ -49,7 +49,7 @@ public class TextRightIconCell extends FrameLayout {
     @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             Paint paint = resourcesProvider != null ? resourcesProvider.getPaint(Theme.key_paint_divider) : null;
             if (paint == null) {
                 paint = Theme.dividerPaint;

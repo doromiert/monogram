@@ -127,6 +127,7 @@ public class LiteMode {
 
 
     public static boolean isEnabled(int flag) {
+        if(flag==FLAG_CHAT_BLUR && org.telegram.utils.settings.MonogramAppearance.forceBlur.get()) return true;
         if (flag == FLAG_CHAT_FORUM_TWOCOLUMN && AndroidUtilities.isTablet()) {
             // always enabled for tablets
             return true;

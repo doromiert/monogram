@@ -449,7 +449,8 @@ public class SeekBarView extends FrameLayout {
 
         float centerY = getMeasuredHeight() / 2f;
         float left = selectorWidth / 2f, right = getMeasuredWidth() - selectorWidth / 2;
-        float top = centerY - AndroidUtilities.dp(lineWidthDp) / 2f, bottom = centerY + AndroidUtilities.dp(lineWidthDp) / 2f;
+        float trackHeight=AndroidUtilities.dp(org.telegram.utils.settings.MonogramAppearance.slider.get()?12:lineWidthDp);
+        float top = centerY - trackHeight / 2f, bottom = centerY + trackHeight / 2f;
 
         rect.set(left, top, right, bottom);
         drawProgressBar(canvas, rect, innerPaint1);
@@ -524,7 +525,10 @@ public class SeekBarView extends FrameLayout {
             }
             canvas.drawCircle(thumbX + selectorWidth / 2, y + thumbSize / 2, currentRadius * newCircleProgress, outerPaint1);
         } else {
-            canvas.drawCircle(thumbX + selectorWidth / 2, y + thumbSize / 2, currentRadius, outerPaint1);
+            if(org.telegram.utils.settings.MonogramAppearance.slider.get()) {
+                float cx=thumbX+selectorWidth/2f,cy=y+thumbSize/2f;
+                canvas.drawRoundRect(cx-AndroidUtilities.dp(2),cy-AndroidUtilities.dp(14),cx+AndroidUtilities.dp(2),cy+AndroidUtilities.dp(14),AndroidUtilities.dp(2),AndroidUtilities.dp(2),outerPaint1);
+            } else canvas.drawCircle(thumbX + selectorWidth / 2, y + thumbSize / 2, currentRadius, outerPaint1);
         }
 
         drawTimestampLabel(canvas);

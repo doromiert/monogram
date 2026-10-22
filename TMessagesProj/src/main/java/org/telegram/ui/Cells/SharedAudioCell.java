@@ -769,7 +769,7 @@ public class SharedAudioCell extends FrameLayout implements DownloadController.F
         radialProgress.setOverlayImageAlpha(showNameProgress);
         radialProgress.draw(canvas);
 
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             if (LocaleController.isRTL) {
                 canvas.drawLine(0, getHeight() - 1, getWidth() - dp(72) - getPaddingRight(), getHeight() - 1, Theme.getThemePaint(Theme.key_paint_divider, resourcesProvider));
             } else {

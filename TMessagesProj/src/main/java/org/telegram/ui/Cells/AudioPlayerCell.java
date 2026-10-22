@@ -344,7 +344,7 @@ public class AudioPlayerCell extends FrameLayout implements DownloadController.F
 
         super.onDraw(canvas);
 
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             final Paint dividerPaint = Theme.getThemePaint(Theme.key_paint_divider, resourcesProvider);
             if (dividerPaint != null) {
                 if (LocaleController.isRTL) {

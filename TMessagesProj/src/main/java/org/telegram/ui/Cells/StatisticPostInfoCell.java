@@ -249,7 +249,7 @@ public class StatisticPostInfoCell extends FrameLayout {
     @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             dividerPaint.setColor(Theme.getColor(Theme.key_divider, resourcesProvider));
             int paddingDp = 72;
             if (LocaleController.isRTL) {

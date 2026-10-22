@@ -43,9 +43,11 @@ RPCs. 0.2.124 source extends this with native reply/profile background emoji fro
 
 ## Remaining scope
 
-The full APK also contains chat/header/list appearance,
-message-menu grouping, media/camera options, notification controls and other
-features. These still need individual implementation and runtime parity checks.
+The 0.2.146 source adds a dedicated Appearance screen and App Navigation,
+with renderer hooks, icon-pack editing/import/export, launcher selection and pills.
+See EXTERA_APPEARANCE_PARITY.md for adapted behavior and outstanding visual checks.
+Media/camera options, notification controls and other features outside this screen
+still need individual implementation and runtime parity checks.
 Telegram-specific services require a working XMPP equivalent rather than dormant
 Telegram API calls. Premium frontend features and monetization removal are tracked
 separately in TODO.md; this inventory does not certify those complete.

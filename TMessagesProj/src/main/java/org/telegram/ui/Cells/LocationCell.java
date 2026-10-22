@@ -245,7 +245,7 @@ public class LocationCell extends FrameLayout {
         canvas.restore();
         super.onDraw(canvas);
 
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             Paint dividerPaint = resourcesProvider == null ? null : resourcesProvider.getPaint(Theme.key_paint_divider);
             if (dividerPaint == null) {
                 dividerPaint = Theme.dividerPaint;

@@ -428,17 +428,17 @@ public class UniversalRecyclerView extends RecyclerListView {
     }
 
     public void setSections() {
-        setSections(dp(12), dp(16), false);
+        setSections(dp(12), dp(org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.sectionRadius,28)), false);
     }
     public void setSections(boolean topPadding) {
-        setSections(dp(12), dp(16), topPadding);
+        setSections(dp(12), dp(org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.sectionRadius,28)), topPadding);
     }
     public void setSections(int padding, float roundRadius, boolean topPadding) {
         super.setSections(
             view -> {
                 if (view.getParent() != this) return false;
                 final ViewHolder viewHolder = getChildViewHolder(view);
-                return !UniversalAdapter.isShadow(viewHolder.getItemViewType());
+                return !UniversalAdapter.isShadow(viewHolder.getItemViewType()) && !(org.telegram.utils.settings.MonogramAppearance.separateHeaders.get() && view instanceof org.telegram.ui.Cells.HeaderCell);
             },
             UniversalAdapter::isShadow,
             padding, roundRadius,

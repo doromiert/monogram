@@ -3815,7 +3815,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             openChat();
                         } else if (chatId != 0) {
                             TLRPC.Chat chatLocal = getMessagesController().getChat(chatId);
-                            if (ChatObject.isForum(chatLocal)) {
+                            if (ChatObject.isForum(chatLocal) && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get()) {
                                 openForum();
                             } else {
                                 openGroup();
@@ -6208,7 +6208,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
         if (chatId != 0) {
             TLRPC.Chat chatLocal = getMessagesController().getChat(chatId);
-            if (ChatObject.isForum(chatLocal)) {
+            if (ChatObject.isForum(chatLocal) && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get()) {
                 return dp(needInsetForStories() ? 24 : 38);
             }
         }
@@ -8222,7 +8222,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
                 avatarsViewPager.setAlpha(0f);
                 avatarsViewPager.setVisibility(View.VISIBLE);
-                avatarImage.setBlurRadiusProgressForExpand(avatarAnimationProgress, avatarScale, true);
+                avatarImage.setBlurRadiusProgressForExpand(org.telegram.utils.settings.MonogramAppearance.gooeyAvatar.get()?avatarAnimationProgress:0, avatarScale, true);
 
                 overlaysView.setAlphaValue(avatarAnimationProgress, false);
                 actionBar.setItemsColor(ColorUtils.blendARGB(peerColor != null ? Color.WHITE : getThemedColor(Theme.key_actionBarDefaultIcon), Color.WHITE, avatarAnimationProgress), false);

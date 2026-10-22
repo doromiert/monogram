@@ -1807,6 +1807,15 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                         FileLog.e(e);
                                     }
                                 }
+                                if(org.telegram.utils.settings.MonogramAppearance.senderAvatars.get() && !isSavedDialog && chat!=null && message!=null && message.messageOwner.from_id!=null && !message.isOutOwner()) {
+                                    long senderId=DialogObject.getPeerDialogId(message.messageOwner.from_id);
+                                    if(senderId!=0) {
+                                        org.telegram.ui.AvatarSpan span=new org.telegram.ui.AvatarSpan(this,currentAccount,16);
+                                        span.needDrawShadow=false;span.setDialogId(senderId);
+                                        stringBuilder.insert(0,"  ");stringBuilder.setSpan(span,0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                        thumbInsertIndex+=2;offsetName+=2;
+                                    }
+                                }
                                 messageString = Emoji.replaceEmoji(stringBuilder, Theme.dialogs_messagePaint[paintIndex].getFontMetricsInt(), false);
                                 if (message.hasHighlightedWords()) {
                                     CharSequence messageH = AndroidUtilities.highlightText(messageString, message.highlightedWords, resourcesProvider);
@@ -3660,7 +3669,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 avatarRadius = 1;
             } else if (drawCommunityAvatar) {
                 avatarRadius = dp(12);
-            } else if (chat != null && chat.forum && currentDialogFolderId == 0 && !useFromUserAsAvatar || !isSavedDialog && user != null && user.self && MessagesController.getInstance(currentAccount).savedViewAsChats) {
+            } else if (chat != null && chat.forum && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get() && currentDialogFolderId == 0 && !useFromUserAsAvatar || !isSavedDialog && user != null && user.self && MessagesController.getInstance(currentAccount).savedViewAsChats) {
                 avatarRadius = dp(16);
             } else {
                 avatarRadius = dp(28);

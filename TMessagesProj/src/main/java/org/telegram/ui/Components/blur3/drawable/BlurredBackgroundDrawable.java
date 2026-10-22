@@ -224,6 +224,9 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
         shadowColor = colorProvider.getShadowColor();
         strokeColorTop = colorProvider.getStrokeColorTop();
         strokeColorBottom = colorProvider.getStrokeColorBottom();
+        int style=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.glassOutline,2);
+        if(style==1) strokeColorBottom=strokeColorTop;
+        if(style==2) strokeColorBottom=strokeColorTop=android.graphics.Color.TRANSPARENT;
     }
 
 

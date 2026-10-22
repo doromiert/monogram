@@ -24,6 +24,10 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AlertsCreator;
 
 public class BasePermissionsActivity extends FragmentActivity {
+    @Override public android.content.res.Resources getResources() {
+        return org.telegram.messenger.MonogramResources.wrap(super.getResources());
+    }
+
     public final static int REQUEST_CODE_GEOLOCATION = 2,
             REQUEST_CODE_EXTERNAL_STORAGE = 4,
             REQUEST_CODE_ATTACH_CONTACT = 5,

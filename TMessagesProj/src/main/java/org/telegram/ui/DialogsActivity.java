@@ -279,10 +279,35 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     public static final int SEARCH_TABS_HEIGHT = 36 + 7 + 7;
     public static final int SEARCH_FIELD_HEIGHT = 48;
     private boolean collapseHomeSearch;
+    private MonogramPillView monogramPills;
 
     // Only the idle header row collapses; the native search editor keeps its full height.
     private int getIdleSearchHeight() {
         return collapseHomeSearch ? 0 : SEARCH_FIELD_HEIGHT;
+    }
+
+    private String monogramHomeTitle() {
+        int mode=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.title,3);
+        if(mode==1) return org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid();
+        if(mode==2) return UserObject.getUserName(getUserConfig().getCurrentUser());
+        return mode==3 ? getString(R.string.FilterChats) : getString(R.string.AppName);
+    }
+
+    private int monogramUnmutedFolderCount(int tabId) {
+        int count=0;
+        for (TLRPC.Dialog dialog : getDialogsArray(currentAccount, initialDialogsType, folderId, false)) {
+            if((dialog.unread_count>0 || dialog.unread_mark) && !getMessagesController().isDialogMuted(dialog.id,0)) count++;
+        }
+        if(filterTabsView!=null && tabId!=filterTabsView.getDefaultTabId()) {
+            ArrayList<MessagesController.DialogFilter> filters=getMessagesController().getDialogFilters();
+            if(tabId<0 || tabId>=filters.size()) return 0;
+            MessagesController.DialogFilter filter=filters.get(tabId);
+            count=0;
+            for(TLRPC.Dialog dialog:getMessagesController().getAllDialogs()) {
+                if((dialog.unread_count>0 || dialog.unread_mark) && !getMessagesController().isDialogMuted(dialog.id,0) && filter.includesDialog(getAccountInstance(),dialog.id)) count++;
+            }
+        }
+        return count;
     }
 
     private boolean shouldCollapseHomeSearch() {
@@ -1308,8 +1333,21 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             updateContextViewPosition();
         }
 
+        private float drawerDownX,drawerDownY;
+        private boolean drawerEdge;
         @Override
         public boolean onInterceptTouchEvent(MotionEvent ev) {
+            if(org.telegram.utils.settings.MonogramAppearance.drawer.get() && !onlySelect && folderId==0 && communityId==0 && !searching && !actionBar.isActionModeShowed()) {
+                if(ev.getActionMasked()==MotionEvent.ACTION_DOWN) {
+                    drawerDownX=ev.getX();drawerDownY=ev.getY();
+                    drawerEdge=LocaleController.isRTL?drawerDownX>getWidth()-dp(24):drawerDownX<dp(24);
+                } else if(ev.getActionMasked()==MotionEvent.ACTION_MOVE && drawerEdge) {
+                    float dx=(ev.getX()-drawerDownX)*(LocaleController.isRTL?-1:1);
+                    if(dx>dp(36) && Math.abs(ev.getY()-drawerDownY)<dp(32)) {
+                        drawerEdge=false;MonogramNavigation.showDrawer(DialogsActivity.this);return true;
+                    }
+                } else if(ev.getActionMasked()==MotionEvent.ACTION_UP || ev.getActionMasked()==MotionEvent.ACTION_CANCEL)drawerEdge=false;
+            }
             int action = ev.getActionMasked();
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 if (actionBar.isActionModeShowed()) {
@@ -2946,8 +2984,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
 
         BirthdayController.getInstance(currentAccount).check();
-        additionNavigationBarHeight = hasMainTabs ? dp(MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
-        additionFloatingButtonOffset = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN) : 0;
+        additionNavigationBarHeight = hasMainTabs && org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()!=1 ? dp(MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        additionFloatingButtonOffset = hasMainTabs && org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()!=1 ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN) : 0;
 
         return true;
     }
@@ -3235,6 +3273,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         fragmentSearchField.setPivotY(0);
 
 
+        if(!onlySelect && folderId==0 && communityId==0) {
+            monogramPills=new MonogramPillView(this);fragmentSearchField.addAdditionalIcon(monogramPills);
+        }
         fragmentSearchField.setCloseButtonOnClickListener(() -> {
             if (searchViewPager != null && searchViewPager.actionModeShowing()) {
                 searchViewPager.hideActionMode();
@@ -3445,7 +3486,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             } else {
                 statusDrawable = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(null, dp(26));
                 statusDrawable.center = true;
-                actionBar.setTitle(getString(R.string.AppName), statusDrawable);
+                actionBar.setTitle(monogramHomeTitle(), statusDrawable);
+                if(org.telegram.utils.settings.MonogramAppearance.drawer.get()) {
+                    actionBar.setBackButtonImage(R.drawable.menu_intro);
+                    actionBar.getBackButton().setContentDescription("Open navigation menu");
+                }
                 updateStatus(UserConfig.getInstance(currentAccount).getCurrentUser(), false);
             }
             if (folderId == 0) {
@@ -3579,6 +3624,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
                 @Override
                 public int getTabCounter(int tabId) {
+                    int mode=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.folderCounters,2);
+                    if(mode==2) return 0;
+                    if(mode==1) return monogramUnmutedFolderCount(tabId);
                     if (initialDialogsType == DIALOGS_TYPE_FORWARD) {
                         return 0;
                     }
@@ -3776,6 +3824,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
+                if(id==-1 && !onlySelect && folderId==0 && communityId==0 && !searching && org.telegram.utils.settings.MonogramAppearance.drawer.get()) {MonogramNavigation.showDrawer(DialogsActivity.this);return;}
                 if (id == 91002) {
                     presentFragment(new MonogramConnectionActivity(currentAccount));
                     return;
@@ -6376,7 +6425,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         }
                     }
                 }
-                final boolean hideAllChats = customFolderCount > 1;
+                final boolean hideAllChats = customFolderCount > 1 && org.telegram.utils.settings.MonogramAppearance.hideAllChats.get();
                 if (hideAllChats && firstCustomIndex >= 0 && (stableId == 0 || id >= 0 && id < filters.size() && filters.get(id).isDefault())) {
                     filterTabsView.resetTabId();
                     id = firstCustomIndex;
@@ -6769,6 +6818,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onPause() {
+        MonogramNavigation.closeDrawer(this,true);
         super.onPause();
         if (storiesBulletin != null) {
             storiesBulletin.hide();
@@ -6797,6 +6847,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public boolean onBackPressed(boolean invoked) {
+        if(MonogramNavigation.closeDrawer(this,invoked))return false;
         if (hasShownSheet()) {
             if (invoked) closeSheet();
             return false;
@@ -12161,8 +12212,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (isArchive()) {
             newVisibility = !getStoriesController().getHiddenList().isEmpty();
         } else {
-            newVisibility = !onlySelfStories && getStoriesController().hasStories();
-            onlySelfStories = getStoriesController().hasOnlySelfStories();
+            newVisibility = !onlySelfStories && getStoriesController().hasStories() && !org.telegram.utils.settings.MonogramAppearance.hideStories.get();
+            onlySelfStories = !org.telegram.utils.settings.MonogramAppearance.hideStories.get() && getStoriesController().hasOnlySelfStories();
         }
 
         hasOnlySlefStories = onlySelfStories;
@@ -12999,7 +13050,46 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    void monogramToggleNight() {
+            if (switchingTheme) {
+                return;
+            }
+            switchingTheme = true;
+            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("themeconfig", Activity.MODE_PRIVATE);
+            String dayThemeName = preferences.getString("lastDayTheme", "Blue");
+            if (Theme.getTheme(dayThemeName) == null || Theme.getTheme(dayThemeName).isDark()) {
+                dayThemeName = "Blue";
+            }
+            String nightThemeName = preferences.getString("lastDarkTheme", "Dark Blue");
+            if (Theme.getTheme(nightThemeName) == null || !Theme.getTheme(nightThemeName).isDark()) {
+                nightThemeName = "Dark Blue";
+            }
+            Theme.ThemeInfo themeInfo = Theme.getActiveTheme();
+            if (dayThemeName.equals(nightThemeName)) {
+                if (themeInfo.isDark() || dayThemeName.equals("Dark Blue") || dayThemeName.equals("Night")) {
+                    dayThemeName = "Blue";
+                } else {
+                    nightThemeName = "Dark Blue";
+                }
+            }
+
+            boolean toDark;
+            if (toDark = dayThemeName.equals(themeInfo.getKey())) {
+                themeInfo = Theme.getTheme(nightThemeName);
+            } else {
+                themeInfo = Theme.getTheme(dayThemeName);
+            }
+            switchTheme(themeInfo, toDark);
+            Theme.turnOffAutoNight(BulletinFactory.of(this), () -> {
+                presentFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_NIGHT));
+            });
+    }
+
     private void showItemOptions() {
+        if (!onlySelect && folderId==0 && communityId==0) {
+            MonogramNavigation.show(this,optionsItem);
+            return;
+        }
         ItemOptions io = ItemOptions.makeOptions(this, optionsItem);
         io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
         io.setDimAlpha(0x08);
@@ -13390,6 +13480,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         final float alpha = factor0 * factor1 * factor2;
 
+        if(monogramPills!=null)monogramPills.setVisibility(searchFieldVisible>.01f || !MonogramPillView.hasActive()?View.GONE:View.VISIBLE);
         fragmentSearchField.setAlpha(alpha);
         fragmentSearchField.setVisibility(alpha > 0 ? View.VISIBLE : View.GONE);
         animatorSearchButtonVisible.setValue(alpha <= 0.01f, true);

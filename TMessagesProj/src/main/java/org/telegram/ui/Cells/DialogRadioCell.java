@@ -170,7 +170,7 @@ public class DialogRadioCell extends FrameLayout {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             canvas.drawLine(dp(LocaleController.isRTL ? 0 : 23), getHeight() - 1, getMeasuredWidth() - dp(LocaleController.isRTL ? 23 : 0), getHeight() - 1, Theme.dividerPaint);
         }
     }

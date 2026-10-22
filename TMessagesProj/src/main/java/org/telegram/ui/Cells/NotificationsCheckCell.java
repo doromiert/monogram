@@ -206,7 +206,7 @@ public class NotificationsCheckCell extends FrameLayout {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (needDivider) {
+        if (needDivider && org.telegram.utils.settings.MonogramAppearance.dividers.get()==1) {
             canvas.drawLine(
                 LocaleController.isRTL ? 0 : dp(imageView != null ? 64 : 20),
                 getMeasuredHeight() - 1,

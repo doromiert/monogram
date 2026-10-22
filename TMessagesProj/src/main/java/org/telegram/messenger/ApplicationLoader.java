@@ -48,6 +48,10 @@ import java.io.File;
 import java.util.Locale;
 
 public class ApplicationLoader extends Application {
+    @Override public android.content.res.Resources getResources() {
+        return MonogramResources.wrap(super.getResources());
+    }
+
 
     public static ApplicationLoader applicationLoaderInstance;
 
@@ -293,6 +297,7 @@ public class ApplicationLoader extends Application {
 
         // AndroidUtilities must be initialized before FileLog
         final String helloWorld = AndroidUtilities.getHelloWorld();
+        MonogramIconPacks.initialize();
 
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d(helloWorld);

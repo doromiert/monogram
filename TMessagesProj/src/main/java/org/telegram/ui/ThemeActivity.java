@@ -227,6 +227,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
     private int doubleTapRow;
     private int swipeActionsRow;
     private int chatBehaviorRow;
+    private int monogramAppearanceRow;
     private int mediaPlaybackRow;
     private int stickersInfoRow;
     private int stickersSectionRow, mediaSoundSectionRow, otherSectionRow;
@@ -576,6 +577,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
         doubleTapRow = -1;
         swipeActionsRow = -1;
         chatBehaviorRow = -1;
+        monogramAppearanceRow = -1;
         mediaPlaybackRow = -1;
         stickersInfoRow = -1;
         stickersSectionRow = -1;
@@ -692,6 +694,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             liteModeRow = rowCount++;
             doubleTapRow = rowCount++;
             swipeActionsRow = rowCount++;
+            monogramAppearanceRow = rowCount++;
             chatBehaviorRow = rowCount++;
             mediaPlaybackRow = rowCount++;
             stickersRow = rowCount++;
@@ -1500,6 +1503,8 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 presentFragment(new MonogramDoubleTapActivity(currentAccount));
             } else if (position == swipeActionsRow) {
                 presentFragment(new MonogramSwipeActionsActivity(currentAccount));
+            } else if (position == monogramAppearanceRow) {
+                presentFragment(new MonogramAppearanceActivity(currentAccount));
             } else if (position == chatBehaviorRow) {
                 presentFragment(new MonogramChatBehaviorActivity(currentAccount));
             } else if (position == mediaPlaybackRow) {
@@ -2707,6 +2712,8 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                         cell.heightDp = 60;
                         cell.offsetFromImage = 64;
                         cell.imageLeft = 20;
+                    } else if (position == monogramAppearanceRow) {
+                        cell.setTextAndIcon("Appearance", R.drawable.menu_edit_appearance, true);
                     } else if (position == chatBehaviorRow) {
                         cell.setTextAndIcon("Chat behavior", R.drawable.msg_settings, true);
                         cell.setSubtitle("Keyboard, mentions and message menu actions");
@@ -2810,7 +2817,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             } else if (position == bubbleRadiusRow) {
                 return TYPE_BUBBLE_RADIUS;
             } else if (position == backgroundRow || position == editThemeRow || position == createNewThemeRow ||
-                        position == liteModeRow || position == stickersRow || position == doubleTapRow || position == swipeActionsRow || position == chatBehaviorRow || position == mediaPlaybackRow) {
+                        position == liteModeRow || position == stickersRow || position == doubleTapRow || position == swipeActionsRow || position == chatBehaviorRow || position == monogramAppearanceRow || position == mediaPlaybackRow) {
                 return TYPE_TEXT_PREFERENCE;
             } else if (position == swipeGestureRow) {
                 return TYPE_SWIPE_GESTURE;

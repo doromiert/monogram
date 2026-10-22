@@ -214,6 +214,9 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
     public void setupGlass(BlurredBackgroundDrawableViewFactory factory,
                            BlurredBackgroundColorProvider colorProvider,
                            boolean isForum) {
+        if (org.telegram.utils.settings.MonogramAppearance.chatHeader.get() && chatAvatarContainer != null) {
+            glassMode=false;setBackgroundColor(getThemedColor(Theme.key_actionBarDefault));return;
+        }
         setBackground(null);
         setClipChildren(false);
         glassMode = true;
@@ -429,7 +432,7 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                         snowflakesEffect = null;
                     }
                 }
-                if (snowflakesEffect != null) {
+                if (snowflakesEffect != null && !org.telegram.utils.settings.MonogramAppearance.snow.get()) {
                     snowflakesEffect.onDraw(this, canvas);
                 } else if (fireworksEffect != null) {
                     fireworksEffect.onDraw(this, canvas);
@@ -2302,6 +2305,10 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
         }
 
         super.dispatchDraw(canvas);
+        if(supportsHolidayImage && org.telegram.utils.settings.MonogramAppearance.snow.get() && getWindowVisibility()==VISIBLE) {
+            if(snowflakesEffect==null)snowflakesEffect=new SnowflakesEffect(0);
+            snowflakesEffect.onDraw(this,canvas);
+        }
     }
 
     public void setForceSkipTouches(boolean forceSkipTouches) {
