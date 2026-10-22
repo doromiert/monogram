@@ -1643,6 +1643,7 @@ public final class MonogramController {
                 syncOwnReads(true);
             } catch (Exception e) {
                 error = e;
+                if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram sign-in: "+com.negzero.monogram.xmpp.XmppRequestException.describeLogin(e));
                 if(signingIn) {
                     if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
                     state(ConnectionsManager.ConnectionStateWaitingForNetwork);

@@ -42,6 +42,7 @@ public class MonogramLoginActivity extends BaseFragment {
     private com.negzero.monogram.xmpp.RegistrationInvitation invitation;
     private boolean accountCreated;
     private int registrationSource = -1;
+    private String webRegistrationDomain;
 
     public MonogramLoginActivity() { super(); }
     public MonogramLoginActivity(int account) { super(); currentAccount = account; }
@@ -148,6 +149,7 @@ public class MonogramLoginActivity extends BaseFragment {
         args.putInt("monogram_account",currentAccount);args.putBoolean("monogram_account_created",accountCreated);
         args.remove("monogram_invite");args.remove("monogram_registration_server");
         args.putInt("monogram_registration_source",registrationSource);
+        args.putString("monogram_web_registration_domain",webRegistrationDomain);
         if(invitation!=null && !invitation.requiresToken()) args.putString("monogram_registration_server",invitation.server.toString());
         if(invitation!=null && invitation.requiresToken()) try { args.putString("monogram_invite",MonogramController.get(currentAccount).sealRegistrationInvite(invitation.uri)); }
         catch(Exception unavailable) { /* Reopen the invite rather than save a token without Keystore protection. */ }
@@ -161,6 +163,7 @@ public class MonogramLoginActivity extends BaseFragment {
         xmppView.showAdvanced(args.getBoolean("monogram_advanced"));
         accountCreated=args.getBoolean("monogram_account_created");
         registrationSource=args.getInt("monogram_registration_source",-1);
+        webRegistrationDomain=args.getString("monogram_web_registration_domain");
         if(args.containsKey("monogram_registration_server")) try {
             invitation=com.negzero.monogram.xmpp.RegistrationInvitation.forServer(args.getString("monogram_registration_server"));
         } catch(Exception invalid) { invitation=null;registrationSource=-1; }
@@ -183,11 +186,12 @@ public class MonogramLoginActivity extends BaseFragment {
         boolean registering=invitation!=null;
         xmppView.titleView.setText(registering ? "Create your XMPP account" : getString(R.string.MonogramLoginTitle));
         xmppView.confirmTextView.setText(registering ? "Create an account on "+invitation.server+". "+(invitation.username==null ? "Choose a username and password."+(!invitation.requiresToken() ? " If an invitation is required, use an invitation link below." : "") : "This invitation reserves the address below. Choose your password.")
-                : accountCreated ? "Your account was created. Sign in with the address and password you chose." : getString(R.string.MonogramLoginHelp));
+                : accountCreated ? "Your account was created. Sign in with the address and password you chose."
+                : webRegistrationDomain!=null ? "Create your account on the provider’s website, then return here and enter your full XMPP ID and password to sign in." : getString(R.string.MonogramLoginHelp));
         xmppView.outlines[1].setText(registering ? "Choose a password" : getString(R.string.EnterPassword));
         xmppView.invitationButton.setText("Use an invitation link");
-        xmppView.createAccountButton.setText(registering ? "Sign in instead" : "Create on an existing server");
-        xmppView.createAccountButton.setVisibility(registering || UserConfig.getActivatedAccountsCount()>0 ? View.VISIBLE : View.GONE);
+        xmppView.createAccountButton.setText(registering ? "Sign in instead" : "Create an account");
+        xmppView.createAccountButton.setVisibility(View.VISIBLE);
         if(floatingButton!=null) floatingButton.setContentDescription(registering ? "Create account" : getString(R.string.Continue));
         if(android.os.Build.VERSION.SDK_INT>=26) xmppView.fields[1].setAutofillHints(registering ? "newPassword" : View.AUTOFILL_HINT_PASSWORD);
         setConnecting(connecting);
@@ -195,25 +199,55 @@ public class MonogramLoginActivity extends BaseFragment {
     private void createAccount() {
         if(connecting) return;
         if(invitation!=null) {
-            invitation=null;registrationSource=-1;accountCreated=false;
+            invitation=null;registrationSource=-1;accountCreated=false;webRegistrationDomain=null;
             xmppView.fields[1].setText("");applyMode();return;
         }
-        ArrayList<Integer> accounts=new ArrayList<>();ArrayList<CharSequence> labels=new ArrayList<>();
+        ArrayList<Runnable> actions=new ArrayList<>();ArrayList<CharSequence> labels=new ArrayList<>();
+        labels.add("yax.im · Register in Monogram");actions.add(() -> usePublicServer("yax.im",null));
+        labels.add("Hot-Chilli · Register on website");actions.add(() -> usePublicServer("jabber.hot-chilli.net","https://jabber.hot-chilli.net/forms/create/"));
+        labels.add("Disroot · Register on website");actions.add(() -> usePublicServer("disroot.org","https://user.disroot.org/pwm/public/newuser"));
         for(int i=0;i<UserConfig.MAX_ACCOUNT_COUNT;i++) if(UserConfig.getInstance(i).isClientActivated()) try {
             com.negzero.monogram.xmpp.Account template=MonogramController.get(i).registrationTemplate();
-            accounts.add(i);labels.add(template.jid.asDomainBareJid()+" · "+template.jid.getLocalpart());
+            final int source=i;
+            labels.add(template.jid.asDomainBareJid()+" · Existing account’s server");actions.add(() -> useRegistrationServer(source));
         } catch(Exception ignored) { }
-        if(accounts.isEmpty()) return;
+        labels.add("Another server…");actions.add(this::customRegistrationServer);
         showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext())
                 .setTitle("Create account on…")
-                .setItems(labels.toArray(new CharSequence[0]),(dialog,which) -> useRegistrationServer(accounts.get(which)))
+                .setMessage("Choose a public provider or your own server. All can communicate across the XMPP network.")
+                .setItems(labels.toArray(new CharSequence[0]),(dialog,which) -> actions.get(which).run())
                 .setNegativeButton(getString(R.string.Cancel),null).create());
+    }
+    private void usePublicServer(String domain,String signupUrl) {
+        try {
+            invitation=com.negzero.monogram.xmpp.RegistrationInvitation.forServer(domain);
+            registrationSource=-1;accountCreated=false;webRegistrationDomain=signupUrl==null?null:domain;
+            prefillInvitation();
+            if(signupUrl!=null) invitation=null;
+            applyMode();
+            if(signupUrl!=null) org.telegram.messenger.browser.Browser.openUrl(getParentActivity(),signupUrl);
+            else {xmppView.fields[0].requestFocus();AndroidUtilities.showKeyboard(xmppView.fields[0]);}
+        } catch(Exception invalid) {xmppView.error(0,"Enter a valid XMPP server domain.");}
+    }
+    private void customRegistrationServer() {
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),"example.org",false);
+        input.editText.setSingleLine(true);input.editText.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+        org.telegram.ui.ActionBar.AlertDialog dialog=new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext())
+                .setTitle("XMPP server").setMessage("Enter the server’s domain. If it requires an invitation, use your invitation link instead.")
+                .setView(input).setPositiveButton("Continue",null).setNegativeButton(getString(R.string.Cancel),null).create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(org.telegram.ui.ActionBar.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String domain=input.editText.getText().toString().trim();
+            try {com.negzero.monogram.xmpp.RegistrationInvitation.forServer(domain);}
+            catch(Exception invalid) {input.editText.setError("Enter a server domain, such as example.org");return;}
+            dialog.dismiss();usePublicServer(domain,null);
+        }));
+        showDialog(dialog);
     }
     private void useRegistrationServer(int source) {
         try {
             com.negzero.monogram.xmpp.Account template=MonogramController.get(source).registrationTemplate();
             invitation=com.negzero.monogram.xmpp.RegistrationInvitation.forServer(template.jid.asDomainBareJid().toString());
-            registrationSource=source;accountCreated=false;prefillInvitation();
+            registrationSource=source;accountCreated=false;webRegistrationDomain=null;prefillInvitation();
             xmppView.fields[2].setText(template.host==null ? "" : template.host);
             xmppView.fields[3].setText(template.port==5222 ? "" : Integer.toString(template.port));
             xmppView.showAdvanced(template.host!=null || template.port!=5222);
@@ -241,7 +275,7 @@ public class MonogramLoginActivity extends BaseFragment {
         org.telegram.ui.ActionBar.AlertDialog.Builder builder=new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext()).setTitle("Use an invitation link")
                 .setMessage("Paste the xmpp: link from your server's invitation page. No account is created until you submit the registration screen.")
                 .setView(input).setPositiveButton("Continue",(dialog,which) -> {
-                    try { invitation=com.negzero.monogram.xmpp.RegistrationInvitation.parse(input.getText().toString().trim());accountCreated=false;prefillInvitation();applyMode(); }
+                    try { invitation=com.negzero.monogram.xmpp.RegistrationInvitation.parse(input.getText().toString().trim());accountCreated=false;webRegistrationDomain=null;prefillInvitation();applyMode(); }
                     catch(com.negzero.monogram.xmpp.XmppInvitations.InvitationException invalid) { xmppView.error(0,invalid.getMessage()); }
                     input.editText.setText("");
                 }).setNegativeButton("Cancel",null);
@@ -283,7 +317,7 @@ public class MonogramLoginActivity extends BaseFragment {
             if (!destroyed && getParentActivity() != null) {
                 setConnecting(false);
                 String detail=error instanceof com.negzero.monogram.xmpp.XmppInvitations.InvitationException ? error.getMessage()
-                        : invitation!=null || accountCreated ? com.negzero.monogram.xmpp.XmppRequestException.describe(error) : getString(R.string.MonogramLoginFailed);
+                        : invitation!=null && !accountCreated ? com.negzero.monogram.xmpp.XmppRequestException.describe(error) : com.negzero.monogram.xmpp.XmppRequestException.describeLogin(error);
                 xmppView.error(1,(accountCreated ? "Account created; sign-in failed. " : "")+detail);
             }
             return;

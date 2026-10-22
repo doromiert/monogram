@@ -4223,7 +4223,7 @@ public class ChatActivity extends BaseFragment implements
             });
             getConnectionsManager().bindRequestToGuid(req, classGuid);
         } else {
-            actionBar.addView(avatarContainer, 0, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !inPreviewMode ? 52 : 0, 0, getAvatarRightMargin(false), 0));
+            actionBar.addView(avatarContainer, 0, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !inPreviewMode ? (org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?57:52) : 0, 0, getAvatarRightMargin(false), 0));
             actionBar.createMenu().bringToFront();
         }
         actionBar.setOnActionModeFactorChangeListener(() -> {
@@ -4554,9 +4554,7 @@ public class ChatActivity extends BaseFragment implements
 
         contentView.setOccupyStatusBar(!inBubbleMode && !isInsideContainer && !inPreviewMode);
 
-        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()) {
-            actionBar.setBackgroundColor(getThemedColor(Theme.key_actionBarDefault));
-        } else actionBar.setupGlass(
+        actionBar.setupGlass(
             glassBackgroundDrawableFactory,
             BlurredBackgroundProviderImpl.topPanelChatActivity(themeDelegate),
             ChatObject.isForum(currentChat));
@@ -6743,7 +6741,7 @@ public class ChatActivity extends BaseFragment implements
 
         chatActivityFadeView = new ChatActivityFadeView(context);
         chatActivityFadeView.setup(navbarContentDrawableFactory);
-        chatActivityFadeView.setFadeHeightTop(dp(48));
+        chatActivityFadeView.setFadeHeightTop(dp(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?78:48));
         chatActivityFadeView.setFadeHeightBottom(dp(48));
         contentView.addView(chatActivityFadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
@@ -11232,6 +11230,7 @@ public class ChatActivity extends BaseFragment implements
         closePinned.setContentDescription(LocaleController.getString(R.string.Close));
 
         pinnedProgress = new RadialProgressView(getContext(), themeDelegate);
+        pinnedProgress.setStyle(2);
         pinnedProgress.setVisibility(View.GONE);
         pinnedProgress.setSize(AndroidUtilities.dp(16));
         pinnedProgress.setStrokeWidth(2f);
@@ -29107,7 +29106,7 @@ public class ChatActivity extends BaseFragment implements
         }
         if (avatarContainer != null) {
             avatarContainer.setOccupyStatusBar(!value);
-            avatarContainer.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !inPreviewMode ? 52 : 0, 0, getAvatarRightMargin(false), 0));
+            avatarContainer.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, !inPreviewMode ? (org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?57:52) : 0, 0, getAvatarRightMargin(false), 0));
         }
         if (chatActivityEnterView != null) {
             chatActivityEnterView.setVisibility(!value ? View.VISIBLE : View.INVISIBLE);
@@ -42961,6 +42960,8 @@ public class ChatActivity extends BaseFragment implements
         if (actionBar == null) {
             return !Theme.isCurrentThemeDark();
         }
+        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get() && !actionBar.isActionModeShowed())
+            return AndroidUtilities.computePerceivedBrightness(getThemedColor(Theme.key_windowBackgroundGray))>.721f;
         return !shouldHaveLightStatusBarIcons;
     }
 
@@ -45013,6 +45014,12 @@ public class ChatActivity extends BaseFragment implements
         }
         fadeHeight += dp(36 + 7) * getHashtagTabsShownT();
 
+        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()) {
+            fadeHeight+=dp(42);int base=actionBar.getMeasuredHeight()+dp(42);
+            if(actionBar.getMeasuredHeight()>0 && base<fadeHeight) fadeHeight=base+Math.round((fadeHeight-base)*.5f);
+            chatActivityFadeView.setTopFadeColor(getThemedColor(Theme.key_windowBackgroundGray));
+        }
+        chatActivityFadeView.setFadeTopAlpha(actionBar.getVisibility()==View.VISIBLE?255:0);
         chatActivityFadeView.setFadeZoneTop((int) fadeHeight);
     }
 

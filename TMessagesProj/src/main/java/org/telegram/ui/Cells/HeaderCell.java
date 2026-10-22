@@ -32,8 +32,38 @@ import org.telegram.ui.Components.LayoutHelper;
 import java.util.ArrayList;
 
 public class HeaderCell extends FrameLayout {
+    private boolean appliedSeparatedHeaders;
+    private boolean sectionStyleInitialized;
+    private int originalPadding, originalBottomMargin;
+    private android.graphics.drawable.Drawable sectionBackground;
+
+    @Override public void setBackground(android.graphics.drawable.Drawable background) {
+        sectionBackground=background;
+        super.setBackground(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()?null:background);
+    }
     @Override public void setBackgroundColor(int color) {
-        super.setBackgroundColor(org.telegram.utils.settings.MonogramAppearance.separateHeaders.get()?Theme.getColor(Theme.key_windowBackgroundGray):color);
+        setBackground(new android.graphics.drawable.ColorDrawable(color));
+    }
+
+    private void updateSectionStyle() {
+        boolean separated=org.telegram.utils.settings.MonogramAppearance.separatedHeaders();
+        if(sectionStyleInitialized && separated==appliedSeparatedHeaders) return;
+        appliedSeparatedHeaders=separated;sectionStyleInitialized=true;
+        padding=separated?24:originalPadding;
+        bottomMargin=separated?3:originalBottomMargin;
+        View primary=animated?animatedTextView:textView;
+        if(primary!=null) {
+            LayoutParams lp=(LayoutParams)primary.getLayoutParams();
+            lp.leftMargin=lp.rightMargin=AndroidUtilities.dp(padding);
+            lp.bottomMargin=textView2==null?AndroidUtilities.dp(bottomMargin):0;
+            primary.setLayoutParams(lp);
+        }
+        if(textView2!=null) {
+            LayoutParams lp=(LayoutParams)textView2.getLayoutParams();
+            lp.leftMargin=lp.rightMargin=AndroidUtilities.dp(padding);
+            lp.bottomMargin=AndroidUtilities.dp(bottomMargin);textView2.setLayoutParams(lp);
+        }
+        super.setBackground(separated?null:sectionBackground);
     }
 
 
@@ -80,6 +110,8 @@ public class HeaderCell extends FrameLayout {
     public HeaderCell(Context context, int textColorKey, int padding, int topMargin, int bottomMargin, boolean text2, boolean animated, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        originalPadding=padding;originalBottomMargin=bottomMargin;
+        if(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()) { padding=24;bottomMargin=3; }
         this.padding = padding;
         this.bottomMargin = bottomMargin;
         this.animated = animated;
@@ -124,6 +156,7 @@ public class HeaderCell extends FrameLayout {
     }
 
     public void setHeight(int value) {
+        if(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()) return;
         int newMinHeight = AndroidUtilities.dp(height = value) - ((LayoutParams) textView.getLayoutParams()).topMargin;
         if (textView.getMinHeight() != newMinHeight) {
             textView.setMinHeight(newMinHeight);
@@ -132,11 +165,14 @@ public class HeaderCell extends FrameLayout {
     }
 
     public void setTopMargin(int topMargin) {
+        if(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()) return;
         ((LayoutParams) textView.getLayoutParams()).topMargin = AndroidUtilities.dp(topMargin);
         setHeight(height);
     }
 
     public void setBottomMargin(int bottomMargin) {
+        if(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()) return;
+        originalBottomMargin=bottomMargin;
         ((LayoutParams) textView.getLayoutParams()).bottomMargin = AndroidUtilities.dp(bottomMargin);
         if (textView2 != null) {
             ((LayoutParams) textView2.getLayoutParams()).bottomMargin = AndroidUtilities.dp(bottomMargin);
@@ -162,6 +198,7 @@ public class HeaderCell extends FrameLayout {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        updateSectionStyle();
         super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
     }
 
@@ -187,6 +224,7 @@ public class HeaderCell extends FrameLayout {
     }
 
     public void setText(CharSequence text, boolean animate) {
+        updateSectionStyle();
         if (this.animated) {
             animatedTextView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
             animatedTextView.setText(text, animate);

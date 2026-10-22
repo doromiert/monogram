@@ -848,6 +848,7 @@ public class AlertDialog extends Dialog implements Drawable.Callback, Notificati
             containerView.addView(progressViewContainer, LayoutHelper.createLinear(86, 86, Gravity.CENTER));
 
             RadialProgressView progressView = new RadialProgressView(getContext(), resourcesProvider);
+            progressView.setStyle(1);
             progressView.setSize(dp(32));
             progressView.setProgressColor(getThemedColor(Theme.key_dialog_inlineProgress));
             progressViewContainer.addView(progressView, LayoutHelper.createFrame(86, 86, Gravity.CENTER));

@@ -14,4 +14,5 @@ public interface BlurredBackgroundProvider extends BlurredBackgroundColorProvide
     @Px float getShadowRadius();
     @Px float getShadowDx();
     @Px float getShadowDy();
+    default boolean isShadowAlwaysVisible() {return false;}
 }

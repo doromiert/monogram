@@ -16,8 +16,22 @@ import org.telegram.ui.Components.AnimatedTextView;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows=MonogramSettingsColorsTest.Preferences.class)
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramSettingsColorsTest.Preferences.class,MonogramSettingsColorsTest.Device.class})
 public class MonogramSettingsColorsTest {
+    // This manifest-free fixture has no APK bool resources for device bootstrap.
+    @Implements(value=org.telegram.messenger.AndroidUtilities.class,isInAndroidSdk=false)
+    public static class Device {
+        @Implementation public static void __staticInitializer__() {}
+        @Implementation public static boolean isTablet() { return false; }
+        @Implementation public static boolean isTabletForce() { return false; }
+    }
+    @org.junit.Before public void setupDevice() {
+        ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
+        ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();
+        ApplicationLoader.applicationHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+        org.telegram.messenger.AndroidUtilities.density=1;
+        org.telegram.messenger.AndroidUtilities.displaySize=new android.graphics.Point(400,800);
+    }
     @Implements(value=org.telegram.messenger.MessagesController.class,isInAndroidSdk=false)
     public static class Preferences {
         @Implementation public static android.content.SharedPreferences getGlobalMainSettings() {

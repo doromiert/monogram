@@ -22,8 +22,8 @@ public final class MonogramAppearance {
     public static final BooleanSetting fabStyle = BooleanSetting.of("appearance_material_fab", false);
     public static final BooleanSetting gooeyAvatar = BooleanSetting.of("appearance_gooey_avatar", true);
     public static final BooleanSetting customThemes = BooleanSetting.of("appearance_chat_themes", true);
-    public static final IntSetting sectionRadius = IntSetting.of("appearance_section_radius", 16);
-    public static final BooleanSetting separateHeaders = BooleanSetting.of("appearance_separate_headers", false);
+    public static final IntSetting sectionRadius = IntSetting.of("appearance_section_radius", 20);
+    public static final BooleanSetting separateHeaders = BooleanSetting.of("appearance_separate_headers", true);
     public static final IntSetting dividers = IntSetting.of("appearance_dividers", 1);
     public static final IntSetting glassOutline = IntSetting.of("appearance_glass_outline", 0);
     public static final BooleanSetting glassMenu = BooleanSetting.of("appearance_glass_menu", true);
@@ -36,5 +36,7 @@ public final class MonogramAppearance {
     public static final BooleanSetting immersiveDrawer = BooleanSetting.of("appearance_immersive_drawer", true);
     public static final StringSetting menuOrder = StringSetting.of("appearance_menu_order", "profile,archive,group,contacts,calls,saved,settings");
     public static final StringSetting menuHidden = StringSetting.of("appearance_menu_hidden", "");
+    /** Segmented rows always put their section titles outside the row surfaces. */
+    public static boolean separatedHeaders() { return dividers.get()==2 || separateHeaders.get(); }
     public static int bounded(IntSetting value, int max) { return Math.max(0, Math.min(max, value.get())); }
 }

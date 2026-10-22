@@ -24,6 +24,10 @@ import org.telegram.ui.ActionBar.Theme;
 
 public class RadialProgressView extends View {
 
+    private int requestedStyle,currentStyle;
+    private Drawable materialDrawable;
+    private com.google.android.material.loadingindicator.LoadingIndicator materialLoading;
+    private com.google.android.material.progressindicator.CircularProgressIndicator materialProgress;
     private long lastUpdateTime;
     private float radOffset;
     private float currentCircleLength;
@@ -87,6 +91,7 @@ public class RadialProgressView extends View {
                 background.setAlpha(a);
             }
             progressPaint.setAlpha(a);
+            if(materialDrawable!=null) materialDrawable.setAlpha(a);
         }
     }
 
@@ -204,16 +209,19 @@ public class RadialProgressView extends View {
 
     public void setSize(int value) {
         size = value;
+        if(materialProgress!=null) materialProgress.setIndicatorSize(value);
         invalidate();
     }
 
     public void setStrokeWidth(float value) {
         progressPaint.setStrokeWidth(AndroidUtilities.dp(value));
+        if(materialProgress!=null) materialProgress.setTrackThickness(AndroidUtilities.dp(value));
     }
 
     public void setProgressColor(int color) {
-        progressColor = color;
-        progressPaint.setColor(progressColor);
+        progressColor = color;progressPaint.setColor(color);
+        if(materialLoading!=null) materialLoading.setIndicatorColor(color);
+        if(materialProgress!=null) materialProgress.setIndicatorColor(color);
     }
 
     public void toCircle(boolean toCircle, boolean animated) {
@@ -228,33 +236,56 @@ public class RadialProgressView extends View {
         int x = (getMeasuredWidth() - size) / 2;
         int y = (getMeasuredHeight() - size) / 2;
         cicleRect.set(x, y, x + size, y + size);
-        if(org.telegram.utils.settings.MonogramAppearance.loading.get() && noProgress && toCircleProgress == 0f) {
-            drawingCircleLenght = currentCircleLength;
-            drawMaterialIndicator(canvas,cicleRect);
-        } else canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
+        if(drawMaterial(canvas,x,y)) return;
+        canvas.drawArc(cicleRect, radOffset, drawingCircleLenght=currentCircleLength, false, progressPaint);
         updateAnimation();
     }
 
     public void draw(Canvas canvas, float cx, float cy) {
         cicleRect.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy +  size / 2f);
-        if(org.telegram.utils.settings.MonogramAppearance.loading.get() && noProgress && toCircleProgress == 0f) {
-            drawingCircleLenght = currentCircleLength;
-            drawMaterialIndicator(canvas,cicleRect);
-        } else canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
+        if(drawMaterial(canvas,(int)(cx-size/2f),(int)(cy-size/2f))) return;
+        canvas.drawArc(cicleRect, radOffset, drawingCircleLenght=currentCircleLength, false, progressPaint);
         updateAnimation();
     }
 
-    private final android.graphics.Path materialPath=new android.graphics.Path();
-    private void drawMaterialIndicator(Canvas canvas,RectF bounds) {
-        materialPath.rewind();
-        float cx=bounds.centerX(),cy=bounds.centerY(),radius=bounds.width()/2f;
-        for(int i=0;i<=96;i++) {
-            double angle=Math.PI*2*i/96.0+Math.toRadians(radOffset);
-            float r=radius*(.78f+.15f*(float)Math.sin(angle*5+Math.toRadians(radOffset)*2));
-            float x=cx+r*(float)Math.cos(angle),y=cy+r*(float)Math.sin(angle);
-            if(i==0)materialPath.moveTo(x,y);else materialPath.lineTo(x,y);
+    /** 0=native, 1=Material morph, 2=circular, 3=wavy, matching the reference. */
+    public void setStyle(int style) {
+        requestedStyle=Math.max(0,Math.min(3,style));updateMaterialStyle();invalidate();
+    }
+    private void updateMaterialStyle() {
+        int style=!org.telegram.utils.settings.MonogramAppearance.loading.get() && requestedStyle>1?0:requestedStyle;
+        if(style==currentStyle) return;
+        if(materialDrawable!=null) {materialDrawable.setVisible(false,false);materialDrawable.setCallback(null);}
+        currentStyle=style;materialDrawable=null;
+        android.content.Context context=new androidx.appcompat.view.ContextThemeWrapper(getContext(),com.google.android.material.R.style.Theme_Material3_DayNight);
+        if(style==1) {
+            if(materialLoading==null) materialLoading=new com.google.android.material.loadingindicator.LoadingIndicator(context);
+            materialLoading.setIndicatorColor(progressColor);materialDrawable=materialLoading.getDrawable();
+        } else if(style==2 || style==3) {
+            if(materialProgress==null) {materialProgress=new com.google.android.material.progressindicator.CircularProgressIndicator(context);materialProgress.setIndeterminate(true);}
+            materialProgress.setIndicatorColor(progressColor);materialProgress.setIndicatorSize(size);
+            materialProgress.setTrackThickness((int)progressPaint.getStrokeWidth());materialProgress.setTrackCornerRadius(AndroidUtilities.dp(2));
+            materialProgress.setIndicatorTrackGapSize(AndroidUtilities.dp(2));materialProgress.setIndicatorInset(0);
+            materialProgress.setWavelengthIndeterminate(style==3?AndroidUtilities.dp(15):0);
+            materialProgress.setWaveAmplitude(style==3?AndroidUtilities.dp(1.6f):0);
+            materialProgress.setWaveSpeed(style==3?AndroidUtilities.dp(5):0);
+            materialProgress.setWaveAmplitudeRampProgressMin(style==3?.05f:1f);
+            materialDrawable=materialProgress.getIndeterminateDrawable();
         }
-        materialPath.close();canvas.drawPath(materialPath,progressPaint);
+        if(materialDrawable!=null) {materialDrawable.setCallback(this);materialDrawable.setAlpha(progressPaint.getAlpha());materialDrawable.setVisible(isShown(),isShown());}
+    }
+    private boolean drawMaterial(Canvas canvas,int x,int y) {
+        updateMaterialStyle();
+        if(materialDrawable==null) return false;
+        materialDrawable.setBounds(x,y,x+size,y+size);materialDrawable.draw(canvas);return true;
+    }
+    public void setTrackColor(int color) {if(materialProgress!=null) materialProgress.setTrackColor(color);}
+    @Override protected boolean verifyDrawable(Drawable drawable) {return drawable==materialDrawable || super.verifyDrawable(drawable);}
+    @Override public void onVisibilityAggregated(boolean visible) {
+        super.onVisibilityAggregated(visible);if(materialDrawable!=null) materialDrawable.setVisible(visible,false);
+    }
+    @Override protected void onDetachedFromWindow() {
+        if(materialDrawable!=null) materialDrawable.setVisible(false,false);super.onDetachedFromWindow();
     }
 
     public boolean isCircle() {

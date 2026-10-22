@@ -220,13 +220,18 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
     public void updateColors() {
         if (colorProvider == null) return;
 
-        backgroundColor = colorProvider.getBackgroundColor();
-        shadowColor = colorProvider.getShadowColor();
-        strokeColorTop = colorProvider.getStrokeColorTop();
-        strokeColorBottom = colorProvider.getStrokeColorBottom();
         int style=org.telegram.utils.settings.MonogramAppearance.bounded(org.telegram.utils.settings.MonogramAppearance.glassOutline,2);
-        if(style==1) strokeColorBottom=strokeColorTop;
-        if(style==2) strokeColorBottom=strokeColorTop=android.graphics.Color.TRANSPARENT;
+        boolean glare=style==0,solid=style==1;
+        boolean shadow=glare || colorProvider instanceof BlurredBackgroundProvider && ((BlurredBackgroundProvider)colorProvider).isShadowAlwaysVisible();
+        if(boundProps.useFullStroke!=solid) {boundProps.useFullStroke=solid;boundProps.build();}
+        backgroundColor=colorProvider.getBackgroundColor();shadowColor=shadow?colorProvider.getShadowColor():0;
+        strokeColorTop=glare?colorProvider.getStrokeColorTop():0;strokeColorBottom=glare?colorProvider.getStrokeColorBottom():0;
+        strokeColorFull=solid?colorProvider.getStrokeColorFull():0;
+        if(colorProvider instanceof BlurredBackgroundProvider) {
+            BlurredBackgroundProvider provider=(BlurredBackgroundProvider)colorProvider;
+            setShadowParams(shadow?provider.getShadowRadius():0,shadow?provider.getShadowDx():0,shadow?provider.getShadowDy():0);
+        }
+        invalidateSelf();
     }
 
 
@@ -234,6 +239,7 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
     /* Bound Props */
     private static final float[] tmpRadii = new float[8];
     protected final Props boundProps = new Props();
+    private int strokeColorFull;
 
     protected static class Props {
         public final Rect bounds = new Rect();
@@ -245,6 +251,8 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
         public float liquidIntensity = 0.75f;
         public float liquidIndex = 1.5f;
 
+        public boolean useFullStroke;
+        public float strokeWidthFull=1;
         public float strokeWidthTop;
         public float strokeWidthBottom;
 
@@ -273,6 +281,13 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
 
             final float radiusMax = Math.min(boundsWithPadding.width(), boundsWithPadding.height()) / 2f;
 
+            if(useFullStroke) {
+                System.arraycopy(radii,0,tmpRadii,0,8);
+                if(radiiAreSame && radii[0]>radiusMax) Arrays.fill(tmpRadii,radiusMax);
+                strokePathTop.rewind();strokePathTop.addRoundRect(boundsWithPadding.left,boundsWithPadding.top,boundsWithPadding.right,boundsWithPadding.bottom,tmpRadii,Path.Direction.CW);
+                strokePathTop.addRoundRect(boundsWithPadding.left+strokeWidthFull,boundsWithPadding.top+strokeWidthFull,boundsWithPadding.right-strokeWidthFull,boundsWithPadding.bottom-strokeWidthFull,tmpRadii,Path.Direction.CCW);
+                strokePathTop.close();strokePathBottom.rewind();return;
+            }
             Arrays.fill(tmpRadii, 0);
             tmpRadii[0] = radii[0]; tmpRadii[1] = radii[1]; tmpRadii[2] = radii[2]; tmpRadii[3] = radii[3];
             if (radiiAreSame && radii[0] > radiusMax) {
@@ -723,6 +738,11 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
     }
 
     private void drawStrokeInternalIfNeeded(Canvas canvas) {
+        if(boundProps.useFullStroke) {
+            int color=Theme.multAlpha(strokeColorFull,alpha/255f);
+            if(Color.alpha(color)>0) {paintStrokeFill.setColor(color);canvas.drawPath(boundProps.strokePathTop,paintStrokeFill);}
+            return;
+        }
         final int strokeColorTop = Theme.multAlpha(this.strokeColorTop, alpha / 255f);
         final int strokeColorBottom = Theme.multAlpha(this.strokeColorBottom, alpha / 255f);
 
@@ -786,11 +806,13 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
         ninePatchHashBuilder.start();
         ninePatchHashBuilder.add(fillColor);
         ninePatchHashBuilder.add(shadowColor);
+        ninePatchHashBuilder.addF(shadowAlpha);
         ninePatchHashBuilder.add(boundProps.radii);
         ninePatchHashBuilder.addF(shadowLayerRadius);
         ninePatchHashBuilder.addF(shadowLayerDx);
         ninePatchHashBuilder.addF(shadowLayerDy);
         ninePatchHashBuilder.add(withStroke);
+        if(withStroke) {ninePatchHashBuilder.add(boundProps.useFullStroke);ninePatchHashBuilder.add(strokeColorFull);ninePatchHashBuilder.addF(boundProps.strokeWidthFull);}
         if (withStroke) {
             ninePatchHashBuilder.add(strokeColorTop);
             ninePatchHashBuilder.add(strokeColorBottom);
@@ -816,7 +838,7 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
                     paint.setStyle(Paint.Style.FILL);
                     paint.setColor(fillColor);
                     if (shadowLayerRadius > 0f) {
-                        paint.setShadowLayer(shadowLayerRadius, shadowLayerDx, shadowLayerDy, shadowColor);
+                        paint.setShadowLayer(shadowLayerRadius, shadowLayerDx, shadowLayerDy, Theme.multAlpha(shadowColor, shadowAlpha));
                     }
                     canvas.drawPath(path, paint);
                     if (shadowLayerRadius > 0f) {
@@ -825,7 +847,11 @@ public abstract class BlurredBackgroundDrawable extends Drawable {
                     }
 
 
-                    if (withStroke) {
+                    if(withStroke && boundProps.useFullStroke) {
+                        Path outline=new Path();outline.addRoundRect(rect,radii1,Path.Direction.CW);
+                        float w=boundProps.strokeWidthFull;RectF inner=new RectF(rect);inner.inset(w,w);outline.addRoundRect(inner,radii1,Path.Direction.CCW);
+                        paint.setColor(strokeColorFull);canvas.drawPath(outline,paint);
+                    } else if (withStroke) {
                         final float[] radii = Arrays.copyOf(boundProps.radii, 8);
                         final boolean radiiAreSame = RadiiUtils.radiiAreSame(radii);
                         final float radiusMax = Math.min(rect.width(), rect.height()) / 2f;

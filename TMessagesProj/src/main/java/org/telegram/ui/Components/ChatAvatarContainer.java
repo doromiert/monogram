@@ -663,7 +663,8 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         final int width = MeasureSpec.getSize(widthMeasureSpec);
         final int availableWidth = width - dp((avatarImageView.getVisibility() == VISIBLE ? 54 : 0) + 16);
-        avatarImageView.measure(MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp) - 2, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp) - 2, MeasureSpec.EXACTLY));
+        int avatarInset=glassMode && org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?0:1;
+        avatarImageView.measure(MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp)-2*avatarInset,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp)-2*avatarInset,MeasureSpec.EXACTLY));
         titleTextView.measure(MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(dp(24 + 8), MeasureSpec.AT_MOST));
         if (subtitleTextView != null) {
             subtitleTextView.measure(MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(dp(20), MeasureSpec.AT_MOST));
@@ -753,7 +754,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
 
     private boolean glassMode;
     public void setGlassMode() {
-        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()) return;
+        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()) avatarSizeInDp=46;
         if (titleTextView != null) {
             titleTextView.setTextSizePx(dp(17.5f));
         }
@@ -769,8 +770,9 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         final int viewTop = (actionBarHeight - avatarImageView.getMeasuredHeight() - 2) / 2 + (occupyStatusBar ? AndroidUtilities.statusBarHeight : 0);
         final int subtitleTop = viewTop + dp(glassMode ? 23.66f : 24);
 
-        avatarImageView.layout(1 + leftPadding, 1 + viewTop, 1 + leftPadding + avatarImageView.getMeasuredWidth(), 1 + viewTop + avatarImageView.getMeasuredHeight());
-        int l = leftPadding + (avatarImageView.getVisibility() == VISIBLE ? dp(glassMode ? 49.66f : 55) : dp(glassMode ? 13 : 1)) + rightAvatarPadding;
+        int avatarInset=glassMode && org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?0:1;
+        avatarImageView.layout(avatarInset+leftPadding,avatarInset+viewTop,avatarInset+leftPadding+avatarImageView.getMeasuredWidth(),avatarInset+viewTop+avatarImageView.getMeasuredHeight());
+        int l = leftPadding + (avatarImageView.getVisibility() == VISIBLE ? dp(glassMode ? (org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?53.66f:49.66f) : 55) : dp(glassMode ? 13 : 1)) + rightAvatarPadding;
         SimpleTextView titleTextLargerCopyView = this.titleTextLargerCopyView.get();
         if (getSubtitleTextView().getVisibility() != GONE) {
             titleTextView.layout(l, viewTop + dp(1.66f) - titleTextView.getPaddingTop(), l + titleTextView.getMeasuredWidth(), viewTop + titleTextView.getTextHeight() + dp(1.66f) - titleTextView.getPaddingTop() + titleTextView.getPaddingBottom());

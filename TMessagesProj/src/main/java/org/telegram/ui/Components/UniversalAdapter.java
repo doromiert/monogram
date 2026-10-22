@@ -181,7 +181,10 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     public void whiteSectionEnd() {
         if (currentWhiteSection != null) {
             currentWhiteSection.end = Math.max(0, itemsOffset + items.size() - 1);
-            if (currentWhiteSection.start == currentWhiteSection.end) {
+            if(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()) {
+                while(currentWhiteSection.start<=currentWhiteSection.end && isHeader(getItemViewType(currentWhiteSection.start))) currentWhiteSection.start++;
+            }
+            if (currentWhiteSection.start >= currentWhiteSection.end) {
                 whiteSections.remove(currentWhiteSection);
             }
             currentWhiteSection = null;
@@ -198,6 +201,9 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     public void reorderSectionEnd() {
         if (currentReorderSection != null) {
             currentReorderSection.end = Math.max(0, items.size() - 1);
+            if(org.telegram.utils.settings.MonogramAppearance.separatedHeaders()) {
+                while(currentReorderSection.start<=currentReorderSection.end && isHeader(getItemViewType(currentReorderSection.start))) currentReorderSection.start++;
+            }
         }
     }
 
@@ -574,9 +580,14 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     private boolean hasDivider(int position) {
         UItem item = getItem(position);
         UItem nextItem = getItem(position + 1);
-        return item != null && !item.hideDivider && nextItem != null && isShadow(nextItem.viewType) == isShadow(item.viewType);
+        return item != null && !item.hideDivider && nextItem != null
+                && !(org.telegram.utils.settings.MonogramAppearance.separatedHeaders() && isHeader(nextItem.viewType))
+                && isShadow(nextItem.viewType) == isShadow(item.viewType);
     }
 
+    public static boolean isHeader(int viewType) {
+        return viewType==VIEW_TYPE_HEADER || viewType==VIEW_TYPE_ANIMATED_HEADER || viewType==VIEW_TYPE_BLACK_HEADER || viewType==VIEW_TYPE_LARGE_HEADER;
+    }
     public static boolean isShadow(int viewType) {
         if (viewType >= UItem.factoryViewTypeStartsWith) {
             UItem.UItemFactory<?> factory = UItem.findFactory(viewType);
@@ -692,7 +703,8 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                     checkCell.setChecked(item.checked);
                 }
                 checkCell.setEnabled(item.enabled, null);
-                checkCell.setTextAndCheck(item.text, item.checked, divider);
+                if(TextUtils.isEmpty(item.subtext)) checkCell.setTextAndCheck(item.text,item.checked,divider);
+                else checkCell.setTextAndValueAndCheck(item.text.toString(),item.subtext.toString(),item.checked,item.intValue==1,divider);
                 checkCell.itemId = item.id;
                 if (viewType == VIEW_TYPE_CHECKRIPPLE) {
                     holder.itemView.setBackgroundColor(Theme.getColor(item.checked ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
@@ -1060,12 +1072,11 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     }
 
     private void updateColors(RecyclerView.ViewHolder holder) {
-        if (holder.itemView instanceof Theme.Colorable) {
-            ((Theme.Colorable) holder.itemView).updateColors();
-            if (shouldApplyBackground(holder.getItemViewType())) {
-                final int key_background = dialog ? Theme.key_dialogBackground : Theme.key_windowBackgroundWhite;
-                holder.itemView.setBackgroundColor(getThemedColor(key_background));
-            }
+        if (holder.itemView instanceof Theme.Colorable) ((Theme.Colorable)holder.itemView).updateColors();
+        if(shouldApplyBackground(holder.getItemViewType())) {
+            UItem item=getItem(holder.getAdapterPosition());
+            if(item!=null && item.transparent) holder.itemView.setBackground(null);
+            else holder.itemView.setBackgroundColor(getThemedColor(dialog?Theme.key_dialogBackground:Theme.key_windowBackgroundWhite));
         }
     }
 

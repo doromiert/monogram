@@ -303,6 +303,9 @@ public class UItem extends AdapterWithDiffUtils.Item {
         i.text = text;
         return i;
     }
+    public static UItem asCheck(int id,CharSequence text,CharSequence description,boolean multiline) {
+        UItem item=asCheck(id,text);item.subtext=description;item.intValue=multiline?1:0;return item;
+    }
 
     public static UItem asRadio(int id, CharSequence text) {
         UItem i = new UItem(UniversalAdapter.VIEW_TYPE_RADIO, false);

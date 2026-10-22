@@ -71,7 +71,7 @@ public class FragmentFloatingButton extends FrameLayout implements FactorAnimato
         ScaleStateListAnimator.apply(this);
         if (!isSubButton) {
             setOutlineProvider(ViewOutlineProviderImpl.BOUNDS_OVAL);
-            setTranslationZ(dpf2(0.5f));
+            setTranslationZ(dpf2(MonogramFabStyle.getFabElevationDp()));
         }
 
         if (isSubButton) {
@@ -95,8 +95,8 @@ public class FragmentFloatingButton extends FrameLayout implements FactorAnimato
             iBlur3Background = iBlur3SourceColor.createDrawable();
             iBlur3Background.setColorProvider(iBlur3ColorProviderTabs);
             iBlur3Background.setStrokeWidth(dpf2(0.4f), dpf2(0.4f));
-            iBlur3Background.setRadius(dp(18));
-            iBlur3Background.setPadding(dp(5.66f));
+            iBlur3Background.setRadius(dp(MonogramFabStyle.getSubFabBackgroundRadiusDp()));
+            iBlur3Background.setPadding(dp(MonogramFabStyle.getSubFabPaddingDp()));
         }
 
         updateColors();
@@ -157,49 +157,43 @@ public class FragmentFloatingButton extends FrameLayout implements FactorAnimato
             iBlur3Background.updateColors();
             invalidate();
 
-            int rad = dp(18);
+            iBlur3Background.setRadius(dp(MonogramFabStyle.getSubFabBackgroundRadiusDp()));
+            iBlur3Background.setPadding(dp(MonogramFabStyle.getSubFabPaddingDp()));
+            int rad = dp(MonogramFabStyle.getSubFabBackgroundRadiusDp());
             int pressedColor = Theme.getColor(Theme.key_listSelector, resourcesProvider);
-            setBackground(Theme.createInsetRoundRectDrawable(pressedColor, rad, dp(6)));
+            setBackground(Theme.createInsetRoundRectDrawable(pressedColor, rad, dp(MonogramFabStyle.getSubFabPaddingDp())));
         } else {
             imageView.setColorFilter(Theme.getColor(Theme.key_chats_actionIcon, resourcesProvider), PorterDuff.Mode.SRC_IN);
             progressView.setProgressColor(Theme.getColor(Theme.key_chats_actionIcon, resourcesProvider));
-            if (org.telegram.utils.settings.MonogramAppearance.squareFab.get() || org.telegram.utils.settings.MonogramAppearance.fabStyle.get()) {
-                setOutlineProvider(new android.view.ViewOutlineProvider() {
-                    @Override public void getOutline(View view, android.graphics.Outline outline) {
-                        outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),dp(16));
-                    }
-                });
-                setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(16),
-                    Theme.getColor(Theme.key_featuredStickers_addButton,resourcesProvider),
-                    Theme.getColor(Theme.key_featuredStickers_addButtonPressed,resourcesProvider)));
-            } else {
-                setOutlineProvider(ViewOutlineProviderImpl.BOUNDS_OVAL);
-                setBackground(Theme.createSimpleSelectorCircleDrawable(dp(48),
-                    Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider),
-                    Theme.getColor(Theme.key_featuredStickers_addButtonPressed, resourcesProvider)));
-            }
+            final int radius=dp(MonogramFabStyle.getFabCornerRadiusDp());
+            setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(View view,android.graphics.Outline outline) {outline.setRoundRect(0,0,view.getWidth(),view.getHeight(),radius);}
+            });
+            setTranslationZ(dpf2(MonogramFabStyle.getFabElevationDp()));
+            setBackground(Theme.createSimpleSelectorRoundRectDrawable(radius,
+                    Theme.getColor(Theme.key_featuredStickers_addButton,resourcesProvider),Theme.getColor(Theme.key_featuredStickers_addButtonPressed,resourcesProvider)));
         }
     }
 
     public static final int SIZE = 48;
 
     public static FrameLayout.LayoutParams createSubButtonLayoutParams() {
-        return LayoutHelper.createFrame(48, 48,
+        return LayoutHelper.createFrame(MonogramFabStyle.getFabSizeDp(), MonogramFabStyle.getFabSizeDp(),
                 (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM,
-                20, 0, 20, 14);
+                20, 0, 20, MonogramFabStyle.getSubFabBottomMarginDp());
     }
 
     public static FrameLayout.LayoutParams createDefaultLayoutParams() {
-        return LayoutHelper.createFrame(48, 48,
+        return LayoutHelper.createFrame(MonogramFabStyle.getFabSizeDp(), MonogramFabStyle.getFabSizeDp(),
                 (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM,
-                20, 0, 20, 14);
+                20, 0, 20, MonogramFabStyle.getFabBottomMarginDp());
     }
 
 
     public static FrameLayout.LayoutParams createDefaultLayoutParamsBig() {
         return LayoutHelper.createFrame(56, 56,
                 (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM,
-                20 /*24*/, 0, 20 /*24*/, 14 /*16*/);
+                20 /*24*/, 0, 20 /*24*/, MonogramFabStyle.getFabBottomMarginDp());
     }
 
     private float additionalTranslationY;

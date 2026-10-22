@@ -291,7 +291,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
     private boolean drawCustomSelector;
     private void setSkipDrawSelector(boolean skipDrawSelector) {
         drawCustomSelector = skipDrawSelector;
-        if (drawCustomSelector) {
+        if (drawCustomSelector && !org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()) {
             selectorPaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider), 0.09f));
         }
         for (int a = 0, N = getChildCount(); a < N; a++) {
@@ -315,7 +315,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
     @Override
     protected void dispatchDraw(@NonNull Canvas canvas) {
-        if (drawCustomSelector) {
+        if (drawCustomSelector && !org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()) {
             final float x = animatedLongSelectedViewCenterX + animatedLongSelectedViewOffsetX;
             final float sWidth = getInterpolatedWidthByX(x, this);
             final float sHeight = getHeight() - getPaddingTop() - getPaddingBottom();
@@ -327,6 +327,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
         }
 
         super.dispatchDraw(canvas);
+        if(org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()) canvas.drawLine(0,0,getWidth(),0,Theme.dividerPaint);
     }
 
 
@@ -611,7 +612,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        clickHelper.onTouchEvent(this, ev);
+        if(!org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()) clickHelper.onTouchEvent(this, ev);
         return super.dispatchTouchEvent(ev);
     }
 

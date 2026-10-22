@@ -438,9 +438,13 @@ public class UniversalRecyclerView extends RecyclerListView {
             view -> {
                 if (view.getParent() != this) return false;
                 final ViewHolder viewHolder = getChildViewHolder(view);
-                return !UniversalAdapter.isShadow(viewHolder.getItemViewType()) && !(org.telegram.utils.settings.MonogramAppearance.separateHeaders.get() && view instanceof org.telegram.ui.Cells.HeaderCell);
+                if(viewHolder==null || Boolean.TRUE.equals(view.getTag(org.telegram.messenger.R.id.parent_tag))) return false;
+                UItem item=adapter.getItem(viewHolder.getAdapterPosition());
+                if(item!=null && item.transparent) return false;
+                return !UniversalAdapter.isShadow(viewHolder.getItemViewType())
+                        && !(org.telegram.utils.settings.MonogramAppearance.separatedHeaders() && UniversalAdapter.isHeader(viewHolder.getItemViewType()));
             },
-            UniversalAdapter::isShadow,
+            type -> !UniversalAdapter.isShadow(type) && !(org.telegram.utils.settings.MonogramAppearance.separatedHeaders() && UniversalAdapter.isHeader(type)),
             padding, roundRadius,
             super::drawBackgroundRect,
             topPadding

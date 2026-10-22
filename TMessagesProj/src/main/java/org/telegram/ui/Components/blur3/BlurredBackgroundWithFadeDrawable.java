@@ -26,6 +26,7 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.math.MathUtils;
 
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSource;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceBitmap;
@@ -36,6 +37,14 @@ public class BlurredBackgroundWithFadeDrawable extends Drawable {
     private final Paint maskFadeGradientPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final BlurredBackgroundDrawable drawable;
 
+    private boolean overrideFadeEnabled;
+    private int overrideFadeColor,lastOverrideFadeColor,lastOverrideFadeHeight;
+    private Shader overrideFadeShader,overrideMaskShader,overrideComposeShader;
+    private final Paint overrideFadePaint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
+    public void setOverrideFadeColor(int color) {
+        if(overrideFadeColor!=color) {overrideFadeColor=color;overrideFadeShader=null;}
+        overrideFadeEnabled=true;invalidateSelf();
+    }
     private final Matrix matrix = new Matrix();
     private Shader shader;
 
@@ -97,6 +106,7 @@ public class BlurredBackgroundWithFadeDrawable extends Drawable {
             return;
         }
 
+        if(overrideFadeEnabled) {drawOverrideFade(canvas,bounds);return;}
         BlurredBackgroundSource source = drawable.getUnwrappedSource();
         if (!ignoreFastWay && source instanceof BlurredBackgroundSourceColor) {
             // fast way - just draw gradient
@@ -257,5 +267,66 @@ public class BlurredBackgroundWithFadeDrawable extends Drawable {
 
             outColors[i] = ColorUtils.setAlphaComponent(baseColor, alpha);
         }
+    }
+    private void drawOverrideFade(Canvas canvas, Rect rect) {
+        Bitmap bitmap;
+        int max = Math.max(1, rect.height());
+        int i = this.lastOverrideFadeColor;
+        int i2 = this.overrideFadeColor;
+        if (i != i2 || this.lastOverrideFadeHeight != max || this.overrideFadeShader == null) {
+            this.lastOverrideFadeColor = i2;
+            this.lastOverrideFadeHeight = max;
+            this.overrideFadeShader = createOverrideFadeGradient(i2, max, 1.0f);
+            this.overrideMaskShader = createOverrideFadeGradient(-16777216, max, 0.75f);
+            this.overrideComposeShader = null;
+            this.overrideFadePaint.setShader(this.overrideFadeShader);
+        }
+        this.matrixTmp.reset();
+        this.matrixTmp.postTranslate(rect.left, rect.top);
+        BlurredBackgroundSource unwrappedSource = this.drawable.getUnwrappedSource();
+        if (!this.ignoreFastWay && (unwrappedSource instanceof BlurredBackgroundSourceBitmap)) {
+            BlurredBackgroundSourceBitmap blurredBackgroundSourceBitmap = (BlurredBackgroundSourceBitmap)unwrappedSource;
+            int i3 = Build.VERSION.SDK_INT;
+            if (i3 >= 28 && (bitmap = blurredBackgroundSourceBitmap.getBitmap()) != null) {
+                if (this.bitmapShader == null || this.lastBitmap != bitmap) {
+                    this.lastBitmap = bitmap;
+                    Shader.TileMode tileMode = Shader.TileMode.CLAMP;
+                    BitmapShader bitmapShader = new BitmapShader(bitmap, tileMode, tileMode);
+                    this.bitmapShader = bitmapShader;
+                    if (i3 >= 33) {
+                        bitmapShader.setFilterMode(2);
+                    }
+                    this.overrideComposeShader = null;
+                }
+                if (this.overrideComposeShader == null) {
+                    ComposeShader composeShader = new ComposeShader(this.bitmapShader, this.overrideMaskShader, PorterDuff.Mode.DST_IN);
+                    this.overrideComposeShader = composeShader;
+                    this.bitmapPaint.setShader(composeShader);
+                }
+                this.overrideMaskShader.setLocalMatrix(this.matrixTmp);
+                this.bitmapMatrix.set(blurredBackgroundSourceBitmap.getMatrix());
+                this.bitmapMatrix.postTranslate(-this.drawable.getSourceOffsetX(), -this.drawable.getSourceOffsetY());
+                this.bitmapShader.setLocalMatrix(this.bitmapMatrix);
+                this.bitmapPaint.setAlpha(this.alpha);
+                canvas.drawRect(rect, this.bitmapPaint);
+                this.overrideFadeShader.setLocalMatrix(this.matrixTmp);
+                this.overrideFadePaint.setAlpha(Math.round(this.alpha * 0.8f));
+                canvas.drawRect(rect, this.overrideFadePaint);
+                return;
+            }
+        }
+        this.overrideFadeShader.setLocalMatrix(this.matrixTmp);
+        this.overrideFadePaint.setAlpha(this.alpha);
+        canvas.drawRect(rect, this.overrideFadePaint);
+    }
+
+    private static LinearGradient createOverrideFadeGradient(int i, int i2, float f) {
+        boolean isCurrentThemeDark = Theme.isCurrentThemeDark();
+        float[] fArr = {isCurrentThemeDark ? 0.95f : 1.0f, isCurrentThemeDark ? 0.9f : 0.93f, isCurrentThemeDark ? 0.78f : 0.83f, 0.62f, 0.4f, 0.18f, 0.05f, 0.0f};
+        int[] iArr = new int[8];
+        for (int i3 = 0; i3 < 8; i3++) {
+            iArr[i3] = ColorUtils.setAlphaComponent(i, Math.round(fArr[i3] * 255.0f * f));
+        }
+        return new LinearGradient(0.0f, 0.0f, 0.0f, Math.max(1, i2), iArr, new float[]{0.0f, 0.5f, 0.65f, 0.75f, 0.84f, 0.92f, 0.97f, 1.0f}, Shader.TileMode.CLAMP);
     }
 }

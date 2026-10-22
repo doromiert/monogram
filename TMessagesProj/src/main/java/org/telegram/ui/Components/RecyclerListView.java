@@ -3288,7 +3288,7 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
     }
     public void setSections(int padding, float roundRadius, boolean topPadding) {
         setSections(
-            view -> !(view instanceof TextInfoPrivacyCell || view instanceof ShadowSectionCell || view instanceof FiltersSetupActivity.HintInnerCell || view instanceof GraySectionCell || view instanceof CollapseTextCell || org.telegram.utils.settings.MonogramAppearance.separateHeaders.get() && view instanceof org.telegram.ui.Cells.HeaderCell) && !Objects.equals(view.getTag(), TAG_NOT_SECTION),
+            view -> !(view instanceof TextInfoPrivacyCell || view instanceof ShadowSectionCell || view instanceof FiltersSetupActivity.HintInnerCell || view instanceof GraySectionCell || view instanceof CollapseTextCell || org.telegram.utils.settings.MonogramAppearance.separatedHeaders() && view instanceof org.telegram.ui.Cells.HeaderCell) && !Objects.equals(view.getTag(), TAG_NOT_SECTION),
             padding,
             roundRadius,
             this::drawBackgroundRect,
@@ -3392,7 +3392,6 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         ) {
             if (isSectionItem.run(view)) {
                 outRect.left = outRect.right = padding;
-                if(org.telegram.utils.settings.MonogramAppearance.dividers.get()==2) outRect.bottom=dp(6);
 
                 final ViewHolder viewHolder = parent.getChildViewHolder(view);
                 final Adapter adapter = parent.getAdapter();
@@ -3403,6 +3402,8 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                         final boolean last = position == adapter.getItemCount() - 1;
 
                         if (first) outRect.top = enableTopPadding ? padding : dp(4);
+                        if(parent instanceof RecyclerListView && ((RecyclerListView)parent).useSegmentedSections()
+                                && ((RecyclerListView)parent).isSectionPosition(position-1)) outRect.top+=dp(2);
                         if (last) outRect.bottom = padding;
                     }
                 }
@@ -3474,16 +3475,38 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         }
         return false;
     }
+    private boolean segmentedSectionsEnabled=true;
+    public void setSegmentedSectionsEnabled(boolean enabled) {
+        if(segmentedSectionsEnabled==enabled) return;
+        segmentedSectionsEnabled=enabled;invalidateItemDecorations();invalidate();
+    }
+    private boolean useSegmentedSections() {return segmentedSectionsEnabled && org.telegram.utils.settings.MonogramAppearance.dividers.get()==2;}
+    private boolean isSectionPosition(int position) {
+        return getAdapter()!=null && isViewTypeSection!=null && position>=0 && position<getAdapter().getItemCount()
+                && isViewTypeSection.run(getAdapter().getItemViewType(position));
+    }
+    private float segmentedRadius(View child,int direction) {
+        return isSectionPosition(getChildAdapterPosition(child)+direction)?Math.min(sectionRadius,dp(4)):sectionRadius;
+    }
+    private RectF segmentedRect(View child) {
+        return new RectF(child.getX(),Math.max(applyPaddingToSections?getPaddingTop():-sectionRadius,top(child)),
+                child.getX()+child.getWidth(),Math.min(getHeight()-(applyPaddingToSections?getPaddingBottom():-sectionRadius),bottom(child)));
+    }
+    private void clipSegmentedChild(Canvas canvas,View child) {
+        clipPath.rewind();float top=segmentedRadius(child,-1),bottom=segmentedRadius(child,1);
+        clipPath.addRoundRect(segmentedRect(child),new float[]{top,top,top,top,bottom,bottom,bottom,bottom},Path.Direction.CW);canvas.clipPath(clipPath);
+    }
     public void drawSectionsBackgrounds(Canvas canvas) {
         if (drawSectionBackground == null) return;
-        if(org.telegram.utils.settings.MonogramAppearance.dividers.get()==2) {
+        if(useSegmentedSections()) {
             for(int i=0;i<getChildCount();i++) {
                 View child=getChildAt(i);
-                if(child!=emptyView && child.getVisibility()==VISIBLE && sectionsItemDecoration.isSectionItem.run(child)) drawSectionBackground(canvas,child,child,false,false);
+                if(child!=emptyView && child.getVisibility()==VISIBLE && child.getAlpha()>0
+                        && sectionsItemDecoration.isSectionItem.run(child) && !isInsideForcedSection(getChildAdapterPosition(child))) {
+                    RectF rect=segmentedRect(child);drawSectionBackground.run(canvas,rect,segmentedRadius(child,-1),segmentedRadius(child,1),child.getAlpha());
+                }
             }
-            return;
-        }
-
+        } else
         if (isAnimating()) {
             if (sections == null) {
                 sections = new ArrayList<>();
@@ -3635,6 +3658,7 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         if (child == null || !shouldClipChildToSection(child) || !sectionsItemDecoration.isSectionItem.run(child))
             return;
 
+        if(useSegmentedSections() && !isInsideForcedSection(getChildAdapterPosition(child))) {clipSegmentedChild(canvas,child);return;}
         boolean prev, next;
         int position = getChildAdapterPosition(child);
         if (position == RecyclerView.NO_POSITION) {
@@ -3713,13 +3737,16 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
             child.getX() + child.getWidth(),
             Math.min(getHeight() - (applyPaddingToSections ? getPaddingBottom() : 0), bottom(child))
         );
-        if (prev && next && !forceRound) {
+        if (prev && next && !forceRound && !(useSegmentedSections() && !isInsideForcedSection(position))) {
             prev = top(child) >= rect.top;
             next = bottom(child) <= rect.bottom;
             if (prev && next) return Theme.createRoundRectDrawable(0, Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
         }
         final Path clipPath = new Path();
-        if (!prev && !next || forceRound) {
+        if(useSegmentedSections() && !isInsideForcedSection(position)) {
+            float top=segmentedRadius(child,-1),bottom=segmentedRadius(child,1);
+            clipPath.addRoundRect(rect,new float[]{top,top,top,top,bottom,bottom,bottom,bottom},Path.Direction.CW);
+        } else if (!prev && !next || forceRound) {
             clipPath.rewind();
             clipPath.addRoundRect(rect, sectionRadius, sectionRadius, Path.Direction.CW);
         } else if (!prev) {

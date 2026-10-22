@@ -305,10 +305,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         tabsView = new MainTabsLayout(context, resourceProvider);
         tabsView.setClipChildren(false);
-        final boolean flatNavigation = org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get() == 0;
+        final boolean materialNavigation=org.telegram.utils.settings.MonogramAppearance.navigationStyle.get();
+        final boolean flatNavigation=materialNavigation || org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==0;
         tabsView.setFillWidth(flatNavigation);
-        tabsView.setPadding(flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(flatNavigation ? 4 : DialogsActivity.MAIN_TABS_MARGIN + 4), flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(flatNavigation ? 4 : DialogsActivity.MAIN_TABS_MARGIN + 4));
-        tabsView.setMaxWidth(org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==0?0:dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        tabsView.setPadding(flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(materialNavigation?0:flatNavigation?4:DialogsActivity.MAIN_TABS_MARGIN+4), flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(materialNavigation?0:flatNavigation?4:DialogsActivity.MAIN_TABS_MARGIN+4));
+        tabsView.setMaxWidth(flatNavigation?0:dp(344));
 
         tabs = new GlassTabView[5];
         tabs[INDEX_CHATS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CHATS, R.string.MainTabsChats);
@@ -363,7 +364,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         iBlur3FactoryGlass.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
 
         tabsViewBackground = iBlur3FactoryGlass.create(tabsView, BlurredBackgroundProviderImpl.mainTabs(resourceProvider));
-        tabsViewBackground.setRadius(org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==0?0:dp(org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()?16:DialogsActivity.MAIN_TABS_HEIGHT / 2f));
+        tabsViewBackground.setRadius(flatNavigation?0:dp(DialogsActivity.MAIN_TABS_HEIGHT/2f));
         tabsViewBackground.setPadding(flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
         tabsView.setBackground(flatNavigation ? null : tabsViewBackground);
 
@@ -380,7 +381,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsViewWrapper = new FrameLayout(context);
         if (flatNavigation) tabsViewWrapper.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
         tabsViewWrapper.setOnClickListener(v -> {});
-        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, flatNavigation ? DialogsActivity.MAIN_TABS_HEIGHT : DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, materialNavigation?64:flatNavigation?DialogsActivity.MAIN_TABS_HEIGHT:DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         tabsViewWrapper.setClipToPadding(false);
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
@@ -932,7 +933,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             }
         }
 
-        tabsViewWrapper.setPadding(systemInsets.left, 0, systemInsets.right, navigationBarHeight);
+        if(org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()) {
+            ViewGroup.LayoutParams tabsParams=tabsView.getLayoutParams();tabsParams.height=dp(64)+navigationBarHeight;tabsView.setLayoutParams(tabsParams);
+            tabsView.setPadding(0,0,0,navigationBarHeight);tabsViewWrapper.setPadding(systemInsets.left,0,systemInsets.right,0);
+        } else tabsViewWrapper.setPadding(systemInsets.left, 0, systemInsets.right, navigationBarHeight);
 
         final WindowInsetsCompat consumed = isUpdateLayoutVisible ?
             insets.inset(0, 0, 0, navigationBarHeight) : insets;
@@ -1201,7 +1205,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     private void blur3_updateColors() {
         blur3_updateFadeColors();
-        if (tabsViewWrapper != null && org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get() == 0) {
+        if (tabsViewWrapper != null && (org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==0 || org.telegram.utils.settings.MonogramAppearance.navigationStyle.get())) {
             tabsViewWrapper.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
         }
         if (tabsViewBackground != null) {

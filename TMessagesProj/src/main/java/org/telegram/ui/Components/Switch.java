@@ -45,6 +45,16 @@ public class Switch extends View {
 
     private float progress;
     private ObjectAnimator checkAnimator;
+    private androidx.dynamicanimation.animation.SpringAnimation checkSpringAnimator;
+    private final BoolAnimator animatorPressed=MonogramSwitchStyle.createThumbPressedAnimator(this);
+    private final Paint outlinePaint=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final float[] materialIconLines=new float[8];
+    private float overrideAlpha=1f;
+    private static final androidx.dynamicanimation.animation.FloatPropertyCompat<Switch> PROGRESS_PROPERTY=
+            new androidx.dynamicanimation.animation.FloatPropertyCompat<Switch>("progress") {
+                @Override public float getValue(Switch view) {return view.getProgress();}
+                @Override public void setValue(Switch view,float value) {view.setProgress(value);}
+            };
     private ObjectAnimator iconAnimator;
 
     private boolean attachedToWindow;
@@ -83,6 +93,19 @@ public class Switch extends View {
     private Paint overlayMaskPaint;
 
     private Theme.ResourcesProvider resourcesProvider;
+    private boolean lastMaterialStyle=MonogramSwitchStyle.isMaterial3SwitchStyle();
+
+    /** Refresh an attached control without replacing its view or interrupting normal toggles. */
+    public void refreshAppearanceStyle() {
+        boolean material=MonogramSwitchStyle.isMaterial3SwitchStyle();
+        if(material!=lastMaterialStyle) {
+            lastMaterialStyle=material;cancelCheckAnimator();cancelIconAnimator();
+            setProgress(isChecked?1:0);paint2.setStrokeWidth(AndroidUtilities.dp(2));paint2.setAlpha(255);
+            animatorPressed.setValue(false,false);colorSet=0;
+            if(rippleDrawable!=null) {rippleDrawable.setState(StateSet.NOTHING);rippleDrawable.setRadius(MonogramSwitchStyle.getStateLayerRadius());}
+        }
+        invalidate();
+    }
 
     private int overrideColorProgress;
 
@@ -137,6 +160,7 @@ public class Switch extends View {
     }
 
     private void cancelCheckAnimator() {
+        if(checkSpringAnimator!=null) {checkSpringAnimator.cancel();checkSpringAnimator=null;}
         if (checkAnimator != null) {
             checkAnimator.cancel();
             checkAnimator = null;
@@ -213,7 +237,9 @@ public class Switch extends View {
         if (Build.VERSION.SDK_INT >= 28 && value) {
             rippleDrawable.setHotspot(isChecked ? 0 : AndroidUtilities.dp(100), AndroidUtilities.dp(18));
         }
+        rippleDrawable.setRadius(MonogramSwitchStyle.getStateLayerRadius());
         rippleDrawable.setState(value ? pressedState : StateSet.NOTHING);
+        animatorPressed.setValue(value,attachedToWindow);
         invalidate();
     }
 
@@ -234,6 +260,12 @@ public class Switch extends View {
     }
 
     private void animateToCheckedState(boolean newCheckedState) {
+        if(MonogramSwitchStyle.isMaterial3SwitchStyle()) {
+            if(checkAnimator!=null) {checkAnimator.cancel();checkAnimator=null;}
+            if(checkSpringAnimator==null) checkSpringAnimator=MonogramSwitchStyle.createThumbSpring(this,PROGRESS_PROPERTY);
+            checkSpringAnimator.animateToFinalPosition(newCheckedState?1:0);return;
+        }
+        cancelCheckAnimator();
         checkAnimator = ObjectAnimator.ofFloat(this, "progress", newCheckedState ? 1 : 0);
         checkAnimator.setDuration(200);
         checkAnimator.addListener(new AnimatorListenerAdapter() {
@@ -267,6 +299,7 @@ public class Switch extends View {
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         attachedToWindow = false;
+        cancelCheckAnimator();cancelIconAnimator();animatorPressed.setValue(false,false);
     }
 
     public void setOnCheckedChangeListener(OnCheckedChangeListener listener) {
@@ -371,17 +404,55 @@ public class Switch extends View {
         invalidate();
     }
 
+    @Override public void setAlpha(float alpha) {
+        if(MonogramSwitchStyle.isMaterial3SwitchStyle()) {overrideAlpha=alpha;super.setAlpha(1);invalidate();}
+        else {overrideAlpha=1;super.setAlpha(alpha);}
+    }
     private void drawMaterialSwitch(Canvas canvas) {
-        float width=Math.min(AndroidUtilities.dp(48),getWidth()-AndroidUtilities.dp(2));
-        float height=Math.min(AndroidUtilities.dp(28),getHeight()-AndroidUtilities.dp(2));
-        float left=(getWidth()-width)/2f,top=(getHeight()-height)/2f;
-        int off=Theme.getColor(trackColorKey,resourcesProvider),on=Theme.getColor(trackCheckedColorKey,resourcesProvider);
-        paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(off,on,progress));
-        rectF.set(left,top,left+width,top+height);canvas.drawRoundRect(rectF,height/2,height/2,paint);
-        float radius=height*(.27f+.09f*progress),cx=left+height/2+(width-height)*progress,cy=getHeight()/2f;
-        paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(Theme.getColor(thumbColorKey,resourcesProvider),Theme.getColor(thumbCheckedColorKey,resourcesProvider),progress));
-        canvas.drawCircle(cx,cy,radius,paint);
-        if(progress>.5f){paint2.setColor(on);paint2.setAlpha((int)((progress-.5f)*510));canvas.drawLine(cx-radius*.45f,cy,cx-radius*.1f,cy+radius*.3f,paint2);canvas.drawLine(cx-radius*.1f,cy+radius*.3f,cx+radius*.5f,cy-radius*.4f,paint2);paint2.setAlpha(255);}
+        float cx=MonogramSwitchStyle.getThumbCenterX(getWidth(),progress),cy=getHeight()/2f;
+        int layer=overrideAlpha<1?canvas.saveLayerAlpha(-AndroidUtilities.dp(20),-AndroidUtilities.dp(20),getWidth()+AndroidUtilities.dp(20),getHeight()+AndroidUtilities.dp(20),(int)(255*overrideAlpha)):canvas.save();
+        int offTrack=processColor(MonogramSwitchStyle.getUnselectedTrackColor(trackColorKey,resourcesProvider));
+        int onTrack=processColor(Theme.getColor(trackCheckedColorKey,resourcesProvider));
+        int offThumb=processColor(MonogramSwitchStyle.getUnselectedThumbColor(trackColorKey,thumbColorKey,resourcesProvider));
+        int onThumb=processColor(MonogramSwitchStyle.getSelectedThumbColor(thumbCheckedColorKey,resourcesProvider));
+        float base=overrideColorProgress==1?0:overrideColorProgress==2?1:org.telegram.messenger.Utilities.clamp01(progress);
+        drawMaterialParts(canvas,cx,cy,base,offTrack,onTrack,offThumb,onThumb);
+        if(overrideColorProgress!=0 && overlayRad>0) {
+            int reveal=canvas.save();android.graphics.Path clip=new android.graphics.Path();
+            clip.addCircle(overlayCx-getX(),overlayCy-getY(),overlayRad,android.graphics.Path.Direction.CW);
+            canvas.clipPath(clip);drawMaterialParts(canvas,cx,cy,1-base,offTrack,onTrack,offThumb,onThumb);canvas.restoreToCount(reveal);
+        }
+        if(rippleDrawable!=null) {
+            int r=MonogramSwitchStyle.getStateLayerRadius();rippleDrawable.setBounds((int)cx-r,(int)cy-r,(int)cx+r,(int)cy+r);rippleDrawable.draw(canvas);
+        }
+        int iconColor=isChecked?onTrack:offTrack;paint2.setColor(iconColor);paint2.setStrokeWidth(MonogramSwitchStyle.getIconStrokeWidth());
+        if(iconDrawable!=null) {
+            if(lastIconColor!=iconColor) iconDrawable.setColorFilter(new PorterDuffColorFilter(lastIconColor=iconColor,PorterDuff.Mode.MULTIPLY));
+            float factor=animatorIconVisibility.getFloatValue();int w=iconDrawable.getIntrinsicWidth(),h=iconDrawable.getIntrinsicHeight();
+            if(factor>0 && w>0 && h>0) {
+                int save=canvas.save();canvas.translate(cx-w/2f,cy-h/2f);
+                float scale=factor*MonogramSwitchStyle.getThumbIconScale(w,h);canvas.scale(scale,scale,w/2f,h/2f);
+                iconDrawable.setBounds(0,0,w,h);iconDrawable.draw(canvas);canvas.restoreToCount(save);
+            }
+        } else if(drawIconType==1) {
+            MonogramSwitchStyle.setCheckIconLines(materialIconLines,cx,cy,progress);canvas.drawLines(materialIconLines,paint2);
+        } else if(drawIconType==2 || iconAnimator!=null) {
+            paint2.setAlpha((int)(255*(1-iconProgress)));canvas.drawLine(cx,cy,cx,cy-MonogramSwitchStyle.getClockHandLength(true),paint2);
+            int save=canvas.save();canvas.rotate(-90*iconProgress,cx,cy);canvas.drawLine(cx,cy,cx+MonogramSwitchStyle.getClockHandLength(false),cy,paint2);canvas.restoreToCount(save);paint2.setAlpha(255);
+        }
+        canvas.restoreToCount(layer);
+    }
+    private void drawMaterialParts(Canvas canvas,float cx,float cy,float value,int offTrack,int onTrack,int offThumb,int onThumb) {
+        paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(offTrack,onTrack,value));
+        MonogramSwitchStyle.setTrackBounds(rectF,getWidth(),getHeight());float radius=rectF.height()/2f;
+        canvas.drawRoundRect(rectF,radius,radius,paint);
+        if(value<1) {
+            float width=MonogramSwitchStyle.getTrackOutlineWidth();outlinePaint.setStyle(Paint.Style.STROKE);outlinePaint.setStrokeWidth(width);
+            outlinePaint.setColor(Theme.multAlpha(offThumb,1-value));rectF.inset(width/2,width/2);canvas.drawRoundRect(rectF,radius-width/2,radius-width/2,outlinePaint);
+        }
+        float icon=drawIconType==1 || drawIconType==2 || iconAnimator!=null?1:iconDrawable!=null?animatorIconVisibility.getFloatValue():0;
+        MonogramSwitchStyle.setThumbBounds(rectF,cx,cy,progress,isChecked,icon,animatorPressed.getFloatValue());
+        paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(offThumb,onThumb,value));radius=rectF.height()/2;canvas.drawRoundRect(rectF,radius,radius,paint);
     }
 
     @Override
@@ -389,6 +460,7 @@ public class Switch extends View {
         if (getVisibility() != VISIBLE) {
             return;
         }
+        if(lastMaterialStyle!=MonogramSwitchStyle.isMaterial3SwitchStyle()) refreshAppearanceStyle();
 
         if (org.telegram.utils.settings.MonogramAppearance.switches.get()) {
             drawMaterialSwitch(canvas);

@@ -54,6 +54,28 @@ import me.vkryl.android.animator.FactorAnimator;
 
 public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, FactorAnimator.Target {
     private final TextView textView;
+    private boolean materialMainTab;
+    private float indicatorSizeProgress,colorProgress;
+    private androidx.dynamicanimation.animation.SpringAnimation indicatorSizeSpring,colorSpring;
+    private void configureMaterialMainTab() {
+        if(!org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()) return;
+        materialMainTab=true;
+        imageView.setLayoutParams(LayoutHelper.createFrame(24,24,Gravity.TOP|Gravity.CENTER_HORIZONTAL,0,10,0,0));
+        if(backupImageView!=null) backupImageView.setLayoutParams(LayoutHelper.createFrame(22,22,Gravity.TOP|Gravity.CENTER_HORIZONTAL,0,11,0,0));
+        textView.setIncludeFontPadding(false);textView.setLetterSpacing(.04166667f);
+        textView.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,16,Gravity.TOP|Gravity.CENTER_HORIZONTAL,0,42,0,0));
+        indicatorSizeSpring=new androidx.dynamicanimation.animation.SpringAnimation(this,new androidx.dynamicanimation.animation.FloatPropertyCompat<GlassTabView>("indicator") {
+            public float getValue(GlassTabView v) {return v.indicatorSizeProgress;}
+            public void setValue(GlassTabView v,float value) {v.indicatorSizeProgress=value;v.invalidate();}
+        }).setMinimumVisibleChange(.01f).setSpring(new androidx.dynamicanimation.animation.SpringForce(0).setDampingRatio(.8f).setStiffness(380));
+        colorSpring=new androidx.dynamicanimation.animation.SpringAnimation(this,new androidx.dynamicanimation.animation.FloatPropertyCompat<GlassTabView>("color") {
+            public float getValue(GlassTabView v) {return v.colorProgress;}
+            public void setValue(GlassTabView v,float value) {v.colorProgress=value;v.updateColors();v.invalidate();}
+        }).setMinimumVisibleChange(.01f).setSpring(new androidx.dynamicanimation.animation.SpringForce(0).setDampingRatio(1).setStiffness(1600));
+    }
+    @Override protected void onDetachedFromWindow() {
+        if(indicatorSizeSpring!=null) indicatorSizeSpring.cancel();if(colorSpring!=null) colorSpring.cancel();super.onDetachedFromWindow();
+    }
     private final RLottieImageView imageView;
     private BackupImageView backupImageView;
     private Theme.ResourcesProvider resourcesProvider;
@@ -151,17 +173,19 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     protected void dispatchDraw(@NonNull Canvas canvas) {
         final float viewWidth = hasVisualWidth ? visualWidth : getWidth();
         final float selectedFactor = hasGestureSelectedOverride ? gestureSelectedOverride : isSelectedAnimator.getFloatValue();
-        if (selectedFactor > 0 && !skipDrawSelector) {
+        if ((materialMainTab?indicatorSizeProgress:selectedFactor) > 0 && !skipDrawSelector) {
             final float alpha = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(selectedFactor);
 
-            paintCounterBackground.setColor(Theme.multAlpha(colorSelected, 0.09f * alpha));
-            tmpRectF.set(0, 0, viewWidth, getHeight());
-            final float r = org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()?dp(16):Math.min(tmpRectF.width(), tmpRectF.height()) / 2f;
-            final float s = lerp(0.6f, 1, selectedFactor) * MathUtils.clamp(attachScale, 0, 1);
-            canvas.save();
-            canvas.scale(s, s, tmpRectF.centerX(), tmpRectF.centerY());
-            canvas.drawRoundRect(tmpRectF, r, r, paintCounterBackground);
-            canvas.restore();
+            if(materialMainTab) {
+                float factor=Math.max(0,indicatorSizeProgress),w=Math.min(dp(56),Math.max(0,viewWidth-dp(8)))*factor;
+                float height=Math.min(dp(32),getHeight());float left=(viewWidth-w)/2f;
+                tmpRectF.set(left,dp(6),left+w,dp(6)+height);paintCounterBackground.setColor(Theme.multAlpha(colorSelected,.125f*MathUtils.clamp(factor,0,1)));
+                canvas.drawRoundRect(tmpRectF,height/2,height/2,paintCounterBackground);
+            } else {
+                paintCounterBackground.setColor(Theme.multAlpha(colorSelected,0.09f*alpha));tmpRectF.set(0,0,viewWidth,getHeight());
+                float radius=Math.min(tmpRectF.width(),tmpRectF.height())/2f,scale=lerp(.6f,1,selectedFactor)*MathUtils.clamp(attachScale,0,1);
+                canvas.save();canvas.scale(scale,scale,tmpRectF.centerX(),tmpRectF.centerY());canvas.drawRoundRect(tmpRectF,radius,radius,paintCounterBackground);canvas.restore();
+            }
         }
 
         final float hasCounter = (usePremiumCounter ? 1f : isHasCounterAnimator.getFloatValue()) * attachScale;
@@ -177,7 +201,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
 
             final float gap = dpf2(1.33f);
             final float cx = viewWidth / 2f + dpf2(11);
-            final float cy = dpf2(10);
+            final float cy = dpf2(materialMainTab?16:10);
             final float height = dpf2(16);
             final float width = Math.max(height, counter.getCurrentWidth() + dp(8));
             final float rOuter = dpf2(9.333f);
@@ -231,10 +255,14 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     }
 
     public void setSelected(boolean selected, boolean animated) {
-        isSelectedAnimator.setValue(selected, animated);
+        if(materialMainTab) {
+            isSelectedAnimator.setValue(selected,false);float target=selected?1:0;
+            if(animated) {indicatorSizeSpring.animateToFinalPosition(target);colorSpring.animateToFinalPosition(target);}
+            else {indicatorSizeSpring.cancel();colorSpring.cancel();indicatorSizeProgress=colorProgress=target;updateColors();invalidate();}
+        } else isSelectedAnimator.setValue(selected,animated);
         checkPlayAnimation(animated);
 
-        textView.setTypeface(selected ? AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_EXTRA_BOLD) : AndroidUtilities.bold());
+        textView.setTypeface(!materialMainTab && selected ? AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_EXTRA_BOLD) : AndroidUtilities.bold());
     }
 
     public boolean isTabSelected() {
@@ -252,8 +280,8 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     private boolean needUpdateBackupViewColor;
 
     private void updateColors() {
-        final int color = ColorUtils.blendARGB(colorDefault, colorSelected, isSelectedAnimator.getFloatValue());
-        final int colorText = ColorUtils.blendARGB(colorDefault, colorSelectedText, isSelectedAnimator.getFloatValue());
+        final int color = ColorUtils.blendARGB(colorDefault, colorSelected, materialMainTab?MathUtils.clamp(colorProgress,0,1):isSelectedAnimator.getFloatValue());
+        final int colorText = ColorUtils.blendARGB(colorDefault, colorSelectedText, materialMainTab?MathUtils.clamp(colorProgress,0,1):isSelectedAnimator.getFloatValue());
 
         final PorterDuffColorFilter filter = new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN);
         if (backupImageView != null && needUpdateBackupViewColor) {
@@ -404,6 +432,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         tab.textView.setText(LocaleController.getString(stringRes));
         tab.checkPlayAnimation(false);
         tab.imageView.setLayoutParams(LayoutHelper.createFrame(24, 24, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 4, 0, 0));
+        tab.configureMaterialMainTab();
         tab.colorDefault = Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider);
         tab.colorSelected = Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider);
         tab.colorSelectedText = Theme.getColor(Theme.key_glass_tabSelectedText, resourcesProvider);
@@ -425,6 +454,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         tab.backupImageView = backupImageView;
 
         tab.addView(backupImageView, LayoutHelper.createFrame(22, 22, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 5, 0, 0));
+        tab.configureMaterialMainTab();
         tab.colorDefault = Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider);
         tab.colorSelected = Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider);
         tab.colorSelectedText = Theme.getColor(Theme.key_glass_tabSelectedText, resourcesProvider);
