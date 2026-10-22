@@ -56,6 +56,12 @@ public final class MonogramLinkPreviews {
         try { return MonogramPreviewHttp.safeUrl(value).toASCIIString(); } catch(IOException invalid) { return null; }
     }
     static boolean candidate(TLRPC.Message message) {
+        // A preview must never reveal a URL that the sender hid behind a spoiler.
+        if(message!=null && message.message!=null) {
+            Matcher url=URL.matcher(message.message);
+            if(url.find()) for(TLRPC.MessageEntity entity:message.entities) if(entity instanceof TLRPC.TL_messageEntitySpoiler
+                    && entity.offset<url.end() && (long)entity.offset+entity.length>url.start()) return false;
+        }
         return message!=null && message.id>0 && !(message instanceof TLRPC.TL_messageService)
                 && (message.media==null || message.media instanceof TLRPC.TL_messageMediaEmpty || message.media instanceof TLRPC.TL_messageMediaWebPage) && firstUrl(message.message)!=null;
     }

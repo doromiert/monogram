@@ -22,9 +22,11 @@ public class MonogramNavigationTest {
         for(String key:MonogramNavigation.order())assertEquals(key,MonogramNavigation.key(MonogramNavigation.index(key)));
     }
     @Test public void hidingDestinationsDoesNotDiscardTheirCustomOrder(){
-        MonogramAppearance.menuOrder.set("saved,settings,contacts");MonogramAppearance.menuHidden.set("contacts,saved");
-        assertTrue(MonogramNavigation.hidden().containsAll(Arrays.asList("contacts","saved")));
+        MonogramAppearance.menuOrder.set("saved,appearance,settings,contacts");MonogramAppearance.menuHidden.set("contacts,saved,appearance");
+        assertTrue(MonogramNavigation.hidden().containsAll(Arrays.asList("contacts","saved","appearance")));
         assertEquals("saved",MonogramNavigation.order().get(0));
+        assertEquals("appearance",MonogramNavigation.order().get(1));
         MonogramAppearance.menuHidden.set("");assertEquals("saved",MonogramNavigation.order().get(0));
+        assertEquals("appearance",MonogramNavigation.order().get(1));
     }
 }

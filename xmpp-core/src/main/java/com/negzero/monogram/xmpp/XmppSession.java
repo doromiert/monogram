@@ -239,6 +239,8 @@ public final class XmppSession implements AutoCloseable {
         FileShare.initialize();
         MessageMarkup.initialize();
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.SPOILER);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.SPOILER_SPAN);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMentions.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.STYLING);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.CONTENT);
@@ -927,8 +929,11 @@ public final class XmppSession implements AutoCloseable {
         return send(jid, link.wireUrl, encrypted, !encrypted, reply);
     }
     public String sendFile(String jid, FileLink link, boolean encrypted, ReplyReference reply, boolean displayStickerHint) throws Exception {
+        return sendFile(jid,link,encrypted,reply,displayStickerHint,false);
+    }
+    public String sendFile(String jid,FileLink link,boolean encrypted,ReplyReference reply,boolean displayStickerHint,boolean spoiler) throws Exception {
         if (link.encrypted() != encrypted || displayStickerHint && !encrypted) throw new IllegalArgumentException("Attachment encryption mode mismatch");
-        return send(jid,link.wireUrl,encrypted,!encrypted,reply,null,null,null,null,null,displayStickerHint);
+        return send(jid,link.wireUrl,encrypted,!encrypted,reply,null,null,null,MessageMarkup.body(link.wireUrl).withSpoiler(spoiler),null,displayStickerHint);
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply) throws Exception {
         return send(jid, body, encrypted, attachment, reply, null);
@@ -1028,7 +1033,7 @@ public final class XmppSession implements AutoCloseable {
         if (correction != null) correction.addTo(message);
         if (sharing != null) sharing.addTo(message, body);
         if(!encrypted && markup!=null) markup.inBody(body,prefix).addTo(message);
-        if(encrypted && markup!=null) markup.addContentHint(message);
+        if(encrypted && markup!=null) { markup.addContentHint(message);markup.inBody(body,prefix).addLegacySpoilers(message); }
         if(!encrypted && inline!=null) inline.inBody(body,prefix).addTo(message);
         if(retraction!=null) {
             retraction.addMetadataTo(message);

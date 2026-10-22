@@ -203,7 +203,6 @@ public final class MonogramDrawer extends FrameLayout {
                 addRow(contents, MonogramNavigation.label(key), MonogramNavigation.icon(key), () -> activate(() -> MonogramNavigation.open(host, key)));
             }
         }
-        addRow(contents, "Appearance", R.drawable.menu_edit_appearance, () -> activate(() -> host.presentFragment(new MonogramAppearanceActivity(account))));
         panel.scrollTo(0, 0);
         setVisibility(VISIBLE);
         bringToFront();

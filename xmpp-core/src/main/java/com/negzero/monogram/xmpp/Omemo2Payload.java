@@ -151,6 +151,7 @@ final class Omemo2Payload {
                 || name.equals("reference") && MessageMentions.NAMESPACE.equals(namespace)
                 || name.equals("content") && MessageMarkup.CONTENT.equals(namespace)
                 || name.equals("markup") && MessageMarkup.NAMESPACE.equals(namespace)
+                || name.equals("spoiler") && MessageMarkup.SPOILER.equals(namespace)
                 || (name.equals("checklist") || name.equals("checklist-update")) && ChecklistContent.NAMESPACE.equals(namespace)
                 || name.equals("unstyled") && MessageMarkup.STYLING.equals(namespace)
                 || name.equals("retract") && MessageRetraction.NAMESPACE.equals(namespace)

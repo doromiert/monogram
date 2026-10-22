@@ -48,6 +48,7 @@ public final class MonogramFormatting {
         return offset==0 || offset==text.length() || !Character.isHighSurrogate(text.charAt(offset-1)) || !Character.isLowSurrogate(text.charAt(offset));
     }
     private static MessageMarkup.Style style(TLRPC.MessageEntity entity) {
+        if(entity instanceof TLRPC.TL_messageEntitySpoiler) return MessageMarkup.Style.SPOILER;
         if(entity instanceof TLRPC.TL_messageEntityBold) return MessageMarkup.Style.STRONG;
         if(entity instanceof TLRPC.TL_messageEntityItalic) return MessageMarkup.Style.EMPHASIS;
         if(entity instanceof TLRPC.TL_messageEntityStrike) return MessageMarkup.Style.DELETED;
@@ -62,6 +63,7 @@ public final class MonogramFormatting {
         for(MessageMarkup.Range range:markup.ranges) for(MessageMarkup.Style style:range.styles) {
             TLRPC.MessageEntity entity;
             switch(style) {
+                case SPOILER:if(markup.spoiler) continue;entity=new TLRPC.TL_messageEntitySpoiler();break;
                 case STRONG:entity=new TLRPC.TL_messageEntityBold();break;
                 case EMPHASIS:entity=new TLRPC.TL_messageEntityItalic();break;
                 case DELETED:entity=new TLRPC.TL_messageEntityStrike();break;
@@ -72,11 +74,15 @@ public final class MonogramFormatting {
             }
             entity.offset=range.utf16Start(markup.body);entity.length=range.utf16End(markup.body)-entity.offset;entities.add(entity);
         }
+        if(markup.spoiler && !markup.body.isEmpty()) {
+            TLRPC.TL_messageEntitySpoiler hidden=new TLRPC.TL_messageEntitySpoiler();hidden.offset=0;hidden.length=markup.body.length();entities.add(hidden);
+        }
         return entities;
     }
     public static void apply(TLRPC.Message message,MessageMarkup markup) {
         if(markup==null) return;
-        if(markup.markdown) { message.message=markup.body;message.entities.clear();message.flags&=~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;MonogramArticles.apply(message,markup.body);return; }
+        if(message.media!=null) message.media.spoiler=markup.spoiler;
+        if(markup.markdown && !markup.spoiler) { message.message=markup.body;message.entities.clear();message.flags&=~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;MonogramArticles.apply(message,markup.body);return; }
         MessageMarkup display=markup.display();
         if(!Objects.equals(message.message,display.body)) message.entities.clear();
         else message.entities.removeIf(entity -> style(entity)!=null);
@@ -111,6 +117,8 @@ public final class MonogramFormatting {
             if(!row.moveToFirst() || !Objects.equals(rawBody,row.getString(0))) return null;
             MessageMarkup visible;
             if(MonogramAttachments.has(message)) {
+                MessageMarkup full=MessageMarkup.decode(rawBody,row.getString(1));
+                if(full!=null && message.media!=null) message.media.spoiler=full.spoiler;
                 if(row.isNull(3) || !Objects.equals(message.message,row.getString(2))) return null;
                 visible=MessageMarkup.decode(row.getString(2),row.getString(3));
                 if(visible==null) return null;

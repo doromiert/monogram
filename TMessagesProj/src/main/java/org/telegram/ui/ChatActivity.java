@@ -4558,6 +4558,7 @@ public class ChatActivity extends BaseFragment implements
             glassBackgroundDrawableFactory,
             BlurredBackgroundProviderImpl.topPanelChatActivity(themeDelegate),
             ChatObject.isForum(currentChat));
+        actionBar.setDrawGlassTitle(org.telegram.utils.settings.MonogramAppearance.chatHeaderBackground.get());
 
         if (chatMode == MODE_PINNED) {
             actionBar.setChatAvatarContainer(avatarContainer);
@@ -29180,6 +29181,7 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
+        if(actionBar!=null) actionBar.setDrawGlassTitle(org.telegram.utils.settings.MonogramAppearance.chatHeaderBackground.get());
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatOpened(dialog_id);
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();

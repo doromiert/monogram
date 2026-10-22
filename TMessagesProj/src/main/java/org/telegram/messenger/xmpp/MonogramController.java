@@ -495,6 +495,26 @@ public final class MonogramController {
             else current.chatStates.open(jid);
         } catch (IllegalArgumentException unknown) { /* A deleted/local-only conversation has no remote state. */ }
     }
+    /** Live XEP-0085 state is authoritative for the header, independent of Telegram's update queues. */
+    public CharSequence chatTypingSubtitle(long dialog) {
+        if(state!=ConnectionsManager.ConnectionStateConnected) return null;
+        if(dialog>0) return typingPeers.contains(dialog) ? LocaleController.getString(R.string.Typing) : null;
+        java.util.TreeSet<Long> users=new java.util.TreeSet<>();
+        for(long[] entry:roomTypingPeers.values()) if(entry[0]==dialog) users.add(entry[1]);
+        if(users.isEmpty()) return null;
+        StringBuilder names=new StringBuilder();int named=0;
+        for(long id:users) {
+            TLRPC.User user=MessagesController.getInstance(account).getUser(id);
+            if(user==null) continue;
+            if(names.length()>0) names.append(", ");
+            names.append(org.telegram.messenger.UserObject.getFirstName(user));
+            if(++named==2) break;
+        }
+        if(names.length()==0) return LocaleController.getString(R.string.Typing);
+        if(users.size()>2) return String.format(LocaleController.getPluralString("AndMoreTypingGroup",users.size()-2),names.toString(),users.size()-2);
+        return users.size()==1 ? LocaleController.formatString("IsTypingGroup",R.string.IsTypingGroup,names.toString())
+                : LocaleController.formatString("AreTypingGroup",R.string.AreTypingGroup,names.toString());
+    }
     private void publishTyping(long peer, boolean composing) { publishTyping(peer, peer, composing); }
     private void publishTyping(long dialog, long user, boolean composing) {
         TLRPC.SendMessageAction action = composing ? new TLRPC.TL_sendMessageTypingAction() : new TLRPC.TL_sendMessageCancelAction();
@@ -512,6 +532,13 @@ public final class MonogramController {
         if (composing) users.add(store.user(user, self));
         ArrayList<TLRPC.Chat> chats = new ArrayList<>();
         if (dialog < 0) chats.add(store.roomChat(dialog,self));
+        // Publish on the main thread as well: a header must not wait for user-cache insertion / printing-string rebuilds.
+        final long owner=accountEpoch;
+        AndroidUtilities.runOnUIThread(() -> {
+            if(owner!=accountEpoch) return;
+            MessagesController.getInstance(account).putUsers(users,false);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_USER_PRINT);
+        });
         Utilities.stageQueue.postRunnable(() -> MessagesController.getInstance(account).processUpdateArray(updates, users, chats, false, now()));
     }
     private void clearRoomTyping() {
@@ -2751,7 +2778,7 @@ public final class MonogramController {
         final MessageMarkup captionMarkup;
         final ArrayList<TLRPC.MessageEntity> captionEntities = new ArrayList<>(request.message.entities);
         try {
-            captionMarkup = MonogramMentions.fromEntities(store,request.message.dialog_id,request.caption == null ? "" : request.caption,captionEntities).styled();
+            captionMarkup = MonogramMentions.fromEntities(store,request.message.dialog_id,request.caption == null ? "" : request.caption,captionEntities).styled().withSpoiler(request.message.media!=null && request.message.media.spoiler);
             TLRPC.MessageReplyHeader header = request.message.reply_to;
             if (header != null && (header.reply_to_peer_id != null && (request.message.dialog_id<0 ? -header.reply_to_peer_id.chat_id : header.reply_to_peer_id.user_id) != request.message.dialog_id || header.reply_to_top_id != 0)) throw new UnsupportedOperationException();
             reply = header == null ? null : replyTo(header.reply_to_msg_id, request.message.dialog_id, encrypted, header.quote_text, header.quote_offset);
@@ -2801,19 +2828,20 @@ public final class MonogramController {
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? null : captionMarkup,displayStickerHint);
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint);
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String fingerprint=expected.senderFingerprint(mode);
-                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
-                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply)
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
+                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply).withMarkup(MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler))
                                     : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,captionMarkup.body,reply).withMarkup(captionMarkup);
                             message=message.withSenderFingerprint(fingerprint).withDisplayStickerHint(displayStickerHint);
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
                         }
                         TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
                                 : MonogramAttachments.media(id, (int) (timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
+                        media.spoiler=captionMarkup.spoiler;
                         store.attach(id, link.wireUrl, cached, media);
                         refreshReplies(request.message.dialog_id);
                         MonogramAttachments.apply(request.message, link, cached, media, sharing == null ? caption : request.caption, sharing == null ? link.fileName() : sharing.name);

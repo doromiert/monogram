@@ -9,11 +9,15 @@ import org.jivesoftware.smack.packet.*;
 public final class MessageMarkup {
     public static final String NAMESPACE="urn:xmpp:markup:0";
     public static final int MAX_RANGES=256;
+    public static final String SPOILER="urn:xmpp:spoiler:0";
+    public static final String SPOILER_SPAN="urn:monogram:spoiler:0";
+    /** XEP-0382 hides the entire message, including its attachment. */
+    public final boolean spoiler;
     public static final String CONTENT="urn:xmpp:content";
     public final boolean markdown;
     public static final String STYLING="urn:xmpp:styling:0";
     private final boolean unstyled;
-    public enum Style { EMPHASIS, STRONG, CODE, DELETED, PRE, QUOTE }
+    public enum Style { EMPHASIS, STRONG, CODE, DELETED, PRE, QUOTE, SPOILER }
     public static final class Range {
         public final int start,end;
         public final Set<Style> styles;
@@ -41,7 +45,10 @@ public final class MessageMarkup {
     private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled,Collection<MessageMentions.Mention> mentions) { this(body,ranges,unstyled,mentions,false); }
     private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled,Collection<MessageMentions.Mention> mentions,boolean markdown) { this(body,ranges,unstyled,mentions,markdown,null); }
     private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled,Collection<MessageMentions.Mention> mentions,boolean markdown,ChecklistContent checklist) {
-        this.markdown=markdown;this.unstyled=unstyled;
+        this(body,ranges,unstyled,mentions,markdown,checklist,false);
+    }
+    private MessageMarkup(String body,Collection<Range> ranges,boolean unstyled,Collection<MessageMentions.Mention> mentions,boolean markdown,ChecklistContent checklist,boolean spoiler) {
+        this.spoiler=spoiler;this.markdown=markdown;this.unstyled=unstyled;
         if(body==null || ranges==null || ranges.size()>MAX_RANGES) throw new IllegalArgumentException("Invalid markup");
         int count=body.codePointCount(0,body.length());
         List<Range> copy=new ArrayList<>(ranges);
@@ -62,6 +69,8 @@ public final class MessageMarkup {
     }
     public static void initialize() {
         InlineEmoji.initialize();MessageMentions.initialize();ChecklistContent.initialize();
+        org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("spoiler",SPOILER,
+                org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("content",CONTENT,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("markup",NAMESPACE,
@@ -78,21 +87,53 @@ public final class MessageMarkup {
                     .addAttribute("start",Integer.toString(range.start)).addAttribute("end",Integer.toString(range.end));
             if(tag.equals("bcode") && range.language!=null && !range.language.isEmpty()) element.addAttribute("language",range.language);
             if(tag.equals("span")) for(Style style:range.styles)
-                element.addElement(StandardExtensionElement.builder(style.name().toLowerCase(Locale.ROOT),NAMESPACE).build());
+                element.addElement(StandardExtensionElement.builder(style.name().toLowerCase(Locale.ROOT),style==Style.SPOILER ? SPOILER_SPAN : NAMESPACE).build());
             markup.addElement(element.build());
         }
         if(!ranges.isEmpty()) message.addExtension(markup.build());
+        addSpoilerHint(message);
         MessageMentions.addTo(message,mentions);
         addContentHint(message);
         if(checklist!=null) checklist.addTo(message);
         if(unstyled) message.addExtension(StandardExtensionElement.builder("unstyled",STYLING).build());
     }
+    public MessageMarkup withSpoiler(boolean hidden) { return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist,hidden); }
+    private boolean allTextSpoiler() {
+        int end=0,length=body.codePointCount(0,body.length());
+        List<Range> sorted=new ArrayList<>(ranges);sorted.sort(Comparator.comparingInt(range -> range.start));
+        for(Range range:sorted) if(range.styles.contains(Style.SPOILER)) { if(range.start>end) return false;end=Math.max(end,range.end); }
+        return length>0 && end==length;
+    }
+    private void addSpoilerHint(Message message) {
+        if(spoiler || allTextSpoiler()) message.addExtension(StandardExtensionElement.builder("spoiler",SPOILER).build());
+    }
+    private static boolean spoilerHint(Message message) {
+        if(message==null) return false;
+        List<ExtensionElement> hints=message.getExtensions("spoiler",SPOILER);
+        if(hints.size()>16) return false;
+        for(ExtensionElement extension:hints) if(extension instanceof StandardExtensionElement) {
+            StandardExtensionElement hint=(StandardExtensionElement)extension;
+            String language=hint.getAttributeValue("xml:lang");
+            if(hint.getElements().isEmpty() && (hint.getText()==null || hint.getText().length()<=4096)
+                    && (language==null || language.equals(message.getLanguage()))) return true;
+        }
+        return false;
+    }
+    /** Legacy OMEMO only authenticates the body. Public spoiler metadata changes hiding, never its content. */
+    public void addLegacySpoilers(Message message) {
+        List<Range> hidden=new ArrayList<>();
+        for(Range range:ranges) if(range.styles.contains(Style.SPOILER)) hidden.add(new Range(range.start,range.end,Collections.singleton(Style.SPOILER),null));
+        if(hidden.isEmpty()) { addSpoilerHint(message);return; }
+        Message presentation=new Message();presentation.setBody(body);
+        new MessageMarkup(body,hidden).withSpoiler(spoiler).addTo(presentation);
+        for(ExtensionElement extension:presentation.getExtensions()) if(SPOILER.equals(extension.getNamespace()) || NAMESPACE.equals(extension.getNamespace())) message.addExtension(extension);
+    }
     /** XEP-0481 empty hint selects a renderer for the body; never accepts alternate remote text. */
     public void addContentHint(Message message) {
         if(markdown) message.addExtension(StandardExtensionElement.builder("content",CONTENT).addAttribute("type","text/markdown").build());
     }
-    public MessageMarkup asMarkdown() { return new MessageMarkup(body,ranges,true,mentions,true,checklist); }
-    public MessageMarkup withChecklist(ChecklistContent checklist) { return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist); }
+    public MessageMarkup asMarkdown() { return new MessageMarkup(body,ranges,true,mentions,true,checklist,spoiler); }
+    public MessageMarkup withChecklist(ChecklistContent checklist) { return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist,spoiler); }
     private static boolean markdownHint(Message message) {
         if(message==null) return false;
         List<ExtensionElement> hints=message.getExtensions("content",CONTENT);
@@ -103,7 +144,16 @@ public final class MessageMarkup {
     }
     /** Legacy OMEMO authenticates only body. A public empty hint can only change presentation of that same text. */
     public static MessageMarkup legacy(Message wire,String body) {
-        MessageMarkup result=body(body);return result!=null && markdownHint(wire) ? result.asMarkdown() : result;
+        MessageMarkup result=body(body);
+        if(result==null) return null;
+        // These unauthenticated hints can only hide the authenticated body; never substitute text or links.
+        Message presentation=new Message();presentation.setBody(body);
+        if(wire!=null) for(ExtensionElement extension:wire.getExtensions("markup",NAMESPACE)) presentation.addExtension(extension);
+        MessageMarkup outer=metadata(presentation,body);List<Range> hidden=new ArrayList<>();
+        if(outer!=null) for(Range range:outer.ranges) if(range.styles.contains(Style.SPOILER))
+            hidden.add(new Range(range.start,range.end,Collections.singleton(Style.SPOILER),null));
+        result=new MessageMarkup(body,hidden).withSpoiler(spoilerHint(wire));
+        return markdownHint(wire) ? result.asMarkdown() : result;
     }
     /** Call only with cleartext or authenticated decrypted content, never an encrypted outer stanza. */
     private static MessageMarkup metadata(Message message,String body) {
@@ -122,6 +172,9 @@ public final class MessageMarkup {
                 EnumSet<Style> styles=EnumSet.noneOf(Style.class);
                 if(tag.equals("span")) {
                     for(StandardExtensionElement child:element.getElements()) {
+                        if(SPOILER_SPAN.equals(child.getNamespace()) && "spoiler".equals(child.getElementName()) && child.getElements().isEmpty()) {
+                            styles.add(Style.SPOILER);continue;
+                        }
                         if(!NAMESPACE.equals(child.getNamespace())) continue;
                         switch(child.getElementName()) {
                             case "emphasis":styles.add(Style.EMPHASIS);break;
@@ -167,7 +220,7 @@ public final class MessageMarkup {
         MessageMarkup metadata=metadata(message,body);
         boolean unstyled=message!=null && message.hasExtension("unstyled",STYLING);
         ChecklistContent checklist=message!=null && body.equals(message.getBody()) ? ChecklistContent.from(message) : null;
-        return new MessageMarkup(body,metadata==null ? Collections.emptyList() : metadata.ranges,unstyled,MessageMentions.from(message,body),message!=null && body.equals(message.getBody()) && markdownHint(message),checklist);
+        return new MessageMarkup(body,metadata==null ? Collections.emptyList() : metadata.ranges,unstyled,MessageMentions.from(message,body),message!=null && body.equals(message.getBody()) && markdownHint(message),checklist,message!=null && body.equals(message.getBody()) && spoilerHint(message));
     }
     /** Pure body parser for legacy OMEMO, whose outer extensions are not authenticated. */
     public static MessageMarkup body(String body) { return body==null ? null : new MessageMarkup(body,Collections.emptyList()); }
@@ -185,16 +238,16 @@ public final class MessageMarkup {
                 throw new IllegalArgumentException("Invalid removed range");
             Arrays.fill(removed,interval[0],interval[1],true);
         }
-        MessageMarkup result=mapped(text,removed,ranges,unstyled,mentions,true,checklist);
+        MessageMarkup result=mapped(text,removed,ranges,unstyled,mentions,true,checklist,spoiler);
         return markdown ? result.asMarkdown() : result;
     }
-    private static MessageMarkup mapped(int[] text,boolean[] removed,Collection<Range> ranges,boolean unstyled,List<MessageMentions.Mention> mentions,boolean intactMentions,ChecklistContent checklist) {
+    private static MessageMarkup mapped(int[] text,boolean[] removed,Collection<Range> ranges,boolean unstyled,List<MessageMentions.Mention> mentions,boolean intactMentions,ChecklistContent checklist,boolean spoiler) {
         int[] map=new int[text.length+1];StringBuilder visible=new StringBuilder();
         for(int i=0;i<text.length;i++) { map[i+1]=map[i];if(!removed[i]) { visible.appendCodePoint(text[i]);map[i+1]++; } }
         List<Range> projected=new ArrayList<>();
         for(Range range:ranges) if(map[range.end]>map[range.start])
             projected.add(new Range(map[range.start],map[range.end],range.styles,range.language));
-        return new MessageMarkup(visible.toString(),normalize(projected),unstyled,MessageMentions.mapped(mentions,map,removed,intactMentions),false,checklist);
+        return new MessageMarkup(visible.toString(),normalize(projected),unstyled,MessageMentions.mapped(mentions,map,removed,intactMentions),false,checklist,spoiler);
     }
     /** The exact parser map removes recognized directives only; raw models and archive offsets stay unchanged. */
     public MessageMarkup display() {
@@ -202,8 +255,8 @@ public final class MessageMarkup {
         Styling parsed=new Styling(body,ranges);parsed.parse();
         List<Range> styles=new ArrayList<>(ranges);
         if(styles.isEmpty()) styles.addAll(parsed.ranges);
-        try { return mapped(parsed.text,parsed.removed,styles,true,mentions,false,checklist); }
-        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true,mentions,markdown,checklist); }
+        try { return mapped(parsed.text,parsed.removed,styles,true,mentions,false,checklist,spoiler); }
+        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true,mentions,markdown,checklist,spoiler); }
     }
     public InlineEmoji displayInline(InlineEmoji inline) {
         if(inline==null || !body.equals(inline.body)) return null;
@@ -231,10 +284,11 @@ public final class MessageMarkup {
         return result;
     }
     /** Native entities become interoperable body directives only when the literal text survives round-trip exactly. */
-    public MessageMarkup preservingBody() { return new MessageMarkup(body,ranges,true,mentions,markdown,checklist); }
+    public MessageMarkup preservingBody() { return new MessageMarkup(body,ranges,true,mentions,markdown,checklist,spoiler); }
     public MessageMarkup styled() {
         if(markdown) return this;
-        if(ranges.isEmpty()) return new MessageMarkup(body,ranges,true,mentions,false,checklist);
+        if(ranges.stream().anyMatch(range -> range.styles.contains(Style.SPOILER))) return preservingBody();
+        if(ranges.isEmpty()) return new MessageMarkup(body,ranges,true,mentions,false,checklist,spoiler);
         int[] text=body.codePoints().toArray();Map<Integer,StringBuilder> opens=new HashMap<>(),closes=new HashMap<>();
         List<Range> directives=new ArrayList<>();
         for(Range range:ranges) if(range.block()) directives.add(range);
@@ -252,11 +306,11 @@ public final class MessageMarkup {
             String open="",close="";
             if(range.styles.contains(Style.PRE)) {
                 if(range.start!=0 && text[range.start-1]!='\n' || range.end<text.length && text[range.end]!='\n')
-                    return new MessageMarkup(body,ranges,true,mentions,false,checklist);
+                    return new MessageMarkup(body,ranges,true,mentions,false,checklist,spoiler);
                 open="```\n";close="\n```";
             } else if(range.styles.contains(Style.QUOTE)) {
                 if(range.start!=0 && text[range.start-1]!='\n' || range.end<text.length && text[range.end]!='\n')
-                    return new MessageMarkup(body,ranges,true,mentions,false,checklist);
+                    return new MessageMarkup(body,ranges,true,mentions,false,checklist,spoiler);
                 opens.computeIfAbsent(range.start,k -> new StringBuilder()).append("> ");
                 for(int i=range.start;i<range.end-1;i++) if(text[i]=='\n') opens.computeIfAbsent(i+1,k -> new StringBuilder()).append("> ");
                 continue;
@@ -281,9 +335,9 @@ public final class MessageMarkup {
         for(Range range:ranges) shifted.add(new Range(starts[range.start],ends[range.end],range.styles,range.language));
         MessageMarkup encoded;
         try { List<MessageMentions.Mention> moved=new ArrayList<>();for(MessageMentions.Mention mention:mentions) moved.add(new MessageMentions.Mention(starts[mention.start],ends[mention.end],mention.address));
-            encoded=new MessageMarkup(wire.toString(),normalize(shifted),false,moved,false,checklist); }
-        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true,mentions,markdown,checklist); }
-        return encoded.display().body.equals(body) ? encoded : new MessageMarkup(body,ranges,true,mentions,false,checklist);
+            encoded=new MessageMarkup(wire.toString(),normalize(shifted),false,moved,false,checklist,spoiler); }
+        catch(IllegalArgumentException invalid) { return new MessageMarkup(body,ranges,true,mentions,markdown,checklist,spoiler); }
+        return encoded.display().body.equals(body) ? encoded : new MessageMarkup(body,ranges,true,mentions,false,checklist,spoiler);
     }
     /** Rebase already-encoded markup after a reply prefix or SFS URL is added. Never search for a repeated substring. */
     public MessageMarkup inBody(String fullBody,int start) {
@@ -291,14 +345,14 @@ public final class MessageMarkup {
         if(!fullBody.regionMatches(offset,body,0,body.length())) throw new IllegalArgumentException("Markup belongs to another body");
         List<Range> shifted=new ArrayList<>();for(Range range:ranges) shifted.add(new Range(range.start+start,range.end+start,range.styles,range.language));
         List<MessageMentions.Mention> moved=new ArrayList<>();for(MessageMentions.Mention mention:mentions) moved.add(new MessageMentions.Mention(mention.start+start,mention.end+start,mention.address));
-        return new MessageMarkup(fullBody,shifted,unstyled,moved,markdown,checklist);
+        return new MessageMarkup(fullBody,shifted,unstyled,moved,markdown,checklist,spoiler);
     }
-    public MessageMarkup withMentions(Collection<MessageMentions.Mention> mentions) { return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist); }
+    public MessageMarkup withMentions(Collection<MessageMentions.Mention> mentions) { return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist,spoiler); }
     /** Bounded local persistence codec. The body remains in the existing message record. */
     public String encode() {
         try {
             ByteArrayOutputStream bytes=new ByteArrayOutputStream();DataOutputStream out=new DataOutputStream(bytes);
-            out.writeByte(4);out.writeBoolean(markdown);out.writeBoolean(unstyled);out.writeShort(ranges.size());
+            out.writeByte(5);out.writeBoolean(markdown);out.writeBoolean(unstyled);out.writeBoolean(spoiler);out.writeShort(ranges.size());
             for(Range range:ranges) { out.writeInt(range.start);out.writeInt(range.end);int mask=0;for(Style style:range.styles) mask|=1<<style.ordinal();out.writeByte(mask);out.writeUTF(range.language==null ? "" : range.language); }
             out.writeShort(mentions.size());for(MessageMentions.Mention mention:mentions) { out.writeInt(mention.start);out.writeInt(mention.end);out.writeUTF(mention.address); }
             out.writeBoolean(checklist!=null);if(checklist!=null) { out.writeBoolean(checklist.update);writeAscii(out,checklist.data,ChecklistContent.MAX_DATA);if(checklist.update) writeAscii(out,checklist.target,ChecklistContent.MAX_TARGET); }
@@ -309,11 +363,11 @@ public final class MessageMarkup {
         if(body==null || encoded==null || encoded.length()>262144) return null;
         try {
             DataInputStream in=new DataInputStream(new ByteArrayInputStream(Base64.getDecoder().decode(encoded)));
-            int version=in.readUnsignedByte();if(version<1 || version>4) return null;boolean markdown=version>=3 && in.readBoolean();boolean unstyled=in.readBoolean();int count=in.readUnsignedShort();
+            int version=in.readUnsignedByte();if(version<1 || version>5) return null;boolean markdown=version>=3 && in.readBoolean();boolean unstyled=in.readBoolean();boolean spoiler=version>=5 && in.readBoolean();int count=in.readUnsignedShort();
             if(count>MAX_RANGES) return null;List<Range> ranges=new ArrayList<>();
             for(int i=0;i<count;i++) {
                 int start=in.readInt(),end=in.readInt(),mask=in.readUnsignedByte();EnumSet<Style> styles=EnumSet.noneOf(Style.class);
-                if((mask & ~63)!=0) return null;for(Style style:Style.values()) if((mask & 1<<style.ordinal())!=0) styles.add(style);
+                if((mask & ~(version>=5 ? 127 : 63))!=0) return null;for(Style style:Style.values()) if((mask & 1<<style.ordinal())!=0) styles.add(style);
                 String language=in.readUTF();ranges.add(new Range(start,end,styles,language.isEmpty() ? null : language));
             }
             List<MessageMentions.Mention> mentions=new ArrayList<>();if(version>=2) { int total=in.readUnsignedShort();if(total>MessageMentions.MAX) return null;
@@ -327,7 +381,7 @@ public final class MessageMarkup {
                 try { checklist=update ? ChecklistContent.update(target,data) : ChecklistContent.document(data); }
                 catch(IllegalArgumentException malformedOptional) { /* Keep local readable message data when optional metadata is corrupt. */ }
             }
-            if(in.read()!=-1) return null;return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist);
+            if(in.read()!=-1) return null;return new MessageMarkup(body,ranges,unstyled,mentions,markdown,checklist,spoiler);
         } catch(IOException|IllegalArgumentException invalid) { return null; }
     }
     private static void writeAscii(DataOutputStream out,String value,int maximum) throws IOException {

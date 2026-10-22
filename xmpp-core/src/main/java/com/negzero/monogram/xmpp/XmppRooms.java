@@ -637,7 +637,7 @@ public final class XmppRooms implements AutoCloseable {
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup,boolean displayStickerHint) throws Exception {
         if(displayStickerHint && !encrypted) throw new IllegalArgumentException("Legacy sticker hint requires encryption");
         if(link.encrypted()!=encrypted || encrypted && sharing!=null || sharing!=null && !sharing.link.wireUrl.equals(link.wireUrl)) throw new IllegalArgumentException("Attachment encryption mode mismatch");
-        if(markup!=null && (sharing==null || !markup.body.equals(caption==null ? "" : caption))) throw new IllegalArgumentException("Markup belongs to another caption");
+        if(markup!=null && !markup.body.equals(sharing==null ? link.wireUrl : caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
         String body=sharing==null ? link.wireUrl : sharing.body(caption);
         return send(jid,body,encrypted,sharing,reply,null,excluded,automatic,markup==null ? null : markup.inBody(body,0),null,displayStickerHint);
     }
@@ -672,7 +672,7 @@ public final class XmppRooms implements AutoCloseable {
             publicMarkup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message); }
         if(sharing!=null) sharing.addTo(message,wireBody);
         if(displayStickerHint && encrypted) StickerHint.addTo(message);
-        if(encrypted && markup!=null) markup.addContentHint(message);
+        if(encrypted && markup!=null) { markup.addContentHint(message);markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addLegacySpoilers(message); }
         if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);

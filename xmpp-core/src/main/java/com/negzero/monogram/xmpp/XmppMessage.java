@@ -179,7 +179,11 @@ public final class XmppMessage {
             if(!body.endsWith(payload)) throw new IllegalArgumentException("Markup belongs to another body");
             full=value.inBody(body,body.codePointCount(0,body.length()-payload.length()));
         }
-        if(encryption==Encryption.LEGACY_OMEMO) full=full.markdown ? MessageMarkup.body(body).withMentions(full.mentions).asMarkdown() : MessageMarkup.body(body).withMentions(full.mentions);
+        if(encryption==Encryption.LEGACY_OMEMO) {
+            Message presentation=new Message();presentation.setBody(body);full.addLegacySpoilers(presentation);
+            MessageMarkup hidden=MessageMarkup.legacy(presentation,body).withMentions(full.mentions);
+            full=full.markdown ? hidden.asMarkdown() : hidden;
+        }
         MessageMarkup captionValue=null;
         if(sharing!=null) {
             String payload=sharing.body(caption);

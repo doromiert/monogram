@@ -260,7 +260,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             }
         }
         avatarImageView.setContentDescription(getString(R.string.AccDescrProfilePicture));
-        avatarImageView.setRoundRadius(dp(21));
+        avatarImageView.setRoundRadius(dp(avatarSizeInDp/2f));
         addView(avatarImageView);
         if (avatarClickable) {
             final TLRPC.Chat chat = parentFragment != null ? parentFragment.getCurrentChat() : null;
@@ -662,6 +662,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         final int width = MeasureSpec.getSize(widthMeasureSpec);
+        avatarSizeInDp=glassMode && org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?46:42;
         final int availableWidth = width - dp((avatarImageView.getVisibility() == VISIBLE ? 54 : 0) + 16);
         int avatarInset=glassMode && org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?0:1;
         avatarImageView.measure(MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp)-2*avatarInset,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(dp(avatarSizeInDp)-2*avatarInset,MeasureSpec.EXACTLY));
@@ -754,7 +755,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
 
     private boolean glassMode;
     public void setGlassMode() {
-        if(org.telegram.utils.settings.MonogramAppearance.chatHeader.get()) avatarSizeInDp=46;
+        avatarSizeInDp=org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?46:42;
         if (titleTextView != null) {
             titleTextView.setTextSizePx(dp(17.5f));
         }
@@ -771,6 +772,9 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         final int subtitleTop = viewTop + dp(glassMode ? 23.66f : 24);
 
         int avatarInset=glassMode && org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?0:1;
+        TLRPC.Chat avatarChat=parentFragment==null ? null : parentFragment.getCurrentChat();
+        if(!ChatObject.isForum(avatarChat) || org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get())
+            avatarImageView.setRoundRadius(avatarImageView.getMeasuredWidth()/2);
         avatarImageView.layout(avatarInset+leftPadding,avatarInset+viewTop,avatarInset+leftPadding+avatarImageView.getMeasuredWidth(),avatarInset+viewTop+avatarImageView.getMeasuredHeight());
         int l = leftPadding + (avatarImageView.getVisibility() == VISIBLE ? dp(glassMode ? (org.telegram.utils.settings.MonogramAppearance.chatHeader.get()?53.66f:49.66f) : 55) : dp(glassMode ? 13 : 1)) + rightAvatarPadding;
         SimpleTextView titleTextLargerCopyView = this.titleTextLargerCopyView.get();
@@ -1042,7 +1046,8 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         if (subtitleTextView == null) return;
         if (start) {
             try {
-                int type = subtitleIsThinkingBot ? 0 : MessagesController.getInstance(currentAccount).getPrintingStringType(parentFragment.getDialogId(), parentFragment.getThreadId());
+                Integer nativeType=MessagesController.getInstance(currentAccount).getPrintingStringType(parentFragment.getDialogId(), parentFragment.getThreadId());
+                int type=subtitleIsThinkingBot || nativeType==null ? 0 : nativeType;
                 if (statusDrawables[type] == null) return;
                 if (type == 5) {
                     subtitleTextView.replaceTextWithDrawable(statusDrawables[type], "**oo**");
@@ -1116,7 +1121,9 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         }
 
         subtitleIsThinkingBot = false;
-        CharSequence printString = MessagesController.getInstance(currentAccount).getPrintingString(parentFragment.getDialogId(), parentFragment.getThreadId(), false);
+        CharSequence printString = parentFragment.getThreadId()==0
+                ? org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatTypingSubtitle(parentFragment.getDialogId())
+                : MessagesController.getInstance(currentAccount).getPrintingString(parentFragment.getDialogId(), parentFragment.getThreadId(), false);
         if (printString == null && UserObject.isBotForum(user)) {
             //if (BotForumHelper.getInstance(currentAccount).isThinking(user.id, (int) parentFragment.getTopicId())) {
             //    printString = "thinking";
@@ -1380,7 +1387,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         avatarDrawable.setInfo(currentAccount, chat);
         if (avatarImageView != null) {
             avatarImageView.setForUserOrChat(chat, avatarDrawable);
-            avatarImageView.setRoundRadius(ChatObject.isForum(chat) && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get() ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
+            avatarImageView.setRoundRadius(ChatObject.isForum(chat) && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get() ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(avatarSizeInDp/2f));
         }
     }
 
@@ -1488,7 +1495,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                 avatarImageView.setAnimatedEmojiDrawable(null);
                 ForumUtilities.setMonoForumAvatar(currentAccount, chat, avatarDrawable, avatarImageView);
             }
-            avatarImageView.setRoundRadius(dp(21));
+            avatarImageView.setRoundRadius(dp(avatarSizeInDp/2f));
         } else if (chat != null) {
             avatarDrawable.setScaleSize(1f);
             avatarDrawable.setInfo(currentAccount, chat);
@@ -1496,7 +1503,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             if (avatarImageView != null) {
                 avatarImageView.setAnimatedEmojiDrawable(null);
                 avatarImageView.setForUserOrChat(chat, avatarDrawable);
-                avatarImageView.setRoundRadius(chat.forum && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get() ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
+                avatarImageView.setRoundRadius(chat.forum && !org.telegram.utils.settings.MonogramAppearance.singleCornerRadius.get() ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(avatarSizeInDp/2f));
             }
         }
     }

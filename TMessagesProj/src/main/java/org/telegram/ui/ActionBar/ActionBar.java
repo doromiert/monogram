@@ -1568,7 +1568,10 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                     int availableRight=getMeasuredWidth()-(menu!=null && menu.getVisibility()!=GONE?menu.getMeasuredWidth():0)-dp(16);
                     titleLeft=Math.max(textLeft,Math.min((getMeasuredWidth()-titleWidth)/2,availableRight-titleWidth));
                 }
-                titleTextView[i].layout(titleLeft, additionalTop + textTop - titleTextView[i].getPaddingTop(), titleLeft + titleTextView[i].getMeasuredWidth(), additionalTop + textTop + titleTextView[i].getTextHeight() - titleTextView[i].getPaddingTop() + titleTextView[i].getPaddingBottom());
+                // Keep the measured padding around the text: shortening the laid-out
+                // view clips glyphs when the home title's container clips its children.
+                int titleTop=additionalTop+textTop-titleTextView[i].getPaddingTop();
+                titleTextView[i].layout(titleLeft,titleTop,titleLeft+titleTextView[i].getMeasuredWidth(),titleTop+titleTextView[i].getMeasuredHeight());
             }
         }
         if (additionalSubTitleOverlayContainer != null) {
@@ -2271,7 +2274,7 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
         if(glassDrawableBack!=null) glassDrawableBack.setShadowAlpha(materialHeader?0:glassShadowAlpha);
         if(glassDrawableMenu!=null) glassDrawableMenu.setShadowAlpha(materialHeader?0:glassShadowAlpha);
         float middleAlpha=drawGlassTitle && !materialHeader?1:Math.max(searchFactor,searchFieldVisibleAlpha);
-        if (glassDrawable != null && !glassOnlyBack && middleAlpha>0) {
+        if (glassDrawable != null && !glassOnlyBack && (!materialHeader || middleAlpha>0)) {
             final int menuWidthWithPadding = menuWidth + ((hasForcedMenuWidth || hasForcedMenuMinWidth) ? (menuWidth > 0 ? gap : 0) : (int) (gap * animatorHasMenuItems.getFloatValue()));
             final int rightOffset = lerp(menuWidthWithPadding, Math.max(menuWidthWithPadding, gap + s), chatAvatarContainer == null ? 0f : 1f - animatorAvatarContainerHasAvatar.getFloatValue());
 
@@ -2296,7 +2299,7 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
             }
 
             glassDrawable.setBounds(left, t, right, b);glassDrawable.setAlpha(Math.round(255*middleAlpha));
-            glassDrawable.draw(canvas);
+            if(middleAlpha>0) glassDrawable.draw(canvas);
         }
         if (glassDrawableBack != null && hasBackButton) {
             glassDrawableBack.setBounds(0, t, s + p * 2, b);

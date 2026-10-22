@@ -44,7 +44,8 @@ public class MonogramFormattingTest {
             assertEquals(i>=3 && i<8,covers(restored,TLRPC.TL_messageEntityBold.class,i));
             assertEquals(i>=6 && i<11,covers(restored,TLRPC.TL_messageEntityItalic.class,i));
         }
-        assertTrue(restored.stream().noneMatch(entity -> entity instanceof TLRPC.TL_messageEntityCode || entity instanceof TLRPC.TL_messageEntityUnderline || entity instanceof TLRPC.TL_messageEntitySpoiler));
+        assertTrue(restored.stream().noneMatch(entity -> entity instanceof TLRPC.TL_messageEntityCode || entity instanceof TLRPC.TL_messageEntityUnderline));
+        assertTrue(covers(restored,TLRPC.TL_messageEntitySpoiler.class,0));
         TLRPC.Message nativeMessage=new TLRPC.TL_message();nativeMessage.message=text;
         TLRPC.TL_messageEntityTextUrl link=span(new TLRPC.TL_messageEntityTextUrl(),3,5);link.url="https://example.org";nativeMessage.entities.add(link);
         MonogramFormatting.apply(nativeMessage,markup.styled());
@@ -96,7 +97,7 @@ public class MonogramFormattingTest {
         int id=store.save(MessageFixture.replyMessage("old","old",null,"Keep me",true,false,100000,"phone",false,null));
         store.getWritableDatabase().execSQL("DROP TRIGGER clear_message_formatting");store.getWritableDatabase().execSQL("DROP TRIGGER delete_message_formatting");
         store.getWritableDatabase().execSQL("DROP TABLE message_formatting");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_tag_names");store.getWritableDatabase().setVersion(22);reopen();
-        assertEquals(29,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertEquals(0,rows());
+        assertEquals(30,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertEquals(0,rows());
     }
     @Test public void searchMatchesDisplayedPhrasesAcrossFormattingAndCurrentCorrectionsAndCaptions() throws Exception {
         MessageMarkup first=styled("hello world",span(new TLRPC.TL_messageEntityBold(),0,5));
@@ -115,4 +116,24 @@ public class MonogramFormattingTest {
         store.getWritableDatabase().execSQL("UPDATE message_formatting SET body='mismatched' WHERE message=?",new Object[]{file});
         assertEquals(1,store.search(self,peer,caption.body,0,0,10,0,0,0,null,false,false).count);
     }
+    @Test public void spoilerTextAndMediaSurviveStoreReloadWithoutLeakingLinkPreviews() throws Exception {
+        String text="😀 secret tail";
+        MessageMarkup hidden=styled(text,span(new TLRPC.TL_messageEntitySpoiler(),3,6));
+        int id=store.save(MessageFixture.replyMessage("spoiler-text","spoiler-text",null,hidden.body,true,false,100000,"phone",true,null).withMarkup(hidden));
+        reopen();TLRPC.Message shown=store.getMessage(id,self);
+        assertEquals(text,shown.message);assertTrue(covers(shown.entities,TLRPC.TL_messageEntitySpoiler.class,3));
+        FileShare file=sharing();MessageMarkup caption=MessageMarkup.body("").withSpoiler(true);
+        int photo=store.save(XmppMessage.sentFile(JidCreate.entityFullFrom("alice@example.org/phone"),"bob@example.org","hidden-media",file,"",null,null).withMarkup(caption));
+        reopen();assertTrue(store.getMessage(photo,self).media.spoiler);
+        MessageMarkup publicUrl=styled("https://example.org/secret",span(new TLRPC.TL_messageEntitySpoiler(),0,26));
+        TLRPC.Message link=new TLRPC.TL_message();link.id=55;link.message=publicUrl.body;MonogramFormatting.apply(link,publicUrl);
+        assertFalse(MonogramLinkPreviews.candidate(link));
+    }
+    @Test public void legacyMediaSpoilerSurvivesWithoutCaptionMetadata() throws Exception {
+        FileLink link=FileLink.parse("aesgcm://files.example.org/hidden#"+String.join("",Collections.nCopies(96,"a")));
+        int id=store.save(XmppMessage.sentFile(JidCreate.entityFullFrom("alice@example.org/phone"),"bob@example.org","legacy-hidden",link,true,null)
+                .withMarkup(MessageMarkup.body(link.wireUrl).withSpoiler(true)));
+        reopen();assertTrue(store.getMessage(id,self).media.spoiler);
+    }
+
 }

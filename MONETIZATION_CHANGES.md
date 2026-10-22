@@ -1,3 +1,15 @@
+## 0.2.152 — configurable chat identity header
+
+Add Appearance → Blur Options → Chat header background. The enabled default preserves the original header; disabling it removes the idle glass pill behind the avatar/name/status for DMs and rooms while retaining the native placement, back/menu backgrounds and search transition. Reset avatar measurements after header-style changes and calculate circular clipping from the actual measured width.
+
+## 0.2.152 — home title vertical clipping
+
+ActionBar measured title text with top/bottom padding, then laid the view out with a shorter height that omitted the top-padding contribution. The home header's title container clips its children, cutting the text at its vertical bounds. Lay out the title using its full measured height while preserving the existing text baseline and horizontal position; applies to both title views during transitions. The focused layout regression passes for direct/container titles and centered/non-centered positioning. On-device visual acceptance remains pending.
+
+## 0.2.152 — configurable Appearance menu item
+
+Appearance was appended unconditionally after the configurable rows in both the drawer and overflow menu, so App Navigation could neither show it in its item list nor hide/reorder it. Register it as a regular destination with a stable appended ID, label/icon/action, and remove both forced shortcuts. Existing menu order/hidden settings are retained. The existing navigation editor now includes Appearance and its shared visibility/order controls both surfaces. The navigation persistence regression now includes hiding/reordering Appearance. The emulator remains stopped after the disk-I/O issue.
+
 ## 0.2.151 follow-up — switch clipping, row alignment, home FAB and native compose picker
 
 Real-phone screenshots confirm Material switch tracks are clipped by legacy 37dp child bounds in Chat Settings, while TextCheckCell already permits their overflow. Apply the same child-clipping policy to the other native switch-row containers, preserving outer RecyclerView section clipping. Reset recycled Chat Settings subtitles/tints and align all icon centers/text insets; give Chat behavior the same two-line row height as other described actions. Recalculate retained home-page navigation/FAB spacing on resume and inset updates so hidden bars reserve zero space and flat/Material/floating modes use their actual heights.
@@ -941,3 +953,12 @@ Restore ContactAddActivity from profile Edit Contact. Save names and notes local
 
 
 Disk cleanup (2026-10-22, user requested): stopped Gradle and paused the emulator after overlapping packaging/emulation saturated disk I/O; build writeback drained. Ran sudo nix-collect-garbage -d: 2407 store paths removed, 26396.87 MiB freed; filesystem reports 72G available. Cached unrooted SDK environment was among the removed paths; future builds need the Nix development environment restored. No further builds were launched during cleanup.
+
+### 0.2.152 — spoilers, typing and header follow-up
+
+- Text/media spoilers: XEP-0382 whole-message hints, documented partial-text extension to XEP-0394, native entities and media flags, OMEMO 2 protected metadata and legacy hide-only hints, persisted across reload. Spoilered URLs do not expose link previews. Protocol documented in `docs/SPOILERS.md`.
+- Chat typing subtitle reads live XEP-0085 state and replaces online/last-seen status; publishes header changes without waiting on the native printing-string/user-cache queue. Restores presence after typing ends.
+- Header background removal is now an option: Appearance → Blur Options → Chat header background, enabled by default. Avatar size resets after changing header style and circular clipping follows the actual measured size.
+- Existing pending navigation/title fixes are included. Release gate: 27 focused native/formatting/store checks and 25 core markup/encryption/chat-state checks pass (52 total). Corrected an outdated database-version assertion and supplied the missing typeface shadow for the new title-layout fixture. No on-phone visual or messaging acceptance test performed.
+
+0.2.152 artifact verification: original signer, version 0.2.152 (73279), scoped APK audit passed. All three packaged native libraries match 0.2.151 byte-for-byte; native sources did not change, so their existing outputs were reused. SHA-256 `27d64498f8809412d38f710d467dcefe25bf5cdfe705b8f53be93934278fbfb8`. Built serially with the emulator stopped; no ADB installation, for GitHub updater delivery.

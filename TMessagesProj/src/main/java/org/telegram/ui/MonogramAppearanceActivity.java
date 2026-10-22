@@ -97,6 +97,7 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
         choice(items,15,"Dividers",dividers,"Hidden","Lines","Segments");
         items.add(UItem.asShadow(null));
         items.add(UItem.asHeader("Blur Options"));
+        flag(items,"Chat header background",chatHeaderBackground,"Show the background behind the avatar, name, and status in chats.");
         choice(items,16,"Glass outline",glassOutline,"Glare","Solid","Hidden");
         flag(items,"Glass Message Menu",glassMenu,"The message menu, header menu, and reaction bar use frosted glass.");
         flag(items,"Force blur",forceBlur);

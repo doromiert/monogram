@@ -22,7 +22,7 @@ final class MonogramNavigation {
         DrawerLayoutContainer root = host.getParentLayout() == null ? null : host.getParentLayout().getDrawerLayoutContainer();
         return root != null && root.closeNavigationDrawer(host, close);
     }
-    private static final String[] KEYS={"profile","archive","group","contacts","calls","saved","settings","theme"};
+    private static final String[] KEYS={"profile","archive","group","contacts","calls","saved","settings","theme","appearance"};
     static ArrayList<String> order() {
         ArrayList<String> out=new ArrayList<>();String saved=menuOrder.get();
         if(saved!=null) for(String key:saved.split(",")) if((Arrays.asList(KEYS).contains(key)||key.matches("divider[0-9]{1,4}"))&&!out.contains(key))out.add(key);
@@ -33,10 +33,10 @@ final class MonogramNavigation {
     static int index(String key) {if(key.startsWith("divider"))return 20+Integer.parseInt(key.substring(7));return Arrays.asList(KEYS).indexOf(key);}
     static String key(int id) {return id>=20?"divider"+(id-20):KEYS[Math.max(0,Math.min(KEYS.length-1,id))];}
     static String label(String key) {
-        switch(key) {case "profile":return "My profile";case "archive":return "Archived chats";case "group":return "New group";case "contacts":return "Contacts";case "calls":return "Calls";case "saved":return "Bookmarks";case "settings":return "Settings";case "theme":return "Day / night mode";default:return "Separator";}
+        switch(key) {case "profile":return "My profile";case "archive":return "Archived chats";case "group":return "New group";case "contacts":return "Contacts";case "calls":return "Calls";case "saved":return "Bookmarks";case "settings":return "Settings";case "theme":return "Day / night mode";case "appearance":return "Appearance";default:return "Separator";}
     }
     static int icon(String key) {
-        switch(key){case "profile":return R.drawable.msg_contacts;case "archive":return R.drawable.msg_archive;case "group":return R.drawable.msg_groups;case "contacts":return R.drawable.msg_contacts;case "calls":return R.drawable.msg_calls;case "saved":return R.drawable.msg_saved;case "theme":return R.drawable.menu_night_mode_24;default:return R.drawable.msg_settings;}
+        switch(key){case "profile":return R.drawable.msg_contacts;case "archive":return R.drawable.msg_archive;case "group":return R.drawable.msg_groups;case "contacts":return R.drawable.msg_contacts;case "calls":return R.drawable.msg_calls;case "saved":return R.drawable.msg_saved;case "theme":return R.drawable.menu_night_mode_24;case "appearance":return R.drawable.menu_edit_appearance;default:return R.drawable.msg_settings;}
     }
     static void open(BaseFragment host,String key) {
         Bundle args=new Bundle();
@@ -48,6 +48,7 @@ final class MonogramNavigation {
             case "calls":host.presentFragment(new CallLogActivity(args));break;
             case "saved":args.putLong("user_id",UserConfig.getInstance(host.getCurrentAccount()).getClientUserId());host.presentFragment(new ChatActivity(args));break;
             case "settings":host.presentFragment(new SettingsActivity());break;
+            case "appearance":host.presentFragment(new MonogramAppearanceActivity(host.getCurrentAccount()));break;
             case "theme":if(host instanceof DialogsActivity)((DialogsActivity)host).monogramToggleNight();break;
         }
     }
@@ -57,8 +58,7 @@ final class MonogramNavigation {
         for(String key:order()) if(!hidden().contains(key)) {
             if(key.startsWith("divider"))menu.addGap();else menu.add(icon(key),label(key),()->open(host,key));
         }
-        // Keep settings reachable even if every configurable menu entry was hidden.
-        menu.addGap();menu.add(R.drawable.menu_edit_appearance,"Appearance",()->host.presentFragment(new MonogramAppearanceActivity(host.getCurrentAccount())));menu.show();
+        menu.show();
     }
     static void showDrawer(BaseFragment host) {
         if (!(host instanceof DialogsActivity) || host.getParentLayout() == null) return;

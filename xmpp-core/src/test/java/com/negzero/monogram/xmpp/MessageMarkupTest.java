@@ -162,4 +162,44 @@ public class MessageMarkupTest {
         XmppMessage unreadable=XmppMessage.from(message,JidCreate.entityBareFrom("alice@example.org"),null,true,false,null,null);
         assertNull(unreadable.markup);assertNull(unreadable.captionMarkup);
     }
+    @Test public void inlineSpoilersUseAnExtensionAndSurviveUtf16ProjectionPersistenceAndProtectedPayload() throws Exception {
+        String body="😀 the answer is 42";
+        MessageMarkup markup=new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(16,18,EnumSet.of(STRONG,SPOILER),null))).styled();
+        assertEquals(body,markup.body);
+        Message message=direct(body);markup.addTo(message);
+        assertTrue(message.toXML().toString().contains(MessageMarkup.SPOILER_SPAN));
+        assertFalse(message.hasExtension("spoiler",MessageMarkup.SPOILER));
+        Message wire=PacketParserUtils.parseMessage(PacketParserUtils.getParserFor(message.toXML().toString()));
+        MessageMarkup parsed=MessageMarkup.from(wire,body);
+        assertEquals(EnumSet.of(STRONG,SPOILER),parsed.ranges.get(0).styles);
+        assertEquals("42",body.substring(parsed.ranges.get(0).utf16Start(body),parsed.ranges.get(0).utf16End(body)));
+        assertEquals(parsed.ranges.get(0).styles,MessageMarkup.decode(body,parsed.encode()).ranges.get(0).styles);
+        Message protectedContent=Omemo2Payload.content(message,Omemo2Payload.envelope(message,new java.security.SecureRandom()));
+        assertEquals(parsed.ranges.get(0).styles,MessageMarkup.from(protectedContent,body).ranges.get(0).styles);
+    }
+    @Test public void wholeMessageSpoilersUseXep0382IncludingCaptionlessMediaAndSurviveProjections() throws Exception {
+        MessageMarkup media=MessageMarkup.body("https://files.example.org/movie.mp4").withSpoiler(true);
+        Message message=direct(media.body);media.addTo(message);
+        assertTrue(message.hasExtension("spoiler",MessageMarkup.SPOILER));
+        Message parsed=PacketParserUtils.parseMessage(PacketParserUtils.getParserFor(message.toXML().toString()));
+        assertTrue(MessageMarkup.from(parsed,media.body).spoiler);
+        assertTrue(media.slice(0,0).spoiler);
+        assertTrue(MessageMarkup.decode(media.body,media.encode()).spoiler);
+        Message clear=Omemo2Payload.content(message,Omemo2Payload.envelope(message,new java.security.SecureRandom()));
+        assertTrue(MessageMarkup.from(clear,media.body).spoiler);
+        MessageMarkup text=new MessageMarkup("secret",Collections.singletonList(new MessageMarkup.Range(0,6,EnumSet.of(SPOILER),null))).styled();
+        Message whole=direct(text.body);text.addTo(whole);assertTrue(whole.hasExtension("spoiler",MessageMarkup.SPOILER));
+    }
+    @Test public void legacySpoilerHintsCanOnlyHideAuthenticatedTextAndIgnoreOtherOuterStyles() throws Exception {
+        String body="😀 secret tail";MessageMarkup markup=new MessageMarkup(body,Collections.singletonList(new MessageMarkup.Range(2,8,EnumSet.of(STRONG,SPOILER),null))).styled();
+        Message wire=direct("Encrypted message");markup.addLegacySpoilers(wire);
+        MessageMarkup parsed=MessageMarkup.legacy(wire,body);
+        assertEquals(body,parsed.body);assertEquals(EnumSet.of(SPOILER),parsed.ranges.get(0).styles);
+        assertEquals(EnumSet.of(SPOILER),MessageMarkup.legacy(wire,body).display().ranges.get(0).styles);
+        assertTrue(MessageMarkup.legacy(wire,"short").ranges.isEmpty());
+        Message full=direct("Encrypted message");MessageMarkup.body(body).withSpoiler(true).addLegacySpoilers(full);
+        assertTrue(MessageMarkup.legacy(full,body).spoiler);
+        assertFalse(MessageMarkup.from(full,"another body").spoiler);
+    }
+
 }

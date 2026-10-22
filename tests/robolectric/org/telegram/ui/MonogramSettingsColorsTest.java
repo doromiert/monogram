@@ -14,6 +14,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AnimatedTextView;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramSettingsColorsTest.Preferences.class,MonogramSettingsColorsTest.Device.class})
@@ -22,6 +23,7 @@ public class MonogramSettingsColorsTest {
     @Implements(value=org.telegram.messenger.AndroidUtilities.class,isInAndroidSdk=false)
     public static class Device {
         @Implementation public static void __staticInitializer__() {}
+        @Implementation public static android.graphics.Typeface getTypeface(String path) { return android.graphics.Typeface.DEFAULT; }
         @Implementation public static boolean isTablet() { return false; }
         @Implementation public static boolean isTabletForce() { return false; }
     }
@@ -104,6 +106,24 @@ public class MonogramSettingsColorsTest {
             org.robolectric.util.ReflectionHelpers.callInstanceMethod(this,"dispatchOnScrolled",
                     org.robolectric.util.ReflectionHelpers.ClassParameter.from(int.class,0),
                     org.robolectric.util.ReflectionHelpers.ClassParameter.from(int.class,1));
+        }
+    }
+
+    @Test public void homeTitleRetainsItsMeasuredPaddingWhenLaidOut() {
+        Context context=RuntimeEnvironment.getApplication();
+        for(boolean container:new boolean[]{false,true}) {
+            org.telegram.ui.ActionBar.ActionBar bar=new org.telegram.ui.ActionBar.ActionBar(context);
+            if(container) bar.setUseContainerForTitles();
+            bar.setTitle("Monogram gyp");
+            for(boolean centered:new boolean[]{false,true}) {
+                bar.setCenteredTitle(centered);
+                bar.measure(android.view.View.MeasureSpec.makeMeasureSpec(400,android.view.View.MeasureSpec.EXACTLY),
+                        android.view.View.MeasureSpec.makeMeasureSpec(80,android.view.View.MeasureSpec.AT_MOST));
+                bar.layout(0,0,bar.getMeasuredWidth(),bar.getMeasuredHeight());
+                org.telegram.ui.ActionBar.SimpleTextView title=bar.getTitleTextView();
+                assertEquals(title.getMeasuredHeight(),title.getHeight());
+                assertTrue(title.getHeight()>=title.getPaddingTop()+title.getTextHeight()+title.getPaddingBottom());
+            }
         }
     }
 
