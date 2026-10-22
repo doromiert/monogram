@@ -355,6 +355,14 @@ public class SharedPhotoVideoCell2 extends FrameLayout {
             Drawable icon = getContext().getResources().getDrawable(R.drawable.msg_emoji_recent).mutate();
             icon.setColorFilter(new PorterDuffColorFilter(0x40FFFFFF, PorterDuff.Mode.SRC_IN));
             imageReceiver.setImageBitmap(new CombinedDrawable(new ColorDrawable(0xFF333333), icon));
+        } else if (messageObject.storyItem != null && messageObject.storyItem.attachPath != null
+                && new java.io.File(messageObject.storyItem.attachPath).isFile()) {
+            String path=messageObject.storyItem.attachPath;
+            boolean video=MessageObject.isVideoDocument(messageObject.getDocument());
+            if(video) { showVideoLayout=true;setVideoText(AndroidUtilities.formatShortDuration((int)messageObject.getDuration()),true); }
+            java.io.File poster=new java.io.File(video ? path+".thumb.jpg" : path);
+            if(poster.isFile()) imageReceiver.setImage(ImageLocation.getForPath(poster.getAbsolutePath()), imageFilter, null, null, parentObject, 0);
+            else imageReceiver.setImageBitmap(new ColorDrawable(0xff20242a));
         } else if (org.telegram.messenger.xmpp.MonogramStories.remote(messageObject.storyItem)) {
             imageReceiver.setImage(ImageLocation.getForPath(messageObject.storyItem.attachPath), imageFilter, null, null, parentObject, 0);
         } else if (messageObject.uploadingStory != null && messageObject.uploadingStory.firstFramePath != null) {

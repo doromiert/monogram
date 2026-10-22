@@ -19,6 +19,8 @@ import java.util.UUID;
 final class MonogramStore extends SQLiteOpenHelper {
     private final Context storeContext;
     private final String database;
+    private int account=-1;
+    private String contactOwner() { return account<0 ? "" : storeContext.getSharedPreferences("monogram-"+account,Context.MODE_PRIVATE).getString("jid",""); }
     final MonogramReactions reactions=new MonogramReactions(this);
     final MonogramSavedTags savedTags=new MonogramSavedTags(this);
     final MonogramReads reads=new MonogramReads(this);
@@ -32,7 +34,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private final java.util.Map<Long,java.util.Map<Long,String>> mentionNamesCache=new java.util.HashMap<>();
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
-    MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db"); }
+    MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db");this.account=account; }
     MonogramStore(Context context, String name) { super(context, name, null, 29); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
@@ -75,6 +77,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         ContentValues value=new ContentValues();value.put("expires",0);
         for(String url:urls) getWritableDatabase().update("link_previews",value,"url=?",new String[]{url});
+    }
+    synchronized void expireIncompleteMediaPreviews() {
+        ContentValues value=new ContentValues();value.put("expires",0);
+        getWritableDatabase().update("link_previews",value,"url LIKE ? OR url LIKE ?",new String[]{"https://www.kkinstagram.com/%","https://kkinstagram.com/%"});
     }
     synchronized void clearFailedLinkPreviews() { getWritableDatabase().delete("link_previews","media IS NULL",null); }
     synchronized void clearLinkPreviews() { getWritableDatabase().delete("link_previews",null,null); }
@@ -687,7 +693,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             if(c.moveToFirst()) bytes=c.getBlob(0);
         }
         if(bytes==null) {
-            java.io.File image=avatar(peer);
+            java.io.File image=remoteAvatar(peer);
             if(image!=null && image.isFile() && image.length()>0 && image.length()<=com.negzero.monogram.xmpp.XmppProfile.MAX_AVATAR_BYTES) {
                 bytes=new byte[(int)image.length()];try(java.io.DataInputStream input=new java.io.DataInputStream(new java.io.FileInputStream(image))) { input.readFully(bytes); }
             } else bytes=new byte[0];
@@ -738,6 +744,13 @@ final class MonogramStore extends SQLiteOpenHelper {
         } finally { db.endTransaction(); }
     }
     synchronized java.io.File avatar(long peer) {
+        String owner=contactOwner();
+        if(peer>0 && !owner.isEmpty()) {
+            java.io.File local=MonogramContactDetails.avatar(account,owner,jid(peer));if(local!=null) return local;
+        }
+        return remoteAvatar(peer);
+    }
+    synchronized java.io.File remoteAvatar(long peer) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT avatar FROM profiles WHERE peer=?", new String[]{Long.toString(peer)})) {
             return c.moveToFirst() && !c.isNull(0) ? new java.io.File(c.getString(0)) : null;
         }
@@ -758,6 +771,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (avatar != null && avatar.isFile()) {
             user.photo = new TLRPC.TL_userProfilePhoto(); user.flags |= 32;
             user.photo.photo_id = MonogramProfiles.photo(id, avatar).id;
+            String owner=contactOwner();
+            user.photo.personal=id!=self && !owner.isEmpty() && MonogramContactDetails.avatar(account,owner,jid)!=null;
             user.photo.photo_small = user.photo.photo_big = MonogramProfiles.location(id); user.photo.dc_id = Integer.MIN_VALUE;
         } else user.photo = new TLRPC.TL_userProfilePhotoEmpty();
         user.status = new TLRPC.TL_userStatusEmpty();
@@ -773,7 +788,14 @@ final class MonogramStore extends SQLiteOpenHelper {
         com.negzero.monogram.xmpp.XmppProfile profile = profile(id);
         full.about = profile == null ? "" : profile.field("DESC");
         if (!full.about.isEmpty()) full.flags |= 2;
-        full.profile_photo = MonogramProfiles.photo(id, avatar(id));
+        full.profile_photo = MonogramProfiles.photo(id, remoteAvatar(id));
+        String owner=contactOwner();
+        if(id!=self && !owner.isEmpty()) {
+            java.io.File local=MonogramContactDetails.avatar(account,owner,jid(id));
+            if(local!=null) { full.personal_photo=MonogramProfiles.photo(id,local);full.flags|=2097152; }
+            String note=MonogramContactDetails.note(account,owner,jid(id));
+            if(!note.isEmpty()) { full.note=new TLRPC.TL_textWithEntities();full.note.text=note;full.flags2|=org.telegram.tgnet.TLObject.FLAG_22; }
+        }
         if (full.profile_photo instanceof TLRPC.TL_photo) full.flags |= 4;
         return full;
     }

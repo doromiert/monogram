@@ -50,4 +50,15 @@ public class MonogramUiPreferencesTest {
         MonogramMessagePins.save(0,owner,"chat@example.org",0,false,true);
         assertTrue(MonogramMessagePins.ids(0,owner,"chat@example.org").isEmpty());
     }
+    @Test public void contactNotesAndPhotoOverridesStayLocalToOwnerAndContact() throws Exception {
+        MonogramContactDetails.note(0,owner,"friend@example.org","A private note\nwith another line");
+        java.io.File photo=new java.io.File(ApplicationLoader.applicationContext.getCacheDir(),"contact.png");
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(photo)) { out.write(new byte[]{1,2,3}); }
+        MonogramContactDetails.avatar(0,owner,"friend@example.org",photo);
+        assertEquals(photo,MonogramContactDetails.avatar(0,owner,"friend@example.org"));
+        assertEquals("A private note\nwith another line",MonogramContactDetails.note(0,owner,"friend@example.org"));
+        assertEquals("",MonogramContactDetails.note(0,"other@example.org","friend@example.org"));
+        assertNull(MonogramContactDetails.avatar(0,owner,"another@example.org"));
+        MonogramContactDetails.avatar(0,owner,"friend@example.org",null);assertNull(MonogramContactDetails.avatar(0,owner,"friend@example.org"));
+    }
 }

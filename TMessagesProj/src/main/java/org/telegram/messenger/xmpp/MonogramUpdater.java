@@ -17,7 +17,7 @@ public final class MonogramUpdater {
     private static final MonogramUpdater INSTANCE=new MonogramUpdater();
     public static MonogramUpdater get() { return INSTANCE; }
     static final String API="https://api.github.com/repos/doromiert/monogram/releases/latest";
-    private static final long MAX_APK=256L*1024*1024, INTERVAL=6L*60*60*1000;
+    private static final long MAX_APK=256L*1024*1024, INTERVAL=24L*60*60*1000;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final ArrayList<Runnable> callbacks=new ArrayList<>();
     private Release release;
@@ -26,6 +26,16 @@ public final class MonogramUpdater {
     private File downloaded;
     private volatile int generation;
     private long lastCheck;
+    private final Runnable dailyCheck=()->check(false,()->{
+        BetaUpdate pending=update();
+        if(pending!=null && !downloading() && !ApplicationLoader.mainInterfacePaused && org.telegram.ui.LaunchActivity.instance!=null)
+            ApplicationLoader.applicationLoaderInstance.showCustomUpdateAppPopup(org.telegram.ui.LaunchActivity.instance,pending,UserConfig.selectedAccount);
+    });
+    private void scheduleDailyCheck() {
+        AndroidUtilities.cancelRunOnUIThread(dailyCheck);
+        AndroidUtilities.runOnUIThread(dailyCheck,Math.max(1000,INTERVAL-(android.os.SystemClock.elapsedRealtime()-lastCheck)));
+    }
+
     static final class Release {
         final String version,url,digest,notes;final long size;
         Release(String version,String url,String digest,String notes,long size) { this.version=version;this.url=url;this.digest=digest;this.notes=notes;this.size=size; }
@@ -62,7 +72,7 @@ public final class MonogramUpdater {
     public synchronized void check(boolean force,Runnable done) {
         if(done!=null) callbacks.add(done);
         if(checking) return;
-        if(!force && lastCheck>0 && System.currentTimeMillis()-lastCheck<INTERVAL) { complete();return; }
+        if(!force && lastCheck>0 && android.os.SystemClock.elapsedRealtime()-lastCheck<INTERVAL) { complete();scheduleDailyCheck();return; }
         checking=true;
         worker.execute(()->{
             String error=null;Release next=null;boolean success=false;
@@ -77,8 +87,9 @@ public final class MonogramUpdater {
             AndroidUtilities.runOnUIThread(()->{
                 synchronized(this) {
                     checking=false;
+                    lastCheck=android.os.SystemClock.elapsedRealtime();
+                    scheduleDailyCheck();
                     if(ok) {
-                        lastCheck=System.currentTimeMillis();
                         if(release==null || found==null || !release.version.equals(found.version) || !release.digest.equals(found.digest)) {
                             if(downloading) cancel();
                             if(downloaded!=null) downloaded.delete();downloaded=null;

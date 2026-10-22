@@ -880,6 +880,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 .add(R.drawable.msg_camera,"Back camera",()->openChosenRoundCamera(false))
                 .setMinWidth(dp(196)).setDimAlpha(0).forceTop(true)
                 .setOnDismiss(()->roundCameraChooser=null);
+        audioVideoSendButton.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         roundCameraChooser.show();
     }
     private void openChosenRoundCamera(boolean front) {

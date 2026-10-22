@@ -1,0 +1,5 @@
+# Local contact editing
+
+Profile → Edit Contact reuses Telegram's ContactAddActivity, static photo picker/cropper and native note fields. Names remain device-local aliases; notes and photo overrides are stored under the account owner JID and contact bare JID. Remote roster/profile refreshes do not replace these values. Reset photo restores the contact's actual avatar, and overrides never feed back into remote vCard/profile refreshes.
+
+Suggest photo queues a normal XMPP image message captioned Suggested profile photo, using the normal encryption policy and offline outbox. The recipient opens the image and explicitly chooses Use as profile photo, then confirms before Monogram publishes their own avatar. Other XMPP clients receive an ordinary image and can apply it manually. This transport does not claim a dedicated suggestion XEP or cryptographic authorship beyond the conversation's normal security. XEP-0145 describes optional roster-note synchronization, but local notes are not uploaded. Videos are not offered as contact-photo overrides.

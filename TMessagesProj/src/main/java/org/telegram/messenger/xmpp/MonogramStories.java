@@ -31,15 +31,20 @@ public final class MonogramStories {
     }
     private synchronized int put(String owner,XmppStories.Story story) throws Exception {
         if(!owner.equals(owner())) throw new IllegalStateException("Account changed");
-        JSONArray data=read(owner),next=new JSONArray();int id=0;
+        JSONArray data=read(owner),next=new JSONArray();int id=0;String local="";
         for(int i=0;i<data.length();i++) {
             JSONObject row=data.getJSONObject(i);
-            if(story.owner.equals(row.optString("owner")) && story.id.equals(row.optString("wire"))) id=row.getInt("id");
-            else if(row.optLong("time")+XmppStories.LIFETIME>System.currentTimeMillis()) next.put(row);
+            if(story.owner.equals(row.optString("owner")) && story.id.equals(row.optString("wire"))) { id=row.getInt("id");local=row.optString("local"); }
+            else if(owner.equals(row.optString("owner")) || row.optLong("time")+XmppStories.LIFETIME>System.currentTimeMillis()) next.put(row);
         }
         if(id==0) id=prefs().getInt(owner+"\nnext",1);
         JSONObject row=new JSONObject().put("id",id).put("owner",story.owner).put("wire",story.id).put("url",story.url)
-                .put("mime",story.mime).put("title",story.title).put("time",story.published);
+                .put("mime",story.mime).put("title",story.title).put("time",story.published).put("active",true);
+        if(owner.equals(story.owner)) {
+            File cached=archiveFile(owner,story.id,story.mime);
+            if(cached.isFile()) local=cached.getAbsolutePath();
+            if(!local.isEmpty()) row.put("local",local);
+        }
         next.put(row);
         if(!prefs().edit().putString(key(owner),next.toString()).putInt(owner+"\nnext",Math.max(id+1,prefs().getInt(owner+"\nnext",1))).commit()) throw new java.io.IOException("Could not save story");
         return id;
@@ -50,7 +55,11 @@ public final class MonogramStories {
         JSONArray data=read(owner),next=new JSONArray();
         for(int i=0;i<data.length();i++) {
             JSONObject row=data.getJSONObject(i);
-            if((!peer.equals(row.optString("owner")) || keep.contains(row.optString("wire"))) && row.optLong("time")+XmppStories.LIFETIME>System.currentTimeMillis()) next.put(row);
+            boolean own=owner.equals(row.optString("owner"));
+            boolean expired=row.optLong("time")+XmppStories.LIFETIME<=System.currentTimeMillis();
+            boolean present=!peer.equals(row.optString("owner")) || keep.contains(row.optString("wire"));
+            if(own && expired) { row.put("active",false);next.put(row); }
+            else if(present && (own || !expired)) next.put(row);
         }
         if(!prefs().edit().putString(key(owner),next.toString()).commit()) throw new java.io.IOException("Could not refresh stories");
         for(XmppStories.Story story:stories) put(owner,story);
@@ -106,6 +115,8 @@ public final class MonogramStories {
         story.contacts=true;story.out=owner().equals(row.getString("owner"));story.flags|=1;
         story.privacy.add(new TLRPC.TL_privacyValueAllowContacts());story.flags|=4;
         story.attachPath=row.getString("url");
+        String local=row.optString("local");
+        if(owner().equals(row.optString("owner")) && !local.isEmpty() && new File(local).isFile()) story.attachPath=local;
         story.media=MonogramAttachments.remoteMedia(story.id,row.getString("mime").startsWith("video/")?"story.mp4":"story.jpg",row.getString("mime"),0);
         if(story.media.photo!=null) story.media.photo.dc_id=Integer.MIN_VALUE;
         return story;
@@ -116,7 +127,7 @@ public final class MonogramStories {
             JSONArray rows=read(owner());
             for(int i=0;i<rows.length();i++) {
                 JSONObject row=rows.getJSONObject(i);
-                if(row.getInt("id")==target.id && store.jid(peer).equals(row.getString("owner"))) { target.attachPath=row.getString("url");return; }
+                if(row.getInt("id")==target.id && store.jid(peer).equals(row.getString("owner"))) { target.attachPath=project(row).attachPath;return; }
             }
         } catch(Exception ignored) {}
     }
@@ -139,10 +150,49 @@ public final class MonogramStories {
         String jid=store.jid(peer);JSONArray rows=read(owner);
         for(int i=0;i<rows.length();i++) {
             JSONObject row=rows.getJSONObject(i);
-            if(jid.equals(row.optString("owner")) && row.optLong("time")+XmppStories.LIFETIME>System.currentTimeMillis()) result.stories.add(project(row));
+            if(jid.equals(row.optString("owner")) && row.optBoolean("active",true) && row.optLong("time")+XmppStories.LIFETIME>System.currentTimeMillis()) result.stories.add(project(row));
         }
         result.stories.sort(Comparator.comparingInt(story->story.date));
         result.max_read_id=prefs().getInt(owner+"\nread\n"+jid,0);result.flags|=1;return result;
+    }
+    static ArrayList<JSONObject> profileRows(JSONArray rows,String owner,String peer,boolean archive,long now) throws Exception {
+        ArrayList<JSONObject> result=new ArrayList<>();
+        if(archive && !owner.equals(peer)) return result;
+        for(int i=0;i<rows.length();i++) {
+            JSONObject row=rows.getJSONObject(i);
+            if(peer.equals(row.optString("owner")) && (archive || row.optBoolean("active",true) && row.optLong("time")+XmppStories.LIFETIME>now)) result.add(row);
+        }
+        result.sort((a,b)->Integer.compare(b.optInt("id"),a.optInt("id")));return result;
+    }
+    static ArrayList<JSONObject> profilePage(ArrayList<JSONObject> rows,int offset,int limit) {
+        ArrayList<JSONObject> page=new ArrayList<>();
+        for(JSONObject row:rows) if((offset<=0 || row.optInt("id")<offset) && page.size()<Math.max(1,Math.min(limit,100))) page.add(row);
+        return page;
+    }
+    private File archiveFile(String owner,String wire,String mime) throws Exception {
+        byte[] hash=java.security.MessageDigest.getInstance("SHA-256").digest((owner+"\n"+wire).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        StringBuilder name=new StringBuilder();for(byte value:hash) name.append(String.format(java.util.Locale.ROOT,"%02x",value&255));
+        File directory=new File(ApplicationLoader.applicationContext.getFilesDir(),"monogram-story-history-"+account);
+        return new File(directory,name+(mime.startsWith("video/") ? ".mp4" : ".jpg"));
+    }
+    private void archiveMedia(String owner,XmppStories.Story story,File source) throws Exception {
+        File target=archiveFile(owner,story.id,story.mime);if(target.isFile()) return;
+        if(!target.getParentFile().isDirectory() && !target.getParentFile().mkdirs()) throw new java.io.IOException("Story history unavailable");
+        File temporary=File.createTempFile("story-",".tmp",target.getParentFile());
+        try {
+            try(java.io.InputStream input=new java.io.FileInputStream(source);java.io.OutputStream output=new java.io.FileOutputStream(temporary)) {
+                byte[] buffer=new byte[65536];int count;while((count=input.read(buffer))!=-1) { checkRequestOwner();output.write(buffer,0,count); }
+            }
+            if(!temporary.renameTo(target)) throw new java.io.IOException("Could not retain story media");
+            if(story.mime.startsWith("video/")) {
+                android.media.MediaMetadataRetriever reader=new android.media.MediaMetadataRetriever();android.graphics.Bitmap frame=null;
+                try {
+                    reader.setDataSource(target.getAbsolutePath());
+                    frame=reader.getFrameAtTime(0,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                    if(frame!=null) try(java.io.FileOutputStream output=new java.io.FileOutputStream(target.getAbsolutePath()+".thumb.jpg")) { frame.compress(android.graphics.Bitmap.CompressFormat.JPEG,82,output); }
+                } finally { if(frame!=null) frame.recycle();reader.release(); }
+            }
+        } finally { temporary.delete(); }
     }
     private long peer(TLRPC.InputPeer peer) { return peer instanceof TLRPC.TL_inputPeerSelf ? self() : peer==null ? 0 : peer.user_id; }
     private final Map<Integer,FileTransfer.Job> uploads=new ConcurrentHashMap<>();
@@ -172,7 +222,7 @@ public final class MonogramStories {
     }
     TLObject handle(TLObject request) throws Exception {
         if(!(request instanceof TL_stories.TL_stories_getAllStories || request instanceof TL_stories.TL_stories_getPeerStories
-                || request instanceof TL_stories.TL_stories_getPinnedStories
+                || request instanceof TL_stories.TL_stories_getPinnedStories || request instanceof TL_stories.TL_stories_getStoriesArchive
                 || request instanceof TL_stories.TL_stories_getStoriesByID || request instanceof TL_stories.TL_stories_sendStory
                 || request instanceof TL_stories.TL_stories_deleteStories || request instanceof TL_stories.TL_stories_readStories
                 || request instanceof TL_stories.TL_stories_canSendStory || request instanceof TL_stories.TL_stories_editStory)) return null;
@@ -191,17 +241,17 @@ public final class MonogramStories {
             }
             return result;
         }
-        if(request instanceof TL_stories.TL_stories_getPinnedStories) {
-            // The native profile uses the pinned-stories request for its Posts grid.
-            // XMPP stories remain ephemeral: expose active items here without making them permanent.
-            TL_stories.TL_stories_getPinnedStories query=(TL_stories.TL_stories_getPinnedStories)request;
-            long peer=peer(query.peer);
-            ArrayList<TL_stories.StoryItem> active=peerStories(owner,peer).stories;
-            active.sort((a,b)->Integer.compare(b.id,a.id));
-            TL_stories.TL_stories_stories result=new TL_stories.TL_stories_stories();result.count=active.size();
-            int limit=Math.max(1,Math.min(query.limit,100));
-            for(TL_stories.StoryItem story:active) if((query.offset_id==0 || story.id<query.offset_id) && result.stories.size()<limit) result.stories.add(story);
-            result.users.add(store.user(peer,self()));changed(store.jid(peer));return result;
+        if(request instanceof TL_stories.TL_stories_getPinnedStories || request instanceof TL_stories.TL_stories_getStoriesArchive) {
+            boolean archive=request instanceof TL_stories.TL_stories_getStoriesArchive;
+            TLRPC.InputPeer input=archive ? ((TL_stories.TL_stories_getStoriesArchive)request).peer : ((TL_stories.TL_stories_getPinnedStories)request).peer;
+            int offset=archive ? ((TL_stories.TL_stories_getStoriesArchive)request).offset_id : ((TL_stories.TL_stories_getPinnedStories)request).offset_id;
+            int limit=archive ? ((TL_stories.TL_stories_getStoriesArchive)request).limit : ((TL_stories.TL_stories_getPinnedStories)request).limit;
+            long peer=peer(input);String jid=store.jid(peer);
+            if(archive && peer!=self()) throw new IllegalArgumentException("Only your own story history is available");
+            ArrayList<JSONObject> rows=profileRows(read(owner),owner,jid,archive,System.currentTimeMillis());
+            TL_stories.TL_stories_stories result=new TL_stories.TL_stories_stories();result.count=rows.size();
+            for(JSONObject row:profilePage(rows,offset,limit)) result.stories.add(project(row));
+            result.users.add(store.user(peer,self()));changed(jid);return result;
         }
         if(request instanceof TL_stories.TL_stories_getPeerStories) {
             long peer=peer(((TL_stories.TL_stories_getPeerStories)request).peer);
@@ -210,7 +260,8 @@ public final class MonogramStories {
         if(request instanceof TL_stories.TL_stories_getStoriesByID) {
             TL_stories.TL_stories_getStoriesByID query=(TL_stories.TL_stories_getStoriesByID)request;
             TL_stories.TL_stories_stories result=new TL_stories.TL_stories_stories();
-            for(TL_stories.StoryItem story:peerStories(owner,peer(query.peer)).stories) if(query.id.contains(story.id)) result.stories.add(story);
+            for(JSONObject row:profileRows(read(owner),owner,store.jid(peer(query.peer)),peer(query.peer)==self(),System.currentTimeMillis()))
+                if(query.id.contains(row.getInt("id"))) result.stories.add(project(row));
             result.users.add(store.user(peer(query.peer),self()));return result;
         }
         if(request instanceof TL_stories.TL_stories_canSendStory) {
@@ -230,7 +281,10 @@ public final class MonogramStories {
             for(int i=0;i<data.length();i++) {
                 JSONObject row=data.getJSONObject(i);
                 if(query.id.contains(row.getInt("id")) && owner.equals(row.getString("owner"))) {
-                    checkRequestOwner();XmppStories.retract(source.get().connection(),row.getString("wire"));result.objects.add(new org.telegram.tgnet.Vector.Int(row.getInt("id")));
+                    checkRequestOwner();
+                    if(row.optBoolean("active",true) && row.optLong("time")+XmppStories.LIFETIME>System.currentTimeMillis()) XmppStories.retract(source.get().connection(),row.getString("wire"));
+                    String local=row.optString("local");if(!local.isEmpty()) { new File(local).delete();new File(local+".thumb.jpg").delete(); }
+                    result.objects.add(new org.telegram.tgnet.Vector.Int(row.getInt("id")));
                 } else next.put(row);
             }
             if(!prefs().edit().putString(key(owner),next.toString()).commit()) throw new java.io.IOException("Could not persist story deletion");return result;
@@ -272,7 +326,9 @@ public final class MonogramStories {
         checkRequestOwner();
         XmppStories.Story story=XmppStories.publish(session.connection(),id,link.wireUrl,mime,send.caption,false);
         if(job.cancelled()) { XmppStories.retract(session.connection(),id);job.check(); }
-        checkRequestOwner();int local=put(owner,story);
+        checkRequestOwner();
+        try { archiveMedia(owner,story,file); } catch(Exception unavailable) { org.telegram.messenger.FileLog.e("Could not retain own story media",unavailable); }
+        int local=put(owner,story);
         TL_stories.TL_updateStory update=new TL_stories.TL_updateStory();update.peer=new TLRPC.TL_peerUser();update.peer.user_id=self();
         JSONArray rows=read(owner);for(int i=0;i<rows.length();i++) if(rows.getJSONObject(i).getInt("id")==local) update.story=project(rows.getJSONObject(i));
         MonogramController.Updates result=new MonogramController.Updates();result.date=(int)(System.currentTimeMillis()/1000);result.updates.add(update);return result;

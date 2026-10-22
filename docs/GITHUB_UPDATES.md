@@ -1,6 +1,6 @@
 # GitHub application updates
 
-The regular Monogram APK uses Telegram's existing optional update sheet, progress bar and Android installer entry. Settings exposes Check for updates. Launch checks the latest stable GitHub release from doromiert/monogram, with a six-hour foreground throttle. Checks do not download APKs automatically.
+The regular Monogram APK uses Telegram's existing optional update sheet, progress bar and Android installer entry. Settings exposes Check for updates. Launch checks the latest stable GitHub release from doromiert/monogram at every process startup and then once per day while the process remains alive. Checks do not download APKs automatically.
 
 Release tags must be plain vMAJOR.MINOR.PATCH. The arm64 build selects monogram-VERSION-arm64.apk. Other architectures require equivalently named compatible assets. Draft/prerelease releases and incompatible assets are ignored. GitHub's SHA-256 asset digest is mandatory.
 

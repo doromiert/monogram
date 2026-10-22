@@ -143,6 +143,11 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
         return resourcesProvider;
     }
 
+    private boolean monogramContact() { return org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount); }
+    private void monogramContactError(String error) {
+        if(error!=null && getParentActivity()!=null) org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(error).show();
+    }
+
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
@@ -153,6 +158,7 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
         lastNameFromCard = getArguments().getString("last_name_card");
         addContact = getArguments().getBoolean("addContact", false);
         focusNotes = getArguments().getBoolean("focus_notes", false);
+        if(monogramContact()) imageUpdater.setCanSelectVideo(false);
         needAddException = MessagesController.getNotificationsSettings(currentAccount).getBoolean("dialog_bar_exception" + user_id, false);
         TLRPC.User user = null;
         if (user_id != 0) {
@@ -194,6 +200,15 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
                 if (id == -1) {
                     finishFragment();
                 } else if (id == done_button) {
+                    if(monogramContact()) {
+                        doneButton.setEnabled(false);
+                        String name=(firstNameField.getText().toString()+" "+lastNameField.getText()).trim();
+                        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).editLocalContact(user_id,name,noteField.getText().toString(),error->{
+                            doneButton.setEnabled(true);monogramContactError(error);
+                            if(error==null) { finishFragment();if(delegate!=null) delegate.didAddToContacts(); }
+                        });
+                        return;
+                    }
                     if (firstNameField.getText().length() != 0) {
                         final TLRPC.User user = getMessagesController().getUser(user_id);
                         final TLRPC.UserFull userInfo = getMessagesController().getUserFull(user_id);
@@ -325,7 +340,7 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
         });
         lastNameField.setText(lastNameFromCard);
 
-        noteField = new EditTextCell(context, getString(R.string.AddNotes), true, true, getMessagesController().config.contactNoteLengthLimit.get(), resourcesProvider);
+        noteField = new EditTextCell(context, getString(R.string.AddNotes), true, true, monogramContact() ? 8192 : getMessagesController().config.contactNoteLengthLimit.get(), resourcesProvider);
         noteField.editText.setLinkTextColor(getThemedColor(Theme.key_chat_messageLinkIn));
         noteField.editText.setImeOptions(EditorInfo.IME_ACTION_DONE);
         noteField.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
@@ -425,6 +440,12 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
                         LocaleController.getString(R.string.ResetToOriginalPhotoTitle),
                         LocaleController.formatString(R.string.ResetToOriginalPhotoMessage, user.first_name),
                         LocaleController.getString(R.string.Reset), () -> {
+                            if(monogramContact()) {
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).contactPhoto(user_id,null,false,error->{
+                                    monogramContactError(error);if(error==null) { updateAvatarLayout();updateCustomPhotoInfo();if(listView!=null) listView.adapter.update(true); }
+                                });
+                                return;
+                            }
                             avatar = null;
                             sendPhotoChangedRequest(null, null,null, null, null, 0, TYPE_SET);
 
@@ -530,7 +551,8 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
         items.add(UItem.asCustom(firstNameField));
         items.add(UItem.asCustom(lastNameField));
 
-        if (TextUtils.isEmpty(getPhone())) {
+        if(monogramContact()) items.add(UItem.asShadow("Names, notes and photo overrides are saved only on this device."));
+        else if (TextUtils.isEmpty(getPhone())) {
             items.add(UItem.asShadow(AndroidUtilities.replaceCharSequence("%1$s", AndroidUtilities.replaceTags(getString(R.string.MobileHiddenExceptionInfo)), UserObject.getFirstName(user))));
         } else {
             if (needAddException) {
@@ -550,7 +572,7 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
 
         if (!addContact) {
             final TLRPC.UserFull userInfo = getMessagesController().getUserFull(user_id);
-            if (userInfo != null && userInfo.birthday == null) {
+            if (!monogramContact() && userInfo != null && userInfo.birthday == null) {
                 items.add(UItem.asCustom(suggestBirthday));
             }
             items.add(UItem.asCustom(suggestPhoto));
@@ -579,7 +601,8 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
                 }
 
                 final TLRPC.UserFull userInfo = getMessagesController().getUserFull(user_id);
-                if (userInfo != null) {
+                if(monogramContact()) noteField.setText(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).contactNote(user_id));
+                else if (userInfo != null) {
                     if (userInfo.note != null) {
                         noteField.setText(userInfo.note);
                     } else {
@@ -783,13 +806,27 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
 
     @Override
     public boolean canFinishFragment() {
-        return photoSelectedTypeFinal != TYPE_SUGGEST;
+        return monogramContact() || photoSelectedTypeFinal != TYPE_SUGGEST;
     }
 
     @Override
     public void didUploadPhoto(TLRPC.InputFile photo, TLRPC.InputFile video, double videoStartTimestamp, String videoPath, TLRPC.PhotoSize bigSize, TLRPC.PhotoSize smallSize, boolean isVideo, TLRPC.VideoSize emojiMarkup) {
         AndroidUtilities.runOnUIThread(() -> {
             if (imageUpdater.isCanceled()) {
+                return;
+            }
+            if(monogramContact()) {
+                if(photo instanceof org.telegram.messenger.xmpp.MonogramAvatarFile) {
+                    boolean suggest=photoSelectedTypeFinal==TYPE_SUGGEST;
+                    showAvatarProgress(true,true);
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).contactPhoto(user_id,((org.telegram.messenger.xmpp.MonogramAvatarFile)photo).source,suggest,error->{
+                        showAvatarProgress(false,true);monogramContactError(error);
+                        if(error==null) {
+                            updateAvatarLayout();updateCustomPhotoInfo();if(listView!=null) listView.adapter.update(true);
+                            if(suggest && getParentActivity()!=null) org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(R.raw.forward,"Photo suggestion queued in chat").show();
+                        }
+                    });
+                } else if(smallSize!=null) avatarImage.setImage(ImageLocation.getForLocal(smallSize.location),"50_50",avatarDrawable,getMessagesController().getUser(user_id));
                 return;
             }
             if (photoSelectedTypeFinal == TYPE_SET) {

@@ -965,3 +965,14 @@ Release validation: Nix arm64 packaging, ten focused native checks and five core
 - [x] Embed fixes: kkinstagram/kkclip crawlers receive media redirects while ordinary user agents receive an ad/interstitial page. Request bot-facing responses with Monogram identification, preserve safe HTTPS media redirects, render direct image previews and recognize OpenGraph MP4/WebM players. Native player now recognizes signed video URLs with query strings. No arbitrary OpenGraph HTML iframe execution. Supplied URL currently returns a JPEG to crawlers, not a video. Invalidate old failed preview cache rows; actual on-phone player acceptance pending.
 
 0.2.143 release validation: Nix arm64 packaging and 22 focused native theme/preferences/pins/updater/preview checks pass. Corrected the app module's missing AndroidX core dependency required by the reused native updater sheet. The app HTTP reader reached the supplied kkinstagram media redirect without downloading its body. Original signer and scoped APK audit pass; installed through 192.168.1.128:46869, package reports 0.2.143 (73189). SHA-256 `8a70b131cb41c20d9441f89f2149dfd6f196e96200980c9030654b096f1e3513`. No real messages/stories/bio changes sent, and no on-phone playback or future-release installer interaction performed. Old unsaved theme colors cannot be reconstructed: reselect the desired variant once after updating.
+
+## 0.2.144 requested regressions
+
+- [x] Posts endless loading: accept initial offset -1; expose native Archived Posts and retain own expired metadata/media locally.
+- [x] KK Instagram media cards: remove domain placeholders; generate a bounded first-frame video thumbnail and expire broken cached cards.
+- [x] Ask round-video camera chooser: native long-press haptic on opening.
+- [x] Orange profile status contrast against actual native profile colors.
+- [x] Updater checks at process startup, then daily; publish this release without ADB installation for updater testing.
+- [x] Restore native contact editing: local name, notes, photo override/reset and ordinary encrypted photo suggestions, with explicit recipient profile-photo acceptance.
+
+Release 0.2.144: Nix arm64 packaging and 30 focused native checks pass. Signed APK and scoped artifact audit verified. Published for user testing through the GitHub updater; deliberately not installed through ADB. New contact/photo interactions, haptic feedback and on-phone video-card playback remain for user acceptance. Old purged own-story history cannot be recovered.

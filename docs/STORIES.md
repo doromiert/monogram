@@ -11,3 +11,5 @@ Public/custom audiences, viewer receipts, story reactions and media editing are 
 References: https://xmpp.org/extensions/xep-0501.html and https://codeberg.org/monocles/monocles_chat .
 
 In 0.2.143 the native profile Posts grid also reads active XMPP stories, using stable descending IDs for paging and restoring remote media URLs after native cache loads. This does not make stories permanent profile posts. Expired-story archiving remains unsupported.
+
+In 0.2.144 native Posts pagination accepts both initial offsets -1 and 0. Archived Posts contains the owner's locally recorded history, including active and expired stories. New own uploads retain a private media copy and video poster for later viewing. Remote contacts' expired stories are not retained. Own history from other clients retains its original media URL; those files remain dependent on their upload host. Entries already discarded by earlier versions cannot be recovered from this local cache. Explicit deletion removes the local history copy too.

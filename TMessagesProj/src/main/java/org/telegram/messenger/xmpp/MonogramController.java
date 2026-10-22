@@ -1755,6 +1755,72 @@ public final class MonogramController {
             });
         });
     }
+    public String contactNote(long peer) { return MonogramContactDetails.note(account,accountJid(),store.jid(peer)); }
+    public void editLocalContact(long peer,String name,String note,java.util.function.Consumer<String> completed) {
+        final long epoch=accountEpoch;final String owner=accountJid();
+        cacheWorker.execute(()->{
+            String error=null;
+            try {
+                if(!sameAccount(epoch,owner) || peer<=0 || peer==self) throw new IllegalArgumentException("Choose another contact");
+                if(note.length()>8192) throw new IllegalArgumentException("Notes can contain up to 8192 characters");
+                store.localName(peer,name);MonogramContactDetails.note(account,owner,store.jid(peer),note);
+            } catch(Exception failed) { error=failed instanceof IllegalArgumentException ? failed.getMessage() : "Could not save contact details"; }
+            final String result=error;AndroidUtilities.runOnUIThread(()->{
+                if(!sameAccount(epoch,owner)) return;
+                if(result==null) { publishLocalContact(peer);publishProfile(peer,sessionEpoch); }
+                completed.accept(result);
+            });
+        });
+    }
+    private void publishLocalContact(long peer) {
+        TLRPC.UserFull current=MessagesController.getInstance(account).getUserFull(peer);
+        if(current!=null) {
+            TLRPC.UserFull updated=store.fullUser(peer,self);current.personal_photo=updated.personal_photo;current.profile_photo=updated.profile_photo;current.note=updated.note;
+            current.flags=(current.flags&~2097152)|(updated.flags&2097152);current.flags2=(current.flags2&~TLObject.FLAG_22)|(updated.flags2&TLObject.FLAG_22);
+            MessagesStorage.getInstance(account).updateUserInfo(current,false);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.userInfoDidLoad,peer,current);
+        }
+    }
+    public void contactPhoto(long peer,File source,boolean suggest,java.util.function.Consumer<String> completed) {
+        final long epoch=accountEpoch;final String owner=accountJid();
+        cacheWorker.execute(()->{
+            String error=null;File prepared=null;
+            try {
+                if(!sameAccount(epoch,owner) || peer<=0 || peer==self) throw new IllegalArgumentException("Choose another contact");
+                if(source!=null) {
+                    if(source.length()<=0 || source.length()>com.negzero.monogram.xmpp.XmppProfile.MAX_AVATAR_BYTES) throw new IllegalArgumentException("Invalid contact photo");
+                    byte[] bytes=new byte[(int)source.length()];try(java.io.DataInputStream input=new java.io.DataInputStream(new java.io.FileInputStream(source))) { input.readFully(bytes); }
+                    prepared=MonogramProfiles.cache(ApplicationLoader.applicationContext,"local-contact-"+account+"-"+Integer.toHexString(owner.hashCode()),MonogramProfiles.png(bytes));
+                }
+                if(!sameAccount(epoch,owner)) throw new IllegalStateException("Account changed");
+                if(!suggest) MonogramContactDetails.avatar(account,owner,store.jid(peer),prepared);
+                else if(prepared==null) throw new IllegalArgumentException("Choose a photo to suggest");
+            } catch(Exception failed) { error=failed instanceof IllegalArgumentException ? failed.getMessage() : "Could not prepare contact photo"; }
+            final File image=prepared;final String result=error;AndroidUtilities.runOnUIThread(()->{
+                if(!sameAccount(epoch,owner)) return;
+                if(result==null) {
+                    if(suggest) SendMessagesHelper.prepareSendingPhoto(org.telegram.messenger.AccountInstance.getInstance(account),image.getAbsolutePath(),null,peer,null,null,null,"Suggested profile photo",null,null,null,0,null,true,0,0,null);
+                    else { publishLocalContact(peer);publishProfile(peer,sessionEpoch); }
+                }
+                completed.accept(result);
+            });
+        });
+    }
+    public void acceptPhotoSuggestion(File source,java.util.function.Consumer<String> completed) {
+        final long epoch=accountEpoch;final String owner=accountJid();
+        worker.execute(()->{
+            String error=null;
+            try {
+                if(!sameAccount(epoch,owner) || source==null || !source.isFile() || source.length()<=0 || source.length()>com.negzero.monogram.xmpp.XmppProfile.MAX_AVATAR_BYTES) throw new IllegalArgumentException("Download a supported photo first");
+                byte[] bytes=new byte[(int)source.length()];try(java.io.DataInputStream input=new java.io.DataInputStream(new java.io.FileInputStream(source))) { input.readFully(bytes); }
+                byte[] png=MonogramProfiles.png(bytes);
+                com.negzero.monogram.xmpp.XmppProfile changed=session().profiles.avatar(png);
+                if(!sameAccount(epoch,owner)) throw new IllegalStateException("Account changed");
+                store.profile(self,changed);publishProfile(self,sessionEpoch);
+            } catch(Exception failed) { error=failed instanceof IllegalArgumentException ? failed.getMessage() : "Could not update profile photo"; }
+            final String result=error;AndroidUtilities.runOnUIThread(()->{ if(sameAccount(epoch,owner)) completed.accept(result); });
+        });
+    }
     public void refreshProfile(long peer) { refreshProfile(peer,null); }
     public void refreshVisibleRoomMember(long room,long peer) { if(peer>0 && isRoom(room) && store.profile(peer)==null) refreshProfile(peer); }
     private void changedProfile(long peer) {

@@ -49,7 +49,13 @@ final class MonogramPreviewHttp {
     static Response fetchHtml(String address,int limit,java.util.function.BooleanSupplier permitted) throws IOException {
         return fetch(address,limit,permitted,true);
     }
+    static Response fetchMediaPrefix(String address,int limit,java.util.function.BooleanSupplier permitted) throws IOException {
+        return fetch(address,limit,permitted,false,true);
+    }
     private static Response fetch(String address,int limit,java.util.function.BooleanSupplier permitted,boolean htmlPrefix) throws IOException {
+        return fetch(address,limit,permitted,htmlPrefix,false);
+    }
+    private static Response fetch(String address,int limit,java.util.function.BooleanSupplier permitted,boolean htmlPrefix,boolean mediaPrefix) throws IOException {
         final long started=System.nanoTime();
         final java.util.function.BooleanSupplier permission=permitted;
         permitted=() -> permission.getAsBoolean() && System.nanoTime()-started<TimeUnit.SECONDS.toNanos(15);
@@ -72,7 +78,7 @@ final class MonogramPreviewHttp {
                     if(url.getRawQuery()!=null) path+="?"+url.getRawQuery();
                     String agent=(host.equals("kkinstagram.com") || host.equals("www.kkinstagram.com") || host.equals("kkclip.com") || host.equals("www.kkclip.com"))
                             ? "TelegramBot (Monogram-LinkPreview/1)" : "Monogram-LinkPreview/1";
-                    String request="GET "+path+" HTTP/1.1\r\nHost: "+url.getRawAuthority()+"\r\nUser-Agent: "+agent+"\r\nAccept: text/html, application/json, image/jpeg, image/png, image/webp\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+                    String request="GET "+path+" HTTP/1.1\r\nHost: "+url.getRawAuthority()+"\r\nUser-Agent: "+agent+"\r\n"+(mediaPrefix ? "Range: bytes=0-"+(limit-1)+"\r\n" : "")+"Accept: text/html, application/json, image/jpeg, image/png, image/webp\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
                     socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));socket.getOutputStream().flush();
                     InputStream input=new BufferedInputStream(socket.getInputStream());
                     String[] status=line(input,permitted).split(" ",3);
@@ -92,13 +98,13 @@ final class MonogramPreviewHttp {
                         try { url=safeUrl(url.resolve(next).toString()); } catch(IllegalArgumentException invalid) { throw new IOException("Invalid redirect",invalid); }
                         continue;
                     }
-                    if(code!=200) throw new IOException("Preview unavailable");
+                    if(code!=200 && !(mediaPrefix && code==206 && headers.getOrDefault("content-range","").matches("bytes 0-[0-9]+/([0-9]+|\\*)"))) throw new IOException("Preview unavailable");
                     String encoding=headers.get("content-encoding");if(encoding!=null && !encoding.equalsIgnoreCase("identity")) throw new IOException("Unsupported preview encoding");
                     String type=headers.getOrDefault("content-type","");
                     boolean html=type.toLowerCase(Locale.ROOT).startsWith("text/html") || type.toLowerCase(Locale.ROOT).startsWith("application/xhtml+xml");
                     // Some embed services redirect crawlers directly to media. Inspect metadata without downloading a video.
                     if(htmlPrefix && (type.toLowerCase(Locale.ROOT).startsWith("image/") || type.toLowerCase(Locale.ROOT).startsWith("video/"))) return new Response(url,type,new byte[0]);
-                    return new Response(url,type,body(input,headers,limit,permitted,htmlPrefix && html));
+                    return new Response(url,type,body(input,headers,limit,permitted,mediaPrefix || htmlPrefix && html));
                 }
             }
         }

@@ -619,23 +619,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int noteRow;
     private int locationRow;
     private void showLocalNameEditor() {
-        if(userId<=0 || userId==getUserConfig().getClientUserId() || getParentActivity()==null) return;
-        org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
-        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),"Local name",false);
-        input.editText.setSingleLine(true);
-        input.editText.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-        input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(256)});
-        String alias=controller.localName(userId);
-        TLRPC.User user=getMessagesController().getUser(userId);
-        input.editText.setText(alias.isEmpty() && user!=null ? UserObject.getUserName(user) : alias);
-        java.util.function.Consumer<String> save=value -> controller.localName(userId,value,error -> {
-            if(getParentActivity()!=null && error!=null) BulletinFactory.of(this).createErrorBulletin(error).show();
-        });
-        showDialog(new AlertDialog.Builder(getContext(),getResourceProvider()).setTitle("Rename locally")
-                .setMessage("Only you see this name on this device. Profile and roster updates will not replace it.")
-                .setView(input).setPositiveButton("Save",(dialog,which) -> save.accept(input.getText().toString()))
-                .setNeutralButton("Reset name",(dialog,which) -> save.accept(""))
-                .setNegativeButton("Cancel",null).create());
+        if(userId<=0 || userId==getUserConfig().getClientUserId()) return;
+        Bundle args=new Bundle();args.putLong("user_id",userId);
+        presentFragment(new ContactAddActivity(args,getResourceProvider()));
     }
 
     private int monogramProfileStart = -1;
@@ -3052,7 +3038,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             statusPlaceholderDrawable[1].setProgress(1f);
                         }
                         updateEmojiStatusDrawableColor(1f);
-                        onlineTextView[1].setTextColor(0xB3FFFFFF);
+                        onlineTextView[1].setTextColor(readableProfileStatus(0xB3FFFFFF));
                         actionBar.setItemsBackgroundColor(Theme.ACTION_BAR_WHITE_SELECTOR_COLOR, false);
                         actionBar.setItemsColor(Color.WHITE, false);
                         overlaysView.setOverlaysVisible();
@@ -5462,8 +5448,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     public void setTextColor(int color) {
                         super.setTextColor(color);
                         if (onlineTextView[2] != null) {
-                            onlineTextView[2].setTextColor(color);
-                            onlineTextView[3].setTextColor(color);
+                            onlineTextView[2].setTextColor(readableProfileStatus(color));
+                            onlineTextView[3].setTextColor(readableProfileStatus(color));
                         }
 
                     }
@@ -5473,7 +5459,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
 
             onlineTextView[a].setEllipsizeByGradient(true);
-            onlineTextView[a].setTextColor(applyPeerColor(getThemedColor(Theme.key_actionBarDefaultSubtitle), true, null));
+            onlineTextView[a].setTextColor(readableProfileStatus(applyPeerColor(getThemedColor(Theme.key_actionBarDefaultSubtitle), true, null)));
             onlineTextView[a].setTextSizePx(dp(13.5f));
             onlineTextView[a].setGravity(Gravity.LEFT);
             onlineTextView[a].setAlpha(a == 0 ? 0.0f : 1.0f);
@@ -6172,7 +6158,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         } else {
             statusColor = getThemedColor(Theme.key_actionBarDefaultSubtitle);
         }
-        onlineTextView[1].setTextColor(ColorUtils.blendARGB(applyPeerColor(statusColor, true, online), 0xB3FFFFFF, value));
+        onlineTextView[1].setTextColor(readableProfileStatus(ColorUtils.blendARGB(applyPeerColor(statusColor, true, online), 0xB3FFFFFF, value)));
         if (extraHeight > getHeaderOnlyExtraHeight()) {
             nameTextView[1].setPivotY(AndroidUtilities.lerp(0, nameTextView[1].getMeasuredHeight(), value));
             nameTextView[1].setScaleX(AndroidUtilities.lerp(1f + 0.12f * diff, 1.38f, value));
@@ -9358,7 +9344,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (onlineTextView[i] == null || i == 1 || i == 2 && playProfileAnimation == 2) {
                 continue;
             }
-            onlineTextView[i].setTextColor(ColorUtils.blendARGB(i == 0 ? subtitleColor : applyPeerColor(subtitleColor, true, isOnline[0]), i == 0 ? color : applyPeerColor(color, true, isOnline[0]), progress));
+            onlineTextView[i].setTextColor(readableProfileStatus(ColorUtils.blendARGB(i == 0 ? subtitleColor : applyPeerColor(subtitleColor, true, isOnline[0]), i == 0 ? color : applyPeerColor(color, true, isOnline[0]), progress)));
         }
         extraHeight = initialAnimationExtraHeight * progress;
         color = AvatarDrawable.getProfileColorForId(userId != 0 ? userId : chatId, resourcesProvider);
@@ -9512,7 +9498,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (playProfileAnimation == 2) {
                 avatarColor = getAverageColor(avatarImage.getImageReceiver());
                 nameTextView[1].setTextColor(Color.WHITE);
-                onlineTextView[1].setTextColor(0xB3FFFFFF);
+                onlineTextView[1].setTextColor(readableProfileStatus(0xB3FFFFFF));
                 actionBar.setItemsBackgroundColor(Theme.ACTION_BAR_WHITE_SELECTOR_COLOR, false);
 
                 overlaysView.setOverlaysVisible();
@@ -10785,7 +10771,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     int key = isOnline[0] && peerColor == null ? Theme.key_profile_status : Theme.key_actionBarDefaultSubtitle;
                     onlineTextView[1].setTag(key);
                     if (!isPulledDown) {
-                        onlineTextView[1].setTextColor(applyPeerColor(getThemedColor(key), true, isOnline[0]));
+                        onlineTextView[1].setTextColor(readableProfileStatus(applyPeerColor(getThemedColor(key), true, isOnline[0])));
                     }
                 }
             }
@@ -11271,7 +11257,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else {
                 statusColor = getThemedColor(Theme.key_actionBarDefaultSubtitle);
             }
-            onlineTextView[1].setTextColor(ColorUtils.blendARGB(applyPeerColor(statusColor, true, isOnline[0]), 0xB3FFFFFF, currentExpandAnimatorValue));
+            onlineTextView[1].setTextColor(readableProfileStatus(ColorUtils.blendARGB(applyPeerColor(statusColor, true, isOnline[0]), 0xB3FFFFFF, currentExpandAnimatorValue)));
         }
 
         if (actionBar != null) {
@@ -11347,6 +11333,17 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     private int dontApplyPeerColor(int color, boolean actionBar, Boolean online) {
         return color;
+    }
+
+    private int readableProfileStatus(int color) {
+        if(isPulledDown) return color; // Preserve the native photo-overlay treatment.
+        int first=topView==null ? getThemedColor(Theme.key_actionBarDefault) : topView.currentColor;
+        int second=first;
+        if(peerColor!=null) {
+            first=peerColor.getBgColor1(Theme.isCurrentThemeDark());
+            second=peerColor.getBgColor2(Theme.isCurrentThemeDark());
+        }
+        return org.telegram.ui.ActionBar.MonogramProfileContrast.readable(color,first,second);
     }
 
     private int applyPeerColor(int color, boolean actionBar, Boolean online) {
@@ -11456,7 +11453,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             shareAction = true;
                         } else {
                             otherItem.addSubItem(add_contact, R.drawable.msg_addcontact, LocaleController.getString(R.string.AddContact));
-                            otherItem.addSubItem(edit_contact, R.drawable.msg_edit, "Rename locally");
+                            otherItem.addSubItem(edit_contact, R.drawable.msg_edit, LocaleController.getString(R.string.EditContact));
                         }
                         if (!TextUtils.isEmpty(user.phone)) {
                             otherItem.addSubItem(share_contact, R.drawable.msg_share, LocaleController.getString(R.string.ShareContact));
@@ -11486,7 +11483,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         otherItem.addSubItem(share_contact, R.drawable.msg_share, LocaleController.getString(R.string.ShareContact));
                     }
                     otherItem.addSubItem(block_contact, !userBlocked ? R.drawable.msg_block : R.drawable.msg_block, !userBlocked ? LocaleController.getString(R.string.BlockContact) : LocaleController.getString(R.string.Unblock));
-                    otherItem.addSubItem(edit_contact, R.drawable.msg_edit, "Rename locally");
+                    otherItem.addSubItem(edit_contact, R.drawable.msg_edit, LocaleController.getString(R.string.EditContact));
                     otherItem.addSubItem(delete_contact, R.drawable.msg_delete, LocaleController.getString(R.string.DeleteContact));
                 }
                 if (!UserObject.isDeleted(user) && !isBot && currentEncryptedChat == null && !userBlocked && userId != 333000 && userId != 777000 && userId != 42777) {
@@ -14413,9 +14410,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     final Object onlineTextViewTag = onlineTextView[1].getTag();
                     for (int i = 0; i < 2; i++) {
                         if (onlineTextViewTag instanceof Integer) {
-                            onlineTextView[i + 1].setTextColor(applyPeerColor(getThemedColor((Integer) onlineTextViewTag), true, isOnline[0]));
+                            onlineTextView[i + 1].setTextColor(readableProfileStatus(applyPeerColor(getThemedColor((Integer) onlineTextViewTag), true, isOnline[0])));
                         } else {
-                            onlineTextView[i + 1].setTextColor(applyPeerColor(getThemedColor(Theme.key_actionBarDefaultSubtitle), true, true));
+                            onlineTextView[i + 1].setTextColor(readableProfileStatus(applyPeerColor(getThemedColor(Theme.key_actionBarDefaultSubtitle), true, true)));
                         }
                     }
                 }

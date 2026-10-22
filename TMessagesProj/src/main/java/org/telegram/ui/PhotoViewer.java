@@ -2181,6 +2181,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private final static int gallery_menu_savegif = 12;
     private final static int gallery_menu_masks2 = 13;
     private final static int gallery_menu_set_as_main = 14;
+    private static final int gallery_menu_use_avatar = 15001;
     private final static int gallery_menu_edit_avatar = 15;
     private final static int gallery_menu_share2 = 16;
     private final static int gallery_menu_speed = 17;
@@ -5618,6 +5619,21 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     if (containerView != null) {
                         BulletinFactory.of(containerView, resourcesProvider).createDownloadBulletin(BulletinFactory.FileType.GIF, resourcesProvider).show();
                     }
+                } else if (id == gallery_menu_use_avatar) {
+                    if(currentMessageObject==null || !org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return;
+                    File source=currentMessageObject.messageOwner.attachPath==null ? null : new File(currentMessageObject.messageOwner.attachPath);
+                    if(source==null || !source.isFile()) source=FileLoader.getInstance(currentAccount).getPathToMessage(currentMessageObject.messageOwner);
+                    final File image=source;
+                    showAlertDialog(new AlertDialog.Builder(parentActivity,resourcesProvider)
+                            .setTitle("Use as profile photo")
+                            .setMessage("Set this image as your XMPP profile photo? Your contacts will see the change.")
+                            .setPositiveButton(getString(R.string.Set), (dialog,which)->{
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).acceptPhotoSuggestion(image,error->{
+                                    if(containerView==null) return;
+                                    if(error!=null) BulletinFactory.of(containerView,resourcesProvider).createErrorBulletin(error).show();
+                                    else BulletinFactory.of(containerView,resourcesProvider).createSimpleBulletin(R.raw.chats_infotip,"Profile photo updated").show();
+                                });
+                            }).setNegativeButton(getString(R.string.Cancel),null));
                 } else if (id == gallery_menu_set_as_main) {
                     TLRPC.Photo photo = avatarsArr.get(currentIndex);
                     if (photo == null || photo.sizes.isEmpty()) {
@@ -5912,6 +5928,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         menuItem.addSubItem(gallery_menu_share, R.drawable.msg_shareout, getString(R.string.ShareFile)).setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_masks2, R.drawable.msg_sticker, getString(R.string.ShowStickers)).setColors(0xfffafafa, 0xfffafafa);
         //menuItem.addSubItem(gallery_menu_edit_avatar, R.drawable.photo_paint, LocaleController.getString(R.string.EditPhoto)).setColors(0xfffafafa, 0xfffafafa);
+        menuItem.addSubItem(gallery_menu_use_avatar,R.drawable.msg_openprofile,"Use as profile photo").setColors(0xfffafafa,0xfffafafa);
+        menuItem.hideSubItem(gallery_menu_use_avatar);
         menuItem.addSubItem(gallery_menu_set_as_main, R.drawable.msg_openprofile, getString(R.string.SetAsMain)).setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_translate, R.drawable.msg_translate, getString(R.string.TranslateMessage)).setColors(0xfffafafa, 0xfffafafa);
         menuItem.addSubItem(gallery_menu_hide_translation, R.drawable.msg_translate, getString(R.string.HideTranslation)).setColors(0xfffafafa, 0xfffafafa);
@@ -15731,6 +15749,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 currentThumb.release();
                 currentThumb = null;
             }
+        }
+        if(menuItem!=null) {
+            if(org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) && currentMessageObject!=null
+                    && currentMessageObject.getPhoto()!=null && !currentMessageObject.isVideo()) menuItem.showSubItem(gallery_menu_use_avatar);
+            else menuItem.hideSubItem(gallery_menu_use_avatar);
         }
         currentFileNames[0] = getFileName(index);
         currentFileNames[1] = getFileName(index + 1);

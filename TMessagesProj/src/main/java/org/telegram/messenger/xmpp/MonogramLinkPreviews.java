@@ -62,8 +62,8 @@ public final class MonogramLinkPreviews {
     synchronized void prepareCache() {
         String policyKey=key("fetch-policy");
         if(policyKey.equals(cachePolicyOwner)) return;
-        if(preferences.getInt(policyKey,0)<4) {
-            store.clearFailedLinkPreviews();store.expireYouTubeLinkPreviews();preferences.edit().putInt(policyKey,4).apply();
+        if(preferences.getInt(policyKey,0)<5) {
+            store.clearFailedLinkPreviews();store.expireYouTubeLinkPreviews();store.expireIncompleteMediaPreviews();preferences.edit().putInt(policyKey,5).apply();
         }
         cachePolicyOwner=policyKey;
     }
@@ -127,13 +127,17 @@ public final class MonogramLinkPreviews {
             page.embed_width=1280;page.embed_height=720;page.flags|=32|64;
         }
         String image=fields.get("og:image");
-        if(image!=null && !image.isEmpty() && allowed.getAsBoolean()) try {
-            URI target=MonogramPreviewHttp.safeUrl(pageUrl.resolve(image).toASCIIString());
-            MonogramPreviewHttp.Response thumbnail=MonogramPreviewHttp.fetch(target.toString(),2*1024*1024,allowed);
+        if((image!=null && !image.isEmpty() || directVideo!=null) && allowed.getAsBoolean()) try {
+            MonogramPreviewHttp.Response thumbnail;
+            if(image!=null && !image.isEmpty()) {
+                URI target=MonogramPreviewHttp.safeUrl(pageUrl.resolve(image).toASCIIString());
+                thumbnail=MonogramPreviewHttp.fetch(target.toString(),2*1024*1024,allowed);
+            } else thumbnail=new MonogramPreviewHttp.Response(pageUrl,"image/jpeg",videoThumbnail(directVideo,allowed));
             String type=thumbnail.type.toLowerCase(Locale.ROOT).split(";",2)[0].trim();
             if(!Arrays.asList("image/jpeg","image/png","image/webp").contains(type)) throw new IOException("Unsupported thumbnail");
             BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeByteArray(thumbnail.bytes,0,thumbnail.bytes.length,bounds);
             if(bounds.outWidth<1 || bounds.outHeight<1 || (long)bounds.outWidth*bounds.outHeight>40_000_000) throw new IOException("Invalid preview dimensions");
+            if(directVideo!=null) { page.embed_width=bounds.outWidth;page.embed_height=bounds.outHeight; }
             BitmapFactory.Options decode=new BitmapFactory.Options();decode.inSampleSize=1;while(Math.max(bounds.outWidth,bounds.outHeight)/decode.inSampleSize>640) { decode.inSampleSize*=2; }
             Bitmap bitmap=BitmapFactory.decodeByteArray(thumbnail.bytes,0,thumbnail.bytes.length,decode);if(bitmap==null) throw new IOException("Invalid preview image");
             try {
@@ -154,9 +158,30 @@ public final class MonogramLinkPreviews {
         return page;
     }
     /** Fixed public first-party endpoint; never discover/fetch arbitrary oEmbed URLs from remote markup. */
+    private byte[] videoThumbnail(String url,BooleanSupplier allowed) throws Exception {
+        MonogramPreviewHttp.Response response=MonogramPreviewHttp.fetchMediaPrefix(url,2*1024*1024,allowed);
+        if(!response.type.toLowerCase(Locale.ROOT).startsWith("video/")) throw new IOException("Not a video thumbnail source");
+        File part=File.createTempFile("preview-video-",".mp4",ApplicationLoader.applicationContext.getCacheDir());
+        Bitmap frame=null;android.media.MediaMetadataRetriever reader=new android.media.MediaMetadataRetriever();
+        try {
+            try(FileOutputStream out=new FileOutputStream(part)) { out.write(response.bytes); }
+            try {
+                reader.setDataSource(part.getAbsolutePath());
+                if(android.os.Build.VERSION.SDK_INT>=27) frame=reader.getScaledFrameAtTime(0,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,640,640);
+                else frame=reader.getFrameAtTime(0,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            } catch(RuntimeException decoderUnavailable) { /* A verified video can still have a playable poster when its first frame is outside the prefix. */ }
+            if(frame==null) {
+                frame=Bitmap.createBitmap(640,360,Bitmap.Config.ARGB_8888);frame.eraseColor(0xff20242a);
+            }
+            ByteArrayOutputStream out=new ByteArrayOutputStream();
+            if(!frame.compress(Bitmap.CompressFormat.JPEG,82,out)) throw new IOException("Video preview unavailable");return out.toByteArray();
+        } finally { if(frame!=null) frame.recycle();try { reader.release(); } finally { part.delete(); } }
+    }
     static Map<String,String> directMetadata(URI media,String contentType,URI original) throws IOException {
         String type=contentType.toLowerCase(Locale.ROOT).split(";",2)[0].trim();
-        Map<String,String> fields=new HashMap<>();fields.put("og:title",original.getHost());fields.put("og:site_name",original.getHost());
+        Map<String,String> fields=new HashMap<>();
+        String host=original.getHost();
+        fields.put("og:site_name",host!=null && (host.equals("kkinstagram.com") || host.equals("www.kkinstagram.com") || host.equals("kkclip.com") || host.equals("www.kkclip.com")) ? "KK Instagram" : host);
         String url=MonogramPreviewHttp.safeUrl(media.toASCIIString()).toASCIIString();
         if(Arrays.asList("image/jpeg","image/png","image/webp").contains(type)) { fields.put("og:type","photo");fields.put("og:image",url); }
         else if(type.equals("video/mp4") || type.equals("video/webm")) {

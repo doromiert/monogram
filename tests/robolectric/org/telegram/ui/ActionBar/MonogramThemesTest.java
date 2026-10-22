@@ -88,4 +88,11 @@ public class MonogramThemesTest {
             assertTrue(theme.getTlTheme(1).settings.get(1).base_theme instanceof TLRPC.TL_baseThemeNight);
         }
     }
+    @Test public void statusStaysReadableAcrossOrangeProfileGradient() {
+        int first=0xffd47719,second=0xffdb821b;
+        int fixed=MonogramProfileContrast.readable(0xb3e8a34b,first,second);
+        assertTrue(ColorUtils.calculateContrast(ColorUtils.compositeColors(fixed,first),first)>=4.5);
+        assertTrue(ColorUtils.calculateContrast(ColorUtils.compositeColors(fixed,second),second)>=4.5);
+        assertEquals(Color.WHITE,MonogramProfileContrast.readable(Color.WHITE,0xff101010,0xff202020));
+    }
 }
