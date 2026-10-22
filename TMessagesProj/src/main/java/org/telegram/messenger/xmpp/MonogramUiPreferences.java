@@ -22,6 +22,8 @@ public final class MonogramUiPreferences {
         if(value<ROUND_FRONT || value>ROUND_ASK) throw new IllegalArgumentException("Unknown camera mode");
         String owner=owner(account);if(!owner.isEmpty()) preferences(account).edit().putInt(owner+"\nround-camera",value).apply();
     }
+    public static boolean collapseHomeSearch(int account) { return getBoolean(account,"collapse-home-search",false); }
+    public static void setCollapseHomeSearch(int account,boolean value) { setBoolean(account,"collapse-home-search",value); }
     public static boolean centerHomeTitle(int account) { return getBoolean(account,"center-title",false); }
     public static boolean hideComposeButton(int account) { return getBoolean(account,"hide-compose",false); }
     public static void setCenterHomeTitle(int account,boolean value) { setBoolean(account,"center-title",value); }

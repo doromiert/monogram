@@ -24,6 +24,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asButton(20,"Avatar corners",MonogramUiPreferences.avatarCorners(currentAccount)==28?"Round":MonogramUiPreferences.avatarCorners(currentAccount)==0?"Square":Integer.toString(MonogramUiPreferences.avatarCorners(currentAccount))));
         items.add(UItem.asCheck(18,"Center home title").setChecked(MonogramUiPreferences.centerHomeTitle(currentAccount)));
         items.add(UItem.asCheck(19,"Show compose button").setChecked(!MonogramUiPreferences.hideComposeButton(currentAccount)));
+        items.add(UItem.asCheck(21,"Always collapse home search").setChecked(MonogramUiPreferences.collapseHomeSearch(currentAccount)));
+        items.add(UItem.asShadow("Keep the search bar hidden until you tap the search icon."));
         items.add(UItem.asHeader("Keyboard"));
         items.add(UItem.asCheck(1,"Hide keyboard on scroll").setChecked(MonogramChatBehavior.hideKeyboardOnScroll(currentAccount)));
         items.add(UItem.asShadow("Dragging the conversation closes the keyboard or emoji panel."));
@@ -83,7 +85,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
                         listView.adapter.update(true);
                     }).create());return;
         }
-        if(item.id==18) MonogramUiPreferences.setCenterHomeTitle(currentAccount,!MonogramUiPreferences.centerHomeTitle(currentAccount));
+        if(item.id==21) MonogramUiPreferences.setCollapseHomeSearch(currentAccount,!MonogramUiPreferences.collapseHomeSearch(currentAccount));
+        else if(item.id==18) MonogramUiPreferences.setCenterHomeTitle(currentAccount,!MonogramUiPreferences.centerHomeTitle(currentAccount));
         else if(item.id==19) MonogramUiPreferences.setHideComposeButton(currentAccount,!MonogramUiPreferences.hideComposeButton(currentAccount));
         else if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
         else if(item.id==2) MonogramChatBehavior.commaAfterMention(currentAccount,!MonogramChatBehavior.commaAfterMention(currentAccount));

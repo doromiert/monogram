@@ -1,5 +1,7 @@
 # Monogram TODO
 
+- [x] Add Chat Settings → Chat behavior → Appearance → Always collapse home search. Persist per account; remove idle search spacing while retaining the native search icon/editor, stories and folder tabs. Nix arm64 packaging and four focused UI preference checks pass; original signer verified. Published as 0.2.145 for the built-in updater, without ADB installation. Phone visual acceptance pending.
+
 - [x] Correct YouTube preview presentation: ADB screenshots confirm small article-style image and author repeated as description. Preserve OG video type/description, use native large video card/player affordance, and refresh old YouTube cards while preserving cached display. Nix arm64 packaging and 11 focused preview/cache checks pass. Published/installed 0.2.140 (73159) through 192.168.1.128:46869; ADB screenshot of the same group confirms real description, large thumbnail and native play affordance after automatic cache refresh. Player playback itself was not exercised.
 
 - [x] Fix enabled link embeds missing on YouTube/Figma: both permissions confirmed enabled; phone cache contains negative results. Exact supplied YouTube page has OG metadata around 772 KiB, beyond the old 512 KiB whole-body rejection limit. Use fixed first-party YouTube oEmbed metadata (no key), bounded HTML prefixes for other sites, clear only obsolete negative cache entries, and start preview work after outgoing native ACKs and active-chat archive updates. Nix arm64 packaging, 13 native checks and public-source fetch probe pass. Published/installed 0.2.139 (73149) through 192.168.1.128:46869 without opening the app; live visual acceptance remains pending.
@@ -933,7 +935,7 @@ Current user priorities (2026-10-22, supersede checklist integration):
 - [o] Round-video camera selection: Front / Back / Ask, following Exteragram.
 - [o] Fix wallpaper patterns appearing only on default theme; preserve wallpaper overrides across variants.
 
-- [o] Profile bio: refresh requested XMPP profiles even when cached, and propagate changed/cleared DESC into the loaded native UserFull cache, persistent user info and userInfoDidLoad so an open profile updates. Source fix; user clarification on saving vs viewing pending, next-APK verification pending.
+- [o] Profile bio: refresh requested XMPP profiles even when cached, and propagate changed/cleared DESC into the loaded native UserFull cache, persistent user info and userInfoDidLoad so an open profile updates. Source fix; user clarification on saving vs viewing pending, next-Nix arm64 packaging and four focused UI preference checks pass; original signer verified. Published as 0.2.145 for the built-in updater, without ADB installation. Phone visual acceptance pending.
 
 - [o] Own-bio save: modern profile editor now commits the acknowledged bio and flag to native cache/storage and refreshes profile listeners; missing profile info no longer leaves Done spinning. Legacy editor persistence corrected too. Await next APK delivery/phone acceptance.
 

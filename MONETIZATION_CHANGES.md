@@ -1,5 +1,7 @@
 # Monetization and crypto removal change log
 
+- [x] Add Chat Settings → Chat behavior → Appearance → Always collapse home search. Persist per account; remove idle search spacing while retaining the native search icon/editor, stories and folder tabs. Nix arm64 packaging and four focused UI preference checks pass; original signer verified. Published as 0.2.145 for the built-in updater, without ADB installation. Phone visual acceptance pending.
+
 This file tracks the requested work: make client-side/XMPP-relevant features free, remove Telegram-only monetization, and remove cryptocurrency functionality. `[ ]` = todo, `[o]` = in progress, `[x]` = done. Implementation and verification are recorded separately. Tests are run only when preparing an APK release, per the user's instruction.
 
 ## Current state
