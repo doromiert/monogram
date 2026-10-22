@@ -225,6 +225,8 @@ public class ChangeBioActivity extends BaseFragment {
                         FileLog.e(e);
                     }
                     userFull.about = newName;
+                    if(newName.isEmpty()) userFull.flags&=~2; else userFull.flags|=2;
+                    org.telegram.messenger.MessagesStorage.getInstance(currentAccount).updateUserInfo(userFull,false);
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.userInfoDidLoad, user.id, userFull);
                     finishFragment();
                 });

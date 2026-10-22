@@ -544,15 +544,18 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 
     private boolean isCenterTitle;
 
-    public void centerTitle() {
-        isCenterTitle = true;
+    public void centerTitle() { setCenteredTitle(true); }
+
+    public void setCenteredTitle(boolean centered) {
+        isCenterTitle = centered;
         if (titleTextView != null) {
             for (int a = 0; a < titleTextView.length; a++) {
                 if (titleTextView[a] != null) {
-                    titleTextView[a].setGravity(Gravity.CENTER);
+                    titleTextView[a].setGravity(centered ? Gravity.CENTER : Gravity.LEFT | Gravity.CENTER_VERTICAL);
                 }
             }
         }
+        requestLayout();
     }
 
     public void setTitleRightMargin(int value) {
@@ -1543,7 +1546,13 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                         textTop = (getCurrentActionBarHeight() - titleTextView[i].getTextHeight()) / 2;
                     }
                 }
-                titleTextView[i].layout(textLeft, additionalTop + textTop - titleTextView[i].getPaddingTop(), textLeft + titleTextView[i].getMeasuredWidth(), additionalTop + textTop + titleTextView[i].getTextHeight() - titleTextView[i].getPaddingTop() + titleTextView[i].getPaddingBottom());
+                int titleLeft=textLeft;
+                if(isCenterTitle) {
+                    int titleWidth=titleTextView[i].getMeasuredWidth();
+                    int availableRight=getMeasuredWidth()-(menu!=null && menu.getVisibility()!=GONE?menu.getMeasuredWidth():0)-dp(16);
+                    titleLeft=Math.max(textLeft,Math.min((getMeasuredWidth()-titleWidth)/2,availableRight-titleWidth));
+                }
+                titleTextView[i].layout(titleLeft, additionalTop + textTop - titleTextView[i].getPaddingTop(), titleLeft + titleTextView[i].getMeasuredWidth(), additionalTop + textTop + titleTextView[i].getTextHeight() - titleTextView[i].getPaddingTop() + titleTextView[i].getPaddingBottom());
             }
         }
         if (additionalSubTitleOverlayContainer != null) {

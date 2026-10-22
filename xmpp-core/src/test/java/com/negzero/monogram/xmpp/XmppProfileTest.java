@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class XmppProfileTest {
+    @org.junit.jupiter.api.BeforeAll static void initializeEncoding() {
+        org.jivesoftware.smack.util.stringencoder.Base64.setEncoder(org.jivesoftware.smack.util.stringencoder.java7.Java7Base64Encoder.getInstance());
+    }
     static final String CARD = "<vCard xmlns='vcard-temp' version='3.0'><FN>Alice Example</FN>"
             + "<N><GIVEN>Alice</GIVEN><MIDDLE>Middle</MIDDLE><FAMILY>Example</FAMILY><PREFIX>Dr</PREFIX></N>"
             + "<NICKNAME>ali</NICKNAME><DESC>Old bio</DESC><BDAY>1990-02-03</BDAY>"

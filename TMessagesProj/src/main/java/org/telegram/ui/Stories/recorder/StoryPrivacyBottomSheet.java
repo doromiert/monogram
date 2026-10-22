@@ -296,6 +296,8 @@ public class StoryPrivacyBottomSheet extends BottomSheet implements Notification
                     return;
                 }
                 ItemInner item = items.get(position);
+                if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()
+                        && item.viewType==VIEW_TYPE_USER && item.type>0) return;
                 if (item.viewType == VIEW_TYPE_USER) {
                     if (item.sendAs && canChangePeer) {
                         new ChoosePeerSheet(context, currentAccount, isLive, selectedPeer, peer -> {
@@ -1065,6 +1067,8 @@ public class StoryPrivacyBottomSheet extends BottomSheet implements Notification
             updateItems(animated, true);
         }
         public void updateItems(boolean animated, boolean notify) {
+            boolean monogram=!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
+            if(monogram) { selectedType=TYPE_CONTACTS;excludedContacts.clear();keepOnMyPage=false;storyPeriod=86400;allowScreenshots=true; }
             oldItems.clear();
             oldItems.addAll(items);
 
@@ -1459,6 +1463,11 @@ public class StoryPrivacyBottomSheet extends BottomSheet implements Notification
                 }
             }
 
+            if(monogram && pageType==PAGE_TYPE_SHARE) {
+                items.removeIf(item -> item.viewType==VIEW_TYPE_USER && item.type>0 && item.type!=TYPE_CONTACTS
+                        || item.viewType==VIEW_TYPE_CHECK || item.viewType==VIEW_TYPE_SHADOW || item.sendAs);
+                items.add(ItemInner.asShadow("Shared with subscribed contacts for 24 hours. Stories are not OMEMO encrypted."));
+            }
             if (layoutManager.getReverseLayout()) {
                 Collections.reverse(items);
             }

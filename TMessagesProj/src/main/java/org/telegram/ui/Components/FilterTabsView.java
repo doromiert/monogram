@@ -76,7 +76,8 @@ public class FilterTabsView extends FrameLayout {
     }
 
     public int getStableId(int selectedType) {
-        return positionToStableId.get(selectedType, -1);
+        int position = idToPosition.get(selectedType, -1);
+        return position < 0 ? -1 : positionToStableId.get(position, -1);
     }
 
     public boolean selectTabWithStableId(int stableId) {
@@ -117,6 +118,9 @@ public class FilterTabsView extends FrameLayout {
         public int counter;
         public boolean isDefault;
         public boolean noanimate;
+        public int iconRes;
+        public CharSequence accessibilityTitle;
+        private Drawable iconDrawable;
 
         public Tab(int i, CharSequence title, boolean noanimate) {
             this.id = i;
@@ -126,6 +130,9 @@ public class FilterTabsView extends FrameLayout {
 
         public int getWidth(boolean store) {
             int width = titleWidth = (int) Math.ceil(HintView2.measureCorrectly(title, textPaint));
+            if (iconRes != 0) {
+                width += dp(28);
+            }
             int c;
             if (store) {
                 c = delegate.getTabCounter(id);
@@ -233,7 +240,7 @@ public class FilterTabsView extends FrameLayout {
         public void setTab(Tab tab, int position) {
             currentTab = tab;
             currentPosition = position;
-            setContentDescription(tab.title);
+            setContentDescription(tab.accessibilityTitle==null ? tab.title : tab.accessibilityTitle);
             requestLayout();
 
             if (currentNoanimate != (currentTab != null && currentTab.noanimate)) {
@@ -378,6 +385,9 @@ public class FilterTabsView extends FrameLayout {
 
             tabCounterVisible = (countWidth != 0 && !animateCounterRemove) ? (counterText != null ? 1.0f : editingStartAnimationProgress) : 0;
             tabWidth = currentTab.titleWidth + ((countWidth != 0 && !animateCounterRemove) ? countWidth + dp(-2 * (counterText != null ? 1.0f : editingStartAnimationProgress)) : 0);
+            if (currentTab.iconRes != 0) {
+                tabWidth += dp(28);
+            }
             float textX = (getMeasuredWidth() - tabWidth) / 2f;
             if (animateTextX) {
                 textX = textX * changeProgress + animateFromTextX * (1f - changeProgress);
@@ -389,6 +399,18 @@ public class FilterTabsView extends FrameLayout {
                 textLayoutEmojis = AnimatedEmojiSpan.update(currentTab.noanimate ? AnimatedEmojiDrawable.CACHE_TYPE_NOANIMATE_FOLDER : AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES, this, textLayoutEmojis, textLayout);
                 textHeight = textLayout.getHeight();
                 textOffsetX = (int) -textLayout.getLineLeft(0);
+            }
+
+            if (currentTab.iconRes != 0) {
+                if (currentTab.iconDrawable == null) {
+                    currentTab.iconDrawable = getContext().getResources().getDrawable(currentTab.iconRes).mutate();
+                }
+                currentTab.iconDrawable.setColorFilter(new PorterDuffColorFilter(textPaint.getColor(), PorterDuff.Mode.MULTIPLY));
+                int iconSize = dp(24);
+                int iconTop = (getMeasuredHeight() - iconSize) / 2;
+                currentTab.iconDrawable.setBounds((int) textX, iconTop, (int) textX + iconSize, iconTop + iconSize);
+                currentTab.iconDrawable.draw(canvas);
+                textX += dp(28);
             }
 
 
@@ -694,7 +716,7 @@ public class FilterTabsView extends FrameLayout {
             info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, LocaleController.getString(R.string.AccDescrOpenMenu2)));
             if (currentTab != null) {
                 StringBuilder sb = new StringBuilder();
-                sb.append(currentTab.title);
+                sb.append(currentTab.accessibilityTitle==null ? currentTab.title : currentTab.accessibilityTitle);
                 int unread = currentTab != null ? currentTab.counter : 0;
                 if (unread > 0) {
                     sb.append("\n");
@@ -1191,7 +1213,15 @@ public class FilterTabsView extends FrameLayout {
         return title;
     }
 
+    public void setLastTabAccessibilityTitle(CharSequence title) {
+        if(!tabs.isEmpty()) tabs.get(tabs.size()-1).accessibilityTitle=title;
+    }
+
     public void addTab(int id, int stableId, String text, ArrayList<TLRPC.MessageEntity> entities, boolean noanimate, boolean isDefault) {
+        addTab(id, stableId, text, entities, noanimate, isDefault, 0);
+    }
+
+    public void addTab(int id, int stableId, String text, ArrayList<TLRPC.MessageEntity> entities, boolean noanimate, boolean isDefault, int iconRes) {
         int position = tabs.size();
         if (position == 0 && selectedTabId == -1) {
             selectedTabId = id;
@@ -1205,6 +1235,7 @@ public class FilterTabsView extends FrameLayout {
 
         Tab tab = new Tab(id, text(text, entities), noanimate);
         tab.isDefault = isDefault;
+        tab.iconRes = iconRes;
         allTabsWidth += tab.getWidth(true) + dp(TAB_PADDING_WIDTH);
         tabs.add(tab);
     }
@@ -1492,6 +1523,19 @@ public class FilterTabsView extends FrameLayout {
                 }
                 updateTabsWidths();
                 invalidated = false;
+            } else {
+                int prevWidth = additionalTabWidth;
+                additionalTabWidth = allTabsWidth < width ? (width - allTabsWidth) / tabs.size() : 0;
+                if (prevWidth != additionalTabWidth) {
+                    ignoreLayout = true;
+                    RecyclerView.ItemAnimator animator = listView.getItemAnimator();
+                    listView.setItemAnimator(null);
+                    adapter.notifyDataSetChanged();
+                    listView.setItemAnimator(animator);
+                    ignoreLayout = false;
+                }
+                updateTabsWidths();
+                invalidated = false;
             }
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
@@ -1732,13 +1776,16 @@ public class FilterTabsView extends FrameLayout {
         }
 
         public void swapElements(int fromIndex, int toIndex) {
-            int idx1 = fromIndex;
-            int idx2 = toIndex;
             int count = tabs.size();
-            if (idx1 < 0 || idx2 < 0 || idx1 >= count || idx2 >= count) {
+            if (fromIndex < 0 || toIndex < 0 || fromIndex >= count || toIndex >= count) {
                 return;
             }
+            int idx1 = tabs.get(fromIndex).id;
+            int idx2 = tabs.get(toIndex).id;
             ArrayList<MessagesController.DialogFilter> filters = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFilters();
+            if (idx1 < 0 || idx2 < 0 || idx1 >= filters.size() || idx2 >= filters.size()) {
+                return;
+            }
             MessagesController.DialogFilter filter1 = filters.get(idx1);
             MessagesController.DialogFilter filter2 = filters.get(idx2);
             int temp = filter1.order;

@@ -311,6 +311,8 @@ public class ChatActivityEnterView extends FrameLayout implements
 
         default void didPressSuggestionButton() {}
 
+        default void setInitialRoundCamera(boolean front) {}
+
         void needStartRecordVideo(int state, boolean notify, int scheduleDate, int scheduleRepeatPeriod, int ttl, long effectId, long stars);
 
         void toggleVideoRecordingPause();
@@ -862,10 +864,40 @@ public class ChatActivityEnterView extends FrameLayout implements
         @Override
         public void run() {
             if (delegate != null) {
-                delegate.needStartRecordVideo(0, true, 0, 0, 0, 0, 0);
+                if(org.telegram.messenger.xmpp.MonogramUiPreferences.roundVideoCamera(currentAccount)
+                        ==org.telegram.messenger.xmpp.MonogramUiPreferences.ROUND_ASK) showRoundCameraChooser();
+                else delegate.needStartRecordVideo(0, true, 0, 0, 0, 0, 0);
             }
         }
     };
+
+    private ItemOptions roundCameraChooser;
+    private void showRoundCameraChooser() {
+        if(parentFragment==null || parentActivity==null || roundCameraChooser!=null) return;
+        calledRecordRunnable=false;
+        roundCameraChooser=ItemOptions.makeOptions(parentFragment,audioVideoSendButton)
+                .add(R.drawable.msg_openprofile,"Front camera",()->openChosenRoundCamera(true))
+                .add(R.drawable.msg_camera,"Back camera",()->openChosenRoundCamera(false))
+                .setMinWidth(dp(196)).setDimAlpha(0).forceTop(true)
+                .setOnDismiss(()->roundCameraChooser=null);
+        roundCameraChooser.show();
+    }
+    private void openChosenRoundCamera(boolean front) {
+        if(delegate==null || parentActivity==null || recordingAudioVideo || !isInVideoMode()) return;
+        delegate.setInitialRoundCamera(front);
+        delegate.needStartRecordVideo(0,true,0,0,0,0,0);
+        calledRecordRunnable=true;
+        recordingAudioVideo=true;
+        updateRecordInterface(RECORD_STATE_ENTER,true);
+        if(recordCircle!=null) {
+            recordCircle.showWaves(false,false);
+            recordCircle.setLockTranslation(0);
+            recordCircle.setLockTranslation(-dp(60));
+            sendButtonVisible=true;
+            startLockTransition();
+        }
+        if(recordTimerView!=null) recordTimerView.reset();
+    }
 
     private boolean recordAudioVideoRunnableStarted;
     private boolean calledRecordRunnable;
@@ -907,6 +939,8 @@ public class ChatActivityEnterView extends FrameLayout implements
                 } else {
                     onFinishInitCameraRunnable.run();
                 }
+                if(org.telegram.messenger.xmpp.MonogramUiPreferences.roundVideoCamera(currentAccount)
+                        ==org.telegram.messenger.xmpp.MonogramUiPreferences.ROUND_ASK) return;
                 if (!recordingAudioVideo) {
                     recordingAudioVideo = true;
                     updateRecordInterface(RECORD_STATE_ENTER, true);
@@ -2977,6 +3011,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     }
                     return true;
                 } else if (motionEvent.getAction() == MotionEvent.ACTION_UP || motionEvent.getAction() == MotionEvent.ACTION_CANCEL) {
+                    if(roundCameraChooser!=null && !recordingAudioVideo) return true;
                     if (motionEvent.getAction() == MotionEvent.ACTION_CANCEL && recordingAudioVideo) {
                         if (slideToCancelProgress < 0.7f) {
                             if (hasRecordVideo && isInVideoMode()) {
@@ -6345,6 +6380,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     private Runnable hideKeyboardRunnable;
 
     public void onPause() {
+        if(roundCameraChooser!=null) roundCameraChooser.dismiss();
         isPaused = true;
         if (senderSelectPopupWindow != null) {
             senderSelectPopupWindow.setPauseNotifications(false);

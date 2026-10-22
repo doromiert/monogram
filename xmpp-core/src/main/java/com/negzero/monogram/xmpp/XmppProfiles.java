@@ -190,13 +190,17 @@ public final class XmppProfiles {
         CardIq request = new CardIq(profile.card); request.setType(IQ.Type.set);
         connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
     }
-    public XmppProfile edit(String first, String last, String about) throws Exception {
+    public XmppProfile edit(String first, String last, String about) throws Exception { return edit(first,last,about,null); }
+    public XmppProfile edit(String first, String last, String about, XmppProfile cached) throws Exception {
         // Always retrieve immediately before writing; cached cards may be stale or incomplete.
         XmppProfile changed = card(connection.getUser().asEntityBareJid(), true).edit(first, last, about);
         saveCard(changed);
         if ((first != null || last != null) && PepManager.getInstanceFor(connection).isSupported()) PepManager.getInstanceFor(connection).publish(NICK,
                 new PayloadItem<>(StandardExtensionElement.builder("nick", NICK).setText(changed.nickname).build()));
-        return load(connection.getUser().asEntityBareJid().toString());
+        // The server has acknowledged the write. An unrelated PEP avatar/nickname fetch must not
+        // turn that successful save into a failure or erase an already cached PEP-only avatar.
+        return new XmppProfile(changed.card,first!=null || last!=null ? changed.nickname
+                : cached!=null ? cached.nickname : changed.nickname,cached!=null ? cached.avatar : changed.avatar);
     }
     public XmppProfile avatar(byte[] png) throws Exception {
         XmppProfile.checkedAvatar(png);

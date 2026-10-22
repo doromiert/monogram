@@ -124,6 +124,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.XiaomiUtilities;
+import org.telegram.messenger.xmpp.MonogramFolderIcons;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.utils.FBool;
 import org.telegram.messenger.utils.GradientProtectionDrawable;
@@ -731,7 +732,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
 
     private AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable statusDrawable;
-    private Drawable statusPlaceholder;
     private AnimatedStatusView animatedStatusView;
     public RightSlidingDialogContainer rightSlidingDialogContainer;
 
@@ -2979,19 +2979,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
             SelectAnimatedEmojiDialog.preload(currentAccount);
         } else {
-            if (statusPlaceholder == null) {
-                statusPlaceholder = getContext().getResources().getDrawable(R.drawable.msg_smile_status).mutate();
-            }
-            statusDrawable.set(statusPlaceholder, animated);
+            statusDrawable.set((Drawable) null, animated);
             statusDrawable.setParticles(false, animated);
-            actionBar.setRightDrawableOnClick(e -> {
-                if (dialogStoriesCellVisible && dialogStoriesCell != null && !dialogStoriesCell.isExpanded()) {
-                    scrollToTop(true, true);
-                    return;
-                }
-                showSelectStatusDialog();
-            });
-            SelectAnimatedEmojiDialog.preload(currentAccount);
+            actionBar.setRightDrawableOnClick(null);
         }
         statusDrawable.setColor(getThemedColor(Theme.key_profile_verifiedBackground));
         if (animatedStatusView != null) {
@@ -6430,6 +6420,24 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 int id = filterTabsView.getCurrentTabId();
                 int stableId = filterTabsView.getCurrentTabStableId();
                 boolean selectWithStableId = false;
+                int customFolderCount = 0;
+                int firstCustomIndex = -1;
+                for (int a = 0; a < filters.size(); a++) {
+                    if (!filters.get(a).isDefault()) {
+                        customFolderCount++;
+                        if (firstCustomIndex < 0) {
+                            firstCustomIndex = a;
+                        }
+                    }
+                }
+                final boolean hideAllChats = customFolderCount > 1;
+                if (hideAllChats && firstCustomIndex >= 0 && (stableId == 0 || id >= 0 && id < filters.size() && filters.get(id).isDefault())) {
+                    filterTabsView.resetTabId();
+                    id = firstCustomIndex;
+                    stableId = filters.get(firstCustomIndex).localId;
+                    selectWithStableId = true;
+                    updateCurrentTab = true;
+                }
                 if (id != filterTabsView.getDefaultTabId() && id >= filters.size()) {
                     filterTabsView.resetTabId();
                     selectWithStableId = true;
@@ -6437,10 +6445,18 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 filterTabsView.removeTabs();
                 for (int a = 0, N = filters.size(); a < N; a++) {
                     if (filters.get(a).isDefault()) {
-                        filterTabsView.addTab(a, 0, LocaleController.getString(R.string.FilterAllChats), null, false, true);
+                        if (!hideAllChats) {
+                            filterTabsView.addTab(a, 0, LocaleController.getString(R.string.FilterAllChats), null, false, true);
+                        }
                     } else {
                         final MessagesController.DialogFilter filter = filters.get(a);
-                        filterTabsView.addTab(a, filter.localId, filter.name, filter.entities, filter.title_noanimate, false);
+                        int icon = MonogramFolderIcons.get(currentAccount, filter.id);
+                        int mode=MonogramFolderIcons.displayMode(currentAccount);
+                        filterTabsView.addTab(a, filter.localId,
+                                mode==MonogramFolderIcons.ICONS_ONLY ? "" : filter.name,
+                                mode==MonogramFolderIcons.ICONS_ONLY ? null : filter.entities,filter.title_noanimate,false,
+                                mode==MonogramFolderIcons.NAMES_ONLY ? 0 : icon==0 ? R.drawable.filter_custom : icon);
+                        filterTabsView.setLastTabAccessibilityTitle(filter.name);
                     }
                 }
                 if (stableId >= 0) {
@@ -6450,7 +6466,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 id--;
                             }
                             if (id < 0) {
-                                id = 0;
+                                id = hideAllChats ? firstCustomIndex : 0;
+                                stableId = hideAllChats ? filters.get(firstCustomIndex).localId : 0;
+                                filterTabsView.selectTabWithStableId(stableId);
                             }
                         }
                     }
@@ -6578,6 +6596,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        if(actionBar!=null && !onlySelect) actionBar.setCenteredTitle(org.telegram.messenger.xmpp.MonogramUiPreferences.centerHomeTitle(currentAccount));
+        updateFloatingButtonVisibility(false);
         if (dialogStoriesCell != null) {
             dialogStoriesCell.onResume();
         }
@@ -8104,7 +8124,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 title = Emoji.replaceEmoji(title, folderItem.getTextView().getPaint().getFontMetricsInt(), false);
                 title = MessageObject.replaceAnimatedEmoji(title, folder.entities, folderItem.getTextView().getPaint().getFontMetricsInt());
                 folderItem.setEmojiCacheType(folder.title_noanimate ? AnimatedEmojiDrawable.CACHE_TYPE_NOANIMATE_FOLDER : AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES);
-                folderItem.setTextAndIcon(title, 0, new FolderDrawable(getContext(), R.drawable.msg_folders, folder.color));
+                int folderIcon = MonogramFolderIcons.get(currentAccount, folder.id);
+                folderItem.setTextAndIcon(title, 0, new FolderDrawable(getContext(),
+                        folderIcon == 0 ? R.drawable.msg_folders : folderIcon, folder.color));
                 folderItem.getTextView().setEmojiColor(getThemedColor(Theme.key_featuredStickers_addButton));
                 folderItem.setMinimumWidth(160);
                 folderItem.setOnClickListener(e -> {
@@ -8352,7 +8374,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         final boolean isVisible = !(onlySelect && initialDialogsType != 10 || folderId != 0 || communityId != 0 || inPreviewMode || (searching && !onlySelect) || floatingButtonHidden);
 
         if (floatingButton3 != null) {
-            floatingButton3.setButtonVisible(isVisible, animated);
+            floatingButton3.setButtonVisible(isVisible && (onlySelect || !org.telegram.messenger.xmpp.MonogramUiPreferences.hideComposeButton(currentAccount)), animated);
         }
         if (floatingButtonStories != null) {
             floatingButtonStories.setButtonVisible(isVisible, animated);

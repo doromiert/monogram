@@ -666,6 +666,9 @@ public final class MonogramController {
                     @Override public void bookmarksChanged() {
                         worker.execute(() -> { if(sessionEpoch==epoch && session!=null) syncBookmarks(session,epoch,null); });
                     }
+                    @Override public void storiesChanged(String address) {
+                        if(sessionEpoch==epoch) stories().changed(address);
+                    }
                     @Override public void profileChanged(org.jxmpp.jid.Jid address) {
                         worker.execute(() -> { if(sessionEpoch!=epoch || session==null) return;
                             long peer=address.hasResource() ? store.knownOccupant(address.toString()) : 0;
@@ -1832,6 +1835,18 @@ public final class MonogramController {
             ArrayList<TLRPC.User> users=new ArrayList<>(batch.values()); if(users.isEmpty()) return;
             MessagesStorage.getInstance(account).putUsersAndChats(users,null,false,true);
             MessagesController.getInstance(account).putUsers(users,false);
+            for (Long peer : batch.keySet()) {
+                TLRPC.UserFull full=MessagesController.getInstance(account).getUserFull(peer);
+                if(full==null) continue;
+                com.negzero.monogram.xmpp.XmppProfile profile=store.profile(peer);
+                String about=profile==null ? "" : profile.field("DESC");
+                if(!java.util.Objects.equals(full.about,about)) {
+                    full.about=about;
+                    if(about==null || about.isEmpty()) full.flags&=~2; else full.flags|=2;
+                    MessagesStorage.getInstance(account).updateUserInfo(full,false);
+                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.userInfoDidLoad,peer,full);
+                }
+            }
             TLRPC.User own=batch.get(self);
             if(own!=null) { UserConfig.getInstance(account).setCurrentUser(own); UserConfig.getInstance(account).saveConfig(true);
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.mainUserInfoChanged); }
@@ -2887,6 +2902,11 @@ public final class MonogramController {
             }
             if(callback!=null) callback.run(response,error);
         };
+        if(request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_sendStory
+                || request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_deleteStories
+                || request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_editStory) {
+            stories().request(token,request,completed);return;
+        }
         if(MonogramLocation.supports(request)) {
             try {
                 TLRPC.TL_messages_sendMessage converted=MonogramLocation.text((TLRPC.TL_messages_sendMedia)request);
@@ -3067,6 +3087,7 @@ public final class MonogramController {
     }
     public int queuedSendCount() { return (int)pendingSends.values().stream().filter(send -> !send.scheduled.get()).count(); }
     public void cancelRequest(int token) {
+        if(storyBridge!=null) storyBridge.cancel(token);
         TranslationRequest translation=translationRequests.remove(token);if(translation!=null) translation.cancel();
         PendingSend pending=pendingSends.remove(token);
         if(pending!=null && pending.request instanceof MonogramFileRequest) {
@@ -3450,8 +3471,15 @@ public final class MonogramController {
             if(wanted==null || wanted.contains(entry.id)) result.messages.add(MonogramScheduledMessages.project(entry,self));
         return result;
     }
+    public void restoreStory(long peer,org.telegram.tgnet.tl.TL_stories.StoryItem story) { stories().restore(peer,story); }
+    private MonogramStories storyBridge;
+    private synchronized MonogramStories stories() {
+        if(storyBridge==null) storyBridge=new MonogramStories(account,store,()->session());
+        return storyBridge;
+    }
     private TLObject handle(TLObject request) throws Exception {
         TLObject localFilters=MonogramLocalFilters.handle(request);if(localFilters!=null) return localFilters;
+        TLObject storyResult=stories().handle(request);if(storyResult!=null) return storyResult;
         if(request instanceof TLRPC.TL_messages_getQuickReplyMessages) {
             TLRPC.TL_messages_getQuickReplyMessages query=(TLRPC.TL_messages_getQuickReplyMessages)request;
             MonogramQuickReplies.Outgoing template=org.telegram.ui.Business.QuickRepliesController.getInstance(account).monogramOutgoing(query.shortcut_id);
@@ -3620,7 +3648,7 @@ public final class MonogramController {
             TLRPC.InputUser input = ((TLRPC.TL_users_getFullUser) request).id;
             long peer = input instanceof TLRPC.TL_inputUserSelf ? self : input.user_id;
             // Respond from the offline cache; refresh separately without blocking the profile screen.
-            if (store.profile(peer) == null) refreshProfile(peer);
+            refreshProfile(peer);
             XmppSession calls=session;
             if(peer>0 && peer!=self && calls!=null && calls.connection().isAuthenticated()) calls.calls.discover(store.jid(peer));
             return profileResult(peer);
@@ -3631,7 +3659,7 @@ public final class MonogramController {
             String last = (edit.flags & 2) != 0 ? edit.last_name : null;
             String about = (edit.flags & 4) != 0 ? edit.about : null;
             profileVersions.merge(self, 1L, Long::sum);
-            com.negzero.monogram.xmpp.XmppProfile changed = session().profiles.edit(first, last, about);
+            com.negzero.monogram.xmpp.XmppProfile changed = session().profiles.edit(first, last, about, store.profile(self));
             profileVersions.merge(self, 1L, Long::sum);
             store.profile(self, changed); publishProfile(self, sessionEpoch);
             return ownUser();
@@ -3847,6 +3875,12 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
+            if(send.reply_to instanceof TLRPC.TL_inputReplyToStory) {
+                String prefix=stories().replyQuote(send.reply_to.story_id,send.peer.user_id);
+                send.message=prefix+(send.message==null?"":send.message);
+                for(TLRPC.MessageEntity entity:send.entities) entity.offset+=prefix.length();
+                send.reply_to=null;send.flags&=~1;
+            }
             com.negzero.monogram.xmpp.InlineEmoji inline=MonogramEmojis.fromEntities(account,send.message,send.entities);
             MessageMarkup markup = send.rich_message!=null ? new MessageMarkup(MonogramArticles.markdown(send.rich_message),java.util.Collections.emptyList()).asMarkdown()
                     : MonogramMentions.fromEntities(store,send.peer.chat_id>0 ? -send.peer.chat_id : send.peer.user_id,send.message,send.entities);

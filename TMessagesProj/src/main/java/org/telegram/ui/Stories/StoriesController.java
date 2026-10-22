@@ -413,6 +413,11 @@ public class StoriesController {
     }
 
     private void processAllStoriesResponse(TL_stories.TL_stories_allStories storiesResponse, boolean hidden, boolean fromCache, boolean isNext) {
+        if(fromCache && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            for(TL_stories.PeerStories peer:storiesResponse.peer_stories)
+                for(TL_stories.StoryItem story:peer.stories) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restoreStory(MessageObject.getPeerId(peer.peer),story);
+        }
+
         if (!isNext) {
             if (!hidden) {
                 //allStoriesMap.clear();
@@ -1966,7 +1971,8 @@ public class StoriesController {
                     } else {
                         boolean rename = new File(messageObject.videoEditedInfo.originalPath).renameTo(new File(path));
                         if (rename) {
-                            FileLoader.getInstance(currentAccount).uploadFile(path, false, false, ConnectionsManager.FileTypeVideo);
+                            ready=true;
+                            upload();
                         }
                     }
                 });
@@ -1986,6 +1992,7 @@ public class StoriesController {
 
         public void tryAgain() {
             failed = false;
+            monogramUploadStarted=false;
             entryDestroyed = false;
             progress = 0;
             uploadProgress = 0;
@@ -1999,7 +2006,14 @@ public class StoriesController {
             start();
         }
 
+        private boolean monogramUploadStarted;
         private void upload() {
+            if(entry.shareUserIds==null && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                if(!ready || monogramUploadStarted) return;
+                monogramUploadStarted=true;
+                sendUploadedRequest(new org.telegram.messenger.xmpp.MonogramAvatarFile(new File(path)));
+                return;
+            }
             if (entry.shareUserIds != null) {
                 putMessages();
             } else {
@@ -2079,13 +2093,15 @@ public class StoriesController {
                         firstSecondSize = availableSize;
                     }
 
-                    FileLoader.getInstance(currentAccount).checkUploadNewDataAvailable(finalPath, false, Math.max(1, availableSize), finalSize, convertingProgress);
+                    if(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty())
+                        FileLoader.getInstance(currentAccount).checkUploadNewDataAvailable(finalPath, false, Math.max(1, availableSize), finalSize, convertingProgress);
 
                     if (finalSize > 0) {
                         if (firstSecondSize < 0) {
                             firstSecondSize = finalSize;
                         }
                         ready = true;
+                        if(!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) upload();
                     }
                 }
             } else if (id == NotificationCenter.filePreparingFailed) {

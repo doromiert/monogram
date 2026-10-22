@@ -481,10 +481,13 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             return;
         }
 
-        doneButtonDrawable.animateToProgress(1f);
         TLRPC.User user = getUserConfig().getCurrentUser();
         TLRPC.UserFull userFull = getMessagesController().getUserFull(getUserConfig().getClientUserId());
-        if (user == null || userFull == null) return;
+        if (user == null || userFull == null) {
+            if(user!=null) getMessagesController().loadUserInfo(user,true,getClassGuid());
+            return;
+        }
+        doneButtonDrawable.animateToProgress(1f);
 
         ArrayList<TLObject> requests = new ArrayList<TLObject>();
 
@@ -583,6 +586,12 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
                     doneButtonDrawable.animateToProgress(0f);
                     BulletinFactory.of(this).createErrorBulletin(LocaleController.getString(R.string.UnknownError)).show();
                 } else {
+                    if (req instanceof TL_account.updateProfile && (((TL_account.updateProfile)req).flags & 4) != 0) {
+                        userFull.about=((TL_account.updateProfile)req).about;
+                        if(TextUtils.isEmpty(userFull.about)) userFull.flags&=~2; else userFull.flags|=2;
+                        getMessagesStorage().updateUserInfo(userFull,false);
+                        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.userInfoDidLoad,user.id,userFull);
+                    }
                     wasSaved = true;
                     requestsReceived[0]++;
                     if (requestsReceived[0] == requests.size()) {

@@ -37,6 +37,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.xmpp.MonogramFolderIcons;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -257,6 +258,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         private final SimpleTextView textView;
         private final TextView valueTextView;
         private final ImageView moveImageView;
+        private final ImageView folderIconView;
         private int lastColor = -2, lastAppliedColor = -1;
         private final View colorImageView;
         private final ImageView optionsImageView;
@@ -283,6 +285,12 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             colorImageView = new View(context);
             addView(colorImageView, LayoutHelper.createFrame(20, 20, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL, 22, 0, 22, 0));
 
+            folderIconView = new ImageView(context);
+            folderIconView.setScaleType(ImageView.ScaleType.CENTER);
+            folderIconView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_stickers_menu), PorterDuff.Mode.MULTIPLY));
+            folderIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            addView(folderIconView, LayoutHelper.createFrame(32, 48, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL, 52, 0, 52, 0));
+
             textView = new SimpleTextView(context);
             textView.setPadding(0, dp(4), 0, dp(4));
             textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
@@ -290,7 +298,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             textView.setMaxLines(1);
             textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
             textView.setEmojiColor(Theme.getColor(Theme.key_featuredStickers_addButton, resourceProvider));
-            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 80 : 64, 10, LocaleController.isRTL ? 64 : 80, 0));
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 80 : 92, 10, LocaleController.isRTL ? 92 : 80, 0));
 
             valueTextView = new TextView(context);
             valueTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
@@ -301,7 +309,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             valueTextView.setSingleLine(true);
             valueTextView.setPadding(0, 0, 0, 0);
             valueTextView.setEllipsize(TextUtils.TruncateAt.END);
-            addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 80 : 64, 35, LocaleController.isRTL ? 64 : 80, 0));
+            addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 80 : 92, 35, LocaleController.isRTL ? 92 : 80, 0));
             valueTextView.setVisibility(GONE);
 
             shareLoadingDrawable = new LoadingDrawable();
@@ -379,6 +387,9 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
             currentFilter = filter;
             int newId = currentFilter == null ? -1 : currentFilter.id;
             boolean animated = oldId != newId;
+
+            int folderIcon = MonogramFolderIcons.get(currentAccount, filter.id);
+            folderIconView.setImageResource(folderIcon == 0 ? R.drawable.msg_folders : folderIcon);
 
             final int color = getMessagesController().folderTags ? filter.color : -1;
             if (color >= 0 && filter.color != lastAppliedColor) {
@@ -493,7 +504,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
         @Override
         protected void onDraw(Canvas canvas) {
             if (needDivider) {
-                canvas.drawLine(LocaleController.isRTL ? 0 : dp(62), getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? dp(62) : 0), getMeasuredHeight() - 1, Theme.dividerPaint);
+                canvas.drawLine(LocaleController.isRTL ? 0 : dp(90), getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? dp(90) : 0), getMeasuredHeight() - 1, Theme.dividerPaint);
             }
 
         }
@@ -866,6 +877,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                                 if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
                                     getMessagesController().removeFilter(filter);
                                     getMessagesStorage().deleteDialogFilter(filter);
+                                    MonogramFolderIcons.remove(currentAccount, filter.id);
                                     return;
                                 }
                                 AlertDialog progressDialog = null;

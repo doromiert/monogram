@@ -188,6 +188,115 @@ public class Theme {
         public Boolean isCustomTheme;
     }
 
+    /** Keeps the familiar Telegram pattern visible while retaining each local theme's own colors. */
+    private static final class LocalThemePatternDrawable extends Drawable implements Drawable.Callback {
+        private final Drawable background;
+        private final Paint patternPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final RectF patternBounds = new RectF();
+        private Bitmap pattern;
+
+        LocalThemePatternDrawable(Drawable background, int patternColor) {
+            this.background = background;
+            this.background.setCallback(this);
+            patternPaint.setColorFilter(new PorterDuffColorFilter(patternColor, PorterDuff.Mode.SRC_IN));
+            patternPaint.setAlpha(Math.round(255 * 0.34f));
+        }
+
+        @Override
+        protected void onBoundsChange(Rect bounds) {
+            background.setBounds(bounds);
+            int width = Math.max(1, bounds.width());
+            int height = Math.max(1, bounds.height());
+            if (pattern == null) {
+                // The same wallpaper is shared by previews and chats. Keep one bounded bitmap
+                // instead of reallocating/recycling a full-screen bitmap whenever their bounds differ.
+                float scale=Math.min(1f,720f/width);
+                pattern = SvgHelper.getBitmap(R.raw.default_pattern,Math.max(1,Math.round(width*scale)),
+                        Math.max(1,Math.min(1600,Math.round(height*scale))),Color.WHITE,1f,SvgHelper.ScaleMode.ByWidth);
+            }
+        }
+
+        @Override
+        public void draw(@NonNull Canvas canvas) {
+            background.draw(canvas);
+            if (pattern == null || pattern.isRecycled()) {
+                onBoundsChange(getBounds());
+            }
+            if (pattern != null) {
+                Rect bounds = getBounds();
+                float scale = Math.max(bounds.width() / (float) pattern.getWidth(), bounds.height() / (float) pattern.getHeight());
+                float width = pattern.getWidth() * scale;
+                float height = pattern.getHeight() * scale;
+                patternBounds.set(bounds.centerX() - width / 2f, bounds.centerY() - height / 2f,
+                        bounds.centerX() + width / 2f, bounds.centerY() + height / 2f);
+                canvas.drawBitmap(pattern, null, patternBounds, patternPaint);
+            }
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            background.setAlpha(alpha);
+            patternPaint.setAlpha(Math.round(alpha * 0.34f));
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(@Nullable ColorFilter colorFilter) {
+            background.setColorFilter(colorFilter);
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return background.getIntrinsicWidth();
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return background.getIntrinsicHeight();
+        }
+
+        @Override
+        public void invalidateDrawable(@NonNull Drawable who) {
+            invalidateSelf();
+        }
+
+        @Override
+        public void scheduleDrawable(@NonNull Drawable who, @NonNull Runnable what, long when) {
+            scheduleSelf(what, when);
+        }
+
+        @Override
+        public void unscheduleDrawable(@NonNull Drawable who, @NonNull Runnable what) {
+            unscheduleSelf(what);
+        }
+    }
+
+    private static Drawable withLocalThemePattern(Drawable background, int color, int gradient1, int gradient2, int gradient3) {
+        if (background == null || background instanceof LocalThemePatternDrawable ||
+                background instanceof MotionBackgroundDrawable && ((MotionBackgroundDrawable) background).hasPattern()) {
+            return background;
+        }
+        int patternColor;
+        if (gradient2 != 0) {
+            patternColor = MotionBackgroundDrawable.getPatternColor(color, gradient1, gradient2, gradient3);
+        } else if (gradient1 != 0) {
+            patternColor = AndroidUtilities.getPatternColor(AndroidUtilities.getAverageColor(color, gradient1));
+        } else {
+            patternColor = AndroidUtilities.getPatternColor(color);
+        }
+        return new LocalThemePatternDrawable(background, patternColor);
+    }
+
+    private static boolean currentLocalThemeNeedsPattern() {
+        return currentTheme != null && currentTheme.assetName != null && currentTheme.overrideWallpaper == null
+                && !(currentTheme.firstAccentIsDefault && currentTheme.currentAccentId == DEFALT_THEME_ACCENT_ID);
+    }
+
     public static class PatternsLoader implements NotificationCenter.NotificationCenterDelegate {
 
         private static class LoadingPattern {
@@ -9631,6 +9740,20 @@ public class Theme {
             }
         }
 
+        int localBackgroundColor = currentColors.get(key_chat_wallpaper);
+        boolean missingAccentPattern = wallpaperFile == null || !wallpaperFile.exists();
+        boolean localThemeNeedsPattern = overrideWallpaper == null && !defaultTheme && currentTheme.assetName != null
+                && localBackgroundColor != 0 && missingAccentPattern && TextUtils.isEmpty(themedWallpaperLink)
+                && themedWallpaperFileOffset <= 0;
+        if (localThemeNeedsPattern) {
+            settings.wallpaper = withLocalThemePattern(settings.wallpaper,
+                    localBackgroundColor,
+                    currentColors.get(key_chat_wallpaper_gradient_to1),
+                    currentColors.get(key_chat_wallpaper_gradient_to2),
+                    currentColors.get(key_chat_wallpaper_gradient_to3));
+            settings.isPatternWallpaper = true;
+        }
+
         if (!LiteMode.isEnabled(LiteMode.FLAG_CHAT_BACKGROUND) && settings.wallpaper instanceof MotionBackgroundDrawable) {
             MotionBackgroundDrawable motionBackgroundDrawable = (MotionBackgroundDrawable) settings.wallpaper;
             int w, h;
@@ -9733,20 +9856,27 @@ public class Theme {
             if (rotation == -1) {
                 rotation = 45;
             }
-            if (gradientToColor1 == 0) {
-                return new ColorDrawable(backgroundColor);
-            } else {
-                ThemeAccent accent = currentTheme.getAccent(false);
-                if (accent != null && !TextUtils.isEmpty(accent.patternSlug) && previousTheme == null) {
-                    File wallpaperFile = accent.getPathToWallpaper();
-                    if (wallpaperFile != null && wallpaperFile.exists()) {
-                        file = wallpaperFile;
-                    }
+            ThemeAccent accent = currentTheme.getAccent(false);
+            if (accent != null && !TextUtils.isEmpty(accent.patternSlug) && previousTheme == null) {
+                File wallpaperFile = accent.getPathToWallpaper();
+                if (wallpaperFile != null && wallpaperFile.exists()) {
+                    file = wallpaperFile;
                 }
+            }
+            if (gradientToColor1 == 0) {
+                if (file == null) {
+                    Drawable background = new ColorDrawable(backgroundColor);
+                    return currentLocalThemeNeedsPattern()
+                            ? withLocalThemePattern(background, backgroundColor, 0, 0, 0)
+                            : background;
+                }
+            } else {
                 if (gradientToColor2 != 0) {
                     motionBackgroundDrawable = new MotionBackgroundDrawable(backgroundColor, gradientToColor1, gradientToColor2, gradientToColor3, true);
                     if (file == null) {
-                        return motionBackgroundDrawable;
+                        return currentLocalThemeNeedsPattern()
+                                ? withLocalThemePattern(motionBackgroundDrawable, backgroundColor, gradientToColor1, gradientToColor2, gradientToColor3)
+                                : motionBackgroundDrawable;
                     }
                 } else if (file == null) {
                     final int[] colors = {backgroundColor, gradientToColor1};
@@ -9778,7 +9908,9 @@ public class Theme {
                         listener = null;
                     }
                     backgroundGradientDrawable.startDithering(sizes, listener);
-                    return backgroundGradientDrawable;
+                    return currentLocalThemeNeedsPattern()
+                            ? withLocalThemePattern(backgroundGradientDrawable, backgroundColor, gradientToColor1, 0, 0)
+                            : backgroundGradientDrawable;
                 }
             }
         } else if (themedWallpaperFileOffset > 0 && (currentTheme.pathToFile != null || currentTheme.assetName != null)) {
@@ -9808,7 +9940,7 @@ public class Theme {
                         photoH /= 2;
                     }
                 }
-                opts.inPreferredConfig = Bitmap.Config.ALPHA_8;
+                opts.inPreferredConfig = motionBackgroundDrawable != null ? Bitmap.Config.ALPHA_8 : Bitmap.Config.ARGB_8888;
                 opts.inJustDecodeBounds = false;
                 opts.inSampleSize = scaleFactor;
                 Bitmap bitmap = BitmapFactory.decodeStream(stream, null, opts);

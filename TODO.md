@@ -608,9 +608,9 @@ Reference APK: `~/extera/exteraGram-full-universal-20261004.apk`. The user repor
 - [ ] Design watch-sized conversations, notifications, replies and input, with account setup and OMEMO trust/key handling appropriate to the chosen architecture.
 - [ ] Implement and verify the watch app, including background connectivity, reconnection, battery use and interoperability with phone Monogram and other XMPP clients.
 
-## Stories (backburner)
+## Stories (requested for implementation, after current UI priorities)
 
-- [ ] Add Monocles-compatible stories after core messaging/profiles/MUCs are reliable, reusing the existing Telegram stories UI where practical. Stories are outside core XMPP: evaluate [XEP-0501 Pubsub Stories](https://xmpp.org/extensions/xep-0501.html) (Experimental), built on XEP-0472 social feeds and PEP/PubSub. Verify Monocles' actual wire format and interoperability, then implement viewing/publishing, audience/access controls, expiry/retraction and media caching. Do not require the optional Monogram helper for standard stories.
+- [o] Add Monocles-compatible stories; promoted from the backburner by the user on 2026-10-22, after the current folder/Exteragram appearance/round-video priorities, reusing the existing Telegram stories UI where practical. Stories are outside core XMPP: evaluate [XEP-0501 Pubsub Stories](https://xmpp.org/extensions/xep-0501.html) (Experimental), built on XEP-0472 social feeds and PEP/PubSub. Verify Monocles' actual wire format and interoperability, then implement viewing/publishing, audience/access controls, expiry/retraction and media caching. Do not require the optional Monogram helper for standard stories.
 
 ## Premium features and monetization
 
@@ -923,3 +923,29 @@ These describe the earlier Telegram-FOSS 10.14.3 prototype; they do not prove th
 - [o] Hide gift/payment/unsupported privacy dead ends and expose working free local settings; source changes complete, verify at next APK delivery. Deep removal of unreachable code deferred behind user-visible behavior.
 
 - [x] Build and install 0.2.141 (73169): native local Quick Replies bridge, local text scheduling, adjustable static sticker corners and visible monetization/settings cleanup. Nix packaging, 13 core and seven native checks, original signer and scoped artifact audit passed. ADB package/version verified; feature gesture/end-to-end interaction acceptance remains open. Interactive checklists remain unfinished.
+
+- [o] Prevent the observed Smack XML recovery assertion from killing Monogram; route that precise broken-parser recovery stack through normal disconnect/reconnect. Source fix after 0.2.141; original malformed stanza cause and next-release verification remain open.
+
+Current user priorities (2026-10-22, supersede checklist integration):
+- [o] Folder icons, and hide All Chats when more than one custom folder exists; preserve valid navigation/reorder/unread behavior.
+- [o] Exteragram UI customization parity using supplied APK as reference.
+- [o] Remove empty smiley beside home title.
+- [o] Round-video camera selection: Front / Back / Ask, following Exteragram.
+- [o] Fix wallpaper patterns appearing only on default theme; preserve wallpaper overrides across variants.
+
+- [o] Profile bio: refresh requested XMPP profiles even when cached, and propagate changed/cleared DESC into the loaded native UserFull cache, persistent user info and userInfoDidLoad so an open profile updates. Source fix; user clarification on saving vs viewing pending, next-APK verification pending.
+
+- [o] Own-bio save: modern profile editor now commits the acknowledged bio and flag to native cache/storage and refreshes profile listeners; missing profile info no longer leaves Done spinning. Legacy editor persistence corrected too. Await next APK delivery/phone acceptance.
+
+## 0.2.142 — requested UI and stories baseline
+
+- [x] Native folder icon selection (30 Exteragram icons), names/icons/both tabs; hide All Chats when more than one custom folder exists.
+- [x] Remove empty title-smiley placeholder; add avatar corners, centered home title and compose-button visibility controls.
+- [x] Round-video initial camera Front/Back/Ask in both native recorder backends.
+- [x] Restore built-in theme wallpaper patterns while respecting custom wallpapers.
+- [x] Own bio: persist acknowledged changes in modern and legacy editors; avoid reporting a successful write as failed because a later profile fetch times out.
+- [x] Stories baseline: native editor/viewer, contacts-only XEP-0501 Atom publication, 24-hour expiry, media upload, caption edits, deletion and local read state.
+- [ ] Verify story publishing between real clients; public/custom audiences, viewer receipts, reactions and media edits remain unsupported. Stories are not OMEMO encrypted. Initial discovery scans up to 50 roster contacts; live notifications/explicit peer loading refresh others.
+- [ ] Complete remaining Exteragram customization parity and interactive checklist integration.
+
+Release validation: Nix arm64 packaging, ten focused native checks and five core checks passed. APK version 0.2.142 (73179), original signer; scoped APK audit passed. SHA-256 `b4827bd1449a25b5905ba7785a4eced24373a9481d5ca6880d559833f87364c1`. No real messages, stories or bio edits sent during validation.

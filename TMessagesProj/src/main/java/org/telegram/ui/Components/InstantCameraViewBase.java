@@ -118,6 +118,8 @@ public abstract class InstantCameraViewBase extends FrameLayout {
     public abstract boolean isPaused();
 
     /** Opens the camera UI and starts the selected implementation. */
+    public abstract void setInitialFrontCamera(boolean front);
+
     public abstract void showCamera(boolean fromPaused);
 
     /** Animates the camera UI visibility. */

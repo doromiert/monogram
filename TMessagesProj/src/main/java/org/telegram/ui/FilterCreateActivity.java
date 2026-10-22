@@ -58,6 +58,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.support.LongSparseIntArray;
+import org.telegram.messenger.xmpp.MonogramFolderIcons;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_chatlists;
@@ -88,6 +89,7 @@ import org.telegram.ui.Components.EditTextEmoji;
 import org.telegram.ui.Components.EditTextSuggestionsFix;
 import org.telegram.ui.Components.EmojiView;
 import org.telegram.ui.Components.FolderBottomSheet;
+import org.telegram.ui.Components.FolderIconPickerSheet;
 import org.telegram.ui.Components.HintView;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
@@ -127,6 +129,8 @@ public class FilterCreateActivity extends BaseFragment {
     private boolean newFilterAnimations = true;
     private int newFilterFlags;
     private int newFilterColor;
+    private int initialFilterIcon;
+    private int newFilterIcon;
     private ArrayList<Long> newAlwaysShow;
     private ArrayList<Long> newNeverShow;
     private LongSparseIntArray newPinned;
@@ -222,6 +226,7 @@ public class FilterCreateActivity extends BaseFragment {
 
     @Override
     public boolean onFragmentCreate() {
+        initialFilterIcon = newFilterIcon = MonogramFolderIcons.get(currentAccount, filter.id);
         updateRows();
         return super.onFragmentCreate();
     }
@@ -294,6 +299,15 @@ public class FilterCreateActivity extends BaseFragment {
         nameRow = items.size();
         items.add(ItemInner.asEdit());
         items.add(ItemInner.asShadow(null));
+        items.add(ItemInner.asHeader("Appearance"));
+        items.add(ItemInner.asButton(newFilterIcon == 0 ? R.drawable.msg_folders : newFilterIcon, "Folder icon", false).whenClicked(v -> {
+            FolderIconPickerSheet.show(this, newFilterIcon, icon -> {
+                newFilterIcon = icon;
+                checkDoneButton(true);
+                updateRows();
+            });
+        }));
+        items.add(ItemInner.asShadow("Choose the icon shown beside this folder in tabs and folder lists."));
         items.add(ItemInner.asHeader(LocaleController.getString(R.string.FilterInclude)));
         items.add(ItemInner.asButton(R.drawable.msg2_chats_add, LocaleController.getString(R.string.FilterAddChats), false).whenClicked(v -> selectChatsFor(true)));
 
@@ -816,6 +830,7 @@ public class FilterCreateActivity extends BaseFragment {
                 if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
                     getMessagesController().removeFilter(filter);
                     getMessagesStorage().deleteDialogFilter(filter);
+                    MonogramFolderIcons.remove(currentAccount, filter.id);
                     finishFragment();
                     return;
                 }
@@ -1080,6 +1095,13 @@ public class FilterCreateActivity extends BaseFragment {
         final ArrayList<TLRPC.MessageEntity> entities = getMediaDataController().getEntities(parsedTitle, false);
         saveFilterToServer(filter, newFilterFlags, parsedTitle[0].toString(), entities, !newFilterAnimations, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, false, hasUserChanged, true, progress, this, () -> {
 
+            if (newFilterIcon == 0) {
+                MonogramFolderIcons.remove(currentAccount, filter.id);
+            } else {
+                MonogramFolderIcons.set(currentAccount, filter.id, newFilterIcon);
+            }
+            initialFilterIcon = newFilterIcon;
+
             hasUserChanged = false;
             creatingNew = false;
             filter.flags = newFilterFlags;
@@ -1291,6 +1313,9 @@ public class FilterCreateActivity extends BaseFragment {
         if (filter.flags != newFilterFlags) {
             return true;
         }
+        if (initialFilterIcon != newFilterIcon) {
+            return true;
+        }
         return hasUserChanged;
     }
 
@@ -1439,6 +1464,9 @@ public class FilterCreateActivity extends BaseFragment {
                 if (!TextUtils.equals(text, other.text)) {
                     return false;
                 }
+            }
+            if (viewType == VIEW_TYPE_BUTTON && iconResId != other.iconResId) {
+                return false;
             }
             if (viewType == VIEW_TYPE_HEADER) {
                 return newSpan == other.newSpan;

@@ -51,6 +51,7 @@ public final class XmppSession implements AutoCloseable {
         default void roomInviteFailed(String room,String target,String condition) {}
         default void roomMetadataChanged(String room) {}
         default void bookmarksChanged() {}
+        default void storiesChanged(String owner) {}
         default void readSyncChanged() {}
         default void blockedChanged(List<String> addresses) {}
         default void reactionRejected(String from,String id) {}
@@ -90,8 +91,29 @@ public final class XmppSession implements AutoCloseable {
     private static LegacyOmemoRecords.Factory legacyRecordsFactory;
     private static final class ManagedConnection extends XMPPTCPConnection {
         ManagedConnection(XMPPTCPConnectionConfiguration config) { super(config); }
+        @Override protected void parseAndProcessStanza(org.jivesoftware.smack.xml.XmlPullParser parser)
+                throws org.jivesoftware.smack.xml.XmlPullParserException, java.io.IOException, InterruptedException {
+            try { super.parseAndProcessStanza(parser); }
+            catch (AssertionError failedRecovery) {
+                // Smack's recovery parser can assert after the original XML parser failed mid-token.
+                // The stream is no longer usable: let its existing IOException path disconnect and
+                // reconnect, rather than continuing at an unknown boundary or crashing Android.
+                if (!stanzaRecoveryAssertion(failedRecovery)) throw failedRecovery;
+                throw new java.io.IOException("Incoming XMPP stanza recovery failed", failedRecovery);
+            }
+        }
         void pingTimedOut() { notifyConnectionError(new java.net.SocketTimeoutException("XMPP server ping timed out")); }
         void setupFailed(Exception error) { notifyConnectionError(error); }
+    }
+    static boolean stanzaRecoveryAssertion(AssertionError error) {
+        boolean element=false, recovery=false;
+        for(StackTraceElement frame:error.getStackTrace()) {
+            if("org.jivesoftware.smack.util.XmlStringBuilder".equals(frame.getClassName())
+                    && "halfOpenElement".equals(frame.getMethodName())) element=true;
+            if("org.jivesoftware.smack.util.PacketParserUtils".equals(frame.getClassName())
+                    && "parseContentDepthWithoutRoundtrip".equals(frame.getMethodName())) recovery=true;
+        }
+        return element && recovery;
     }
     private final ManagedConnection connection;
     public final com.negzero.monogram.xmpp.calls.XmppCalls calls;
@@ -194,8 +216,15 @@ public final class XmppSession implements AutoCloseable {
                 .setSendPresence(false).setCompressionEnabled(false).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
         connection = new ManagedConnection(config.build());
+        XmppStories.initialize(connection);
         connection.setReplyTimeout(15000);
         this.listener = listener;
+        connection.addAsyncStanzaListener(stanza -> {
+            org.jivesoftware.smackx.pubsub.EventElement event=org.jivesoftware.smackx.pubsub.EventElement.from(stanza);
+            if(event!=null && XmppStories.NODE.equals(event.getEvent().getNode()) && stanza.getFrom()!=null
+                    && stanza.getFrom().asEntityBareJidIfPossible()!=null)
+                listener.storiesChanged(stanza.getFrom().asEntityBareJidIfPossible().toString());
+        },stanza -> stanza.hasExtension("event","http://jabber.org/protocol/pubsub#event"));
         connection.addAsyncStanzaListener(stanza -> debugMessageXml(false,(Message)stanza),stanza -> stanza instanceof Message);
         connection.addStanzaSendingListener(stanza -> debugMessageXml(true,(Message)stanza),stanza -> stanza instanceof Message);
         legacyCapacityKey="legacy\n"+account.jid+"\n"+deviceId;

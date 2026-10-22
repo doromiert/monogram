@@ -5003,13 +5003,13 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
             if (repostButtonContainer != null) {
                 repostButtonContainer.setVisibility(allowRepost && !currentStory.isLive ? View.VISIBLE : View.GONE);
             }
-            likeButtonContainer.setVisibility(!isFailed && !currentStory.isLive ? View.VISIBLE : View.GONE);
+            likeButtonContainer.setVisibility(!org.telegram.messenger.xmpp.MonogramStories.remote(currentStory.storyItem) && !isFailed && !currentStory.isLive ? View.VISIBLE : View.GONE);
         } else {
             shareButton.setVisibility(allowShare && !currentStory.isLive ? View.VISIBLE : View.INVISIBLE);
             if (repostButtonContainer != null) {
                 repostButtonContainer.setVisibility(View.GONE);
             }
-            likeButtonContainer.setVisibility(!isSelf && !currentStory.isLive ? View.VISIBLE : View.GONE);
+            likeButtonContainer.setVisibility(!org.telegram.messenger.xmpp.MonogramStories.remote(currentStory.storyItem) && !isSelf && !currentStory.isLive ? View.VISIBLE : View.GONE);
             likeButtonContainer.getLayoutParams().width = AndroidUtilities.dp(40);
         }
         likeButtonContainer.requestLayout();
@@ -5463,7 +5463,10 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
                 storyContainer.invalidate();
             } else if (currentStory.isVideo()) {
                 TLRPC.Document document = null;
-                if (currentStory.getLocalPath() != null && new File(currentStory.getLocalPath()).exists()) {
+                if(org.telegram.messenger.xmpp.MonogramStories.remote(currentStory.storyItem)) {
+                    uri=Uri.parse(currentStory.storyItem.attachPath);
+                    document=null;
+                } else if (currentStory.getLocalPath() != null && new File(currentStory.getLocalPath()).exists()) {
                     uri = Uri.fromFile(new File(currentStory.getLocalPath()));
                     FileLog.d("StoryViewer requestVideoPlayer(" + t + "): playing from attachPath " + uri);
                     videoDuration = 0;

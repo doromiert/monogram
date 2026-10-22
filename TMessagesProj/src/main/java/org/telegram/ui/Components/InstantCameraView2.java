@@ -364,6 +364,9 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
         );
     }
 
+    private Boolean initialFrontCamera;
+    @Override public void setInitialFrontCamera(boolean front) { initialFrontCamera=front; }
+
     @Override
     public void showCamera(boolean fromPaused) {
         if (session != null) return;
@@ -379,9 +382,14 @@ public final class InstantCameraView2 extends InstantCameraViewBase {
         showInitialPlaceholder();
         upload = new TelegramRoundVideoUpload(currentAccount, secretChat);
         activeOutputResolution = SharedSettings.roundVideoOutputResolution.get();
+        int preferred=org.telegram.messenger.xmpp.MonogramUiPreferences.roundVideoCamera(currentAccount);
+        RoundVideoSession.CameraFacing facing=fromPaused ? SharedSettings.roundVideoLastCamera.get()
+                : (initialFrontCamera!=null ? initialFrontCamera : preferred!=org.telegram.messenger.xmpp.MonogramUiPreferences.ROUND_BACK)
+                ? RoundVideoSession.CameraFacing.FRONT : RoundVideoSession.CameraFacing.BACK;
+        initialFrontCamera=null;
         session = new RoundVideoSession.Builder(getContext(), textureView)
                 .setOutputDirectory(new File(ApplicationLoader.getFilesDirFixed(), "cache"))
-                .setInitialFacing(SharedSettings.roundVideoLastCamera.get())
+                .setInitialFacing(facing)
                 .setOutputResolution(activeOutputResolution)
                 .setVideoBitrate(SharedSettings.roundVideoVideoBitrate.get())
                 .setCameraResolution(SharedSettings.roundVideoCameraResolution.get())

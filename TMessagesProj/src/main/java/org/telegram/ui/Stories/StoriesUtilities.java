@@ -856,6 +856,10 @@ public class StoriesUtilities {
     }
 
     public static void setStoryMiniImage(ImageReceiver imageReceiver, TL_stories.StoryItem storyItem) {
+        if(org.telegram.messenger.xmpp.MonogramStories.remote(storyItem)) {
+            imageReceiver.setImage(ImageLocation.getForPath(storyItem.attachPath),"320_320",null,null,null,0,null,storyItem,0);return;
+        }
+
         if (storyItem == null) {
             return;
         }
@@ -878,6 +882,10 @@ public class StoriesUtilities {
     }
 
     public static void setImage(ImageReceiver imageReceiver, TL_stories.StoryItem storyItem, String filter) {
+        if(org.telegram.messenger.xmpp.MonogramStories.remote(storyItem)) {
+            imageReceiver.setImage(ImageLocation.getForPath(storyItem.attachPath),"320_320",null,null,null,0,null,storyItem,0);return;
+        }
+
         if (storyItem == null) {
             return;
         }

@@ -4,7 +4,9 @@ package org.telegram.ui;
 import android.view.View;
 import java.util.ArrayList;
 import org.telegram.messenger.xmpp.MonogramChatBehavior;
+import org.telegram.messenger.xmpp.MonogramUiPreferences;
 import org.telegram.ui.Business.QuickRepliesActivity;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 
@@ -17,6 +19,11 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asHeader("Messaging"));
         items.add(UItem.asButton(15,"Quick replies"));
         items.add(UItem.asShadow("Create reusable replies stored on this device. They are sent as ordinary messages and do not require a subscription."));
+        items.add(UItem.asHeader("Appearance"));
+        items.add(UItem.asButton(17,"Folder tabs",new String[]{"Names only","Icons only","Icons and names"}[org.telegram.messenger.xmpp.MonogramFolderIcons.displayMode(currentAccount)]));
+        items.add(UItem.asButton(20,"Avatar corners",MonogramUiPreferences.avatarCorners(currentAccount)==28?"Round":MonogramUiPreferences.avatarCorners(currentAccount)==0?"Square":Integer.toString(MonogramUiPreferences.avatarCorners(currentAccount))));
+        items.add(UItem.asCheck(18,"Center home title").setChecked(MonogramUiPreferences.centerHomeTitle(currentAccount)));
+        items.add(UItem.asCheck(19,"Show compose button").setChecked(!MonogramUiPreferences.hideComposeButton(currentAccount)));
         items.add(UItem.asHeader("Keyboard"));
         items.add(UItem.asCheck(1,"Hide keyboard on scroll").setChecked(MonogramChatBehavior.hideKeyboardOnScroll(currentAccount)));
         items.add(UItem.asShadow("Dragging the conversation closes the keyboard or emoji panel."));
@@ -39,6 +46,9 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asHeader(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.VoipCamera)));
         items.add(UItem.asCheck(13,org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramUseSystemCamera)).setChecked(!org.telegram.messenger.SharedConfig.inappCamera));
         items.add(UItem.asShadow(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramUseSystemCameraInfo)));
+        items.add(UItem.asHeader("Round video messages"));
+        items.add(UItem.asButton(16,"Opening camera",roundVideoCameraLabel(MonogramUiPreferences.roundVideoCamera(currentAccount))));
+        items.add(UItem.asShadow("Choose which camera opens first, or ask each time you record a round video."));
         items.add(UItem.asHeader(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramMapsTitle)));
         android.content.Context context = org.telegram.messenger.ApplicationLoader.applicationContext;
         int provider = org.telegram.messenger.MonogramMaps.selected(context);
@@ -56,7 +66,26 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
             presentFragment(fragment);
             return;
         }
-        if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
+        if(item.id==20) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Avatar corners")
+                    .setItems(new CharSequence[]{"Square","Slightly rounded","Rounded","More rounded","Round"},(dialog,which)->{
+                        MonogramUiPreferences.setAvatarCorners(currentAccount,which*7);
+                        org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(org.telegram.messenger.NotificationCenter.monogramAvatarShapeChanged,currentAccount);
+                        getNotificationCenter().postNotificationName(org.telegram.messenger.NotificationCenter.updateInterfaces,org.telegram.messenger.MessagesController.UPDATE_MASK_ALL);
+                        listView.adapter.update(true);
+                    }).create());return;
+        }
+        if(item.id==17) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Folder tabs")
+                    .setItems(new CharSequence[]{"Names only","Icons only","Icons and names"},(dialog,which)->{
+                        org.telegram.messenger.xmpp.MonogramFolderIcons.setDisplayMode(currentAccount,which);
+                        getNotificationCenter().postNotificationName(org.telegram.messenger.NotificationCenter.dialogFiltersUpdated);
+                        listView.adapter.update(true);
+                    }).create());return;
+        }
+        if(item.id==18) MonogramUiPreferences.setCenterHomeTitle(currentAccount,!MonogramUiPreferences.centerHomeTitle(currentAccount));
+        else if(item.id==19) MonogramUiPreferences.setHideComposeButton(currentAccount,!MonogramUiPreferences.hideComposeButton(currentAccount));
+        else if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
         else if(item.id==2) MonogramChatBehavior.commaAfterMention(currentAccount,!MonogramChatBehavior.commaAfterMention(currentAccount));
         else if(item.id==3) MonogramChatBehavior.showSaveButton(currentAccount,!MonogramChatBehavior.showSaveButton(currentAccount));
         else if(item.id==4) MonogramChatBehavior.showRepeatButton(currentAccount,!MonogramChatBehavior.showRepeatButton(currentAccount));
@@ -67,6 +96,21 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         else if(item.id==9) MonogramChatBehavior.replyEmoji(currentAccount,!MonogramChatBehavior.replyEmoji(currentAccount));
         else if(item.id==10) MonogramChatBehavior.replyBackground(currentAccount,!MonogramChatBehavior.replyBackground(currentAccount));
         else if(item.id==13) org.telegram.messenger.SharedConfig.toggleInappCamera();
+        else if(item.id==16) {
+            CharSequence[] choices={"Front camera","Back camera","Ask every time"};
+            showDialog(new AlertDialog.Builder(getContext())
+                    .setTitle("Opening camera")
+                    .setItems(choices,(dialog,which) -> {
+                        int mode=which==1 ? MonogramUiPreferences.ROUND_BACK
+                                : which==2 ? MonogramUiPreferences.ROUND_ASK
+                                : MonogramUiPreferences.ROUND_FRONT;
+                        MonogramUiPreferences.setRoundVideoCamera(currentAccount,mode);
+                        listView.adapter.update(true);
+                    })
+                    .setNegativeButton(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.Cancel),null)
+                    .create());
+            return;
+        }
         else if(item.id==11 || item.id==12) {
             if (!org.telegram.messenger.MonogramMaps.select(org.telegram.messenger.ApplicationLoader.applicationContext,
                     item.id == 12 ? org.telegram.messenger.MonogramMaps.GOOGLE : org.telegram.messenger.MonogramMaps.OPEN_STREET_MAP)) {
@@ -75,6 +119,11 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         }
         else return;
         listView.adapter.update(true);
+    }
+    private static String roundVideoCameraLabel(int mode) {
+        if(mode==MonogramUiPreferences.ROUND_BACK) return "Back camera";
+        if(mode==MonogramUiPreferences.ROUND_ASK) return "Ask every time";
+        return "Front camera";
     }
     @Override protected boolean onLongClick(UItem item,View view,int position,float x,float y) { return false; }
 }

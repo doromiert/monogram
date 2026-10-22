@@ -145,6 +145,7 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
     private float progress;
     private CameraInfo selectedCamera;
     private boolean isFrontface = true;
+    private Boolean initialFrontCamera;
     private volatile boolean cameraReady;
     private AnimatorSet muteAnimation;
     private TLRPC.InputFile file;
@@ -706,6 +707,9 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         return !recording;
     }
 
+    /** One-recording choice, used by Ask mode before any capture is started. */
+    public void setInitialFrontCamera(boolean front) { initialFrontCamera = front; }
+
     public void showCamera(boolean fromPaused) {
         if (textureView != null) {
             return;
@@ -736,9 +740,10 @@ public class InstantCameraView extends InstantCameraViewBase implements Notifica
         cameraReady = false;
         selectedCamera = null;
         if (!fromPaused) {
-            if (!useCamera2) {
-                isFrontface = true;
-            }
+            int preference = org.telegram.messenger.xmpp.MonogramUiPreferences.roundVideoCamera(currentAccount);
+            isFrontface = initialFrontCamera != null ? initialFrontCamera
+                    : preference != org.telegram.messenger.xmpp.MonogramUiPreferences.ROUND_BACK;
+            initialFrontCamera = null;
             updateFlash();
             recordedTime = 0;
             progress = 0;

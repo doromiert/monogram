@@ -805,6 +805,7 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
         currentSize = size;
         currentCacheType = cacheType;
         setStaticDrawable(thumb);
+        setRoundRadius(requestedRoundRadius);
         imageShader = null;
         composeShader = null;
         thumbShader = null;
@@ -1229,7 +1230,8 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
                 .createWeakObserversGroup(this)
                 .add(NotificationCenter.didReplacedPhotoInMemCache)
                 .add(NotificationCenter.stopAllHeavyOperations)
-                .add(NotificationCenter.startAllHeavyOperations);
+                .add(NotificationCenter.startAllHeavyOperations)
+                .add(NotificationCenter.monogramAvatarShapeChanged);
         }
         if (setBackupImage()) {
             return true;
@@ -2569,7 +2571,14 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
         setRoundRadius(new int[]{tl, tr, br, bl});
     }
 
+    private int[] requestedRoundRadius=new int[4];
     public void setRoundRadius(int[] value) {
+        requestedRoundRadius=value.clone();
+        if(staticThumbDrawable instanceof AvatarDrawable || currentImageLocation!=null && currentImageLocation.photoPeer!=null) {
+            float scale=org.telegram.messenger.xmpp.MonogramUiPreferences.avatarCorners(currentAccount)/28f;
+            value=value.clone();
+            for(int i=0;i<value.length;i++) value[i]=Math.round(value[i]*scale);
+        }
         boolean changed = false;
         int firstValue = value[0];
         isRoundRect = true;
@@ -3159,6 +3168,12 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if(id==NotificationCenter.monogramAvatarShapeChanged) {
+            if(args.length>0 && args[0] instanceof Integer && (Integer)args[0]==currentAccount) {
+                setRoundRadius(requestedRoundRadius);invalidate();
+            }
+            return;
+        }
         if (id == NotificationCenter.didReplacedPhotoInMemCache) {
             String oldKey = (String) args[0];
             if (currentMediaKey != null && currentMediaKey.equals(oldKey)) {
