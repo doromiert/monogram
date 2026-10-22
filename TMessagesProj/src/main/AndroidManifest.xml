@@ -497,7 +497,7 @@
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Persistent XMPP connection for real-time messaging on user-selected Jabber servers without a push gateway" />
+                android:value="Persistent XMPP connection for real-time messaging on user-selected XMPP servers without a push gateway" />
         </service>
         <service
             android:name=".NotificationRepeat"

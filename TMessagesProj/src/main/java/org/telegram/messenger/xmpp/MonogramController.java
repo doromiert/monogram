@@ -156,6 +156,11 @@ public final class MonogramController {
     }
     public String lastDisconnect() { return preferences.getString("last-disconnect-"+accountJid(),null); }
     public String accountJid() { return preferences.getString("jid", ""); }
+    /** Non-secret connection template for creating a separate account on the same service. */
+    public Account registrationTemplate() throws Exception {
+        return new Account(accountJid(),preferences.getString("host",""),preferences.getInt("port",5222),"Monogram");
+    }
+
     public void markLocalRead(long peer,java.util.Collection<Integer> anchors,boolean all,java.util.function.BiConsumer<java.util.Set<Integer>,Integer> callback) {
         markLocalRead(peer,anchors,all,true,callback);
     }
@@ -2277,7 +2282,7 @@ public final class MonogramController {
                 return;
             }
             ArrayList<TLRPC.Message> messages=new ArrayList<>();
-            for(int id:store.roomDisplayed(peer,marker.id)) if(!store.hiddenMessage(id)) messages.add(store.getMessage(id,self));
+            for(int id:store.roomDisplayed(peer,marker)) if(!store.hiddenMessage(id)) messages.add(store.getMessage(id,self));
             publishReceiptMessages(owner,own,peer,messages);
         });
     }
@@ -3323,7 +3328,7 @@ public final class MonogramController {
         long peer=input instanceof TLRPC.TL_inputUserSelf ? self : input.user_id;
         String address=store.jid(peer);
         if(peer<=0 || !org.jxmpp.jid.impl.JidCreate.from(address).isEntityBareJid())
-            throw new IllegalArgumentException("Select a person's bare Jabber address, rather than an anonymous room nickname.");
+            throw new IllegalArgumentException("Select a person's bare XMPP address, rather than an anonymous room nickname.");
         return address;
     }
     private TLRPC.TL_messages_invitedUsers createNativeRoom(TLRPC.TL_messages_createChat request) throws Exception {
@@ -3361,6 +3366,7 @@ public final class MonogramController {
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
                 || request instanceof TLRPC.TL_messages_getMessagesReactions || request instanceof TLRPC.TL_messages_getMessageReactionsList
+                || request instanceof TLRPC.TL_messages_getMessageReadParticipants
                 || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
         (cached ? cacheWorker : roomMutation(request) ? roomWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction ? sendWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
@@ -3700,6 +3706,19 @@ public final class MonogramController {
             for (RosterEntry entry : Roster.getInstanceFor(session().connection()).getEntries()) {
                 long id = store.peer(entry.getJid().toString()); store.rosterName(id, entry.getName()); result.users.add(store.user(id, self));
                 TLRPC.TL_contact contact = new TLRPC.TL_contact(); contact.user_id = id; contact.mutual = entry.canSeeMyPresence(); result.contacts.add(contact);
+            }
+            return result;
+        }
+        if(request instanceof TLRPC.TL_messages_getMessageReadParticipants) {
+            TLRPC.TL_messages_getMessageReadParticipants query=(TLRPC.TL_messages_getMessageReadParticipants)request;
+            if(query.peer==null || query.peer.channel_id!=0 || query.peer.chat_id<=0) throw new IllegalArgumentException("Room required");
+            org.telegram.tgnet.Vector<TLRPC.TL_readParticipantDate> result=new org.telegram.tgnet.Vector<>(TLRPC.TL_readParticipantDate::TLdeserialize);
+            for(long user:store.roomReaders(-query.peer.chat_id,query.msg_id,self)) {
+                TLRPC.TL_readParticipantDate reader=new TLRPC.TL_readParticipantDate();
+                reader.user_id=user;
+                // XEP-0333 supplies a read frontier, not the exact time this
+                // particular message was read. Zero leaves the timestamp hidden.
+                reader.date=0;result.objects.add(reader);
             }
             return result;
         }

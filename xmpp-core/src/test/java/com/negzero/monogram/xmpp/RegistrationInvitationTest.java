@@ -4,6 +4,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RegistrationInvitationTest {
+    @Test void explicitServerRegistrationHasNoTokenAndStaysBoundToItsServer() throws Exception {
+        RegistrationInvitation registration=RegistrationInvitation.forServer("example.org");
+        assertFalse(registration.requiresToken());assertNull(registration.username);
+        assertEquals("",registration.token());
+        registration.validate(new Account("newuser@example.org","connect.example.net",5223,"Phone"));
+        assertThrows(XmppInvitations.InvitationException.class,() -> registration.validate(new Account("newuser@other.org",null,5222,"Phone")));
+        assertTrue(RegistrationInvitation.parse("xmpp:example.org?register;preauth=token").requiresToken());
+        assertThrows(XmppInvitations.InvitationException.class,() -> RegistrationInvitation.parse(registration.uri));
+    }
     @Test void preservesServerReservedNamesAndOpaqueTokensWithoutTrustingOtherActions() throws Exception {
         RegistrationInvitation reserved=RegistrationInvitation.parse("xmpp:juliet@example.org?register;preauth=a%2Bb%26c");
         assertEquals("juliet",reserved.username.toString());assertEquals("a+b&c",reserved.token());

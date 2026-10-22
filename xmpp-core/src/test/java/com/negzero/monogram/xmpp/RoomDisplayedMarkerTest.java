@@ -29,6 +29,7 @@ class RoomDisplayedMarkerTest {
         assertNull(RoomDisplayedMarker.from(marker(),room,null,false));
         RoomDisplayedMarker read=RoomDisplayedMarker.from(marker(),room,"id:stable-Bob",false);
         assertNotNull(read);assertEquals("room-id",read.id);assertFalse(read.own);
+        assertEquals(room+"/Bob",read.occupant);assertEquals("id:stable-Bob",read.actor);
         Message mixed=marker();mixed.setBody("message");assertNull(RoomDisplayedMarker.from(mixed,room,"id:stable-Bob",false));
         Message duplicate=marker();duplicate.addExtension(StandardExtensionElement.builder("displayed",MessageReceipt.MARKERS).addAttribute("id","other").build());assertNull(RoomDisplayedMarker.from(duplicate,room,"id:stable-Bob",false));
         Message foreign=marker();foreign.setFrom(JidCreate.entityFullFrom("other@conference.example.org/Bob"));assertNull(RoomDisplayedMarker.from(foreign,room,"id:stable-Bob",false));

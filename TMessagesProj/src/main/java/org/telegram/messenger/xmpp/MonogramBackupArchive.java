@@ -84,7 +84,7 @@ final class MonogramBackupArchive {
             }
             if(manifest==null || !manifest.getString("format").equals("monogram-account-backup") || manifest.getInt("version")!=1)
                 throw new IOException("Unsupported backup manifest.");
-            if(!expectedOwner.equals(manifest.getString("owner"))) throw new IOException("This backup belongs to a different Jabber account.");
+            if(!expectedOwner.equals(manifest.getString("owner"))) throw new IOException("This backup belongs to a different XMPP account.");
             if(!sizes.keySet().containsAll(REQUIRED)) throw new IOException("Incomplete account backup.");
             JSONArray entries=manifest.getJSONArray("files");Set<String> declared=new HashSet<>();
             for(int i=0;i<entries.length();i++) {
@@ -118,7 +118,7 @@ final class MonogramBackupArchive {
     }
     private static void requireOwner(String owner) throws Exception {
         if(owner==null || owner.indexOf('/')>=0 || !JidCreate.entityBareFrom(owner).toString().equals(owner))
-            throw new IllegalArgumentException("Use the canonical bare Jabber account for this backup.");
+            throw new IllegalArgumentException("Use the canonical bare XMPP account for this backup.");
     }
     private static long copy(InputStream input,OutputStream output,MessageDigest digest,long limit) throws IOException {
         byte[] buffer=new byte[16384];long total=0;int count;

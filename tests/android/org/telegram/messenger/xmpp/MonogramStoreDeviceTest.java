@@ -182,7 +182,7 @@ public final class MonogramStoreDeviceTest {
                     check(fresh.profile(bob).field("EMAIL", "USERID").equals("bob@example.org") && fresh.avatar(bob).isFile(), "Profile cache must survive a new store instance");
                     check(fresh.user(bob, alice).first_name.equals("My friend"), "Roster aliases must survive a new store instance");
                 }
-                check(reopened.user(alice, alice).first_name.equals("alice"), "An unnamed account must use its username, separately from its full Jabber address");
+                check(reopened.user(alice, alice).first_name.equals("alice"), "An unnamed account must use its username, separately from its full XMPP address");
                 check(reopened.user(bob, bob).first_name.equals("Bobby"), "Published account names must take precedence over username and roster fallbacks");
                 check(reopened.user(alice, bob).first_name.equals("alice@example.org"), "Unnamed contacts must retain their full address to distinguish servers");
                 try (MonogramStore isolated = new MonogramStore(context, "isolated.db")) {

@@ -1,6 +1,6 @@
 # Monogram privacy
 
-Monogram is a Jabber/XMPP client. It uses your chosen XMPP provider for messaging. That provider's privacy policy and account terms apply to its service; Telegram's privacy policy does not describe your Monogram account.
+Monogram is a XMPP/XMPP client. It uses your chosen XMPP provider for messaging. That provider's privacy policy and account terms apply to its service; Telegram's privacy policy does not describe your Monogram account.
 
 ## Accounts and messages
 
@@ -12,7 +12,7 @@ When enabled and successfully established, OMEMO encrypts message content for th
 
 ## Optional services
 
-- Telegram pack imports contact Telegram directly using the configured bot token. They do not turn your Jabber account into a Telegram account.
+- Telegram pack imports contact Telegram directly using the configured bot token. They do not turn your XMPP account into a Telegram account.
 - GIF search contacts the configured GIF service. Translation may send the selected text to the chosen translation provider. Review the provider and settings before using either feature.
 - Opening websites or embedded web content connects to those sites, which have their own policies.
 - Sharing files, exporting packs or saving media to Gallery creates copies outside the original conversation or app storage. Those copies may be accessible to other apps or included in your device's backups.

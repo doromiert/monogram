@@ -309,7 +309,7 @@ public final class XmppRooms implements AutoCloseable {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Join the room before inviting someone.");
         Jid target=JidCreate.from(address);
-        if(!target.isEntityBareJid()) throw new IllegalArgumentException("Enter a bare Jabber address.");
+        if(!target.isEntityBareJid()) throw new IllegalArgumentException("Enter a bare XMPP address.");
         chat.invite(target.asEntityBareJidOrThrow(),reason);
     }
     public enum MemberAction { KICK, GRANT_VOICE, REVOKE_VOICE, GRANT_MODERATOR, REVOKE_MODERATOR, GRANT_MEMBERSHIP, REVOKE_MEMBERSHIP }
@@ -332,7 +332,7 @@ public final class XmppRooms implements AutoCloseable {
             case GRANT_MODERATOR: chat.grantModerator(from.getResourcepart()); break;
             case REVOKE_MODERATOR: chat.revokeModerator(from.getResourcepart()); break;
             case GRANT_MEMBERSHIP: case REVOKE_MEMBERSHIP:
-                if(member.getJid()==null) throw new IllegalStateException("This room does not disclose the participant's Jabber address.");
+                if(member.getJid()==null) throw new IllegalStateException("This room does not disclose the participant's XMPP address.");
                 if(action==MemberAction.GRANT_MEMBERSHIP) chat.grantMembership(member.getJid().asBareJid());
                 else chat.revokeMembership(member.getJid().asBareJid());
                 break;
@@ -372,7 +372,7 @@ public final class XmppRooms implements AutoCloseable {
     public void affiliation(String jid,String address,String affiliation) throws Exception {
         MultiUserChat chat=chat(jid); Jid target=JidCreate.from(address);
         if(!chat.isJoined()) throw new IllegalStateException("Join the room before changing memberships.");
-        if(!target.isEntityBareJid()) throw new IllegalArgumentException("Enter a bare Jabber address.");
+        if(!target.isEntityBareJid()) throw new IllegalArgumentException("Enter a bare XMPP address.");
         if(target.equals(connection.getUser().asBareJid())) throw new IllegalArgumentException("Use another owner to change your own membership.");
         switch(affiliation) {
             case "member": chat.grantMembership(target); break;

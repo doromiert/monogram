@@ -2505,7 +2505,7 @@
     <string name="MonogramRequestRetraction">Also request deletion for everyone</string>
     <string name="MonogramRequestingRetraction">Requesting deletion…</string>
     <string name="MonogramDeleteMessagesRetraction">Delete these messages from this device? You can also ask other clients to delete them. Retraction requests identify the message to the server; copies may remain.</string>
-    <string name="MonogramBackgroundConnection">Keeping your Jabber accounts connected</string>
+    <string name="MonogramBackgroundConnection">Keeping your XMPP accounts connected</string>
     <string name="NotificationsServiceInfo">Relaunch app when shut down. Enable for reliable notifications.</string>
     <string name="NotificationsServiceConnection">Background Connection</string>
     <string name="NotificationsServiceConnectionInfo">Keep a low impact background connection to Monogram for reliable notifications.</string>
@@ -2736,7 +2736,7 @@
     <string name="TapToChange">Tap to change</string>
     <string name="AlternativeOptions">Alternative options</string>
     <string name="AddAnotherAccount">Add another account</string>
-    <string name="AddAnotherAccountInfo">Connect other Jabber accounts and easily switch between them.</string>
+    <string name="AddAnotherAccountInfo">Connect other XMPP accounts and easily switch between them.</string>
     <string name="SetPasscode">Set a Passcode</string>
     <string name="SetPasscodeInfo">Lock the app with a passcode so that others can\'t open it.</string>
     <string name="ClearCache">Clear Cache</string>
@@ -4218,11 +4218,11 @@
     <string name="Page5Title">Powerful</string>
     <string name="Page6Title">Cloud-Based</string>
     <string name="Page1Message">The world\'s **fastest** messaging app.\nIt is **free** and **secure**.</string>
-    <string name="Page2Message">**Monogram** connects you to friends\nthrough Jabber.</string>
+    <string name="Page2Message">**Monogram** connects you to friends\nthrough XMPP.</string>
     <string name="Page3Message">Keep your chats and media\non your devices and your chosen server.</string>
     <string name="Page4Message">Protect your conversations\nwith **OMEMO** encryption.</string>
     <string name="Page5Message">Share photos, videos and files.\nUpload limits depend on your server.</string>
-    <string name="Page6Message">Use your Jabber account\non multiple devices.</string>
+    <string name="Page6Message">Use your XMPP account\non multiple devices.</string>
     <string name="StartMessaging">Start Messaging</string>
     <!-- VoIP -->
     <string name="AccountSettings">Account Settings</string>
@@ -5408,7 +5408,7 @@
     <string name="TerminateOldSessionHeader">Automatically terminate old sessions</string>
     <string name="IfInactiveFor">if inactive for</string>
     <string name="AuthAnotherClientInfo5">Go to *getdesktop.telegram.org* or *web.telegram.org* to get a QR code</string>
-    <string name="SessionsListInfo">You can use your Jabber account with compatible XMPP clients on other devices.</string>
+    <string name="SessionsListInfo">You can use your XMPP account with compatible XMPP clients on other devices.</string>
     <string name="MigrateOldFolder">Migrate old folder to Scoped Storage</string>
     <string name="SelectThisDay">Select this day</string>
     <string name="NoMessagesForThisDay">No messages for this day</string>
@@ -6199,7 +6199,7 @@
     <string name="DeleteAllProxies">Delete All Proxies</string>
     <string name="DeleteAllProxiesConfirm">Are you sure you want to delete all proxies?</string>
     <string name="AccDescrSendAs">Send as %1$s</string>
-    <string name="SessionsSettingsInfo">Review the list of devices connected to your Jabber account.</string>
+    <string name="SessionsSettingsInfo">Review the list of devices connected to your XMPP account.</string>
     <string name="SendMediaPermissionPhotos">Photos</string>
     <string name="TapAndHoldToDeleteReaction">Tap and hold to delete reaction.</string>
     <string name="PollV2YouCanAddXCountriesOnly">You can add **%d** countries only</string>
@@ -11549,7 +11549,7 @@
     <string name="MonogramDisconnected">Disconnected</string>
     <string name="MonogramReconnect">Reconnect XMPP</string>
     <string name="MonogramConversationSecurity">Conversation security</string>
-    <string name="MonogramJabberId">Jabber ID</string>
+    <string name="MonogramXmppId">XMPP ID</string>
     <string name="MonogramTypingIndicators">Typing indicators</string>
     <string name="MonogramTypingIndicatorsInfo">Let contacts see when you are typing or active in a chat. These activity signals are sent outside OMEMO encryption.</string>
     <string name="MonogramTypingSaveFailed">Could not save the typing preference.</string>
@@ -11560,8 +11560,8 @@
     <string name="MonogramGroupReadReceipts">Include group read receipts</string>
     <string name="MonogramGroupReadReceiptsInfo">When Send read receipts is enabled, also let participants in supported groups see when you have read messages. Group read markers are sent outside OMEMO encryption.</string>
     <string name="MonogramReadReceiptsSaveFailed">Could not save the read receipt preference.</string>
-    <string name="MonogramJabberAddress">Jabber profile</string>
-    <string name="MonogramProfilePublished">Published in your Jabber profile. Other profile fields are preserved when you save.</string>
+    <string name="MonogramXmppAddress">XMPP profile</string>
+    <string name="MonogramProfilePublished">Published in your XMPP profile. Other profile fields are preserved when you save.</string>
     <string name="MonogramFavoriteAndRecentEmoji">Favorites and recent</string>
     <string name="MonogramSavedGifsEmpty">Save a GIF from a chat to reuse it here.</string>
     <string name="MonogramGlobalSearchHint">Chats and downloaded messages</string>
@@ -11572,15 +11572,15 @@
     <string name="MonogramSearchSavedGifs">Search saved GIFs</string>
     <string name="MonogramFavoriteEmoji">Favorite emoji</string>
     <string name="MonogramFileSizeLimit">Choose a non-empty file up to %1$s. Your provider may have a smaller limit.</string>
-    <string name="MonogramLoginTitle">Your Jabber account</string>
-    <string name="MonogramLoginHelp">Sign in with your full Jabber address and password.</string>
-    <string name="MonogramLoginAddress">Jabber address</string>
+    <string name="MonogramLoginTitle">Your XMPP account</string>
+    <string name="MonogramLoginHelp">Sign in with your full XMPP address and password.</string>
+    <string name="MonogramLoginAddress">XMPP address</string>
     <string name="MonogramLoginAdvanced">Advanced connection settings</string>
     <string name="MonogramLoginHideAdvanced">Hide advanced settings</string>
     <string name="MonogramLoginServer">Server override (optional)</string>
     <string name="MonogramLoginPort">Port (5222)</string>
     <string name="MonogramLoginPortError">Enter a port between 1 and 65535.</string>
-    <string name="MonogramLoginAddressError">Enter your full Jabber address, such as you@example.org.</string>
+    <string name="MonogramLoginAddressError">Enter your full XMPP address, such as you@example.org.</string>
     <string name="MonogramLoginPasswordError">Enter your password.</string>
     <string name="MonogramLoginFailed">Could not sign in. Check your address, password and server TLS certificate.</string>
     <string name="MonogramIntroServerTitle">Your server</string>
@@ -11588,12 +11588,12 @@
     <string name="MonogramIntroGroupsTitle">Together</string>
     <string name="MonogramIntroPrivateTitle">Encrypted</string>
     <string name="MonogramIntroHistoryTitle">Your conversations</string>
-    <string name="MonogramIntroWelcome">**Monogram** brings a familiar interface to **Jabber**.</string>
-    <string name="MonogramIntroServer">Use your **XMPP account** to talk with people on other Jabber servers.</string>
-    <string name="MonogramIntroFree">Chat freely. Add up to **four Jabber accounts**.</string>
+    <string name="MonogramIntroWelcome">**Monogram** brings a familiar interface to **XMPP**.</string>
+    <string name="MonogramIntroServer">Use your **XMPP account** to talk with people on other XMPP servers.</string>
+    <string name="MonogramIntroFree">Chat freely. Add up to **four XMPP accounts**.</string>
     <string name="MonogramIntroGroups">Keep in touch in **direct conversations** and **group chats**.</string>
     <string name="MonogramIntroPrivate">Use **OMEMO encryption** with compatible clients and review your contacts’ fingerprints.</string>
-    <string name="MonogramIntroHistory">Keep conversations cached on this device. Sync available history from your **Jabber server**.</string>
+    <string name="MonogramIntroHistory">Keep conversations cached on this device. Sync available history from your **XMPP server**.</string>
     <string name="MonogramDoubleTapTitle">Double-tap actions</string>
     <string name="MonogramDoubleTapIncoming">Incoming messages</string>
     <string name="MonogramDoubleTapOutgoing">Your messages</string>

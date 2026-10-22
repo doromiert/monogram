@@ -53,7 +53,7 @@ public final class XmppContacts implements AutoCloseable {
     private EntityBareJid contact(String address) throws Exception {
         org.jxmpp.jid.Jid jid=JidCreate.from(address);
         if(!jid.isEntityBareJid() || rooms.known(jid) || connection.getUser()==null || jid.equals(connection.getUser().asBareJid()))
-            throw new IllegalArgumentException("A contact's bare Jabber address is required");
+            throw new IllegalArgumentException("A contact's bare XMPP address is required");
         return jid.asEntityBareJidIfPossible();
     }
     public State state(String address) throws Exception { return new State(roster.getEntry(contact(address))); }

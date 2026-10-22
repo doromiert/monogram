@@ -237,7 +237,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
         items.add(UItem.asCustom(bioEdit));
         items.add(UItem.asShadow(bioInfo));
 
-        items.add(UItem.asHeader(getString(R.string.MonogramJabberAddress)));
+        items.add(UItem.asHeader(getString(R.string.MonogramXmppAddress)));
         for (java.util.Map.Entry<String, String> field : org.telegram.messenger.xmpp.MonogramController.get(currentAccount)
                 .profileDetails(getUserConfig().getClientUserId()).entrySet())
             items.add(org.telegram.ui.Cells.TextDetailCell.Factory.of(0, field.getValue(), field.getKey()));

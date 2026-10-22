@@ -305,7 +305,7 @@ public class AlertsCreator {
             case "MONOGRAM_XMPP_FAILED":
                 text = "The XMPP request failed. Your message was not sent."; break;
             case "MONOGRAM_FILE_NO_UPLOAD_SERVICE":
-                text = "Your Jabber provider does not offer HTTP File Upload. This file was not sent."; break;
+                text = "Your XMPP provider does not offer HTTP File Upload. This file was not sent."; break;
             case "MONOGRAM_FILE_SERVER_SIZE_LIMIT":
                 text = "This file exceeds the upload service's size limit. Choose a smaller file and retry."; break;
             case "MONOGRAM_FILE_FILE_SIZE":

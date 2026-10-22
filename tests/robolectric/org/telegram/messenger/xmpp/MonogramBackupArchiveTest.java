@@ -33,7 +33,7 @@ public class MonogramBackupArchiveTest {
         }
         assertFalse(staged.exists());assertEquals(0,work.listFiles().length);
         IOException wrong=assertThrows(IOException.class,()->MonogramBackupArchive.stage(new ByteArrayInputStream(encrypted.toByteArray()),work,"bob@example.org",password));
-        assertTrue(wrong.getMessage().contains("different Jabber account"));assertEquals(0,work.listFiles().length);
+        assertTrue(wrong.getMessage().contains("different XMPP account"));assertEquals(0,work.listFiles().length);
     }
     @Test public void authenticatedZipTraversalAndIncompleteSnapshotsAreRejectedWithoutApplyingAnything() throws Exception {
         File work=temporary.newFolder("private-no-backup-work"),empty=temporary.newFolder("incomplete");

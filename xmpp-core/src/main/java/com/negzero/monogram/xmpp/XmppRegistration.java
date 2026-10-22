@@ -32,15 +32,19 @@ public final class XmppRegistration {
         XMPPTCPConnection connection=new XMPPTCPConnection(config.build());connection.setReplyTimeout(15000);
         try {
             connection.connect();
-            if(!connection.isSecureConnection() || !connection.hasFeature("register",FEATURE))
-                throw new XmppInvitations.InvitationException("This server does not offer token-based registration over a secure connection. Use its invitation web page.");
-            IQ preauth=new IQ("preauth","urn:xmpp:pars:0") {
-                @Override protected IQChildElementXmlStringBuilder getIQChildElementBuilder(IQChildElementXmlStringBuilder xml) {
-                    xml.attribute("token",invitation.token());xml.setEmptyElement();return xml;
-                }
-            };
-            preauth.setType(IQ.Type.set);preauth.setTo(invitation.server);
-            request(connection,preauth);
+            if(!connection.isSecureConnection())
+                throw new XmppInvitations.InvitationException("Registration requires a secure connection.");
+            if(invitation.requiresToken()) {
+                if(!connection.hasFeature("register",FEATURE))
+                    throw new XmppInvitations.InvitationException("This server does not offer token-based registration over a secure connection. Use its invitation web page.");
+                IQ preauth=new IQ("preauth","urn:xmpp:pars:0") {
+                    @Override protected IQChildElementXmlStringBuilder getIQChildElementBuilder(IQChildElementXmlStringBuilder xml) {
+                        xml.attribute("token",invitation.token());xml.setEmptyElement();return xml;
+                    }
+                };
+                preauth.setType(IQ.Type.set);preauth.setTo(invitation.server);
+                request(connection,preauth);
+            }
             Registration query=new Registration();query.setTo(invitation.server);
             Registration information=request(connection,query);
             DataForm offered=DataForm.from(information);

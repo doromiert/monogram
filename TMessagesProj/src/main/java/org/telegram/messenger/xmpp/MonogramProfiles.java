@@ -83,7 +83,7 @@ public final class MonogramProfiles {
     }
     public static Map<String, String> details(XmppProfile profile, String jid) {
         Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("Jabber ID", jid);
+        fields.put("XMPP ID", jid);
         if (profile == null) return fields;
         add(fields, "Nickname", profile.nickname); add(fields, "Full name", profile.field("FN"));
         add(fields, "Website", profile.field("URL")); add(fields, "Birthday", profile.field("BDAY"));

@@ -20,6 +20,12 @@ public final class RegistrationInvitation {
         this.uri=uri;this.server=server;this.username=username;this.token=token;
     }
     String token() { return token; }
+    /** Explicit registration on a chosen server; no invitation token or credentials are fabricated. */
+    public static RegistrationInvitation forServer(String server) throws Exception {
+        DomainBareJid domain=JidCreate.domainBareFrom(server);
+        return new RegistrationInvitation("xmpp:"+domain+"?register",domain,null,"");
+    }
+    public boolean requiresToken() { return !token.isEmpty(); }
     public static RegistrationInvitation parse(String uri) throws XmppInvitations.InvitationException {
         try {
             if(uri==null || uri.length()>16384 || uri.codePoints().anyMatch(Character::isISOControl)) throw new IllegalArgumentException();

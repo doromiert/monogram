@@ -78,7 +78,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             items.add(UItem.asButton(1, "Import Telegram pack links"));
             items.add(UItem.asButton(2, "Create sticker pack"));
             items.add(UItem.asButton(3, "Create custom emoji pack"));
-            items.add(UItem.asShadow("Packs stay on this phone for this Jabber account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Open a pack’s menu to update or detach it; automatic updates are off by default. Inline emoji in media captions are not supported yet."));
+            items.add(UItem.asShadow("Packs stay on this phone for this XMPP account. Sending a sticker uses the chat’s existing file encryption. No pack manifest is published to your server. Small custom emoji are included in plain and OMEMO 2 direct messages. Legacy OMEMO, encrypted groups and oversized emoji use an ordinary emoji fallback in other clients. Imported packs remain available offline. Open a pack’s menu to update or detach it; automatic updates are off by default. Inline emoji in media captions are not supported yet."));
             if (busy) items.add(UItem.asShadow("Preparing local pack…"));
             if (lastError != null) items.add(UItem.asShadow(lastError));
             items.add(UItem.asHeader("Your packs"));
@@ -89,7 +89,7 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
             items.add(UItem.asHeader("Telegram import"));
             items.add(UItem.asButton(4, MonogramPacks.configured(currentAccount) ? "Replace bot token" : "Add bot token", MonogramPacks.configured(currentAccount) ? "Configured" : "Not configured"));
             if (MonogramPacks.configured(currentAccount)) items.add(UItem.asButton(5, "Remove bot token").red());
-            items.add(UItem.asShadow("Import uses Telegram’s official Bot API and contacts api.telegram.org directly. Create a bot with @BotFather and paste its token here. The token is stored encrypted on this phone. It is never sent to your Jabber server. Imported artwork remains subject to its creator’s rights."));
+            items.add(UItem.asShadow("Import uses Telegram’s official Bot API and contacts api.telegram.org directly. Create a bot with @BotFather and paste its token here. The token is stored encrypted on this phone. It is never sent to your XMPP server. Imported artwork remains subject to its creator’s rights."));
         }
     }
 

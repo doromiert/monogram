@@ -21,7 +21,11 @@ public final class MonogramAccountInviteActivity extends MonogramSettingsActivit
     private EditTextCell username;
     private boolean busy,destroyed,subscribe;
     private String error;
+    private java.util.function.Consumer<com.negzero.monogram.xmpp.RegistrationInvitation> useInvitation;
     public MonogramAccountInviteActivity(int account) { currentAccount=account; }
+    public MonogramAccountInviteActivity(int account,java.util.function.Consumer<com.negzero.monogram.xmpp.RegistrationInvitation> useInvitation) {
+        this(account);this.useInvitation=useInvitation;
+    }
     @Override protected CharSequence getTitle() { return "Invite to your server"; }
     @Override public View createView(Context context) {
         username=new EditTextCell(context,"Username",false);
@@ -35,6 +39,7 @@ public final class MonogramAccountInviteActivity extends MonogramSettingsActivit
         items.add(UItem.asShadow("Create a link that lets someone register on your XMPP server. Your server decides whether your account can issue invitations."));
         items.add(UItem.asHeader("New XMPP account"));
         if(invitation!=null && invitation.result!=null) {
+            if(useInvitation!=null) items.add(UItem.asButton(6,R.drawable.msg_add,"Use to create account").accent());
             items.add(UItem.asButton(2,R.drawable.msg_copy,"Copy invitation link"));
             items.add(UItem.asButton(3,R.drawable.msg_share,"Share invitation link").accent());
             items.add(UItem.asShadow(invitation.result.link));
@@ -67,6 +72,14 @@ public final class MonogramAccountInviteActivity extends MonogramSettingsActivit
         });
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
+        if(item.id==6 && useInvitation!=null && invitation!=null && invitation.result!=null) {
+            try {
+                com.negzero.monogram.xmpp.RegistrationInvitation value=com.negzero.monogram.xmpp.RegistrationInvitation.parse(invitation.result.uri);
+                useInvitation.accept(value);finishFragment();
+            } catch(Exception invalid) { error="This invitation cannot be used for in-app registration. Use the server’s invitation page.";listView.adapter.update(true); }
+            return;
+        }
+
         if(item.id==1) generate();
         else if(item.id==2 && invitation!=null && invitation.result!=null) {
             AndroidUtilities.addToClipboard(invitation.result.link);BulletinFactory.of(this).createCopyLinkBulletin().show();

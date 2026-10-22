@@ -141,8 +141,8 @@ class XmppIntegrationTest {
             assertEquals(0, bob.profiles.load("alice@localhost").avatar.length);
             assertEquals(2, alice.profiles.load("alice@localhost").card.getElements("EMAIL").size());
             assertTrue(alice.hasArchive());
-            alice.send("bob@localhost", "ordinary Jabber", false);
-            assertEquals("ordinary Jabber", received.poll(15, TimeUnit.SECONDS));
+            alice.send("bob@localhost", "ordinary XMPP", false);
+            assertEquals("ordinary XMPP", received.poll(15, TimeUnit.SECONDS));
             assertEquals(false, encryption.poll(1, TimeUnit.SECONDS));
 
             assertFalse(alice.devices("bob@localhost").isEmpty());
@@ -313,7 +313,7 @@ class XmppIntegrationTest {
                 if (page.complete || page.firstId == null) break;
                 assertNotEquals(before, page.firstId); before = page.firstId;
             }
-            assertTrue(archive.values().stream().anyMatch(m -> "ordinary Jabber".equals(m.body) && m.outgoing));
+            assertTrue(archive.values().stream().anyMatch(m -> "ordinary XMPP".equals(m.body) && m.outgoing));
             assertTrue(archive.values().stream().anyMatch(m -> sentId.equals(m.ids.get("stanza")) && m.outgoing));
             assertTrue(archive.values().stream().anyMatch(m -> "to another device".equals(m.body) && !m.outgoing));
             assertTrue(archive.values().stream().anyMatch(m -> m.encrypted && !m.readable && m.body == null),

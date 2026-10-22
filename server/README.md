@@ -23,4 +23,4 @@ Requests use the account's own server/self IQ route. The authenticated account b
 
 Delivery is at most once: queue removal is committed before routing. A crash between removal and routing can lose that scheduled message. Device keys may also change before delivery; pre-encrypted scheduled messages cannot automatically include devices added later.
 
-This module currently requires installation on the account's own XMPP server. A separate helper for users on external Jabber servers, Android scheduling controls, restart tests and remaining Telegram-specific helper features are still pending. Nothing has been deployed to 192.168.1.24.
+This module currently requires installation on the account's own XMPP server. A separate helper for users on external XMPP servers, Android scheduling controls, restart tests and remaining Telegram-specific helper features are still pending. Nothing has been deployed to 192.168.1.24.

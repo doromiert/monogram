@@ -40,6 +40,55 @@ public class MonogramDisplayedMarkersTest {
         reopen();assertFalse(MonogramReceipts.isUnread(store.getMessage(sent,self)));assertEquals(candidate.wire,store.reads.pendingDisplayed().get(0).wire);
         store.reads.clearPendingGroupDisplayed();assertTrue(store.reads.pendingDisplayed().isEmpty());
     }
+    @Test public void everyRoomReaderIsRetainedEvenAfterTheFirstDoubleCheckAndRestart() throws Exception {
+        String address="room@conference.example.org";long room=store.room(address,"Alice");
+        int latest=store.saveRoom(MessageFixture.roomMarkable(address,"Alice","latest",300000,true),self);
+        int older=store.saveRoom(MessageFixture.roomMarkable(address,"Alice","older",100000,true),self);
+        int anchor=store.saveRoom(MessageFixture.roomMarkable(address,"Carol","anchor",200000,false),self);
+        long bob=store.peer("bob@example.org"),carol=store.peer("carol@example.org");
+        assertEquals(Collections.singletonList(older),store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Bob","anchor","jid:bob@example.org",false)));
+        assertTrue(store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Carol","anchor","jid:carol@example.org",false)).isEmpty());
+        assertEquals(Arrays.asList(bob,carol),store.roomReaders(room,older,self));
+        assertTrue(store.roomReaders(room,latest,self).isEmpty());
+        assertTrue(store.roomReaders(room,anchor,self).isEmpty()); // Incoming messages have no outgoing seen-by menu.
+        assertTrue(store.roomReaders(peer,older,self).isEmpty());
+        reopen();assertEquals(Arrays.asList(bob,carol),store.roomReaders(room,older,self));
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Bob","latest","jid:bob@example.org",false));
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Bob","older","jid:bob@example.org",false)); // Stale replay cannot regress Bob.
+        assertEquals(Collections.singletonList(bob),store.roomReaders(room,latest,self));
+        // Anonymous/departed readers still have local user details for the native seen-by list.
+        assertTrue(store.roomFull(room,self).users.stream().anyMatch(user -> user.id==carol));
+        store.deleteMessages(Collections.singleton(older));assertTrue(store.roomReaders(room,older,self).isEmpty());
+        store.clear();assertEquals(0,rows("room_readers"));
+    }
+    @Test public void anonymousReadersAreRoomScopedAndNicknameReuseDoesNotMergePeople() throws Exception {
+        String address="room@conference.example.org",second="other@conference.example.org";
+        long room=store.room(address,"Alice"),otherRoom=store.room(second,"Alice");
+        int sent=store.saveRoom(MessageFixture.roomMarkable(address,"Alice","sent",100000,true),self);
+        int otherSent=store.saveRoom(MessageFixture.roomMarkable(second,"Alice","sent",100000,true),self);
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Bob","sent","id:first",false));
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Bob","sent","id:second",false));
+        store.roomDisplayed(otherRoom,MessageFixture.roomDisplayed(second,"Bob","sent","id:first",false));
+        ArrayList<Long> readers=store.roomReaders(room,sent,self);assertEquals(2,readers.size());
+        assertEquals("Bob",store.user(readers.get(0),self).first_name);
+        assertTrue(Collections.disjoint(store.peers(),readers));
+        assertFalse(readers.contains(store.roomReaders(otherRoom,otherSent,self).get(0)));
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Alice","sent","jid:alice@example.org",true));
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Eve","unknown","jid:eve@example.org",false));
+        assertEquals(readers,store.roomReaders(room,sent,self));
+        assertTrue(store.roomDisplayed(room,MessageFixture.roomDisplayed(second,"Mallory","sent","jid:mallory@example.org",false)).isEmpty());
+    }
+    @Test public void schema29MigrationPreservesDoubleChecksWithoutInventingReaders() throws Exception {
+        String address="room@conference.example.org";long room=store.room(address,"Alice");
+        int sent=store.saveRoom(MessageFixture.roomMarkable(address,"Alice","sent",100000,true),self);
+        store.roomDisplayed(room,"sent");
+        store.getWritableDatabase().execSQL("DROP TABLE room_readers");store.getWritableDatabase().setVersion(29);
+        reopen();assertEquals(30,store.getReadableDatabase().getVersion());
+        assertFalse(MonogramReceipts.isUnread(store.getMessage(sent,self)));
+        assertTrue(store.roomReaders(room,sent,self).isEmpty());
+        store.roomDisplayed(room,MessageFixture.roomDisplayed(address,"Bob","sent","jid:bob@example.org",false));
+        assertEquals(Collections.singletonList(store.peer("bob@example.org")),store.roomReaders(room,sent,self));
+    }
     int rows(String table) {
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT count(*) FROM "+table,null)) { assertTrue(c.moveToFirst());return c.getInt(0); }
     }
@@ -105,7 +154,7 @@ public class MonogramDisplayedMarkersTest {
     @Test public void schema21MigrationPreservesLocalReadDataAndDoesNotInventOldMarkerRequests() throws Exception {
         int original=save("keep",100000);read(original);
         for(String table:Arrays.asList("markable_messages","displayed_anchors","pending_displayed")) store.getWritableDatabase().execSQL("DROP TABLE "+table);
-        store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().setVersion(21);reopen();assertEquals(28,store.getReadableDatabase().getVersion());
+        store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS call_events");store.getWritableDatabase().execSQL("DROP TABLE saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE saved_tag_names");store.getWritableDatabase().setVersion(21);reopen();assertEquals(30,store.getReadableDatabase().getVersion());
         assertTrue(store.reads.isRead(original));assertEquals("keep",store.getMessage(original,self).message);assertEquals(0,rows("markable_messages"));
         store.save(MessageFixture.markable("keep","origin-keep","mam-replay","keep",false,true,100000,"phone"));
         assertEquals(1,rows("markable_messages"));assertTrue(read(original).newlyRead.isEmpty());assertTrue(store.reads.pendingDisplayed().isEmpty());

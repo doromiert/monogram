@@ -51,7 +51,7 @@ public final class MonogramRoomMembersActivity extends MonogramSettingsActivity 
             items.add(UItem.asButton(2,"Change room topic").setEnabled(!busy));
             if(administrator()) {
                 items.add(UItem.asButton(3,"Manage memberships and bans").setEnabled(!busy));
-                items.add(UItem.asButton(4,"Add member by Jabber address").setEnabled(!busy));
+                items.add(UItem.asButton(4,"Add member by XMPP address").setEnabled(!busy));
             }
             if(!state.subject.isEmpty()) items.add(UItem.asShadow(state.subject));
             items.add(UItem.asHeader("Participants ("+state.occupants.size()+")"));
@@ -80,17 +80,17 @@ public final class MonogramRoomMembersActivity extends MonogramSettingsActivity 
                 .setPositiveButton("Send",(d,which) -> {
                     if(destroyed || busy) return;
                     String value=input.getText().toString().trim();
-                    if(address && value.isEmpty()) { status="Enter a Jabber address."; reload(); return; }
+                    if(address && value.isEmpty()) { status="Enter a XMPP address."; reload(); return; }
                     busy=true; status=null; reload(); action.accept(value);
                 }).setNegativeButton("Cancel",null).create());
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(busy || state==null || !state.joined) return;
         MonogramController controller=MonogramController.get(currentAccount);
-        if(item.id==1) text("Invite to room","Jabber address","",true,value -> controller.inviteToRoom(room,value,this::completed));
+        if(item.id==1) text("Invite to room","XMPP address","",true,value -> controller.inviteToRoom(room,value,this::completed));
         else if(item.id==2) text("Room topic","Topic",state.subject,false,value -> controller.changeRoomSubject(room,value,this::completed));
         else if(item.id==3 && administrator()) memberships();
-        else if(item.id==4 && administrator()) text("Add member","Jabber address","",true,value -> membershipChange(value,"member"));
+        else if(item.id==4 && administrator()) text("Add member","XMPP address","",true,value -> membershipChange(value,"member"));
         else if(item.id>=100 && item.id-100<state.occupants.size()) participant(state.occupants.get(item.id-100));
     }
     private void memberships() {

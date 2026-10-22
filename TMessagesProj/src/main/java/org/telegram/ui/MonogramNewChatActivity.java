@@ -19,13 +19,13 @@ public final class MonogramNewChatActivity extends MonogramSettingsActivity {
     public MonogramNewChatActivity(int account) { currentAccount = account; }
     @Override protected CharSequence getTitle() { return "New conversation"; }
     @Override public View createView(Context context) {
-        address = new EditTextCell(context, "Contact's Jabber address", false);
+        address = new EditTextCell(context, "Contact's XMPP address", false);
         address.editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         address.whenHitEnter(this::open);
         return super.createView(context);
     }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
-        items.add(UItem.asHeader("Jabber address")); items.add(UItem.asCustom(address));
+        items.add(UItem.asHeader("XMPP address")); items.add(UItem.asCustom(address));
         items.add(UItem.asShadow("Use the contact's full address, such as friend@example.org."));
         items.add(UItem.asButton(1, opening ? "Opening…" : "Start conversation").accent().setEnabled(!opening));
         items.add(UItem.asShadow(status));

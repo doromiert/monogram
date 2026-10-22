@@ -107,8 +107,8 @@ public final class XmppBlocking implements AutoCloseable {
         manager.unblockContacts(Collections.singletonList(jid)); return list();
     }
     private Jid address(String address) throws Exception {
-        if(address==null || address.isEmpty()) throw new IllegalArgumentException("A Jabber address is required");
-        for(int i=0;i<address.length();i++) if(Character.isISOControl(address.charAt(i))) throw new IllegalArgumentException("Invalid Jabber address");
+        if(address==null || address.isEmpty()) throw new IllegalArgumentException("A XMPP address is required");
+        for(int i=0;i<address.length();i++) if(Character.isISOControl(address.charAt(i))) throw new IllegalArgumentException("Invalid XMPP address");
         synchronized(stateLock) { if(closed) throw new IllegalStateException("Blocking session closed"); }
         return JidCreate.from(address);
     }

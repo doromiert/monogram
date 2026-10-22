@@ -44,7 +44,7 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
         items.add(UItem.asCheck(3,"Hide compose button").setChecked(MonogramUiPreferences.hideComposeButton(currentAccount)));
         items.add(UItem.asCheck(4,"Always collapse home search").setChecked(MonogramUiPreferences.collapseHomeSearch(currentAccount)));
         flag(items,"Sender mini avatars",senderAvatars);
-        choice(items,5,"Home title",title,"Monogram","Jabber ID","Your name","Chats");
+        choice(items,5,"Home title",title,"Monogram","XMPP ID","Your name","Chats");
         items.add(UItem.asShadow("Search remains available from its icon. Hiding stories does not delete them."));
         items.add(UItem.asHeader("Folders"));
         items.add(UItem.asButton(6,"Folder tabs",new String[]{"Names only","Icons only","Icons and names"}[MonogramFolderIcons.displayMode(currentAccount)]));
@@ -100,7 +100,7 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
             case 2:MonogramUiPreferences.setCenterHomeTitle(currentAccount,!MonogramUiPreferences.centerHomeTitle(currentAccount));break;
             case 3:MonogramUiPreferences.setHideComposeButton(currentAccount,!MonogramUiPreferences.hideComposeButton(currentAccount));break;
             case 4:MonogramUiPreferences.setCollapseHomeSearch(currentAccount,!MonogramUiPreferences.collapseHomeSearch(currentAccount));break;
-            case 5:select("Home title",title,"Monogram","Jabber ID","Your name","Chats");return;
+            case 5:select("Home title",title,"Monogram","XMPP ID","Your name","Chats");return;
             case 6:choose("Folder tabs",MonogramFolderIcons.displayMode(currentAccount),new String[]{"Names only","Icons only","Icons and names"},i -> MonogramFolderIcons.setDisplayMode(currentAccount,i));return;
             case 7:select("Folder counters",folderCounters,"All chats","Unmuted chats","Off");return;
             case 8:presentFragment(new MonogramNavigationActivity(currentAccount));return;

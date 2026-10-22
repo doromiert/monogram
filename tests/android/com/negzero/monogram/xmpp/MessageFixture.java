@@ -2,12 +2,19 @@ package com.negzero.monogram.xmpp;
 
 import java.util.Date;
 import org.jivesoftware.smack.packet.Message;
+import org.jivesoftware.smack.packet.StandardExtensionElement;
 import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
     public static XmppRoomMessage withRoomAliases(XmppRoomMessage message,java.util.Map<String,String> aliases) {
         return message.withAliases(aliases);
+    }
+    public static RoomDisplayedMarker roomDisplayed(String room,String nickname,String id,String actor,boolean own) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
+        wire.setFrom(JidCreate.entityFullFrom(room+"/"+nickname));
+        wire.addExtension(StandardExtensionElement.builder("displayed",MessageReceipt.MARKERS).addAttribute("id",id).build());
+        return RoomDisplayedMarker.from(wire,JidCreate.entityBareFrom(room),actor,own);
     }
     public static XmppRoomMessage roomMarkable(String room,String nickname,String id,long time,boolean own) throws Exception {
         Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
