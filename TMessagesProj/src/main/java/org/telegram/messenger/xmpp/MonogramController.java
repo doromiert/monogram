@@ -2420,6 +2420,7 @@ public final class MonogramController {
         TLRPC.Message saved=store.getMessage(message.id,self);
         if(!MonogramLinkPreviews.candidate(saved) || !java.util.Objects.equals(MonogramLinkPreviews.firstUrl(saved.message),MonogramLinkPreviews.firstUrl(message.message))) return;
         final long owner=accountEpoch;
+        if(linkPreviews.enabled()) linkPreviews.prepareCache();
         if((saved.media instanceof TLRPC.TL_messageMediaWebPage)!=(message.media instanceof TLRPC.TL_messageMediaWebPage)) publishLinkPreview(saved,owner);
         if(!linkPreviews.enabled() || saved.media instanceof TLRPC.TL_messageMediaWebPage && message.media instanceof TLRPC.TL_messageMediaWebPage && store.linkPreviewFresh(MonogramLinkPreviews.firstUrl(saved.message),System.currentTimeMillis())) return;
         linkPreviews.maybeFetch(saved,store.encryptionOf(message.id)>0,() -> owner==accountEpoch,worker,() -> {

@@ -77,7 +77,7 @@ public class MonogramLinkPreviewsTest {
         assertNull(MonogramLinkPreviews.youtubeMetadataUrl(new URI("https://youtube.com.evil.example/watch?v=r8Ljx3SP03Y")));
         assertNull(MonogramLinkPreviews.youtubeMetadataUrl(new URI("https://www.youtube.com/watch?v=invalid")));
         Map<String,String> fields=MonogramLinkPreviews.youtubeMetadata("{\"title\":\"A &amp; B\",\"author_name\":\"Author\",\"thumbnail_url\":\"https://i.ytimg.com/a.jpg\",\"html\":\"<iframe src='https://example.org/'></iframe>\"}");
-        assertEquals("A & B",fields.get("og:title"));assertEquals("YouTube",fields.get("og:site_name"));assertEquals("Author",fields.get("og:description"));assertFalse(fields.containsKey("html"));
+        assertEquals("A & B",fields.get("og:title"));assertEquals("YouTube",fields.get("og:site_name"));assertFalse(fields.containsKey("og:description"));assertEquals("video",MonogramLinkPreviews.previewType(fields,true));assertFalse(fields.containsKey("html"));
     }
     @Test public void fetchPolicyUpgradeRetriesOldFailuresWithoutDiscardingSuccessfulPreviews() throws Exception {
         android.content.SharedPreferences preferences=context.getSharedPreferences("preview-policy",Context.MODE_PRIVATE);preferences.edit().clear().putString("jid","alice@example.org").commit();
@@ -88,6 +88,16 @@ public class MonogramLinkPreviewsTest {
         AtomicBoolean refreshed=new AtomicBoolean();previews.maybeFetch(message,false,()->true,Runnable::run,()->refreshed.set(true));
         assertTrue(refreshed.get());assertTrue(store.linkPreviewFresh(url,System.currentTimeMillis()));assertFalse(store.linkPreviewFresh("https://example.org/failed",System.currentTimeMillis()));
         previews.cancel();
+    }
+    @Test public void videoClassificationAndYouTubeCacheRefreshPreserveOtherCachedPreviews() throws Exception {
+        Map<String,String> fields=MonogramLinkPreviews.metadata("<meta property='og:type' content='video.other'><meta property='og:description' content='Actual video description'>");
+        assertEquals("video",MonogramLinkPreviews.previewType(fields,false));assertEquals("Actual video description",fields.get("og:description"));
+        assertEquals("article",MonogramLinkPreviews.previewType(Collections.emptyMap(),false));
+        String video="https://www.youtube.com/watch?v=r8Ljx3SP03Y",article="https://example.org/article";
+        store.saveLinkPreview(video,page(video),System.currentTimeMillis()+60000);store.saveLinkPreview(article,page(article),System.currentTimeMillis()+60000);
+        store.expireYouTubeLinkPreviews();assertFalse(store.linkPreviewFresh(video,System.currentTimeMillis()));assertTrue(store.linkPreviewFresh(article,System.currentTimeMillis()));
+        int id=store.save(MessageFixture.replyMessage("cached-video","cached-video",null,video,true,false,100000,"phone",false,null));
+        assertTrue(store.getMessage(id,self).media instanceof TLRPC.TL_messageMediaWebPage);
     }
     @Test public void cachedPreviewSurvivesReopenButNeverOverridesMediaOrEditedText() throws Exception {
         int id=store.save(MessageFixture.replyMessage("preview","preview",null,"https://example.org/page",true,false,100000,"phone",false,null));

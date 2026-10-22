@@ -66,6 +66,16 @@ final class MonogramStore extends SQLiteOpenHelper {
         getWritableDatabase().insertWithOnConflict("link_previews",null,value,SQLiteDatabase.CONFLICT_REPLACE);
         getWritableDatabase().execSQL("DELETE FROM link_previews WHERE url NOT IN (SELECT url FROM link_previews ORDER BY expires DESC LIMIT 256)");
     }
+    synchronized void expireYouTubeLinkPreviews() {
+        ArrayList<String> urls=new ArrayList<>();
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT url FROM link_previews WHERE media IS NOT NULL",null)) {
+            while(row.moveToNext()) try {
+                if(MonogramLinkPreviews.youtubeMetadataUrl(new java.net.URI(row.getString(0)))!=null) urls.add(row.getString(0));
+            } catch(java.net.URISyntaxException malformed) { /* Ignore invalid optional cache entries. */ }
+        }
+        ContentValues value=new ContentValues();value.put("expires",0);
+        for(String url:urls) getWritableDatabase().update("link_previews",value,"url=?",new String[]{url});
+    }
     synchronized void clearFailedLinkPreviews() { getWritableDatabase().delete("link_previews","media IS NULL",null); }
     synchronized void clearLinkPreviews() { getWritableDatabase().delete("link_previews",null,null); }
     private void decorateLinkPreview(TLRPC.Message message) {
