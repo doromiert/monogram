@@ -3195,7 +3195,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         }
                     } else if (drawPhotoImage && (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF || documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO || authorLayout == null && titleLayout == null && descriptionLayout == null && siteNameLayout == null)) {
                         if (delegate != null) {
-                            delegate.didPressImage(this, lastTouchX, lastTouchY, true);
+                            delegate.didPressImage(this, lastTouchX, lastTouchY, !currentMessageObject.isGif());
                         }
                     } else if (currentMessageObject != null && !currentMessageObject.preview) {
                         TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
@@ -6034,7 +6034,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 delegate.didPressImage(this, lastTouchX, lastTouchY, false);
             }
         } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_GIF) {
-            if (buttonState == -1) {
+            if (buttonState == -1 && currentMessageObject.isGif()) {
+                delegate.didPressImage(this, lastTouchX, lastTouchY, false);
+            } else if (buttonState == -1) {
                 TLRPC.WebPage webPage = MessageObject.getMedia(currentMessageObject.messageOwner).webpage;
                 if (webPage != null) {
                     if (webPage.embed_url != null && webPage.embed_url.length() != 0) {
@@ -7091,7 +7093,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             drawForwardedName = false;
             drawCommentButton = false;
             photoImage.setSideClip(0);
-            photoImage.setAspectFit(false);
+            photoImage.setAspectFit(messageObject.isGif());
             photoImage.setRoundRadiusEnabled(true);
             fitPhotoImage = false;
             gradientShader = null;
@@ -9832,7 +9834,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 }
                             }
                         }
-                        PointF point = getMessageSize(imageW, imageH, photoWidth, photoHeight);
+                        // GIFs commonly have ImageSize (not Video) attributes and no thumbnail.
+                        // A square poster or the generic minimum-height rule must not crop the animation.
+                        if (messageObject.isGif()) {
+                            android.graphics.Point dimensions = org.telegram.messenger.xmpp.MonogramMediaPresentation.dimensions(documentAttach);
+                            if (dimensions != null) { imageW = dimensions.x; imageH = dimensions.y; }
+                        }
+                        PointF point = messageObject.isGif()
+                                ? org.telegram.messenger.xmpp.MonogramMediaPresentation.fit(imageW, imageH, photoWidth, photoHeight) : null;
+                        if (point == null) point = getMessageSize(imageW, imageH, photoWidth, photoHeight);
                         w = (int) point.x;
                         h = (int) point.y;
                     }

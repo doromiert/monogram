@@ -13507,6 +13507,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 && getRightSlidingProgress() == 0 && !hasShownSheet() && !filterTabsViewIsEditing();
     }
 
+    public boolean canOpenNavigationDrawerBySwipe(MotionEvent event) {
+        if (!canOpenNavigationDrawer()) return false;
+        boolean edge = LocaleController.isRTL ? event.getX() >= AndroidUtilities.displaySize.x - dp(48) : event.getX() <= dp(48);
+        // Beyond the first folder, a rightward drag belongs to folder navigation.
+        return edge || filterTabsView == null || filterTabsView.getTabsCount() < 2
+                || filterTabsView.getCurrentTabId() == filterTabsView.getFirstTabId();
+    }
+
     private boolean filterTabsViewIsEditing() {
         return filterTabsView != null && filterTabsView.isEditing();
     }

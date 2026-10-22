@@ -19724,31 +19724,35 @@ public class ChatActivity extends BaseFragment implements
                 if (onlyIfVisible && view.getY() + imageReceiver.getImageY2() < chatListViewPaddingTop - AndroidUtilities.dp(4)) {
                     return null;
                 }
-                int[] coords = new int[2];
-                view.getLocationInWindow(coords);
-                PhotoViewer.PlaceProviderObject object = new PhotoViewer.PlaceProviderObject();
-                object.viewX = coords[0];
-                object.viewY = coords[1] - 0 + view.getPaddingTop();
-                object.parentView = chatListView;
-                object.animatingImageView = null;
-                object.imageReceiver = imageReceiver;
-                if (needPreview) {
-                    object.thumb = imageReceiver.getBitmapSafe();
-                }
-                object.radius = imageReceiver.getRoundRadius(true);
-                if (view instanceof ChatActionCell && currentChat != null) {
-                    object.dialogId = -currentChat.id;
-                }
-                object.clipTopAddition = (int) (chatListViewPaddingTop - chatListViewPaddingVisibleOffset - AndroidUtilities.dp(4));
-                object.clipBottomAddition = (int) (blurredViewBottomOffset
-                    + dp(9)
-                    + windowInsetsStateHolder.getAnimatedMaxBottomInset()
-                    + getTopicTabsSideSize(TopicsTabsView.Position.BOTTOM)
-                    + inputIslandHeightCurrent);
-                return object;
+                return createPhotoViewerPlace(view, imageReceiver, needPreview);
             }
         }
         return null;
+    }
+
+    private PhotoViewer.PlaceProviderObject createPhotoViewerPlace(View view, ImageReceiver imageReceiver, boolean needPreview) {
+        int[] coords = new int[2];
+        view.getLocationInWindow(coords);
+        PhotoViewer.PlaceProviderObject object = new PhotoViewer.PlaceProviderObject();
+        object.viewX = coords[0];
+        object.viewY = coords[1] - 0 + view.getPaddingTop();
+        object.parentView = chatListView;
+        object.animatingImageView = null;
+        object.imageReceiver = imageReceiver;
+        if (needPreview) {
+            object.thumb = imageReceiver.getBitmapSafe();
+        }
+        object.radius = imageReceiver.getRoundRadius(true);
+        if (view instanceof ChatActionCell && currentChat != null) {
+            object.dialogId = -currentChat.id;
+        }
+        object.clipTopAddition = (int) (chatListViewPaddingTop - chatListViewPaddingVisibleOffset - AndroidUtilities.dp(4));
+        object.clipBottomAddition = (int) (blurredViewBottomOffset
+            + dp(9)
+            + windowInsetsStateHolder.getAnimatedMaxBottomInset()
+            + getTopicTabsSideSize(TopicsTabsView.Position.BOTTOM)
+            + inputIslandHeightCurrent);
+        return object;
     }
 
     private boolean openArticlePhoto(ChatMessageCell messageCell, TL_iv.PageBlock targetBlock) {
@@ -35702,6 +35706,23 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
         }
+        // Keep the clicked GIF bubble as the transition source instead of relying on a later
+        // list lookup after a send/update has rebound its MessageObject.
+        final ChatMessageCell openingCell = cell;
+        PhotoViewer.PhotoViewerProvider openingProvider = photoViewerProvider;
+        if (message.isGif() && openingCell != null) {
+            openingProvider = new PhotoViewer.EmptyPhotoViewerProvider() {
+                @Override public PhotoViewer.PlaceProviderObject getPlaceForPhoto(MessageObject target, TLRPC.FileLocation location, int index, boolean needPreview, boolean closing) {
+                    MessageObject bound = openingCell.getMessageObject();
+                    if (openingCell.isAttachedToWindow() && bound != null && target != null
+                            && bound.getId() == target.getId() && bound.getDialogId() == target.getDialogId()) {
+                        return createPhotoViewerPlace(openingCell, openingCell.getPhotoImage(), needPreview);
+                    }
+                    return photoViewerProvider.getPlaceForPhoto(target, location, index, needPreview, closing);
+                }
+                @Override public boolean validateGroupId(long groupId) { return photoViewerProvider.validateGroupId(groupId); }
+            };
+        }
         if (message.isVideo()) {
             sendSecretMessageRead(message, true);
         }
@@ -35736,9 +35757,9 @@ public class ChatActivity extends BaseFragment implements
                     arrayList.add(0, m);
                 }
             }
-            PhotoViewer.getInstance().openPhoto(arrayList, arrayList.indexOf(message), dialog_id, 0, getTopicId(),photoViewerProvider);
+            PhotoViewer.getInstance().openPhoto(arrayList, arrayList.indexOf(message), dialog_id, 0, getTopicId(),openingProvider);
         } else {
-            PhotoViewer.getInstance().openPhoto(message, ChatActivity.this, message.type != 0 ? dialog_id : 0, message.type != 0 ? mergeDialogId : 0, message.type != 0 ? getTopicId() : 0, photoViewerProvider);
+            PhotoViewer.getInstance().openPhoto(message, ChatActivity.this, message.type != 0 ? dialog_id : 0, message.type != 0 ? mergeDialogId : 0, message.type != 0 ? getTopicId() : 0, openingProvider);
         }
         hideHints(false);
         MediaController.getInstance().resetGoingToShowMessageObject();
@@ -39565,6 +39586,10 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void needOpenWebView(MessageObject message, String url, String title, String description, String originalUrl, int w, int h) {
+            if (message != null && message.isGif()) {
+                openPhotoViewerForMessage(null, message);
+                return;
+            }
             try {
                 EmbedBottomSheet.show(ChatActivity.this, message, photoViewerProvider, title, description, originalUrl, url, w, h, isKeyboardVisible());
             } catch (Throwable e) {
@@ -40132,7 +40157,7 @@ public class ChatActivity extends BaseFragment implements
             } else if (message.isSending()) {
                 return;
             }
-            if (fullPreview && message != null && message.messageOwner != null && message.messageOwner.media != null && message.messageOwner.media.webpage != null && !TextUtils.isEmpty(message.messageOwner.media.webpage.url)) {
+            if (fullPreview && message != null && !message.isGif() && message.messageOwner != null && message.messageOwner.media != null && message.messageOwner.media.webpage != null && !TextUtils.isEmpty(message.messageOwner.media.webpage.url)) {
                 final String url = message.messageOwner.media.webpage.url;
                 final String host = AndroidUtilities.getHostAuthority(url);
                 if (!openLinkInternally(url, cell, null, message.getId(), PROGRESS_INSTANT)) {

@@ -18,6 +18,32 @@ import org.telegram.tgnet.TLRPC;
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
         shadows=MonogramMessageRegressionTest.Device.class)
 public class MonogramMediaRegressionTest {
+    @Test public void gifLayoutUsesActualDimensionsEvenWithASquarePoster() {
+        TLRPC.Document document = new TLRPC.TL_document();
+        TLRPC.TL_documentAttributeImageSize source = new TLRPC.TL_documentAttributeImageSize();
+        source.w = 480; source.h = 248; document.attributes.add(source);
+        TLRPC.TL_photoSize_layer127 poster = new TLRPC.TL_photoSize_layer127();
+        poster.w = poster.h = 150; document.thumbs.add(poster);
+        android.graphics.Point dimensions = MonogramMediaPresentation.dimensions(document);
+        assertEquals(480, dimensions.x); assertEquals(248, dimensions.y);
+        android.graphics.PointF bounds = MonogramMediaPresentation.fit(dimensions.x, dimensions.y, 300, 400);
+        assertEquals(300f, bounds.x, .001f); assertEquals(155f, bounds.y, .001f);
+        // Very wide GIFs must not be forced up to the generic 120dp media minimum.
+        bounds = MonogramMediaPresentation.fit(800, 100, 300, 400);
+        assertEquals(8f, bounds.x / bounds.y, .001f);
+        bounds = MonogramMediaPresentation.fit(100, 800, 300, 400);
+        assertEquals(50f, bounds.x, .001f); assertEquals(400f, bounds.y, .001f);
+    }
+    @Test public void animatedVideoDimensionsOverrideAnImagePlaceholder() {
+        TLRPC.Document document = new TLRPC.TL_document();
+        TLRPC.TL_documentAttributeImageSize placeholder = new TLRPC.TL_documentAttributeImageSize();
+        placeholder.w = placeholder.h = 150; document.attributes.add(placeholder);
+        TLRPC.TL_documentAttributeVideo video = new TLRPC.TL_documentAttributeVideo();
+        video.w = 640; video.h = 360; document.attributes.add(video);
+        android.graphics.Point dimensions = MonogramMediaPresentation.dimensions(document);
+        assertEquals(640, dimensions.x); assertEquals(360, dimensions.y);
+        assertNull(MonogramMediaPresentation.fit(0, 0, 300, 400));
+    }
     @Test public void animatedMp4IntentSurvivesUploadMetadataAndPrivateCacheBinding() throws Exception {
         TLRPC.Message message=new TLRPC.TL_message();message.id=44;
         message.media=MonogramAttachments.remoteMedia(44,"animation.gif","video/mp4",3);

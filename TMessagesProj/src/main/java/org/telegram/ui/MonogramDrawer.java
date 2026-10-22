@@ -240,10 +240,9 @@ public final class MonogramDrawer extends FrameLayout {
             downX = event.getX(); downY = event.getY(); startProgress = progress;
             wasOpen = progress > .5f; tracking = false;
             boolean visible = getVisibility() == VISIBLE;
-            boolean edge = LocaleController.isRTL ? downX >= root.getWidth() - dp(48) : downX <= dp(48);
-            candidate = visible || edge && event.getY() >= AndroidUtilities.statusBarHeight
+            candidate = visible || event.getY() >= AndroidUtilities.statusBarHeight
                     && event.getY() < root.getHeight() - AndroidUtilities.navigationBarHeight
-                    && availableHost != null && availableHost.canOpenNavigationDrawer();
+                    && availableHost != null && availableHost.canOpenNavigationDrawerBySwipe(event);
             if (candidate) { velocity = VelocityTracker.obtain(); velocity.addMovement(event); }
             return false;
         }
