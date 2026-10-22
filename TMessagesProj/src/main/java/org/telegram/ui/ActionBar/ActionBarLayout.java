@@ -3084,7 +3084,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
         if (fragmentCount >= 1 && settings.applyTheme && settings.applyTrulyTheme) {
             if (settings.accentId != -1 && settings.theme != null) {
                 settings.theme.setCurrentAccentId(settings.accentId);
-                Theme.saveThemeAccents(settings.theme, true, false, true, false);
+                // Generated presets (IDs >= 100) must persist their color data as well as the ID.
+                // Otherwise startup cannot resolve the selection and falls back to the base accent.
+                Theme.saveThemeAccents(settings.theme, true, false, settings.accentId < 100, false);
             }
             if (onDone == null) {
                 Theme.applyTheme(settings.theme, settings.nightTheme);

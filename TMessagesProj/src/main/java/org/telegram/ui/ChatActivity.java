@@ -11244,10 +11244,10 @@ public class ChatActivity extends BaseFragment implements
             }
             boolean allowPin;
             if (currentChat != null) {
-                allowPin = ChatObject.canPinMessages(currentChat) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
+                allowPin = org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || ChatObject.canPinMessages(currentChat) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
             } else if (currentEncryptedChat == null) {
                 if (userInfo != null) {
-                    allowPin = userInfo.can_pin_message;
+                    allowPin = org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || userInfo.can_pin_message;
                 } else {
                     allowPin = false;
                 }
@@ -27365,10 +27365,10 @@ public class ChatActivity extends BaseFragment implements
         } else if (chatMode == MODE_PINNED) {
             boolean allowPin;
             if (currentChat != null) {
-                allowPin = ChatObject.canPinMessages(currentChat) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
+                allowPin = org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || ChatObject.canPinMessages(currentChat) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
             } else {
                 if (userInfo != null) {
-                    allowPin = userInfo.can_pin_message;
+                    allowPin = org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || userInfo.can_pin_message;
                 } else {
                     allowPin = false;
                 }
@@ -30125,12 +30125,12 @@ public class ChatActivity extends BaseFragment implements
         } else if (chatMode == MODE_SCHEDULED || (isThreadChat() && !isTopic)) {
             allowPin = false;
         } else if (currentChat != null) {
-            allowPin = message.getDialogId() != mergeDialogId && ChatObject.canPinMessages(currentChat) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
+            allowPin = message.getDialogId() != mergeDialogId && (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || ChatObject.canPinMessages(currentChat)) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
         } else if (currentEncryptedChat == null) {
             if (UserObject.isDeleted(currentUser)) {
                 allowPin = false;
             } else if (userInfo != null) {
-                allowPin = userInfo.can_pin_message;
+                allowPin = org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || userInfo.can_pin_message;
             } else {
                 allowPin = false;
             }
@@ -32927,13 +32927,6 @@ public class ChatActivity extends BaseFragment implements
 
 
             case OPTION_PIN: {
-                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
-                    showDialog(new AlertDialog.Builder(getParentActivity(), themeDelegate)
-                            .setTitle("Message pins")
-                            .setMessage("Shared message pins aren't available for this XMPP conversation yet.")
-                            .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
-                    break;
-                }
                 final int mid;
                 if (selectedObjectGroup != null && !selectedObjectGroup.messages.isEmpty()) {
                     mid = selectedObjectGroup.messages.get(0).getId();
@@ -32947,7 +32940,10 @@ public class ChatActivity extends BaseFragment implements
                 builder.setOnPreDismissListener(di -> dimBehindView(false));
 
                 final boolean[] checks;
-                if (currentUser != null) {
+                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                    builder.setMessage("Pin this message only on this device?");
+                    checks = new boolean[]{false, false};
+                } else if (currentUser != null) {
                     if (currentPinnedMessageId != 0 && mid < currentPinnedMessageId) {
                         builder.setMessage(LocaleController.getString(R.string.PinOldMessageAlert));
                     } else {
@@ -44239,12 +44235,12 @@ public class ChatActivity extends BaseFragment implements
         } else if (chatMode == MODE_SCHEDULED || (isThreadChat() && !isTopic)) {
             allowPin = false;
         } else if (currentChat != null) {
-            allowPin = message.getDialogId() != mergeDialogId && ChatObject.canPinMessages(currentChat) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
+            allowPin = message.getDialogId() != mergeDialogId && (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || ChatObject.canPinMessages(currentChat)) && (!currentChat.monoforum /*|| ChatObject.canManageMonoForum(currentAccount, currentChat)*/);
         } else if (currentEncryptedChat == null) {
             if (UserObject.isDeleted(currentUser)) {
                 allowPin = false;
             } else if (userInfo != null) {
-                allowPin = userInfo.can_pin_message;
+                allowPin = org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) || userInfo.can_pin_message;
             } else {
                 allowPin = false;
             }

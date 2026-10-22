@@ -156,24 +156,7 @@ public class UserObject {
     }
 
     public static Long getEmojiStatusDocumentId(TLRPC.EmojiStatus emojiStatus) {
-        if (emojiStatus == null) {
-            return null;
-        }
-        if (emojiStatus instanceof TLRPC.TL_emojiStatus) {
-            final TLRPC.TL_emojiStatus status = (TLRPC.TL_emojiStatus) emojiStatus;
-            if ((status.flags & 1) != 0 && status.until <= (int) (System.currentTimeMillis() / 1000)) {
-                return null;
-            }
-            return status.document_id;
-        }
-        if (emojiStatus instanceof TLRPC.TL_emojiStatusCollectible) {
-            final TLRPC.TL_emojiStatusCollectible status = (TLRPC.TL_emojiStatusCollectible) emojiStatus;
-            if ((status.flags & 1) != 0 && status.until <= (int) (System.currentTimeMillis() / 1000)) {
-                return null;
-            }
-            return status.document_id;
-        }
-        return null;
+        return null; // Emoji status is not a Monogram feature.
     }
 
     public static boolean isService(long user_id) {

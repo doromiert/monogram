@@ -695,6 +695,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(SettingCell.Factory.of(22, 0xFFF45255, 0xFFDF3955, 0, getString(R.string.DebugClearLogs)));
         }
 
+        items.add(SettingCell.Factory.of(1010, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom,
+                R.drawable.settings_features, "Check for updates", "Monogram GitHub releases"));
         items.add(UItem.asCustomShadow(versionView));
     }
 
@@ -768,6 +770,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 6:
                 presentSettingFragment(new DataSettingsActivity());
+                break;
+            case 1010:
+                if (getParentActivity() instanceof LaunchActivity) ((LaunchActivity)getParentActivity()).checkAppUpdate(true, null);
                 break;
             case 1003:
                 presentSettingFragment(new MonogramGifSettingsActivity(currentAccount));
@@ -1013,8 +1018,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             emojiStatusDrawable.setColor(Theme.getColor(Theme.key_profile_verifiedBackground, resourcesProvider));
             if (emojiStatusId != null) {
                 emojiStatusDrawable.set(emojiStatusId, false);
-            } else if (user != null && user.premium) {
-                emojiStatusDrawable.set(getContext().getResources().getDrawable(R.drawable.msg_premium_liststar).mutate(), false);
+
             } else {
                 emojiStatusDrawable.set((Drawable) null, false);
             }

@@ -355,6 +355,8 @@ public class SharedPhotoVideoCell2 extends FrameLayout {
             Drawable icon = getContext().getResources().getDrawable(R.drawable.msg_emoji_recent).mutate();
             icon.setColorFilter(new PorterDuffColorFilter(0x40FFFFFF, PorterDuff.Mode.SRC_IN));
             imageReceiver.setImageBitmap(new CombinedDrawable(new ColorDrawable(0xFF333333), icon));
+        } else if (org.telegram.messenger.xmpp.MonogramStories.remote(messageObject.storyItem)) {
+            imageReceiver.setImage(ImageLocation.getForPath(messageObject.storyItem.attachPath), imageFilter, null, null, parentObject, 0);
         } else if (messageObject.uploadingStory != null && messageObject.uploadingStory.firstFramePath != null) {
             imageReceiver.setImage(ImageLocation.getForPath(messageObject.uploadingStory.firstFramePath), imageFilter, null, null, parentObject, 0);
         } else {

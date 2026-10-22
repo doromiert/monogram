@@ -410,20 +410,7 @@ public class DialogObject {
     }
 
     public static long getEmojiStatusDocumentId(TLRPC.EmojiStatus emojiStatus) {
-        if (emojiStatus instanceof TLRPC.TL_emojiStatus) {
-            final TLRPC.TL_emojiStatus status = (TLRPC.TL_emojiStatus) emojiStatus;
-            if ((status.flags & 1) != 0 && status.until <= (int) (System.currentTimeMillis() / 1000)) {
-                return 0;
-            }
-            return status.document_id;
-        } else if (emojiStatus instanceof TLRPC.TL_emojiStatusCollectible) {
-            final TLRPC.TL_emojiStatusCollectible status = (TLRPC.TL_emojiStatusCollectible) emojiStatus;
-            if ((status.flags & 1) != 0 && status.until <= (int) (System.currentTimeMillis() / 1000)) {
-                return 0;
-            }
-            return status.document_id;
-        }
-        return 0;
+        return 0; // Ignore previously stored status decorations.
     }
 
     public static long getEmojiStatusCollectibleId(TLRPC.EmojiStatus emojiStatus) {

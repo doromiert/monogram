@@ -172,6 +172,7 @@ public final class MonogramStories {
     }
     TLObject handle(TLObject request) throws Exception {
         if(!(request instanceof TL_stories.TL_stories_getAllStories || request instanceof TL_stories.TL_stories_getPeerStories
+                || request instanceof TL_stories.TL_stories_getPinnedStories
                 || request instanceof TL_stories.TL_stories_getStoriesByID || request instanceof TL_stories.TL_stories_sendStory
                 || request instanceof TL_stories.TL_stories_deleteStories || request instanceof TL_stories.TL_stories_readStories
                 || request instanceof TL_stories.TL_stories_canSendStory || request instanceof TL_stories.TL_stories_editStory)) return null;
@@ -189,6 +190,18 @@ public final class MonogramStories {
                 result.count=result.peer_stories.size();refresh();
             }
             return result;
+        }
+        if(request instanceof TL_stories.TL_stories_getPinnedStories) {
+            // The native profile uses the pinned-stories request for its Posts grid.
+            // XMPP stories remain ephemeral: expose active items here without making them permanent.
+            TL_stories.TL_stories_getPinnedStories query=(TL_stories.TL_stories_getPinnedStories)request;
+            long peer=peer(query.peer);
+            ArrayList<TL_stories.StoryItem> active=peerStories(owner,peer).stories;
+            active.sort((a,b)->Integer.compare(b.id,a.id));
+            TL_stories.TL_stories_stories result=new TL_stories.TL_stories_stories();result.count=active.size();
+            int limit=Math.max(1,Math.min(query.limit,100));
+            for(TL_stories.StoryItem story:active) if((query.offset_id==0 || story.id<query.offset_id) && result.stories.size()<limit) result.stories.add(story);
+            result.users.add(store.user(peer,self()));changed(store.jid(peer));return result;
         }
         if(request instanceof TL_stories.TL_stories_getPeerStories) {
             long peer=peer(((TL_stories.TL_stories_getPeerStories)request).peer);

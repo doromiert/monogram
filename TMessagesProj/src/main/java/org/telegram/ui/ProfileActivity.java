@@ -6499,88 +6499,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow selectAnimatedEmojiDialog;
 
     public void showStatusSelect() {
-        if (selectAnimatedEmojiDialog != null) {
-            return;
-        }
-        final SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow[] popup = new SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow[1];
-        int xoff, yoff;
-        getEmojiStatusLocation(AndroidUtilities.rectTmp2);
-        int topMarginDp = nameTextView[1].getScaleX() < 1.5f ? 16 : 32;
-        yoff = -(avatarContainer2.getHeight() - AndroidUtilities.rectTmp2.centerY()) - AndroidUtilities.dp(topMarginDp);
-        int popupWidth = (int) Math.min(AndroidUtilities.dp(340 - 16), AndroidUtilities.displaySize.x * .95f);
-        int ecenter = AndroidUtilities.rectTmp2.centerX();
-        xoff = MathUtils.clamp(ecenter - popupWidth / 2, 0, AndroidUtilities.displaySize.x - popupWidth);
-        ecenter -= xoff;
-        SelectAnimatedEmojiDialog popupLayout = new SelectAnimatedEmojiDialog(this, getContext(), true, Math.max(0, ecenter), currentChat == null ? SelectAnimatedEmojiDialog.TYPE_EMOJI_STATUS : SelectAnimatedEmojiDialog.TYPE_EMOJI_STATUS_CHANNEL, true, resourcesProvider, topMarginDp) {
-            @Override
-            protected boolean willApplyEmoji(View view, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
-                return gift == null;
-            }
-
-            @Override
-            public long getDialogId() {
-                return ProfileActivity.this.getDialogId();
-            }
-
-            @Override
-            protected void onEmojiSelected(View emojiView, Long documentId, TLRPC.Document document, TL_stars.TL_starGiftUnique gift, Integer until) {
-                final TLRPC.EmojiStatus emojiStatus;
-                if (gift != null) return;
-                if (documentId == null) {
-                    emojiStatus = new TLRPC.TL_emojiStatusEmpty();
-                } else {
-                    final TLRPC.TL_emojiStatus status = new TLRPC.TL_emojiStatus();
-                    status.document_id = documentId;
-                    if (until != null) {
-                        status.flags |= 1;
-                        status.until = until;
-                    }
-                    emojiStatus = status;
-                }
-                getMessagesController().updateEmojiStatus(currentChat == null ? 0 : -currentChat.id, emojiStatus, null);
-                for (int a = 0; a < 2; ++a) {
-                    if (emojiStatusDrawable[a] != null) {
-                        if (documentId == null && currentChat == null) {
-                            emojiStatusDrawable[a].set(getStatusPlaceholderDrawable(a), true);
-                        } else if (documentId != null) {
-                            emojiStatusDrawable[a].set(documentId, true);
-                        } else {
-                            emojiStatusDrawable[a].set((Drawable) null, true);
-                        }
-                        emojiStatusDrawable[a].setParticles(false, true);
-                    }
-                }
-                if (documentId != null) {
-                    animatedStatusView.animateChange(ReactionsLayoutInBubble.VisibleReaction.fromCustomEmoji(documentId));
-                }
-                updateEmojiStatusDrawableColor();
-                updateEmojiStatusEffectPosition();
-                if (popup[0] != null) {
-                    selectAnimatedEmojiDialog = null;
-                    popup[0].dismiss();
-                }
-            }
-        };
-        TLRPC.User user = getMessagesController().getUser(userId);
-        if (user != null) {
-            popupLayout.setExpireDateHint(DialogObject.getEmojiStatusUntil(user.emoji_status));
-        }
-        popupLayout.setSelected(emojiStatusDrawable[1] != null && emojiStatusDrawable[1].getDrawable() instanceof AnimatedEmojiDrawable ? ((AnimatedEmojiDrawable) emojiStatusDrawable[1].getDrawable()).getDocumentId() : null);
-        popupLayout.setSaveState(3);
-        popupLayout.setScrimDrawable(emojiStatusDrawable[1], nameTextView[1]);
-        popup[0] = selectAnimatedEmojiDialog = new SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow(popupLayout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT) {
-            @Override
-            public void dismiss() {
-                super.dismiss();
-                selectAnimatedEmojiDialog = null;
-            }
-        };
-        int[] loc = new int[2];
-        if (nameTextView[1] != null) {
-            nameTextView[1].getLocationOnScreen(loc);
-        }
-        popup[0].showAsDropDown(fragmentView, xoff, yoff, Gravity.TOP | Gravity.LEFT);
-        popup[0].dimBehind();
+        // Emoji status selection has been removed.
     }
 
     public TLRPC.Chat getCurrentChat() {
@@ -10636,36 +10555,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private Drawable getEmojiStatusDrawable(TLRPC.EmojiStatus emojiStatus, boolean switchable, boolean animated, int a) {
-        if (emojiStatusDrawable[a] == null) {
-            emojiStatusDrawable[a] = new AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable(nameTextView[a], AndroidUtilities.dp(24), a == 0 ? AnimatedEmojiDrawable.CACHE_TYPE_EMOJI_STATUS : AnimatedEmojiDrawable.CACHE_TYPE_KEYBOARD);
-            if (fragmentViewAttached) {
-                emojiStatusDrawable[a].attach();
-            }
-        }
-        if (emojiStatus instanceof TLRPC.TL_emojiStatus) {
-            final TLRPC.TL_emojiStatus status = (TLRPC.TL_emojiStatus) emojiStatus;
-            if ((status.flags & 1) == 0 || status.until > (int) (System.currentTimeMillis() / 1000)) {
-                emojiStatusDrawable[a].set(status.document_id, animated);
-                emojiStatusDrawable[a].setParticles(false, animated);
-            } else {
-                emojiStatusDrawable[a].set(getStatusPlaceholderDrawable(a), animated);
-                emojiStatusDrawable[a].setParticles(false, animated);
-            }
-        } else if (emojiStatus instanceof TLRPC.TL_emojiStatusCollectible) {
-            final TLRPC.TL_emojiStatusCollectible status = (TLRPC.TL_emojiStatusCollectible) emojiStatus;
-            if ((status.flags & 1) == 0 || status.until > (int) (System.currentTimeMillis() / 1000)) {
-                emojiStatusDrawable[a].set(status.document_id, animated);
-                emojiStatusDrawable[a].setParticles(false, animated);
-            } else {
-                emojiStatusDrawable[a].set(getStatusPlaceholderDrawable(a), animated);
-                emojiStatusDrawable[a].setParticles(false, animated);
-            }
-        } else {
-            emojiStatusDrawable[a].set(getStatusPlaceholderDrawable(a), animated);
-            emojiStatusDrawable[a].setParticles(false, animated);
-        }
-        updateEmojiStatusDrawableColor();
-        return emojiStatusDrawable[a];
+        return null;
     }
 
     private float lastEmojiStatusProgress;
@@ -10967,9 +10857,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         nameTextViewRightDrawableContentDescription = LocaleController.getString(R.string.PremiumPreviewEmojiStatus);
                     } else if (user.self) {
                         rightIconIsStatus = false;
-                        rightIconIsPlaceholder = true;
+                        rightIconIsPlaceholder = false;
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(null, false, false, a));
-                        nameTextViewRightDrawableContentDescription = LocaleController.getString(R.string.SetEmojiStatus);
+                        nameTextViewRightDrawableContentDescription = null;
                     } else {
                         nameTextView[a].setRightDrawable(null);
                         nameTextViewRightDrawableContentDescription = null;
@@ -10988,7 +10878,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(user.emoji_status, true, true, a));
                     } else if (user.self) {
                         rightIconIsStatus = false;
-                        rightIconIsPlaceholder = true;
+                        rightIconIsPlaceholder = false;
                         nameTextView[a].setRightDrawable(getEmojiStatusDrawable(null, true, true, a));
                     } else {
                         nameTextView[a].setRightDrawable(null);
@@ -11005,11 +10895,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     nameTextView[a].setRightDrawableOutside(true);
                 }
                 nameTextView[a].setRightDrawableOnClick(null);
-                if (user.self) {
-                    nameTextView[a].setRightDrawableOnClick(v -> {
-                        showStatusSelect();
-                    });
-                }
+
 
             }
 

@@ -695,8 +695,8 @@ public class ChannelColorActivity extends BaseFragment implements NotificationCe
             }
         }
         profileHintRow = rowsCount++;
-        statusEmojiRow = rowsCount++;
-        statusHintRow = rowsCount++;
+        statusEmojiRow = -1;
+        statusHintRow = -1;
     }
 
     protected int getProfileInfoStrRes() {

@@ -917,7 +917,7 @@ public class ContentPreviewViewer {
                     icons.add(R.drawable.msg_send);
                     actions.add(0);
                 }
-                Boolean canSetAsStatus = delegate.canSetAsStatus(currentDocument);
+                Boolean canSetAsStatus = null; // Emoji status actions are removed from Monogram.
                 if (canSetAsStatus != null) {
                     if (canSetAsStatus) {
                         items.add(LocaleController.getString(R.string.SetAsEmojiStatus));

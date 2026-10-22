@@ -37,4 +37,17 @@ public class MonogramUiPreferencesTest {
         owner="replacement@example.org";assertEquals(MonogramUiPreferences.ROUND_FRONT,MonogramUiPreferences.roundVideoCamera(0));assertEquals(28,MonogramUiPreferences.avatarCorners(0));
         assertThrows(IllegalArgumentException.class,()->MonogramUiPreferences.setRoundVideoCamera(0,99));
     }
+    @Test public void messagePinsPersistAcrossReadsAndStayPrivateToOwnerAndPeer() {
+        String saved=owner;
+        MonogramMessagePins.save(0,owner,"chat@example.org",42,true,false);
+        MonogramMessagePins.save(0,owner,"chat@example.org",43,true,false);
+        assertEquals(new java.util.HashSet<>(java.util.Arrays.asList("42","43")),MonogramMessagePins.ids(0,owner,"chat@example.org"));
+        assertTrue(MonogramMessagePins.ids(0,owner,"other@example.org").isEmpty());
+        owner="replacement@example.org";assertTrue(MonogramMessagePins.ids(0,owner,"chat@example.org").isEmpty());
+        assertThrows(IllegalStateException.class,()->MonogramMessagePins.save(0,saved,"chat@example.org",42,false,false));
+        owner=saved;MonogramMessagePins.save(0,owner,"chat@example.org",42,false,false);
+        assertEquals(java.util.Collections.singleton("43"),MonogramMessagePins.ids(0,owner,"chat@example.org"));
+        MonogramMessagePins.save(0,owner,"chat@example.org",0,false,true);
+        assertTrue(MonogramMessagePins.ids(0,owner,"chat@example.org").isEmpty());
+    }
 }

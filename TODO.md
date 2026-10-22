@@ -949,3 +949,19 @@ Current user priorities (2026-10-22, supersede checklist integration):
 - [ ] Complete remaining Exteragram customization parity and interactive checklist integration.
 
 Release validation: Nix arm64 packaging, ten focused native checks and five core checks passed. APK version 0.2.142 (73179), original signer; scoped APK audit passed. SHA-256 `b4827bd1449a25b5905ba7785a4eced24373a9481d5ca6880d559833f87364c1`. No real messages, stories or bio edits sent during validation.
+
+## 0.2.143 — theme variant restart persistence
+
+- [x] Native theme switching now saves the complete generated accent for IDs >= 100, not just its selected ID. Local default-theme color presets therefore retain their colors across process restart. Built-in accents still use the index-only path.
+
+- [x] Remove emoji-status selection and status rendering, including the self-profile placeholder and group appearance row; old cached statuses are ignored.
+- [x] Connect the native profile Posts request to active XMPP stories, with descending ID pagination, cached URL restoration and HTTPS thumbnail rendering. Active story updates also populate existing profile lists. Expired-story archive/persistent profile posts remain unimplemented.
+
+- [x] Persistent device-local message pins: native Pin/Unpin/Unpin all, pinned banner/list and pinned-message search; account/JID/chat-scoped persistence, deleted-message filtering. Confirmation explicitly states device-only; no shared-pin protocol is claimed.
+- [x] GitHub updater: latest stable release from doromiert/monogram, exact ABI asset selection; reuse native optional update sheet and progress/install UI. Six-hour foreground check throttle, manual Settings check, bounded download, SHA-256/package/version/signer verification. User still confirms Android installation.
+- [ ] Forwarding with original-sender attribution using XEP-0297 and native Forwarded from header; mark as forwarded attribution rather than verified authorship, support encrypted payload transport and other-client capability handling.
+- [o] Supplied kkinstagram video embed: inspect bot-facing metadata/redirect behavior and native player mapping before release.
+
+- [x] Embed fixes: kkinstagram/kkclip crawlers receive media redirects while ordinary user agents receive an ad/interstitial page. Request bot-facing responses with Monogram identification, preserve safe HTTPS media redirects, render direct image previews and recognize OpenGraph MP4/WebM players. Native player now recognizes signed video URLs with query strings. No arbitrary OpenGraph HTML iframe execution. Supplied URL currently returns a JPEG to crawlers, not a video. Invalidate old failed preview cache rows; actual on-phone player acceptance pending.
+
+0.2.143 release validation: Nix arm64 packaging and 22 focused native theme/preferences/pins/updater/preview checks pass. Corrected the app module's missing AndroidX core dependency required by the reused native updater sheet. The app HTTP reader reached the supplied kkinstagram media redirect without downloading its body. Original signer and scoped APK audit pass; installed through 192.168.1.128:46869, package reports 0.2.143 (73189). SHA-256 `8a70b131cb41c20d9441f89f2149dfd6f196e96200980c9030654b096f1e3513`. No real messages/stories/bio changes sent, and no on-phone playback or future-release installer interaction performed. Old unsaved theme colors cannot be reconstructed: reselect the desired variant once after updating.

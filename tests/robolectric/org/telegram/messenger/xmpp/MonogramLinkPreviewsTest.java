@@ -143,4 +143,15 @@ public class MonogramLinkPreviewsTest {
         store.getWritableDatabase().execSQL("DROP TABLE link_previews");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_tag_names");store.getWritableDatabase().setVersion(27);store.close();store=new MonogramStore(context,"previews.db");
         assertEquals(29,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
     }
+    @Test public void keepsDirectMediaRedirectsAndSignedVideoUrlsWithoutAcceptingHtmlPlayers() throws Exception {
+        java.net.URI page=new java.net.URI("https://example.org/post");
+        java.util.Map<String,String> image=MonogramLinkPreviews.directMetadata(new java.net.URI("https://cdn.example.org/photo.jpg?token=abc"),"image/jpeg",page);
+        assertEquals("https://cdn.example.org/photo.jpg?token=abc",image.get("og:image"));
+        assertEquals("photo",MonogramLinkPreviews.previewType(image,false));
+        java.util.Map<String,String> video=MonogramLinkPreviews.metadata("<meta property='og:video:secure_url' content='https://cdn.example.org/clip.mp4?token=abc&amp;x=2'><meta property='og:video:type' content='video/mp4'>");
+        assertEquals("https://cdn.example.org/clip.mp4?token=abc&x=2",MonogramLinkPreviews.videoUrl(video,page));
+        video.put("og:video:secure_url","javascript:alert(1)");assertNull(MonogramLinkPreviews.videoUrl(video,page));
+        video.put("og:video:secure_url","https://example.org/player.html");assertNull(MonogramLinkPreviews.videoUrl(video,page));
+        assertThrows(java.io.IOException.class,()->MonogramLinkPreviews.directMetadata(page,"text/html",page));
+    }
 }

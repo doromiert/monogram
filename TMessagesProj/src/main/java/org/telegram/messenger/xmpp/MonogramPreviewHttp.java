@@ -70,7 +70,9 @@ final class MonogramPreviewHttp {
                     if(!permitted.getAsBoolean()) throw new IOException("Preview cancelled");
                     String path=url.getRawPath();if(path==null || path.isEmpty()) path="/";
                     if(url.getRawQuery()!=null) path+="?"+url.getRawQuery();
-                    String request="GET "+path+" HTTP/1.1\r\nHost: "+url.getRawAuthority()+"\r\nUser-Agent: Monogram-LinkPreview/1\r\nAccept: text/html, application/json, image/jpeg, image/png, image/webp\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+                    String agent=(host.equals("kkinstagram.com") || host.equals("www.kkinstagram.com") || host.equals("kkclip.com") || host.equals("www.kkclip.com"))
+                            ? "TelegramBot (Monogram-LinkPreview/1)" : "Monogram-LinkPreview/1";
+                    String request="GET "+path+" HTTP/1.1\r\nHost: "+url.getRawAuthority()+"\r\nUser-Agent: "+agent+"\r\nAccept: text/html, application/json, image/jpeg, image/png, image/webp\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
                     socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));socket.getOutputStream().flush();
                     InputStream input=new BufferedInputStream(socket.getInputStream());
                     String[] status=line(input,permitted).split(" ",3);
@@ -94,6 +96,8 @@ final class MonogramPreviewHttp {
                     String encoding=headers.get("content-encoding");if(encoding!=null && !encoding.equalsIgnoreCase("identity")) throw new IOException("Unsupported preview encoding");
                     String type=headers.getOrDefault("content-type","");
                     boolean html=type.toLowerCase(Locale.ROOT).startsWith("text/html") || type.toLowerCase(Locale.ROOT).startsWith("application/xhtml+xml");
+                    // Some embed services redirect crawlers directly to media. Inspect metadata without downloading a video.
+                    if(htmlPrefix && (type.toLowerCase(Locale.ROOT).startsWith("image/") || type.toLowerCase(Locale.ROOT).startsWith("video/"))) return new Response(url,type,new byte[0]);
                     return new Response(url,type,body(input,headers,limit,permitted,htmlPrefix && html));
                 }
             }

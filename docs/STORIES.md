@@ -9,3 +9,5 @@ Local account/JID-scoped metadata supports immediate cached display, local read 
 Public/custom audiences, viewer receipts, story reactions and media editing are not implemented. Cross-client publication was not exercised against real contacts during release validation. This is a protocol/UI baseline, not complete Telegram or Monocles story parity.
 
 References: https://xmpp.org/extensions/xep-0501.html and https://codeberg.org/monocles/monocles_chat .
+
+In 0.2.143 the native profile Posts grid also reads active XMPP stories, using stable descending IDs for paging and restoring remote media URLs after native cache loads. This does not make stories permanent profile posts. Expired-story archiving remains unsupported.

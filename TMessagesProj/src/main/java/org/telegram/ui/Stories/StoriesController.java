@@ -3429,6 +3429,9 @@ public class StoriesController {
                             TL_stories.StoryItem storyItem = TL_stories.StoryItem.TLdeserialize(data, data.readInt32(true), true);
                             storyItem.dialogId = dialogId;
                             storyItem.messageId = storyItem.id;
+                            if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restoreStory(dialogId, storyItem);
+                            }
                             MessageObject msg = new MessageObject(currentAccount, storyItem);
                             for (TLRPC.PrivacyRule rule : storyItem.privacy) {
                                 if (rule instanceof TLRPC.TL_privacyValueDisallowUsers) {
@@ -3963,6 +3966,10 @@ public class StoriesController {
                 }
                 boolean contains = loadedObjects.contains(storyItem.id) || cachedObjects.contains(storyItem.id);
                 boolean shouldContain = type == TYPE_ARCHIVE || storyItem.pinned;
+                if (type == TYPE_PINNED && storyItem.expire_date > System.currentTimeMillis() / 1000
+                        && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                    shouldContain = true;
+                }
                 if (albumId > 0) {
                     shouldContain = storyItem.albums != null && storyItem.albums.contains(albumId);
                 }
@@ -4046,6 +4053,9 @@ public class StoriesController {
         }
 
         private MessageObject toMessageObject(TL_stories.StoryItem storyItem, TL_stories.TL_stories_stories stories) {
+            if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restoreStory(dialogId, storyItem);
+            }
             storyItem.dialogId = dialogId;
             storyItem.messageId = storyItem.id;
             MessageObject msg = new MessageObject(currentAccount, storyItem);

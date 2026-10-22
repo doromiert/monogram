@@ -3286,6 +3286,7 @@ public final class MonogramController {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
         boolean cached = MonogramLocalFilters.supports(request)
+                || request instanceof TLRPC.TL_messages_updatePinnedMessage || request instanceof TLRPC.TL_messages_unpinAllMessages
                 || request instanceof TLRPC.TL_messages_sendReaction && ((TLRPC.TL_messages_sendReaction)request).peer!=null && ((TLRPC.TL_messages_sendReaction)request).peer.user_id==self
                 || request instanceof TLRPC.TL_messages_getDefaultTagReactions || request instanceof TLRPC.TL_messages_getSavedReactionTags || request instanceof TLRPC.TL_messages_updateSavedReactionTag
                 || request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
@@ -3707,6 +3708,8 @@ public final class MonogramController {
             session().rooms.leave(store.jid(-leave.chat_id)); store.leaveRoom(-leave.chat_id); dirtyRoomBookmark(-leave.chat_id); publishRoom(-leave.chat_id);
             Updates result=new Updates(); result.date=now(); result.chats.add(store.roomChat(-leave.chat_id,self)); return result;
         }
+        TLObject pins=MonogramMessagePins.handle(account,accountJid(),store,self,request);
+        if(pins!=null) return pins;
         if (request instanceof TLRPC.TL_messages_getDialogs) return MonogramDialogState.dialogs(account,accountJid(),dialogs(),(TLRPC.TL_messages_getDialogs)request);
         if (request instanceof TLRPC.TL_messages_getPinnedDialogs) return MonogramDialogState.pinned(account,accountJid(),dialogs(),((TLRPC.TL_messages_getPinnedDialogs)request).folder_id);
         if (request instanceof TLRPC.TL_messages_getMessages) {
@@ -3723,7 +3726,8 @@ public final class MonogramController {
             TLRPC.TL_messages_messagesSlice result;
             if(request instanceof TLRPC.TL_messages_search) {
                 TLRPC.TL_messages_search query=(TLRPC.TL_messages_search)request;
-                result=store.search(self,searchPeer(query.peer),query.q,query.offset_id,query.add_offset,query.limit,
+                result=query.filter instanceof TLRPC.TL_inputMessagesFilterPinned ? MonogramMessagePins.search(account,accountJid(),store,self,query)
+                        : store.search(self,searchPeer(query.peer),query.q,query.offset_id,query.add_offset,query.limit,
                         searchPeer(query.from_id),query.min_date,query.max_date,query.filter,false,false,query.saved_reaction==null ? java.util.Collections.emptyList() : query.saved_reaction);
             } else {
                 TLRPC.TL_messages_searchGlobal query=(TLRPC.TL_messages_searchGlobal)request;

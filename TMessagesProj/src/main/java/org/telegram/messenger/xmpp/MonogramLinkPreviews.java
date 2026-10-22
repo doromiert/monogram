@@ -62,8 +62,8 @@ public final class MonogramLinkPreviews {
     synchronized void prepareCache() {
         String policyKey=key("fetch-policy");
         if(policyKey.equals(cachePolicyOwner)) return;
-        if(preferences.getInt(policyKey,0)<3) {
-            store.clearFailedLinkPreviews();store.expireYouTubeLinkPreviews();preferences.edit().putInt(policyKey,3).apply();
+        if(preferences.getInt(policyKey,0)<4) {
+            store.clearFailedLinkPreviews();store.expireYouTubeLinkPreviews();preferences.edit().putInt(policyKey,4).apply();
         }
         cachePolicyOwner=policyKey;
     }
@@ -95,12 +95,16 @@ public final class MonogramLinkPreviews {
         try {
             MonogramPreviewHttp.Response response=MonogramPreviewHttp.fetchHtml(url,metadataUrl==null ? 512*1024 : 1024*1024,allowed);
             String contentType=response.type.toLowerCase(Locale.ROOT);
+            if(contentType.startsWith("image/") || contentType.startsWith("video/")) {
+                fields=directMetadata(response.url,response.type,pageUrl);
+            } else {
             if(!contentType.startsWith("text/html") && !contentType.startsWith("application/xhtml+xml")) throw new IOException("Not an HTML preview");
             Charset charset=StandardCharsets.UTF_8;
             Matcher encoding=Pattern.compile("charset\\s*=\\s*[\"']?([-a-zA-Z0-9_]+)",Pattern.CASE_INSENSITIVE).matcher(response.type);
             if(encoding.find()) try { charset=Charset.forName(encoding.group(1)); } catch(IllegalArgumentException ignored) {}
             fields=metadata(new String(response.bytes,charset));pageUrl=metadataUrl==null ? response.url : pageUrl;
             if(fields.getOrDefault("og:title",fields.getOrDefault("title","")).isEmpty() || metadataUrl!=null && !fields.containsKey("og:title")) fields=null;
+            }
         } catch(IOException unavailable) { if(metadataUrl==null) throw unavailable; }
         if(fields==null && metadataUrl!=null) {
             MonogramPreviewHttp.Response response=MonogramPreviewHttp.fetch(metadataUrl,64*1024,allowed);
@@ -112,6 +116,11 @@ public final class MonogramLinkPreviews {
         page.type=previewType(fields,metadataUrl!=null);page.flags=1;page.site_name=fields.getOrDefault("og:site_name",page.display_url);page.flags|=2;
         page.title=fields.getOrDefault("og:title",fields.getOrDefault("title",""));if(!page.title.isEmpty()) page.flags|=4;
         page.description=fields.getOrDefault("og:description",fields.getOrDefault("description",""));if(!page.description.isEmpty()) page.flags|=8;
+        String directVideo=videoUrl(fields,pageUrl);
+        if(metadataUrl==null && directVideo!=null) {
+            page.type="video";page.embed_url=directVideo;page.embed_type=fields.getOrDefault("og:video:type","video/mp4");
+            page.embed_width=dimension(fields.get("og:video:width"),1280);page.embed_height=dimension(fields.get("og:video:height"),720);page.flags|=32|64;
+        }
         if(metadataUrl!=null) {
             // Only this locally constructed, validated first-party player URL reaches the native player.
             page.embed_url="https://www.youtube.com/embed/"+youtubeVideoId(MonogramPreviewHttp.safeUrl(url));page.embed_type="text/html";
@@ -138,13 +147,36 @@ public final class MonogramLinkPreviews {
                 TLRPC.TL_photo photo=new TLRPC.TL_photo();photo.id=page.id;photo.dc_id=LOCAL_DC;photo.file_reference=new byte[0];photo.date=(int)(System.currentTimeMillis()/1000);
                 TLRPC.TL_photoSize_layer127 size=new TLRPC.TL_photoSize_layer127();size.type="x";size.w=bitmap.getWidth();size.h=bitmap.getHeight();size.size=(int)destination.length();
                 size.location=new TLRPC.TL_fileLocation_layer82();size.location.volume_id=page.id;size.location.local_id=account;size.location.dc_id=LOCAL_DC;size.location.file_reference=new byte[0];photo.sizes.add(size);
-                page.photo=photo;page.flags|=16;page.has_large_media="video".equals(page.type);trimImages(directory);
+                page.photo=photo;page.flags|=16;page.has_large_media="video".equals(page.type) || "photo".equals(page.type);trimImages(directory);
             } finally { bitmap.recycle(); }
         } catch(Exception noImage) { /* A text preview still works when a site's image is unsafe/unavailable. */ }
         if(page.title.isEmpty() && page.description.isEmpty() && page.photo==null) throw new IOException("No preview metadata");
         return page;
     }
     /** Fixed public first-party endpoint; never discover/fetch arbitrary oEmbed URLs from remote markup. */
+    static Map<String,String> directMetadata(URI media,String contentType,URI original) throws IOException {
+        String type=contentType.toLowerCase(Locale.ROOT).split(";",2)[0].trim();
+        Map<String,String> fields=new HashMap<>();fields.put("og:title",original.getHost());fields.put("og:site_name",original.getHost());
+        String url=MonogramPreviewHttp.safeUrl(media.toASCIIString()).toASCIIString();
+        if(Arrays.asList("image/jpeg","image/png","image/webp").contains(type)) { fields.put("og:type","photo");fields.put("og:image",url); }
+        else if(type.equals("video/mp4") || type.equals("video/webm")) {
+            fields.put("og:type","video");fields.put("og:video",url);fields.put("og:video:type",type);
+        } else throw new IOException("Unsupported preview media");
+        return fields;
+    }
+    static String videoUrl(Map<String,String> fields,URI page) {
+        String value=fields.getOrDefault("og:video:secure_url",fields.getOrDefault("og:video:url",fields.get("og:video")));
+        if(value==null) return null;
+        try {
+            URI url=MonogramPreviewHttp.safeUrl(page.resolve(value).toASCIIString());
+            String path=url.getPath()==null ? "" : url.getPath().toLowerCase(Locale.ROOT);
+            String type=fields.getOrDefault("og:video:type","").toLowerCase(Locale.ROOT);
+            return (path.endsWith(".mp4") || path.endsWith(".webm")) ? url.toASCIIString() : null;
+        } catch(Exception unsafe) { return null; }
+    }
+    private static int dimension(String value,int fallback) {
+        try { int size=Integer.parseInt(value);return size>0 && size<=8192 ? size : fallback; } catch(Exception invalid) { return fallback; }
+    }
     static String youtubeMetadataUrl(URI url) {
         String id=youtubeVideoId(url);if(id==null) return null;
         return "https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D"+id+"&format=json";
@@ -163,7 +195,7 @@ public final class MonogramLinkPreviews {
     }
     static String previewType(Map<String,String> fields,boolean youtube) {
         String type=fields.getOrDefault("og:type","").toLowerCase(Locale.ROOT);
-        return youtube || type.equals("video") || type.startsWith("video.") ? "video" : "article";
+        return youtube || type.equals("video") || type.startsWith("video.") ? "video" : type.equals("photo") ? "photo" : "article";
     }
     static Map<String,String> youtubeMetadata(String json) throws IOException {
         try {
@@ -186,8 +218,8 @@ public final class MonogramLinkPreviews {
             Map<String,String> attributes=new HashMap<>();Matcher values=ATTR.matcher(tags.group());
             while(values.find()) attributes.put(values.group(1).toLowerCase(Locale.ROOT),values.group(2)!=null ? values.group(2) : values.group(3)!=null ? values.group(3) : values.group(4));
             String name=attributes.getOrDefault("property",attributes.getOrDefault("name","")).toLowerCase(Locale.ROOT),value=attributes.get("content");
-            if(value!=null && Arrays.asList("og:title","og:description","og:site_name","og:image","og:type","description").contains(name) && !result.containsKey(name))
-                result.put(name,clean(value,name.equals("og:image") ? 4096 : name.contains("description") ? 600 : 160));
+            if(value!=null && Arrays.asList("og:title","og:description","og:site_name","og:image","og:type","description","og:video","og:video:url","og:video:secure_url","og:video:type","og:video:width","og:video:height").contains(name) && !result.containsKey(name))
+                result.put(name,clean(value,name.equals("og:image") || name.equals("og:video") || name.endsWith(":url") || name.endsWith(":secure_url") ? 4096 : name.contains("description") ? 600 : 160));
         }
         Matcher title=TITLE.matcher(html);if(title.find()) result.put("title",clean(title.group(1),160));return result;
     }

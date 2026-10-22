@@ -9303,25 +9303,10 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
-    private boolean explainUnavailableMessagePins() {
-        if (!org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) return false;
-        AndroidUtilities.runOnUIThread(() -> {
-            BaseFragment fragment = org.telegram.ui.LaunchActivity.getSafeLastFragment();
-            if (fragment != null && fragment.getParentActivity() != null) {
-                fragment.showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getParentActivity())
-                        .setTitle("Message pins")
-                        .setMessage("Shared message pins aren't available for this XMPP conversation yet.")
-                        .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
-            }
-        });
-        return true;
-    }
-
     public void unpinAllMessages(TLRPC.Chat chat, TLRPC.User user) {
         if (chat == null && user == null) {
             return;
         }
-        if (explainUnavailableMessagePins()) return;
         TLRPC.TL_messages_unpinAllMessages req = new TLRPC.TL_messages_unpinAllMessages();
         req.peer = getInputPeer(chat != null ? -chat.id : user.id);
         getConnectionsManager().sendRequest(req, (response, error) -> {
@@ -9342,7 +9327,6 @@ public class MessagesController extends BaseController implements NotificationCe
         if (chat == null && user == null) {
             return;
         }
-        if (explainUnavailableMessagePins()) return;
         TLRPC.TL_messages_updatePinnedMessage req = new TLRPC.TL_messages_updatePinnedMessage();
         req.peer = getInputPeer(chat != null ? -chat.id : user.id);
         req.id = id;

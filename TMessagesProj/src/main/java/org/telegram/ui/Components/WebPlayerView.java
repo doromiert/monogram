@@ -2100,7 +2100,7 @@ public class WebPlayerView extends ViewGroup implements VideoPlayer.VideoPlayerD
 
     public boolean canHandleUrl(String url) {
         if (url != null) {
-            if (url.endsWith(".mp4")) {
+            if (isDirectVideoUrl(url)) {
                 return true;
             } else {
                 try {
@@ -2186,6 +2186,16 @@ public class WebPlayerView extends ViewGroup implements VideoPlayer.VideoPlayerD
         showProgress(true, false);
     }
 
+    private static boolean isDirectVideoUrl(String url) {
+        if (url == null) return false;
+        try {
+            android.net.Uri uri = android.net.Uri.parse(url);
+            String path = uri.getPath();
+            return "https".equalsIgnoreCase(uri.getScheme()) && path != null
+                    && (path.toLowerCase(java.util.Locale.ROOT).endsWith(".mp4") || path.toLowerCase(java.util.Locale.ROOT).endsWith(".webm"));
+        } catch (Exception invalid) { return false; }
+    }
+
     public boolean loadVideo(String url, TLRPC.Photo thumb, Object parentObject, String originalUrl, boolean autoplay) {
         String youtubeId = null;
         String vimeoId = null;
@@ -2199,7 +2209,7 @@ public class WebPlayerView extends ViewGroup implements VideoPlayer.VideoPlayerD
         String aparatId = null;
         seekToTime = -1;
         if (coubId == null && url != null) {
-            if (url.endsWith(".mp4")) {
+            if (isDirectVideoUrl(url)) {
                 mp4File = url;
             } else {
                 try {
