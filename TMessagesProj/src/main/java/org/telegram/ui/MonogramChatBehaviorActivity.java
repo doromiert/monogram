@@ -4,6 +4,7 @@ package org.telegram.ui;
 import android.view.View;
 import java.util.ArrayList;
 import org.telegram.messenger.xmpp.MonogramChatBehavior;
+import org.telegram.ui.Business.QuickRepliesActivity;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 
@@ -13,6 +14,9 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         items.add(UItem.asButton(14,"Automatic link embeds"));
         items.add(UItem.asShadow("Create link previews on this device, including an optional setting for encrypted chats."));
+        items.add(UItem.asHeader("Messaging"));
+        items.add(UItem.asButton(15,"Quick replies"));
+        items.add(UItem.asShadow("Create reusable replies stored on this device. They are sent as ordinary messages and do not require a subscription."));
         items.add(UItem.asHeader("Keyboard"));
         items.add(UItem.asCheck(1,"Hide keyboard on scroll").setChecked(MonogramChatBehavior.hideKeyboardOnScroll(currentAccount)));
         items.add(UItem.asShadow("Dragging the conversation closes the keyboard or emoji panel."));
@@ -46,6 +50,12 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(item.id==14) { presentFragment(new MonogramLinkPreviewsActivity(currentAccount));return; }
+        if(item.id==15) {
+            QuickRepliesActivity fragment=new QuickRepliesActivity();
+            fragment.setCurrentAccount(currentAccount);
+            presentFragment(fragment);
+            return;
+        }
         if(item.id==1) MonogramChatBehavior.hideKeyboardOnScroll(currentAccount,!MonogramChatBehavior.hideKeyboardOnScroll(currentAccount));
         else if(item.id==2) MonogramChatBehavior.commaAfterMention(currentAccount,!MonogramChatBehavior.commaAfterMention(currentAccount));
         else if(item.id==3) MonogramChatBehavior.showSaveButton(currentAccount,!MonogramChatBehavior.showSaveButton(currentAccount));

@@ -39,6 +39,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.xmpp.MonogramController;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -207,9 +208,13 @@ public class TranscribeButton {
         }
         clickedToOpen = false;
         boolean processClick, toOpen = !shouldBeOpen;
+        final boolean hasSavedTranscription = hasSavedTranscription(parent.getMessageObject());
+        if (toOpen && !hasSavedTranscription && !canRequestTranscription(parent.getMessageObject())) {
+            return;
+        }
         if (!shouldBeOpen) {
             processClick = !loading;
-            if ((premium || canTranscribeTrial(parent.getMessageObject())) && parent.getMessageObject().isSent()) {
+            if (!hasSavedTranscription && (premium || canTranscribeTrial(parent.getMessageObject())) && parent.getMessageObject().isSent()) {
                 setLoading(true, true);
             }
         } else {
@@ -223,7 +228,12 @@ public class TranscribeButton {
         }
         pressed = false;
         if (processClick) {
-            if (!premium && toOpen) {
+            if (hasSavedTranscription) {
+                if (toOpen) {
+                    clickedToOpen = true;
+                }
+                transcribePressed(parent.getMessageObject(), toOpen, parent.getDelegate());
+            } else if (!premium && toOpen) {
                 if (canTranscribeTrial(parent.getMessageObject()) || parent.getMessageObject() != null && parent.getMessageObject().messageOwner != null && !TextUtils.isEmpty(parent.getMessageObject().messageOwner.voiceTranscription)) {
                     transcribePressed(parent.getMessageObject(), toOpen, parent.getDelegate());
                 } else {
@@ -639,6 +649,16 @@ public class TranscribeButton {
     private static HashMap<Integer, MessageObject> transcribeOperationsByDialogPosition;
     private static ArrayList<Integer> videoTranscriptionsOpen;
 
+    public static boolean canRequestTranscription(MessageObject messageObject) {
+        return messageObject != null && MonogramController.get(messageObject.currentAccount).accountJid().isEmpty();
+    }
+
+    public static boolean hasSavedTranscription(MessageObject messageObject) {
+        return messageObject != null && messageObject.messageOwner != null
+                && messageObject.messageOwner.voiceTranscriptionFinal
+                && !TextUtils.isEmpty(messageObject.messageOwner.voiceTranscription);
+    }
+
     public static void openVideoTranscription(MessageObject messageObject) {
         if (messageObject == null || isVideoTranscriptionOpen(messageObject)) {
             return;
@@ -684,6 +704,9 @@ public class TranscribeButton {
                     NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.voiceTranscriptionUpdate, messageObject, null, null, (Boolean) true, (Boolean) true);
                 });
             } else {
+                if (!canRequestTranscription(messageObject)) {
+                    return;
+                }
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d("sending Transcription request, msg_id=" + messageId + " dialog_id=" + dialogId);
                 }
@@ -805,7 +828,7 @@ public class TranscribeButton {
     }
 
     public static void showOffTranscribe(MessageObject messageObject, boolean notify) {
-        if (messageObject == null || messageObject.messageOwner == null) {
+        if (messageObject == null || messageObject.messageOwner == null || !canRequestTranscription(messageObject)) {
             return;
         }
         final MessageObject finalMessageObject = messageObject;
@@ -819,7 +842,7 @@ public class TranscribeButton {
     }
 
     public static boolean canTranscribeTrial(MessageObject messageObject) {
-        if (messageObject == null || messageObject.messageOwner == null) {
+        if (messageObject == null || messageObject.messageOwner == null || !canRequestTranscription(messageObject)) {
             return false;
         }
         ConnectionsManager cc = ConnectionsManager.getInstance(messageObject.currentAccount);
@@ -834,7 +857,7 @@ public class TranscribeButton {
     }
 
     public static boolean isFreeTranscribeInChat(MessageObject messageObject) {
-        if (messageObject == null || messageObject.messageOwner == null) {
+        if (messageObject == null || messageObject.messageOwner == null || !canRequestTranscription(messageObject)) {
             return false;
         }
         MessagesController mc = MessagesController.getInstance(messageObject.currentAccount);
@@ -843,6 +866,9 @@ public class TranscribeButton {
     }
 
     public static int getTranscribeTrialCount(int currentAccount) {
+        if (!MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            return 0;
+        }
         ConnectionsManager cc = ConnectionsManager.getInstance(currentAccount);
         MessagesController mc = MessagesController.getInstance(currentAccount);
         if (mc.transcribeAudioTrialWeeklyNumber <= 0) {
@@ -854,7 +880,7 @@ public class TranscribeButton {
     }
 
     public static boolean showTranscribeLock(MessageObject messageObject) {
-        if (messageObject == null || messageObject.messageOwner == null) {
+        if (messageObject == null || messageObject.messageOwner == null || !canRequestTranscription(messageObject)) {
             return false;
         }
         if (isFreeTranscribeInChat(messageObject)) {

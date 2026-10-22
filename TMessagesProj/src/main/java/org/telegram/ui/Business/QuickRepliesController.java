@@ -1,11 +1,14 @@
 package org.telegram.ui.Business;
 
 import android.text.TextUtils;
+import android.content.Context;
+import android.content.SharedPreferences;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MediaDataController;
@@ -15,6 +18,8 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.xmpp.MonogramController;
+import org.telegram.messenger.xmpp.MonogramQuickReplies;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLRPC;
@@ -82,6 +87,7 @@ public class QuickRepliesController {
     }
 
     public boolean canAddNew() {
+        if (isMonogramAccount()) return true;
         boolean containsGreeting = false;
         boolean containsAway = false;
         for (int i = 0; i < replies.size(); ++i) {
@@ -109,6 +115,85 @@ public class QuickRepliesController {
 
     private boolean loading;
     private boolean loaded;
+    private String loadedMonogramJid;
+
+    private boolean isMonogramAccount() {
+        return !MonogramController.get(currentAccount).accountJid().isEmpty();
+    }
+
+    private String monogramJid() {
+        return MonogramController.get(currentAccount).accountJid();
+    }
+
+    private SharedPreferences monogramAttachments() {
+        return ApplicationLoader.applicationContext.getSharedPreferences("monogram-quick-reply-attachments", Context.MODE_PRIVATE);
+    }
+
+    private String monogramAttachmentKey(int replyId, int messageId) {
+        return currentAccount + "\n" + monogramJid() + "\n" + replyId + "\n" + messageId;
+    }
+
+    private void rememberMonogramAttachment(int replyId, TLRPC.Message message) {
+        if (message != null && message.attachPath != null && !message.attachPath.isEmpty()) {
+            monogramAttachments().edit().putString(monogramAttachmentKey(replyId, message.id), message.attachPath).apply();
+        }
+    }
+
+    private void restoreMonogramAttachments(int replyId, ArrayList<TLRPC.Message> messages) {
+        SharedPreferences attachments = monogramAttachments();
+        for (TLRPC.Message message : messages) {
+            String path = attachments.getString(monogramAttachmentKey(replyId, message.id), null);
+            if (path != null) message.attachPath = path;
+        }
+    }
+
+    private void clearMonogramAttachments(int replyId) {
+        String prefix = currentAccount + "\n" + monogramJid() + "\n" + replyId + "\n";
+        SharedPreferences.Editor editor = monogramAttachments().edit();
+        boolean changed = false;
+        for (String key : monogramAttachments().getAll().keySet()) {
+            if (key.startsWith(prefix)) {
+                editor.remove(key);
+                changed = true;
+            }
+        }
+        if (changed) editor.apply();
+    }
+
+    private QuickReply fromMonogram(MonogramQuickReplies.Reply source) {
+        QuickReply reply = new QuickReply();
+        reply.id = source.id;
+        reply.name = source.name;
+        reply.order = source.order;
+        reply.messagesCount = source.messageCount();
+        ArrayList<TLRPC.Message> messages = source.messages();
+        restoreMonogramAttachments(source.id, messages);
+        if (!messages.isEmpty()) {
+            TLRPC.Message message = messages.get(0);
+            message.flags |= 1073741824;
+            message.quick_reply_shortcut_id = reply.id;
+            reply.topMessageId = message.id;
+            reply.topMessage = new MessageObject(currentAccount, message, false, true);
+            reply.topMessage.generateThumbs(false);
+            reply.topMessage.applyQuickReply(reply.name, reply.id);
+        }
+        return reply;
+    }
+
+    private void loadMonogramReplies() {
+        String owner = monogramJid();
+        ArrayList<QuickReply> result = new ArrayList<>();
+        for (MonogramQuickReplies.Reply source : MonogramQuickReplies.list(currentAccount, owner)) {
+            result.add(fromMonogram(source));
+        }
+        loading = false;
+        loaded = true;
+        loadedMonogramJid = owner;
+        replies.clear();
+        replies.addAll(result);
+        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.quickRepliesUpdated);
+    }
+
     public void load() {
 //        if (!UserConfig.getInstance(currentAccount).isPremium()) return;
         load(true, null);
@@ -117,7 +202,18 @@ public class QuickRepliesController {
         load(cache, null);
     }
     private void load(boolean cache, Runnable whenLoaded) {
+        if (isMonogramAccount() && !TextUtils.equals(loadedMonogramJid, monogramJid())) {
+            loaded = false;
+            loading = false;
+            replies.clear();
+        }
         if (loading || loaded) return;
+        if (isMonogramAccount()) {
+            loading = true;
+            loadMonogramReplies();
+            if (whenLoaded != null) whenLoaded.run();
+            return;
+        }
         loading = true;
         if (cache) {
             MessagesStorage storage = MessagesStorage.getInstance(currentAccount);
@@ -366,17 +462,29 @@ public class QuickRepliesController {
     }
 
     public boolean isNameBusy(String name, int exceptId) {
+        if (isMonogramAccount()) return MonogramQuickReplies.nameTaken(currentAccount, monogramJid(), name, exceptId);
         QuickReply reply = findReply(name);
         return reply != null && reply.id != exceptId;
     }
 
     public long getTopicId(String quick_shortcut) {
+        if (isMonogramAccount()) {
+            MonogramQuickReplies.Reply reply = MonogramQuickReplies.find(currentAccount, monogramJid(), quick_shortcut);
+            return reply == null ? 0 : reply.id;
+        }
         QuickReply reply = findReply(quick_shortcut);
         if (reply != null) return reply.id;
         return 0;
     }
 
     public void removeReply(long topicId) {
+        if (isMonogramAccount()) {
+            if (MonogramQuickReplies.delete(currentAccount, monogramJid(), (int) topicId)) {
+                clearMonogramAttachments((int) topicId);
+                loadMonogramReplies();
+            }
+            return;
+        }
         QuickReply reply = null;
         for (int i = 0; i < replies.size(); ++i) {
             if (replies.get(i).id == topicId) {
@@ -404,6 +512,15 @@ public class QuickRepliesController {
     }
 
     public void reorder() {
+        if (isMonogramAccount()) {
+            ArrayList<QuickReply> ordered = new ArrayList<>(replies);
+            Collections.sort(ordered, (a, b) -> a.order - b.order);
+            ArrayList<Integer> ids = new ArrayList<>();
+            for (QuickReply reply : ordered) ids.add(reply.id);
+            MonogramQuickReplies.reorder(currentAccount, monogramJid(), ids);
+            loadMonogramReplies();
+            return;
+        }
         ArrayList<Integer> oldOrder = new ArrayList<>();
         for (int i = 0; i < replies.size(); ++i) {
             oldOrder.add(replies.get(i).id);
@@ -429,6 +546,11 @@ public class QuickRepliesController {
     }
 
     public void renameReply(int topicId, String name) {
+        if (isMonogramAccount()) {
+            MonogramQuickReplies.rename(currentAccount, monogramJid(), topicId, name);
+            loadMonogramReplies();
+            return;
+        }
         QuickReply reply = findReply(topicId);
         if (reply == null) return;
         final String oldName = reply.name;
@@ -445,6 +567,17 @@ public class QuickRepliesController {
     }
 
     public void deleteReplies(ArrayList<Integer> ids) {
+        if (isMonogramAccount()) {
+            boolean changed = false;
+            for (Integer id : new ArrayList<>(ids)) {
+                if (MonogramQuickReplies.delete(currentAccount, monogramJid(), id)) {
+                    clearMonogramAttachments(id);
+                    changed = true;
+                }
+            }
+            if (changed) loadMonogramReplies();
+            return;
+        }
         for (int i = 0; i < ids.size(); ++i) {
             if (findReply(ids.get(i)) == null) {
                 ids.remove(i);
@@ -708,6 +841,107 @@ public class QuickRepliesController {
         return false;
     }
 
+    /**
+     * Stores a message composed in the native quick-reply editor.  XMPP callers must invoke this
+     * instead of asking Telegram to create a shortcut, then acknowledge the local send normally.
+     */
+    public QuickReply recordMonogramTemplateMessage(String shortcut, int shortcutId, TLRPC.Message message) {
+        if (!isMonogramAccount()) throw new IllegalStateException("Not an XMPP account");
+        if (message == null) throw new IllegalArgumentException("Quick reply message is required");
+        MonogramQuickReplies.Reply template;
+        if (shortcutId != 0) {
+            template = MonogramQuickReplies.find(currentAccount, monogramJid(), shortcutId);
+            if (template == null) throw new IllegalArgumentException("Quick reply does not exist");
+            ArrayList<TLRPC.Message> messages = template.messages();
+            restoreMonogramAttachments(template.id, messages);
+            messages.add(message);
+            template = MonogramQuickReplies.replaceMessages(currentAccount, monogramJid(), template.id, messages);
+        } else {
+            template = MonogramQuickReplies.find(currentAccount, monogramJid(), shortcut);
+            if (template == null) {
+                ArrayList<TLRPC.Message> messages = new ArrayList<>();
+                messages.add(message);
+                template = MonogramQuickReplies.create(currentAccount, monogramJid(), shortcut, messages);
+            } else {
+                ArrayList<TLRPC.Message> messages = template.messages();
+                restoreMonogramAttachments(template.id, messages);
+                messages.add(message);
+                template = MonogramQuickReplies.replaceMessages(currentAccount, monogramJid(), template.id, messages);
+            }
+        }
+        message.flags |= 1073741824;
+        message.quick_reply_shortcut_id = template.id;
+        rememberMonogramAttachment(template.id, message);
+        loadMonogramReplies();
+        return findReply(template.id);
+    }
+
+    /** Replaces one native editor item without changing the rest of its template. */
+    public QuickReply replaceMonogramTemplateMessage(int shortcutId, int messageId, TLRPC.Message replacement) {
+        if (!isMonogramAccount()) throw new IllegalStateException("Not an XMPP account");
+        if (replacement == null) throw new IllegalArgumentException("Quick reply message is required");
+        MonogramQuickReplies.Reply template = MonogramQuickReplies.find(currentAccount, monogramJid(), shortcutId);
+        if (template == null) throw new IllegalArgumentException("Quick reply does not exist");
+        ArrayList<TLRPC.Message> messages = template.messages();
+        restoreMonogramAttachments(template.id, messages);
+        boolean replaced = false;
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).id == messageId) {
+                messages.set(i, replacement);
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) throw new IllegalArgumentException("Quick reply message does not exist");
+        template = MonogramQuickReplies.replaceMessages(currentAccount, monogramJid(), template.id, messages);
+        replacement.flags |= 1073741824;
+        replacement.quick_reply_shortcut_id = template.id;
+        rememberMonogramAttachment(template.id, replacement);
+        loadMonogramReplies();
+        return findReply(template.id);
+    }
+
+    public boolean deleteMonogramTemplateMessage(int shortcutId, int messageId) {
+        if (!isMonogramAccount()) throw new IllegalStateException("Not an XMPP account");
+        MonogramQuickReplies.Reply template = MonogramQuickReplies.find(currentAccount, monogramJid(), shortcutId);
+        if (template == null) return false;
+        ArrayList<TLRPC.Message> messages = template.messages();
+        restoreMonogramAttachments(template.id, messages);
+        boolean removed = false;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).id == messageId) {
+                messages.remove(i);
+                removed = true;
+                break;
+            }
+        }
+        if (!removed) return false;
+        if (messages.isEmpty()) {
+            MonogramQuickReplies.delete(currentAccount, monogramJid(), template.id);
+            clearMonogramAttachments(template.id);
+        } else {
+            MonogramQuickReplies.replaceMessages(currentAccount, monogramJid(), template.id, messages);
+            monogramAttachments().edit().remove(monogramAttachmentKey(template.id, messageId)).apply();
+        }
+        loadMonogramReplies();
+        return true;
+    }
+
+    /** Returns ordinary XMPP-send snapshots for a template selected from the native picker. */
+    public MonogramQuickReplies.Outgoing monogramOutgoing(int shortcutId) {
+        if (!isMonogramAccount()) return null;
+        MonogramQuickReplies.Outgoing outgoing = MonogramQuickReplies.outgoing(currentAccount, monogramJid(), shortcutId);
+        if (outgoing != null) {
+            restoreMonogramAttachments(shortcutId, outgoing.messages);
+            for (TLRPC.Message message : outgoing.messages) {
+                message.flags |= 1073741824;
+                message.quick_reply_shortcut_id = shortcutId;
+                message.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
+            }
+        }
+        return outgoing;
+    }
+
     public void checkLocalMessages(ArrayList<MessageObject> messages) {
         for (MessageObject message : messages) {
             if (!message.isSending()) continue;
@@ -769,6 +1003,12 @@ public class QuickRepliesController {
 
     public void sendQuickReplyTo(long dialogId, QuickRepliesController.QuickReply reply) {
         if (reply == null) return;
+        if (isMonogramAccount()) {
+            MonogramQuickReplies.Outgoing outgoing = monogramOutgoing(reply.id);
+            if (outgoing == null) throw new IllegalArgumentException("Quick reply does not exist");
+            MonogramController.get(currentAccount).sendQuickReply(dialogId, outgoing);
+            return;
+        }
 
         TLRPC.TL_messages_sendQuickReplyMessages req = new TLRPC.TL_messages_sendQuickReplyMessages();
         req.peer = MessagesController.getInstance(currentAccount).getInputPeer(dialogId);

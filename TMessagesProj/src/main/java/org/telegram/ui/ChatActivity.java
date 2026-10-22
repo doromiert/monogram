@@ -252,7 +252,6 @@ import org.telegram.ui.Components.FloatingDebug.FloatingDebugController;
 import org.telegram.ui.Components.FloatingDebug.FloatingDebugProvider;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.EmojiStatusPreviewSheet;
-import org.telegram.ui.Components.Premium.boosts.BoostDialogs;
 import org.telegram.ui.Components.Reactions.ChatSelectionReactionMenuOverlay;
 import org.telegram.ui.Components.Reactions.ReactionsEffectOverlay;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
@@ -2141,14 +2140,6 @@ public class ChatActivity extends BaseFragment implements
                 chatActivityEnterView.getEmojiView().onMessageSend();
             }
 
-            if (!getMessagesController().premiumFeaturesBlocked() && getMessagesController().transcribeAudioTrialWeeklyNumber <= 0 && !getMessagesController().didPressTranscribeButtonEnough() && !getUserConfig().isPremium() && !TextUtils.isEmpty(message) && messages != null) {
-                for (int i = 1; i < Math.min(5, messages.size()); ++i) {
-                    MessageObject msg = messages.get(i);
-                    if (msg != null && !msg.isOutOwner() && (msg.isVoice() || msg.isRoundVideo()) && msg.isContentUnread()) {
-                        TranscribeButton.showOffTranscribe(msg);
-                    }
-                }
-            }
         }
 
         @Override
@@ -13078,12 +13069,10 @@ public class ChatActivity extends BaseFragment implements
         }
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         int moreemojihint;
-        if ((moreemojihint = preferences.getInt("moreemojihint", 0)) > 3 && UserConfig.getInstance(currentAccount).isPremium()) {
+        if ((moreemojihint = preferences.getInt("moreemojihint", 0)) > 3) {
             return false;
         }
-        if (UserConfig.getInstance(currentAccount).isPremium()) {
-            preferences.edit().putInt("moreemojihint", moreemojihint + 1).commit();
-        }
+        preferences.edit().putInt("moreemojihint", moreemojihint + 1).apply();
 
         if (getParentActivity() == null || fragmentView == null || emojiHintTextView != null) {
             return false;
@@ -26819,14 +26808,6 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onBecomeFullyHidden() {
         hideTagSelector();
-        if (!getMessagesController().premiumFeaturesBlocked() && getMessagesController().transcribeAudioTrialWeeklyNumber <= 0 && !getMessagesController().didPressTranscribeButtonEnough() && !getUserConfig().isPremium() && messages != null) {
-            for (int i = 0; i < messages.size(); ++i) {
-                MessageObject msg = messages.get(i);
-                if (msg != null && !msg.isOutOwner() && (msg.isVoice() || msg.isRoundVideo()) && !msg.isUnread() && (msg.isContentUnread() || ChatObject.isChannelAndNotMegaGroup(currentChat))) {
-                    TranscribeButton.showOffTranscribe(msg, false);
-                }
-            }
-        }
         isFullyVisible = false;
         hideUndoViews();
         TranscribeButton.resetVideoTranscriptionsOpen();
@@ -30066,8 +30047,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 return true;
             } else if (!longpress && message.messageOwner.action instanceof TLRPC.TL_messageActionPaymentRefunded) {
-                TLRPC.TL_messageActionPaymentRefunded action = (TLRPC.TL_messageActionPaymentRefunded) message.messageOwner.action;
-                StarsIntroActivity.showTransactionSheet(getContext(), currentAccount, message.messageOwner.date, action, resourceProvider);
+                BulletinFactory.of(this).createErrorBulletin(getString(R.string.MonogramPurchasesUnavailable), themeDelegate).show();
                 return true;
             } else if (message.messageOwner.action instanceof TLRPC.TL_messageActionGroupCall || message.messageOwner.action instanceof TLRPC.TL_messageActionInviteToGroupCall || message.messageOwner.action instanceof TLRPC.TL_messageActionGroupCallScheduled) {
                 if (getParentActivity() == null) {
@@ -31586,7 +31566,7 @@ public class ChatActivity extends BaseFragment implements
                             }
                         }
 
-                        if (stickerSets.size() > 0 && !getMessagesController().premiumFeaturesBlocked()) {
+                        if (stickerSets.size() > 0) {
                             popupLayout.addView(new ActionBarPopupWindow.GapView(contentView.getContext(), themeDelegate), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
 
                             View button = new MessageContainsEmojiButton(currentAccount, contentView.getContext(), themeDelegate, stickerSets, MessageContainsEmojiButton.EMOJI_TYPE);
@@ -39499,7 +39479,7 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public boolean didPressAnimatedEmoji(ChatMessageCell cell, AnimatedEmojiSpan span) {
-            if (getMessagesController().premiumFeaturesBlocked() || span == null || span.standard) {
+            if (span == null || span.standard) {
                 return false;
             }
             final long documentId = span.getDocumentId();
@@ -40369,26 +40349,7 @@ public class ChatActivity extends BaseFragment implements
         public void didPressInstantButton(ChatMessageCell cell, int type) {
             MessageObject messageObject = cell.getMessageObject();
             if (type == 19) {
-                if (progressDialogCurrent != null) {
-                    progressDialogCurrent.cancel(true);
-                }
-                progressDialogCurrent = cell == null || cell.getMessageObject() == null ? null : new Browser.Progress() {
-                    @Override
-                    public void init() {
-                        progressDialogAtMessageId = cell.getMessageObject().getId();
-                        progressDialogAtMessageType = PROGRESS_INSTANT;
-                        progressDialogLinkSpan = null;
-                        cell.invalidate();
-                    }
-
-                    @Override
-                    public void end(boolean replaced) {
-                        if (!replaced) {
-                            AndroidUtilities.runOnUIThread(ChatActivity.this::resetProgressDialogLoading, 250);
-                        }
-                    }
-                };
-                BoostDialogs.openGiveAwayStatusDialog(messageObject, progressDialogCurrent, getContext(), getResourceProvider());
+                BulletinFactory.of(ChatActivity.this).createErrorBulletin(getString(R.string.MonogramPurchasesUnavailable), themeDelegate).show();
             } else if (type == 21) {
                 didPressAppUpdateButtonInternal();
             } else if (type == ChatMessageCell.INSTANT_BUTTON_TYPE_ADD_OPTION) {
@@ -43872,16 +43833,14 @@ public class ChatActivity extends BaseFragment implements
                 MessagesController.getGlobalMainSettings().edit().putInt("savedsearchtaghint", 1).apply();
 
                 ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getParentActivity(), 0, getResourceProvider(), 0);
-                if (getUserConfig().isPremium()) {
-                    ActionBarMenuSubItem editTag = new ActionBarMenuSubItem(getParentActivity(), false, false);
-                    editTag.setTextAndIcon(LocaleController.getString(TextUtils.isEmpty(getMessagesController().getSavedTagName(reaction.reaction)) ? R.string.SavedTagLabelTag : R.string.SavedTagRenameTag), R.drawable.menu_tag_rename);
-                    editTag.setMinimumWidth(160);
-                    editTag.setOnClickListener(view -> {
-                        closeMenu();
-                        SearchTagsList.openRenameTagAlert(getContext(), currentAccount, reaction.reaction, themeDelegate, false);
-                    });
-                    popupLayout.addView(editTag);
-                }
+                ActionBarMenuSubItem editTag = new ActionBarMenuSubItem(getParentActivity(), false, false);
+                editTag.setTextAndIcon(LocaleController.getString(TextUtils.isEmpty(getMessagesController().getSavedTagName(reaction.reaction)) ? R.string.SavedTagLabelTag : R.string.SavedTagRenameTag), R.drawable.menu_tag_rename);
+                editTag.setMinimumWidth(160);
+                editTag.setOnClickListener(view -> {
+                    closeMenu();
+                    SearchTagsList.openRenameTagAlert(getContext(), currentAccount, reaction.reaction, themeDelegate, false);
+                });
+                popupLayout.addView(editTag);
                 if (!isInsideContainer && (searchingReaction == null || !searchingReaction.isSame(reaction.reaction)) && (chatMode == 0 || chatMode == MODE_SAVED)) {
                     ActionBarMenuSubItem filterByTag = new ActionBarMenuSubItem(getParentActivity(), false, false);
                     filterByTag.setTextAndIcon(LocaleController.getString(R.string.SavedTagFilterByTag), R.drawable.menu_tag_filter);

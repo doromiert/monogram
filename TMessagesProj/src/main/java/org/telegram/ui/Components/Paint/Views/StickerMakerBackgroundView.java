@@ -14,12 +14,22 @@ import org.telegram.messenger.AndroidUtilities;
 public class StickerMakerBackgroundView extends View {
     private final Paint backgroundPaint = new Paint();
     private final Path path = new Path();
+    private float cornerRadius = .25f;
 
     public StickerMakerBackgroundView(Context context) {
         super(context);
         backgroundPaint.setColor(Color.WHITE);
         backgroundPaint.setAlpha(40);
         setLayerType(LAYER_TYPE_HARDWARE, null);
+    }
+
+    public void setCornerRadius(float cornerRadius) {
+        cornerRadius = Math.max(0f, Math.min(1f, cornerRadius));
+        if (this.cornerRadius == cornerRadius) {
+            return;
+        }
+        this.cornerRadius = cornerRadius;
+        invalidate();
     }
 
     @Override
@@ -31,7 +41,7 @@ public class StickerMakerBackgroundView extends View {
         canvas.save();
         AndroidUtilities.rectTmp.set(inset, inset, inset + width, inset + width);
         AndroidUtilities.rectTmp.offset(0, (height - AndroidUtilities.rectTmp.height()) / 2);
-        float rx = width / 7f;
+        float rx = width / 2f * cornerRadius;
         path.rewind();
         path.addRoundRect(AndroidUtilities.rectTmp, rx, rx, Path.Direction.CW);
         canvas.clipPath(path);

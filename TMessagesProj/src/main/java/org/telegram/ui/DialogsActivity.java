@@ -730,8 +730,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private boolean slowedReloadAfterDialogClick;
 
 
-    private Long statusDrawableGiftId;
     private AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable statusDrawable;
+    private Drawable statusPlaceholder;
     private AnimatedStatusView animatedStatusView;
     public RightSlidingDialogContainer rightSlidingDialogContainer;
 
@@ -2959,8 +2959,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    private Drawable premiumStar;
-
     public void updateStatus(TLRPC.User user, boolean animated) {
         if (dialogStoriesCell != null) {
             dialogStoriesCell.updateStatus(user, animated);
@@ -2969,37 +2967,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return;
         }
         Long emojiStatusId = UserObject.getEmojiStatusDocumentId(user);
-        statusDrawableGiftId = null;
         if (emojiStatusId != null) {
-            final boolean isCollectible = user.emoji_status instanceof TLRPC.TL_emojiStatusCollectible;
             statusDrawable.set(emojiStatusId, animated);
-            statusDrawable.setParticles(isCollectible, animated);
-            if (isCollectible) {
-                statusDrawableGiftId = ((TLRPC.TL_emojiStatusCollectible) user.emoji_status).collectible_id;
-            }
-            actionBar.setRightDrawableOnClick(e -> {
-                if (dialogStoriesCellVisible && dialogStoriesCell != null && !dialogStoriesCell.isExpanded()) {
-                    scrollToTop(true, true);
-                    return;
-                }
-                showSelectStatusDialog();
-            });
-            SelectAnimatedEmojiDialog.preload(currentAccount);
-        } else if (user != null && MessagesController.getInstance(currentAccount).isPremiumUser(user)) {
-            if (premiumStar == null) {
-                premiumStar = getContext().getResources().getDrawable(R.drawable.msg_premium_liststar).mutate();
-                premiumStar = new AnimatedEmojiDrawable.WrapSizeDrawable(premiumStar, dp(18), dp(18)) {
-                    @Override
-                    public void draw(@NonNull Canvas canvas) {
-                        canvas.save();
-                        canvas.translate(dp(-2), dp(1));
-                        super.draw(canvas);
-                        canvas.restore();
-                    }
-                };
-            }
-            premiumStar.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_profile_verifiedBackground), PorterDuff.Mode.MULTIPLY));
-            statusDrawable.set(premiumStar, animated);
             statusDrawable.setParticles(false, animated);
             actionBar.setRightDrawableOnClick(e -> {
                 if (dialogStoriesCellVisible && dialogStoriesCell != null && !dialogStoriesCell.isExpanded()) {
@@ -3010,9 +2979,19 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             });
             SelectAnimatedEmojiDialog.preload(currentAccount);
         } else {
-            statusDrawable.set((Drawable) null, animated);
+            if (statusPlaceholder == null) {
+                statusPlaceholder = getContext().getResources().getDrawable(R.drawable.msg_smile_status).mutate();
+            }
+            statusDrawable.set(statusPlaceholder, animated);
             statusDrawable.setParticles(false, animated);
-            actionBar.setRightDrawableOnClick(null);
+            actionBar.setRightDrawableOnClick(e -> {
+                if (dialogStoriesCellVisible && dialogStoriesCell != null && !dialogStoriesCell.isExpanded()) {
+                    scrollToTop(true, true);
+                    return;
+                }
+                showSelectStatusDialog();
+            });
+            SelectAnimatedEmojiDialog.preload(currentAccount);
         }
         statusDrawable.setColor(getThemedColor(Theme.key_profile_verifiedBackground));
         if (animatedStatusView != null) {
@@ -5716,11 +5695,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (user != null && DialogObject.getEmojiStatusUntil(user.emoji_status) > 0) {
             popupLayout.setExpireDateHint(DialogObject.getEmojiStatusUntil(user.emoji_status));
         }
-        if (statusDrawableGiftId != null) {
-            popupLayout.setSelected(statusDrawableGiftId);
-        } else {
-            popupLayout.setSelected(statusDrawable.getDrawable() instanceof AnimatedEmojiDrawable ? ((AnimatedEmojiDrawable) statusDrawable.getDrawable()).getDocumentId() : null);
-        }
+        popupLayout.setSelected(statusDrawable.getDrawable() instanceof AnimatedEmojiDrawable ? ((AnimatedEmojiDrawable) statusDrawable.getDrawable()).getDocumentId() : null);
         popupLayout.setSaveState(1);
         popupLayout.setScrimDrawable(statusDrawable, actionBarTitle);
         popup[0] = selectAnimatedEmojiDialog = new SelectAnimatedEmojiDialog.SelectAnimatedEmojiDialogWindow(popupLayout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT) {

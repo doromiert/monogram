@@ -97,6 +97,8 @@ public final class MonogramController {
     private volatile long mediaHistoryPeer;
     private int retrySeconds = 3;
     private final Runnable retryConnection = this::restore;
+    private final Runnable scheduledWake = this::drainScheduledMessages;
+    private final java.util.concurrent.atomic.AtomicBoolean scheduledDrainQueued=new java.util.concurrent.atomic.AtomicBoolean();
 
     private MonogramController(int account) {
         this.account = account;
@@ -723,6 +725,7 @@ public final class MonogramController {
                             if (sessionEpoch != epoch || session == null) return;
                             preferences.edit().putString("last-disconnect-"+details.jid,new java.util.Date()+" · "+(error==null ? "Connection closed" : com.negzero.monogram.xmpp.XmppRequestException.describe(error))).apply();
                             cancelSearchLoads(archiveSync);archiveSync = null; joinedRooms.clear(); bookmarkSync=null;
+                            AndroidUtilities.cancelRunOnUIThread(scheduledWake);
                             state(ConnectionsManager.ConnectionStateWaitingForNetwork); retryConnection();
                         });
                     }
@@ -730,7 +733,7 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account); recoverPendingSends(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch); syncOwnReads(true);
+                            state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account); recoverPendingSends(); drainScheduledMessages(); startArchiveSync(session); syncBookmarks(session,epoch,null); refreshBlocked(session,epoch); syncOwnReads(true);
                         });
                     }
                 });
@@ -783,7 +786,7 @@ public final class MonogramController {
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
         state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account);
         AndroidUtilities.cancelRunOnUIThread(retryConnection); retrySeconds = 3;
-        recoverPendingSends();
+        recoverPendingSends(); drainScheduledMessages();
         startArchiveSync(connecting); syncBookmarks(connecting,epoch,null); refreshBlocked(connecting,epoch); syncOwnReads(true);
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
@@ -1682,6 +1685,9 @@ public final class MonogramController {
     }
     public void logout() {
         final String departing=accountJid();
+        final long departingEpoch=accountEpoch;
+        AndroidUtilities.cancelRunOnUIThread(scheduledWake);
+        MonogramScheduledMessages.releaseGeneration(account,departing,departingEpoch);
         synchronized(readSyncLock) {
             readSyncPrivacyEpoch++;
             XmppSession current=session;if(current!=null) current.readSync.setEnabled(false);
@@ -2886,9 +2892,12 @@ public final class MonogramController {
                 TLRPC.TL_messages_sendMessage converted=MonogramLocation.text((TLRPC.TL_messages_sendMedia)request);
                 Integer local=queuedLocalIds.remove(request);String mode=queuedEncryption.remove(request);
                 if(local!=null) queuedLocalIds.put(converted,local);if(mode!=null) queuedEncryption.put(converted,mode);
-                queueSend(token,converted,completed);
+                if(converted.schedule_date!=0) scheduleOutgoing(converted,completed);
+                else queueSend(token,converted,completed);
             } catch(Exception invalid) { queuedLocalIds.remove(request);queuedEncryption.remove(request);TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;error.text="MONOGRAM_INVALID_LOCATION";Utilities.stageQueue.postRunnable(() -> completed.run(null,error)); }
-        } else if(request instanceof TLRPC.TL_messages_sendMessage || request instanceof MonogramFileRequest) queueSend(token,request,completed);
+        } else if(request instanceof TLRPC.TL_messages_sendMessage && ((TLRPC.TL_messages_sendMessage)request).schedule_date!=0)
+            scheduleOutgoing((TLRPC.TL_messages_sendMessage)request,completed);
+        else if(request instanceof TLRPC.TL_messages_sendMessage || request instanceof MonogramFileRequest) queueSend(token,request,completed);
         else dispatchRequest(request,completed);
     }
     private static final String QUEUED_ENCRYPTION="monogram-encryption";
@@ -2903,6 +2912,109 @@ public final class MonogramController {
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request)) return;
         MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
+    }
+    /** Sends a detached local quick-reply template through the regular Monogram outbox. */
+    public void sendQuickReply(long dialogId,MonogramQuickReplies.Outgoing outgoing) {
+        if(dialogId==0 || outgoing==null) throw new IllegalArgumentException("Quick reply and conversation are required");
+        SendMessagesHelper.getInstance(account).sendMonogramQuickReply(dialogId,outgoing);
+    }
+    private void scheduleOutgoing(TLRPC.TL_messages_sendMessage request,RequestDelegate completed) {
+        Integer local=queuedLocalIds.remove(request); String selected=queuedEncryption.remove(request);
+        try {
+            long peer=sendingPeer(request);
+            if(local==null || local>=0 || peer==0) throw new IllegalArgumentException("Scheduled message was not added to the local outbox");
+            if(request.rich_message!=null) throw new UnsupportedOperationException("Scheduled articles are not available yet");
+            if(request.schedule_date==0x7ffffffe) throw new UnsupportedOperationException("Send when online cannot be represented by an XMPP schedule");
+            String owner=accountJid(); if(owner.isEmpty()) throw new IllegalStateException("Sign in before scheduling a message");
+            if(selected==null) selected=encryption(peer).name();
+            String destination=store.jid(peer);
+            int scheduledId=MonogramScheduledMessages.allocateId(account,owner,accountEpoch);
+            if(scheduledId<=0) throw new IllegalStateException("Could not allocate a scheduled-message id");
+            MonogramScheduledMessages.Entry entry=MonogramScheduledMessages.fromRequest(scheduledId,local,request.schedule_date*1000L,
+                    request.schedule_repeat_period,destination,request,selected,!automaticEncryption(peer),"");
+            if(!MonogramScheduledMessages.put(account,owner,accountEpoch,entry)) throw new IllegalStateException("Could not save scheduled message");
+            armScheduledWake();
+            Updates updates=new Updates(); updates.date=now();
+            TL_update.TL_updateMessageID mapped=new TL_update.TL_updateMessageID(); mapped.id=entry.id; mapped.random_id=request.random_id; updates.updates.add(mapped);
+            TL_update.TL_updateNewScheduledMessage update=new TL_update.TL_updateNewScheduledMessage(); update.message=MonogramScheduledMessages.project(entry,self); updates.updates.add(update);
+            Utilities.stageQueue.postRunnable(() -> completed.run(updates,null));
+        } catch(Exception failed) {
+            TLRPC.TL_error error=new TLRPC.TL_error(); error.code=400;
+            error.text=failed instanceof UnsupportedOperationException ? "MONOGRAM_SCHEDULED_UNAVAILABLE: "+failed.getMessage() : "MONOGRAM_SCHEDULED_FAILED";
+            Utilities.stageQueue.postRunnable(() -> completed.run(null,error));
+        }
+    }
+    private void armScheduledWake() {
+        AndroidUtilities.cancelRunOnUIThread(scheduledWake);
+        final String owner=accountJid(); final long epoch=accountEpoch;
+        XmppSession expected=session;
+        if(owner.isEmpty() || expected==null || !expected.connection().isAuthenticated()) return;
+        long now=System.currentTimeMillis();
+        long wakeAt=MonogramScheduledMessages.nextWakeAt(account,owner,epoch,now);
+        if(wakeAt<=0 || wakeAt==Long.MAX_VALUE) return;
+        long delay=Math.max(1000L,wakeAt-now);
+        AndroidUtilities.runOnUIThread(scheduledWake,delay);
+    }
+    private void drainScheduledMessages() {
+        if(!scheduledDrainQueued.compareAndSet(false,true)) return;
+        worker.execute(() -> {
+            try {
+                final String owner=accountJid(); final long epoch=accountEpoch;
+                XmppSession expected=session;
+                if(owner.isEmpty() || expected==null || !expected.connection().isAuthenticated()) return;
+                for(MonogramScheduledMessages.Claim claim:MonogramScheduledMessages.claimDue(account,owner,epoch,System.currentTimeMillis(),32))
+                    dispatchScheduledClaim(claim,owner,epoch);
+            } finally {
+                scheduledDrainQueued.set(false); armScheduledWake();
+            }
+        });
+    }
+    private void dispatchScheduledClaim(MonogramScheduledMessages.Claim claim,String owner,long epoch) {
+        try {
+            MonogramScheduledMessages.Entry entry=claim.entry;
+            if(epoch!=accountEpoch || !owner.equals(accountJid())) { MonogramScheduledMessages.releaseGeneration(account,owner,epoch);return; }
+            if(!entry.destination.equals(store.jid(entry.peer))) throw new IllegalStateException("The recipient changed");
+            TLRPC.TL_messages_sendMessage request=entry.request(MessagesController.getInstance(account).getInputPeer(entry.peer));
+            // The scheduled projection has a native positive id.  A fired XMPP request is a new
+            // ordinary outbox item, never that scheduled id, or native storage can conflate both.
+            queuedEncryption.put(request,entry.manualEncryption ? encryption(entry.peer).name() : entry.encryption);
+            queueSend(0,request,(response,error) -> completeScheduledClaim(claim,response,error,owner,epoch));
+        } catch(Exception failed) {
+            MonogramScheduledMessages.fail(claim,System.currentTimeMillis()); armScheduledWake();
+        }
+    }
+    private void completeScheduledClaim(MonogramScheduledMessages.Claim claim,TLObject response,TLRPC.TL_error error,String owner,long epoch) {
+        if(epoch!=accountEpoch || !owner.equals(accountJid())) { MonogramScheduledMessages.releaseGeneration(account,owner,epoch);return; }
+        if(error!=null || !(response instanceof TLRPC.TL_updateShortSentMessage)) {
+            MonogramScheduledMessages.fail(claim,System.currentTimeMillis()); armScheduledWake(); return;
+        }
+        MonogramScheduledMessages.Completion completion=MonogramScheduledMessages.complete(claim,System.currentTimeMillis());
+        if(!completion.committed) { armScheduledWake(); return; }
+        MonogramScheduledMessages.Entry next=completion.next;
+        int sentId=((TLRPC.TL_updateShortSentMessage)response).id;
+        try {
+            TLRPC.Message sent=store.getMessage(sentId,self);
+            ArrayList<TLRPC.Message> sentRows=new ArrayList<>(); sentRows.add(sent);
+            MessagesStorage.getInstance(account).putMessages(sentRows,false,true,false,0,0,0);
+            ArrayList<Integer> scheduledIds=new ArrayList<>(); scheduledIds.add(claim.entry.id);
+            // Replace a repeating projection rather than appending another row with the same
+            // native scheduled id. The ordinary sent message above stays in the normal history.
+            MessagesController.getInstance(account).deleteMessages(scheduledIds,null,null,claim.entry.peer,false,org.telegram.ui.ChatActivity.MODE_SCHEDULED,true,0,null,0);
+            if(next!=null) {
+                Updates repeatUpdate=new Updates(); repeatUpdate.date=now();
+                TL_update.TL_updateNewScheduledMessage update=new TL_update.TL_updateNewScheduledMessage(); update.message=MonogramScheduledMessages.project(next,self); repeatUpdate.updates.add(update);
+                Utilities.stageQueue.postRunnable(() -> {
+                    if(epoch==accountEpoch && owner.equals(accountJid())) MessagesController.getInstance(account).processUpdates(repeatUpdate,false);
+                });
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                if(epoch!=accountEpoch || !owner.equals(accountJid())) return;
+                ArrayList<MessageObject> objects=new ArrayList<>(); objects.add(new MessageObject(account,sent,true,true));
+                MessagesController.getInstance(account).updateInterfaceWithMessages(claim.entry.peer,objects,0);
+                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.scheduledMessagesUpdated,claim.entry.peer,0,false);
+            });
+        } catch(Exception ignored) { /* The durable queue has completed; normal XMPP history will reconcile this row. */ }
+        armScheduledWake();
     }
     private static final class PendingSend {
         final long created=System.nanoTime();
@@ -3317,8 +3429,83 @@ public final class MonogramController {
         if(block) expected.blocking.block(target);else expected.blocking.unblock(target);
         requireRoomSession(expected,epoch);rememberBlocked(expected,epoch);return new TLRPC.TL_boolTrue();
     }
+    private long scheduledPeer(TLRPC.InputPeer peer) {
+        if(peer instanceof TLRPC.TL_inputPeerSelf) return self;
+        if(peer==null || peer.channel_id!=0) throw new IllegalArgumentException("Conversation required");
+        long dialog=peer.chat_id!=0 ? -peer.chat_id : peer.user_id;
+        if(dialog==0) throw new IllegalArgumentException("Conversation required");
+        return dialog;
+    }
+    private Updates scheduledDeleteUpdates(long peer,java.util.Collection<Integer> ids) {
+        Updates result=new Updates(); result.date=now();
+        TL_update.TL_updateDeleteScheduledMessages update=new TL_update.TL_updateDeleteScheduledMessages();
+        update.peer=peer<0 ? new TLRPC.TL_peerChat() : new TLRPC.TL_peerUser();
+        if(peer<0) update.peer.chat_id=-peer; else update.peer.user_id=peer;
+        update.messages.addAll(ids); result.updates.add(update); return result;
+    }
+    private TLRPC.TL_messages_messages scheduledMessages(long peer,java.util.Collection<Integer> ids) {
+        TLRPC.TL_messages_messages result=new TLRPC.TL_messages_messages();
+        java.util.HashSet<Integer> wanted=ids==null ? null : new java.util.HashSet<>(ids);
+        for(MonogramScheduledMessages.Entry entry:MonogramScheduledMessages.list(account,accountJid(),accountEpoch,peer))
+            if(wanted==null || wanted.contains(entry.id)) result.messages.add(MonogramScheduledMessages.project(entry,self));
+        return result;
+    }
     private TLObject handle(TLObject request) throws Exception {
         TLObject localFilters=MonogramLocalFilters.handle(request);if(localFilters!=null) return localFilters;
+        if(request instanceof TLRPC.TL_messages_getQuickReplyMessages) {
+            TLRPC.TL_messages_getQuickReplyMessages query=(TLRPC.TL_messages_getQuickReplyMessages)request;
+            MonogramQuickReplies.Outgoing template=org.telegram.ui.Business.QuickRepliesController.getInstance(account).monogramOutgoing(query.shortcut_id);
+            TLRPC.TL_messages_messages result=new TLRPC.TL_messages_messages();
+            if(template!=null) for(TLRPC.Message message:template.messages)
+                if(query.id.isEmpty() || query.id.contains(message.id)) result.messages.add(message);
+            return result;
+        }
+        if(request instanceof TLRPC.TL_messages_deleteQuickReplyMessages) {
+            TLRPC.TL_messages_deleteQuickReplyMessages query=(TLRPC.TL_messages_deleteQuickReplyMessages)request;
+            org.telegram.ui.Business.QuickRepliesController controller=org.telegram.ui.Business.QuickRepliesController.getInstance(account);
+            TL_update.TL_updateDeleteQuickReplyMessages update=new TL_update.TL_updateDeleteQuickReplyMessages();
+            update.shortcut_id=query.shortcut_id;
+            for(Integer id:query.id) if(controller.deleteMonogramTemplateMessage(query.shortcut_id,id)) update.messages.add(id);
+            Updates result=new Updates(); result.date=now(); result.updates.add(update); return result;
+        }
+        if(request instanceof TLRPC.TL_messages_sendQuickReplyMessages) {
+            TLRPC.TL_messages_sendQuickReplyMessages query=(TLRPC.TL_messages_sendQuickReplyMessages)request;
+            long peer=scheduledPeer(MonogramSelfChat.resolve(query.peer,self));
+            MonogramQuickReplies.Outgoing outgoing=org.telegram.ui.Business.QuickRepliesController.getInstance(account).monogramOutgoing(query.shortcut_id);
+            if(outgoing==null) throw new IllegalArgumentException("Quick reply does not exist");
+            if(!query.id.isEmpty()) {
+                java.util.HashSet<Integer> selected=new java.util.HashSet<>(query.id);
+                java.util.HashSet<Integer> available=new java.util.HashSet<>();
+                for(TLRPC.Message message:outgoing.messages) available.add(message.id);
+                if(!available.containsAll(selected)) throw new IllegalArgumentException("Quick reply message no longer exists");
+                outgoing.messages.removeIf(message -> !selected.contains(message.id));
+            }
+            sendQuickReply(peer,outgoing);
+            Updates result=new Updates(); result.date=now(); return result;
+        }
+        if(request instanceof TLRPC.TL_messages_getScheduledHistory) {
+            TLRPC.TL_messages_getScheduledHistory query=(TLRPC.TL_messages_getScheduledHistory)request;
+            return scheduledMessages(scheduledPeer(query.peer),null);
+        }
+        if(request instanceof TLRPC.TL_messages_getScheduledMessages) {
+            TLRPC.TL_messages_getScheduledMessages query=(TLRPC.TL_messages_getScheduledMessages)request;
+            return scheduledMessages(scheduledPeer(query.peer),query.id);
+        }
+        if(request instanceof TLRPC.TL_messages_deleteScheduledMessages) {
+            TLRPC.TL_messages_deleteScheduledMessages query=(TLRPC.TL_messages_deleteScheduledMessages)request;
+            long peer=scheduledPeer(query.peer);
+            java.util.Set<Integer> removed=MonogramScheduledMessages.cancel(account,accountJid(),accountEpoch,peer,query.id);
+            if(!removed.isEmpty()) {
+                AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.scheduledMessagesUpdated,peer,0,false));
+            }
+            armScheduledWake(); return scheduledDeleteUpdates(peer,removed);
+        }
+        if(request instanceof TLRPC.TL_messages_sendScheduledMessages) {
+            TLRPC.TL_messages_sendScheduledMessages query=(TLRPC.TL_messages_sendScheduledMessages)request;
+            long peer=scheduledPeer(query.peer);
+            MonogramScheduledMessages.sendNow(account,accountJid(),accountEpoch,peer,query.id,System.currentTimeMillis());
+            drainScheduledMessages(); return new Updates();
+        }
         if(request instanceof TLRPC.TL_messages_getCustomEmojiDocuments) {
             org.telegram.tgnet.Vector<TLRPC.Document> result=new org.telegram.tgnet.Vector<>(TLRPC.Document::TLdeserialize);
             for(long id:((TLRPC.TL_messages_getCustomEmojiDocuments)request).document_id) {
@@ -3598,6 +3785,27 @@ public final class MonogramController {
             if (query.peer == null || query.peer.user_id<=0 && query.peer.chat_id<=0) throw new IllegalArgumentException("Conversation required");
             MonogramStore.EditTarget target=editTarget(query.id, query.peer.chat_id>0 ? -query.peer.chat_id : query.peer.user_id);
             TLRPC.TL_messages_messageEditData result=new TLRPC.TL_messages_messageEditData(); result.caption=target.sharing!=null;
+            return result;
+        }
+        if (request instanceof TLRPC.TL_messages_editMessage && ((TLRPC.TL_messages_editMessage)request).schedule_date!=0) {
+            TLRPC.TL_messages_editMessage edit=(TLRPC.TL_messages_editMessage)request;
+            long peer=scheduledPeer(edit.peer);
+            if(edit.media!=null || edit.rich_message!=null || edit.quick_reply_shortcut_id!=0)
+                throw new UnsupportedOperationException("This scheduled message cannot be edited here");
+            MonogramScheduledMessages.Entry previous=null;
+            for(MonogramScheduledMessages.Entry entry:MonogramScheduledMessages.list(account,accountJid(),accountEpoch,peer))
+                if(entry.id==edit.id) { previous=entry;break; }
+            if(previous==null) throw new IllegalArgumentException("Scheduled message is no longer available");
+            String body=(edit.flags&2048)!=0 ? edit.message : previous.body;
+            ArrayList<TLRPC.MessageEntity> entities=(edit.flags&8)!=0 ? edit.entities : previous.entities;
+            int repeat=(edit.flags&TLObject.FLAG_18)!=0 ? edit.schedule_repeat_period : previous.repeatPeriod;
+            MonogramScheduledMessages.Entry replacement=new MonogramScheduledMessages.Entry(previous.id,previous.localId,previous.peer,previous.destination,body,
+                    entities,previous.replyTo,previous.encryption,previous.manualEncryption,edit.no_webpage,previous.silent,
+                    previous.createdAt,edit.schedule_date*1000L,repeat,previous.attempts,previous.payload);
+            if(!MonogramScheduledMessages.edit(account,accountJid(),accountEpoch,replacement))
+                throw new IllegalStateException("Scheduled message is already being sent");
+            armScheduledWake(); Updates result=new Updates(); result.date=now();
+            TL_update.TL_updateEditMessage update=new TL_update.TL_updateEditMessage(); update.message=MonogramScheduledMessages.project(replacement); result.updates.add(update);
             return result;
         }
         if (request instanceof TLRPC.TL_messages_editMessage) {

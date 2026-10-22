@@ -283,6 +283,7 @@ import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.RectOld;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
+import org.telegram.ui.Components.SeekBarView;
 import org.telegram.ui.Components.SeekSpeedDrawable;
 import org.telegram.ui.Components.ShareAlert;
 import org.telegram.ui.Components.SizeNotifierFrameLayoutPhoto;
@@ -2043,6 +2044,12 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private BlurButton cutOutBtn;
     private LinearLayout btnLayout;
     private BlurButton eraseBtn, restoreBtn, undoBtn, outlineBtn;
+    private LinearLayout stickerCornerControl;
+    private TextView stickerCornerLabel;
+    private SeekBarView stickerCornerSeekBar;
+    private float stickerCornerRadius = .25f;
+    private final Path stickerCornerClipPath = new Path();
+    private final RectF stickerCornerClipRect = new RectF();
 
     private long avatarsDialogId;
     private boolean canEditAvatar;
@@ -3195,7 +3202,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 undoBtn.setTranslationY(-sz / 2f - dp(29 + 18));
                 btnLayout.setTranslationY(sz / 2f + dp(29 + 18));
                 cutOutBtn.setTranslationY(sz / 2f + dp(29 + 18));
-                outlineBtn.setTranslationY(sz / 2f + dp(29 + 18 + 36 + 12));
+                if (stickerCornerControl != null) {
+                    stickerCornerControl.setTranslationY(sz / 2f + dp(29 + 18 + 36 + 12));
+                }
+                outlineBtn.setTranslationY(sz / 2f + dp(29 + 18 + 36 + 12 + 44 + 12));
             }
 
             final int count = getChildCount();
@@ -7077,6 +7087,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
         };
         stickerMakerBackgroundView.setVisibility(View.GONE);
+        stickerMakerBackgroundView.setCornerRadius(stickerCornerRadius);
         containerView.addView(stickerMakerBackgroundView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, 0, 0, 0, 0));
         stickerMakerView = new StickerMakerView(activityContext, resourcesProvider);
 
@@ -7306,6 +7317,43 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
         });
         containerView.addView(outlineBtn, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 36, Gravity.CENTER));
+
+        stickerCornerControl = new LinearLayout(parentActivity);
+        stickerCornerControl.setOrientation(LinearLayout.HORIZONTAL);
+        stickerCornerControl.setGravity(Gravity.CENTER_VERTICAL);
+        stickerCornerControl.setPadding(dp(16), 0, dp(10), 0);
+        stickerCornerControl.setBackground(Theme.createRoundRectDrawable(dp(22), 0xcc2b2b2b));
+        stickerCornerControl.setVisibility(View.GONE);
+
+        stickerCornerControl.addView(new StickerCornerIconView(parentActivity, false), LayoutHelper.createLinear(24, LayoutHelper.MATCH_PARENT));
+
+        stickerCornerLabel = new TextView(parentActivity);
+        stickerCornerLabel.setTextColor(Color.WHITE);
+        stickerCornerLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        stickerCornerLabel.setSingleLine(true);
+        stickerCornerLabel.setGravity(Gravity.CENTER);
+
+        stickerCornerSeekBar = new SeekBarView(parentActivity, true, resourcesProvider);
+        stickerCornerSeekBar.setReportChanges(true);
+        stickerCornerSeekBar.setColors(0x55ffffff, 0xffffffff);
+        stickerCornerSeekBar.setProgress(stickerCornerRadius);
+        stickerCornerSeekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
+            @Override
+            public void onSeekBarDrag(boolean stop, float progress) {
+                setStickerCornerRadius(progress);
+            }
+
+            @Override
+            public CharSequence getContentDescription() {
+                return getString(R.string.BubbleRadius) + ", " + Math.round(stickerCornerRadius * 100f) + "%";
+            }
+        });
+        stickerCornerControl.addView(stickerCornerSeekBar, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1f));
+        stickerCornerControl.addView(new StickerCornerIconView(parentActivity, true), LayoutHelper.createLinear(24, LayoutHelper.MATCH_PARENT));
+        stickerCornerControl.addView(stickerCornerLabel, LayoutHelper.createLinear(48, LayoutHelper.MATCH_PARENT));
+        stickerCornerControl.setContentDescription(getString(R.string.BubbleRadius));
+        containerView.addView(stickerCornerControl, LayoutHelper.createFrame(260, 44, Gravity.CENTER));
+        updateStickerCornerLabel();
 
         showEditCaption(false, false);
         showStickerMode(false, false);
@@ -8099,7 +8147,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         Path clipPath = new Path();
                         RectF clipRect = new RectF();
                         clipRect.set(0, 0, canvasBitmap.getWidth(), canvasBitmap.getHeight());
-                        int r = canvasBitmap.getWidth() / 8;
+                        float r = canvasBitmap.getWidth() / 2f * getStickerCornerRadiusFraction();
                         clipPath.addRoundRect(clipRect, r, r, Path.Direction.CW);
                         canvas.clipPath(clipPath);
 
@@ -8271,7 +8319,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                     Path paintingOverlayClipPath = new Path();
                                     paintingOverlayClipPath.rewind();
                                     AndroidUtilities.rectTmp.set(0, 0, viewer.paintingOverlay.getWidth(), viewer.paintingOverlay.getHeight());
-                                    paintingOverlayClipPath.addRoundRect(AndroidUtilities.rectTmp, viewer.paintingOverlay.getWidth() / 8f, viewer.paintingOverlay.getHeight() / 8f, Path.Direction.CW);
+                                    paintingOverlayClipPath.addRoundRect(AndroidUtilities.rectTmp, viewer.paintingOverlay.getWidth() / 2f * PhotoViewer.this.getStickerCornerRadiusFraction(), viewer.paintingOverlay.getHeight() / 2f * PhotoViewer.this.getStickerCornerRadiusFraction(), Path.Direction.CW);
                                     canvas.clipPath(paintingOverlayClipPath);
                                     viewer.paintingOverlay.draw(canvas);
                                     canvas.restore();
@@ -15438,6 +15486,61 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
         }
         outlineBtn.setTag(outlineShow ? 1 : null);
+        showStickerCornerControl(show && !isCurrentVideo, animated);
+    }
+
+    private void setStickerCornerRadius(float value) {
+        value = Utilities.clamp(value, 1f, 0f);
+        if (stickerCornerRadius == value) {
+            return;
+        }
+        stickerCornerRadius = value;
+        if (stickerMakerBackgroundView != null) {
+            stickerMakerBackgroundView.setCornerRadius(value);
+        }
+        if (stickerCornerSeekBar != null && Math.abs(stickerCornerSeekBar.getProgress() - value) > .001f) {
+            stickerCornerSeekBar.setProgress(value);
+        }
+        updateStickerCornerLabel();
+        if (containerView != null) {
+            containerView.invalidate();
+        }
+    }
+
+    public float getStickerCornerRadiusFraction() {
+        return stickerCornerRadius;
+    }
+
+    private void updateStickerCornerLabel() {
+        if (stickerCornerLabel != null) {
+            stickerCornerLabel.setText(Math.round(stickerCornerRadius * 100f) + "%");
+        }
+    }
+
+    private void showStickerCornerControl(boolean show, boolean animated) {
+        if (stickerCornerControl == null) {
+            return;
+        }
+        if (!animated) {
+            stickerCornerControl.animate().setListener(null).cancel();
+            stickerCornerControl.setVisibility(show ? View.VISIBLE : View.GONE);
+            stickerCornerControl.setAlpha(show ? 1f : 0f);
+            stickerCornerControl.setScaleX(show ? 1f : .92f);
+            stickerCornerControl.setScaleY(show ? 1f : .92f);
+        } else if (show && stickerCornerControl.getTag() == null) {
+            stickerCornerControl.animate().setListener(null).cancel();
+            if (stickerCornerControl.getVisibility() != View.VISIBLE) {
+                stickerCornerControl.setVisibility(View.VISIBLE);
+                stickerCornerControl.setAlpha(0f);
+                stickerCornerControl.setScaleX(.92f);
+                stickerCornerControl.setScaleY(.92f);
+            }
+            stickerCornerControl.animate().alpha(1f).scaleX(1f).scaleY(1f).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).setDuration(320).start();
+        } else if (!show && stickerCornerControl.getTag() != null) {
+            stickerCornerControl.animate().setListener(null).cancel();
+            stickerCornerControl.animate().alpha(0f).scaleX(.92f).scaleY(.92f).setListener(new HideViewAfterAnimation(stickerCornerControl)).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).setDuration(240).start();
+        }
+        stickerCornerControl.setTag(show ? 1 : null);
     }
 
     private void showEditStickerMode(boolean show, boolean animated) {
@@ -17056,6 +17159,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     public boolean openPhotoForSelect(final TLRPC.FileLocation fileLocation, final ImageLocation imageLocation, final ArrayList<Object> photos, final int index, int type, boolean documentsPicker, final PhotoViewerProvider provider, ChatActivity chatActivity) {
         isDocumentsPicker = documentsPicker;
+        if (type == SELECT_TYPE_STICKER) {
+            setStickerCornerRadius(.25f);
+        }
         if (pickerViewSendButton != null) {
             FrameLayout.LayoutParams layoutParams2 = (FrameLayout.LayoutParams) pickerViewSendButton.getLayoutParams();
             if (type == 4 || type == 5) {
@@ -19914,6 +20020,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             canvas.save();
             canvas.translate(containerWidth / 2f + getAdditionX(currentEditMode), containerHeight / 2f + getAdditionY(currentEditMode));
             centerImageTransform.preTranslate(containerWidth / 2f + getAdditionX(currentEditMode), containerHeight / 2f + getAdditionY(currentEditMode));
+            if (sendPhotoType == SELECT_TYPE_STICKER && !isCurrentVideo) {
+                float halfSize = (containerWidth - dp(20)) / 2f;
+                float radius = halfSize * stickerCornerRadius;
+                stickerCornerClipRect.set(-halfSize, -halfSize, halfSize, halfSize);
+                stickerCornerClipPath.rewind();
+                stickerCornerClipPath.addRoundRect(stickerCornerClipRect, radius, radius, Path.Direction.CW);
+                canvas.clipPath(stickerCornerClipPath);
+            }
             canvas.translate(translateX, currentTranslationY + (currentEditMode != EDIT_MODE_PAINT ? currentPanTranslationY : 0));
             centerImageTransform.preTranslate(translateX, currentTranslationY + (currentEditMode != EDIT_MODE_PAINT ? currentPanTranslationY : 0));
             canvas.scale(currentScale - scaleDiff, currentScale - scaleDiff);
@@ -22753,6 +22867,32 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
         public boolean isActive() {
             return active;
+        }
+    }
+
+    private static class StickerCornerIconView extends View {
+        private final boolean round;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF bounds = new RectF();
+
+        StickerCornerIconView(Context context, boolean round) {
+            super(context);
+            this.round = round;
+            paint.setColor(0xccffffff);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1.5f));
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float size = dp(14);
+            float left = (getWidth() - size) / 2f;
+            float top = (getHeight() - size) / 2f;
+            bounds.set(left, top, left + size, top + size);
+            float radius = round ? size / 2f : dp(2);
+            canvas.drawRoundRect(bounds, radius, radius, paint);
         }
     }
 

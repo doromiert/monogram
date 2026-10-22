@@ -12585,30 +12585,29 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (seekBarWaveform != null) {
             seekBarWaveform.setWaveform(waveform);
         }
+        final boolean hasSavedTranscription = TranscribeButton.hasSavedTranscription(currentMessageObject);
         useTranscribeButton = (
             currentMessageObject != null &&
             !currentMessageObject.isQuickReply() &&
             !currentMessageObject.isRepostPreview &&
             (!currentMessageObject.isOutOwner() || currentMessageObject.isSent()) &&
             (
-                UserConfig.getInstance(currentAccount).isPremium()
-                ||
-                TranscribeButton.isFreeTranscribeInChat(currentMessageObject)
-                ||
-                MessagesController.getInstance(currentAccount).transcribeAudioTrialWeeklyNumber > 0 &&
-                currentMessageObject.getDuration() <= MessagesController.getInstance(currentAccount).transcribeAudioTrialDurationMax && (
-                    currentMessageObject.messageOwner != null && (
-                        !TextUtils.isEmpty(currentMessageObject.messageOwner.voiceTranscription) ||
-                        currentMessageObject.messageOwner.voiceTranscriptionFinal
-                    ) ||
-                    TranscribeButton.canTranscribeTrial(currentMessageObject) || true
-                )
-                ||
-                MessagesController.getInstance(currentAccount).transcribeAudioTrialWeeklyNumber <= 0 &&
-                !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() &&
-                !MessagesController.getInstance(currentAccount).didPressTranscribeButtonEnough() && !currentMessageObject.isOutOwner() && (
-                    currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.voiceTranscriptionForce ||
-                    currentMessageObject.getDuration() >= 60
+                hasSavedTranscription ||
+                TranscribeButton.canRequestTranscription(currentMessageObject) && (
+                    UserConfig.getInstance(currentAccount).isPremium()
+                    ||
+                    TranscribeButton.isFreeTranscribeInChat(currentMessageObject)
+                    ||
+                    MessagesController.getInstance(currentAccount).transcribeAudioTrialWeeklyNumber > 0 &&
+                    currentMessageObject.getDuration() <= MessagesController.getInstance(currentAccount).transcribeAudioTrialDurationMax &&
+                    TranscribeButton.canTranscribeTrial(currentMessageObject)
+                    ||
+                    MessagesController.getInstance(currentAccount).transcribeAudioTrialWeeklyNumber <= 0 &&
+                    !MessagesController.getInstance(currentAccount).premiumFeaturesBlocked() &&
+                    !MessagesController.getInstance(currentAccount).didPressTranscribeButtonEnough() && !currentMessageObject.isOutOwner() && (
+                        currentMessageObject.messageOwner != null && currentMessageObject.messageOwner.voiceTranscriptionForce ||
+                        currentMessageObject.getDuration() >= 60
+                    )
                 )
             ) && (
                 currentMessageObject.isVoice() && useSeekBarWaveform ||

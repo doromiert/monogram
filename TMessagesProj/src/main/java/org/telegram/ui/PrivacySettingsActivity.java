@@ -16,14 +16,9 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextUtils;
-import android.text.style.DynamicDrawableSpan;
-import android.text.style.ImageSpan;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
@@ -65,11 +60,9 @@ import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.AlertsCreator;
-import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Premium.PremiumGradient;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.TextStyleSpan;
 import org.telegram.ui.bots.BotBiometry;
@@ -170,7 +163,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     private boolean newSync;
     private boolean currentSuggest;
     private boolean newSuggest;
-    private boolean archiveChats;
 
     private boolean[] clear = new boolean[2];
     private SessionsActivity devicesActivityPreload;
@@ -184,11 +176,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         getMessagesController().getBlockedPeers(true);
         currentSync = newSync = getUserConfig().syncContacts;
         currentSuggest = newSuggest = getUserConfig().suggestContacts;
-        TLRPC.GlobalPrivacySettings privacySettings = getContactsController().getGlobalPrivacySettings();
-        if (privacySettings != null) {
-            archiveChats = privacySettings.archive_and_mute_new_noncontact_peers;
-        }
-
         updateRows();
         loadPasswordSettings();
         loadPasskeys();
@@ -248,20 +235,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
             save = true;
             TLRPC.TL_contacts_toggleTopPeers req = new TLRPC.TL_contacts_toggleTopPeers();
             req.enabled = newSuggest;
-            getConnectionsManager().sendRequest(req, (response, error) -> {
-
-            });
-        }
-        TLRPC.GlobalPrivacySettings globalPrivacySettings = getContactsController().getGlobalPrivacySettings();
-        if (globalPrivacySettings != null && globalPrivacySettings.archive_and_mute_new_noncontact_peers != archiveChats) {
-            globalPrivacySettings.archive_and_mute_new_noncontact_peers = archiveChats;
-            save = true;
-            TL_account.setGlobalPrivacySettings req = new TL_account.setGlobalPrivacySettings();
-            req.settings = getContactsController().getGlobalPrivacySettings();
-            if (req.settings == null) {
-                req.settings = new TLRPC.TL_globalPrivacySettings();
-            }
-            req.settings.archive_and_mute_new_noncontact_peers = archiveChats;
             getConnectionsManager().sendRequest(req, (response, error) -> {
 
             });
@@ -571,9 +544,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                     cell.setChecked(newSuggest = true);
                 }
             } else if (position == newChatsRow) {
-                final TextCheckCell cell = (TextCheckCell) view;
-                archiveChats = !archiveChats;
-                cell.setChecked(archiveChats);
+                presentFragment(new ArchiveSettingsActivity());
             } else if (position == contactsSyncRow) {
                 newSync = !newSync;
                 if (view instanceof TextCheckCell) {
@@ -684,10 +655,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.privacyRulesUpdated) {
-            TLRPC.GlobalPrivacySettings privacySettings = getContactsController().getGlobalPrivacySettings();
-            if (privacySettings != null) {
-                archiveChats = privacySettings.archive_and_mute_new_noncontact_peers;
-            }
             if (listAdapter != null) {
                 listAdapter.notifyDataSetChanged();
             }
@@ -753,26 +720,16 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         forwardsRow = rowCount++;
         callsRow = rowCount++;
         groupsDetailRow = -1;
-        if (!getMessagesController().premiumFeaturesBlocked() || getUserConfig().isPremium()) {
-            voicesRow = rowCount++;
-        } else {
-            voicesRow = -1;
-        }
+        voicesRow = -1;
         birthdayRow = rowCount++;
         bioRow = rowCount++;
         musicRow = rowCount++;
         groupsRow = rowCount++;
         privacyShadowRow = rowCount++;
 
-        if (getMessagesController().autoarchiveAvailable || getUserConfig().isPremium()) {
-            newChatsHeaderRow = rowCount++;
-            newChatsRow = rowCount++;
-            newChatsSectionRow = rowCount++;
-        } else {
-            newChatsHeaderRow = -1;
-            newChatsRow = -1;
-            newChatsSectionRow = -1;
-        }
+        newChatsHeaderRow = rowCount++;
+        newChatsRow = rowCount++;
+        newChatsSectionRow = rowCount++;
         advancedSectionRow = rowCount++;
         deleteAccountRow = rowCount++;
         deleteAccountDetailRow = rowCount++;
@@ -782,7 +739,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         } else {
             passportRow = -1;
         }
-        paymentsClearRow = rowCount++;
+        paymentsClearRow = -1;
         if (!biometryBots.isEmpty()) {
             botsBiometryRow = rowCount++;
         } else {
@@ -1142,12 +1099,10 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                         if (getContactsController().getLoadingPrivacyInfo(ContactsController.PRIVACY_RULES_TYPE_VOICE_MESSAGES)) {
                             showLoading = true;
                             loadingLen = 30;
-                        } else if (!getUserConfig().isPremium()) {
-                            value = getString(R.string.P2PEverybody);
                         } else {
                             value = formatRulesString(getAccountInstance(), ContactsController.PRIVACY_RULES_TYPE_VOICE_MESSAGES);
                         }
-                        textCell.setTextAndValue(addPremiumStar(getString(R.string.PrivacyVoiceMessages)), value, true);
+                        textCell.setTextAndValue(getString(R.string.PrivacyVoiceMessages), value, true);
                         ImageView imageView = textCell.getValueImageView();
                         imageView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
                     } else if (position == passportRow) {
@@ -1175,6 +1130,8 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                         deleteAccountUpdate = false;
                     } else if (position == paymentsClearRow) {
                         textCell.setText(getString("PrivacyPaymentsClear", R.string.PrivacyPaymentsClear), true);
+                    } else if (position == newChatsRow) {
+                        textCell.setText(getString(R.string.ArchiveSettings), true);
                     } else if (position == botsBiometryRow) {
                         textCell.setText(getString(R.string.PrivacyBiometryBotsButton), true);
                     } else if (position == secretMapRow) {
@@ -1264,8 +1221,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
                         textCheckCell.setTextAndCheck(getString("SyncContacts", R.string.SyncContacts), newSync, true);
                     } else if (position == contactsSuggestRow) {
                         textCheckCell.setTextAndCheck(getString("SuggestContacts", R.string.SuggestContacts), newSuggest, false);
-                    } else if (position == newChatsRow) {
-                        textCheckCell.setTextAndCheck(getString("ArchiveAndMute", R.string.ArchiveAndMute), archiveChats, false);
                     }
                     break;
                 case 5:
@@ -1373,13 +1328,13 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         public int getItemViewType(int position) {
             if (position == passportRow || position == lastSeenRow || position == phoneNumberRow ||
                     position == deleteAccountRow || position == webSessionsRow || position == groupsRow || position == paymentsClearRow ||
-                    position == secretMapRow || position == contactsDeleteRow || position == botsBiometryRow) {
+                    position == secretMapRow || position == contactsDeleteRow || position == botsBiometryRow || position == newChatsRow) {
                 return 0;
             } else if (position == privacyShadowRow || position == deleteAccountDetailRow || position == groupsDetailRow || position == sessionsDetailRow || position == secretDetailRow || position == botsDetailRow || position == contactsDetailRow || position == newChatsSectionRow) {
                 return 1;
             } else if (position == securitySectionRow || position == advancedSectionRow || position == privacySectionRow || position == secretSectionRow || position == botsSectionRow || position == contactsSectionRow || position == newChatsHeaderRow) {
                 return 2;
-            } else if (position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == monogramReadSyncRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow || position == newChatsRow) {
+            } else if (position == monogramTypingRow || position == monogramReadReceiptsRow || position == monogramGroupReadReceiptsRow || position == monogramReadSyncRow || position == secretWebpageRow || position == contactsSyncRow || position == contactsSuggestRow) {
                 return 3;
             } else if (position == botsAndWebsitesShadowRow) {
                 return 4;
@@ -1388,20 +1343,6 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
             }
             return 0;
         }
-    }
-
-    private SpannableString premiumStar;
-    private CharSequence addPremiumStar(String text) {
-//        if (getUserConfig().isPremium()) {
-//            return text;
-//        }
-        if (premiumStar == null) {
-            premiumStar = new SpannableString("★");
-            Drawable drawable = new AnimatedEmojiDrawable.WrapSizeDrawable(PremiumGradient.getInstance().premiumStarMenuDrawable, dp(18), dp(18));
-            drawable.setBounds(0, 0, dp(18), dp(18));
-            premiumStar.setSpan(new ImageSpan(drawable, DynamicDrawableSpan.ALIGN_CENTER), 0, premiumStar.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-        }
-        return new SpannableStringBuilder(text).append("  ").append(premiumStar);
     }
 
     @Override

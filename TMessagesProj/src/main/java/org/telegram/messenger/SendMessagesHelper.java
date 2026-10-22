@@ -12,6 +12,7 @@ import android.annotation.SuppressLint;
 import android.content.ClipDescription;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -1894,6 +1895,148 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
     }
 
+    /**
+     * Fans a local XMPP quick reply out as ordinary sends.  Quick replies are templates, not a
+     * Telegram business RPC: validate every payload before the first outbox row is created so a
+     * missing attachment cannot leave a partially sent template behind.
+     */
+    public void sendMonogramQuickReply(long dialogId, org.telegram.messenger.xmpp.MonogramQuickReplies.Outgoing outgoing) {
+        if (outgoing == null || outgoing.messages == null || outgoing.messages.isEmpty()) {
+            throw new IllegalArgumentException("Quick reply has no messages");
+        }
+        if (dialogId == 0 || (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialogId) && dialogId <= 0)) {
+            throw new IllegalArgumentException("Conversation required");
+        }
+        if (org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty()) {
+            throw new IllegalStateException("XMPP account is not connected");
+        }
+        ArrayList<SendMessageParams> sends = new ArrayList<>();
+        for (TLRPC.Message message : outgoing.messages) sends.add(monogramQuickReplySend(dialogId, message));
+        for (SendMessageParams send : sends) sendMessage(send);
+    }
+
+    private SendMessageParams monogramQuickReplySend(long dialogId, TLRPC.Message message) {
+        if (message == null || message.reply_markup != null || message.ttl != 0 || message.grouped_id != 0) {
+            throw new IllegalArgumentException("Quick reply contains unsupported content");
+        }
+        ArrayList<TLRPC.MessageEntity> entities = message.entities == null || message.entities.isEmpty() ? null : new ArrayList<>(message.entities);
+        if (message.rich_message != null) {
+            return SendMessageParams.ofRichMessage(message.rich_message, dialogId, null, null, null, null, true, 0, 0);
+        }
+        TLRPC.MessageMedia media = message.media;
+        if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
+            if (TextUtils.isEmpty(message.message)) throw new IllegalArgumentException("Quick reply contains an empty message");
+            return SendMessageParams.of(message.message, dialogId, null, null, null, true, entities, null, null, true, 0, 0, null, false);
+        }
+        if (media.ttl_seconds != 0 || media.spoiler) throw new IllegalArgumentException("Quick reply contains unsupported media");
+        if (media instanceof TLRPC.TL_messageMediaPhoto && media.photo instanceof TLRPC.TL_photo) {
+            File source = monogramQuickReplyMediaSource(message);
+            return SendMessageParams.of((TLRPC.TL_photo) media.photo, source.getAbsolutePath(), dialogId, null, null,
+                    message.message == null ? "" : message.message, entities, null, null, true, 0, 0, 0, null, false, false);
+        }
+        if (media instanceof TLRPC.TL_messageMediaDocument && media.document instanceof TLRPC.TL_document) {
+            File source = monogramQuickReplyMediaSource(message);
+            return SendMessageParams.of((TLRPC.TL_document) media.document, null, source.getAbsolutePath(), dialogId, null, null,
+                    message.message == null ? "" : message.message, entities, null, null, true, 0, 0, 0, null, null, false, false);
+        }
+        if (media instanceof TLRPC.TL_messageMediaGeo || media instanceof TLRPC.TL_messageMediaVenue) {
+            return SendMessageParams.of(media, dialogId, null, null, null, null, true, 0, 0);
+        }
+        throw new IllegalArgumentException("Quick reply contains unsupported media");
+    }
+
+    private File monogramQuickReplyMediaSource(TLRPC.Message message) {
+        if (!TextUtils.isEmpty(message.attachPath)) {
+            File explicit = new File(message.attachPath);
+            if (explicit.isFile()) return explicit;
+        }
+        TLRPC.MessageMedia media = message.media;
+        File source = null;
+        if (media != null && media.document instanceof TLRPC.TL_document) {
+            source = getFileLoader().getPathToAttach(media.document);
+            if (!source.isFile()) source = getFileLoader().getPathToAttach(media.document, true);
+        } else if (media != null && media.photo instanceof TLRPC.TL_photo) {
+            TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(media.photo.sizes, 10000);
+            if (size != null) {
+                source = getFileLoader().getPathToAttach(size, true);
+                if (!source.isFile()) source = getFileLoader().getPathToAttach(size);
+            }
+        }
+        if (source == null || !source.isFile()) throw new IllegalArgumentException("Quick reply media is no longer available");
+        return source;
+    }
+
+    /** Saves a native quick-reply editor row locally instead of sending it to Telegram. */
+    private boolean captureMonogramQuickReplyEditor(TLRPC.Message message, String shortcut, int shortcutId, long peer) {
+        if (TextUtils.isEmpty(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid())
+                || (shortcutId == 0 && TextUtils.isEmpty(shortcut))) return false;
+        // Template rows are edited and deleted through the native quick-reply table, which expects
+        // a stable permanent positive id rather than the ordinary outgoing negative local id.
+        if (message.id <= 0) {
+            int localId = message.id;
+            message.id = nextMonogramQuickReplyMessageId();
+            message.local_id = localId;
+        }
+        QuickRepliesController.QuickReply reply = QuickRepliesController.getInstance(currentAccount)
+                .recordMonogramTemplateMessage(shortcut, shortcutId, message);
+        if (reply == null) throw new IllegalStateException("Could not save quick reply");
+        message.flags |= 1073741824;
+        message.quick_reply_shortcut_id = reply.id;
+        message.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
+        ArrayList<TLRPC.Message> messages = new ArrayList<>();
+        messages.add(message);
+        MessagesStorage.getInstance(currentAccount).putMessages(messages, false, true, false, 0, ChatActivity.MODE_QUICK_REPLIES, reply.id);
+        ArrayList<MessageObject> objects = new ArrayList<>();
+        objects.add(new MessageObject(currentAccount, message, false, true));
+        MessagesController.getInstance(currentAccount).updateInterfaceWithMessages(peer, objects, ChatActivity.MODE_QUICK_REPLIES);
+        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
+        return true;
+    }
+
+    private int nextMonogramQuickReplyMessageId() {
+        String owner = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid();
+        if (TextUtils.isEmpty(owner)) throw new IllegalStateException("XMPP account is not connected");
+        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-quick-reply-message-ids", Context.MODE_PRIVATE);
+        String key = currentAccount + "\n" + owner;
+        synchronized (SendMessagesHelper.class) {
+            int id = preferences.getInt(key, 1_500_000_000);
+            if (id <= 0 || id == Integer.MAX_VALUE) id = 1_500_000_000;
+            if (!preferences.edit().putInt(key, id + 1).commit()) throw new IllegalStateException("Could not allocate quick reply message id");
+            return id;
+        }
+    }
+
+    /** Applies a native editor change to the local template and never emits a Telegram edit RPC. */
+    private boolean captureMonogramQuickReplyEdit(MessageObject messageObject, TLRPC.TL_messages_editMessage request) {
+        if (messageObject == null || messageObject.messageOwner == null
+                || TextUtils.isEmpty(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid())
+                || (messageObject.messageOwner.flags & 1073741824) == 0
+                || messageObject.messageOwner.quick_reply_shortcut_id == 0) return false;
+        if ((request.flags & 2048) != 0) {
+            messageObject.messageOwner.message = request.message == null ? "" : request.message;
+            if ((request.flags & 8) == 0) {
+                messageObject.messageOwner.entities = new ArrayList<>();
+                messageObject.messageOwner.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+            }
+        }
+        if ((request.flags & 8) != 0) {
+            messageObject.messageOwner.entities = request.entities;
+            messageObject.messageOwner.flags |= TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
+        }
+        QuickRepliesController.QuickReply updated = QuickRepliesController.getInstance(currentAccount).replaceMonogramTemplateMessage(
+                messageObject.messageOwner.quick_reply_shortcut_id, messageObject.getId(), messageObject.messageOwner);
+        if (updated == null) throw new IllegalStateException("Could not update quick reply");
+        messageObject.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
+        ArrayList<TLRPC.Message> messages = new ArrayList<>();
+        messages.add(messageObject.messageOwner);
+        MessagesStorage.getInstance(currentAccount).putMessages(messages, true, true, false, 0, ChatActivity.MODE_QUICK_REPLIES,
+                messageObject.messageOwner.quick_reply_shortcut_id);
+        ArrayList<MessageObject> objects = new ArrayList<>();
+        objects.add(messageObject);
+        getNotificationCenter().postNotificationName(NotificationCenter.replaceMessagesObjects, messageObject.getDialogId(), objects);
+        return true;
+    }
+
 
 
     public void sendScreenshotMessage(TLRPC.User user, int messageId, TLRPC.Message resendMessage) {
@@ -3407,6 +3550,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         delayedMessage.sendRequest = request;
                     }
                     reqSend = request;
+                    if (captureMonogramQuickReplyEdit(messageObject, request)) return;
                 }
 
                 if (type == 1 || type == 11) {
@@ -3478,6 +3622,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             req.entities = entities;
             req.flags |= 8;
         }
+        if (captureMonogramQuickReplyEdit(messageObject, req)) return 0;
         if (scheduleDate != 0) {
             req.schedule_date = scheduleDate;
             req.flags |= 32768;
@@ -3527,6 +3672,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             req.flags |= 131072;
         }
         messageObject.messageOwner.rich_message = rich;
+        if (captureMonogramQuickReplyEdit(messageObject, req)) return 0;
         messageObject.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_EDITING;
         final int reqId = sendEditRichMessageRequest(req, messageObject, fragment, onlyCheckbox);
         notifyRichMessageEditing(messageObject);
@@ -5086,6 +5232,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             if (isWelcomeMessageTemplate) {
                 // newMsg.out = false;
                 newMsg.from_id = newMsg.peer_id;
+            }
+            if (captureMonogramQuickReplyEditor(newMsg, quick_reply_shortcut, quick_reply_shortcut_id, peer)) {
+                return;
             }
             org.telegram.messenger.xmpp.MonogramController.get(currentAccount).prepareOutgoingMessage(newMsg);
             newMsg.send_state = MessageObject.MESSAGE_SEND_STATE_SENDING;
