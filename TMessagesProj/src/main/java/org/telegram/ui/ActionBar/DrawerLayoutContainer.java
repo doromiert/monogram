@@ -31,6 +31,51 @@ public class DrawerLayoutContainer extends FrameLayout {
     private INavigationLayout parentActionBarLayout;
     private ActionBarLayout actionBarLayout;
     private boolean inLayout;
+    private org.telegram.ui.MonogramDrawer navigationDrawer;
+
+    private org.telegram.ui.DialogsActivity navigationDrawerHost() {
+        if (parentActionBarLayout == null || parentActionBarLayout.checkTransitionAnimation()
+                || parentActionBarLayout.isInPreviewMode()) return null;
+        BaseFragment top = parentActionBarLayout.getLastFragment();
+        if (top instanceof org.telegram.ui.MainTabsActivity) top = ((org.telegram.ui.MainTabsActivity) top).getCurrentVisibleFragment();
+        return top instanceof org.telegram.ui.DialogsActivity && ((org.telegram.ui.DialogsActivity) top).canOpenNavigationDrawer()
+                ? (org.telegram.ui.DialogsActivity) top : null;
+    }
+
+    private void ensureNavigationDrawer() {
+        if (navigationDrawer == null) {
+            navigationDrawer = new org.telegram.ui.MonogramDrawer(this);
+            addView(navigationDrawer, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        }
+    }
+
+    public void setNavigationDrawerOffset(float offset) {
+        if (parentActionBarLayout == null) return;
+        View target = parentActionBarLayout.getView();
+        if (target == null) return;
+        while (target.getParent() instanceof View && target.getParent() != this) target = (View) target.getParent();
+        if (target.getParent() == this) target.setTranslationX(offset);
+    }
+
+    public void openNavigationDrawer(org.telegram.ui.DialogsActivity host) {
+        if (navigationDrawerHost() != host) return;
+        ensureNavigationDrawer();
+        navigationDrawer.open(host);
+    }
+
+    public boolean closeNavigationDrawer(BaseFragment host, boolean close) {
+        if (navigationDrawer == null || !navigationDrawer.belongsTo(host)) return false;
+        if (close) navigationDrawer.close(true);
+        return true;
+    }
+
+    @Override public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+        // Keep observing a possible edge drag above RecyclerView and the main-tab ViewPager.
+        // Vertical movement relinquishes this reservation immediately.
+        if (disallowIntercept && navigationDrawer != null && navigationDrawer.observingEdge()) return;
+        super.requestDisallowInterceptTouchEvent(disallowIntercept);
+    }
+
 
     public DrawerLayoutContainer(Context context) {
         super(context);
@@ -52,12 +97,15 @@ public class DrawerLayoutContainer extends FrameLayout {
     }
 
     public boolean onTouchEvent(MotionEvent ev) {
-        return false;
+        return navigationDrawer != null && navigationDrawer.touch(ev);
     }
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        return parentActionBarLayout.checkTransitionAnimation();
+        org.telegram.ui.DialogsActivity host = navigationDrawerHost();
+        if (navigationDrawer == null && ev.getActionMasked() == MotionEvent.ACTION_DOWN && host != null) ensureNavigationDrawer();
+        if (navigationDrawer != null && navigationDrawer.intercept(ev, host)) return true;
+        return parentActionBarLayout != null && parentActionBarLayout.checkTransitionAnimation();
     }
 
     @Override

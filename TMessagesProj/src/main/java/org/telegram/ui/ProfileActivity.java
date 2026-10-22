@@ -11336,14 +11336,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private int readableProfileStatus(int color) {
-        if(isPulledDown) return color; // Preserve the native photo-overlay treatment.
-        int first=topView==null ? getThemedColor(Theme.key_actionBarDefault) : topView.currentColor;
-        int second=first;
-        if(peerColor!=null) {
-            first=peerColor.getBgColor1(Theme.isCurrentThemeDark());
-            second=peerColor.getBgColor2(Theme.isCurrentThemeDark());
-        }
-        return org.telegram.ui.ActionBar.MonogramProfileContrast.readable(color,first,second);
+        // The colored profile hero uses white names and controls; keep the subtitle consistent.
+        // The compact action bar retains its own theme color during the collapse transition.
+        return ColorUtils.blendARGB(color, android.graphics.Color.WHITE, calculateHeaderExtraDiff());
     }
 
     private int applyPeerColor(int color, boolean actionBar, Boolean online) {

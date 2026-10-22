@@ -39,3 +39,12 @@ A minimal pack ZIP contains `metadata.json` and the referenced files at its root
 ```
 
 Resource names stay stable across builds; numeric Android resource IDs are not exported. Relative subdirectories are supported, but references outside the pack are rejected. SVG imports have no external entity support. Imports do not overwrite an installed pack with the same ID.
+
+
+### 0.2.147 drawer and flat-navigation correction
+
+The initial drawer overlay did not reproduce the supplied reference. Replace it with an activity-root drawer whose gesture interception runs above the home pager. Adapt the supplied APK’s DrawerContainer/Header/AccountPicker geometry: 300dp maximum width, 72dp account avatar, 15/12sp name/JID header, day/night action, expandable account card, 48dp menu rows and rounded outside corners. Preserve native XMPP account switching/login, profile, archived chats, bookmarks, settings and configured menu visibility/order. Use MenuDrawable instead of the overflow entry while drawer mode is enabled. Dragging updates both panel and immersive content translation directly; release/cancel settle through a cancellable animator. Restore scroll/velocity cleanup on detach.
+
+Flat navigation now fills available width and paints through the system navigation inset; floating mode retains its original padding and glass shape. The colored profile hero uses white status text, transitioning to themed compact-bar text on collapse.
+
+Release checks: Nix arm64 packaging, existing 15 focused cases and three Robolectric real-view gesture cases pass. APK signer/version/exclusion audit verified and previous entry inventory preserved. No phone installation; visual comparison, closed-drawer opening and physical-device motion acceptance remain pending. This is an adapted native implementation, without a pixel-exact parity claim.

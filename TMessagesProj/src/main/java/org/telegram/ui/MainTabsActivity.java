@@ -305,7 +305,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         tabsView = new MainTabsLayout(context, resourceProvider);
         tabsView.setClipChildren(false);
-        tabsView.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4));
+        final boolean flatNavigation = org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get() == 0;
+        tabsView.setFillWidth(flatNavigation);
+        tabsView.setPadding(flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(flatNavigation ? 4 : DialogsActivity.MAIN_TABS_MARGIN + 4), flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(flatNavigation ? 4 : DialogsActivity.MAIN_TABS_MARGIN + 4));
         tabsView.setMaxWidth(org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==0?0:dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
 
         tabs = new GlassTabView[5];
@@ -362,8 +364,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         tabsViewBackground = iBlur3FactoryGlass.create(tabsView, BlurredBackgroundProviderImpl.mainTabs(resourceProvider));
         tabsViewBackground.setRadius(org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==0?0:dp(org.telegram.utils.settings.MonogramAppearance.navigationStyle.get()?16:DialogsActivity.MAIN_TABS_HEIGHT / 2f));
-        tabsViewBackground.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
-        tabsView.setBackground(tabsViewBackground);
+        tabsViewBackground.setPadding(flatNavigation ? 0 : dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
+        tabsView.setBackground(flatNavigation ? null : tabsViewBackground);
 
         BlurredBackgroundDrawableViewFactory iBlur3FactoryFade = new BlurredBackgroundDrawableViewFactory(iBlur3SourceColor);
         iBlur3FactoryFade.setSourceRootView(viewPositionWatcher, contentView);
@@ -376,8 +378,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         contentView.addView(fadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.BOTTOM));
 
         tabsViewWrapper = new FrameLayout(context);
+        if (flatNavigation) tabsViewWrapper.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
         tabsViewWrapper.setOnClickListener(v -> {});
-        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, flatNavigation ? DialogsActivity.MAIN_TABS_HEIGHT : DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         tabsViewWrapper.setClipToPadding(false);
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
@@ -1044,7 +1047,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         final float animatedPosition = viewPager.getPositionAnimated();
         final float isProfile = 1f - MathUtils.clamp(Math.abs(POSITION_PROFILE - animatedPosition), 0, 1);
         final float hide = 1f - AndroidUtilities.getNavigationBarThirdButtonsFactor(0, 1f, navigationBarHeight);
-        float alpha = org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()==1?0:(1f - isProfile * hide) * animatorTabsVisible.getFloatValue();
+        float alpha = org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()!=2?0:(1f - isProfile * hide) * animatorTabsVisible.getFloatValue();
         if (tabletLayout) {
             alpha = 0.0f;
         }
@@ -1198,6 +1201,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     private void blur3_updateColors() {
         blur3_updateFadeColors();
+        if (tabsViewWrapper != null && org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get() == 0) {
+            tabsViewWrapper.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        }
         if (tabsViewBackground != null) {
             tabsViewBackground.updateColors();
         }

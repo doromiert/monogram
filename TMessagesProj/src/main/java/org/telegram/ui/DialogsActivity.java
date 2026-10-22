@@ -1333,21 +1333,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             updateContextViewPosition();
         }
 
-        private float drawerDownX,drawerDownY;
-        private boolean drawerEdge;
         @Override
         public boolean onInterceptTouchEvent(MotionEvent ev) {
-            if(org.telegram.utils.settings.MonogramAppearance.drawer.get() && !onlySelect && folderId==0 && communityId==0 && !searching && !actionBar.isActionModeShowed()) {
-                if(ev.getActionMasked()==MotionEvent.ACTION_DOWN) {
-                    drawerDownX=ev.getX();drawerDownY=ev.getY();
-                    drawerEdge=LocaleController.isRTL?drawerDownX>getWidth()-dp(24):drawerDownX<dp(24);
-                } else if(ev.getActionMasked()==MotionEvent.ACTION_MOVE && drawerEdge) {
-                    float dx=(ev.getX()-drawerDownX)*(LocaleController.isRTL?-1:1);
-                    if(dx>dp(36) && Math.abs(ev.getY()-drawerDownY)<dp(32)) {
-                        drawerEdge=false;MonogramNavigation.showDrawer(DialogsActivity.this);return true;
-                    }
-                } else if(ev.getActionMasked()==MotionEvent.ACTION_UP || ev.getActionMasked()==MotionEvent.ACTION_CANCEL)drawerEdge=false;
-            }
             int action = ev.getActionMasked();
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 if (actionBar.isActionModeShowed()) {
@@ -3414,6 +3401,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (initialDialogsType == DIALOGS_TYPE_DEFAULT) {
             optionsItem = menu.addItem(4, R.drawable.ic_ab_other);
             optionsItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
+            if (monogramDrawerEnabled()) optionsItem.setVisibility(View.GONE);
             optionsItem.setOnClickListener(v -> {
                 getContactsController().loadGlobalPrivacySetting();
                 showItemOptions();
@@ -3488,7 +3476,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 statusDrawable.center = true;
                 actionBar.setTitle(monogramHomeTitle(), statusDrawable);
                 if(org.telegram.utils.settings.MonogramAppearance.drawer.get()) {
-                    actionBar.setBackButtonImage(R.drawable.menu_intro);
+                    if (!(actionBar.getBackButtonDrawable() instanceof MenuDrawable)) actionBar.setBackButtonDrawable(new MenuDrawable());
                     actionBar.getBackButton().setContentDescription("Open navigation menu");
                 }
                 updateStatus(UserConfig.getInstance(currentAccount).getCurrentUser(), false);
@@ -13510,9 +13498,27 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         checkUi_itemSearchVisibility();
     }
 
+    private boolean monogramDrawerEnabled() {
+        return org.telegram.utils.settings.MonogramAppearance.drawer.get() && !onlySelect && folderId == 0 && communityId == 0;
+    }
+
+    public boolean canOpenNavigationDrawer() {
+        return monogramDrawerEnabled() && !searching && actionBar != null && !actionBar.isActionModeShowed()
+                && getRightSlidingProgress() == 0 && !hasShownSheet() && !filterTabsViewIsEditing();
+    }
+
+    private boolean filterTabsViewIsEditing() {
+        return filterTabsView != null && filterTabsView.isEditing();
+    }
+
     private void checkUi_itemBackButtonVisibility() {
         if (actionBar == null) {
             return;
+        }
+
+        if (monogramDrawerEnabled() && !searching && !actionBar.isActionModeShowed() && getRightSlidingProgress() == 0) {
+            if (!(actionBar.getBackButtonDrawable() instanceof MenuDrawable)) actionBar.setBackButtonDrawable(new MenuDrawable());
+            actionBar.getBackButton().setContentDescription("Open navigation menu");
         }
 
         final float factor1 = 1f - animatorSearchVisible.getFloatValue();
@@ -13526,7 +13532,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         final float factor1 = 1f - animatorSearchVisible.getFloatValue();
         final float factor2 = 1f - getRightSlidingProgress();
         final float factor3 = 1f - animatorDoneButtonVisible.getFloatValue();
-        final float factor = factor1 * factor2 * factor3;
+        final float factor = monogramDrawerEnabled() ? 0 : factor1 * factor2 * factor3;
         FragmentFloatingButton.setAnimatedVisibility(optionsItem, factor);
     }
 
