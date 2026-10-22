@@ -2971,8 +2971,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
 
         BirthdayController.getInstance(currentAccount).check();
-        additionNavigationBarHeight = hasMainTabs && org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()!=1 ? dp(MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
-        additionFloatingButtonOffset = hasMainTabs && org.telegram.utils.settings.MonogramAppearance.bottomNavigation.get()!=1 ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN) : 0;
+        updateMainTabsOffsets();
 
         return true;
     }
@@ -6579,6 +6578,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        updateFloatingButtonOffset();
+        if(fragmentView!=null) ViewCompat.requestApplyInsets(fragmentView);
         boolean collapseSearch = shouldCollapseHomeSearch();
         if (collapseHomeSearch != collapseSearch) {
             collapseHomeSearch = collapseSearch;
@@ -8376,7 +8377,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    private void updateMainTabsOffsets() {
+        // A retained chats page keeps its original hasMainTabs argument when settings
+        // rebuild its views. Its hosting controller remains valid across hide/show.
+        boolean hosted=hasMainTabs || mainTabsActivityController!=null;
+        additionNavigationBarHeight=dp(MonogramNavigation.bottomBarHeightDp(hosted));
+        additionFloatingButtonOffset=dp(MonogramNavigation.bottomBarFabOffsetDp(hosted));
+    }
+
     private void updateFloatingButtonOffset() {
+        updateMainTabsOffsets();
         final float top = -navigationBarHeight - additionFloatingButtonOffset - additionalFloatingTranslation;
         final float baseTranslationY = top
             - floatingButtonPanOffset;
@@ -12933,7 +12943,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private void openWriteContacts() {
         Bundle args = new Bundle();
         args.putBoolean("destroyAfterSelect", true);
-        presentFragment(new MonogramNewChatActivity(currentAccount));
+        args.putBoolean("monogramCompose",true);
+        ContactsActivity picker=new ContactsActivity(args);picker.setCurrentAccount(currentAccount);
+        presentFragment(picker);
     }
 
     private void openStoriesRecorder() {

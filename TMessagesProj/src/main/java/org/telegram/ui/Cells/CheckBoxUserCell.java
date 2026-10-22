@@ -38,6 +38,7 @@ public class CheckBoxUserCell extends FrameLayout {
 
     public CheckBoxUserCell(Context context, boolean alert) {
         super(context);
+        setClipChildren(false);
 
         textView = new SimpleTextView(context);
         textView.setTextColor(Theme.getColor(alert ? Theme.key_dialogTextBlack : Theme.key_windowBackgroundWhiteBlackText));

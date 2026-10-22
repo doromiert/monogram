@@ -576,7 +576,9 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                         if (position == 0) {
                             textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewGroup), "", false, R.drawable.settings_group, 0xFF1CA5ED, 0xFF1488E1, false);
                         } else if (position == 1) {
-                            textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewChannel), "", false, R.drawable.settings_channel, 0xFF55CA47, 0xFF27B434, false);
+                            boolean xmppCompose=fragment instanceof org.telegram.ui.ContactsActivity && ((org.telegram.ui.ContactsActivity)fragment).isMonogramCompose();
+                            textCell.setTextAndValueAndColorfulIcon(xmppCompose ? "Join XMPP room" : getString(R.string.NewChannel), "", false,
+                                    xmppCompose ? R.drawable.msg_link2 : R.drawable.settings_channel, 0xFF55CA47, 0xFF27B434, false);
                         }
                     }
                 } else {

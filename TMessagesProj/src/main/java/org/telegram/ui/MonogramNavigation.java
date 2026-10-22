@@ -10,6 +10,14 @@ import org.telegram.ui.Components.*;
 import static org.telegram.utils.settings.MonogramAppearance.*;
 
 final class MonogramNavigation {
+    static int bottomBarHeightDp(boolean hosted) {
+        if(!hosted || bottomNavigation.get()==1) return 0;
+        return navigationStyle.get()?64:bottomNavigation.get()==0?DialogsActivity.MAIN_TABS_HEIGHT:DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS;
+    }
+    static int bottomBarFabOffsetDp(boolean hosted) {
+        int height=bottomBarHeightDp(hosted);
+        return bottomNavigation.get()==2 && !navigationStyle.get() ? Math.max(0,height-DialogsActivity.MAIN_TABS_MARGIN) : height;
+    }
     static boolean closeDrawer(BaseFragment host, boolean close) {
         DrawerLayoutContainer root = host.getParentLayout() == null ? null : host.getParentLayout().getDrawerLayoutContainer();
         return root != null && root.closeNavigationDrawer(host, close);

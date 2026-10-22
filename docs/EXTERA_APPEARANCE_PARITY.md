@@ -97,3 +97,12 @@ The user confirmed native/Material toggle animation and the subsequent live styl
 Emulator radios were re-enabled for the user's sign-in attempt; the earlier offline-preview statement describes the initial setup only. Disroot rejects the attempted credentials with SASL not-authorized; both service endpoints have verified Let’s Encrypt chains from the PC. No physical-device account was logged out or new account created.
 
 This packages existing corrections; it does not establish full exteraGram parity. Outstanding items include the special isolated pill/animation-offset behavior, some fixed bottom-navigation/FAB caller reserves, exact reset/choice-dialog placement, and comprehensive RTL/large-font/motion/physical-device acceptance.
+
+
+### 0.2.151 phone regression follow-up
+
+A fresh, explicitly requested phone capture shows the Material track's left and right arcs clipped in Chat Settings. Those switches are still 37dp child views; the working TextCheckCell disables child clipping, while NotificationsCheckCell and several other holders did not. Apply the same policy to these holders while retaining RecyclerView's outer section clipping. Normalize Chat Settings binding before reuse: clear old subtitles, reset tint, use a common icon center/64dp text inset, center the actual drawable vertically, and give described rows 60dp height.
+
+The phone's native compose comparison was captured directly: Monogram showed only an address form; installed exteraGram showed New Message with search, sort, group/channel actions, roster and add-contact FAB. Return the home compose button to the existing ContactsActivity. Preserve its contact search/sorting/selection and group creation, adapt the channel action to Join XMPP room, use XMPP address entry from its add-contact FAB and retain server invitations in its overflow. Captures are in ignored `.state/new-conversation-reference/`. Returned to Monogram without sending messages, changing settings or accounts.
+
+The retained home page also cached navigation/FAB space at fragment creation. Recompute it on resume and inset updates using the owning tabs controller and current navigation preference, with zero reserve when hidden and actual native flat/Material/floating geometry.

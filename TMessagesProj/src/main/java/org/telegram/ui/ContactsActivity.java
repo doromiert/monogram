@@ -195,6 +195,11 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     private final static int sort_button = 1;
 
     private final static int delete = 100;
+    private final static int xmpp_invite = 101;
+
+    public boolean isMonogramCompose() {
+        return arguments!=null && arguments.getBoolean("monogramCompose",false) && !returnAsResult && !createSecretChat;
+    }
 
 
 
@@ -223,7 +228,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.updateInterfaces);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.encryptedChatCreated);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.closeChats);
-        checkPermission = UserConfig.getInstance(currentAccount).syncContacts;
+        checkPermission = !isMonogramCompose() && UserConfig.getInstance(currentAccount).syncContacts;
         if (arguments != null) {
             onlyUsers = arguments.getBoolean("onlyUsers", false);
             destroyAfterSelect = arguments.getBoolean("destroyAfterSelect", false);
@@ -241,6 +246,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             resetDelegate = arguments.getBoolean("resetDelegate", false);
             needPhonebook = arguments.getBoolean("needPhonebook", false);
             hasMainTabs = arguments.getBoolean("hasMainTabs", false);
+            if(isMonogramCompose()) allowUsernameSearch=false;
         } else {
             needPhonebook = true;
         }
@@ -330,6 +336,8 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                     } else {
                         finishFragment();
                     }
+                } else if (id == xmpp_invite && isMonogramCompose()) {
+                    presentFragment(new MonogramAccountInviteActivity(currentAccount));
                 } else if (id == delete) {
                     performSelectedContactsDelete();
                 } else if (id == sort_button) {
@@ -407,6 +415,8 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
             sortItem = menu.addItem(sort_button, sortByName ? R.drawable.msg_contacts_time : R.drawable.msg_contacts_name);
             sortItem.setContentDescription(getString(R.string.AccDescrContactSorting));
         }
+        if(isMonogramCompose()) menu.addItem(102,R.drawable.ic_ab_other)
+                .addSubItem(xmpp_invite,R.drawable.msg_contacts,"Invite someone to your server");
 
         listView = new RecyclerListView(context);
         searchListViewAdapter = new SearchAdapter(listView, context, ignoreUsers, selectedContacts, allowUsernameSearch, false, false, allowBots, allowSelf, true, 0, resourceProvider) {
@@ -699,6 +709,10 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                             Bundle args = new Bundle();
                             presentFragment(new GroupCreateActivity(args), false);
                         } else if (row == 1) {
+                            if(isMonogramCompose()) {
+                                presentFragment(new MonogramRoomActivity(currentAccount,0));
+                                return;
+                            }
                             if (MessagesController.getInstance(currentAccount).isFrozen()) {
                                 AccountFrozenAlert.show(currentAccount);
                                 return;
@@ -941,7 +955,8 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                     AccountFrozenAlert.show(currentAccount);
                     return;
                 }
-                new NewContactBottomSheet(ContactsActivity.this, getContext()).show();
+                if(isMonogramCompose()) presentFragment(new MonogramNewChatActivity(currentAccount));
+                else new NewContactBottomSheet(ContactsActivity.this, getContext()).show();
             });
 
             floatingButton.setAnimation(R.raw.write_contacts_fab_icon, 44);
@@ -1618,7 +1633,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     private boolean lastIsEmpty;
 
     private void checkUi_searchFieldHint() {
-        final boolean isEmpty = listViewAdapter != null && listViewAdapter.isEmpty();
+        final boolean isEmpty = !isMonogramCompose() && listViewAdapter != null && listViewAdapter.isEmpty();
 
         if (lastIsEmpty != isEmpty || TextUtils.isEmpty(searchField.editText.getHint())) {
             searchField.editText.setHint(getString(isEmpty ? R.string.SearchPeopleByUsername : R.string.SearchContacts));

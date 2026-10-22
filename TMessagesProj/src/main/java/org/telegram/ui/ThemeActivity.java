@@ -2693,6 +2693,8 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 case TYPE_TEXT_PREFERENCE: {
                     TextCell cell = (TextCell) holder.itemView;
                     cell.heightDp = 48;
+                    cell.setSubtitle(null);
+                    cell.setColors(Theme.key_windowBackgroundWhiteGrayIcon, Theme.key_windowBackgroundWhiteBlackText);
                     if (position == backgroundRow) {
                         cell.setSubtitle(null);
                         cell.setColors(Theme.key_windowBackgroundWhiteBlueText4, Theme.key_windowBackgroundWhiteBlueText4);
@@ -2717,6 +2719,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                     } else if (position == chatBehaviorRow) {
                         cell.setTextAndIcon("Chat behavior", R.drawable.msg_settings, true);
                         cell.setSubtitle("Keyboard, mentions and message menu actions");
+                        cell.heightDp = 60;
                     } else if (position == swipeActionsRow) {
                         cell.setColors(Theme.key_dialogIcon, Theme.key_windowBackgroundWhiteBlackText);
                         cell.setTextAndIcon(getString(R.string.MonogramSwipeActionsTitle), R.drawable.msg_message, true);
@@ -2744,6 +2747,14 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                         cell.heightDp = 60;
                         cell.imageLeft = 20;
                     }
+                    // Recycled one-/two-line preferences share the notification rows' 64dp
+                    // text inset and icon center, regardless of each asset's intrinsic size.
+                    cell.offsetFromImage = 64;
+                    android.graphics.drawable.Drawable rowIcon=cell.imageView.getDrawable();
+                    cell.imageLeft=rowIcon==null ? 20 : 32-Math.round(rowIcon.getIntrinsicWidth()/(2f*AndroidUtilities.density));
+                    cell.centerIconVertically=true;
+                    if(position!=backgroundRow && position!=editThemeRow && position!=createNewThemeRow)
+                        cell.setColors(Theme.key_windowBackgroundWhiteGrayIcon, Theme.key_windowBackgroundWhiteBlackText);
                     break;
                 }
                 case TYPE_DEFAULT_THEMES_PREVIEW: {

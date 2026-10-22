@@ -63,6 +63,7 @@ public class TextCell extends FrameLayout {
     public int offsetFromImage = 58;
     public int heightDp = 50;
     public int imageLeft = 16;
+    public boolean centerIconVertically;
     private boolean inDialogs;
     private boolean prioritizeTitleOverValue;
     private Theme.ResourcesProvider resourcesProvider;
@@ -143,6 +144,7 @@ public class TextCell extends FrameLayout {
         }
 
         setFocusable(true);
+        setClipChildren(false);
     }
 
     public boolean isChecked() {
@@ -279,6 +281,10 @@ public class TextCell extends FrameLayout {
         }
         if (imageView.getVisibility() == VISIBLE) {
             viewTop = dp(heightDp > 50 ? 0 : 2) + (height - imageView.getMeasuredHeight()) / 2 - imageView.getPaddingTop() + dp(1);
+            if(centerIconVertically) {
+                int iconHeight=imageView.getMeasuredHeight()-imageView.getPaddingTop()-imageView.getPaddingBottom();
+                viewTop=(height-iconHeight)/2-imageView.getPaddingTop();
+            }
             viewLeft = !LocaleController.isRTL ? dp(imageLeft) : width - imageView.getMeasuredWidth() - dp(imageLeft);
             imageView.layout(viewLeft, viewTop, viewLeft + imageView.getMeasuredWidth(), viewTop + imageView.getMeasuredHeight());
         }

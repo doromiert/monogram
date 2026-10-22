@@ -63,6 +63,8 @@ public class NotificationsCheckCell extends FrameLayout {
     public NotificationsCheckCell(Context context, int padding, int height, boolean withImage, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        // The Material track extends beyond the legacy 37dp switch child bounds.
+        setClipChildren(false);
 
         setWillNotDraw(false);
         currentHeight = height;
