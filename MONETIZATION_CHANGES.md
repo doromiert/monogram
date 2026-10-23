@@ -1070,3 +1070,5 @@ Installed private xmr.19 (73529), SHA-256 d86bedb39cfc2ef4636e54ce1f99356b764b1c
 - Private XMR follow-up: default new main wallets to SDK Polyseed, display recovery words in a two-column grid, hide precise-balance controls while locked, and automatically sync after successful unlock in both wallet entry points. Pending APK validation; existing wallets and claim-link seed format unchanged.
 
 - xmr.20: portable claim restore links/manual instructions, confirmation-aware cancellation preparation, recent Keystore-auth reuse, Polyseed/two-column recovery, locked precision control hiding, auto-sync on unlock, normal-size scrollable attachment controls and lower-cost precision animation rendering. Release branch remains separate from main.
+
+- xmr.22 follow-up: swipe wallet cards, exact total/available send balances with confirmation-lock explanation, resume-safe unlock callback, reduced note gap, clipped scroll viewport, compact history and transaction precision toggle with text fitting.

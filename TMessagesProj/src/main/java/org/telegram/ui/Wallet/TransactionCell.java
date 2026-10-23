@@ -637,9 +637,9 @@ public class TransactionCell extends FrameLayout implements Theme.Colorable {
         }
     }
 
-    private static CharSequence formatAmount(boolean incoming, long grams) {
+    private CharSequence formatAmount(boolean incoming, long grams) {
         final long gramsAbs = Math.abs(grams);
-        final SpannableStringBuilder amount = GramWallet.formatGramsScaled(gramsAbs, 11.0f / 14.0f);
+        final SpannableStringBuilder amount = GramWallet.formatGramsScaled(com.negzero.monogram.wallet.WalletAmounts.displayBalance(gramsAbs,WalletCardComponent.displayDecimals(getContext())),11.0f/14.0f);
         if (gramsAbs != 0 && incoming) {
             amount.insert(0, "+");
         } else if (gramsAbs != 0 && !incoming) {

@@ -272,7 +272,8 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         center.setOnClickListener(v -> requestAmountKeyboard());
         amountScroll = new ScrollView(context);
         amountScroll.setFillViewport(true);
-        amountScroll.setClipToPadding(false);
+        amountScroll.setClipToPadding(true);
+        amountScroll.setClipChildren(true);
         amountScroll.setVerticalScrollBarEnabled(false);
         center.setGravity(Gravity.CENTER_VERTICAL);
         amountScroll.addView(center, new ScrollView.LayoutParams(
@@ -410,7 +411,14 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         ScaleStateListAnimator.apply(currencyView);
         currencyView.setOnClickListener(v -> switchInputMode());
 
-        centerBottomContainer = new FrameLayout(context);
+        centerBottomContainer = new FrameLayout(context) {
+            @Override protected void onMeasure(int widthSpec,int heightSpec){
+                super.onMeasure(widthSpec,heightSpec);
+                // Invisible legacy error/hint rows must not reserve an empty block.
+                if(centerBottomVisible && insufficientFundsView!=null && insufficientFundsView.getVisibility()==View.GONE)
+                    setMeasuredDimension(getMeasuredWidth(),0);
+            }
+        };
         center.addView(centerBottomContainer, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         centerBottom = new LinearLayout(context);
         centerBottom.setOrientation(LinearLayout.VERTICAL);
@@ -498,6 +506,8 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         balanceView = new TextView(context);
         balanceView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
         balanceView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        balanceView.setSingleLine(true);
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(balanceView,10,14,1,TypedValue.COMPLEX_UNIT_DIP);
         balanceView.setGravity(Gravity.CENTER);
         bottomIntroContainer.addView(balanceView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT,
@@ -509,6 +519,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         feeView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
         feeView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         feeView.setGravity(Gravity.CENTER);
+        feeView.setMaxLines(2);
         feeView.setPadding(0, dp(4), 0, dp(4));
         feeView.setVisibility(View.GONE);
         bottomIntroContainer.addView(feeView, LayoutHelper.createFrame(
@@ -560,7 +571,11 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
     private void showError(boolean show, boolean insufficientFunds) {
         if (show) {
-            if (insufficientFunds) {
+            if (insufficientFunds && GramWallet.getInstance(currentAccount).getBalance() > GramWallet.getInstance(currentAccount).getSpendableBalance()
+                    && getGramNanoAmount() <= GramWallet.getInstance(currentAccount).getBalance()) {
+                insufficientFundsView.setText("Funds are awaiting confirmations. Available: "
+                    + GramWallet.formatGramsWithUnit(GramWallet.getInstance(currentAccount).getSpendableBalance()));
+            } else if (insufficientFunds) {
                 final SpannableStringBuilder sb = new SpannableStringBuilder();
                 sb.append(getString(R.string.WalletInsufficientFunds));
                 sb.append(" ");
@@ -584,6 +599,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                 insufficientFundsView.setText(LocaleController.formatSpannable(R.string.WalletMinimumAmount, GramWallet.formatGramCapital(1L)));
             }
         }
+        insufficientFundsView.setVisibility(show ? View.VISIBLE : View.GONE);
         insufficientFundsView.animate()
             .alpha(show ? 1.0f : 0.0f)
             .scaleX(show ? 1.0f : 0.6f)
@@ -1337,12 +1353,15 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
             updateFeeVisibility(false);
             return;
         }
-        balanceView.setText(LocaleController.formatSpannable(R.string.WalletBalanceAmount, GramWallet.formatGramsWithUnit(wallet.getSpendableBalance(), true)));
+        balanceView.setText("Balance: " + GramWallet.formatGrams(wallet.getBalance()) + " XMR");
         final long minAmount = 1L;
         feeEmulationAvailable = !wallet.isGaslessAvailable() && wallet.getSpendableBalance() >= minAmount;
         hasEnteredAmount |= !TextUtils.isEmpty(amountEdit.getText());
-        updateFeeVisibility(!requestMode && feeEmulationAvailable && hasEnteredAmount);
-        if (recipientAddress == null && !loadingAddress && !requestMode) {
+        final boolean lockedFunds=wallet.getBalance()>wallet.getSpendableBalance();
+        updateFeeVisibility(lockedFunds || !requestMode && feeEmulationAvailable && hasEnteredAmount);
+        if(lockedFunds){
+            feeView.setText("Available: " + GramWallet.formatGrams(wallet.getSpendableBalance()) + " XMR · awaiting confirmations");
+        } else if (recipientAddress == null && !loadingAddress && !requestMode) {
             feeView.setText("Network fee calculated on review");
         } else if (fee >= 0) {
             feeView.setText(LocaleController.formatSpannable(R.string.WalletNetworkFeeAmount, GramWallet.formatGramsWithUnit(fee)));

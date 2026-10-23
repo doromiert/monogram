@@ -1137,3 +1137,5 @@ Private xmr.14 delivery: final build passed; 8 app checks + 7 core checks passed
 - [x] Implement Polyseed by default for newly created main wallets, two-column recovery words, locked precision-button hiding, and unlock-to-sync in Settings/attachment UI.
 - [x] Validate disposable Polyseed create/restore/reopen, URI/amount logic and xmr.20 ARM64 APK packaging.
 - [ ] Verify locked/unlocked user-wallet UI, attachment scrolling and precision animation frame pacing on device.
+
+- xmr.22 follow-up: swipe wallet cards, exact total/available send balances with confirmation-lock explanation, resume-safe unlock callback, reduced note gap, clipped scroll viewport, compact history and transaction precision toggle with text fitting.

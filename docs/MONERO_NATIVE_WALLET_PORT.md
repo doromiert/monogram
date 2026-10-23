@@ -131,3 +131,11 @@ Only `com.negzero.monogram.beta` is installed under our package prefix on the ph
 - Attachment amount controls now scroll at normal size in their available viewport instead of being uniformly scaled to fit the keyboard.
 - Delivery checks: ARM64 native adapter and APK build successful; 11 focused app tests and 8 core Monero payment tests pass (precision arithmetic, note/URI handling, portable claim integrity). Disposable device fixture confirms fresh 16-word Polyseed creation, distinct wallets, restore/reopen identity and main-seed rejection by claim export. Artifact audit verifies pinned native SDKs, unchanged messaging/OMEMO libraries, required UI/assets and excluded old wallet/payment families.
 - No real payment was broadcast or user's recovery phrase inspected by these checks. UI checks involving the unlocked user wallet still need user participation.
+
+### xmr.22 presentation and lifecycle follow-up
+- Wallet cards accept horizontal swipes between existing local wallets; selection uses the existing registry/vault isolation, replaces the bound screen, and labels multi-wallet cards by wallet name. Busy scans must be stopped before changing wallets.
+- Send sheet shows exact total balance rather than mislabeling spendable balance as total. A separate available amount explains confirmation locks; insufficient-spendable errors identify waiting change instead of suggesting the wallet has no funds. This does not bypass the SDK spendability rules.
+- Native unlock completion is retained across pause/resume and delivered once the host resumes, so authentication no longer silently drops completion/sync startup.
+- Hidden error rows no longer reserve a large gap above Add a note. Scroll viewport clips overflow above the fixed footer.
+- History rows use configured compact precision. Transaction details offer animated Show precise amount / Back, hide the decorative model/unit in exact display, and fit long amounts to available width. Payment review continues showing exact values by default.
+- User screenshot `.state/xmr-transactions-current.png` confirmed the old detail amount clipped the XMR unit. Device UI verification of the new paths is recorded separately below.

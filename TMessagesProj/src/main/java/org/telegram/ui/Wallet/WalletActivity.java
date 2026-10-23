@@ -608,6 +608,8 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
             }
         };
         card.setDiamondOnCard(true);
+        try{if(GramWallet.getInstance(currentAccount).backend().wallets().size()>1)card.setOnWalletSwipe(this::switchWalletCard);}catch(Exception ignored){}
+        if(walletPageEntry!=0){card.setTranslationX(dp(72)*walletPageEntry);card.setAlpha(0f);card.post(()->card.animate().translationX(0f).alpha(1f).setDuration(220).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start());}
         card.setCardOnClickListener(v -> openWalletQRAlert(getContext(), currentAccount, getResourceProvider()));
         listView.addEdgeEffectListener(cardOverscrollListener);
         cardShadowView = new View(context) {
@@ -2295,9 +2297,19 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         amountView.setIncludeFontPadding(false);
         amountView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 40);
         amountView.setTypeface(AndroidUtilities.bold());
+        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(amountView,12,40,1,TypedValue.COMPLEX_UNIT_DIP);
         amountLayout.addView(amountView, LayoutHelper.createLinear(
             LayoutHelper.MATCH_PARENT, 50, Gravity.CENTER_HORIZONTAL
         ));
+
+        final boolean[] preciseTransaction={false};
+        final AnimatedTextView precisionToggle=new AnimatedTextView(context,false,true,true);
+        precisionToggle.setText("Show precise amount",false);precisionToggle.setTextSize(dp(13));
+        precisionToggle.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2,resourceProvider));
+        precisionToggle.setGravity(Gravity.CENTER);
+        precisionToggle.setAnimationProperties(.3f,0,240,CubicBezierInterpolator.EASE_OUT_QUINT);
+        precisionToggle.setVisibility(onSend==null && !initialTransaction.key_change && initialTransaction.nft==null ? View.VISIBLE : View.GONE);
+        amountLayout.addView(precisionToggle,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,40,Gravity.CENTER_HORIZONTAL));
 
         final TextView usdView = new TextView(context);
         usdView.setGravity(Gravity.CENTER);
@@ -2605,13 +2617,15 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
                     ? Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2, resourceProvider)
                     : Theme.getColor(Theme.key_featuredStickers_addButton, resourceProvider)
                 );
-                final SpannableStringBuilder formattedAmount = GramWallet.formatGramsScaled(amount, 30f / 40f);
+                final boolean exact=onSend!=null || preciseTransaction[0];
+                final SpannableStringBuilder formattedAmount = GramWallet.formatGramsScaled(exact ? GramWallet.formatGrams(amount)
+                    : com.negzero.monogram.wallet.WalletAmounts.displayBalance(amount,WalletCardComponent.displayDecimals(context)),30f/40f);
                 formattedAmount.insert(0, incoming ? "+" : "–");
                 if (!unsettled) {
                     formattedAmount.setSpan(new ForegroundColorSpan(Theme.getColor(incoming ? Theme.key_color_green : Theme.key_windowBackgroundWhiteBlackText, resourceProvider)), 0, formattedAmount.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
                 final SpannableStringBuilder amountText = new SpannableStringBuilder();
-                amountText.append(GramWallet.formatGramsWithUnit(formattedAmount));
+                amountText.append(preciseTransaction[0] && onSend==null ? formattedAmount : GramWallet.formatGramsWithUnit(formattedAmount));
                 final int amountStart = TextUtils.indexOf(amountText, formattedAmount);
                 final int amountEnd = amountStart + formattedAmount.length();
                 if (amountStart > 0) {
@@ -2758,6 +2772,12 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
             }
         };
 
+        precisionToggle.setOnClickListener(v->{
+            preciseTransaction[0]=!preciseTransaction[0];
+            precisionToggle.setText(preciseTransaction[0] ? "Back" : "Show precise amount",true);
+            diamond.setVisibility(preciseTransaction[0] ? View.GONE : View.VISIBLE);
+            update.run(transaction[0]);
+        });
         layout.setTag((Runnable) () -> update.run(transaction[0]));
         update.run(initialTransaction);
 
@@ -2972,6 +2992,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         try {
             MonogramWallet backend = wallet.backend();
             card.setPrecisionAvailable(backend.unlocked());
+            if(backend.wallets().size()>1)card.setCardHolder(backend.name().toUpperCase(java.util.Locale.ROOT));
             sendButton.setText(backend.scanning ? "Stop scan" : !backend.exists() ? "Restore wallet"
                     : !backend.unlocked() ? "Unlock wallet"
                     : !backend.readyToSend() ? "Sync wallet" : LocaleController.getString(R.string.WalletSend));
@@ -3337,6 +3358,20 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
 
     private MonogramWalletAuth walletAuth;
     private boolean walletResumed;
+
+    private int walletPageEntry;
+    private void switchWalletCard(int direction){
+        try{
+            MonogramWallet current=GramWallet.getInstance(currentAccount).backend();
+            java.util.List<MonogramWallet> wallets=current.wallets();int index=-1;
+            for(int i=0;i<wallets.size();i++)if(wallets.get(i).walletId.equals(current.walletId)){index=i;break;}
+            int next=index+direction;if(index<0 || next<0 || next>=wallets.size())return;
+            if(current.busy)throw new IllegalStateException("Stop syncing before switching wallets.");
+            current.select(wallets.get(next).walletId);GramWallet.cleanup(currentAccount);
+            WalletActivity screen=new WalletActivity();screen.setCurrentAccount(currentAccount);screen.walletPageEntry=direction;
+            presentFragment(screen,true,true);
+        }catch(Exception failure){BulletinFactory.of(this).showForError(failure.getMessage());}
+    }
 
     private void unlockMonero() {
         try {

@@ -20,17 +20,20 @@ public final class MonogramWalletAuth {
     private final int requestCode;
     private MonogramWallet.Authentication guard;
     private BiometricPrompt prompt;
-    private Result callback;
+    private Result callback,localUnlockCallback;
+    private boolean localUnlockComplete;
+    private Exception localUnlockFailure;
+    private int localUnlockGeneration;
     private String title,subtitle;
     private boolean resumed,waitingCredential,completed;
     private boolean success;
     private Exception failure;
     private int generation;
     public MonogramWalletAuth(BaseFragment host,MonogramWallet wallet,int requestCode){this.host=host;this.wallet=wallet;this.requestCode=requestCode;}
-    public boolean pending(){return callback!=null;}
-    public void resume(){resumed=true;deliver();}
+    public boolean pending(){return callback!=null || localUnlockCallback!=null;}
+    public void resume(){resumed=true;deliver();deliverLocalUnlock();}
     public void pause(){resumed=false;}
-    public void destroy(){generation++;callback=null;waitingCredential=false;completed=false;if(prompt!=null){prompt.cancelAuthentication();prompt=null;}if(guard!=null){guard.close();guard=null;}}
+    public void destroy(){generation++;callback=null;localUnlockCallback=null;localUnlockFailure=null;localUnlockComplete=false;waitingCredential=false;completed=false;if(prompt!=null){prompt.cancelAuthentication();prompt=null;}if(guard!=null){guard.close();guard=null;}}
     public void authenticate(String title,String subtitle,boolean credentialOnly,Result result){
         if(pending())return;
         this.title=title;this.subtitle=subtitle;callback=result;completed=false;failure=null;success=false;int current=++generation;
@@ -59,10 +62,7 @@ public final class MonogramWalletAuth {
     public void unlockWithRecentDeviceAuthentication(Result result){
         if(wallet.unlocked()){result.done(true,null);return;}
         try{
-            char[] password=wallet.authorizeUnlock();final int operation=generation;
-            wallet.unlock(password,(value,failure)->{
-                if(operation==generation && resumed)result.done(failure==null,failure);
-            });
+            openLocally(wallet.authorizeUnlock(),result);
         }catch(com.negzero.monogram.wallet.WalletVault.AuthenticationRequired expired){unlock(result);}
         catch(Exception failure){result.done(false,failure);}
     }
@@ -72,12 +72,25 @@ public final class MonogramWalletAuth {
         authenticate("Unlock Monero wallet","Use a fingerprint, device PIN, pattern or password",credentialOnly,(approved,error)->{
             if(!approved){result.done(false,error);return;}
             try{
-                char[] password=wallet.authorizeUnlock();final int operation=generation;
-                wallet.unlock(password,(value,failure)->{if(operation==generation && resumed)result.done(failure==null,failure);});
+                openLocally(wallet.authorizeUnlock(),result);
             }catch(com.negzero.monogram.wallet.WalletVault.AuthenticationRequired required){
                 if(!credentialOnly)unlock(true,result);else result.done(false,new IllegalStateException("The device credential did not authorize this wallet key. Unlock your phone and retry."));
             }catch(Exception failure){result.done(false,failure);}
         });
+    }
+    private void openLocally(char[] password,Result result) throws Exception{
+        localUnlockCallback=result;localUnlockComplete=false;localUnlockFailure=null;
+        final int operation=localUnlockGeneration=generation;
+        try{wallet.unlock(password,(value,failure)->{
+            if(operation!=generation || localUnlockCallback==null)return;
+            localUnlockFailure=failure;localUnlockComplete=true;deliverLocalUnlock();
+        });}catch(Exception failure){localUnlockCallback=null;java.util.Arrays.fill(password,'\0');throw failure;}
+    }
+    private void deliverLocalUnlock(){
+        if(!resumed || !localUnlockComplete || localUnlockCallback==null || localUnlockGeneration!=generation)return;
+        Result result=localUnlockCallback;Exception failure=localUnlockFailure;
+        localUnlockCallback=null;localUnlockFailure=null;localUnlockComplete=false;
+        result.done(failure==null,failure);
     }
     private void credential(){try{
         waitingCredential=true;
