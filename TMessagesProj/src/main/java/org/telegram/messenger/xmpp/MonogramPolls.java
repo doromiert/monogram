@@ -89,6 +89,22 @@ public final class MonogramPolls {
         return send;
     }
     private static String key(String emoji) { return emoji==null?"":emoji.replace("\ufe0f",""); }
+    /** Presentation only: vote transport reactions remain available to tallying, voter lists and resend logic. */
+    public static List<TLRPC.ReactionCount> visibleReactions(TLRPC.Message message) {
+        if(message==null || message.reactions==null) return Collections.emptyList();
+        int options=message.media instanceof TLRPC.TL_messageMediaPoll && ((TLRPC.TL_messageMediaPoll)message.media).poll!=null
+                ? Math.min(EMOJI.length,((TLRPC.TL_messageMediaPoll)message.media).poll.answers.size()):0;
+        List<TLRPC.ReactionCount> visible=new ArrayList<>();
+        for(TLRPC.ReactionCount count:message.reactions.results) {
+            boolean vote=false;
+            if(count.reaction instanceof TLRPC.TL_reactionEmoji) {
+                String emoji=key(((TLRPC.TL_reactionEmoji)count.reaction).emoticon);
+                for(int i=0;i<options;i++) if(emoji.equals(key(EMOJI[i]))) { vote=true;break; }
+            }
+            if(!vote) visible.add(count);
+        }
+        return visible;
+    }
     private static byte[] option(int index) { return new byte[]{(byte)('0'+index)}; }
     private static int index(byte[] option,int count) {
         int value=option==null || option.length!=1?-1:option[0]-'0';return value>=0 && value<count?value:-1;

@@ -36,6 +36,7 @@ public class MonogramAttachmentCommitTest {
             FileShare stronger=FileShare.describe(link,bytes,"file.bin","application/octet-stream");
             assertEquals(original,store.save(MessageFixture.modern("file",null,stronger.body(""),true,100000,null,null,stronger)));
             File current=store.attachmentPath(original);assertNotEquals(oldPath,current);
+            assertFalse(store.attachRemoteMetadata(original,link.wireUrl,current,oldMedia));
             assertFalse(store.attachDownloaded(original,link.wireUrl,null,oldPath,oldMedia));
             assertFalse(store.hasCachedAttachment(link.wireUrl,oldPath));
             assertEquals(current.getAbsolutePath(),store.getMessage(original,self).attachPath);
@@ -71,5 +72,36 @@ public class MonogramAttachmentCommitTest {
                 assertFalse(reopened.attachDownloaded(id,sharing.link.wireUrl,sharing,cached,media));
             }
         } finally { bytes.delete();context.deleteDatabase(database); }
+    }
+    @Test public void headerPlaceholdersSurviveReopenWithoutClaimingCachedBytesOrReplacingDecodedMedia() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+        String database="attachment-headers.db";context.deleteDatabase(database);
+        int id;long self;File path;
+        try {
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                self=store.peer("alice@example.org");store.peer("bob@example.org");
+                id=store.save(MessageFixture.modern("headers",null,link().wireUrl,true,100000,null,null,null));
+                path=store.attachmentPath(id);path.delete();
+                TLRPC.MessageMedia photo=MonogramAttachments.remoteMedia(id,"photo.jpg","image/jpeg",321);
+                assertFalse(store.attachRemoteMetadata(id,"https://files.example.org/wrong",path,photo));
+                assertTrue(store.attachRemoteMetadata(id,link().wireUrl,path,photo));
+                assertFalse(store.hasCachedAttachment(link().wireUrl,path));
+                assertTrue(store.getMessage(id,self).media instanceof TLRPC.TL_messageMediaPhoto);
+            }
+            try(MonogramStore reopened=new MonogramStore(context,database)) {
+                TLRPC.Message projected=reopened.getMessage(id,self);
+                assertEquals(321,projected.media.photo.sizes.get(0).size);
+                assertFalse(reopened.hasCachedAttachment(link().wireUrl,path));
+                path.getParentFile().mkdirs();Files.write(path.toPath(),new byte[]{1,2,3});
+                TLRPC.MessageMedia decoded=MonogramAttachments.remoteMedia(id,"photo.jpg","image/jpeg",3);
+                assertTrue(reopened.attachDownloaded(id,link().wireUrl,null,path,decoded));
+                assertFalse(reopened.attachRemoteMetadata(id,link().wireUrl,path,MonogramAttachments.remoteMedia(id,"file","video/mp4",999)));
+                assertEquals(3,reopened.getMessage(id,self).media.photo.sizes.get(0).size);
+                assertTrue(reopened.hasCachedAttachment(link().wireUrl,path));
+                path.delete();reopened.deleteMessages(Collections.singleton(id));
+                assertFalse(reopened.attachRemoteMetadata(id,link().wireUrl,path,decoded));
+            }
+        } finally { context.deleteDatabase(database); }
     }
 }

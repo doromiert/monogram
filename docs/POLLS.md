@@ -80,6 +80,11 @@ is invalid and contributes no vote; other clients should remove the previous
 option before picking another. Multiple choice counts people once in the total,
 while counting each of their selected options.
 
+Monogram hides the option-mapped reaction emoji chips on native poll cards,
+showing votes through the poll controls/results instead. Ordinary reactions stay
+visible. This is a rendering filter: the complete replacement sets remain in
+storage and on the wire for counting, voter lists and other clients.
+
 Counts, selected options and voter lists derive from the durable reaction event
 journal. This handles out-of-order arrival, archive replay, votes arriving before
 the poll and stable room identities across nickname changes. The existing

@@ -981,3 +981,16 @@ Disk cleanup (2026-10-22, user requested): stopped Gradle and paused the emulato
 - Corrective release gate: 31 focused poll/reaction/formatting/self-chat checks pass. Two new cases cover the actual composer `PollSendParams` envelope, native message serialization/retry, multiline description projection/reload, send acknowledgement, closure and forwarding. Native TYPE_POLL retry now restores the caption explicitly. No phone access or subagents.
 
 0.2.154 artifact: original signer verified, version 0.2.154 (73299), scoped APK audit passed. All three native libraries match 0.2.153 exactly. SHA-256 `7b1723d9e21cff71cf88a2af1017647bb3171bf905dec4f583edce392a949188`. Published through the GitHub updater; no ADB install or on-device send/visual acceptance test.
+
+## 0.2.155 — poll presentation and early attachment metadata
+
+- Filter only the option-mapped vote reactions from the native reaction strip on poll cards, including its visible count and empty-layout sizing. Keep ordinary reactions visible.
+- Apply this to presentation copies only; retain complete wire reactions for vote totals, selected answers, voter lists, changing/retracting votes and other-client compatibility. No changes to XMPP poll fallback text or stored reaction events.
+- Reuse existing poll/reaction checks at APK delivery; no new test for this reversible visual filter. No subagents or phone interaction.
+
+- Legacy encrypted uploads now keep the caller's original MIME type on both the XEP-0363 slot request and HTTP PUT, matching Monocles/Conversations. Payload encryption and its 16-byte tag remain unchanged. OMEMO2 callers still request opaque binary uploads and carry the real type inside protected file-sharing metadata; plaintext uploads are unchanged.
+- Expose final GET response headers before consuming the body. Use MIME plus declared plaintext size (subtracting the encryption tag) to persist and publish a typed download placeholder, even when the auto-download size policy declines the body. No extra HEAD request or second download. Servers without a length retain unknown size; generic MIME falls back to filename inference.
+- Preserve progress/cancel/completion routing across native filename changes when a generic document becomes a photo/video placeholder. Header hints cannot replace a decoded cached file, newer protected metadata, changed URL or deleted message. Final decoding uses the response MIME when legacy metadata is absent.
+- Delivery checks: 20 existing poll/reaction checks, 4 new core transfer checks and 4 attachment persistence/cache checks pass. Transfer tests cover actual slot/PUT MIME, encrypted-byte roundtrip, header timing, tag-adjusted sizes, unknown/rejected sizes without reading the body, byte bounds, authentication and cancellation. Store checks cover provisional metadata across reopen, absent cache bytes, verified media, changed references and deletions. No phone interaction or subagents.
+
+0.2.155 artifact: original signer verified, version 0.2.155 (73309), scoped APK audit passed. All three native libraries match 0.2.154 byte-for-byte. SHA-256 `180c5a738e92d5b2ad45e20da93141d225059d84a4e22d253fa046b0ece0a1e3`. GitHub updater delivery; no ADB installation or on-device acceptance test.

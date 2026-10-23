@@ -1467,6 +1467,11 @@ final class MonogramStore extends SQLiteOpenHelper {
         } catch (Exception invalid) { throw new IllegalStateException("Invalid cached file description", invalid); }
     }
     /** A late metadata upgrade or deletion must invalidate work verified against the earlier description. */
+    /** Header hints are provisional: do not replace decoded bytes or newer file-sharing metadata. */
+    synchronized boolean attachRemoteMetadata(int id,String url,java.io.File path,TLRPC.MessageMedia media) throws Exception {
+        if(path.isFile()) return false;
+        return attachDownloaded(id,url,null,path,media);
+    }
     synchronized boolean attachDownloaded(int id,String url,com.negzero.monogram.xmpp.FileShare expected,java.io.File path,TLRPC.MessageMedia media) throws Exception {
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {

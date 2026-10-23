@@ -18,6 +18,8 @@ public final class FileTransfer {
     public static final long MAX_BYTES = 4000L * 1024 * 1024;
     public interface Progress { void update(long bytes, long total); }
     public interface DownloadPolicy { long limit(String contentType, long plainSize); }
+    /** Called after final response headers, before opening the response body; size is plaintext bytes or -1. */
+    public interface Metadata { void received(String contentType, long plainSize); }
     public static final class Job {
         private volatile boolean cancelled;
         private volatile HttpURLConnection connection;
@@ -80,7 +82,9 @@ public final class FileTransfer {
         if (!file.isFile()) throw new Failure("FILE_SIZE");
         HttpFileUploadManager manager = uploadService(connection,length,encrypted,job);
         long size = length + (encrypted ? 16 : 0);
-        String contentType = encrypted ? "application/octet-stream" : mime;
+        // The caller selects opaque MIME for modern encrypted sharing. Legacy clients
+        // need the original type on the slot and PUT, as in Conversations/Monocles.
+        String contentType = mime == null || mime.trim().isEmpty() ? "application/octet-stream" : mime;
         Slot slot;
         try { slot=manager.requestSlot(filename, size, contentType); }
         catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
@@ -113,12 +117,18 @@ public final class FileTransfer {
     }
     /** The application supplies its existing auto-download policy after receiving size/type headers. */
     public static boolean download(FileLink link, File destination, Job job, Progress progress, DownloadPolicy policy) throws Exception {
-        return download(link, destination, job, progress, policy, null);
+        return download(link, destination, job, progress, policy, null, null);
     }
     public static boolean download(FileShare sharing, File destination, Job job, Progress progress, DownloadPolicy policy) throws Exception {
-        return download(sharing.link, destination, job, progress, policy, sharing);
+        return download(sharing.link, destination, job, progress, policy, sharing, null);
     }
-    private static boolean download(FileLink link, File destination, Job job, Progress progress, DownloadPolicy policy, FileShare sharing) throws Exception {
+    public static boolean download(FileLink link, File destination, Job job, Progress progress, DownloadPolicy policy, Metadata metadata) throws Exception {
+        return download(link, destination, job, progress, policy, null, metadata);
+    }
+    public static boolean download(FileShare sharing, File destination, Job job, Progress progress, DownloadPolicy policy, Metadata metadata) throws Exception {
+        return download(sharing.link, destination, job, progress, policy, sharing, metadata);
+    }
+    private static boolean download(FileLink link, File destination, Job job, Progress progress, DownloadPolicy policy, FileShare sharing, Metadata metadata) throws Exception {
         job.check();
         File parent = destination.getAbsoluteFile().getParentFile();
         if (!parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create attachment directory");
@@ -138,15 +148,18 @@ public final class FileTransfer {
                     }
                     if (status != 200) throw new Failure("DOWNLOAD_HTTP_" + status);
                     long length = contentLength(http);
+                    long plainSize = length < 0 ? (sharing == null ? -1 : sharing.size)
+                            : Math.max(0, length - (link.encrypted() ? 16 : 0));
+                    String contentType = sharing == null ? http.getContentType() : sharing.mime;
+                    if (length > MAX_BYTES + (link.encrypted() ? 16 : 0)) throw new Failure("SERVER_SIZE_LIMIT");
+                    if (metadata != null) metadata.received(contentType, plainSize);
+                    job.check();
                     long maximum = MAX_BYTES;
                     if (policy != null) {
-                        long plainSize = length < 0 && sharing != null ? sharing.size
-                                : length - (link.encrypted() ? 16 : 0);
                         if (plainSize <= 0) return false;
-                        maximum = Math.min(MAX_BYTES, policy.limit(http.getContentType(), plainSize));
+                        maximum = Math.min(MAX_BYTES, policy.limit(contentType, plainSize));
                         if (maximum <= 0 || plainSize > maximum) return false;
                     }
-                    if (length > MAX_BYTES + (link.encrypted() ? 16 : 0)) throw new Failure("SERVER_SIZE_LIMIT");
                     try (InputStream in = http.getInputStream(); FileOutputStream out = new FileOutputStream(partial)) {
                         copy(in, out, maximum + (link.encrypted() ? 16 : 0), length, link.encrypted() ? cipher(false, link.iv, link.key) : null, job, progress);
                         out.getFD().sync();

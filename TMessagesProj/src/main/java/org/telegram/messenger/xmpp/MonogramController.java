@@ -2877,12 +2877,22 @@ public final class MonogramController {
         download(object, false);
     }
     private void finishDownload(int id, String name, FileTransfer.Job job) {
-        fileJobs.remove(id, job); fileNames.remove(name, job);
+        synchronized(fileNames) {
+            fileJobs.remove(id, job);
+            for(String alias:downloadNames(name,job)) {
+                fileNames.remove(alias,job);clearProgress(alias);
+            }
+        }
         if(automaticJobs.remove(id,job)) {
             File path=store.attachmentPath(id);
             if(path==null || !path.isFile()) autoAttempted.remove(id);
         }
-        clearProgress(name);
+    }
+    private java.util.Set<String> downloadNames(String name,FileTransfer.Job job) {
+        java.util.Set<String> names=new java.util.HashSet<>();names.add(name);
+        for(java.util.Map.Entry<String,FileTransfer.Job> entry:fileNames.entrySet())
+            if(entry.getValue()==job) names.add(entry.getKey());
+        return names;
     }
     private void download(MessageObject object, boolean automatic) {
         if (!MonogramAttachments.has(object.messageOwner)) return;
@@ -2902,7 +2912,42 @@ public final class MonogramController {
                 if (sharing != null && !sharing.link.wireUrl.equals(address)) throw new IllegalStateException("Attachment reference changed");
                 File path = sharing == null ? store.attachmentFile(address) : store.attachmentFile(sharing);
                 String filename = sharing == null ? link.fileName() : sharing.name;
-                FileTransfer.Progress onProgress = (bytes, total) -> progress(name, bytes, total, false, link.encrypted());
+                FileTransfer.Progress onProgress = (bytes, total) -> {
+                    synchronized(fileNames) {
+                        if(job.cancelled() || fileJobs.get(id)!=job) return;
+                        for(String alias:downloadNames(name,job)) progress(alias,bytes,total,false,link.encrypted());
+                    }
+                };
+                final String[] responseMime={null};
+                FileTransfer.Metadata metadata = (mime,size) -> {
+                    responseMime[0]=mime;
+                    // Protected file-sharing metadata already provides a better placeholder.
+                    if(sharing!=null) return;
+                    worker.execute(() -> {
+                        try {
+                            if(job.cancelled() || sessionEpoch!=epoch || owner!=accountEpoch || fileJobs.get(id)!=null && fileJobs.get(id)!=job) return;
+                            TLRPC.Message saved=store.getMessage(id,self);
+                            TLRPC.MessageMedia remote=MonogramStickers.preserve(saved.media,MonogramAttachments.remoteMedia(id,filename,mime,size));
+                            MonogramAttachments.preserveMediaAttributes(saved.media,remote);
+                            if(remote.photo!=null) remote.photo.date=saved.date;
+                            if(remote.document!=null) remote.document.date=saved.date;
+                            if(!store.attachRemoteMetadata(id,address,path,remote)) return;
+                            TLRPC.Message updated=store.getMessage(id,self);
+                            MessageObject replacement=new MessageObject(account,updated,true,true);
+                            synchronized(fileNames) {
+                                if(job.cancelled()) return;
+                                if(fileJobs.get(id)==job) fileNames.put(replacement.getFileName(),job);
+                            }
+                            ArrayList<TLRPC.Message> messages=new ArrayList<>();messages.add(updated);
+                            MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
+                            AndroidUtilities.runOnUIThread(() -> {
+                                if(owner!=accountEpoch || sessionEpoch!=epoch || job.cancelled()) return;
+                                ArrayList<MessageObject> objects=new ArrayList<>();objects.add(replacement);
+                                NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,updated.dialog_id,objects);
+                            });
+                        } catch(Exception error) { org.telegram.messenger.FileLog.e(error); }
+                    });
+                };
                 FileTransfer.DownloadPolicy policy = automatic ? (mime, size) -> DownloadController.getInstance(account).getMonogramDownloadLimit(
                         object.messageOwner, MonogramAttachments.remoteMedia(id, filename, sharing==null ? mime : sharing.mime, size), size) : null;
                 boolean cached = store.hasCachedAttachment(address, path);
@@ -2910,17 +2955,18 @@ public final class MonogramController {
                     try { sharing.verify(path, job); }
                     catch (java.io.IOException invalidCache) { job.check(); cached = false; }
                 }
-                boolean downloaded = cached || (sharing == null ? FileTransfer.download(link, path, job, onProgress, policy) : FileTransfer.download(sharing, path, job, onProgress, policy));
+                boolean downloaded = cached || (sharing == null ? FileTransfer.download(link, path, job, onProgress, policy, metadata) : FileTransfer.download(sharing, path, job, onProgress, policy, metadata));
                 if (!downloaded) {
+                    java.util.Set<String> names=downloadNames(name,job);
                     finishDownload(id, name, job);
                     AndroidUtilities.runOnUIThread(() -> {
-                        if(owner==accountEpoch) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0);
+                        if(owner==accountEpoch) for(String alias:names) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, alias, 0);
                     });
                     return;
                 }
                 job.check();
                 TLRPC.MessageMedia decoded=MonogramStickers.preserve(object.messageOwner.media,MonogramAttachments.decodedMedia(id,object.messageOwner.date,path,filename,
-                        sharing==null && object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : sharing==null ? null : sharing.mime));
+                        sharing!=null ? sharing.mime : responseMime[0]!=null ? responseMime[0] : object.messageOwner.media!=null && object.messageOwner.media.document!=null ? object.messageOwner.media.document.mime_type : null));
                 MonogramStickers.inspectDisplayHint(decoded,path,store.displayStickerHint(id,address));
                 MonogramAttachments.preserveMediaAttributes(object.messageOwner.media,decoded);
                 job.check();
@@ -2938,11 +2984,12 @@ public final class MonogramController {
                         MonogramAttachments.apply(object.messageOwner, link, path, updated.media, updated.message, filename);
                         ArrayList<TLRPC.Message> messages = new ArrayList<>(); messages.add(updated);
                         MessagesStorage.getInstance(account).putMessages(messages, false, true, false, 0, 0, 0);
+                        java.util.Set<String> completedNames=downloadNames(name,job);
                         AndroidUtilities.runOnUIThread(() -> {
                             if(owner!=accountEpoch || sessionEpoch!=epoch) return;
                             ArrayList<MessageObject> objects = new ArrayList<>(); objects.add(new MessageObject(account, updated, true, true));
                             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects, updated.dialog_id, objects);
-                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoaded, name, path);
+                            for(String alias:completedNames) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoaded, alias, path);
                         });
                     } catch (Exception e) { downloadError(name, object, job, e, automatic,owner); }
                     finally {
@@ -2957,9 +3004,10 @@ public final class MonogramController {
         });
     }
     private void downloadError(String name, MessageObject object, FileTransfer.Job job, Exception error, boolean automatic,long owner) {
+        java.util.Set<String> names=downloadNames(name,job);
         AndroidUtilities.runOnUIThread(() -> {
             if(owner!=accountEpoch) return;
-            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, 0);
+            for(String alias:names) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, alias, 0);
             if (!automatic && !job.cancelled()) org.telegram.ui.Components.AlertsCreator.processError(account, fileError(error), null,
                     new MonogramFileRequest(object.messageOwner, null, "application/octet-stream", ""));
         });

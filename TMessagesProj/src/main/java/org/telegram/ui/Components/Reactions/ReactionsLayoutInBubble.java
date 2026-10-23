@@ -183,19 +183,20 @@ public class ReactionsLayoutInBubble {
 
             comparator.dialogId = messageObject.getDialogId();
             if (messageObject.messageOwner.reactions != null && messageObject.messageOwner.reactions.results != null) {
+                final java.util.List<TLRPC.ReactionCount> visibleReactions=org.telegram.messenger.xmpp.MonogramPolls.visibleReactions(messageObject.messageOwner);
                 int totalCount = 0;
-                for (int i = 0; i < messageObject.messageOwner.reactions.results.size(); i++) {
-                    totalCount += messageObject.messageOwner.reactions.results.get(i).count;
+                for (int i = 0; i < visibleReactions.size(); i++) {
+                    totalCount += visibleReactions.get(i).count;
                 }
                 boolean includeEmptyStarButton = false;
                 boolean includeEmptyLikeButton = forceLikeDislikeReactions;
                 boolean includeEmptyDislikeButton = forceLikeDislikeReactions;
 
                 final TLRPC.ChatFull chatInfo = MessagesController.getInstance(currentAccount).getChatFull(-messageObject.getDialogId());
-                if (!isSmall && !messageObject.messageOwner.reactions.results.isEmpty() && chatInfo != null && chatInfo.paid_reactions_available) {
+                if (!isSmall && !visibleReactions.isEmpty() && chatInfo != null && chatInfo.paid_reactions_available) {
                     boolean hasPaidReaction = false;
-                    for (int i = 0; i < messageObject.messageOwner.reactions.results.size(); i++) {
-                        TLRPC.ReactionCount reactionCount = messageObject.messageOwner.reactions.results.get(i);
+                    for (int i = 0; i < visibleReactions.size(); i++) {
+                        TLRPC.ReactionCount reactionCount = visibleReactions.get(i);
                         if (reactionCount.reaction instanceof TLRPC.TL_reactionPaid) {
                             hasPaidReaction = true;
                         }
@@ -229,7 +230,7 @@ public class ReactionsLayoutInBubble {
                     forcedReactions.add(emoji);
                 }
 
-                for (int i = (-forcedReactions.size()); i < messageObject.messageOwner.reactions.results.size(); i++) {
+                for (int i = (-forcedReactions.size()); i < visibleReactions.size(); i++) {
                     TLRPC.ReactionCount reactionCount;
                     if (i < 0) {
                         reactionCount = new TLRPC.TL_reactionCount();
@@ -237,7 +238,7 @@ public class ReactionsLayoutInBubble {
                         reactionCount.chosen = false;
                         reactionCount.count = 0;
                     } else {
-                        reactionCount = messageObject.messageOwner.reactions.results.get(i);
+                        reactionCount = visibleReactions.get(i);
                     }
                     ReactionButton old = null;
                     for (int j = 0; j < oldButtons.size(); ++j) {
@@ -312,7 +313,7 @@ public class ReactionsLayoutInBubble {
                         reactionButtons.get(1).key = reactionButtons.get(1).key + "_";
                         break;
                     }
-                    if (isSmall && i == 2) {
+                    if (isSmall && reactionButtons.size() >= 3) {
                         break;
                     }
                     if (attached) {
