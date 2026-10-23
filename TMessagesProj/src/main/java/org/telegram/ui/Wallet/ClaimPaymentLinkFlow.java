@@ -18,7 +18,6 @@ public final class ClaimPaymentLinkFlow {
     private final MonogramWallet main, claim;
     private final MoneroClaim link;
     private final MonogramWalletAuth mainAuth, claimAuth;
-    private final boolean reclaim;
     private MonogramWallet.Quote quote;
     private String destination;
     private AlertDialog waitingDialog;
@@ -39,7 +38,6 @@ public final class ClaimPaymentLinkFlow {
             for (MonogramWallet candidate : main.claims()) {
                 if (candidate.primary().equals(link.payment.address) && !candidate.claimId.equals(link.id())) { existing = candidate; break; }
             }
-            reclaim = existing != null;
             claim = existing == null ? MonogramWallet.getClaim(account, main.network, link.id()) : existing;
             opened = claim;
             main.acquire();
@@ -65,9 +63,8 @@ public final class ClaimPaymentLinkFlow {
         initial.feeUnknown = true;
         initial.readOnlyComment = true;
         initial.peer = GramWallet.createRecipientPeer(null, link.payment.address, null);
-        initial.comment = reclaim ? "Canceling returns this link’s unclaimed funds to your wallet after confirmations. It requires a network fee. Until that return transaction is confirmed, the recipient can still claim the funds."
-                : "The wallet checks this link’s funds before showing the final amount and network fee.";
-        initial.actionLabel = reclaim ? "Prepare cancellation" : "Prepare claim";
+        initial.comment = "Deposit this link’s available funds into your selected wallet. The wallet checks confirmations and shows the amount and network fee before you approve. Anyone else holding the link can also spend its funds until they are transferred.";
+        initial.actionLabel = "Deposit to your wallet";
         mainAuth.resume();
         claimAuth.resume();
         WalletActivity.openTransactionSheet(host.getContext(), account, initial, (note, encrypted, done) -> {
@@ -159,7 +156,7 @@ public final class ClaimPaymentLinkFlow {
                             transaction.preview = true;
                             transaction.incoming = true;
                             transaction.readOnlyComment = true;
-                            transaction.actionLabel = (reclaim ? "Return to wallet: " : "Claim ") + GramWallet.formatGramsWithUnit(transaction.amount);
+                            transaction.actionLabel = "Deposit " + GramWallet.formatGramsWithUnit(transaction.amount);
                             done.run(transaction, null);
                         } catch (Exception invalid) { claim.cancel(prepared); quote = null; done.run(null, message(invalid)); }
                     });
@@ -173,9 +170,7 @@ public final class ClaimPaymentLinkFlow {
         if (waitingDialog == null) {
             waitingDialog = new AlertDialog.Builder(host.getContext(), host.getResourceProvider())
                 .setTitle("Waiting for confirmations")
-                .setMessage(reclaim
-                    ? "The funding transaction’s funds are not spendable yet. Checking every 30 seconds. When they unlock, you can review the return amount and fee. This has not canceled the payment: the recipient may still claim it."
-                    : "This payment is not spendable yet. Checking every 30 seconds; you can review the amount and fee once its funds unlock.")
+                .setMessage("This payment is not spendable yet. Checking every 30 seconds; you can review the deposit amount and fee once its funds unlock. Anyone holding the link can still spend the funds until they are transferred.")
                 .setNegativeButton("Stop waiting", (dialog, which) -> {
                     stopWaiting();busy=false;done.run(null,"Stopped checking. No transaction was sent.");
                 }).create();

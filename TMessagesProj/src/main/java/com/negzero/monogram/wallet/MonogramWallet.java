@@ -200,6 +200,13 @@ public final class MonogramWallet {
     }
     public String node(){return config==null ? "" : config.optString("node","");}
     public String primary(){return config==null ? "" : config.optString("primary","");}
+    public boolean hasSavedAddress(String address){
+        if(address==null || address.isEmpty() || !exists())return false;
+        if(address.equals(primary()))return true;
+        JSONObject value=config;org.json.JSONArray addresses=value.optJSONArray("receivingAddresses");
+        if(addresses!=null)for(int i=0;i<addresses.length();i++)if(address.equals(addresses.optString(i)))return true;
+        return false;
+    }
     public void observe(Observer observer){observers.add(observer);}
     public void unobserve(Observer observer){observers.remove(observer);}
     private void changed(){WalletSyncService.progress(this);AndroidUtilities.runOnUIThread(()->{for(Observer observer:new ArrayList<>(observers))observer.changed();});}
@@ -377,7 +384,9 @@ public final class MonogramWallet {
         if(handle==0)throw new IllegalStateException("Unlock your wallet first.");
         String[] address=WalletNative.newAddress(handle,config.optLong("maxIndex",0),"");
         MoneroPayment checked=MoneroPayment.address(address[0],network);if(checked.type!=MoneroPayment.AddressType.SUBADDRESS)throw new IllegalStateException("Engine returned an invalid subaddress.");
-        JSONObject next=new JSONObject(config.toString());next.put("maxIndex",Long.parseLong(address[1]));save(next);return address[0];
+        JSONObject next=new JSONObject(config.toString());next.put("maxIndex",Long.parseLong(address[1]));
+        org.json.JSONArray addresses=next.optJSONArray("receivingAddresses");if(addresses==null)addresses=new org.json.JSONArray();
+        addresses.put(address[0]);next.put("receivingAddresses",addresses);save(next);return address[0];
     });}
     public static final class Quote {
         public final long session,id;public final MoneroPayment payment;public final java.math.BigInteger fee;public final String hashes,count;

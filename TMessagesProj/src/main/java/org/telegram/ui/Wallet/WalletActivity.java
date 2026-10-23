@@ -3329,7 +3329,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
                                 new AlertDialog.Builder(getContext(), getResourceProvider()).setTitle("Payment link")
                                     .setMessage("Anyone with this link can claim its remaining funds.")
                                     .setPositiveButton("Copy claim details", (dialog, which) -> AndroidUtilities.addToClipboard(portable))
-                                    .setNeutralButton("Cancel payment", (dialog, which) -> {
+                                    .setNeutralButton("Deposit to your wallet", (dialog, which) -> {
                                         try {
                                             if (reclaimFlow != null) reclaimFlow.close();
                                             reclaimFlow = new ClaimPaymentLinkFlow(this, currentAccount, uri);

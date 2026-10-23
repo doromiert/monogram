@@ -669,6 +669,7 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
         }
         if (walletActionLayout != null) {
             walletActionLayout.setSurfaceEnabled(hasWalletActionLayout());
+            walletActionLayout.setOnClickListener(isSavedWalletRequest() ? null : this::openGramTransaction);
         }
         if (messageObject.messageOwner != null && messageObject.messageOwner.action instanceof TLRPC.TL_messageActionGramTransfer) {
             final TL_wallet.walletTransaction scannedPayment = GramWallet.getInstance(currentAccount).findTransaction(messageObject);
@@ -2102,8 +2103,17 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
         return textY + textHeight + dp(11);
     }
 
+    private boolean isSavedWalletRequest() {
+        if(currentMessageObject==null || currentMessageObject.monogramXmrMessage==null
+                || currentMessageObject.monogramXmrMessage.kind!=org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.REQUEST)return false;
+        try(org.telegram.messenger.xmpp.MonogramXmr settings=new org.telegram.messenger.xmpp.MonogramXmr(currentAccount)){
+            return settings.ownsDestination(currentMessageObject.monogramXmrMessage.payment);
+        }catch(Exception unavailable){return false;}
+    }
+
     private void openGramTransaction() {
         if (!hasWalletActionLayout()) return;
+        if(isSavedWalletRequest())return;
         final MessageObject msg = currentMessageObject;
         if (msg == null || msg.messageOwner == null) return;
         final GramWallet wallet = GramWallet.getInstance(currentAccount);
@@ -2117,14 +2127,9 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
         if (action.moneroKind == 1) {
             BaseFragment host = delegate != null ? delegate.getBaseFragment() : LaunchActivity.getSafeLastFragment();
             if (host == null) return;
-            if (msg.isOutOwner()) {
-                AndroidUtilities.addToClipboard(msg.monogramXmrMessage.uri);
-                org.telegram.ui.Components.BulletinFactory.of(host).createCopyBulletin("Request link copied").show();
-            } else {
                 TLRPC.User peer = MessagesController.getInstance(currentAccount).getUser(msg.getDialogId());
                 host.presentFragment(new org.telegram.ui.Wallet.WalletSendEnterAmount(currentAccount, action.peer_address)
                         .setChatRecipient(peer).setAmount(action.amount).setAllowOpenChat());
-            }
             return;
         }
         final boolean failed = msg.isOutOwner() && msg.messageOwner.send_state == MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;

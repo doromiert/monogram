@@ -35595,6 +35595,9 @@ public class ChatActivity extends BaseFragment implements
             if (payment != null && payment.regionMatches(true, 0, "monero:", 0, 7)) {
                 try {
                     com.negzero.monogram.xmpp.MoneroPayment request = com.negzero.monogram.xmpp.MoneroPayment.parse(payment, null);
+                    try(org.telegram.messenger.xmpp.MonogramXmr settings=new org.telegram.messenger.xmpp.MonogramXmr(currentAccount)){
+                        if(settings.ownsDestination(request))return;
+                    }
                     org.telegram.ui.Wallet.WalletSendEnterAmount screen = new org.telegram.ui.Wallet.WalletSendEnterAmount(currentAccount, request.address);
                     if (request.atomicAmount != null) screen.setAmount(com.negzero.monogram.wallet.WalletAmounts.checkedAtomic(request.atomicAmount));
                     presentFragment(screen);

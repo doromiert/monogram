@@ -69,6 +69,17 @@ public final class MonogramXmr implements AutoCloseable {
             return rows.moveToFirst() ? rows.getString(0) : null;
         }
     }
+    /** Public local address metadata only; never unlock or scan to render a request. */
+    public boolean ownsDestination(MoneroPayment payment) {
+        requireEnabled();
+        try {
+            for(com.negzero.monogram.wallet.MonogramWallet wallet:com.negzero.monogram.wallet.MonogramWallet.get(account,payment.network).wallets())
+                if(wallet.hasSavedAddress(payment.address))return true;
+            try(Cursor rows=db().rawQuery("SELECT 1 FROM receiving_addresses WHERE network=? AND address=? LIMIT 1",new String[]{payment.network.name(),payment.address})) {
+                return rows.moveToFirst();
+            }
+        } catch(Exception unavailable) {return false;}
+    }
     public int unusedCount() {
         try(Cursor rows=db().rawQuery("SELECT count(*) FROM receiving_addresses WHERE network=? AND request IS NULL",new String[]{network().name()})) {rows.moveToFirst();return rows.getInt(0);}
     }
