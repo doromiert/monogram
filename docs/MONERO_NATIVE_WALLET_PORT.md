@@ -159,3 +159,8 @@ Delivery: xmr.25 (73589) was installed via ADB and published as prerelease `v0.2
 The attachment expansion follow-up (xmr.27) reserves scroll range for the collapsed top padding even when the locked body is short. Its scroll listener updates the parent sheet offset and grows the centered unlock region as the sheet expands. This prevents a short locked body from leaving the sheet unable to expand.
 
 Delivery: xmr.27 (73609) installed successfully via ADB and published as GitHub prerelease `v0.2.159-xmr.27`. Signed APK audit and uploaded asset size/digest verified; SHA-256 4129c7a56816847e432c808df851ef972e45f011a4577b1a6e05b74d17bd5ccd. No user wallet was removed. Device visual confirmation remains pending.
+
+### xmr.28 measured attachment viewport
+- Device captures `.state/attachment-padding-{1,2}.png`, `.state/attachment-padding-later.png` and `.state/attachment-boundaries{,-next}.png` show the settled expanded state clipping the recipient and reserving a large centered body.
+- Header offset now counts only the action bar and content gap; the attachment parent already supplies the status-bar inset. Body minimum/expansion range use the actual scroll viewport height after layout, rather than the parent's height before external insets. Unlocked amount controls use natural height/top alignment; only the locked unlock area is vertically centered.
+- Delivery: signed ARM64 APK build/artifact audit passed, installed xmr.28 (73619) via ADB. Settled device capture `.state/xmr28-expanded-settled.png` shows the recipient fully below the header and an unclipped centered sync/unlock action. User confirmed the revised layout with “lgtm.” No payment was sent.

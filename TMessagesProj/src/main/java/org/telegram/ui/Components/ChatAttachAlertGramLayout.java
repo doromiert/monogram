@@ -96,7 +96,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     private final FrameLayout contentContainer;
     private final FrameLayout amountArea;
     private final androidx.core.widget.NestedScrollView contentScroll;
-    private int collapsedAmountHeight,expandScrollRange;
+    private int expandScrollRange;
     private final WalletRecipientView recipientView;
     private final ActionBarMenuItem moreItem;
     private final ActionBarMenuItem inlineMoreItem;
@@ -269,14 +269,14 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         center.setClipToPadding(false);
         center.setOnClickListener(v -> requestAmountKeyboard());
         center.setGravity(Gravity.CENTER_VERTICAL);
-        amountArea.addView(center,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,Gravity.CENTER_VERTICAL));
+        amountArea.addView(center,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,Gravity.TOP));
 
         unlockButton = new ButtonWithCounterView(context, resourcesProvider).setRound();
         unlockButton.setText("Unlock wallet");
         unlockButton.setOnClickListener(v -> { if (walletAccess != null) walletAccess.open(); });
         amountArea.addView(unlockButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER, 32, 0, 32, 0));
         contentScroll.setOnScrollChangeListener((androidx.core.widget.NestedScrollView.OnScrollChangeListener)(view,x,y,oldX,oldY)->{
-            amountArea.setMinimumHeight(Math.max(dp(48),collapsedAmountHeight+Math.min(y,expandScrollRange)));
+            updateBodyViewport();
             parentAlert.updateLayout(ChatAttachAlertGramLayout.this,true,y-oldY);
         });
 
@@ -1591,7 +1591,18 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         } else if (panTransitionInProgress) {
             updateKeyboardTransitionPositions();
         }
+        updateBodyViewport();
         updateCenterGeometry();
+    }
+
+    private void updateBodyViewport(){
+        int height=contentScroll.getHeight();if(height<=0)return;
+        expandScrollRange=Math.max(0,contentContainer.getPaddingTop()-dp(12));
+        int minimum=height+expandScrollRange;
+        if(contentContainer.getMinimumHeight()!=minimum)contentContainer.setMinimumHeight(minimum);
+        boolean ready=walletAccess!=null && walletAccess.ready();
+        int amountMinimum=ready ? 0 : Math.max(dp(48),height-expandScrollRange-dp(88)-dp(44)+Math.min(contentScroll.getScrollY(),expandScrollRange));
+        if(amountArea.getMinimumHeight()!=amountMinimum)amountArea.setMinimumHeight(amountMinimum);
     }
 
     @Override
@@ -1663,18 +1674,15 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         final int bottomMargin=footerHeight+tabsReservedHeight;
         // The collapsed space belongs to scrollable content, not a fixed viewport
         // margin. Scrolling therefore lifts the entire body up to the sticky header.
-        final int viewportTop=dp(56)+AndroidUtilities.statusBarHeight;
+        final int viewportTop=ActionBar.getCurrentActionBarHeight()+dp(8);
         contentContainer.setPadding(0,Math.max(dp(12),padding-viewportTop+dp(12)),0,dp(32));
         if (layoutParams.topMargin != viewportTop || layoutParams.bottomMargin!=bottomMargin) {
             layoutParams.topMargin = viewportTop;
             layoutParams.bottomMargin=bottomMargin;
             contentScroll.setLayoutParams(layoutParams);
         }
-        final int viewportHeight=Math.max(0,availableHeight-padding-footerHeight-tabsReservedHeight);
         expandScrollRange=Math.max(0,contentContainer.getPaddingTop()-dp(12));
-        contentContainer.setMinimumHeight(Math.max(0,availableHeight-viewportTop-footerHeight-tabsReservedHeight)+expandScrollRange);
-        collapsedAmountHeight=viewportHeight-dp(88)-dp(12)-contentContainer.getPaddingBottom();
-        amountArea.setMinimumHeight(Math.max(dp(48),collapsedAmountHeight+Math.min(contentScroll.getScrollY(),expandScrollRange)));
+        updateBodyViewport();
 
         updateCenterBottom();
     }
