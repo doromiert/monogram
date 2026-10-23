@@ -96,7 +96,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     private final FrameLayout contentContainer;
     private final FrameLayout amountArea;
     private final androidx.core.widget.NestedScrollView contentScroll;
-    private int expandScrollRange;
+    private int expandScrollRange,lastTrayInset=-1;
     private final WalletRecipientView recipientView;
     private final ActionBarMenuItem moreItem;
     private final ActionBarMenuItem inlineMoreItem;
@@ -118,7 +118,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     private final AnimatedTextView currencyView;
     private final TextView commentView;
     private final LinkSpanDrawable.LinksTextView insufficientFundsView;
-    private final TextView balanceView;
+    private final org.telegram.ui.Wallet.WalletBalanceStrip walletStrip;
     private final TextView feeView;
     private final SpannableString feeViewLoading;
     private boolean feeVisible;
@@ -497,17 +497,9 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         bottomIntroContainer.setClipToPadding(false);
         bottomContainer.addView(bottomIntroContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        balanceView = new TextView(context);
-        balanceView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
-        balanceView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        balanceView.setSingleLine(true);
-        androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(balanceView,10,14,1,TypedValue.COMPLEX_UNIT_DIP);
-        balanceView.setGravity(Gravity.CENTER);
-        bottomIntroContainer.addView(balanceView, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT,
-                20,
-                Gravity.TOP | Gravity.FILL_HORIZONTAL
-        ));
+        walletStrip=new org.telegram.ui.Wallet.WalletBalanceStrip(context);
+        walletStrip.setOnWalletSelected(this::selectSheetWallet);
+        bottomIntroContainer.addView(walletStrip,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,48,Gravity.TOP));
 
         feeView = new TextView(context);
         feeView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
@@ -520,7 +512,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                 LayoutHelper.MATCH_PARENT,
                 LayoutHelper.WRAP_CONTENT,
                 Gravity.TOP | Gravity.FILL_HORIZONTAL,
-                0, 24, 0, 0
+                0, 52, 0, 0
         ));
         feeViewLoading = new SpannableString(getString(R.string.Loading));
         feeViewLoading.setSpan(new LoadingSpan(feeView, dp(80)), 0, feeViewLoading.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -632,13 +624,29 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         boolean accessChanged=ready!=accessWasReady;
         accessWasReady = ready;
         center.setVisibility(ready ? View.VISIBLE : View.GONE);
-        bottomContainer.setVisibility(ready ? View.VISIBLE : View.GONE);
+        bottomContainer.setVisibility(View.VISIBLE);
         if(accessChanged)requestLayout();
         unlockButton.setVisibility(ready ? View.GONE : View.VISIBLE);
         unlockButton.setText(walletAccess == null ? "Wallet unavailable" : walletAccess.title());
         unlockButton.setLoading(walletAccess != null && walletAccess.busy() && !walletAccess.scanning());
         unlockButton.setEnabled(walletAccess != null && (!walletAccess.busy() || walletAccess.scanning()));
         if (amountEdit != null && sendButton != null) updateAmount();
+    }
+
+    private void selectSheetWallet(com.negzero.monogram.wallet.MonogramWallet chosen){
+        try{
+            com.negzero.monogram.wallet.MonogramWallet current=GramWallet.getInstance(currentAccount).backend();
+            if(current.walletId.equals(chosen.walletId))return;
+            if(paymentLinkFlow!=null && paymentLinkFlow.committing())throw new IllegalStateException("Wait for the payment broadcast to finish.");
+            if(current.busy && !current.scanning)throw new IllegalStateException("Finish the current wallet operation first.");
+            if(cancelFeeLoading!=null){cancelFeeLoading.run();cancelFeeLoading=null;}
+            if(paymentLinkFlow!=null){paymentLinkFlow.close();paymentLinkFlow=null;}
+            current.select(chosen.walletId);
+            if(walletAccess!=null){walletAccess.close();walletAccess=null;}
+            GramWallet.cleanup(currentAccount);accessWasReady=false;feeAmount=-1;fee=-1;
+            walletAccess=new WalletAccessController(parentAlert.getBaseFragment(),currentAccount,9634,this::updateWalletAccess);
+            walletAccess.resume();loadFee();requestLayout();
+        }catch(Exception failure){BulletinFactory.global().showForError(failure.getMessage());updateBalance();}
     }
 
     public void onWalletResume() { if (walletAccess != null) walletAccess.resume(); if (paymentLinkFlow != null) paymentLinkFlow.resume(); }
@@ -1059,20 +1067,20 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         if (animated && sendButtonVisible == visible) {
             return;
         }
+        if(sendButtonVisible!=visible)requestLayout();
         sendButtonVisible = visible;
         sendButton.animate().cancel();
-        balanceView.animate().cancel();
+        walletStrip.animate().cancel();
         feeView.animate().cancel();
 
         final float alpha = visible ? 1.0f : 0.0f;
         final float scale = visible ? 1.0f : 0.8f;
-        final float textTranslationY = visible ? 0 : dp(60);
+        final float textTranslationY = 0;
         if (!animated) {
             sendButton.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
             sendButton.setAlpha(alpha);
             sendButton.setScaleX(scale);
             sendButton.setScaleY(scale);
-            balanceView.setTranslationY(textTranslationY);
             feeView.setTranslationY(textTranslationY);
             return;
         }
@@ -1089,11 +1097,6 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                         sendButton.setVisibility(View.INVISIBLE);
                     }
                 })
-                .start();
-        balanceView.animate()
-                .translationY(textTranslationY)
-                .setDuration(320)
-                .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
                 .start();
         feeView.animate()
                 .translationY(textTranslationY)
@@ -1136,7 +1139,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                     && (link || valid && !walletUnavailable && wallet.hasReviewedPayment(recipientAddress, amount))
                     && (paymentLinkFlow == null || !paymentLinkFlow.busy()));
         }
-        updateSendButtonVisibility(hasAmount, layoutShown);
+        updateSendButtonVisibility(hasAmount && walletAccess!=null && walletAccess.ready(), layoutShown);
         updateBalance();
 
         updateInputModeViews();
@@ -1343,12 +1346,13 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
     private void updateBalance() {
         final GramWallet wallet = GramWallet.getInstance(currentAccount);
+        try{com.negzero.monogram.wallet.MonogramWallet backend=wallet.backend();walletStrip.bind(backend.wallets(),backend.walletId);}catch(Exception ignored){}
         if (!wallet.isReady()) {
-            balanceView.setText("Unlock and scan your wallet");
+
             updateFeeVisibility(false);
             return;
         }
-        balanceView.setText("Balance: " + GramWallet.formatGrams(wallet.getBalance()) + " XMR");
+
         final long minAmount = 1L;
         feeEmulationAvailable = !wallet.isGaslessAvailable() && wallet.getSpendableBalance() >= minAmount;
         hasEnteredAmount |= !TextUtils.isEmpty(amountEdit.getText());
@@ -1605,6 +1609,11 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         if(amountArea.getMinimumHeight()!=amountMinimum)amountArea.setMinimumHeight(amountMinimum);
     }
 
+    @Override public void onButtonsTranslationYUpdated(){
+        int inset=keyboardVisible ? 0 : parentAlert.getVisibleTypeButtonsInset();
+        if(inset!=lastTrayInset){lastTrayInset=inset;requestLayout();}
+    }
+
     @Override
     public int needsActionBar() {
         return 1;
@@ -1642,9 +1651,10 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         keyboardVisible =
                 parentAlert.sizeNotifierFrameLayout.measureKeyboardHeight() > dp(20);
         occupyNavigationBar = keyboardVisible;
-        final int tabsReservedHeight = keyboardVisible ? 0 : dp(TABS_RESERVED_HEIGHT_DP);
+        final int tabsReservedHeight = keyboardVisible ? 0 : parentAlert.getVisibleTypeButtonsInset();
+        lastTrayInset=tabsReservedHeight;
         final boolean composerReady=walletAccess!=null && walletAccess.ready();
-        final int footerHeight = composerReady ? dp(92) + Math.round(dp(32) * feeVisibilityProgress) : 0;
+        final int footerHeight = dp(60)+(composerReady && sendButtonVisible ? dp(60) : 0)+Math.round(dp(48)*feeVisibilityProgress);
 
         final FrameLayout.LayoutParams bottomLayoutParams =
                 (FrameLayout.LayoutParams) bottomContainer.getLayoutParams();
@@ -1841,7 +1851,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         tapToSetAmount.animate().cancel();
         insufficientFundsView.animate().cancel();
         sendButton.animate().cancel();
-        balanceView.animate().cancel();
+        walletStrip.animate().cancel();
         feeView.animate().cancel();
         cancelPendingCommentAlert();
         if (commentDialog != null) {

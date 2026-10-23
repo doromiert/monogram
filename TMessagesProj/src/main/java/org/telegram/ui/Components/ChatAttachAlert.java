@@ -6253,6 +6253,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         return typeButtonsAvailable ? dp(48 + 7 + 7) : 0;
     }
 
+    /** Visible attachment tabs plus the gap above them; fades to zero on expansion. */
+    public int getVisibleTypeButtonsInset(){
+        if(!typeButtonsAvailable || buttonsRecyclerViewWrapper.getVisibility()!=View.VISIBLE)return 0;
+        return Math.round((getTypeButtonsHeight()+dp(8))*buttonsRecyclerViewWrapper.getAlpha());
+    }
+
     /** Hide/show the bottom attach-type buttons row without affecting the write/send button. */
     public void setTypeButtonsHidden(boolean hidden, boolean animated) {
         if (typeButtonsHidden == hidden) {
