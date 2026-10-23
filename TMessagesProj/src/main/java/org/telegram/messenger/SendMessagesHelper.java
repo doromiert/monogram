@@ -4653,6 +4653,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     } else if (retryMessageObject.type == MessageObject.TYPE_POLL) {
                         if (newMsg.media instanceof TLRPC.TL_messageMediaPoll) {
                             poll = (TLRPC.TL_messageMediaPoll) newMsg.media;
+                            caption = org.telegram.messenger.xmpp.MonogramPolls.retryDescription(newMsg);
                         } else {
                             todo = (TLRPC.TL_messageMediaToDo) newMsg.media;
                         }

@@ -972,3 +972,12 @@ Disk cleanup (2026-10-22, user requested): stopped Gradle and paused the emulato
 - Release gate complete: 29 focused native poll/reaction/formatting/self-chat checks pass, including 8 new poll scenarios covering serialization, history/replay/reload, multiple/single choice, retraction, author closure, room actor continuity and voter pagination. Tests ran only during APK delivery. No subagents or phone interaction.
 
 0.2.153 artifact: original signer verified, version 0.2.153 (73289), scoped APK audit passed; three unchanged native libraries match 0.2.152 byte-for-byte. SHA-256 `3237184185132a73fad6e0bcbfac8d15446dc0ad395f841fcf129e96c99657c5`. GitHub updater delivery; no ADB installation or real-message/visual acceptance test.
+
+## 0.2.154 — poll descriptions rejected as unsupported
+
+- User screenshots show a normal public poll rejected with the generic compatibility error. Root cause: the native composer exposes a description and sends it as `TL_messages_sendMedia.message`; the adapter rejected all nonempty message fields, while the earlier test used an empty caption.
+- Preserve descriptions in an optional readable 📝 fallback block and project them as native poll captions. Keep description-free poll wire bodies unchanged. Restore the caption explicitly in the native TYPE_POLL retry branch and preserve it through message serialization, send acknowledgements, reload, author closure and forwarding; distinguish actual unsupported features in failure text.
+- Add regression coverage using the real `PollSendParams` constructor and a stored-message retry, matching the reported question/description and duplicate option text. Existing failed polls can be retried after upgrading.
+- Corrective release gate: 31 focused poll/reaction/formatting/self-chat checks pass. Two new cases cover the actual composer `PollSendParams` envelope, native message serialization/retry, multiline description projection/reload, send acknowledgement, closure and forwarding. Native TYPE_POLL retry now restores the caption explicitly. No phone access or subagents.
+
+0.2.154 artifact: original signer verified, version 0.2.154 (73299), scoped APK audit passed. All three native libraries match 0.2.153 exactly. SHA-256 `7b1723d9e21cff71cf88a2af1017647bb3171bf905dec4f583edce392a949188`. Published through the GitHub updater; no ADB install or on-device send/visual acceptance test.

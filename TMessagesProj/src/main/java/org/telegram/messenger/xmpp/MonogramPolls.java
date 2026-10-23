@@ -15,14 +15,16 @@ public final class MonogramPolls {
     static String body(TLRPC.Message message) { return message.params!=null && message.params.containsKey(BODY)?message.params.get(BODY):message.message; }
     private static final String PREFIX="📊 ",SINGLE="Public votes. React with an option's emoji to vote. Choose one.",MULTI="Public votes. React with option emojis to vote. Choose any.",CLOSED="Voting closed.";
     static final class Poll {
-        final String question;final List<String> answers;final boolean multiple,closed;
-        Poll(String question,List<String> answers,boolean multiple,boolean closed) {
-            this.question=field(question,4096);this.multiple=multiple;this.closed=closed;
+        final String question,description;final List<String> answers;final boolean multiple,closed;
+        Poll(String question,List<String> answers,boolean multiple,boolean closed) { this(question,"",answers,multiple,closed); }
+        Poll(String question,String description,List<String> answers,boolean multiple,boolean closed) {
+            this.question=field(question,4096);this.description=description==null || description.trim().isEmpty()?"":field(description,4096);this.multiple=multiple;this.closed=closed;
             if(answers==null || answers.size()<2 || answers.size()>EMOJI.length) throw new Invalid("Choose between 2 and 32 poll options.");
             ArrayList<String> copy=new ArrayList<>();for(String answer:answers) copy.add(field(answer,1024));this.answers=Collections.unmodifiableList(copy);
         }
         String body() {
             StringBuilder out=new StringBuilder(PREFIX).append(indent(question)).append("\n\n");
+            if(!description.isEmpty()) out.append("📝 ").append(indent(description)).append("\n\n");
             for(int i=0;i<answers.size();i++) { if(i>0) out.append('\n');out.append(EMOJI[i]).append(' ').append(indent(answers.get(i))); }
             return out.append("\n\n").append(multiple?MULTI:SINGLE).append(closed?"\n"+CLOSED:"").toString();
         }
@@ -44,15 +46,22 @@ public final class MonogramPolls {
             String footer=body.substring(last+2);boolean closed=footer.endsWith("\n"+CLOSED);
             if(closed) footer=footer.substring(0,footer.length()-CLOSED.length()-1);
             if(!footer.equals(SINGLE) && !footer.equals(MULTI)) return null;
-            String question=unindent(body.substring(PREFIX.length(),first));List<String> answers=new ArrayList<>();StringBuilder answer=null;
-            for(String line:body.substring(first+2,last).split("\n",-1)) {
+            String question=unindent(body.substring(PREFIX.length(),first)),description="";
+            int options=first+2;
+            if(body.startsWith("📝 ",options)) {
+                int descriptionEnd=body.indexOf("\n\n",options);
+                if(descriptionEnd<0 || descriptionEnd>=last) return null;
+                description=unindent(body.substring(options+"📝 ".length(),descriptionEnd));options=descriptionEnd+2;
+            }
+            List<String> answers=new ArrayList<>();StringBuilder answer=null;
+            for(String line:body.substring(options,last).split("\n",-1)) {
                 if(line.startsWith("  ") && answer!=null) { answer.append('\n').append(line);continue; }
                 if(answer!=null) answers.add(unindent(answer.toString()));
                 if(answers.size()>=EMOJI.length || !line.startsWith(EMOJI[answers.size()]+" ")) return null;
                 answer=new StringBuilder(line.substring(EMOJI[answers.size()].length()+1));
             }
             if(answer!=null) answers.add(unindent(answer.toString()));
-            Poll result=new Poll(question,answers,footer.equals(MULTI),closed);
+            Poll result=new Poll(question,description,answers,footer.equals(MULTI),closed);
             return result.body().equals(body)?result:null;
         } catch(IllegalArgumentException invalid) { return null; }
     }
@@ -60,9 +69,13 @@ public final class MonogramPolls {
     static TLRPC.TL_messages_sendMessage text(TLRPC.TL_messages_sendMedia request) {
         TLRPC.TL_inputMediaPoll media=(TLRPC.TL_inputMediaPoll)request.media;TLRPC.Poll poll=media.poll;
         if(poll==null || poll.question==null) throw new Invalid("Missing poll question.");
-        if(!poll.public_voters || poll.quiz || poll.open_answers || poll.revoting_disabled || poll.hide_results_until_close || poll.subscribers_only
-                || poll.close_period!=0 || poll.close_date!=0 || !poll.countries_iso2.isEmpty() || media.attached_media!=null || media.solution_media!=null
-                || request.message!=null && !request.message.isEmpty()) throw new Invalid("XMPP reaction polls support public votes, fixed options and changing your vote. Send attachments separately.");
+        if(!poll.public_voters) throw new Invalid("Reaction poll votes are public. Create this poll with public votes enabled.");
+        if(poll.quiz) throw new Invalid("Quiz answers are not supported by reaction polls yet.");
+        if(poll.open_answers) throw new Invalid("Adding options after sending is not supported by reaction polls yet.");
+        if(poll.revoting_disabled) throw new Invalid("Reaction polls allow voters to change their vote.");
+        if(poll.hide_results_until_close || poll.close_period!=0 || poll.close_date!=0) throw new Invalid("Timed closure and hidden results are not supported by reaction polls yet.");
+        if(poll.subscribers_only || !poll.countries_iso2.isEmpty()) throw new Invalid("Audience restrictions are not supported by reaction polls yet.");
+        if(media.attached_media!=null || media.solution_media!=null) throw new Invalid("Send poll attachments separately.");
         List<String> answers=new ArrayList<>();
         for(TLRPC.PollAnswer answer:poll.answers) {
             if(answer==null || answer.text==null || answer.media!=null || answer.input_media!=null) throw new Invalid("Send poll options as text; attachments are not supported yet.");
@@ -71,7 +84,9 @@ public final class MonogramPolls {
         TLRPC.TL_messages_sendMessage send=new TLRPC.TL_messages_sendMessage();
         send.peer=request.peer;send.random_id=request.random_id;send.reply_to=request.reply_to;send.flags=request.reply_to==null?0:1;
         send.silent=request.silent;send.background=request.background;send.clear_draft=request.clear_draft;send.schedule_date=request.schedule_date;
-        send.no_webpage=true;send.message=new Poll(poll.question.text,answers,poll.multiple_choice,poll.closed).body();return send;
+        send.no_webpage=true;send.message=new Poll(poll.question.text,request.message,answers,poll.multiple_choice,poll.closed).body();
+        if(send.message.length()>40000) throw new Invalid("This poll is too long. Shorten its text before sending.");
+        return send;
     }
     private static String key(String emoji) { return emoji==null?"":emoji.replace("\ufe0f",""); }
     private static byte[] option(int index) { return new byte[]{(byte)('0'+index)}; }
@@ -118,7 +133,14 @@ public final class MonogramPolls {
         }
         for(TLRPC.TL_messagePeerVoteMultiple vote:votes.values()) media.results.recent_voters.add(vote.peer);
         if(message.params==null) message.params=new HashMap<>();message.params.put(BODY,body(message));
-        message.message="";message.media=media;message.flags|=TLRPC.MESSAGE_FLAG_HAS_MEDIA;
+        message.message=data.description;message.media=media;message.flags|=TLRPC.MESSAGE_FLAG_HAS_MEDIA;
+    }
+    /** Failed native polls store the description as their caption; projected polls also retain the full fallback. */
+    public static String retryDescription(TLRPC.Message message) {
+        if(message.params!=null && message.params.containsKey(BODY)) {
+            Poll original=parse(message.params.get(BODY));if(original!=null) return original.description;
+        }
+        return message.message==null?"":message.message;
     }
     /** Native short-send responses have no params field; preserve the fallback for immediate forwarding. */
     public static void completeSent(TLRPC.Message message) {
@@ -126,11 +148,11 @@ public final class MonogramPolls {
         TLRPC.Poll poll=((TLRPC.TL_messageMediaPoll)message.media).poll;List<String> answers=new ArrayList<>();
         for(TLRPC.PollAnswer answer:poll.answers) answers.add(answer.text.text);
         if(message.params==null) message.params=new HashMap<>();
-        message.params.put(BODY,new Poll(poll.question.text,answers,poll.multiple_choice,poll.closed).body());message.message="";
+        message.params.put(BODY,new Poll(poll.question.text,message.message,answers,poll.multiple_choice,poll.closed).body());
     }
     static String freshBody(TLRPC.Message message) {
         Poll poll=parse(body(message));if(poll==null) throw new Invalid("Poll is unavailable.");
-        return new Poll(poll.question,poll.answers,poll.multiple,false).body();
+        return new Poll(poll.question,poll.description,poll.answers,poll.multiple,false).body();
     }
     static TLRPC.TL_messageMediaPoll require(TLRPC.Message message,long peer) {
         if(message.dialog_id!=peer || !(message.media instanceof TLRPC.TL_messageMediaPoll) || parse(body(message))==null) throw new Invalid("Poll is unavailable in this conversation.");
@@ -173,6 +195,6 @@ public final class MonogramPolls {
         if(!message.out) throw new Invalid("Only the author can close this poll.");
         TLRPC.Poll input=((TLRPC.TL_inputMediaPoll)request.media).poll;
         if(input==null || !input.closed) throw new Invalid("Only closing an existing poll is supported.");
-        Poll poll=parse(body(message));request.message=new Poll(poll.question,poll.answers,poll.multiple,true).body();request.media=null;request.flags=(request.flags&~16384)|2048;
+        Poll poll=parse(body(message));request.message=new Poll(poll.question,poll.description,poll.answers,poll.multiple,true).body();request.media=null;request.flags=(request.flags&~16384)|2048;
     }
 }

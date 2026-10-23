@@ -104,4 +104,52 @@ public class MonogramPollsTest {
         query.offset=first.next_offset;assertEquals(1,MonogramPolls.voters(query,store.getMessage(id,self),store,self).votes.size());
         query.offset="";query.option=media(id).poll.answers.get(1).option;assertEquals(1,MonogramPolls.voters(query,store.getMessage(id,self),store,self).count);
     }
+    private TLRPC.TL_messages_sendMedia composerRequest(String description) {
+        TLRPC.TL_messageMediaPoll nativePoll=new TLRPC.TL_messageMediaPoll();nativePoll.poll=new TLRPC.TL_poll();nativePoll.results=new TLRPC.TL_pollResults();
+        nativePoll.poll.question.text="love?";nativePoll.poll.public_voters=true;nativePoll.poll.multiple_choice=true;nativePoll.poll.creator=true;
+        for(int i=0;i<2;i++) { TLRPC.TL_pollAnswer answer=new TLRPC.TL_pollAnswer();answer.text.text="love";answer.option=new byte[]{(byte)('0'+i)};nativePoll.poll.answers.add(answer); }
+        // Same constructor used by ChatActivity.sendPoll, including its nonempty caption field.
+        org.telegram.ui.Components.poll.PollSendParams prepared=new org.telegram.ui.Components.poll.PollSendParams(
+                new org.telegram.ui.Components.poll.PollAttachedMediaPack(),nativePoll,91,description,new ArrayList<>(),new ArrayList<>());
+        TLRPC.TL_messages_sendMedia request=new TLRPC.TL_messages_sendMedia();request.peer=input(peer);request.random_id=91;
+        request.media=prepared.inputMediaPoll;request.message=prepared.caption;request.entities=prepared.entities;return request;
+    }
+    @Test public void composerDescriptionAndStoredPollRetryBecomeTheSameSendablePoll() {
+        TLRPC.TL_messages_sendMedia request=composerRequest("love?");
+        TLRPC.TL_messages_sendMessage sent=MonogramPolls.text(request);MonogramPolls.Poll parsed=MonogramPolls.parse(sent.message);
+        assertNotNull(parsed);assertEquals("love?",parsed.question);assertEquals("love?",parsed.description);assertTrue(parsed.multiple);
+        assertEquals(Arrays.asList("love","love"),parsed.answers);
+        TLRPC.Message failed=new TLRPC.TL_message();failed.message=request.message;
+        failed.media=new TLRPC.TL_messageMediaPoll();((TLRPC.TL_messageMediaPoll)failed.media).poll=((TLRPC.TL_inputMediaPoll)request.media).poll;
+        assertEquals("love?",MonogramPolls.retryDescription(failed));
+        request.message=MonogramPolls.retryDescription(failed);
+        failed.id=-11;failed.out=true;failed.flags=TLRPC.MESSAGE_FLAG_HAS_MEDIA;failed.date=100;
+        failed.peer_id=new TLRPC.TL_peerUser();failed.peer_id.user_id=peer;
+        ((TLRPC.TL_messageMediaPoll)failed.media).results=new TLRPC.TL_pollResults();
+        // The durable outbox stores a native message, not a client request (whose TL reader is intentionally absent).
+        SerializedData bytes=new SerializedData();failed.serializeToStream(bytes);SerializedData encoded=new SerializedData(bytes.toByteArray());
+        TLRPC.Message restored=TLRPC.Message.TLdeserialize(encoded,encoded.readInt32(true),true);
+        TLRPC.TL_messages_sendMedia retry=new TLRPC.TL_messages_sendMedia();retry.peer=input(peer);retry.random_id=91;
+        TLRPC.TL_inputMediaPoll retryPoll=new TLRPC.TL_inputMediaPoll();retryPoll.poll=((TLRPC.TL_messageMediaPoll)restored.media).poll;retry.media=retryPoll;
+        retry.message=MonogramPolls.retryDescription(restored);
+        assertEquals(sent.message,MonogramPolls.text(retry).message);bytes.cleanup();encoded.cleanup();
+        assertEquals("",MonogramPolls.parse(MonogramPolls.text(composerRequest(null)).message).description);
+        assertEquals("",MonogramPolls.parse(MonogramPolls.text(composerRequest("")).message).description);
+    }
+    @Test public void descriptionsSurviveReloadCloseForwardingAndNativeSendAcknowledgement() throws Exception {
+        String description="A description\n\n📝 with emoji and *literal* text";
+        String wire=MonogramPolls.text(composerRequest(description)).message;
+        int id=store.save(MessageFixture.replyMessage("description","description",null,wire,true,true,100000,"phone",false,null)
+                .withMarkup(MessageMarkup.body(wire).preservingBody()));
+        reopen();TLRPC.Message shown=store.getMessage(id,self);
+        assertEquals(description,shown.message);assertEquals("love?",((TLRPC.TL_messageMediaPoll)shown.media).poll.question.text);
+        assertEquals(wire,MonogramPolls.body(shown));assertEquals(description,MonogramPolls.retryDescription(shown));
+        MonogramPolls.completeSent(shown);assertEquals(description,shown.message);assertEquals(wire,MonogramPolls.body(shown));
+        assertEquals(description,MonogramPolls.parse(MonogramPolls.freshBody(shown)).description);
+        TLRPC.TL_messages_editMessage close=new TLRPC.TL_messages_editMessage();close.id=id;close.peer=input(peer);
+        TLRPC.TL_inputMediaPoll closing=new TLRPC.TL_inputMediaPoll();closing.poll=new TLRPC.TL_poll();closing.poll.closed=true;close.media=closing;
+        MonogramPolls.close(close,shown,self);MonogramPolls.Poll closed=MonogramPolls.parse(close.message);
+        assertTrue(closed.closed);assertEquals(description,closed.description);
+    }
+
 }

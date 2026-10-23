@@ -28,9 +28,30 @@ Multiple-choice polls use this exact final line instead:
 Public votes. React with option emojis to vote. Choose any.
 ```
 
+Poll descriptions are optional. Starting with 0.2.154, a separate block between
+the question and options preserves them:
+
+```text
+📊 Where shall we eat?
+
+📝 Pick a place for tonight.
+
+1️⃣ Pizza
+2️⃣ Noodles
+
+Public votes. React with an option's emoji to vote. Choose one.
+```
+
+The native card shows the description as its caption; the fallback includes it
+once. Definitions without descriptions keep their original wire representation.
+0.2.153 displays description-bearing polls as readable text; 0.2.154 recognizes
+their native cards. Descriptions survive retries, native send acknowledgements,
+reload, closure and forwarding. Descriptions are bounded to 4096 UTF-16 units;
+complete authored fallback bodies are bounded to 40000 units.
+
 The fixed English fallback is a wire convention; it must not be localized or
 silently changed. Native controls can use the app's usual translations. The
-question/options may contain line breaks; every continuation line is indented
+question/description/options may contain line breaks; every continuation line is indented
 by exactly two additional spaces. Blank lines inside a field are therefore
 indented too. Monogram recognizes only canonical, bounded definitions that
 round-trip exactly, rather than guessing that ordinary numbered text is a poll.
