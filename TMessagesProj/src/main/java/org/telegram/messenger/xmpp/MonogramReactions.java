@@ -170,9 +170,10 @@ final class MonogramReactions {
         final long user,stamp; final int protocol; final String emojis;
         State(Cursor c) { user=c.getLong(1); stamp=c.getLong(2); protocol=c.getInt(3); emojis=c.getString(4); }
     }
-    TLRPC.TL_messageReactions snapshot(int message,long self) {
+    TLRPC.TL_messageReactions snapshot(int message,long self) { return snapshot(message,self,Long.MAX_VALUE); }
+    TLRPC.TL_messageReactions snapshot(int message,long self,long cutoff) {
         Map<String,State> latest=new LinkedHashMap<>();
-        try(Cursor c=store.getReadableDatabase().rawQuery("SELECT actor,user,stamp,protocol,emojis FROM reaction_events WHERE message=? AND failed=0 ORDER BY stamp,id",new String[]{Integer.toString(message)})) {
+        try(Cursor c=store.getReadableDatabase().rawQuery("SELECT actor,user,stamp,protocol,emojis FROM reaction_events WHERE message=? AND failed=0 AND stamp<=? ORDER BY stamp,id",new String[]{Integer.toString(message),Long.toString(cutoff)})) {
             while(c.moveToNext()) {
                 State before=latest.get(c.getString(0)),next=new State(c);
                 if(before==null || before.protocol!=2 || next.protocol==2) latest.put(c.getString(0),next);

@@ -1288,7 +1288,10 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
         MonogramLocation.decorate(message);
         decorateLinkPreview(message);
-        message.reactions=peer==self ? savedTags.snapshot(id) : reactions.snapshot(id,self);
+        MonogramPolls.Poll poll=MonogramPolls.parse(message.message);
+        long reactionCutoff=poll!=null && poll.closed ? Math.max((long)message.date,message.edit_date)*1000+999 : Long.MAX_VALUE;
+        message.reactions=peer==self ? savedTags.snapshot(id) : reactions.snapshot(id,self,reactionCutoff);
+        MonogramPolls.decorate(message,self);
         if (outgoing && peer != 0 && peer != self) receipts.decorate(message);
         if (!outgoing) MonogramReceipts.restoreIncoming(message, message.media_unread ? 0 : 2);
         if (!outgoing && reads.isRead(id)) MonogramReceipts.markLocalRead(message);

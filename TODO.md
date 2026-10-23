@@ -1036,3 +1036,13 @@ Release 0.2.144: Nix arm64 packaging and 30 focused native checks pass. Signed A
 - Existing pending navigation/title fixes are included. Release gate: 27 focused native/formatting/store checks and 25 core markup/encryption/chat-state checks pass (52 total). Corrected an outdated database-version assertion and supplied the missing typeface shadow for the new title-layout fixture. No on-phone visual or messaging acceptance test performed.
 
 0.2.152 artifact verification: original signer, version 0.2.152 (73279), scoped APK audit passed. All three packaged native libraries match 0.2.151 byte-for-byte; native sources did not change, so their existing outputs were reused. SHA-256 `27d64498f8809412d38f710d467dcefe25bf5cdfe705b8f53be93934278fbfb8`. Built serially with the emulator stopped; no ADB installation, for GitHub updater delivery.
+
+## 0.2.153 — native reaction polls
+
+- Implement native poll creation in DMs/rooms through the durable text outbox, with a canonical readable question/options fallback and XEP-0444 vote transport. No dedicated poll XEP found in the XSF catalogue; protocol convention documented in `docs/POLLS.md`.
+- Project reaction history as native counts, selected options and voter lists; support single/multiple choice, changing/retracting votes, author-only closure and forwarding as a fresh poll. Preserve reload/archive/replay behavior and stable room actor/target IDs.
+- Expose supported composer controls and an explicit public-vote explanation; omit anonymous/quiz/dynamic/timed/restricted controls. Reuse existing encrypted-reaction policy and per-chat legacy OMEMO public-reaction consent; surface vote errors instead of swallowing them.
+- Keep native XMPP result updates during the old 600ms Telegram vote debounce, since the local reaction snapshots are already ordered. Preserve native poll media/body metadata after queued-send acknowledgement.
+- Release gate complete: 29 focused native poll/reaction/formatting/self-chat checks pass, including 8 new poll scenarios covering serialization, history/replay/reload, multiple/single choice, retraction, author closure, room actor continuity and voter pagination. Tests ran only during APK delivery. No subagents or phone interaction.
+
+0.2.153 artifact: original signer verified, version 0.2.153 (73289), scoped APK audit passed; three unchanged native libraries match 0.2.152 byte-for-byte. SHA-256 `3237184185132a73fad6e0bcbfac8d15446dc0ad395f841fcf129e96c99657c5`. GitHub updater delivery; no ADB installation or real-message/visual acceptance test.

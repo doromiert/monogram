@@ -19329,7 +19329,8 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
 
                 long time = getSendMessagesHelper().getVoteSendTime(update.poll_id);
-                if (Math.abs(SystemClock.elapsedRealtime() - time) < 600) {
+                // Negative IDs are local XMPP poll projections, whose ordered reaction snapshots must not be dropped.
+                if (update.poll_id>=0 && Math.abs(SystemClock.elapsedRealtime() - time) < 600) {
                     continue;
                 }
                 getMessagesStorage().updateMessagePollResults(update.poll_id, update.poll, update.results);

@@ -25,6 +25,9 @@ public final class MonogramSelfChat {
         }
         else if(request instanceof TLRPC.TL_messages_editMessage) peer=((TLRPC.TL_messages_editMessage)request).peer;
         else if(request instanceof TLRPC.TL_messages_getMessageEditData) peer=((TLRPC.TL_messages_getMessageEditData)request).peer;
+        else if(request instanceof TLRPC.TL_messages_sendVote) peer=((TLRPC.TL_messages_sendVote)request).peer;
+        else if(request instanceof TLRPC.TL_messages_getPollResults) peer=((TLRPC.TL_messages_getPollResults)request).peer;
+        else if(request instanceof TLRPC.TL_messages_getPollVotes) peer=((TLRPC.TL_messages_getPollVotes)request).peer;
         else if(request instanceof TLRPC.TL_messages_sendReaction) peer=((TLRPC.TL_messages_sendReaction)request).peer;
         else if(request instanceof TLRPC.TL_messages_getMessagesReactions) peer=((TLRPC.TL_messages_getMessagesReactions)request).peer;
         else if(request instanceof TLRPC.TL_messages_getMessageReactionsList) peer=((TLRPC.TL_messages_getMessageReactionsList)request).peer;

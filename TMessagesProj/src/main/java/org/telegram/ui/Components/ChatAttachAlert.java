@@ -5960,7 +5960,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 plainTextEnabled = ChatObject.canSendPlain(chat);
                 documentsEnabled = ChatObject.canSendDocument(chat);
             } else {
-                pollsEnabled = UserObject.isBot(user) || UserObject.isUserSelf(user);
+                pollsEnabled = user!=null; // XMPP reaction polls also work in ordinary DMs.
                 todoEnabled = !(baseFragment instanceof ChatActivity) || ((ChatActivity) baseFragment).getCurrentEncryptedChat() == null;
             }
         }

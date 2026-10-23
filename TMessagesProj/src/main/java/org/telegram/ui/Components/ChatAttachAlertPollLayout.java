@@ -281,7 +281,7 @@ public class ChatAttachAlertPollLayout extends ChatAttachAlert.AttachAlertLayout
         super(alert, context, resourcesProvider);
 
         this.todo = todo;
-        maxAnswersCount = getAnswersMaxCount();
+        maxAnswersCount = todo?getAnswersMaxCount():Math.min(getAnswersMaxCount(),org.telegram.messenger.xmpp.MonogramPolls.MAX_OPTIONS);
         answers = new CharSequence[maxAnswersCount];
         answersChecks = new boolean[maxAnswersCount];
 
@@ -1210,36 +1210,10 @@ public class ChatAttachAlertPollLayout extends ChatAttachAlert.AttachAlertLayout
                 allowAddingRow = rowCount++;
             }
         } else {
-            TLRPC.Chat chat = ((ChatActivity) parentAlert.baseFragment).getCurrentChat();
-            final boolean isChannel = ChatObject.isChannel(chat) && !chat.megagroup;
-            if (!isChannel) {
-                poll2vAnonymousRow = rowCount++;
-            } else {
-                anonymousPoll = true;
-            }
-            poll2vMultipleRow = rowCount++;
-            if (!isChannel) {
-                poll2vAllowAddingRow = rowCount++;
-            } else {
-                allowAddingOptions = false;
-            }
-            poll2vAllowRevotingRow = rowCount++;
-            poll2vShuffleRow = rowCount++;
-            poll2vQuizRow = rowCount++;
-            if (isChannel) {
-                poll2vSubscribersOnlyRow.row = rowCount++;
-                poll2vLimitByCountryRow.row = rowCount++;
-                if (poll2vLimitByCountryRow.checked) {
-                    poll2vLimitByCountryListRow = rowCount++;
-                }
-            }
-
-            poll2vLimitDurationRow = rowCount++;
-            if (pollLimitDuration != 0 || pollLimitDeadline != 0) {
-                poll2vLimitDurationTimeRow = rowCount++;
-                poll2vLimitDurationHideResultsRow = rowCount++;
-                poll2vLimitDurationHideResultsRowInfo = rowCount++;
-            }
+            // Reaction polls expose only the options that XMPP clients can actually honor.
+            anonymousPoll=false;quizPoll=false;quizOnly=false;allowAddingOptions=false;
+            allowRevoting=true;shuffleOptions=false;hideResults=false;pollLimitDuration=0;pollLimitDeadline=0;
+            poll2vMultipleRow=rowCount++;
             settingsSectionRow = rowCount++;
             if (quizPoll) {
                 solutionRowHeader = rowCount++;
@@ -1975,8 +1949,8 @@ public class ChatAttachAlertPollLayout extends ChatAttachAlert.AttachAlertLayout
                     if (position == solutionInfoRow) {
                         cell.setText(getString(R.string.AddAnExplanationInfo));
                     } else if (position == settingsSectionRow) {
-                        cell.setFixedSize(12);
-                        cell.setText(null);
+                        if(!todo) { cell.setFixedSize(0);cell.setText("Votes are public and use XMPP reactions. You can change or retract your vote. Other clients can vote using the option emojis."); }
+                        else { cell.setFixedSize(12);cell.setText(null); }
                     } else if (maxAnswersCount - answersCount <= 0) {
                         cell.setText(getString(todo ? R.string.TodoAddTaskInfoMax : R.string.AddAnOptionInfoMax));
                     } else if (todo) {

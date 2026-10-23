@@ -3917,6 +3917,18 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (messageObject == null) {
             return 0;
         }
+        final org.telegram.messenger.xmpp.MonogramController monogram=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+        if(messageObject.getDialogId()!=getUserConfig().getClientUserId() && monogram.requiresPlainReactionConsent(messageObject.getId(),messageObject.getDialogId())) {
+            org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getLastFragment();
+            if(fragment!=null) fragment.showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getContext())
+                .setTitle("Poll vote privacy")
+                .setMessage("This chat uses legacy OMEMO. Poll text stays encrypted, but reaction votes are visible to the server. Allow unencrypted reactions in this chat?")
+                .setPositiveButton("Allow reactions",(dialog,which) -> {
+                    if(monogram.allowPlainReactions(messageObject.getDialogId())) sendVote(messageObject,answers,finishRunnable);
+                }).setNegativeButton(LocaleController.getString(R.string.Cancel),(dialog,which) -> { if(finishRunnable!=null) finishRunnable.run(); }).create());
+            else if(finishRunnable!=null) finishRunnable.run();
+            return 0;
+        }
         final String key = "poll_" + messageObject.getPollId();
         if (waitingForCallback.containsKey(key)) {
             return 0;
@@ -3945,6 +3957,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
             AndroidUtilities.runOnUIThread(() -> {
                 waitingForVote.remove(key);
+                if(error!=null) {
+                    org.telegram.ui.ActionBar.BaseFragment fragment=org.telegram.ui.LaunchActivity.getLastFragment();
+                    if(fragment!=null) org.telegram.ui.Components.AlertsCreator.processError(currentAccount,error,fragment,req);
+                }
                 if (finishRunnable != null) {
                     finishRunnable.run();
                 }
@@ -8304,6 +8320,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             }
                             if (!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty() && res.message != null) {
                                 newMsgObj.message = res.message;
+                                if(res.media instanceof TLRPC.TL_messageMediaPoll) {
+                                    org.telegram.messenger.xmpp.MonogramPolls.completeSent(newMsgObj);msgObj.setType();
+                                }
                                 if (newMsgObj.entities.isEmpty()) newMsgObj.flags &= ~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
                                 msgObj.updateMessageText();
                                 msgObj.resetLayout();

@@ -3007,6 +3007,26 @@ public final class MonogramController {
                 || request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_editStory) {
             stories().request(token,request,completed);return;
         }
+        if(MonogramPolls.supports(request)) {
+            try {
+                TLRPC.TL_messages_sendMessage converted=MonogramPolls.text((TLRPC.TL_messages_sendMedia)request);
+                Integer local=queuedLocalIds.remove(request);String mode=queuedEncryption.remove(request);
+                if(local!=null) queuedLocalIds.put(converted,local);if(mode!=null) queuedEncryption.put(converted,mode);
+                RequestDelegate pollCompleted=(response,error) -> {
+                    if(response instanceof TLRPC.TL_updateShortSentMessage && error==null) {
+                        TLRPC.TL_updateShortSentMessage sent=(TLRPC.TL_updateShortSentMessage)response;
+                        TLRPC.Message projected=store.getMessage(sent.id,self);sent.media=projected.media;sent.message=projected.message;sent.flags|=512;
+                    }
+                    completed.run(response,error);
+                };
+                if(converted.schedule_date!=0) scheduleOutgoing(converted,pollCompleted);else queueSend(token,converted,pollCompleted);
+            } catch(MonogramPolls.Invalid invalid) {
+                queuedLocalIds.remove(request);queuedEncryption.remove(request);
+                TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;error.text="MONOGRAM_XMPP_FAILED|"+invalid.getMessage();
+                Utilities.stageQueue.postRunnable(() -> completed.run(null,error));
+            }
+            return;
+        }
         if(MonogramLocation.supports(request)) {
             try {
                 TLRPC.TL_messages_sendMessage converted=MonogramLocation.text((TLRPC.TL_messages_sendMedia)request);
@@ -3029,7 +3049,7 @@ public final class MonogramController {
         message.params.putIfAbsent(QUEUED_ENCRYPTION,encryption(message.dialog_id).name());
     }
     public void prepareOutgoingRequest(TLObject request,TLRPC.Message message) {
-        if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request)) return;
+        if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request) && !MonogramPolls.supports(request)) return;
         MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
     }
@@ -3394,10 +3414,12 @@ public final class MonogramController {
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
+                || request instanceof TLRPC.TL_messages_getPollResults || request instanceof TLRPC.TL_messages_getPollVotes
+                || request instanceof TLRPC.TL_messages_sendVote && ((TLRPC.TL_messages_sendVote)request).peer!=null && ((TLRPC.TL_messages_sendVote)request).peer.user_id==self
                 || request instanceof TLRPC.TL_messages_getMessagesReactions || request instanceof TLRPC.TL_messages_getMessageReactionsList
                 || request instanceof TLRPC.TL_messages_getMessageReadParticipants
                 || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
-        (cached ? cacheWorker : roomMutation(request) ? roomWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction ? sendWorker : worker).execute(() -> {
+        (cached ? cacheWorker : roomMutation(request) ? roomWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction || request instanceof TLRPC.TL_messages_sendVote ? sendWorker : worker).execute(() -> {
             TLObject response = null; TLRPC.TL_error error = null;
             try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request); }
             catch (Exception e) {
@@ -3415,6 +3437,7 @@ public final class MonogramController {
                 if(roomMutation(request)) error.text="MONOGRAM_XMPP_ROOM: "+roomError(e);
                 else if(e instanceof ReactionConsentRequired) error.text="MONOGRAM_REACTION_CONSENT_REQUIRED";
                 else if(request instanceof TLRPC.TL_messages_sendReaction && e instanceof IllegalArgumentException) error.text="MONOGRAM_REACTION_UNAVAILABLE: "+e.getMessage();
+                else if(e instanceof MonogramPolls.Invalid) error.text="MONOGRAM_XMPP_FAILED|"+e.getMessage();
                 else if(e instanceof MonogramArticles.Failure) error.text="MONOGRAM_XMPP_FAILED|"+e.getMessage();
                 else if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
                 else if (e instanceof MonogramStore.EditUnavailable) error.text = ((MonogramStore.EditUnavailable)e).code;
@@ -3476,6 +3499,7 @@ public final class MonogramController {
             update.peer=peer<0 ? new TLRPC.TL_peerChat() : new TLRPC.TL_peerUser();
             if(peer<0) update.peer.chat_id=-peer; else update.peer.user_id=peer;
             update.msg_id=id; update.reactions=message.reactions; result.updates.add(update);
+            if(message.media instanceof TLRPC.TL_messageMediaPoll) result.updates.add(MonogramPolls.update(message));
             if(message.from_id!=null && message.from_id.user_id!=0) users.add(message.from_id.user_id);
             for(TLRPC.MessagePeerReaction reaction:message.reactions.recent_reactions)
                 if(reaction.peer_id!=null && reaction.peer_id.user_id!=0) users.add(reaction.peer_id.user_id);
@@ -3895,6 +3919,20 @@ public final class MonogramController {
             store.savedTags.rename(rename.reaction,(rename.flags & 1)!=0 ? rename.title : null);
             return new TLRPC.TL_boolTrue();
         }
+        if(request instanceof TLRPC.TL_messages_sendVote) {
+            TLRPC.TL_messages_sendVote vote=(TLRPC.TL_messages_sendVote)request;
+            long peer=MonogramPolls.dialog(vote.peer);
+            return handle(MonogramPolls.vote(vote,store.getMessage(vote.msg_id,self),self));
+        }
+        if(request instanceof TLRPC.TL_messages_getPollResults) {
+            TLRPC.TL_messages_getPollResults query=(TLRPC.TL_messages_getPollResults)request;long peer=MonogramPolls.dialog(query.peer);
+            TLRPC.Message message=store.getMessage(query.msg_id,self);MonogramPolls.require(message,peer);
+            return reactionUpdates(peer,java.util.Collections.singleton(query.msg_id));
+        }
+        if(request instanceof TLRPC.TL_messages_getPollVotes) {
+            TLRPC.TL_messages_getPollVotes query=(TLRPC.TL_messages_getPollVotes)request;
+            return MonogramPolls.voters(query,store.getMessage(query.id,self),store,self);
+        }
         if(request instanceof TLRPC.TL_messages_sendReaction) {
             TLRPC.TL_messages_sendReaction send=(TLRPC.TL_messages_sendReaction)request;
             if(send.peer==null || send.peer.channel_id!=0) throw new IllegalArgumentException("Unsupported conversation");
@@ -3956,6 +3994,7 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_editMessage) {
             TLRPC.TL_messages_editMessage edit = (TLRPC.TL_messages_editMessage) request;
+            if(edit.media instanceof TLRPC.TL_inputMediaPoll) MonogramPolls.close(edit,store.getMessage(edit.id,self),self);
             if (edit.peer == null || edit.peer.user_id == 0 && edit.peer.chat_id == 0 || edit.media != null || edit.schedule_date != 0 || edit.quick_reply_shortcut_id != 0
                     || (edit.flags & 2048) == 0 && edit.rich_message==null) throw new UnsupportedOperationException();
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
@@ -3987,6 +4026,7 @@ public final class MonogramController {
             corrections.edited.remove(edit.id); publishCorrections(peer, correctionUpdates(corrections, saved));
             Updates result = new Updates(); result.date = now();
             TL_update.TL_updateEditMessage update = new TL_update.TL_updateEditMessage(); update.message = store.getMessage(edit.id, self); result.updates.add(update);
+            if(update.message.media instanceof TLRPC.TL_messageMediaPoll) result.updates.add(MonogramPolls.update(update.message));
             if(peer<0) { result.users.addAll(store.roomUsers(peer,self)); result.chats.add(store.roomChat(peer,self)); }
             else { result.users.add(store.user(peer, self)); result.users.add(ownUser()); }
             return result;
@@ -4012,6 +4052,7 @@ public final class MonogramController {
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
+                if(projected.media instanceof TLRPC.TL_messageMediaPoll) { result.media=projected.media;result.flags|=512; }
                 result.pts_count=1; result.pts=MessagesStorage.getInstance(account).getLastPtsValue()+1; return result;
             }
             if (send.schedule_date != 0 || send.peer.user_id == 0) throw new UnsupportedOperationException();
@@ -4025,6 +4066,7 @@ public final class MonogramController {
             TLRPC.TL_updateShortSentMessage result = new TLRPC.TL_updateShortSentMessage();
             result.id = id; result.date = date; result.out = true; result.pts_count = 1;
             TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
+                if(projected.media instanceof TLRPC.TL_messageMediaPoll) { result.media=projected.media;result.flags|=512; }
             result.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
             return result;
         }

@@ -56,6 +56,7 @@ public final class MonogramLinkPreviews {
         try { return MonogramPreviewHttp.safeUrl(value).toASCIIString(); } catch(IOException invalid) { return null; }
     }
     static boolean candidate(TLRPC.Message message) {
+        if(message!=null && MonogramPolls.parse(message.message)!=null) return false;
         // A preview must never reveal a URL that the sender hid behind a spoiler.
         if(message!=null && message.message!=null) {
             Matcher url=URL.matcher(message.message);

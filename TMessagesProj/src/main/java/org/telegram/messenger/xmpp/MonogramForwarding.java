@@ -47,6 +47,8 @@ public final class MonogramForwarding {
                 send.params.put(SOURCE, Integer.toString(source.id));
                 send.params.put(ADDRESS, source.params.get(MonogramAttachments.PARAM));
             }
+        } else if(media instanceof TLRPC.TL_messageMediaPoll && MonogramPolls.parse(MonogramPolls.body(source))!=null) {
+            send.message=MonogramPolls.freshBody(source);send.entities.clear(); // A forwarded poll starts a fresh vote in its destination.
         } else if(media instanceof TLRPC.TL_messageMediaGeo || media instanceof TLRPC.TL_messageMediaVenue) {
             send.location=TLObject.deepCopy(media,TLRPC.MessageMedia::TLdeserialize);send.entities.clear();
         } else if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
