@@ -37,3 +37,10 @@ Use stable room-assigned IDs for MUC references; never export local Android/TL I
 unregistered identifiers. They are not reserved XMPP/XSF or registered IANA names.
 An eventual XEP submission needs its own assigned identity and migration story;
 existing Monogram implementations must continue recognizing their older versions.
+
+## Research proposals
+
+[Optional Monero payments](../MONERO_PAYMENTS_PROPOSAL.md) researches XEP-0518,
+Monero URI/proof handling and native Telegram wallet UI reuse. It is a design only:
+disabled-by-default visibility is mandatory, and no wallet protocol/UI is implemented
+or advertised by this proposal.
