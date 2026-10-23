@@ -195,3 +195,5 @@ Delivery: xmr.27 (73609) installed successfully via ADB and published as GitHub 
 - Fee reference: [daemon RPC](https://docs.getmonero.org/rpc-library/monerod-rpc/) and [wallet API estimator](https://github.com/monero-project/monero/blob/master/src/wallet/api/wallet.cpp). The SDK estimator assumes one input and an extra output; it is a suggestion, not a signed sweep quote.
 
 - User approved the xmr.37 UI and authorized merging the native wallet branch into the primary `master` branch. Stable 0.2.159 removes the XMR version suffix, uses version code 73719 (above all private XMR builds), and is being packaged for the regular GitHub release channel.
+
+- Stable 0.2.159 delivered: merged into primary `master`, published as the latest non-prerelease at https://github.com/doromiert/monogram/releases/tag/v0.2.159 and installed on the phone as version code 73719. GitHub’s uploaded APK digest and size match the local signed/audited artifact: SHA-256 `f2d084826d040caef8c87ef9c783d6ff9fa146a3f57d3bd6d753f32749d41318`, 78,212,503 bytes. User README/reference files preserved.
