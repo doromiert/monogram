@@ -307,17 +307,28 @@ extern "C" JNIEXPORT jcharArray JNICALL Java_com_negzero_monogram_wallet_WalletN
         std::fill(chars.begin(),chars.end(),0);wipe(seed);return out;
     }catch(...){wipe(seed);fail(env,"Could not export this claim wallet.");return nullptr;}
 }
-extern "C" JNIEXPORT jobjectArray JNICALL Java_com_negzero_monogram_wallet_WalletNative_prepareClaimSweep(JNIEnv* env,jclass,jlong handle,jstring destination) {
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_negzero_monogram_wallet_WalletNative_prepareClaimSweepPriority(JNIEnv* env,jclass,jlong handle,jstring destination,jint priority) {
     try {
         auto s=session(handle);if(!s->claim || !s->connected || !s->wallet->synchronized())throw std::runtime_error("Sync the claim wallet first.");
+        if(priority!=0 && priority!=3)throw std::runtime_error("Invalid deposit priority.");
         if(!s->quotes.empty())throw std::runtime_error("Finish the current claim review first.");
         if(s->wallet->balance(0)==0)throw std::runtime_error("No claim funds found. The payment may be pending or already claimed.");
         if(s->wallet->balance(0)!=s->wallet->unlockedBalance(0))throw std::runtime_error("Claim funds are still locked. Wait for confirmations, then sync again.");
-        auto tx=s->wallet->createTransaction(string(env,destination),"",Monero::optional<uint64_t>(),0,Monero::PendingTransaction::Priority_Default,0);
+        auto tx=s->wallet->createTransaction(string(env,destination),"",Monero::optional<uint64_t>(),0,static_cast<Monero::PendingTransaction::Priority>(priority),0);
         if(!tx)throw std::runtime_error("Could not prepare claim.");
         if(tx->status()!=Monero::PendingTransaction::Status_Ok || tx->amount()==0){s->wallet->disposeTransaction(tx);throw std::runtime_error("Could not prepare the claim. The balance must cover the network fee.");}
         uint64_t id=nextHandle.fetch_add(1);s->quotes.emplace(id,tx);
         return strings(env,{std::to_string(id),std::to_string(tx->amount()),std::to_string(tx->fee()),std::to_string(tx->txCount()),hashes(tx->txid())});
+    }catch(const std::exception& error){fail(env,error.what());return nullptr;}
+}
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_negzero_monogram_wallet_WalletNative_prepareClaimSweep(JNIEnv* env,jclass type,jlong handle,jstring destination) {
+    return Java_com_negzero_monogram_wallet_WalletNative_prepareClaimSweepPriority(env,type,handle,destination,0);
+}
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_negzero_monogram_wallet_WalletNative_estimateDepositFees(JNIEnv* env,jclass,jlong handle,jstring destination) {
+    try {
+        auto s=session(handle);if(!s->connected)throw std::runtime_error("Connect to your node before estimating fees.");
+        std::vector<std::pair<std::string,uint64_t>> destinations={{string(env,destination),1}};
+        return strings(env,{std::to_string(s->wallet->estimateTransactionFee(destinations,Monero::PendingTransaction::Priority_Default)),std::to_string(s->wallet->estimateTransactionFee(destinations,Monero::PendingTransaction::Priority_High))});
     }catch(const std::exception& error){fail(env,error.what());return nullptr;}
 }
 

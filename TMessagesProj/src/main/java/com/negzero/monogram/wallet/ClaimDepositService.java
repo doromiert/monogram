@@ -22,23 +22,24 @@ public final class ClaimDepositService extends Service {
     private PowerManager.WakeLock cpu;
     public static boolean active(int account,String address){return jobs.containsKey(ClaimStatusStore.key(account,address));}
     public static void start(MonogramWallet claim,String destination,BigInteger maxFee,MonogramWallet.Result<Void> done){
-        start(claim,destination,maxFee,false,done);
+        start(claim,destination,maxFee,0,false,done);
     }
-    public static void watch(MonogramWallet claim,MonogramWallet.Result<Void> done){start(claim,null,null,true,done);}
-    private static void start(MonogramWallet claim,String destination,BigInteger maxFee,boolean watch,MonogramWallet.Result<Void> done){
+    public static void start(MonogramWallet claim,String destination,BigInteger maxFee,int priority,MonogramWallet.Result<Void> done){start(claim,destination,maxFee,priority,false,done);}
+    public static void watch(MonogramWallet claim,MonogramWallet.Result<Void> done){start(claim,null,null,0,true,done);}
+    private static void start(MonogramWallet claim,String destination,BigInteger maxFee,int priority,boolean watch,MonogramWallet.Result<Void> done){
         String key=ClaimStatusStore.key(claim.accountIndex(),claim.primary());
         Job existing=jobs.get(key);
         if(existing!=null){
             if(watch){done.done(null,null);return;}
             if(existing.watch){
-                existing.watch=false;existing.destination=destination;existing.limit=maxFee;existing.pendingApproval=done;
+                existing.watch=false;existing.destination=destination;existing.limit=maxFee;existing.priority=priority;existing.pendingApproval=done;
                 AndroidUtilities.cancelRunOnUIThread(existing);AndroidUtilities.runOnUIThread(existing);return;
             }
             done.done(null,new IllegalStateException("A deposit for this link is already queued. Stop its notification before changing it."));return;
         }
         try{
             if(!watch && (maxFee==null || maxFee.signum()<=0))throw new IllegalArgumentException("Approve a positive maximum network fee.");
-            claim.beginBackgroundClaim();Job job=new Job(key,claim,destination,maxFee,watch);jobs.put(key,job);
+            claim.beginBackgroundClaim();Job job=new Job(key,claim,destination,maxFee,watch);job.priority=priority;jobs.put(key,job);
             MonogramWallet.Result<Void> saved=(unused,error)->{
                 if(error!=null){job.finish("paused","Deposit could not be queued");done.done(null,error);return;}
                 try{
@@ -46,12 +47,13 @@ public final class ClaimDepositService extends Service {
                     ClaimStatusStore.pending(key,!watch);job.state(watch ? "unknown" : "queued");AndroidUtilities.runOnUIThread(job);done.done(null,null);
                 }catch(Exception failure){job.finish("paused","Background checking could not start");done.done(null,failure);}
             };
-            if(watch)saved.done(null,null);else claim.saveDepositApproval(destination,maxFee,saved);
+            if(watch)saved.done(null,null);else claim.saveDepositApproval(destination,maxFee,priority,saved);
         }catch(Exception error){Job job=jobs.get(key);if(job!=null && job.claim==claim)job.finish("paused","Deposit could not be queued");done.done(null,error);}
     }
     private static final class Job implements Runnable {
         final String key;String destination;final MonogramWallet claim;BigInteger limit;boolean watch;
         MonogramWallet.Result<Void> pendingApproval;
+        int priority;
         final long started=SystemClock.elapsedRealtime();boolean closed,committing,broadcasted,readyNotified;
         Job(String key,MonogramWallet claim,String destination,BigInteger limit,boolean watch){this.key=key;this.claim=claim;this.destination=destination;this.limit=limit;this.watch=watch;}
         void state(String state){ClaimStatusStore.putKey(claim.accountIndex(),key,state);if(instance!=null)instance.update();}
@@ -63,7 +65,7 @@ public final class ClaimDepositService extends Service {
             if(claim.busy){later();return;}
             if(pendingApproval!=null){
                 MonogramWallet.Result<Void> approved=pendingApproval;pendingApproval=null;
-                try{claim.saveDepositApproval(destination,limit,(unused,error)->{
+                try{claim.saveDepositApproval(destination,limit,priority,(unused,error)->{
                     if(closed){approved.done(null,new IllegalStateException("Background deposit stopped."));return;}
                     if(error!=null){finish("paused","Deposit needs another review");approved.done(null,error);return;}
                     ClaimStatusStore.pending(key,true);state("queued");approved.done(null,null);AndroidUtilities.runOnUIThread(this);
@@ -79,9 +81,9 @@ public final class ClaimDepositService extends Service {
                     if(watch && "ready".equals(state) && !readyNotified){readyNotified=true;completion(key,"Payment link is ready to deposit");}
                     if(pendingApproval!=null){AndroidUtilities.runOnUIThread(this);return;}
                     if(watch || broadcasted || !"ready".equals(state)){later();return;}
-                    claim.prepareBackgroundClaimSweep(destination,(quote,failure)->{
+                    claim.prepareBackgroundClaimSweep(destination,priority,(quote,failure)->{
                         if(closed){if(quote!=null)claim.cancel(quote);return;}
-                        if(failure!=null){finish("paused","Deposit needs another review");return;}
+                        if(failure!=null){finish("paused",failure.getMessage()==null ? "Deposit needs another review" : failure.getMessage());return;}
                         try{
                             ClaimDepositPolicy.checkApproval(destination,quote.payment.address,new BigInteger(claim.balance[1]),quote.payment.atomicAmount,quote.fee,limit);
                         }catch(Exception rejected){claim.cancel(quote);finish(quote.fee.compareTo(limit)>0 ? "fee-limit" : "paused",rejected.getMessage());return;}

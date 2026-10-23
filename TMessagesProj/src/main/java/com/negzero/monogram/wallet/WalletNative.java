@@ -18,6 +18,9 @@ public final class WalletNative {
     public static native long openClaim(String path,char[] password,int network,long height);
     public static native char[] claimSeed(long handle);
     public static native String[] prepareClaimSweep(long handle,String destination);
+    public static native String[] prepareClaimSweepPriority(long handle,String destination,int priority);
+    /** Default/high-priority one-input estimates only; never constructs or broadcasts a transaction. */
+    public static native String[] estimateDepositFees(long handle,String destination);
     public static native void close(long handle);
     public static native void stop(long handle);
     /** address, balance atomic, unlocked atomic, wallet height, daemon height, synchronized, address count, scan start height. */

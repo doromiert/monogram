@@ -50,13 +50,17 @@ public final class MonogramWallet {
     public boolean backgroundClaimActive(){return backgroundClaim && unlocked();}
     public void endBackgroundClaim(){backgroundClaim=false;release();}
     public void saveDepositApproval(String destination,java.math.BigInteger limit,Result<Void> done){
+        saveDepositApproval(destination,limit,0,done);
+    }
+    public void saveDepositApproval(String destination,java.math.BigInteger limit,int priority,Result<Void> done){
         if(claimId==null || !backgroundClaim)throw new IllegalStateException("No background deposit authorized.");
         MoneroPayment.address(destination,network);
         work("Saving deposit approval…",done,()->{
             if(limit==null || limit.signum()<=0)throw new IllegalArgumentException("Approve a positive maximum fee.");
+            if(priority!=0 && priority!=3)throw new IllegalArgumentException("Invalid deposit priority.");
             JSONObject broadcast=config.optJSONObject("lastBroadcast");
             if(broadcast!=null && "unknown".equals(broadcast.optString("state")))throw new IllegalStateException("A previous deposit has an uncertain outcome. Check its transaction history before approving another.");
-            save(new JSONObject(config.toString()).put("depositApproval",new JSONObject().put("destination",destination).put("maxFee",limit.toString()).put("state","queued")));return null;
+            save(new JSONObject(config.toString()).put("depositApproval",new JSONObject().put("destination",destination).put("maxFee",limit.toString()).put("priority",priority).put("state","queued")));return null;
         },()->{},true);
     }
     public void syncBackgroundClaim(Result<Void> done){
@@ -187,16 +191,22 @@ public final class MonogramWallet {
         prepareClaimSweep(destination,callback,false);
     }
     public void prepareBackgroundClaimSweep(String destination,Result<Quote> callback){
+        prepareBackgroundClaimSweep(destination,0,callback);
+    }
+    public void prepareBackgroundClaimSweep(String destination,int priority,Result<Quote> callback){
         if(claimId==null || !backgroundClaim)throw new IllegalStateException("Background deposit stopped.");
-        prepareClaimSweep(destination,callback,true);
+        prepareClaimSweep(destination,callback,true,priority);
     }
     private void prepareClaimSweep(String destination,Result<Quote> callback,boolean background){
+        prepareClaimSweep(destination,callback,background,0);
+    }
+    private void prepareClaimSweep(String destination,Result<Quote> callback,boolean background,int priority){
         MoneroPayment address=MoneroPayment.address(destination,network);
         work("Calculating claim fee…",callback,()->{
             if(claimId==null || handle==0 || !sessionSynced)throw new IllegalStateException("Unlock and sync the claim first.");
-            String[] values=WalletNative.prepareClaimSweep(handle,address.address);
+            String[] values=WalletNative.prepareClaimSweepPriority(handle,address.address,priority);
             MoneroPayment payment=MoneroPayment.create(address.address,MoneroPayment.format(new java.math.BigInteger(values[1])),"","",network);
-            return new Quote(handle,payment,values);
+            Quote quote=new Quote(handle,payment,values);quote.priority=priority;return quote;
         },()->{},background);
     }
     private MonogramWallet(int account,String owner,MoneroPayment.Network network,String walletId,String claimId) throws Exception {
@@ -427,7 +437,17 @@ public final class MonogramWallet {
         org.json.JSONArray addresses=next.optJSONArray("receivingAddresses");if(addresses==null)addresses=new org.json.JSONArray();
         addresses.put(address[0]);next.put("receivingAddresses",addresses);save(next);return address[0];
     });}
+    public void estimateDepositFees(String destination,Result<String[]> callback){
+        MoneroPayment.address(destination,network);
+        work("Estimating network fee…",callback,()->{
+            if(handle==0 || node().isEmpty())throw new IllegalStateException("Unlock your wallet and choose a node first.");
+            WalletTlsBridge previous=transport;transport=null;if(previous!=null)previous.close();
+            WalletTlsBridge bridge=new WalletTlsBridge(node());transport=bridge;WalletNative.connect(handle,bridge.endpoint(),bridge.user,bridge.password);
+            return WalletNative.estimateDepositFees(handle,destination);
+        });
+    }
     public static final class Quote {
+        private int priority;
         public final long session,id;public final MoneroPayment payment;public final java.math.BigInteger fee;public final String hashes,count;
         private boolean consumed;
         private MonogramWallet fundingClaim;
@@ -474,6 +494,7 @@ public final class MonogramWallet {
             if(background && !backgroundClaim)throw new IllegalStateException("Background deposit stopped.");
             if(background){
                 JSONObject approval=config.getJSONObject("depositApproval");
+                if(quote.priority!=approval.optInt("priority"))throw new IllegalStateException("Deposit priority changed. Approve again.");
                 ClaimDepositPolicy.checkApproval(approval.getString("destination"),quote.payment.address,new java.math.BigInteger(balance[1]),quote.payment.atomicAmount,quote.fee,new java.math.BigInteger(approval.getString("maxFee")));
             }
             if(quote.fundingClaim!=null)quote.fundingClaim.saveFunding("unknown",quote.hashes);

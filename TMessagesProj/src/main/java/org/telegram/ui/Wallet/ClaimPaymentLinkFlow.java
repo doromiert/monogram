@@ -43,6 +43,7 @@ public final class ClaimPaymentLinkFlow {
     private String destination;
     private java.math.BigInteger maxFee;
     private boolean watchOnly,closed,busy,queued;
+    private int depositPriority;
 
     public ClaimPaymentLinkFlow(BaseFragment host, int account, String uri) throws Exception {
         this.host = host;
@@ -88,13 +89,14 @@ public final class ClaimPaymentLinkFlow {
         WalletActivity.openTransactionSheet(host.getContext(), account, initial, (note, encrypted, done) -> {
             if (busy || closed) return;
             busy=true;
-            chooseFeeLimit((approved,error)->{
+            mainAuth.unlock((unlocked,failure)->{
                 if(closed)return;
-                if(!approved){busy=false;done.run(error);return;}
-                mainAuth.unlock((unlocked,failure)->{
+                if(!unlocked){busy=false;done.run(failure==null ? "Unlock cancelled." : message(failure));return;}
+                prepareFeeChoice((choice,error)->{
                     if(closed)return;
-                    if(!unlocked){busy=false;done.run(failure==null ? "Unlock cancelled." : message(failure));return;}
-                    prepareDestination((unused,queueError)->{
+                    if(choice==null){busy=false;done.run(error);return;}
+                    watchOnly=choice.watch;maxFee=choice.limit;depositPriority=choice.priority;
+                    unlockClaim((unused,queueError)->{
                         busy=false;if(closed)return;
                         queued=queueError==null;done.run(queueError);
                     });
@@ -106,35 +108,18 @@ public final class ClaimPaymentLinkFlow {
         }, host.getResourceProvider());
     }
 
-    private void chooseFeeLimit(org.telegram.messenger.Utilities.Callback2<Boolean,String> done){
-        org.telegram.ui.Components.EditTextBoldCursor input=new org.telegram.ui.Components.EditTextBoldCursor(host.getContext());
-        input.setSingleLine(true);input.setTextSize(18);input.setHint("Maximum network fee in XMR");
-        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        input.setTextColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextBlack,host.getResourceProvider()));
-        input.setHintTextColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextHint,host.getResourceProvider()));
-        input.setPadding(AndroidUtilities.dp(24),AndroidUtilities.dp(12),AndroidUtilities.dp(24),AndroidUtilities.dp(12));
-        boolean[] answered={false};
-        new AlertDialog.Builder(host.getContext(),host.getResourceProvider()).setTitle("Approve background deposit")
-            .setMessage("Deposit this link’s funds into “"+main.name()+"”, minus a network fee no higher than the limit below. This authorizes Monogram to send automatically once the funds unlock. A higher fee will pause the job for another review.")
-            .setView(input).setPositiveButton("Approve and queue",(dialog,which)->{
-                answered[0]=true;
-                try{maxFee=com.negzero.monogram.xmpp.MoneroPayment.amount(input.getText().toString().trim().replace(',','.'));watchOnly=false;done.run(true,null);}
-                catch(Exception invalid){done.run(false,"Enter a positive fee limit in XMR.");}
-            }).setNeutralButton("Only check status",(dialog,which)->{answered[0]=true;watchOnly=true;done.run(true,null);})
-            .setNegativeButton("Cancel",(dialog,which)->{answered[0]=true;done.run(false,"Deposit not queued.");})
-            .setOnDismissListener(dialog->{if(!answered[0] && !closed)done.run(false,"Deposit not queued.");}).show();
-    }
-
-    private void prepareDestination(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction, String> done) {
-        if (watchOnly || destination != null) { unlockClaim(done); return; }
-        try {
-            main.newAddress((address, error) -> {
-                if (closed) return;
-                if (error != null) { done.run(null, message(error)); return; }
-                destination = address;
-                unlockClaim(done);
-            });
-        } catch (Exception error) { done.run(null, message(error)); }
+    private void prepareFeeChoice(org.telegram.messenger.Utilities.Callback2<DepositFeePicker.Choice,String> done){
+        Runnable estimate=()->{
+            try{main.estimateDepositFees(destination,(values,error)->{
+                if(!closed)DepositFeePicker.show(host,main,link.payment.atomicAmount,error==null ? values : null,done);
+            });}catch(Exception error){if(!closed)DepositFeePicker.show(host,main,link.payment.atomicAmount,null,done);}
+        };
+        if(destination!=null){estimate.run();return;}
+        try{main.newAddress((address,error)->{
+            if(closed)return;
+            if(error!=null){done.run(null,message(error));return;}
+            destination=address;estimate.run();
+        });}catch(Exception error){done.run(null,message(error));}
     }
 
     private void unlockClaim(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction, String> done) {
@@ -169,7 +154,7 @@ public final class ClaimPaymentLinkFlow {
         try{
             MonogramWallet.Result<Void> result=(unused,error)->{if(!closed)done.run(null,error==null ? null : message(error));};
             if(watchOnly)com.negzero.monogram.wallet.ClaimDepositService.watch(claim,result);
-            else com.negzero.monogram.wallet.ClaimDepositService.start(claim,destination,maxFee,result);
+            else com.negzero.monogram.wallet.ClaimDepositService.start(claim,destination,maxFee,depositPriority,result);
         }catch(Exception error){done.run(null,message(error));}
     }
 
