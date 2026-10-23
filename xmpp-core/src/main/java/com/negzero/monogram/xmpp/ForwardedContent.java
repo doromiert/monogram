@@ -25,15 +25,24 @@ public final class ForwardedContent {
     public String wireBody() { return prefix()+body; }
     public static String label(String value) {
         if(value==null) throw new IllegalArgumentException("Missing forwarded sender");
+        String address=address(value);if(address!=null) return address;
         StringBuilder safe=new StringBuilder();
         value.codePoints().filter(c->!Character.isISOControl(c) && !(c>=0x202a && c<=0x202e) && !(c>=0x2066 && c<=0x2069))
             .limit(128).forEach(safe::appendCodePoint);
         String name=safe.toString().trim();
         if(name.isEmpty()) throw new IllegalArgumentException("Missing forwarded sender");return name;
     }
+    /** Full entity address; unlike a display alias it must never be truncated. */
+    public static String address(String value) {
+        if(value==null || value.length()>3071 || value.codePoints().anyMatch(c->Character.isISOControl(c) || c>=0x202a && c<=0x202e || c>=0x2066 && c<=0x2069)) return null;
+        try {
+            org.jxmpp.jid.Jid jid=org.jxmpp.jid.impl.JidCreate.from(value);
+            return jid.asEntityBareJidIfPossible()==null ? null : jid.toString();
+        } catch(Exception invalid) {return null;}
+    }
     public static ForwardedContent parse(String body) {
         if(body==null || !body.startsWith(PREFIX)) return null;
-        int end=body.indexOf("\n\n");if(end<0 || end>512) return null;
+        int end=body.indexOf("\n\n");if(end<0 || end>4096) return null;
         int separator=body.lastIndexOf(SEPARATOR,end);if(separator<PREFIX.length()) return null;
         String stamp=body.substring(separator+SEPARATOR.length(),end);
         ParsePosition position=new ParsePosition(0);Date date=format().parse(stamp,position);

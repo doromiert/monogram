@@ -19,7 +19,7 @@ class ForwardedContentTest {
         assertEquals("Alice",ForwardedContent.of("\u202eAlice\n",0,"").name);
         assertEquals("ordinary",ForwardedContent.payload("ordinary"));
     }
-    @Test void legacyForwardedFileIsStillAnEncryptedAttachmentInDmAndRoom() throws Exception {
+    @Test void legacy156ForwardedFileStillLoadsButMustNotBeUsedForNewWireSends() throws Exception {
         String url="aesgcm://files.example.org/new.bin#"+new String(new char[88]).replace('\0','a');
         String body=ForwardedContent.of("Original",1700000000,url).wireBody();
         Message message=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.chat);
@@ -48,5 +48,24 @@ class ForwardedContentTest {
         assertEquals(text,decoded.getBody());
         XmppMessage model=XmppMessage.modern(clear,decoded,JidCreate.entityBareFrom("alice@example.org"),null,new Date());
         assertEquals("Alice",ForwardedContent.parse(model.body).name);assertEquals(XmppMessage.Encryption.OMEMO2,model.encryption);
+    }
+    @Test void fullXmppAddressesAreNotReducedToNicknamesOrTruncated() {
+        String address=new String(new char[120]).replace('\0','a')+"@long-server.example.org";
+        ForwardedContent forward=ForwardedContent.of(address,1700000000,"hello");
+        assertEquals(address,forward.name);assertEquals(address,ForwardedContent.parse(forward.wireBody()).name);
+        assertEquals("alice@example.org",ForwardedContent.address("alice@example.org"));
+        assertNull(ForwardedContent.address("a display name"));assertNull(ForwardedContent.address("https://example.org"));
+        assertEquals("room@conference.example.org/Anon",ForwardedContent.address("room@conference.example.org/Anon"));
+    }
+    @Test void newLegacyMediaModelsAreAcceptedByStrictUriOnlyReceivers() throws Exception {
+        String url="aesgcm://files.example.org/new.jpg#"+new String(new char[88]).replace('\0','a');
+        FileLink link=FileLink.parse(url);
+        XmppMessage direct=XmppMessage.sentFile(JidCreate.entityFullFrom("alice@example.org/phone"),"bob@example.org","fresh-upload",link,true,null);
+        // XEP-0454 / Monocles MessageUtils accepts one URI, optionally one data-URI thumbnail line.
+        java.net.URI receiver=new java.net.URI(direct.body);
+        assertEquals("aesgcm",receiver.getScheme());assertTrue(receiver.getFragment().matches("[0-9a-f]{88}"));
+        assertEquals(1,direct.body.split("\n",-1).length);assertEquals(url,direct.body);
+        XmppRoomMessage room=XmppRoomMessage.sentFile(JidCreate.entityBareFrom("room@conference.example.org"),JidCreate.entityBareFrom("alice@example.org"),"Alice","fresh-room-upload",url,true,null,null,null);
+        assertEquals(url,room.body);
     }
 }

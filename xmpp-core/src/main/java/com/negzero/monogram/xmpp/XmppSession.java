@@ -933,11 +933,9 @@ public final class XmppSession implements AutoCloseable {
         return sendFile(jid,link,encrypted,reply,displayStickerHint,false);
     }
     public String sendFile(String jid,FileLink link,boolean encrypted,ReplyReference reply,boolean displayStickerHint,boolean spoiler) throws Exception {
-        return sendFile(jid,link,encrypted,reply,displayStickerHint,spoiler,null);
-    }
-    public String sendFile(String jid,FileLink link,boolean encrypted,ReplyReference reply,boolean displayStickerHint,boolean spoiler,ForwardedContent forward) throws Exception {
         if (link.encrypted() != encrypted || displayStickerHint && !encrypted) throw new IllegalArgumentException("Attachment encryption mode mismatch");
-        String body=forward==null ? link.wireUrl : ForwardedContent.of(forward.name,forward.date,link.wireUrl).wireBody();
+        // XEP-0454 receivers require a bare aesgcm URI; attribution belongs in a separate caption.
+        String body=link.wireUrl;
         return send(jid,body,encrypted,!encrypted,reply,null,null,null,MessageMarkup.body(body).withSpoiler(spoiler),null,displayStickerHint);
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply) throws Exception {

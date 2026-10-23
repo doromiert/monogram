@@ -9,7 +9,7 @@ and security rules. Existing wire identifiers must not be silently renamed.
 | Feature | Base standards | Monogram-specific part | Specification / implementation status |
 | --- | --- | --- | --- |
 | Reaction polls | XEP-0444 reactions, XEP-0359 IDs, XEP-0308 correction | Canonical readable poll definition, emoji-to-option map, public vote/closure rules | [Polls](../POLLS.md), implemented |
-| Forward attribution | XEP-0297 stanza forwarding | Readable body fallback, native unverified sender label, body-only encryption compatibility | [Forwarding](FORWARDING.md), incoming standard + outgoing fallback implemented |
+| Forward attribution | XEP-0297 stanza forwarding | Full-address readable fallback, native unverified attribution, URI-only legacy media plus separate caption | [Forwarding](FORWARDING.md), incoming standard + outgoing fallback implemented |
 | Partial spoilers | XEP-0394 markup, XEP-0382 whole-message spoilers | `urn:monogram:spoiler:0` span child | [Spoilers](../SPOILERS.md), implemented |
 | Checklists | XEP-0394 markup and XEP-0481 content hints | `urn:monogram:checklist:1` document/update codecs | [Checklist draft](CHECKLISTS.md), codecs exist; collaborative send/application is not integrated |
 | Saved Messages tags | XMPP self-chat for messages | Account-local emoji/name/text-color definitions and message membership | [Saved tags](SAVED_TAGS.md), local only; no tag wire protocol or cross-device sync |

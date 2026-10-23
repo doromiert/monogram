@@ -635,18 +635,12 @@ public final class XmppRooms implements AutoCloseable {
         return sendFile(jid,link,sharing,caption,encrypted,reply,excluded,automatic,markup,false);
     }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup,boolean displayStickerHint) throws Exception {
-        return sendFile(jid,link,sharing,caption,encrypted,reply,excluded,automatic,markup,displayStickerHint,null);
-    }
-    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,boolean encrypted,ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup,boolean displayStickerHint,ForwardedContent forward) throws Exception {
         if(displayStickerHint && !encrypted) throw new IllegalArgumentException("Legacy sticker hint requires encryption");
         if(link.encrypted()!=encrypted || encrypted && sharing!=null || sharing!=null && !sharing.link.wireUrl.equals(link.wireUrl)) throw new IllegalArgumentException("Attachment encryption mode mismatch");
         if(markup!=null && !markup.body.equals(sharing==null ? link.wireUrl : caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
         String body=sharing==null ? link.wireUrl : sharing.body(caption);
-        int prefix=0;
-        if(sharing==null && forward!=null) {
-            ForwardedContent attributed=ForwardedContent.of(forward.name,forward.date,body);body=attributed.wireBody();prefix=attributed.prefix().codePointCount(0,attributed.prefix().length());
-        }
-        return send(jid,body,encrypted,sharing,reply,null,excluded,automatic,markup==null ? null : markup.inBody(body,prefix),null,displayStickerHint);
+        // Legacy OMEMO media must remain URI-only for strict XEP-0454 clients.
+        return send(jid,body,encrypted,sharing,reply,null,excluded,automatic,markup==null ? null : markup.inBody(body,0),null,displayStickerHint);
     }
     public XmppRoomMessage correctFile(String jid,FileShare sharing,String caption,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
         if(sharing==null || sharing.link.encrypted() || correction==null) throw new IllegalArgumentException("Unsupported encrypted caption correction");

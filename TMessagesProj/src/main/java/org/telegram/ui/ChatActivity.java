@@ -38431,6 +38431,17 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void didPressHiddenForward(ChatMessageCell cell) {
+            TLRPC.Message forwarded=cell.getMessageObject().messageOwner;
+            if(forwarded.params!=null && forwarded.params.containsKey(org.telegram.messenger.xmpp.MonogramForwarding.NAME)) {
+                String name=forwarded.params.get(org.telegram.messenger.xmpp.MonogramForwarding.NAME);
+                String address=com.negzero.monogram.xmpp.ForwardedContent.address(name);
+                AlertDialog.Builder details=new AlertDialog.Builder(getParentActivity(),themeDelegate)
+                    .setTitle(LocaleController.getString(R.string.ForwardedFrom))
+                    .setMessage(address==null ? LocaleController.getString(R.string.MonogramForwardedAddressMissing) : address)
+                    .setNegativeButton(LocaleController.getString(R.string.Close),null);
+                if(address!=null) details.setPositiveButton(LocaleController.getString(R.string.Copy),(d,which)->AndroidUtilities.addToClipboard(address));
+                showDialog(details.create());return;
+            }
             if (cell.getMessageObject().isImportedForward()) {
                 didPressTime(cell);
                 return;

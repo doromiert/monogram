@@ -83,7 +83,7 @@ public class MonogramSavedTagsTest {
                 sql.execSQL("DROP TABLE old_tag_names");sql.setVersion(30);
             }
             try(MonogramStore upgraded=new MonogramStore(context,db)) {
-                assertEquals(31,upgraded.getReadableDatabase().getVersion());assertEquals("Old label",upgraded.savedTags.list(self).tags.get(0).title);
+                assertEquals(32,upgraded.getReadableDatabase().getVersion());assertEquals("Old label",upgraded.savedTags.list(self).tags.get(0).title);
                 assertEquals(1,upgraded.getMessage(message,self).reactions.results.size());assertEquals(Integer.valueOf(0),upgraded.savedTags.colors().get("e:⭐"));
             }
         } finally {context.deleteDatabase(db);}

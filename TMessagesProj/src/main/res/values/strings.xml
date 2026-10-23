@@ -11703,4 +11703,6 @@
     <string name="MonogramEditSavedTag">Edit tag</string>
     <string name="MonogramTagTextColor">Text color</string>
     <string name="MonogramTagEmojiHint">Emoji (leave empty to keep the current custom emoji)</string>
+    <string name="MonogramForwardedAttachment">Forwarded attachment</string>
+    <string name="MonogramForwardedAddressMissing">The original XMPP address was not included in this older forward.</string>
 </resources>

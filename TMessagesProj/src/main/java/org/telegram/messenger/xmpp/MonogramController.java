@@ -2830,19 +2830,19 @@ public final class MonogramController {
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
                         com.negzero.monogram.xmpp.ForwardedContent forwardedFile=MonogramForwarding.attribution(request.message.params,link.wireUrl);
-                        String protectedFileBody=forwardedFile==null ? link.wireUrl : forwardedFile.wireBody();
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint,forwardedFile);
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint);
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String fingerprint=expected.senderFingerprint(mode);
-                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler,forwardedFile) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
-                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply).withForwarding(forwardedFile).withMarkup(MessageMarkup.body(protectedFileBody).withSpoiler(captionMarkup.spoiler))
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
+                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply).withMarkup(MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler))
                                     : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,captionMarkup.body,reply).withMarkup(captionMarkup);
                             message=message.withSenderFingerprint(fingerprint).withDisplayStickerHint(displayStickerHint);
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
                         }
+                        if(encrypted && !modern) store.forwarded(id,forwardedFile);
                         TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
                                 : MonogramAttachments.media(id, (int) (timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
                         media.spoiler=captionMarkup.spoiler;
@@ -2861,9 +2861,14 @@ public final class MonogramController {
                         Utilities.stageQueue.postRunnable(() -> {
                             callback.run(response, null);
                             // Legacy OMEMO cannot carry SFS content; keep its separate encrypted caption until OMEMO2 is integrated.
-                            if (encrypted && !modern && request.caption != null && !request.caption.isEmpty()) AndroidUtilities.runOnUIThread(() ->
-                                    SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
-                                            request.caption, request.message.dialog_id, null, null, null, false, captionEntities, null, null, true, 0, 0, null, false)));
+                            if(encrypted && !modern) {
+                                String companion=MonogramForwarding.legacyCaption(request.message.params,request.caption);
+                                if(!companion.isEmpty()) {
+                                    ArrayList<TLRPC.MessageEntity> companionEntities=MonogramForwarding.captionEntities(companion,captionEntities);
+                                    AndroidUtilities.runOnUIThread(() -> SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
+                                        companion,request.message.dialog_id,null,null,null,false,companionEntities,null,null,true,0,0,null,false)));
+                                }
+                            }
                         });
                     } catch (Exception e) {
                         TLRPC.TL_error error = fileError(e);

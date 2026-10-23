@@ -16,22 +16,43 @@ public final class MonogramForwarding {
         SendMessageParams send=copy(source,destination,hideCaption);
         if(hideAuthor) return send;
         String name=source.fwd_from==null ? null : source.fwd_from.from_name;
-        if((name==null || name.isEmpty()) && source.fwd_from!=null && source.fwd_from.from_id!=null)
-            name=org.telegram.messenger.UserObject.getUserName(org.telegram.messenger.MessagesController.getInstance(account).getUser(source.fwd_from.from_id.user_id));
-        if(name==null || name.isEmpty()) {
-            TLRPC.User user=source.from_id==null ? null : org.telegram.messenger.MessagesController.getInstance(account).getUser(source.from_id.user_id);
-            name=org.telegram.messenger.UserObject.getUserName(user);
-        }
+        String address=sourceAddress(source,id->MonogramController.get(account).jid(id));
+        if(address!=null) name=address;
         if(name==null || name.isEmpty()) name="Unknown sender";
         name=com.negzero.monogram.xmpp.ForwardedContent.label(name);
         int date=source.fwd_from!=null && source.fwd_from.date>0 ? source.fwd_from.date : source.date;
         send.params.put(NAME,name);send.params.put(DATE,Integer.toString(Math.max(0,date)));
         return send;
     }
+    static String sourceAddress(TLRPC.Message source,java.util.function.LongFunction<String> lookup) {
+        String address=source.params==null ? null : com.negzero.monogram.xmpp.ForwardedContent.address(source.params.get(NAME));
+        if(address==null && source.fwd_from!=null) address=com.negzero.monogram.xmpp.ForwardedContent.address(source.fwd_from.from_name);
+        long user=source.fwd_from==null ? source.from_id==null ? 0 : source.from_id.user_id
+                : source.fwd_from.from_id==null ? 0 : source.fwd_from.from_id.user_id;
+        if(address==null && user!=0) try { address=com.negzero.monogram.xmpp.ForwardedContent.address(lookup.apply(user)); }
+        catch(IllegalArgumentException unknown) { /* Do not substitute the forwarder for an unknown original author. */ }
+        return address;
+    }
+    static ArrayList<TLRPC.MessageEntity> captionEntities(String body,java.util.List<TLRPC.MessageEntity> source) {
+        com.negzero.monogram.xmpp.ForwardedContent forward=com.negzero.monogram.xmpp.ForwardedContent.parse(body);
+        int prefix=forward==null ? 0 : forward.prefix().length();
+        ArrayList<TLRPC.MessageEntity> result=new ArrayList<>();
+        for(TLRPC.MessageEntity old:source) {
+            TLRPC.MessageEntity entity=TLObject.deepCopy(old,TLRPC.MessageEntity::TLdeserialize);entity.offset+=prefix;result.add(entity);
+        }
+        return result;
+    }
     public static com.negzero.monogram.xmpp.ForwardedContent attribution(java.util.Map<String,String> params,String body) {
         if(params==null || !params.containsKey(NAME)) return null;
         try { return com.negzero.monogram.xmpp.ForwardedContent.of(params.get(NAME),Integer.parseInt(params.get(DATE)),body); }
         catch(IllegalArgumentException invalid) { return null; }
+    }
+    public static String legacyCaption(java.util.Map<String,String> params,String caption) {
+        String text=caption==null ? "" : caption;
+        com.negzero.monogram.xmpp.ForwardedContent author=attribution(params,text);
+        if(author==null) return text;
+        if(text.isEmpty()) text=org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramForwardedAttachment);
+        return com.negzero.monogram.xmpp.ForwardedContent.of(author.name,author.date,text).wireBody();
     }
     public static void prepare(TLObject request,TLRPC.Message local) {
         com.negzero.monogram.xmpp.ForwardedContent author=attribution(local.params,"");if(author==null) return;
@@ -54,7 +75,7 @@ public final class MonogramForwarding {
         if(forward!=null) header(message,forward);
         decorate(message,message.message);
     }
-    private static void header(TLRPC.Message message,com.negzero.monogram.xmpp.ForwardedContent forward) {
+    static void header(TLRPC.Message message,com.negzero.monogram.xmpp.ForwardedContent forward) {
         message.fwd_from=new TLRPC.TL_messageFwdHeader();message.fwd_from.flags=32;
         message.fwd_from.from_name=forward.name;message.fwd_from.date=forward.date;
         message.flags|=TLRPC.MESSAGE_FLAG_FWD;
