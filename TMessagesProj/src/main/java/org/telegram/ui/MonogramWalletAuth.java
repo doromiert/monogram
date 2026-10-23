@@ -18,6 +18,7 @@ public final class MonogramWalletAuth {
     private final BaseFragment host;
     private final MonogramWallet wallet;
     private final int requestCode;
+    private final boolean management;
     private MonogramWallet.Authentication guard;
     private BiometricPrompt prompt;
     private Result callback,localUnlockCallback;
@@ -29,7 +30,8 @@ public final class MonogramWalletAuth {
     private boolean success;
     private Exception failure;
     private int generation;
-    public MonogramWalletAuth(BaseFragment host,MonogramWallet wallet,int requestCode){this.host=host;this.wallet=wallet;this.requestCode=requestCode;}
+    public MonogramWalletAuth(BaseFragment host,MonogramWallet wallet,int requestCode){this(host,wallet,requestCode,false);}
+    public MonogramWalletAuth(BaseFragment host,MonogramWallet wallet,int requestCode,boolean management){this.host=host;this.wallet=wallet;this.requestCode=requestCode;this.management=management;}
     public boolean pending(){return callback!=null || localUnlockCallback!=null;}
     public void resume(){resumed=true;deliver();deliverLocalUnlock();}
     public void pause(){resumed=false;}
@@ -40,7 +42,7 @@ public final class MonogramWalletAuth {
         try{
             KeyguardManager keyguard=(KeyguardManager)host.getContext().getSystemService(Context.KEYGUARD_SERVICE);
             if(keyguard==null || !keyguard.isDeviceSecure())throw new IllegalStateException("Set a device PIN, pattern or password to protect your wallet.");
-            guard=wallet.beginSystemAuthentication();
+            guard=wallet.beginSystemAuthentication(management);
             int allowed=BiometricManager.Authenticators.BIOMETRIC_STRONG;
             if(Build.VERSION.SDK_INT>=30)allowed|=BiometricManager.Authenticators.DEVICE_CREDENTIAL;
             if(credentialOnly || BiometricManager.from(host.getContext()).canAuthenticate(allowed)!=BiometricManager.BIOMETRIC_SUCCESS){credential();return;}

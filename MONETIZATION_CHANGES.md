@@ -1074,3 +1074,5 @@ Installed private xmr.19 (73529), SHA-256 d86bedb39cfc2ef4636e54ce1f99356b764b1c
 - xmr.22 follow-up: swipe wallet cards, exact total/available send balances with confirmation-lock explanation, resume-safe unlock callback, reduced note gap, clipped scroll viewport, compact history and transaction precision toggle with text fitting.
 
 - xmr.25: native continuous wallet-card pager with visible neighbors and final translucent Add wallet card; pager owns card/precision-button gestures; independent scans continue during selection; full attachment body scrolls with sticky header/footer. Two disposable SDK wallets passed concurrent scanning.
+
+- xmr.26: theme-aware Add wallet card, authenticated removal without selecting the target, and corrected locked/ready attachment measurements and full-sheet scrolling insets.

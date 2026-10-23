@@ -96,6 +96,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     private final FrameLayout contentContainer;
     private final FrameLayout amountArea;
     private final androidx.core.widget.NestedScrollView contentScroll;
+    private int collapsedAmountHeight,expandScrollRange;
     private final WalletRecipientView recipientView;
     private final ActionBarMenuItem moreItem;
     private final ActionBarMenuItem inlineMoreItem;
@@ -268,12 +269,16 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         center.setClipToPadding(false);
         center.setOnClickListener(v -> requestAmountKeyboard());
         center.setGravity(Gravity.CENTER_VERTICAL);
-        amountArea.addView(center,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,Gravity.TOP));
+        amountArea.addView(center,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,Gravity.CENTER_VERTICAL));
 
         unlockButton = new ButtonWithCounterView(context, resourcesProvider).setRound();
         unlockButton.setText("Unlock wallet");
         unlockButton.setOnClickListener(v -> { if (walletAccess != null) walletAccess.open(); });
         amountArea.addView(unlockButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.CENTER, 32, 0, 32, 0));
+        contentScroll.setOnScrollChangeListener((androidx.core.widget.NestedScrollView.OnScrollChangeListener)(view,x,y,oldX,oldY)->{
+            amountArea.setMinimumHeight(Math.max(dp(48),collapsedAmountHeight+Math.min(y,expandScrollRange)));
+            parentAlert.updateLayout(ChatAttachAlertGramLayout.this,true,y-oldY);
+        });
 
         paymentTabs = new WalletActivity.TabsView(context, new CharSequence[]{"Send", "Request"}, selected -> {
             requestMode = selected == 1;
@@ -624,8 +629,11 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         if (unlockButton == null) return;
         boolean ready = walletAccess != null && walletAccess.ready();
         if (ready && !accessWasReady) feeAmount = -1;
+        boolean accessChanged=ready!=accessWasReady;
         accessWasReady = ready;
-        center.setVisibility(ready ? View.VISIBLE : View.INVISIBLE);
+        center.setVisibility(ready ? View.VISIBLE : View.GONE);
+        bottomContainer.setVisibility(ready ? View.VISIBLE : View.GONE);
+        if(accessChanged)requestLayout();
         unlockButton.setVisibility(ready ? View.GONE : View.VISIBLE);
         unlockButton.setText(walletAccess == null ? "Wallet unavailable" : walletAccess.title());
         unlockButton.setLoading(walletAccess != null && walletAccess.busy() && !walletAccess.scanning());
@@ -1600,7 +1608,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     public int getListTopPadding() {
         final FrameLayout.LayoutParams layoutParams =
                 (FrameLayout.LayoutParams) contentScroll.getLayoutParams();
-        return layoutParams == null ? 0 : layoutParams.topMargin;
+        return layoutParams == null ? 0 : layoutParams.topMargin+contentContainer.getPaddingTop()-dp(12);
     }
 
     @Override
@@ -1610,7 +1618,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
     @Override
     public int getCurrentItemTop() {
-        int top = contentScroll.getTop()-contentScroll.getScrollY();
+        int top = contentScroll.getTop()+contentContainer.getPaddingTop()-dp(12)-contentScroll.getScrollY();
         if (top <= 0) {
             top = getListTopPadding();
         }
@@ -1624,7 +1632,8 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                 parentAlert.sizeNotifierFrameLayout.measureKeyboardHeight() > dp(20);
         occupyNavigationBar = keyboardVisible;
         final int tabsReservedHeight = keyboardVisible ? 0 : dp(TABS_RESERVED_HEIGHT_DP);
-        final int footerHeight = dp(92) + Math.round(dp(32) * feeVisibilityProgress);
+        final boolean composerReady=walletAccess!=null && walletAccess.ready();
+        final int footerHeight = composerReady ? dp(92) + Math.round(dp(32) * feeVisibilityProgress) : 0;
 
         final FrameLayout.LayoutParams bottomLayoutParams =
                 (FrameLayout.LayoutParams) bottomContainer.getLayoutParams();
@@ -1651,13 +1660,21 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
         final FrameLayout.LayoutParams layoutParams =
                 (FrameLayout.LayoutParams) contentScroll.getLayoutParams();
-        layoutParams.bottomMargin=footerHeight+tabsReservedHeight;
-        if (layoutParams.topMargin != padding) {
-            layoutParams.topMargin = padding;
+        final int bottomMargin=footerHeight+tabsReservedHeight;
+        // The collapsed space belongs to scrollable content, not a fixed viewport
+        // margin. Scrolling therefore lifts the entire body up to the sticky header.
+        final int viewportTop=dp(56)+AndroidUtilities.statusBarHeight;
+        contentContainer.setPadding(0,Math.max(dp(12),padding-viewportTop+dp(12)),0,dp(32));
+        if (layoutParams.topMargin != viewportTop || layoutParams.bottomMargin!=bottomMargin) {
+            layoutParams.topMargin = viewportTop;
+            layoutParams.bottomMargin=bottomMargin;
             contentScroll.setLayoutParams(layoutParams);
         }
-
-        contentContainer.setMinimumHeight(Math.max(0,availableHeight-padding-footerHeight-tabsReservedHeight));
+        final int viewportHeight=Math.max(0,availableHeight-padding-footerHeight-tabsReservedHeight);
+        expandScrollRange=Math.max(0,contentContainer.getPaddingTop()-dp(12));
+        contentContainer.setMinimumHeight(Math.max(0,availableHeight-viewportTop-footerHeight-tabsReservedHeight)+expandScrollRange);
+        collapsedAmountHeight=viewportHeight-dp(88)-dp(12)-contentContainer.getPaddingBottom();
+        amountArea.setMinimumHeight(Math.max(dp(48),collapsedAmountHeight+Math.min(contentScroll.getScrollY(),expandScrollRange)));
 
         updateCenterBottom();
     }

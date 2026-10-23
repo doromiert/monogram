@@ -204,6 +204,7 @@ public final class MonogramWallet {
     public void unobserve(Observer observer){observers.remove(observer);}
     private void changed(){WalletSyncService.progress(this);AndroidUtilities.runOnUIThread(()->{for(Observer observer:new ArrayList<>(observers))observer.changed();});}
     public void acquire(){check();leases++;AndroidUtilities.cancelRunOnUIThread(delayedLock);}
+    public void acquireForManagement(){checkIdentity();leases++;AndroidUtilities.cancelRunOnUIThread(delayedLock);}
     public void release(){leases=Math.max(0,leases-1);if(leases==0)AndroidUtilities.runOnUIThread(delayedLock,700);}
     public final class Authentication implements AutoCloseable {
         private boolean closed;
@@ -214,7 +215,8 @@ public final class MonogramWallet {
         @Override public void close(){if(closed)return;closed=true;AndroidUtilities.cancelRunOnUIThread(timeout);if(authentication==this)authentication=null;if(leases==0)lock();}
     }
     private boolean authenticating(){return authentication!=null && authentication.valid();}
-    public Authentication beginSystemAuthentication(){check();if(busy || authenticating())throw new IllegalStateException("Finish the current wallet operation first.");authentication=new Authentication();return authentication;}
+    public Authentication beginSystemAuthentication(){return beginSystemAuthentication(false);}
+    public Authentication beginSystemAuthentication(boolean management){if(management)checkIdentity();else check();if(busy || authenticating())throw new IllegalStateException("Finish the current wallet operation first.");authentication=new Authentication();return authentication;}
     boolean initialScanComplete(){return config!=null && config.optBoolean("initialScanComplete",scanned());}
     private boolean holdForInitialScan(){
         if(claimId!=null || initialScanComplete() || (!exists() && !busy))return false;
@@ -239,12 +241,12 @@ public final class MonogramWallet {
     private static int nativeNetwork(MoneroPayment.Network n){return n==MoneroPayment.Network.MAINNET ? 0 : n==MoneroPayment.Network.TESTNET ? 1 : 2;}
     private <T> void work(String label,Result<T> result,Callable<T> task){work(label,result,task,()->{});}
     private <T> void work(String label,Result<T> result,Callable<T> task,Runnable cleanup) {work(label,result,task,cleanup,false);}
-    private <T> void work(String label,Result<T> result,Callable<T> task,Runnable cleanup,boolean backgroundScan) {
-        check();if(busy)throw new IllegalStateException("Wait for the current wallet operation, or stop syncing first.");
+    private <T> void work(String label,Result<T> result,Callable<T> task,Runnable cleanup,boolean identityScoped) {
+        if(identityScoped)checkIdentity();else check();if(busy)throw new IllegalStateException("Wait for the current wallet operation, or stop syncing first.");
         busy=true;status=label;error="";long generation=epoch;changed();
         actor.execute(()->{
             T value=null;Exception problem=null;
-            try {if(backgroundScan)checkIdentity();else check();if(generation!=epoch)throw new IllegalStateException("Wallet operation cancelled.");value=task.call();}
+            try {if(identityScoped)checkIdentity();else check();if(generation!=epoch)throw new IllegalStateException("Wallet operation cancelled.");value=task.call();}
             catch(Exception failure){problem=failure;error=failure.getMessage()==null ? "Wallet operation failed." : failure.getMessage();}
             catch(LinkageError failure){problem=new IllegalStateException("The wallet engine is unavailable in this build.");error=problem.getMessage();}
             finally {cleanup.run();busy=false;if(handle!=0)status="Unlocked";else status="Locked";changed();}
@@ -290,7 +292,7 @@ public final class MonogramWallet {
             }
             metadata.delete();vault.remove();config=null;balance=null;transactions=new String[0];sessionSynced=false;recentCacheReady=false;
             WalletRegistry.remove(account,owner,network,walletId);return null;
-        });
+        },()->{},true);
     }
     private void deleteChecked(File file)throws IOException{
         if(!file.getCanonicalPath().startsWith(root.getCanonicalPath()+File.separator))throw new IOException("Invalid wallet storage path.");

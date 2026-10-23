@@ -3432,9 +3432,9 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
     private View createAddWalletCard(Context context){
         FrameLayout frame=new FrameLayout(context);frame.setPadding(dp(12),dp(12),dp(12),dp(12));
         LinearLayout button=new LinearLayout(context);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);
-        android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable();background.setColor(0x18FFFFFF);background.setCornerRadius(dp(24));button.setBackground(background);
-        TextView plus=new TextView(context);plus.setText("+");plus.setGravity(Gravity.CENTER);plus.setTextSize(48);plus.setTextColor(0xFFFF6A00);button.addView(plus,LayoutHelper.createLinear(64,64));
-        TextView label=new TextView(context);label.setText("Add or create another wallet");label.setTextColor(Color.WHITE);label.setTextSize(16);label.setGravity(Gravity.CENTER);label.setPadding(dp(24),dp(12),dp(24),0);button.addView(label,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT));
+        android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable();background.setColor(Theme.multAlpha(getThemedColor(Theme.key_windowBackgroundWhiteBlackText),0.08f));background.setCornerRadius(dp(24));button.setBackground(background);
+        TextView plus=new TextView(context);plus.setText("+");plus.setGravity(Gravity.CENTER);plus.setTextSize(48);plus.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlueText));button.addView(plus,LayoutHelper.createLinear(64,64));
+        TextView label=new TextView(context);label.setText("Add or create another wallet");label.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));label.setTextSize(16);label.setGravity(Gravity.CENTER);label.setPadding(dp(24),dp(12),dp(24),0);button.addView(label,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT));
         frame.addView(button,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.MATCH_PARENT));
 
         button.setOnClickListener(v->presentFragment(new WalletManagementActivity()));return frame;

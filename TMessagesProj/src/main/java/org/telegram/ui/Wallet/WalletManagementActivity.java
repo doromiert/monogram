@@ -36,12 +36,14 @@ public final class WalletManagementActivity extends BaseFragment {
         new AlertDialog.Builder(getContext(),getResourceProvider()).setTitle("Remove "+wallet.name()+"?")
             .setMessage("This deletes this wallet’s local files and device unlock key. Make sure you have its recovery phrase before continuing.")
             .setNegativeButton("Cancel",null).setPositiveButton("Remove from this device",(d,w)->{try{
-                MonogramWallet current=GramWallet.getInstance(currentAccount).backend();if(!current.walletId.equals(wallet.walletId))throw new IllegalStateException("Select this wallet first.");
+                MonogramWallet current=wallet;
+                final boolean removingSelected=current.walletId.equals(GramWallet.getInstance(currentAccount).backend().walletId);
                 if(current.busy)throw new IllegalStateException("Stop syncing or finish the current wallet operation first.");
-                held=current;held.acquire();auth=new MonogramWalletAuth(this,current,9641);auth.resume();
+                if(auth!=null){auth.destroy();auth=null;}release();
+                held=current;held.acquireForManagement();auth=new MonogramWalletAuth(this,current,9641,true);auth.resume();
                 auth.authenticate("Remove local wallet","Confirm with your device unlock",false,(approved,failure)->{
                     if(!approved){if(failure!=null)error(failure);release();return;}
-                    try{current.remove((unused,error)->{release();if(error!=null)error(error);else{GramWallet.cleanup(currentAccount);refresh();}});}catch(Exception e){release();error(e);}
+                    try{current.remove((unused,error)->{release();if(error!=null)error(error);else{if(removingSelected)GramWallet.cleanup(currentAccount);refresh();}});}catch(Exception e){release();error(e);}
                 });
             }catch(Exception e){release();error(e);}}).show();
     }
