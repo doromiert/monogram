@@ -178,3 +178,5 @@ Delivery: xmr.27 (73609) installed successfully via ADB and published as GitHub 
 - Three focused geometry tests pass: normal geometry identity, compact bounds/circular arcs, and monotonic mapping without mesh folds. Native shader source is unchanged. Final runtime capture pending.
 
 - Compact attachment wallet cards are display-only touch targets: page dispatch declines child touches so the enclosing ViewPager receives swipes directly, without 3D press/drag handlers or tap selection. Source fix; device validation pending next APK.
+
+- Returning from wallet management now rebuilds changed wallet pages in the existing screen instead of presenting a replacement fragment during the back transition. Captured overlapping whole-screen columns in `.state/wallet-manager-renderer-after-delete.png`; runtime verification pending.

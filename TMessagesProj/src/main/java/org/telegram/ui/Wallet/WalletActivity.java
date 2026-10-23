@@ -3252,8 +3252,18 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         try {
             GramWallet selected=GramWallet.getInstance(currentAccount);
             if(walletPager!=null && (!walletPages.equals(selected.backend().wallets()) || !addWalletPage && walletPageIndex<walletPages.size() && !walletPages.get(walletPageIndex).walletId.equals(selected.backend().walletId))){
-                AndroidUtilities.runOnUIThread(()->{if(!walletDestroyed){WalletActivity refreshed=new WalletActivity();refreshed.setCurrentAccount(currentAccount);presentFragment(refreshed,true,true);}});
-            }else rebindWallet();
+                // Management can remove the current page. Refresh its views in place:
+                // presenting another fragment here races the manager's back transition.
+                if(balanceInOverlay)setBalanceInOverlay(false);
+                walletPager.setAdapter(null);
+                cardLayer.removeView(walletPager);
+                addWalletPage=false;walletPagerState=androidx.viewpager.widget.ViewPager.SCROLL_STATE_IDLE;
+                configureWalletPager(cardLayer.getContext());
+                cardLayer.addView(walletPager,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT));
+                card.setPageActive(true);
+                if(listView!=null)listView.post(this::updateBalancePosition);
+            }
+            rebindWallet();
         }catch(Exception unavailable){}
         if (walletAuth != null) walletAuth.resume();
         if (recoveryAuth != null) recoveryAuth.resume();

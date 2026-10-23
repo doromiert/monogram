@@ -1084,3 +1084,5 @@ Installed private xmr.19 (73529), SHA-256 d86bedb39cfc2ef4636e54ce1f99356b764b1c
 - xmr.31: replace rejected flat wallet footer with genuine compact mesh/material rendering and clear/suppress the native Monero logo on relock.
 
 - Compact attachment wallet cards are display-only touch targets: page dispatch declines child touches so the enclosing ViewPager receives swipes directly, without 3D press/drag handlers or tap selection. Source fix; device validation pending next APK.
+
+- Returning from wallet management now rebuilds changed wallet pages in the existing screen instead of presenting a replacement fragment during the back transition. Captured overlapping whole-screen columns in `.state/wallet-manager-renderer-after-delete.png`; runtime verification pending.
