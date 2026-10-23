@@ -130,6 +130,8 @@ public class WalletActionLayout {
     private Text commentText;
     private boolean touchCaptured;
     private Runnable onClick;
+    private String claimStatus="Tap to check link status";
+    public void setClaimStatus(String value){claimStatus=value;}
 
     public WalletActionLayout(View parentView) {
         this(parentView, null);
@@ -331,7 +333,7 @@ public class WalletActionLayout {
             9.3f,
             AndroidUtilities.getTypeface("fonts/rmono.ttf")
         ).multiline(2).align(Layout.Alignment.ALIGN_CENTER).setMaxWidth(getWidth() - dp(24));
-        addressText.setText(formattedAddress);
+        addressText.setText(action.moneroKind==2 ? claimStatus+"\n"+(fullAddress.length()>32 ? fullAddress.substring(0,16)+"…"+fullAddress.substring(fullAddress.length()-12) : fullAddress) : formattedAddress);
 
         if (TextUtils.isEmpty(peerLink)) {
             peerLinkText = null;

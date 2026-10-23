@@ -676,6 +676,9 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
             ((TLRPC.TL_messageActionGramTransfer) messageObject.messageOwner.action).paymentVerified =
                     scannedPayment != null && !scannedPayment.pending;
             final MessagesController messagesController = MessagesController.getInstance(currentAccount);
+            if(((TLRPC.TL_messageActionGramTransfer)messageObject.messageOwner.action).moneroKind==2){
+                walletActionLayout.setClaimStatus(com.negzero.monogram.wallet.ClaimStatusStore.label(currentAccount,((TLRPC.TL_messageActionGramTransfer)messageObject.messageOwner.action).peer_address));
+            }
             final long peerDialogId = DialogObject.getPeerDialogId(messageObject.messageOwner.peer_id);
             final String peerUsername = UserObject.isService(peerDialogId)
                 ? LocaleController.getString(R.string.WalletUnknownUser)

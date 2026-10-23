@@ -42,6 +42,34 @@ public final class MonogramWallet {
     private volatile boolean recentCacheReady;
     private static final long RECENT_SYNC_MS=5*60*1000L;
     public volatile boolean scanning;
+    private volatile boolean backgroundClaim;
+    public void beginBackgroundClaim(){
+        checkIdentity();if(claimId==null || !unlocked() || backgroundClaim)throw new IllegalStateException("Reopen this payment link before starting a background deposit.");
+        acquireForManagement();backgroundClaim=true;
+    }
+    public boolean backgroundClaimActive(){return backgroundClaim && unlocked();}
+    public void endBackgroundClaim(){backgroundClaim=false;release();}
+    public void saveDepositApproval(String destination,java.math.BigInteger limit,Result<Void> done){
+        if(claimId==null || !backgroundClaim)throw new IllegalStateException("No background deposit authorized.");
+        MoneroPayment.address(destination,network);
+        work("Saving deposit approval…",done,()->{
+            if(limit==null || limit.signum()<=0)throw new IllegalArgumentException("Approve a positive maximum fee.");
+            JSONObject broadcast=config.optJSONObject("lastBroadcast");
+            if(broadcast!=null && "unknown".equals(broadcast.optString("state")))throw new IllegalStateException("A previous deposit has an uncertain outcome. Check its transaction history before approving another.");
+            save(new JSONObject(config.toString()).put("depositApproval",new JSONObject().put("destination",destination).put("maxFee",limit.toString()).put("state","queued")));return null;
+        },()->{},true);
+    }
+    public void syncBackgroundClaim(Result<Void> done){
+        if(claimId==null || !backgroundClaim)throw new IllegalStateException("Background deposit stopped. Reopen the link.");
+        refresh(needsRescan(),done,true);
+    }
+    public void publishClaimStatus(){
+        if(claimId==null || balance==null || balance.length<3 || !sessionSynced)return;
+        boolean outgoing=false,pending=false;
+        for(String row:transactions)try{JSONObject tx=new JSONObject(row);if(tx.optInt("direction")==1 && !tx.optBoolean("failed")){if(tx.optBoolean("pending"))pending=true;else if(tx.optLong("height")>0 && tx.optLong("confirmations")>0)outgoing=true;}}catch(Exception ignored){}
+        ClaimStatusStore.put(account,primary(),ClaimDepositPolicy.observed(new java.math.BigInteger(balance[1]),new java.math.BigInteger(balance[2]),outgoing,pending));
+    }
+    public int accountIndex(){return account;}
     private volatile boolean scanCancelled;
     public volatile long scanHeight,scanTarget,scanOrigin;
     public int scanPercent(){long span=scanTarget-scanOrigin;return span<=0 ? 0 : (int)Math.max(0,Math.min(100,100.0*(scanHeight-scanOrigin)/span));}
@@ -156,13 +184,20 @@ public final class MonogramWallet {
         });
     }
     public void prepareClaimSweep(String destination,Result<Quote> callback){
+        prepareClaimSweep(destination,callback,false);
+    }
+    public void prepareBackgroundClaimSweep(String destination,Result<Quote> callback){
+        if(claimId==null || !backgroundClaim)throw new IllegalStateException("Background deposit stopped.");
+        prepareClaimSweep(destination,callback,true);
+    }
+    private void prepareClaimSweep(String destination,Result<Quote> callback,boolean background){
         MoneroPayment address=MoneroPayment.address(destination,network);
         work("Calculating claim fee…",callback,()->{
             if(claimId==null || handle==0 || !sessionSynced)throw new IllegalStateException("Unlock and sync the claim first.");
             String[] values=WalletNative.prepareClaimSweep(handle,address.address);
             MoneroPayment payment=MoneroPayment.create(address.address,MoneroPayment.format(new java.math.BigInteger(values[1])),"","",network);
             return new Quote(handle,payment,values);
-        });
+        },()->{},background);
     }
     private MonogramWallet(int account,String owner,MoneroPayment.Network network,String walletId,String claimId) throws Exception {
         this.account=account;this.owner=owner;this.network=network;this.walletId=walletId;this.claimId=claimId;
@@ -229,8 +264,9 @@ public final class MonogramWallet {
         if(claimId!=null || initialScanComplete() || (!exists() && !busy))return false;
         try{checkIdentity();return true;}catch(Exception changed){return false;}
     }
-    private void lockAutomatically(){if(!authenticating() && !holdForInitialScan() && !(claimId==null && scanning && !scanCancelled))lock();}
+    private void lockAutomatically(){if(!backgroundClaim && !authenticating() && !holdForInitialScan() && !(claimId==null && scanning && !scanCancelled))lock();}
     public void lock(){
+        backgroundClaim=false;
         if(authentication!=null){Authentication old=authentication;authentication=null;old.closed=true;AndroidUtilities.cancelRunOnUIThread(old.timeout);}
         epoch++;scanCancelled=true;recentCacheReady=false;sessionSynced=false;WalletTlsBridge bridge=transport;transport=null;long current=handle;stopper.execute(()->{if(bridge!=null)bridge.close();if(current!=0)WalletNative.stop(current);});
         actor.execute(()->{long old=handle;handle=0;try{if(old!=0)WalletNative.close(old);}catch(Exception ignored){}balance=null;transactions=new String[0];status="Locked";changed();});
@@ -345,8 +381,11 @@ public final class MonogramWallet {
     public void sync(Result<Void> callback){if(needsRescan())throw new IllegalStateException("Rescan this wallet to recover history skipped by an older build.");refresh(false,callback);}
     public void rescan(Result<Void> callback){refresh(true,callback);}
     private void refresh(boolean rescan,Result<Void> callback) {
+        refresh(rescan,callback,false);
+    }
+    private void refresh(boolean rescan,Result<Void> callback,boolean background) {
         if(!unlocked())throw new IllegalStateException("Unlock your wallet first.");if(node().isEmpty())throw new IllegalStateException("Set your Monero node first.");
-        check();if(busy)throw new IllegalStateException("Wait for the current wallet operation first.");
+        if(background)checkIdentity();else check();if(busy)throw new IllegalStateException("Wait for the current wallet operation first.");
         scanCancelled=false;scanning=true;scanHeight=0;scanTarget=0;scanOrigin=0;
         boolean initial=claimId==null;
         try{if(initial)WalletSyncService.begin(this);work("Connecting to node…",callback,()->{
@@ -374,7 +413,7 @@ public final class MonogramWallet {
             checkIdentity();read();if(!"true".equals(balance[5]))throw new IllegalStateException("The node has not completed this scan.");
             JSONObject next=new JSONObject(config.toString());next.put("scanned",true).put("scanPolicy",2).put("scanStart",Long.parseLong(balance[7])).put("initialScanComplete",true);
             if(claimId!=null && fundingStatus().equals("unknown") && new java.math.BigInteger(balance[1]).signum()>0)next.put("fundingStatus","broadcast");
-            save(next);rememberSync();return null;
+            save(next);rememberSync();publishClaimStatus();return null;
         },()->{scanning=false;if(initial)WalletSyncService.finish(this);},true);}
         catch(RuntimeException failure){scanning=false;if(initial)WalletSyncService.finish(this);throw failure;}
     }
@@ -422,16 +461,29 @@ public final class MonogramWallet {
     }
     public void cancel(Quote quote){if(quote==null || quote.consumed)return;quote.consumed=true;actor.execute(()->{try{if(handle==quote.session)WalletNative.cancel(handle,quote.id);}catch(Exception ignored){}});}
     public void commit(Quote quote,Result<String[]> callback){
+        commit(quote,callback,false);
+    }
+    public void commitBackgroundClaim(Quote quote,Result<String[]> callback){
+        if(claimId==null || !backgroundClaim)throw new IllegalStateException("Background deposit stopped.");
+        commit(quote,callback,true);
+    }
+    private void commit(Quote quote,Result<String[]> callback,boolean background){
         if(quote.consumed || quote.session!=handle || handle==0)throw new IllegalStateException("Payment review expired. Review again.");
         work("Broadcasting payment…",(value,failure)->{if(failure!=null)cancel(quote);callback.done(value,failure);},()->{
             // Durable before broadcast: a crash must leave the transaction hashes available for inspection.
+            if(background && !backgroundClaim)throw new IllegalStateException("Background deposit stopped.");
+            if(background){
+                JSONObject approval=config.getJSONObject("depositApproval");
+                ClaimDepositPolicy.checkApproval(approval.getString("destination"),quote.payment.address,new java.math.BigInteger(balance[1]),quote.payment.atomicAmount,quote.fee,new java.math.BigInteger(approval.getString("maxFee")));
+            }
             if(quote.fundingClaim!=null)quote.fundingClaim.saveFunding("unknown",quote.hashes);
+            if(background)save(new JSONObject(config.toString()).put("depositApproval",new JSONObject(config.getJSONObject("depositApproval").toString()).put("state","unknown").put("hashes",quote.hashes)));
             JSONObject next=new JSONObject(config.toString()).put("lastBroadcast",new JSONObject().put("hashes",quote.hashes).put("state","unknown"));save(next);
             quote.consumed=true;String[] result=WalletNative.commit(handle,quote.id);
             try{JSONObject saved=new JSONObject(config.toString());saved.getJSONObject("lastBroadcast").put("state",result[0]);save(saved);}catch(Exception ignored){}
             if(quote.fundingClaim!=null)try{quote.fundingClaim.saveFunding(result[0],quote.hashes);}catch(Exception ignored){}
             try{read();}catch(Exception ignored){}return result;
-        });
+        },()->{},background);
     }
     public String lastBroadcast(){return config==null ? "" : config.optJSONObject("lastBroadcast")==null ? "" : config.optJSONObject("lastBroadcast").toString();}
 }

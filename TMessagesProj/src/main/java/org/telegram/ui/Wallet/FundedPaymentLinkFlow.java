@@ -128,6 +128,8 @@ public final class FundedPaymentLinkFlow {
                                     recipient.id, null, null, null, false, null, null, params, true, 0, 0, null, false);
                             notice.onLocalMessageCreated = message -> transaction.localMessageId = message.getId();
                             SendMessagesHelper.getInstance(account).sendMessage(notice);
+                            // Keep the sender's card status current without approving a deposit.
+                            com.negzero.monogram.wallet.ClaimDepositService.watch(claim,(unused,statusError)->{});
                             if (queued != null) queued.run(transaction);
                             GramWallet.getInstance(account).invalidateState();
                             done.run(null);

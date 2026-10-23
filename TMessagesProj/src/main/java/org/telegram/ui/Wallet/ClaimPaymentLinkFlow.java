@@ -40,12 +40,9 @@ public final class ClaimPaymentLinkFlow {
     private final MonogramWallet main, claim;
     private final MoneroClaim link;
     private final MonogramWalletAuth mainAuth, claimAuth;
-    private MonogramWallet.Quote quote;
     private String destination;
-    private AlertDialog waitingDialog;
-    private Runnable retryScan;
-    private boolean closed, busy, committing;
-    private TL_wallet.walletTransaction pendingReview;
+    private java.math.BigInteger maxFee;
+    private boolean watchOnly,closed,busy,queued;
 
     public ClaimPaymentLinkFlow(BaseFragment host, int account, String uri) throws Exception {
         this.host = host;
@@ -85,34 +82,51 @@ public final class ClaimPaymentLinkFlow {
         initial.feeUnknown = true;
         initial.readOnlyComment = true;
         initial.peer = GramWallet.createRecipientPeer(null, link.payment.address, null);
-        initial.comment = "Deposit into “"+main.name()+"”. The wallet checks confirmations and shows the amount and network fee before you approve. Anyone else holding the link can also spend its funds until they are transferred.";
-        initial.actionLabel = "Deposit to your wallet";
-        mainAuth.resume();
-        claimAuth.resume();
+        initial.comment = "Destination: “"+main.name()+"”. Approve a maximum network fee, then leave this screen. Monogram will deposit the link’s spendable funds into that wallet in the background. Its claim wallet stays unlocked while checking; you can stop checking from the notification. If Android stops the app, reopen the link to resume.";
+        initial.actionLabel = "Deposit in background";
+        mainAuth.resume();claimAuth.resume();
         WalletActivity.openTransactionSheet(host.getContext(), account, initial, (note, encrypted, done) -> {
             if (busy || closed) return;
-            busy = true;
-            mainAuth.unlock((approved, error) -> {
-                if (closed) return;
-                if (!approved) { busy = false; done.run(error == null ? "Unlock cancelled." : message(error)); return; }
-                prepareDestination((transaction, failure) -> {
-                    busy = false;
-                    if (closed) return;
-                    if (failure != null) { done.run(failure); return; }
-                    pendingReview = transaction;
-                    done.run(null);
+            busy=true;
+            chooseFeeLimit((approved,error)->{
+                if(closed)return;
+                if(!approved){busy=false;done.run(error);return;}
+                mainAuth.unlock((unlocked,failure)->{
+                    if(closed)return;
+                    if(!unlocked){busy=false;done.run(failure==null ? "Unlock cancelled." : message(failure));return;}
+                    prepareDestination((unused,queueError)->{
+                        busy=false;if(closed)return;
+                        queued=queueError==null;done.run(queueError);
+                    });
                 });
             });
         }, (note, encrypted) -> {
-            TL_wallet.walletTransaction prepared = pendingReview;
-            pendingReview = null;
-            if (prepared == null) close();
-            else AndroidUtilities.runOnUIThread(() -> { if (!closed) review(prepared); });
+            if(queued)BulletinFactory.of(host).createSimpleBulletin(org.telegram.messenger.R.raw.done,watchOnly ? "Checking link status in the background" : "Background deposit queued").show();
+            close();
         }, host.getResourceProvider());
     }
 
+    private void chooseFeeLimit(org.telegram.messenger.Utilities.Callback2<Boolean,String> done){
+        org.telegram.ui.Components.EditTextBoldCursor input=new org.telegram.ui.Components.EditTextBoldCursor(host.getContext());
+        input.setSingleLine(true);input.setTextSize(18);input.setHint("Maximum network fee in XMR");
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setTextColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextBlack,host.getResourceProvider()));
+        input.setHintTextColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextHint,host.getResourceProvider()));
+        input.setPadding(AndroidUtilities.dp(24),AndroidUtilities.dp(12),AndroidUtilities.dp(24),AndroidUtilities.dp(12));
+        boolean[] answered={false};
+        new AlertDialog.Builder(host.getContext(),host.getResourceProvider()).setTitle("Approve background deposit")
+            .setMessage("Deposit this link’s funds into “"+main.name()+"”, minus a network fee no higher than the limit below. This authorizes Monogram to send automatically once the funds unlock. A higher fee will pause the job for another review.")
+            .setView(input).setPositiveButton("Approve and queue",(dialog,which)->{
+                answered[0]=true;
+                try{maxFee=com.negzero.monogram.xmpp.MoneroPayment.amount(input.getText().toString().trim().replace(',','.'));watchOnly=false;done.run(true,null);}
+                catch(Exception invalid){done.run(false,"Enter a positive fee limit in XMR.");}
+            }).setNeutralButton("Only check status",(dialog,which)->{answered[0]=true;watchOnly=true;done.run(true,null);})
+            .setNegativeButton("Cancel",(dialog,which)->{answered[0]=true;done.run(false,"Deposit not queued.");})
+            .setOnDismissListener(dialog->{if(!answered[0] && !closed)done.run(false,"Deposit not queued.");}).show();
+    }
+
     private void prepareDestination(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction, String> done) {
-        if (destination != null) { unlockClaim(done); return; }
+        if (watchOnly || destination != null) { unlockClaim(done); return; }
         try {
             main.newAddress((address, error) -> {
                 if (closed) return;
@@ -128,7 +142,7 @@ public final class ClaimPaymentLinkFlow {
             claimAuth.unlockWithRecentDeviceAuthentication((approved, error) -> {
                 if (closed) return;
                 if (!approved) { done.run(null, error == null ? "Unlock cancelled." : message(error)); return; }
-                scan(done);
+                queue(done);
             });
         } else {
             claimAuth.authenticate("Open payment link", "Protect this independent claim wallet with your device credential", false, (approved, error) -> {
@@ -142,7 +156,7 @@ public final class ClaimPaymentLinkFlow {
                             claim.restoreClaim(claim.authorizeRestore(), link, (value, restoreError) -> {
                                 if (closed) return;
                                 if (restoreError != null) { done.run(null, message(restoreError)); return; }
-                                scan(done);
+                                queue(done);
                             });
                         } catch (Exception restoreError) { done.run(null, message(restoreError)); }
                     });
@@ -151,105 +165,27 @@ public final class ClaimPaymentLinkFlow {
         }
     }
 
-    private void scan(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction, String> done) {
-        try {
-            MonogramWallet.Result<Void> scanned = (unused, scanError) -> {
-                if (closed) return;
-                if (scanError != null) { stopWaiting(); done.run(null, message(scanError)); return; }
-                try {
-                    if (claim.balance != null && claim.balance.length > 2
-                            && new java.math.BigInteger(claim.balance[1]).signum() > 0
-                            && !claim.balance[1].equals(claim.balance[2])) {
-                        waitForConfirmations(done);
-                        return;
-                    }
-                    stopWaiting();
-                    claim.prepareClaimSweep(destination, (prepared, feeError) -> {
-                        if (closed) { claim.cancel(prepared); return; }
-                        if (feeError != null) { done.run(null, message(feeError)); return; }
-                        try {
-                            if (quote != null) claim.cancel(quote);
-                            quote = prepared;
-                            TL_wallet.walletTransaction transaction = new TL_wallet.walletTransaction();
-                            transaction.id = transaction.tx_hash = prepared.hashes;
-                            transaction.amount = WalletAmounts.checkedAtomic(prepared.payment.atomicAmount);
-                            transaction.fee = WalletAmounts.checkedAtomic(prepared.fee);
-                            transaction.peer = GramWallet.createRecipientPeer(null, destination, null);
-                            transaction.preview = true;
-                            transaction.incoming = true;
-                            transaction.readOnlyComment = true;
-                            transaction.actionLabel = "Deposit " + GramWallet.formatGramsWithUnit(transaction.amount);
-                            done.run(transaction, null);
-                        } catch (Exception invalid) { claim.cancel(prepared); quote = null; done.run(null, message(invalid)); }
-                    });
-                } catch (Exception feeError) { done.run(null, message(feeError)); }
-            };
-            if (claim.needsRescan()) claim.rescan(scanned); else claim.sync(scanned);
-        } catch (Exception error) { done.run(null, message(error)); }
-    }
-
-    private void waitForConfirmations(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction, String> done) {
-        String[] snapshot=claim.balance;
-        String progress=snapshot!=null && snapshot.length>3
-            ? "Funds: "+com.negzero.monogram.xmpp.MoneroPayment.format(new java.math.BigInteger(snapshot[1]))+" XMR\nSpendable: "+com.negzero.monogram.xmpp.MoneroPayment.format(new java.math.BigInteger(snapshot[2]))+" XMR\nScanned block: "+snapshot[3]+"\n\n" : "";
-        String waiting=progress+"The link’s funds need confirmations before they can be deposited. Checking every 30 seconds. Once spendable, you can review the deposit amount and network fee. No deposit has been sent.";
-        if (waitingDialog == null) {
-            waitingDialog = new AlertDialog.Builder(host.getContext(), host.getResourceProvider())
-                .setTitle("Waiting for confirmations")
-                .setMessage(waiting)
-                .setNegativeButton("Stop waiting", (dialog, which) -> {
-                    stopWaiting();busy=false;done.run(null,"Stopped checking. No transaction was sent.");
-                }).create();
-            waitingDialog.setCancelable(false);
-            waitingDialog.setCanceledOnTouchOutside(false);
-            waitingDialog.show();
-        }else waitingDialog.setMessage(waiting);
-        if(retryScan!=null)AndroidUtilities.cancelRunOnUIThread(retryScan);
-        retryScan=()->{retryScan=null;if(!closed)scan(done);};
-        AndroidUtilities.runOnUIThread(retryScan,30000);
-    }
-    private void stopWaiting(){
-        if(retryScan!=null){AndroidUtilities.cancelRunOnUIThread(retryScan);retryScan=null;}
-        if(waitingDialog!=null){waitingDialog.dismiss();waitingDialog=null;}
-    }
-    private void review(TL_wallet.walletTransaction transaction) {
-        WalletActivity.openTransactionSheet(host.getContext(), account, transaction, (note, encrypted, done) -> {
-            if (closed || committing || quote == null) return;
-            try {
-                committing = true;
-                claim.commit(quote, (result, error) -> {
-                    committing = false;
-                    quote = null;
-                    if (error != null) { done.run(message(error)); if (closed) release(); return; }
-                    if (result == null || result.length < 2 || !"broadcast".equals(result[0])) {
-                        done.run("Claim status is uncertain. Check its transaction history before trying again.");
-                        if (closed) release();
-                        return;
-                    }
-                    done.run(null);
-                    try { if (main.unlocked() && !main.busy) main.sync((unused, failure) -> GramWallet.getInstance(account).invalidateState()); }
-                    catch (Exception unavailable) { GramWallet.getInstance(account).invalidateState(); }
-                    close();
-                });
-            } catch (Exception error) { committing = false; done.run(message(error)); }
-        }, (note, encrypted) -> close(), host.getResourceProvider());
+    private void queue(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction,String> done){
+        try{
+            MonogramWallet.Result<Void> result=(unused,error)->{if(!closed)done.run(null,error==null ? null : message(error));};
+            if(watchOnly)com.negzero.monogram.wallet.ClaimDepositService.watch(claim,result);
+            else com.negzero.monogram.wallet.ClaimDepositService.start(claim,destination,maxFee,result);
+        }catch(Exception error){done.run(null,message(error));}
     }
 
     public void resume() { mainAuth.resume(); claimAuth.resume(); }
     public void pause() { mainAuth.pause(); claimAuth.pause(); }
     public boolean activityResult(int code, int result) { return mainAuth.activityResult(code, result) || claimAuth.activityResult(code, result); }
-    public boolean busy() { return busy || committing; }
+    public boolean busy() { return busy; }
     public void close() {
         if (closed) return;
         closed = true;
-        stopWaiting();
-        if (!committing) release();
+        release();
     }
     private boolean released;
     private void release() {
         if (released) return;
         released = true;
-        if (quote != null) { claim.cancel(quote); quote = null; }
         mainAuth.destroy();
         claimAuth.destroy();
         main.release();
