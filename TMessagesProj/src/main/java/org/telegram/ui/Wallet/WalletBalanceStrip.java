@@ -44,6 +44,9 @@ public final class WalletBalanceStrip extends ViewPager {
             material.getFrontFace().addView(amount,new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT));
             material.setDynamicOverlays(amount);
         }
+        // These are display-only pages. Let ViewPager own the entire gesture,
+        // without the 3D surface starting its own drag/press interaction.
+        @Override public boolean dispatchTouchEvent(MotionEvent event){return false;}
     }
     public WalletBalanceStrip(Context context){
         super(context);
@@ -68,7 +71,6 @@ public final class WalletBalanceStrip extends ViewPager {
                     @Override public Object instantiateItem(ViewGroup parent,int position){
                         Card card=new Card();
                         if(Build.VERSION.SDK_INT>=26)card.setTooltipText(wallets.get(position).name());
-                        card.material.setOnClickListener(view->setCurrentItem(position,true));
                         cards.put(position,card);updateCard(position,card);parent.addView(card);return card;
                     }
                     @Override public void destroyItem(ViewGroup parent,int position,Object item){parent.removeView((View)item);if(cards.get(position)==item)cards.remove(position);}

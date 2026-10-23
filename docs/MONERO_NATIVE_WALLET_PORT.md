@@ -176,3 +176,5 @@ Delivery: xmr.27 (73609) installed successfully via ADB and published as GitHub 
 - Shortens the original face/edge mesh in model space while preserving the corner arcs and width/depth, with compact camera calibration and matching overlay projection. Body shader coordinates retain the native foil pattern instead of scaling an imitation gradient. Compact mode omits full-size QR/engraving/icon passes and leaves normal card geometry unchanged. Neighbor cards render at 10 FPS, current card at 60 FPS.
 - Locking clears native logo bounds and disables outgoing animated logo-span draws, preventing the old icon from remaining behind the dash. Unlock restores icon eligibility.
 - Three focused geometry tests pass: normal geometry identity, compact bounds/circular arcs, and monotonic mapping without mesh folds. Native shader source is unchanged. Final runtime capture pending.
+
+- Compact attachment wallet cards are display-only touch targets: page dispatch declines child touches so the enclosing ViewPager receives swipes directly, without 3D press/drag handlers or tap selection. Source fix; device validation pending next APK.
