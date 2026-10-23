@@ -1080,3 +1080,5 @@ Installed private xmr.19 (73529), SHA-256 d86bedb39cfc2ef4636e54ce1f99356b764b1c
 - xmr.28: correct doubled status inset and parent-height sizing in the attachment wallet; compact unlocked controls and actual measured viewport geometry.
 
 - xmr.29: compact swipeable wallet-balance footer cards with no Add card/outer balance background, selected-wallet rebind/cancellation, and footer inset tied to attachment-tabs visibility.
+
+- xmr.31: replace rejected flat wallet footer with genuine compact mesh/material rendering and clear/suppress the native Monero logo on relock.

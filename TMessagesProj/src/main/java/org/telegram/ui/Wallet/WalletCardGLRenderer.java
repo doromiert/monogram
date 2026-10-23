@@ -29,6 +29,9 @@ public class WalletCardGLRenderer extends GLIconRenderer {
     private static final float LIGHT_ORBIT_CYCLES_PER_SECOND = 0.05f;
     private static final int[] TRANSIENT_ATTACHMENTS = { GLES30.GL_DEPTH };
 
+    private volatile float cardAspect=CARD_ASPECT;
+    private float projectedAspect=-1f;
+    void setCardAspect(float aspect){cardAspect=aspect;}
     private final Context context;
     private final float[] projectionMatrix = new float[16];
     private final float[] viewMatrix = new float[16];
@@ -195,7 +198,8 @@ public class WalletCardGLRenderer extends GLIconRenderer {
         surfaceWidth = width;
         surfaceHeight = height;
         GLES20.glViewport(0, 0, width, height);
-        setProjectionMatrix(projectionMatrix, width, height);
+        setProjectionMatrix(projectionMatrix, width, height, cardAspect);
+        projectedAspect=cardAspect;
     }
 
     @Override
@@ -204,6 +208,9 @@ public class WalletCardGLRenderer extends GLIconRenderer {
         if (card == null) {
             return;
         }
+        float aspect=cardAspect;
+        card.setCompactRatio(CARD_ASPECT/aspect);
+        if(projectedAspect!=aspect){setProjectionMatrix(projectionMatrix,surfaceWidth,surfaceHeight,aspect);projectedAspect=aspect;}
         int currentCardIconResId = cardIconResId;
         if (currentCardIconResId != uploadedCardIconResId) {
             card.setCardIcon(context, currentCardIconResId, qrButtonRightPadding);
@@ -280,7 +287,7 @@ public class WalletCardGLRenderer extends GLIconRenderer {
     private static void setProjectionMatrix(
             float[] matrix,
             int width,
-            int height
+            int height,float aspect
     ) {
         // WalletCardView gives the GL surface equal overscan on every side.
         // Recover the card's visible (non-overscan) dimensions from the
@@ -288,16 +295,16 @@ public class WalletCardGLRenderer extends GLIconRenderer {
         // the resting card exactly the same size while leaving room for both
         // pitched and yawed corners.
         float visibleWidth = (width - height)
-                / (1.0f - 1.0f / CARD_ASPECT);
+                / (1.0f - 1.0f / aspect);
         if (visibleWidth <= 0.0f || visibleWidth > width) {
             visibleWidth = width;
         }
-        float visibleHeight = visibleWidth / CARD_ASPECT;
+        float visibleHeight = visibleWidth / aspect;
         float overscanRatio = height / Math.max(1.0f, visibleHeight);
         float fieldOfView = (float) Math.toDegrees(
                 2.0 * Math.atan(
                         Math.tan(Math.toRadians(FIELD_OF_VIEW * 0.5))
-                                * overscanRatio
+                                * (CARD_ASPECT/aspect) * overscanRatio
                 )
         );
         Matrix.perspectiveM(
@@ -352,8 +359,9 @@ public class WalletCardGLRenderer extends GLIconRenderer {
                 float rotationY,
                 boolean back,
                 float[] result
-        ) {
-            setProjectionMatrix(projectionMatrix, width, height);
+        ) {project(width,height,rotationX,rotationY,back,CARD_ASPECT,result);}
+        void project(int width,int height,float rotationX,float rotationY,boolean back,float aspect,float[] result){
+            setProjectionMatrix(projectionMatrix,width,height,aspect);
             setViewMatrix(viewMatrix);
             setModelMatrix(modelMatrix, rotationX, rotationY);
             Matrix.multiplyMM(
@@ -376,10 +384,10 @@ public class WalletCardGLRenderer extends GLIconRenderer {
             float faceX = back ? BACK_FACE_X : FRONT_FACE_X;
             float leftZ = back ? MODEL_HALF_WIDTH : -MODEL_HALF_WIDTH;
             float rightZ = -leftZ;
-            projectPoint(faceX, WalletCardGeometry.TOP, leftZ, width, height, result, 0);
-            projectPoint(faceX, WalletCardGeometry.TOP, rightZ, width, height, result, 2);
-            projectPoint(faceX, WalletCardGeometry.BOTTOM, rightZ, width, height, result, 4);
-            projectPoint(faceX, WalletCardGeometry.BOTTOM, leftZ, width, height, result, 6);
+            projectPoint(faceX, WalletCardGeometry.TOP*(CARD_ASPECT/aspect), leftZ, width, height, result, 0);
+            projectPoint(faceX, WalletCardGeometry.TOP*(CARD_ASPECT/aspect), rightZ, width, height, result, 2);
+            projectPoint(faceX, WalletCardGeometry.BOTTOM*(CARD_ASPECT/aspect), rightZ, width, height, result, 4);
+            projectPoint(faceX, WalletCardGeometry.BOTTOM*(CARD_ASPECT/aspect), leftZ, width, height, result, 6);
         }
 
         private void projectPoint(

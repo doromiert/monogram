@@ -66,6 +66,7 @@ public class WalletCardComponent extends FrameLayout implements NotificationCent
     private AnimatedTextView precisionButton;
     private Runnable precisionChanged;
     private boolean diamondOnCard;
+    private boolean balanceIconAllowed=true;
     private float balanceDrawScale = 1f;
     private final Matrix balanceDiamondTransform = new Matrix();
     private final Matrix inverseDiamondFaceTransform = new Matrix();
@@ -213,6 +214,11 @@ public class WalletCardComponent extends FrameLayout implements NotificationCent
     public static int displayDecimals(Context context){return Math.max(0,Math.min(12,context.getSharedPreferences("monogram_wallet_display",Context.MODE_PRIVATE).getInt("decimals",4)));}
     public static void setDisplayDecimals(Context context,int decimals){if(decimals<0 || decimals>12)throw new IllegalArgumentException("Use 0–12 decimals.");context.getSharedPreferences("monogram_wallet_display",Context.MODE_PRIVATE).edit().putInt("decimals",decimals).apply();}
     public void setPrecisionAvailable(boolean available){
+        balanceIconAllowed=available;
+        if(!available){
+            hasBalanceDiamondTransform=false;
+            if(cardView instanceof WalletCardView)((WalletCardView)cardView).setDiamondBounds(0,0,0,0);
+        }
         precisionButton.setVisibility(available ? View.VISIBLE : View.GONE);
         if(!available && preciseBalance)setPreciseBalance(false);
     }
@@ -527,6 +533,7 @@ public class WalletCardComponent extends FrameLayout implements NotificationCent
             @Override
             public void draw(Canvas canvas, CharSequence text, int start, int end,
                              float x, int top, int y, int bottom, Paint paint) {
+                if(!balanceIconAllowed)return;
                 setAlpha(1f);
                 if (diamondOnCard && !preciseBalance && cardView instanceof WalletCardView
                         && frontFace.getWidth() > 0) {

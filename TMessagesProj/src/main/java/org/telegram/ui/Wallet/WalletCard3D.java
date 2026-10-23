@@ -37,6 +37,11 @@ final class WalletCard3D {
     private int frontContentWidth, frontContentHeight;
     private MaterialProgram diamondProgram;
     private int diamondTexture;
+    private float compactRatio=1f;
+    void setCompactRatio(float ratio){
+        if(compactRatio==ratio)return;compactRatio=ratio;
+        frontMesh.reshape(ratio);edgeMesh.reshape(ratio);
+    }
     private float detailsOffset;
     void setDetailsOffset(float offset){detailsOffset=offset;}
     private MoneroRenderer moneroOnCard;
@@ -122,7 +127,7 @@ final class WalletCard3D {
 
         drawMesh(frontMesh, bodyProgram);
 
-        if (hasEngraving) {
+        if (hasEngraving && compactRatio==1f) {
             engravingProgram.bind(mvpMatrix, modelViewMatrix, lightDirectionX, lightDirectionY,
                     lightDirectionZ, cardGradientRotation, qrButtonRightPadding);
             WalletCardQrBounds.compute(mvpMatrix, surfaceWidth, surfaceHeight,
@@ -140,6 +145,7 @@ final class WalletCard3D {
 
         qrProgram.bind(mvpMatrix, modelViewMatrix, lightDirectionX, lightDirectionY,
                 lightDirectionZ, cardGradientRotation, qrButtonRightPadding);
+        if(compactRatio==1f){
         WalletCardQrBounds.compute(mvpMatrix, surfaceWidth, surfaceHeight,
                 (CARD_DESIGN_WIDTH - qrButtonRightPadding - QR_BUTTON_WIDTH) / CARD_DESIGN_WIDTH+detailsOffset,
                 QR_BUTTON_TOP / CARD_DESIGN_HEIGHT,
@@ -169,6 +175,7 @@ final class WalletCard3D {
         GLES20.glDepthMask(true);
         GLES20.glDepthFunc(GLES20.GL_LEQUAL);
 
+        }
         if (diamondAlpha > 0f && diamondBounds != null && diamondBounds[2] > 0 && diamondBounds[3] > 0) {
             if (diamondProgram == null) {
                 diamondProgram = new MaterialProgram(context,
@@ -282,7 +289,7 @@ final class WalletCard3D {
             }
         }
         hasEngraving = right >= left;
-        if (hasEngraving) {
+        if (hasEngraving && compactRatio==1f) {
             engravingUvBounds[0] = left / (float) mipWidth;
             engravingUvBounds[1] = top / (float) mipHeight;
             engravingUvBounds[2] = (right + 1) / (float) mipWidth;
@@ -804,9 +811,16 @@ final class WalletCard3D {
     private static final class Mesh {
         final int vertexCount;
         final int[] buffers = new int[2];
+        final float[] originalPositions;
+        void reshape(float ratio){
+            float[] points=originalPositions.clone();
+            for(int i=0;i<points.length;i+=3){points[i+1]=WalletCardGeometry.compactY(points[i+1],ratio);points[i+2]=WalletCardGeometry.compactZ(points[i+2],ratio);}
+            uploadBuffer(buffers[0],points);
+        }
 
         Mesh(Context context, String asset) {
             ObjLoader object = new ObjLoader(context, asset, 1.0f);
+            originalPositions=object.positions.clone();
             vertexCount = object.numFaces;
             GLES20.glGenBuffers(buffers.length, buffers, 0);
             uploadBuffer(buffers[0], object.positions);

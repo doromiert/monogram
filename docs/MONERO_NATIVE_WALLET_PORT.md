@@ -170,3 +170,9 @@ Delivery: xmr.27 (73609) installed successfully via ADB and published as GitHub 
 - Selecting another card cancels stale fee/review work, switches through the existing wallet registry and rebinds access/observers. Existing independent scans continue; signing/broadcast work cannot be switched away mid-operation. The strip stays visible while locked so another wallet can be chosen.
 - Strip/fee/send rows have explicit footer heights and no legacy 60 dp balance translation. Bottom reservation follows the visible attachment-tabs inset as it fades out on expansion; no permanent tray-sized empty gap.
 - User rejected the previous footer after `.state/attachment-bottom-before.png`. No xmr.28 release was published. Final xmr.29 verification follows below.
+
+### xmr.31 actual compact 3D material and lock cleanup
+- User rejected xmr.29’s flat gradient footer; no release of xmr.29 or xmr.30 was published. Compact footer now embeds WalletCardView and the same WalletCard3D material shader, LUT, lighting and native balance projection as the settings cards.
+- Shortens the original face/edge mesh in model space while preserving the corner arcs and width/depth, with compact camera calibration and matching overlay projection. Body shader coordinates retain the native foil pattern instead of scaling an imitation gradient. Compact mode omits full-size QR/engraving/icon passes and leaves normal card geometry unchanged. Neighbor cards render at 10 FPS, current card at 60 FPS.
+- Locking clears native logo bounds and disables outgoing animated logo-span draws, preventing the old icon from remaining behind the dash. Unlock restores icon eligibility.
+- Three focused geometry tests pass: normal geometry identity, compact bounds/circular arcs, and monotonic mapping without mesh folds. Native shader source is unchanged. Final runtime capture pending.

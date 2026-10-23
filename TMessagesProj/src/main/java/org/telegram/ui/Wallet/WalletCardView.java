@@ -35,6 +35,11 @@ import org.telegram.ui.Components.ScaleStateListAnimator;
 
 public class WalletCardView extends FrameLayout implements SensorEventListener {
 
+    private boolean compactMode;
+    void setCompactMode(){
+        compactMode=true;frontFace.setCompactFace();backFace.setCompactFace();
+        loadingCard.setVisibility(INVISIBLE);requestLayout();
+    }
     private static final float CARD_ASPECT = 1.64f;
     private static final float MAX_LIGHT_TILT = 0.82f;
     private static final float MAX_CARD_ROTATION_DEGREES = 15f;
@@ -283,7 +288,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
-        int height = Math.round(width / CARD_ASPECT);
+        int height = compactMode ? MeasureSpec.getSize(heightMeasureSpec) : Math.round(width / CARD_ASPECT);
         super.onMeasure(
                 MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
@@ -293,6 +298,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        if(compactMode && h>0)textureView.renderer.setCardAspect((float)w/h);
         updateFaceProjection();
     }
 
@@ -407,7 +413,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
                 * Math.cos(Math.toRadians(rotationY));
         if (showingLoadingCard) {
             loadingCard.applyRotation(rotationX, rotationY);
-            loadingCard.setVisibility(facing >= 0.0 ? VISIBLE : INVISIBLE);
+            loadingCard.setVisibility(!compactMode && facing >= 0.0 ? VISIBLE : INVISIBLE);
         }
         frontFace.setVisibility(facing >= 0.0 ? VISIBLE : INVISIBLE);
         backFace.setVisibility(facing < 0.0 ? VISIBLE : INVISIBLE);
@@ -426,6 +432,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
                 cardRotationX,
                 cardRotationY,
                 false,
+                compactMode ? (float)getWidth()/Math.max(1,getHeight()) : CARD_ASPECT,
                 frontCorners
         );
         faceProjection.project(
@@ -434,6 +441,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
                 cardRotationX,
                 cardRotationY,
                 true,
+                compactMode ? (float)getWidth()/Math.max(1,getHeight()) : CARD_ASPECT,
                 backCorners
         );
         frontFace.setProjectedCorners(frontCorners);
@@ -681,6 +689,9 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
         private static final float DESIGN_WIDTH = 336.0f;
         private static final float DESIGN_HEIGHT = 205.0f;
 
+        private boolean compactFace;
+        private float designHeight=DESIGN_HEIGHT;
+        void setCompactFace(){compactFace=true;designHeight=48f;content.getLayoutParams().height=dp(designHeight);content.requestLayout();contentDirty=true;}
         private final Matrix projection = new Matrix();
         private final float[] sourceCorners = new float[8];
         private final OverlayContent content;
@@ -708,7 +719,11 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
                 protected void dispatchDraw(Canvas canvas) {
                     // Cache the rounded mask together with the text, before perspective.
                     int save = canvas.save();
-                    WalletCardGeometry.setFacePath(clipPath, getWidth(), getHeight());
+                    if(compactFace){
+                        float ratio=1.64f*getHeight()/Math.max(1,getWidth());
+                        float radius=WalletCardGeometry.compactRadius(ratio)*getWidth()*.5f;
+                        clipPath.rewind();clipPath.addRoundRect(0,0,getWidth(),getHeight(),radius,radius,Path.Direction.CW);
+                    }else WalletCardGeometry.setFacePath(clipPath, getWidth(), getHeight());
                     canvas.clipPath(clipPath);
                     super.dispatchDraw(canvas);
                     canvas.restoreToCount(save);
@@ -750,7 +765,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
             super.onSizeChanged(w, h, oldw, oldh);
             contentDirty = true;
             content.setScaleX(w / (float) dp(DESIGN_WIDTH));
-            content.setScaleY(h / (float) dp(DESIGN_HEIGHT));
+            content.setScaleY(h / (float) dp(designHeight));
         }
 
         @Override
