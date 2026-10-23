@@ -56,4 +56,76 @@ public class MonogramForwardingTest {
         assertFalse(pending.params.containsKey("fwd_id"));assertFalse(pending.params.containsKey("fwd_peer"));
         assertEquals("12",pending.params.get(MonogramForwarding.SOURCE));assertEquals("OMEMO",pending.params.get("monogram-encryption"));
     }
+    @Test public void wireAttributionDoesNotMutateSourceOrNativeVisibleTextAndHideSenderIsRespected() {
+        TLRPC.Message source=new TLRPC.TL_message();source.message="hello";source.date=1700000000;
+        source.fwd_from=new TLRPC.TL_messageFwdHeader();source.fwd_from.from_name="Alice 🧑‍💻";source.fwd_from.date=1690000000;
+        TLRPC.TL_messageEntityBold bold=new TLRPC.TL_messageEntityBold();bold.offset=0;bold.length=5;source.entities.add(bold);
+        SendMessageParams copy=MonogramForwarding.copy(source,99,false,0,false);
+        assertEquals("hello",copy.message);assertEquals("Alice 🧑‍💻",copy.params.get(MonogramForwarding.NAME));
+        TLRPC.Message pending=new TLRPC.TL_message();pending.message=copy.message;pending.params=copy.params;pending.entities=copy.entities;
+        MonogramForwarding.pending(pending);assertEquals("hello",pending.message);assertNotNull(pending.fwd_from);assertNull(pending.fwd_from.from_id);
+        TLRPC.TL_messages_sendMessage request=new TLRPC.TL_messages_sendMessage();request.message=copy.message;request.entities=copy.entities;
+        MonogramForwarding.prepare(request,pending);
+        com.negzero.monogram.xmpp.ForwardedContent wire=com.negzero.monogram.xmpp.ForwardedContent.parse(request.message);
+        assertNotNull(wire);assertEquals(1690000000,wire.date);assertEquals("hello",wire.body);
+        assertEquals(wire.prefix().length(),request.entities.get(0).offset);assertEquals(0,pending.entities.get(0).offset);assertEquals(0,bold.offset);
+        MonogramForwarding.prepare(request,pending);assertEquals(wire.wireBody(),request.message);
+        SendMessageParams hidden=MonogramForwarding.copy(source,99,false,0,true);assertFalse(hidden.params.containsKey(MonogramForwarding.NAME));assertEquals("hello",hidden.message);
+    }
+    @Test public void attributionAndTextEntitiesSurviveStoreReopenAndReforwarding() throws Exception {
+        android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+        String database="forward-label.db";context.deleteDatabase(database);long self;int id;
+        String text=com.negzero.monogram.xmpp.ForwardedContent.of("Alice 🧑‍💻",1700000000,"hello").wireBody();
+        try {
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                self=store.peer("bob@example.org");
+                id=store.save(com.negzero.monogram.xmpp.XmppMessage.sent(org.jxmpp.jid.impl.JidCreate.entityFullFrom("bob@example.org/mobile"),"carol@example.org","forward",text,false));
+                assertEquals("Alice 🧑‍💻",store.getMessage(id,self).fwd_from.from_name);
+            }
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                TLRPC.Message received=store.getMessage(id,self);assertEquals("hello",received.message);assertEquals(1700000000,received.fwd_from.date);
+                SendMessageParams again=MonogramForwarding.copy(received,7,false,0,false);
+                assertEquals("Alice 🧑‍💻",again.params.get(MonogramForwarding.NAME));assertEquals("hello",again.message);
+            }
+        } finally {context.deleteDatabase(database);}
+    }
+    @Test public void encryptedMediaForwardKeepsAHeaderEvenWithoutItsLegacyCaption() throws Exception {
+        android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+        String database="forward-file-label.db";context.deleteDatabase(database);
+        try(MonogramStore store=new MonogramStore(context,database)) {
+            long self=store.peer("bob@example.org");
+            com.negzero.monogram.xmpp.FileLink link=com.negzero.monogram.xmpp.FileLink.parse("aesgcm://files.example.org/fresh.bin#"+new String(new char[88]).replace('\0','a'));
+            com.negzero.monogram.xmpp.XmppMessage message=com.negzero.monogram.xmpp.XmppMessage.sentFile(org.jxmpp.jid.impl.JidCreate.entityFullFrom("bob@example.org/mobile"),"carol@example.org","forward-file",link,true,null)
+                .withForwarding(com.negzero.monogram.xmpp.ForwardedContent.of("Original",1700000000,""));
+            int id=store.save(message);TLRPC.Message projected=store.getMessage(id,self);
+            assertTrue(MonogramAttachments.has(projected));assertEquals("Original",projected.fwd_from.from_name);
+            assertEquals("",projected.message);assertEquals(link.wireUrl,projected.params.get(MonogramAttachments.PARAM));
+        } finally {context.deleteDatabase(database);}
+    }
+    @Test public void forwardedLocationUsesTheSameBodyProjection() {
+        TLRPC.TL_messages_sendMedia request=new TLRPC.TL_messages_sendMedia();request.media=new TLRPC.TL_inputMediaGeoPoint();
+        request.media.geo_point=new TLRPC.TL_inputGeoPoint();request.media.geo_point.lat=51.5;request.media.geo_point._long=0.12;
+        request.message=com.negzero.monogram.xmpp.ForwardedContent.of("Original",1700000000,"").wireBody();
+        String wire=MonogramLocation.text(request).message;
+        TLRPC.Message visible=new TLRPC.TL_message();visible.message=wire;MonogramForwarding.decorate(visible,wire);MonogramLocation.decorate(visible);
+        assertTrue(visible.media instanceof TLRPC.TL_messageMediaGeo);assertEquals("Original",visible.fwd_from.from_name);
+    }
+    @Test public void forwardedPollProjectsAsANewPollAndClosingKeepsAttribution() throws Exception {
+        android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+        String database="forward-poll-label.db";context.deleteDatabase(database);
+        try(MonogramStore store=new MonogramStore(context,database)) {
+            long self=store.peer("bob@example.org");String poll=new MonogramPolls.Poll("Question?","Description",java.util.Arrays.asList("Yes","No"),false,false).body();
+            String wire=com.negzero.monogram.xmpp.ForwardedContent.of("Original",1700000000,poll).wireBody();
+            int id=store.save(com.negzero.monogram.xmpp.XmppMessage.sent(org.jxmpp.jid.impl.JidCreate.entityFullFrom("bob@example.org/mobile"),"carol@example.org","poll-forward",wire,false));
+            TLRPC.Message projected=store.getMessage(id,self);assertTrue(projected.media instanceof TLRPC.TL_messageMediaPoll);assertEquals("Original",projected.fwd_from.from_name);
+            TLRPC.TL_messages_editMessage close=new TLRPC.TL_messages_editMessage();close.peer=new TLRPC.TL_inputPeerUser();close.peer.user_id=projected.dialog_id;
+            TLRPC.TL_inputMediaPoll input=new TLRPC.TL_inputMediaPoll();input.poll=new TLRPC.TL_poll();input.poll.closed=true;close.media=input;
+            MonogramPolls.close(close,projected,self);
+            com.negzero.monogram.xmpp.ForwardedContent closed=com.negzero.monogram.xmpp.ForwardedContent.parse(close.message);
+            assertNotNull(closed);assertEquals("Original",closed.name);assertTrue(MonogramPolls.parse(closed.body).closed);
+        } finally {context.deleteDatabase(database);}
+    }
 }

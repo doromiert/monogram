@@ -21,6 +21,8 @@ final class MonogramLocation {
         result.peer=source.peer;result.random_id=source.random_id;result.reply_to=source.reply_to;
         result.silent=source.silent;result.background=source.background;result.clear_draft=source.clear_draft;
         result.schedule_date=source.schedule_date;result.message=location.wire();result.no_webpage=true;result.flags=source.reply_to==null?0:1;
+        com.negzero.monogram.xmpp.ForwardedContent forward=com.negzero.monogram.xmpp.ForwardedContent.parse(source.message);
+        if(forward!=null) result.message=com.negzero.monogram.xmpp.ForwardedContent.of(forward.name,forward.date,result.message).wireBody();
         return result;
     }
     static void decorate(TLRPC.Message message) {

@@ -1069,6 +1069,7 @@ public class ReactionsLayoutInBubble {
             }
 
             updateColors(progress);
+            if(isTag) lastDrawnTextColor=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).savedTagColor(reaction,lastDrawnTextColor);
             textPaint.setColor(lastDrawnTextColor);
             if (textDrawable != null) {
                 textDrawable.setTextColor(lastDrawnTextColor);

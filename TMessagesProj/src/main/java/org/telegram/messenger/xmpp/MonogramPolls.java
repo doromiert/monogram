@@ -211,6 +211,8 @@ public final class MonogramPolls {
         if(!message.out) throw new Invalid("Only the author can close this poll.");
         TLRPC.Poll input=((TLRPC.TL_inputMediaPoll)request.media).poll;
         if(input==null || !input.closed) throw new Invalid("Only closing an existing poll is supported.");
-        Poll poll=parse(body(message));request.message=new Poll(poll.question,poll.description,poll.answers,poll.multiple,true).body();request.media=null;request.flags=(request.flags&~16384)|2048;
+        Poll poll=parse(body(message));request.message=new Poll(poll.question,poll.description,poll.answers,poll.multiple,true).body();
+        com.negzero.monogram.xmpp.ForwardedContent forward=MonogramForwarding.attribution(message.params,request.message);
+        if(forward!=null) request.message=forward.wireBody();request.media=null;request.flags=(request.flags&~16384)|2048;
     }
 }

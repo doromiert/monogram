@@ -35,7 +35,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final java.util.Map<Long,java.util.Map<Long,String>> mentionNamesCache=new java.util.HashMap<>();
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db");this.account=account; }
-    MonogramStore(Context context, String name) { super(context, name, null, 30); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 31); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -166,7 +166,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 30 || oldVersion < 1 || oldVersion > 29) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 31 || oldVersion < 1 || oldVersion > 30) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -194,6 +194,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<27) addStickerHints(db);
         if(oldVersion<28) addLinkPreviews(db);
         if(oldVersion<29) MonogramSavedTags.create(db);
+        else if(oldVersion<31) db.execSQL("ALTER TABLE saved_tag_names ADD COLUMN color INTEGER NOT NULL DEFAULT 0");
         if(oldVersion<30) MonogramReceipts.createRoomReaders(db);
     }
     private static void addProfileSources(SQLiteDatabase db) {
@@ -1286,6 +1287,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         com.negzero.monogram.xmpp.MessageMarkup visibleMarkup=MonogramFormatting.decorate(getReadableDatabase(),message,payload,body);
         MonogramMentions.decorate(this,message,self,visibleMarkup);
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
+        MonogramForwarding.decorate(message,body);
         MonogramLocation.decorate(message);
         decorateLinkPreview(message);
         MonogramPolls.Poll poll=MonogramPolls.parse(message.message);

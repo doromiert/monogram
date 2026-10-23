@@ -120,3 +120,5 @@ reaction metadata; voting uses the existing per-chat unencrypted-reaction
 consent dialog. It never silently permits public votes in an encrypted chat.
 No server plugin or new polling loop is added. Native result refreshes read local
 state; live and archive reaction events update it through the existing sync path.
+
+This convention is indexed with other publication candidates in the [Monogram protocol registry](protocols/README.md).

@@ -11700,4 +11700,7 @@
     <string name="MonogramTranscriptionUnavailable">Voice transcription is unavailable right now.</string>
     <string name="MonogramTranscriptionRetryAt">Voice transcription is unavailable. Try again after %1$s.</string>
     <string name="MonogramOperationLimitReached">The operation could not be completed because a limit was reached.</string>
+    <string name="MonogramEditSavedTag">Edit tag</string>
+    <string name="MonogramTagTextColor">Text color</string>
+    <string name="MonogramTagEmojiHint">Emoji (leave empty to keep the current custom emoji)</string>
 </resources>

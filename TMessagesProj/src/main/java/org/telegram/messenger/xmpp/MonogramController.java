@@ -1760,7 +1760,7 @@ public final class MonogramController {
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
             automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
-            linkPreviews.clear();store.clear(); self = 0;
+            savedTagColors=java.util.Collections.emptyMap();linkPreviews.clear();store.clear(); self = 0;
             state(ConnectionsManager.ConnectionStateWaitingForNetwork);
         });
     }
@@ -2778,7 +2778,9 @@ public final class MonogramController {
         final MessageMarkup captionMarkup;
         final ArrayList<TLRPC.MessageEntity> captionEntities = new ArrayList<>(request.message.entities);
         try {
-            captionMarkup = MonogramMentions.fromEntities(store,request.message.dialog_id,request.caption == null ? "" : request.caption,captionEntities).styled().withSpoiler(request.message.media!=null && request.message.media.spoiler);
+            MessageMarkup contentMarkup=MonogramMentions.fromEntities(store,request.message.dialog_id,request.caption == null ? "" : request.caption,captionEntities).styled().withSpoiler(request.message.media!=null && request.message.media.spoiler);
+            com.negzero.monogram.xmpp.ForwardedContent author=MonogramForwarding.attribution(request.message.params,contentMarkup.body);
+            captionMarkup=author==null ? contentMarkup : contentMarkup.inBody(author.wireBody(),author.prefix().codePointCount(0,author.prefix().length()));
             TLRPC.MessageReplyHeader header = request.message.reply_to;
             if (header != null && (header.reply_to_peer_id != null && (request.message.dialog_id<0 ? -header.reply_to_peer_id.chat_id : header.reply_to_peer_id.user_id) != request.message.dialog_id || header.reply_to_top_id != 0)) throw new UnsupportedOperationException();
             reply = header == null ? null : replyTo(header.reply_to_msg_id, request.message.dialog_id, encrypted, header.quote_text, header.quote_offset);
@@ -2827,14 +2829,16 @@ public final class MonogramController {
                         job.check();
                         if (session != expected || encryption(request.message.dialog_id) != mode) throw new IllegalStateException("Sending mode or account changed");
                         int id; long timestamp; String caption;
+                        com.negzero.monogram.xmpp.ForwardedContent forwardedFile=MonogramForwarding.attribution(request.message.params,link.wireUrl);
+                        String protectedFileBody=forwardedFile==null ? link.wireUrl : forwardedFile.wireBody();
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint);
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint,forwardedFile);
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String fingerprint=expected.senderFingerprint(mode);
-                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
-                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply).withMarkup(MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler))
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler,forwardedFile) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
+                            XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply).withForwarding(forwardedFile).withMarkup(MessageMarkup.body(protectedFileBody).withSpoiler(captionMarkup.spoiler))
                                     : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,captionMarkup.body,reply).withMarkup(captionMarkup);
                             message=message.withSenderFingerprint(fingerprint).withDisplayStickerHint(displayStickerHint);
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
@@ -3097,6 +3101,7 @@ public final class MonogramController {
         message.params.putIfAbsent(QUEUED_ENCRYPTION,encryption(message.dialog_id).name());
     }
     public void prepareOutgoingRequest(TLObject request,TLRPC.Message message) {
+        MonogramForwarding.prepare(request,message);
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request) && !MonogramPolls.supports(request)) return;
         MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
@@ -3535,7 +3540,37 @@ public final class MonogramController {
     public boolean plainReactionsAllowed(long peer) { return preferences.getBoolean(plainReactionKey(peer),false); }
     public boolean setPlainReactions(long peer,boolean allowed) { return preferences.edit().putBoolean(plainReactionKey(peer),allowed).commit(); }
     public boolean allowPlainReactions(long peer) { return setPlainReactions(peer,true); }
-    public TLRPC.TL_messageReactions cachedReactions(int id) { return store.reactions.snapshot(id,self); }
+    private volatile java.util.Map<String,Integer> savedTagColors=java.util.Collections.emptyMap();
+    public int savedTagColor(TLRPC.Reaction reaction,int fallback) {
+        try { Integer color=savedTagColors.get(MonogramSavedTags.key(reaction));return color==null || color==0 ? fallback : color; }
+        catch(IllegalArgumentException unsupported) { return fallback; }
+    }
+    public void editSavedTag(TLRPC.Reaction original,TLRPC.Reaction replacement,String title,int color,Consumer<String> completed) {
+        long owner=accountEpoch;
+        cacheWorker.execute(() -> {
+            String error=null;
+            try {
+                if(owner!=accountEpoch || self<=0) throw new IllegalStateException("Account changed");
+                ArrayList<Integer> changed=store.savedTags.edit(self,original,replacement,title,color);
+                savedTagColors=store.savedTags.colors();
+                Updates updates=reactionUpdates(self,changed);updates.updates.add(new TL_update.TL_updateSavedReactionTags());
+                Utilities.stageQueue.postRunnable(() -> {
+                    if(owner==accountEpoch) MessagesController.getInstance(account).processUpdates(updates,false);
+                });
+            } catch(Exception failed) { error=failed.getMessage()==null ? "Could not save this tag." : failed.getMessage(); }
+            String failure=error;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(owner!=accountEpoch) return;
+                MediaDataController.getInstance(account).loadSavedReactions(true);
+                if(failure==null) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.savedReactionTagsUpdate,0L,original,replacement);
+                completed.accept(failure);
+            });
+        });
+    }
+    public TLRPC.TL_messageReactions cachedReactions(int id) {
+        try { return store.getMessage(id,self).reactions; }
+        catch(IllegalArgumentException removed) { return new TLRPC.TL_messageReactions(); }
+    }
     private Updates reactionUpdates(long peer,java.util.Collection<Integer> ids) {
         Updates result=new Updates(); result.date=now();
         java.util.Set<Long> users=new java.util.LinkedHashSet<>();
@@ -3960,6 +3995,7 @@ public final class MonogramController {
         if(request instanceof TLRPC.TL_messages_getSavedReactionTags) {
             TLRPC.TL_messages_getSavedReactionTags query=(TLRPC.TL_messages_getSavedReactionTags)request;
             if(query.peer!=null && searchPeer(query.peer)!=self) return new TLRPC.TL_messages_savedReactionsTags();
+            savedTagColors=store.savedTags.colors();
             return store.savedTags.list(self);
         }
         if(request instanceof TLRPC.TL_messages_updateSavedReactionTag) {
@@ -3987,7 +4023,8 @@ public final class MonogramController {
             long peer=send.peer.chat_id!=0 ? -send.peer.chat_id : send.peer.user_id;
             if(peer==self) {
                 store.savedTags.set(send.msg_id,self,send.reaction);
-                return reactionUpdates(peer,java.util.Collections.singleton(send.msg_id));
+                Updates changed=reactionUpdates(peer,java.util.Collections.singleton(send.msg_id));
+                changed.updates.add(new TL_update.TL_updateSavedReactionTags());return changed;
             }
             String target=store.reactions.target(send.msg_id,peer,self);
             java.util.List<String> emojis=new java.util.ArrayList<>();

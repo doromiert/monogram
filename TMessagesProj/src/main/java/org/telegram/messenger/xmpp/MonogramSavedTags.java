@@ -16,9 +16,9 @@ final class MonogramSavedTags {
     static void create(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE saved_message_tags(message INTEGER NOT NULL,tag TEXT NOT NULL,PRIMARY KEY(message,tag))");
         db.execSQL("CREATE INDEX saved_message_tags_tag ON saved_message_tags(tag,message)");
-        db.execSQL("CREATE TABLE saved_tag_names(tag TEXT PRIMARY KEY,title TEXT NOT NULL)");
+        db.execSQL("CREATE TABLE saved_tag_names(tag TEXT PRIMARY KEY,title TEXT NOT NULL,color INTEGER NOT NULL DEFAULT 0)");
     }
-    private static String key(TLRPC.Reaction reaction) {
+    static String key(TLRPC.Reaction reaction) {
         if(reaction instanceof TLRPC.TL_reactionEmoji) {
             String emoji=((TLRPC.TL_reactionEmoji)reaction).emoticon;
             if(MonogramReactions.isEmoji(emoji)) return "e:"+emoji;
@@ -51,10 +51,43 @@ final class MonogramSavedTags {
         String tag=key(reaction);
         if(title!=null && title.length()>128) throw new IllegalArgumentException("Tag name is too long");
         if(title==null || title.trim().isEmpty()) {
-            store.getWritableDatabase().delete("saved_tag_names","tag=?",new String[]{tag});return;
+            ContentValues empty=new ContentValues();empty.put("title","");
+            store.getWritableDatabase().update("saved_tag_names",empty,"tag=?",new String[]{tag});return;
         }
         ContentValues row=new ContentValues();row.put("tag",tag);row.put("title",title.trim());
-        store.getWritableDatabase().insertWithOnConflict("saved_tag_names",null,row,SQLiteDatabase.CONFLICT_REPLACE);
+        if(store.getWritableDatabase().update("saved_tag_names",row,"tag=?",new String[]{tag})==0)
+            store.getWritableDatabase().insertOrThrow("saved_tag_names",null,row);
+    }
+    java.util.Map<String,Integer> colors() {
+        java.util.Map<String,Integer> result=new java.util.HashMap<>();
+        try(Cursor rows=store.getReadableDatabase().rawQuery("SELECT tag,color FROM saved_tag_names",null)) {
+            while(rows.moveToNext()) result.put(rows.getString(0),rows.getInt(1));
+        }
+        return result;
+    }
+    ArrayList<Integer> edit(long self,TLRPC.Reaction original,TLRPC.Reaction replacement,String title,int color) {
+        String before=key(original),after=key(replacement);
+        String name=title==null ? "" : title.trim();
+        if(name.length()>128) throw new IllegalArgumentException("Tag name is too long");
+        if(color!=0 && android.graphics.Color.alpha(color)!=255) throw new IllegalArgumentException("Choose an opaque text color");
+        SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();
+        try {
+            if(!before.equals(after)) try(Cursor clash=db.rawQuery("SELECT 1 FROM saved_message_tags WHERE tag=? UNION SELECT 1 FROM saved_tag_names WHERE tag=? LIMIT 1",new String[]{after,after})) {
+                if(clash.moveToFirst()) throw new IllegalArgumentException("That emoji already has a tag. Choose another emoji.");
+            }
+            ArrayList<Integer> changed=new ArrayList<>();
+            try(Cursor rows=db.rawQuery("SELECT t.message FROM saved_message_tags t JOIN messages m ON m.id=t.message WHERE t.tag=? AND m.peer=? AND m.deleted=0",new String[]{before,Long.toString(self)})) {
+                while(rows.moveToNext()) changed.add(rows.getInt(0));
+            }
+            if(!before.equals(after)) {
+                ContentValues tag=new ContentValues();tag.put("tag",after);
+                db.update("saved_message_tags",tag,"tag=?",new String[]{before});
+                db.delete("saved_tag_names","tag=?",new String[]{before});
+            }
+            ContentValues definition=new ContentValues();definition.put("tag",after);definition.put("title",name);definition.put("color",color);
+            db.insertWithOnConflict("saved_tag_names",null,definition,SQLiteDatabase.CONFLICT_REPLACE);
+            db.setTransactionSuccessful();return changed;
+        } finally { db.endTransaction(); }
     }
     TLRPC.TL_messageReactions snapshot(int message) {
         TLRPC.TL_messageReactions result=new TLRPC.TL_messageReactions();result.reactions_as_tags=true;

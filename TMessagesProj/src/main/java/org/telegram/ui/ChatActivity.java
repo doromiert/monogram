@@ -22893,6 +22893,10 @@ public class ChatActivity extends BaseFragment implements
                 }
             });
         } else if (id == NotificationCenter.savedReactionTagsUpdate) {
+            if(args.length>=3 && searchingReaction!=null && searchingReaction.isSame((TLRPC.Reaction)args[1])) {
+                searchingReaction=ReactionsLayoutInBubble.VisibleReaction.fromTL((TLRPC.Reaction)args[2]);
+                getMediaDataController().searchMessagesInChat(searchingQuery,dialog_id,mergeDialogId,classGuid,0,threadMessageId,false,searchingUserMessages,searchingChatMessages,false,searchingReaction);
+            }
             if (dialog_id != getUserConfig().getClientUserId()) {
                 return;
             }
@@ -43861,13 +43865,13 @@ public class ChatActivity extends BaseFragment implements
             int[] loc = new int[2];
             cell.getLocationInWindow(loc);
             boolean forceBottom = false;
-            final boolean tags = getUserConfig().getClientUserId() == getDialogId() && !getMessagesController().getSavedMessagesController().unsupported;
+            final boolean tags = getUserConfig().getClientUserId() == getDialogId();
             if (tags) {
                 MessagesController.getGlobalMainSettings().edit().putInt("savedsearchtaghint", 1).apply();
 
                 ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getParentActivity(), 0, getResourceProvider(), 0);
                 ActionBarMenuSubItem editTag = new ActionBarMenuSubItem(getParentActivity(), false, false);
-                editTag.setTextAndIcon(LocaleController.getString(TextUtils.isEmpty(getMessagesController().getSavedTagName(reaction.reaction)) ? R.string.SavedTagLabelTag : R.string.SavedTagRenameTag), R.drawable.menu_tag_rename);
+                editTag.setTextAndIcon(LocaleController.getString(R.string.MonogramEditSavedTag), R.drawable.menu_tag_rename);
                 editTag.setMinimumWidth(160);
                 editTag.setOnClickListener(view -> {
                     closeMenu();

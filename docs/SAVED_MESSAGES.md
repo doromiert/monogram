@@ -9,3 +9,5 @@ The self-chat is included in the chat list when it has messages, in the initial 
 Synchronization uses the selected XMPP encryption mode and the server's ordinary message/archive support. OMEMO excludes the sending device from recipient encryption, so encrypted sending requires another eligible, trusted device of this account. This change does not auto-trust devices or silently downgrade to plaintext. A standalone offline-only notebook or a new encrypted personal-storage protocol is not implemented. A new device cannot decrypt older OMEMO messages that were never addressed to it.
 
 Validation for 0.2.132: focused self-peer account scoping, queued text/media/edit resolution, signed-out validation, saved text/media reopen/search/delete isolation, existing forwarding, and native-outbox merge checks. Phone UI acceptance, real self-chat encrypted delivery and inter-device archive recovery remain pending. The app was not opened and no real messages were sent during delivery.
+
+Local tag editing, colors, membership and synchronization limits are specified in [Saved Messages tags](protocols/SAVED_TAGS.md).

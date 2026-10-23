@@ -2272,7 +2272,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             ArrayList<SendMessageParams> copies = new ArrayList<>();
             try {
                 for (MessageObject source : messages) {
-                    SendMessageParams copy = org.telegram.messenger.xmpp.MonogramForwarding.copy(source.messageOwner, peer, hideCaption);
+                    SendMessageParams copy = org.telegram.messenger.xmpp.MonogramForwarding.copy(source.messageOwner, peer, hideCaption,currentAccount,forwardFromMyName);
                     if(scheduleDate==0) org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(copy.params,org.telegram.messenger.xmpp.MonogramMediaDrafts.captureForward(currentAccount,peer,source));
                     copy.notify = notify;
                     copy.scheduleDate = scheduleDate;
@@ -5340,6 +5340,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             if (replyToTopMsg != null && replyToTopMsg == reply && replyToTopMsg.getId() == 1 || destroyReply) {
                 reply = null;
             }
+            org.telegram.messenger.xmpp.MonogramForwarding.pending(newMsg);
             newMsgObj = new MessageObject(currentAccount, newMsg, reply, true, true);
             newMsgObj.sendAnimationData = sendAnimationData;
             newMsgObj.wasJustSent = true;

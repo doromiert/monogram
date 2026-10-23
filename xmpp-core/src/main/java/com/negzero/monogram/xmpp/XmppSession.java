@@ -238,6 +238,7 @@ public final class XmppSession implements AutoCloseable {
         MessageRetraction.initialize();
         FileShare.initialize();
         MessageMarkup.initialize();
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature("urn:xmpp:forward:0");
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.SPOILER);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.SPOILER_SPAN);
@@ -932,8 +933,12 @@ public final class XmppSession implements AutoCloseable {
         return sendFile(jid,link,encrypted,reply,displayStickerHint,false);
     }
     public String sendFile(String jid,FileLink link,boolean encrypted,ReplyReference reply,boolean displayStickerHint,boolean spoiler) throws Exception {
+        return sendFile(jid,link,encrypted,reply,displayStickerHint,spoiler,null);
+    }
+    public String sendFile(String jid,FileLink link,boolean encrypted,ReplyReference reply,boolean displayStickerHint,boolean spoiler,ForwardedContent forward) throws Exception {
         if (link.encrypted() != encrypted || displayStickerHint && !encrypted) throw new IllegalArgumentException("Attachment encryption mode mismatch");
-        return send(jid,link.wireUrl,encrypted,!encrypted,reply,null,null,null,MessageMarkup.body(link.wireUrl).withSpoiler(spoiler),null,displayStickerHint);
+        String body=forward==null ? link.wireUrl : ForwardedContent.of(forward.name,forward.date,link.wireUrl).wireBody();
+        return send(jid,body,encrypted,!encrypted,reply,null,null,null,MessageMarkup.body(body).withSpoiler(spoiler),null,displayStickerHint);
     }
     private String send(String jid, String body, boolean encrypted, boolean attachment, ReplyReference reply) throws Exception {
         return send(jid, body, encrypted, attachment, reply, null);
@@ -1016,7 +1021,7 @@ public final class XmppSession implements AutoCloseable {
         int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         EntityBareJid recipient = directRecipient(jid);
-        String attachmentUrl = body;
+        String attachmentUrl = ForwardedContent.payload(body);
         if (reply != null) body = reply.wireBody(body);
         Message message;
         if (encrypted) {

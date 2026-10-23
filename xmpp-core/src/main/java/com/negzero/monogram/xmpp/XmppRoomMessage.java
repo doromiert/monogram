@@ -69,12 +69,13 @@ public final class XmppRoomMessage {
                     || correction!=null || retraction!=null || wire.hasExtension("file-sharing",FileShare.NAMESPACE)) return null;
             body=null; reply=null;
         }
+        if(!encrypted && readable && reactions==null && retraction==null) body=ForwardedContent.incoming(wire,body);
         FileShare sharing=!encrypted && readable ? FileShare.from(wire) : null;
         if(sharing!=null && sharing.link.encrypted()) sharing=null;
         if(readable && body==null && reactions==null && sharing==null && retraction==null) return null;
         if(sharing!=null && body==null) body="";
         FileLink attachment=sharing==null ? null : sharing.link;
-        String mediaBody=reply==null ? body : reply.withoutFallback(body);
+        String mediaBody=ForwardedContent.payload(reply==null ? body : reply.withoutFallback(body));
         if(attachment==null && readable && mediaBody!=null) {
             String first=mediaBody.split("\n",-1)[0];
             boolean file=encrypted && (mediaBody.equals(first) || XmppMessage.validThumbnail(mediaBody.substring(Math.min(mediaBody.length(),first.length()+1))));

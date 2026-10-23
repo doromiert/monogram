@@ -75,6 +75,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         int count;
         String name;
         int nameHash;
+        int textColor;
 
         public static Item get(ReactionsLayoutInBubble.VisibleReaction reaction, int count, String name) {
             Item item = new Item();
@@ -95,7 +96,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
                 return false;
             }
             Item that = (Item) obj;
-            return this.count == that.count && this.reaction.hash == that.reaction.hash && this.nameHash == that.nameHash;
+            return this.count == that.count && this.reaction.hash == that.reaction.hash && this.nameHash == that.nameHash && this.textColor == that.textColor;
         }
     }
 
@@ -211,7 +212,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
             final Item item = items.get(position);
             ItemOptions.makeOptions(fragment, view)
                 .setGravity(Gravity.LEFT)
-                .add(R.drawable.menu_tag_rename, LocaleController.getString(TextUtils.isEmpty(item.name) ? R.string.SavedTagLabelTag : R.string.SavedTagRenameTag), () -> {
+                .add(R.drawable.menu_tag_rename, LocaleController.getString(R.string.MonogramEditSavedTag), () -> {
                     openRenameTagAlert(getContext(), currentAccount, item.reaction.toTLReaction(), resourcesProvider, false);
                 })
                 .show();
@@ -271,6 +272,9 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         return true;
     }
     public static void openRenameTagAlert(Context context, int currentAccount, TLRPC.Reaction reaction, Theme.ResourcesProvider resourcesProvider, boolean forceNotAdaptive) {
+        MonogramSavedTagEditor.show(context,currentAccount,reaction,resourcesProvider);
+    }
+    private static void originalRenameTagAlert(Context context, int currentAccount, TLRPC.Reaction reaction, Theme.ResourcesProvider resourcesProvider, boolean forceNotAdaptive) {
         BaseFragment fragment = LaunchActivity.getLastFragment();
         Activity activity = AndroidUtilities.findActivity(context);
         View currentFocus = activity != null ? activity.getCurrentFocus() : null;
@@ -472,6 +476,8 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
         if (id == NotificationCenter.savedReactionTagsUpdate) {
             final long thisTopicId = (long) args[0];
             if (thisTopicId == 0 || thisTopicId == topicId) {
+                if(args.length>=3 && chosen==Item.get(ReactionsLayoutInBubble.VisibleReaction.fromTL((TLRPC.Reaction)args[1]),0,null).hash())
+                    chosen=Item.get(ReactionsLayoutInBubble.VisibleReaction.fromTL((TLRPC.Reaction)args[2]),0,null).hash();
                 updateTags(true);
             }
         } else if (id == NotificationCenter.emojiLoaded) {
@@ -499,6 +505,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
                     if (topicId != 0 && tag.count <= 0)
                         continue;
                     Item item = Item.get(r, tag.count, topicId != 0 ? ms.getSavedTagName(tag.reaction) : tag.title);
+                    item.textColor=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).savedTagColor(tag.reaction,0);
                     if (item.hash() == chosen) {
                         hasChosen = true;
                     }
@@ -685,6 +692,7 @@ public class SearchTagsList extends FrameLayout implements NotificationCenter.No
                     protected void updateColors(float progress) {
                         lastDrawnTextColor = ColorUtils.blendARGB(fromTextColor, chosen ? Theme.getColor(Theme.key_chat_inReactionButtonTextSelected, resourcesProvider) : Theme.getColor(Theme.key_actionBarActionModeReactionText, resourcesProvider), progress);
                         lastDrawnBackgroundColor = ColorUtils.blendARGB(fromBackgroundColor, chosen ? Theme.getColor(Theme.key_chat_inReactionButtonBackground, resourcesProvider) : 0, progress);
+                        lastDrawnTextColor = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).savedTagColor(reaction,lastDrawnTextColor);
                         lastDrawnTextColor = Theme.blendOver(lastDrawnBackgroundColor, lastDrawnTextColor);
                         lastDrawnTagDotColor = ColorUtils.blendARGB(fromTagDotColor, chosen ? 0x5affffff : Theme.getColor(Theme.key_actionBarActionModeReactionDot, resourcesProvider), progress);
                     }

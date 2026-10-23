@@ -107,6 +107,7 @@ public final class XmppMessage {
                     || MessageCorrection.from(content) != null || retraction != null) return null;
             body=null;
         }
+        if(readable && encryption!=Encryption.LEGACY_OMEMO && reactions==null && retraction==null) body=ForwardedContent.incoming(content,body);
         if (peer == null || (readable && body == null && sharing == null && reactions == null && retraction == null)) return null;
         if (sharing != null && body == null) body = "";
         Map<String, String> ids = new LinkedHashMap<>();
@@ -124,7 +125,7 @@ public final class XmppMessage {
         if (ids.isEmpty() && (encrypted || reactions!=null)) ids.put("local", opaqueId(message));
         ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? body : null);
         FileLink attachment = null;
-        String mediaText = reply == null ? body : reply.withoutFallback(body);
+        String mediaText = ForwardedContent.payload(reply == null ? body : reply.withoutFallback(body));
         if (readable && body != null) {
             String first = mediaText.split("\n", -1)[0];
             boolean mediaBody = encrypted && (mediaText.equals(first) || validThumbnail(mediaText.substring(Math.min(mediaText.length(), first.length() + 1))));
@@ -156,6 +157,12 @@ public final class XmppMessage {
     public XmppMessage withSenderFingerprint(String fingerprint) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
                 attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint);
+    }
+    public XmppMessage withForwarding(ForwardedContent forward) {
+        if(forward==null) return this;
+        String attributed=ForwardedContent.of(forward.name,forward.date,body).wireBody();
+        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),attributed,encryption,readable,outgoing,archived,timestamp,
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,null,captionMarkup,inlineEmoji,displayStickerHint);
     }
     public XmppMessage withDisplayStickerHint(boolean value) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,value);
