@@ -157,3 +157,5 @@ Delivery: xmr.25 (73589) was installed via ADB and published as prerelease `v0.2
 - User screenshots 10091/10092 motivated these fixes. No user wallet is deleted as a test. Runtime verification is tracked at delivery.
 
 The attachment expansion follow-up (xmr.27) reserves scroll range for the collapsed top padding even when the locked body is short. Its scroll listener updates the parent sheet offset and grows the centered unlock region as the sheet expands. This prevents a short locked body from leaving the sheet unable to expand.
+
+Delivery: xmr.27 (73609) installed successfully via ADB and published as GitHub prerelease `v0.2.159-xmr.27`. Signed APK audit and uploaded asset size/digest verified; SHA-256 4129c7a56816847e432c808df851ef972e45f011a4577b1a6e05b74d17bd5ccd. No user wallet was removed. Device visual confirmation remains pending.
