@@ -1742,7 +1742,7 @@ public final class MonogramController {
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);
         }
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); outbox.clear();
+        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); outbox.clear();
         for(TranslationRequest translation:translationRequests.values()) translation.cancel();
         translationRequests.clear();
         try { MonogramTranslation.clearConfiguration(account); }
@@ -2858,15 +2858,24 @@ public final class MonogramController {
                         TLRPC.Message projected = store.getMessage(id, self);
                         response.message = projected.message; response.entities = projected.entities;
                         response.pts = MessagesStorage.getInstance(account).getLastPtsValue() + 1;
+                        final long captionOwner=accountEpoch;
                         Utilities.stageQueue.postRunnable(() -> {
+                            if(captionOwner!=accountEpoch) return;
                             callback.run(response, null);
                             // Legacy OMEMO cannot carry SFS content; keep its separate encrypted caption until OMEMO2 is integrated.
                             if(encrypted && !modern) {
                                 String companion=MonogramForwarding.legacyCaption(request.message.params,request.caption);
                                 if(!companion.isEmpty()) {
                                     ArrayList<TLRPC.MessageEntity> companionEntities=MonogramForwarding.captionEntities(companion,captionEntities);
-                                    AndroidUtilities.runOnUIThread(() -> SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
-                                        companion,request.message.dialog_id,null,null,null,false,companionEntities,null,null,true,0,0,null,false)));
+                                    java.util.HashMap<String,String> companionParams=new java.util.HashMap<>();
+                                    companionParams.put(MonogramForwarding.CAPTION_PARENT,Integer.toString(id));
+                                    companionParams.put(MonogramForwarding.CAPTION_EMPTY,Boolean.toString(request.caption==null || request.caption.isEmpty()));
+                                    companionParams.put(QUEUED_ENCRYPTION,mode.name());
+                                    AndroidUtilities.runOnUIThread(() -> {
+                                        if(captionOwner!=accountEpoch) return;
+                                        SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of(
+                                            companion,request.message.dialog_id,null,null,null,false,companionEntities,null,companionParams,true,0,0,null,false));
+                                    });
                                 }
                             }
                         });
@@ -3100,6 +3109,11 @@ public final class MonogramController {
     private static final String QUEUED_ENCRYPTION="monogram-encryption";
     private final java.util.concurrent.ConcurrentHashMap<TLObject,Integer> queuedLocalIds=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,String> queuedEncryption=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<TLObject,LegacyCaptionTarget> queuedCaptions=new java.util.concurrent.ConcurrentHashMap<>();
+    private static final class LegacyCaptionTarget {
+        final int parent;final boolean placeholder;
+        LegacyCaptionTarget(int parent,boolean placeholder) { this.parent=parent;this.placeholder=placeholder; }
+    }
     public void prepareOutgoingMessage(TLRPC.Message message) {
         if(message.params==null) message.params=new java.util.HashMap<>();
         if (message.dialog_id>0 && message.dialog_id!=self) MonogramReceipts.pending(message);
@@ -3110,6 +3124,10 @@ public final class MonogramController {
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request) && !MonogramPolls.supports(request)) return;
         MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
+        if(request instanceof TLRPC.TL_messages_sendMessage && message.params.containsKey(MonogramForwarding.CAPTION_PARENT)) try {
+            int parent=Integer.parseInt(message.params.get(MonogramForwarding.CAPTION_PARENT));
+            if(parent>0) queuedCaptions.put(request,new LegacyCaptionTarget(parent,Boolean.parseBoolean(message.params.get(MonogramForwarding.CAPTION_EMPTY))));
+        } catch(NumberFormatException absent) { /* Normal message, not a generated media caption. */ }
     }
     /** Sends a detached local quick-reply template through the regular Monogram outbox. */
     public void sendQuickReply(long dialogId,MonogramQuickReplies.Outgoing outgoing) {
@@ -3215,6 +3233,7 @@ public final class MonogramController {
         armScheduledWake();
     }
     private static final class PendingSend {
+        LegacyCaptionTarget caption;
         final long created=System.nanoTime();
         final String encryption;
         final int token,localId; final long owner; final TLObject request; final RequestDelegate completed;
@@ -3279,6 +3298,7 @@ public final class MonogramController {
         if(mode==null) mode=encryption(sendingPeer(request)).name();
         Integer local=queuedLocalIds.remove(request);
         PendingSend pending=new PendingSend(token,accountEpoch,request,completed,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local);
+        pending.caption=queuedCaptions.remove(request);
         pendingSends.put(token,pending); scheduleSend(pending);
     }
     private void scheduleSend(PendingSend pending) {
@@ -3346,6 +3366,8 @@ public final class MonogramController {
                         worker.execute(() -> {
                             if(pending.owner!=accountEpoch) return;
                             try {
+                                if(id>0 && pending.caption!=null) store.linkLegacyCaption(pending.caption.parent,id,pending.caption.placeholder);
+                                if(id>0 && store.legacyCaptionParent(id)!=0) outbox.folded(pending.localId);
                                 if(id>0 && !store.hiddenMessage(id)) {
                                     TLRPC.Message sent=store.getMessage(id,self);
                                     outbox.completed(pending.localId,sent);
@@ -3353,7 +3375,11 @@ public final class MonogramController {
                             } catch(RuntimeException unavailable) {
                                 if(BuildVars.LOGS_ENABLED) FileLog.e("Monogram sent-message refresh: "+unavailable.getClass().getSimpleName());
                             } finally {
-                                Utilities.stageQueue.postRunnable(() -> { if(pending.owner==accountEpoch) pending.completed.run(response,null); });
+                                Utilities.stageQueue.postRunnable(() -> {
+                                    if(pending.owner!=accountEpoch) return;
+                                    pending.completed.run(response,null);
+                                    publishLegacyCaptionMerge(pending.owner,id);
+                                });
                             }
                         });
                     } else pending.completed.run(response,error);
@@ -3363,6 +3389,18 @@ public final class MonogramController {
     }
     private void flushPendingSends() {
         sendWorker.execute(() -> pendingSends.values().stream().sorted(java.util.Comparator.comparingLong(send -> send.created)).forEach(this::scheduleSend));
+    }
+    /** Hide only a successfully saved local companion; failed/queued captions remain retryable. */
+    private void publishLegacyCaptionMerge(long owner,int companion) {
+        int parent=store.legacyCaptionParent(companion);if(parent==0 || owner!=accountEpoch) return;
+        if(store.hiddenMessage(parent)) return;
+        TLRPC.Message file=store.getMessage(parent,self);
+        ArrayList<TLRPC.Update> updates=new ArrayList<>();
+        TL_update.TL_updateDeleteMessages hidden=new TL_update.TL_updateDeleteMessages();hidden.messages.add(companion);updates.add(hidden);
+        TL_update.TL_updateEditMessage edited=new TL_update.TL_updateEditMessage();edited.message=file;updates.add(edited);
+        Utilities.stageQueue.postRunnable(() -> {
+            if(owner==accountEpoch) MessagesController.getInstance(account).processUpdateArray(updates,new ArrayList<>(),new ArrayList<>(),false,now());
+        });
     }
     private void recoverPendingSends() {
         flushPendingSends();

@@ -9,18 +9,24 @@ import org.telegram.tgnet.TLRPC;
 /** Merge the native durable outbox with XMPP history without recreating a second send queue. */
 final class MonogramOutbox {
     private final LinkedHashMap<Integer,TLRPC.Message> completed = new LinkedHashMap<>();
+    private final java.util.LinkedHashSet<Integer> folded=new java.util.LinkedHashSet<>();
+    synchronized void folded(int localId) {
+        if(localId>=0) return;
+        folded.add(localId);completed.remove(localId);
+        while(folded.size()>1024) folded.remove(folded.iterator().next());
+    }
     synchronized void completed(int localId,TLRPC.Message message) {
         if(localId>=0 || message.id<=0 || !message.out) return;
         completed.put(localId,message);
         while(completed.size()>1024) completed.remove(completed.keySet().iterator().next());
     }
-    synchronized void clear() { completed.clear(); }
+    synchronized void clear() { completed.clear();folded.clear(); }
     synchronized void merge(long peer,ArrayList<TLRPC.Message> history,ArrayList<TLRPC.Message> pending) {
         HashSet<Integer> ids=new HashSet<>();
         for(TLRPC.Message message:history) ids.add(message.id);
         ArrayList<TLRPC.Message> outgoing=new ArrayList<>();
         for(TLRPC.Message queued:pending) {
-            if(queued.dialog_id!=peer || queued.id>=0 || !queued.out || queued.send_state==0) continue;
+            if(queued.dialog_id!=peer || queued.id>=0 || !queued.out || queued.send_state==0 || folded.contains(queued.id)) continue;
             TLRPC.Message message=completed.getOrDefault(queued.id,queued);
             if(message.dialog_id==peer && ids.add(message.id)) outgoing.add(message);
         }

@@ -11,6 +11,8 @@ public final class MonogramForwarding {
     public static final String SOURCE = "monogram-forward-source";
     public static final String ADDRESS = "monogram-forward-address";
     public static final String NAME="monogram-forward-name",DATE="monogram-forward-date";
+    // Local outbox metadata, never part of the transmitted text or attachment URL.
+    static final String CAPTION_PARENT="monogram-caption-parent",CAPTION_EMPTY="monogram-caption-empty";
     private MonogramForwarding() {}
     public static SendMessageParams copy(TLRPC.Message source,long destination,boolean hideCaption,int account,boolean hideAuthor) {
         SendMessageParams send=copy(source,destination,hideCaption);

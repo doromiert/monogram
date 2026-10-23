@@ -1092,3 +1092,20 @@ Release 0.2.144: Nix arm64 packaging and 30 focused native checks pass. Signed A
 - Delivery gate: 25 checks pass (6 core forwarding/address/media cases, 11 native forwarding/caption/storage cases, 4 tag migration/persistence checks and 4 self-chat regressions). Tests cover URI-only outgoing models against strict receiver grammar, retained reading of old 0.2.156 bodies, full JIDs longer than the old label limit, correct caption entity offsets and v30/v31 upgrades. No claim of real-recipient or on-device visual acceptance.
 
 0.2.157 artifact: original signer verified, version 0.2.157 (73329), scoped APK audit passed. All three native libraries match 0.2.156 byte-for-byte; new localization bindings are present. SHA-256 `71dbf02f2e1f0f5275fc9743e5bdc7d899a254f0d0fe39f857fe57be44a055df`. GitHub updater delivery; no ADB installation or real-recipient/visual verification.
+
+## Monero integration — research only (2026-10-23)
+
+- Research complete; implementation remains pending. Proposal: docs/MONERO_PAYMENTS_PROPOSAL.md. Hard requirement: disabled by default, one plain Settings → Monero row until enabled; no crypto home/navigation/promotions, payment actions/cards, profile fetches or background wallet activity for non-users.
+- Proposed first phase uses external wallet URI handoff, validated receiving subaddresses and ordinary encrypted messages, without importing seed/spend/view keys. A txid or returning from a wallet is not verified payment. XEP-0518 is a relevant experimental invoice framework; wallet/JID binding and private tracked-receipt semantics still need a defined profile.
+- Inspected Monfluo's monero: Android handler and URI parser, Radar's Breez/Spark adapter, Monero's signing/proof APIs and Tor/I2P documentation. Recorded capability/privacy limits and source-versus-device verification boundaries.
+- Retrieved latest official Telegram Android source in /home/doromiert/Projects/telegram-reference-latest: 13.0.3 (7183), commit 0aae959806c57be8ad457980f2a5c6277ff18635 (2026-10-20). Sparse source checkout includes the native wallet UI; no submodules/native binaries or builds. Map selected view/animation reuse to XMR adapters rather than restoring TON/Telegram wallet services.
+- No app code, settings row, wallet, payment, test, APK build/release or phone interaction was created/performed for this research. Root README.md remains user-owned and untouched.
+
+## 0.2.158 — legacy forwarded attachment presentation (2026-10-23)
+
+- Link generated legacy-OMEMO captions to their file through durable local outbox metadata. Once successfully sent, show one attachment bubble with its forwarding header and real caption, without the extra “Forwarded attachment” bubble. Pending/failed caption sends remain retryable.
+- Database v33 keeps both transmitted bodies/IDs unchanged, folds linked captions in history/calendar/pagination and indexes real caption text on the attachment in search. Account reset clears the links.
+- Recover existing synthetic placeholders only for adjacent outgoing legacy files with matching known forwarding identity/date and a 30-second window. Do not guess arbitrary captions or incoming associations. This correction is local to the sending device; other clients/devices retain the compatible two-stanza fallback.
+- Document the exact presentation/wire boundary in docs/protocols/FORWARDING.md. Delivery checks: all 25 focused forwarding, outbox, saved-tag and self-chat checks pass, including migration, persistence, caption search, unchanged wire bodies and stale outbox snapshots. APK 0.2.158 (73339) built successfully and retains the original signer. No phone interaction or on-device visual verification.
+
+0.2.158 artifact: scoped APK audit passed, caption-link implementation present, all three native libraries identical to 0.2.157. SHA-256 `834a1ee137d143323a296d19ccaf587b355cd4ab30b527c97d6ef24b487b5807`. GitHub updater delivery; no XMR app code or wallet functionality included.

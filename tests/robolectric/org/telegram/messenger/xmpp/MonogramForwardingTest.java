@@ -154,6 +154,60 @@ public class MonogramForwardingTest {
         assertFalse(com.negzero.monogram.xmpp.ForwardedContent.parse(MonogramForwarding.legacyCaption(params,"")).body.isEmpty());
         assertEquals("",MonogramForwarding.legacyCaption(null,""));
     }
+    @Test public void legacyCaptionFoldsIntoTheFileAcrossReloadAndSearchWithoutChangingEitherWireBody() throws Exception {
+        android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+        String database="forward-compound.db";context.deleteDatabase(database);
+        String url="aesgcm://files.example.org/file.jpg#"+new String(new char[88]).replace('\0','a');
+        String wire=com.negzero.monogram.xmpp.ForwardedContent.of("original@example.org",1700000000,"caption 🧑‍💻").wireBody();
+        int file,caption;long self,peer;
+        try {
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                self=store.peer("bob@example.org");peer=store.peer("carol@example.org");
+                org.jxmpp.jid.EntityFullJid sender=org.jxmpp.jid.impl.JidCreate.entityFullFrom("bob@example.org/mobile");
+                file=store.save(com.negzero.monogram.xmpp.XmppMessage.sentFile(sender,"carol@example.org","file",com.negzero.monogram.xmpp.FileLink.parse(url),true,null));
+                store.forwarded(file,com.negzero.monogram.xmpp.ForwardedContent.of("original@example.org",1700000000,""));
+                caption=store.save(com.negzero.monogram.xmpp.XmppMessage.sent(sender,"carol@example.org","caption",wire,true));
+                int unrelated=store.save(com.negzero.monogram.xmpp.XmppMessage.sent(sender,"other@example.org","wrong-chat",wire,true));
+                assertFalse(store.linkLegacyCaption(file,unrelated,false));assertFalse(store.hiddenMessage(unrelated));
+                assertTrue(store.linkLegacyCaption(file,caption,false));
+            }
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                assertTrue(store.hiddenMessage(caption));assertEquals(file,store.legacyCaptionParent(caption));
+                java.util.ArrayList<TLRPC.Message> history=store.history(peer,self,0,20);
+                assertEquals(1,history.size());assertEquals(file,history.get(0).id);
+                assertEquals("caption 🧑‍💻",history.get(0).message);assertEquals("original@example.org",history.get(0).fwd_from.from_name);
+                TLRPC.TL_messages_messagesSlice found=store.search(self,peer,"caption",0,0,20,0,0,0,new TLRPC.TL_inputMessagesFilterEmpty(),false,false);
+                assertEquals(1,found.count);assertEquals(file,found.messages.get(0).id);
+                try(android.database.Cursor row=store.getReadableDatabase().rawQuery("SELECT body FROM messages WHERE id IN (?,?) ORDER BY id",new String[]{Integer.toString(file),Integer.toString(caption)})) {
+                    assertTrue(row.moveToFirst());assertEquals(url,row.getString(0));assertTrue(row.moveToNext());assertEquals(wire,row.getString(0));
+                }
+            }
+        } finally {context.deleteDatabase(database);}
+    }
+    @Test public void version32RecoveryOnlyFoldsTheExactOldGeneratedForwardPlaceholder() throws Exception {
+        android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication();
+        org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
+        String database="forward-placeholder-upgrade.db";context.deleteDatabase(database);
+        String url="aesgcm://files.example.org/file.jpg#"+new String(new char[88]).replace('\0','a');
+        int file,caption;long self,peer;
+        try {
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                self=store.peer("bob@example.org");peer=store.peer("carol@example.org");
+                org.jxmpp.jid.EntityFullJid sender=org.jxmpp.jid.impl.JidCreate.entityFullFrom("bob@example.org/mobile");
+                file=store.save(com.negzero.monogram.xmpp.XmppMessage.sentFile(sender,"carol@example.org","file",com.negzero.monogram.xmpp.FileLink.parse(url),true,null));
+                store.forwarded(file,com.negzero.monogram.xmpp.ForwardedContent.of("original@example.org",1700000000,""));
+                caption=store.save(com.negzero.monogram.xmpp.XmppMessage.sent(sender,"carol@example.org","caption",com.negzero.monogram.xmpp.ForwardedContent.of("original@example.org",1700000000,"Forwarded attachment").wireBody(),true));
+                store.getWritableDatabase().execSQL("DROP TABLE local_media_captions");store.getWritableDatabase().setVersion(32);
+            }
+            try(MonogramStore store=new MonogramStore(context,database)) {
+                assertEquals(33,store.getReadableDatabase().getVersion());assertTrue(store.hiddenMessage(caption));
+                java.util.ArrayList<TLRPC.Message> history=store.history(peer,self,0,20);
+                assertEquals(1,history.size());assertEquals(file,history.get(0).id);assertEquals("",history.get(0).message);
+                store.clear();assertEquals(0,store.legacyCaptionParent(caption));
+            }
+        } finally {context.deleteDatabase(database);}
+    }
     @Test public void uriOnlyForwardMetadataSurvivesReopenAndVersion31UpgradeWithoutRewritingWireBody() throws Exception {
         android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication();org.telegram.messenger.ApplicationLoader.applicationLoaderInstance=new org.telegram.messenger.ApplicationLoader();
         String db="forward-31-upgrade.db";context.deleteDatabase(db);int id;long self;
@@ -165,7 +219,7 @@ public class MonogramForwardingTest {
                 store.getWritableDatabase().execSQL("DROP TABLE local_forwarded_messages");store.getWritableDatabase().setVersion(31);
             }
             try(MonogramStore store=new MonogramStore(context,db)) {
-                assertEquals(32,store.getReadableDatabase().getVersion());
+                assertEquals(33,store.getReadableDatabase().getVersion());
                 store.forwarded(id,com.negzero.monogram.xmpp.ForwardedContent.of("original@example.org",1700000000,""));
             }
             try(MonogramStore store=new MonogramStore(context,db)) {

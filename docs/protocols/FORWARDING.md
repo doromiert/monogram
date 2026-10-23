@@ -101,6 +101,34 @@ devices learn the readable companion caption, not this local record. A received
 0.2.156 prefixed file remains readable in Monogram for backward compatibility;
 fixing its old copy in another client requires a fresh forward.
 
+### Sending-device presentation correction after 0.2.157
+
+The sending device now records an explicit local outbox link from the file to its
+generated legacy caption. Once the caption is saved successfully, Monogram renders
+one attachment bubble with one forwarding header and the user's real caption.
+The synthetic "Forwarded attachment" placeholder is omitted from that bubble.
+Queued or failed caption sends remain visible and retryable until successful.
+
+Database version 33 adds `local_media_captions(message,companion,placeholder)`.
+Both original wire bodies and message IDs remain intact in the canonical store;
+the local link changes presentation, not encryption or server history. Timeline,
+calendar, pagination and search omit the linked companion, and search matches real
+caption text on the attachment. Account reset clears the links. A local compound
+attachment deletion keeps its companion hidden rather than resurfacing a dummy
+caption bubble.
+
+Migration recovers an old synthetic placeholder only when it is the immediately
+following message in the same chat, is outgoing legacy OMEMO within 30 seconds,
+and exactly matches the file's known local forwarding label/date and the English
+or current localized placeholder. Other captions and ambiguous neighbors remain
+separate. This is deliberately limited recovery, not a general adjacency matcher.
+
+These links are local to the sending device. Other clients/devices still receive
+the compatible file plus readable caption; no remote merge or authenticated
+association is implied. A received-caption merge would require its own explicit
+interoperable association instead of guessing from neighboring messages. This
+correction adds no wire extension or unauthenticated attribution metadata.
+
 Sticker attributes and spoilers follow the normal media path.
 
 Poll definitions and static location bodies are wrapped without changing their

@@ -30,12 +30,12 @@ final class MonogramStore extends SQLiteOpenHelper {
     synchronized boolean pendingDecryption(int id) { return pendingDecryptions.contains(id); }
     synchronized void finishPendingDecryption(int id) { pendingDecryptions.remove(id); }
     private String pendingClause(String alias) {
-        return pendingDecryptions.isEmpty() ? "" : " AND " + alias + ".id NOT IN (" + android.text.TextUtils.join(",",pendingDecryptions) + ")";
+        return MonogramLegacyCaptions.visibleClause(alias)+(pendingDecryptions.isEmpty() ? "" : " AND " + alias + ".id NOT IN (" + android.text.TextUtils.join(",",pendingDecryptions) + ")");
     }
     private final java.util.Map<Long,java.util.Map<Long,String>> mentionNamesCache=new java.util.HashMap<>();
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db");this.account=account; }
-    MonogramStore(Context context, String name) { super(context, name, null, 32); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 33); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -49,7 +49,13 @@ final class MonogramStore extends SQLiteOpenHelper {
         addLocalNames(db);
         addStickerHints(db);
         addLinkPreviews(db);
-        MonogramSavedTags.create(db);addForwardedMetadata(db);
+        MonogramSavedTags.create(db);addForwardedMetadata(db);MonogramLegacyCaptions.create(db);
+    }
+    synchronized boolean linkLegacyCaption(int parent,int companion,boolean placeholder) {
+        return MonogramLegacyCaptions.link(getWritableDatabase(),parent,companion,placeholder);
+    }
+    synchronized int legacyCaptionParent(int companion) {
+        return MonogramLegacyCaptions.parent(getReadableDatabase(),companion);
     }
     private static void addForwardedMetadata(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS local_forwarded_messages(message INTEGER PRIMARY KEY,sender TEXT NOT NULL,date INTEGER NOT NULL)");
@@ -181,7 +187,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 32 || oldVersion < 1 || oldVersion > 31) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 33 || oldVersion < 1 || oldVersion > 32) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -212,6 +218,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         else if(oldVersion<31) db.execSQL("ALTER TABLE saved_tag_names ADD COLUMN color INTEGER NOT NULL DEFAULT 0");
         if(oldVersion<30) MonogramReceipts.createRoomReaders(db);
         if(oldVersion<32) addForwardedMetadata(db);
+        if(oldVersion<33) { MonogramLegacyCaptions.create(db);MonogramLegacyCaptions.recoverPlaceholders(db); }
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -326,7 +333,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();mentionNamesCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { db.delete("local_forwarded_messages",null,null); db.delete("saved_message_tags",null,null); db.delete("saved_tag_names",null,null); db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("room_readers",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("local_media_captions",null,null); db.delete("local_forwarded_messages",null,null); db.delete("saved_message_tags",null,null); db.delete("saved_tag_names",null,null); db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("room_readers",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -976,7 +983,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(deleted(id)) return true;
         try (Cursor c = getReadableDatabase().rawQuery("SELECT 1 FROM corrections WHERE message=? AND resolved!=0 UNION SELECT 1 FROM reaction_sources WHERE message=?", new String[]{Integer.toString(id),Integer.toString(id)})) { return c.moveToFirst(); }
     }
-    synchronized boolean hiddenMessage(int id) { return pendingDecryptions.contains(id) || hiddenCorrection(id); }
+    synchronized boolean hiddenMessage(int id) { return pendingDecryptions.contains(id) || hiddenCorrection(id) || legacyCaptionParent(id)!=0; }
     private int payload(int original) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT message FROM applied_corrections WHERE original=?", new String[]{Integer.toString(original)})) { return c.moveToFirst() ? c.getInt(0) : original; }
     }
@@ -1304,6 +1311,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramMentions.decorate(this,message,self,visibleMarkup);
         MonogramEmojis.decorate(getReadableDatabase(),storeContext,database,message,payload);
         MonogramForwarding.decorate(message,body);decorateForwarded(message);
+        MonogramLegacyCaptions.decorate(this,getReadableDatabase(),message,self);
         MonogramLocation.decorate(message);
         decorateLinkPreview(message);
         MonogramPolls.Poll poll=MonogramPolls.parse(message.message);
@@ -1689,14 +1697,16 @@ final class MonogramStore extends SQLiteOpenHelper {
         // Keep the owner-indexed call table first, rather than scanning and projecting unrelated chat history.
         String source=phoneCalls ? "call_events ce CROSS JOIN messages m ON m.id=ce.message AND ce.owner=? " : "messages m ";
         if(phoneCalls) args.add(jid(self));
-        String sql="SELECT m.id,m.peer,p.body,COALESCE(a.caption,''),m.time_ms,m.archive_order,f.markup,f.caption_body,f.caption_markup FROM "+source
+        String sql="SELECT m.id,m.peer,p.body,COALESCE(cm.body,a.caption,''),m.time_ms,m.archive_order,f.markup,COALESCE(cf.body,f.caption_body),COALESCE(cf.markup,f.caption_markup) FROM "+source
                 +"LEFT JOIN applied_corrections ac ON ac.original=m.id JOIN messages p ON p.id=COALESCE(ac.message,m.id) "
                 +"LEFT JOIN message_formatting f ON f.message=p.id AND f.body=p.body "
                 +"LEFT JOIN attachments a ON a.message=p.id LEFT JOIN room_senders r ON r.message=m.id "
+                +"LEFT JOIN local_media_captions lc ON lc.message=m.id AND lc.placeholder=0 LEFT JOIN messages cm ON cm.id=lc.companion AND cm.deleted=0 AND cm.readable=1 "
+                +"LEFT JOIN message_formatting cf ON cf.message=cm.id AND cf.body=cm.body "
                 +"WHERE m.deleted=0 AND p.deleted=0 AND p.readable=1 "
                 +"AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) "
                 +"AND NOT EXISTS(SELECT 1 FROM reaction_sources x WHERE x.message=m.id) "
-                +"AND NOT EXISTS(SELECT 1 FROM retraction_sources x WHERE x.message=m.id AND x.hidden=1)";
+                +"AND NOT EXISTS(SELECT 1 FROM retraction_sources x WHERE x.message=m.id AND x.hidden=1)"+pendingClause("m");
         if(!tags.isEmpty()) {
             sql+=" AND m.peer=?";args.add(Long.toString(self));
             sql+=MonogramSavedTags.searchClause(tags,args);

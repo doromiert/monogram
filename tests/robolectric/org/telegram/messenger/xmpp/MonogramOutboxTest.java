@@ -33,6 +33,14 @@ public class MonogramOutboxTest {
         outbox.clear(); history.clear(); outbox.merge(-7,history,new ArrayList<>(Arrays.asList(pending)));
         assertEquals(Arrays.asList(pending),history);
     }
+    @Test public void foldedCaptionDoesNotReturnFromAStaleOutboxSnapshotButFailuresRemainVisible() {
+        MonogramOutbox outbox=new MonogramOutbox();
+        TLRPC.Message file=message(9,7,100,0),caption=message(-1,7,101,1),failed=message(-2,7,102,2);
+        outbox.folded(caption.id);
+        ArrayList<TLRPC.Message> history=new ArrayList<>(Arrays.asList(file));
+        outbox.merge(7,history,new ArrayList<>(Arrays.asList(caption,failed)));
+        assertEquals(Arrays.asList(failed,file),history);
+    }
     @Test public void explicitlyUnsupportedRoomUsesQuoteAndStillProtectsEncryptedText() throws Exception {
         android.content.Context context=org.robolectric.RuntimeEnvironment.getApplication(); String file="quote-only-room.db"; context.deleteDatabase(file);
         try(MonogramStore store=new MonogramStore(context,file)) {
