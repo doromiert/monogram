@@ -52,7 +52,7 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
     private EGLConfig eglConfig;
     private GL10 mGl;
 
-    private long targetFrameDurationNanos;
+    private volatile long targetFrameDurationNanos;
 
 
     private volatile int surfaceHeight;
@@ -86,8 +86,8 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
         super(context);
 
         this.type = type;
-        animationsCount = type == Icon3D.TYPE_COIN || type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_DEAL ? 1 : 5;
-        idleDelay = type == Icon3D.TYPE_DIAMOND ? 0 : 2000;
+        animationsCount = type == Icon3D.TYPE_COIN || (type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO) || type == Icon3D.TYPE_DEAL ? 1 : 5;
+        idleDelay = (type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO) ? 0 : 2000;
         setOpaque(false);
         setRenderer(new GLIconRenderer(context, style, type));
         initialize(context);
@@ -179,7 +179,7 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
 
             @Override
             public boolean onScroll(MotionEvent motionEvent, MotionEvent motionEvent1, float v, float v1) {
-                if (type == Icon3D.TYPE_DIAMOND) {
+                if ((type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO)) {
                     // Match DiamondSurfaceView: GestureDetector deltas run in the
                     // opposite direction to finger travel.
                     mRenderer.angleX -= v * 0.5f;
@@ -232,16 +232,22 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
     }
 
     protected boolean preferGles3() {
-        return type == Icon3D.TYPE_DIAMOND;
+        return (type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO);
     }
 
     protected int getMaxFrameRate() {
         // Decoration shares the GPU with the UI, unlike the isolated renderer test.
-        if (type == Icon3D.TYPE_DIAMOND) {
+        if ((type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO)) {
             return org.telegram.messenger.SharedConfig.getDevicePerformanceClass()
                     == org.telegram.messenger.SharedConfig.PERFORMANCE_CLASS_HIGH ? 60 : 30;
         }
         return targetFps;
+    }
+
+    /** Per-surface active animation pacing; unrelated icon renderers keep their existing policy. */
+    public void setRenderFrameRate(int fps) {
+        targetFps=Math.max(1,fps);
+        targetFrameDurationNanos=1_000_000_000L/Math.max(1,Math.min(targetFps,getMaxFrameRate()));
     }
 
     public void startThread(SurfaceTexture surface, int width, int height) {
@@ -455,7 +461,7 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
         }
         checkGlError();
         boolean swapped = mEgl.eglSwapBuffers(mEglDisplay, mEglSurface);
-        if (!swapped && type == Icon3D.TYPE_DIAMOND) {
+        if (!swapped && (type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO)) {
             throw new IllegalStateException("Diamond buffer swap failed: " + mEgl.eglGetError());
         }
     }
@@ -492,7 +498,7 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
     private void checkGlError() {
         final int error = mGl.glGetError();
         if (error != GL11.GL_NO_ERROR) {
-            if (type == Icon3D.TYPE_DIAMOND) {
+            if ((type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO)) {
                 throw new IllegalStateException("Diamond GL error: 0x" + Integer.toHexString(error));
             }
         }
@@ -770,7 +776,7 @@ public class GLIconTextureView extends TextureView implements TextureView.Surfac
     private void pullAnimation() {
         int i = Math.abs(Utilities.random.nextInt() % 4);
         animatorSet = new AnimatorSet();
-        if (type == Icon3D.TYPE_DIAMOND) {
+        if ((type == Icon3D.TYPE_DIAMOND || type == Icon3D.TYPE_MONERO)) {
             ValueAnimator v1 = ValueAnimator.ofFloat(mRenderer.angleX, mRenderer.angleX + 360);
             v1.addUpdateListener(xUpdater);
             v1.setDuration(12000);

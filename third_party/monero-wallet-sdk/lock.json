@@ -1,0 +1,19 @@
+{
+  "version": "0.9.7",
+  "source_commit": "7c21fd77c4da6b8f4e112858d3bb5c150e97ab49",
+  "signature": "[GNUPG:] VALIDSIG 4C767F41F3220AF96AC391D0318D49FCE95DEA5A 2026-09-28 1790573596 0 4 0 22 10 01 4C767F41F3220AF96AC391D0318D49FCE95DEA5A",
+  "libraries": {
+    "lib/arm64-v8a/libc++_shared.so": {
+      "size": 1374336,
+      "sha256": "c4c2fe5cbcb1fba0003a31fc7ab29a9bb12df6cc187ec45a806462540e83d93b"
+    },
+    "lib/arm64-v8a/libmonfluo.so": {
+      "size": 19579296,
+      "sha256": "97e2a9c192d7ee381a6c2b297dd13decee26f67d2d19de16e99e54eed3158173"
+    }
+  },
+  "apk_url": "https://codeberg.org/Monfluo/monfluo-android/releases/download/0.9.7/monfluo-0x9x7-arm64-v8a-release.apk",
+  "apk_sha256": "a49be253dbe8569866702d36e33a85c35fb2f5d27b3b0ff2856c3fd5702ca091",
+  "monero_source_commit": "9c2e01c6599d11b6283cb4789b943eaa6c854e97",
+  "signer_fingerprint": "4C767F41F3220AF96AC391D0318D49FCE95DEA5A"
+}

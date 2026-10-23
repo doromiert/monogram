@@ -577,6 +577,8 @@
             </intent-filter>
         </receiver>
 
+        <service android:name="com.negzero.monogram.wallet.WalletSyncService" android:exported="false" android:foregroundServiceType="dataSync" />
+
         <service android:name=".xmpp.MonogramCallService" android:exported="false" android:foregroundServiceType="microphone|camera" />
         <receiver android:name=".xmpp.MonogramCallActionReceiver" android:exported="false" />
         <activity android:name=".xmpp.MonogramCallPermissionActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />

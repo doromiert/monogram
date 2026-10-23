@@ -16,6 +16,7 @@ flat in float vRadialLightResponse;
 
 uniform float uCardGradientRotation;
 uniform sampler2D uCardDetailTexture;
+uniform float uDetailsOffset;
 uniform sampler2D uEngravingTexture;
 #ifdef WALLET_FINISH_LUT
 uniform highp sampler2D uFinishLut;
@@ -85,11 +86,11 @@ const vec3 DETAIL_LIGHT_DIRECTION = vec3(0.12, -0.54, 0.45);
 const float DETAIL_LIGHT_STRENGTH = 0.10;
 const float DETAIL_LIGHT_SOFTNESS = 2.10;
 // Calibrated before exposure, ACES and saturation so the resting front body
-// renders as #229AF0. Using the raw linearized hex color renders too cyan.
-const vec3 CARD_COLOR = vec3(0.09729573, 0.29946935, 1.1024685);
-// Calibrated blue/cyan endpoints for the 2D-style sweep, around #229AF0.
-const vec3 CARD_GRADIENT_DARK = vec3(0.06964265, 0.22803165, 0.74607265);
-const vec3 CARD_GRADIENT_BRIGHT = vec3(0.14900434, 0.42189533, 2.1465068);
+// uses the Monero orange body palette.
+const vec3 CARD_COLOR = vec3(1.1024685, 0.165, 0.018);
+// Orange endpoints for the original material sweep.
+const vec3 CARD_GRADIENT_DARK = vec3(0.74607265, 0.075, 0.008);
+const vec3 CARD_GRADIENT_BRIGHT = vec3(2.1465068, 0.37, 0.055);
 
 float hash(float value) {
     return fract(sin(value * 127.1) * 43758.5453);
@@ -231,30 +232,31 @@ void main() {
             vCardPosition.x * 0.5 + 0.5,
             0.5 - vCardPosition.y / 1.219512
     );
+    vec2 detailUv = cardUv - vec2(uDetailsOffset, 0.0);
     // Only the insert pass samples the QR masks. The body is replaced by
     // the original, pre-tone-map material mix wherever that mask contributes.
 #if defined(WALLET_QR_PASS) || defined(WALLET_FLECKS_PASS)
     const vec2 qrTexel = vec2(1.0 / 1024.0, 1.0 / 625.0);
     vec2 qrFilterTexel = max(
             qrTexel,
-            fwidth(cardUv) * 0.75
+            fwidth(detailUv) * 0.75
     );
-    vec4 cardDetailCenter = texture(uCardDetailTexture, cardUv);
+    vec4 cardDetailCenter = texture(uCardDetailTexture, detailUv);
     vec4 qrLeftSample = texture(
             uCardDetailTexture,
-            cardUv - vec2(qrFilterTexel.x, 0.0)
+            detailUv - vec2(qrFilterTexel.x, 0.0)
     );
     vec4 qrRightSample = texture(
             uCardDetailTexture,
-            cardUv + vec2(qrFilterTexel.x, 0.0)
+            detailUv + vec2(qrFilterTexel.x, 0.0)
     );
     vec4 qrTopSample = texture(
             uCardDetailTexture,
-            cardUv - vec2(0.0, qrFilterTexel.y)
+            detailUv - vec2(0.0, qrFilterTexel.y)
     );
     vec4 qrBottomSample = texture(
             uCardDetailTexture,
-            cardUv + vec2(0.0, qrFilterTexel.y)
+            detailUv + vec2(0.0, qrFilterTexel.y)
     );
     vec4 cardDetail = (
             cardDetailCenter * 4.0
@@ -330,33 +332,33 @@ void main() {
 #else
     vec2 engravingFilterTexel = max(
             uEngravingTexel,
-            fwidth(cardUv) * 0.75
+            fwidth(detailUv) * 0.75
     );
     float engravingCenter = texture(
             uEngravingTexture,
-            cardUv
+            detailUv
     ).a;
     float engravingTopLeft = texture(
             uEngravingTexture,
-            cardUv - engravingFilterTexel
+            detailUv - engravingFilterTexel
     ).a;
     float engravingTopRight = texture(
             uEngravingTexture,
-            cardUv + vec2(
+            detailUv + vec2(
                     engravingFilterTexel.x,
                     -engravingFilterTexel.y
             )
     ).a;
     float engravingBottomLeft = texture(
             uEngravingTexture,
-            cardUv + vec2(
+            detailUv + vec2(
                     -engravingFilterTexel.x,
                     engravingFilterTexel.y
             )
     ).a;
     float engravingBottomRight = texture(
             uEngravingTexture,
-            cardUv + engravingFilterTexel
+            detailUv + engravingFilterTexel
     ).a;
     float engraving = (
             engravingCenter * 4.0
@@ -415,8 +417,8 @@ void main() {
 
 #if defined(WALLET_QR_PASS) || defined(WALLET_FLECKS_PASS)
     vec2 qrPosition = vec2(
-            (cardUv.x - uQrCenter.x) * 2.0,
-            -(cardUv.y - uQrCenter.y) * 1.219512
+            (detailUv.x - uQrCenter.x) * 2.0,
+            -(detailUv.y - uQrCenter.y) * 1.219512
     );
     float qrRadius = length(qrPosition);
     vec2 qrRadial = qrPosition / max(qrRadius, 0.0001);

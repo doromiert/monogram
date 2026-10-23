@@ -1109,3 +1109,31 @@ Release 0.2.144: Nix arm64 packaging and 30 focused native checks pass. Signed A
 - Document the exact presentation/wire boundary in docs/protocols/FORWARDING.md. Delivery checks: all 25 focused forwarding, outbox, saved-tag and self-chat checks pass, including migration, persistence, caption search, unchanged wire bodies and stale outbox snapshots. APK 0.2.158 (73339) built successfully and retains the original signer. No phone interaction or on-device visual verification.
 
 0.2.158 artifact: scoped APK audit passed, caption-link implementation present, all three native libraries identical to 0.2.157. SHA-256 `834a1ee137d143323a296d19ccaf587b355cd4ab30b527c97d6ef24b487b5807`. GitHub updater delivery; no XMR app code or wallet functionality included.
+
+### Restart XMR using the actual native Telegram wallet
+
+Archived the superseded custom UI locally; brought master forward to the current pre-wallet messaging baseline; started feature/xmr-native-wallet. Native Telegram wallet UI and built-in currency picker are the new source of truth. Monero SDK/vault/backend retained; old custom screens discarded. Remaining work and reference evidence: docs/MONERO_NATIVE_WALLET_PORT.md. No tests/builds run during this restart; private ADB delivery only when ready.
+
+### Native XMR wallet UI — private xmr.14 preparation (2026-10-23)
+
+- Continued on feature/xmr-native-wallet without agents or remote publication. Ported Telegram wallet dashboard/currency picker, amount sheet, native cards/receipts and shared send-flight integration; bound them to Monero SDK balances, exact fee quotes and twelve-decimal amounts. Added inline system unlock/sync and native recovery cells for Monero/Polyseed.
+- Added connected-wallet-only attachment entry with native Send/Request tabs, automatically reserved receiving subaddresses, funded unknown-recipient links, native claim/reclaim fee review and saved-link recovery. XMPP notices remain ordinary encrypted message bodies; receipt verification comes from the local wallet scan. Kept opt-in discovery, Monero case-sensitive addresses, orange palettes, user-edited 3D logo and white-backed fallbacks.
+- Restored SDK packaging/service/shrinker rules, not the superseded custom UI or helper APKs. Removed source TON/onramp/cloud-backup execution paths from these screens. Preserved README.md and ref.mp4.
+- Deferred tests until private APK preparation. Packaging gate started for 0.2.159-xmr.14 (73479); build/test/visual/device results are still pending. Protocol draft and detailed progress: docs/protocols/MONERO.md and docs/MONERO_NATIVE_WALLET_PORT.md. No phone interaction or release upload during source work.
+
+Private xmr.14 delivery: final build passed; 8 app checks + 7 core checks passed. APK/native SDK/model/signer audit passed and ADB installation succeeded (73479). Source/native libraries preserve the messaging baseline. Phone UI verification is waiting for the device to be unlocked; no payment submitted and no release/source upload. Full evidence: docs/MONERO_NATIVE_WALLET_PORT.md.
+
+- [x] Private xmr.15: separate local wallet unlock from scan; show remaining blocks/percentage and stop controls; safe periodic native checkpoints, repair resume, persistent verified TLS, white settings wallet icon. Built/tested at delivery gate and installed via ADB, no release upload.
+- [ ] Verify real-wallet checkpoint/resume and scan progress after system authentication; measure public-node throughput before claiming Cake-equivalent speed. Preserve explicit restore height and never silently skip earlier funds.
+
+- [x] Source: native multiple-wallet list/create/restore/select/rename/remove with separate vaults and legacy wallet path retained.
+- [x] Source: default four-place balance display, configurable precision and in-card precise/back mode that hides address/QR/unit/logo.
+- [ ] xmr.18 delivery gate: build and focused monetary/native wallet checks, APK audit and device UI verification. No destructive testing against the user's actual wallets.
+
+- [x] Private xmr.18/19 delivered via ADB: build and artifact audits, ten monetary/note checks, disposable SDK create/restore/reopen checks and five GPU shader variant checks passed.
+- [x] Requested precision animation: QR/address slide right and return on Back; native AnimatedTextView animates label/pill.
+- [ ] User feedback on final motion and wallet-manager workflows; no destructive create/remove testing against the user's funded wallet.
+
+- [x] Implement Polyseed by default for newly created main wallets, two-column recovery words, locked precision-button hiding, and unlock-to-sync in Settings/attachment UI.
+- [x] Validate disposable Polyseed create/restore/reopen, URI/amount logic and xmr.20 ARM64 APK packaging.
+- [ ] Verify locked/unlocked user-wallet UI, attachment scrolling and precision animation frame pacing on device.

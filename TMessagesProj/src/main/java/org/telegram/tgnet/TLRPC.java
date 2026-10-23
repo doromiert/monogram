@@ -24534,6 +24534,46 @@ public class TLRPC {
         }
     }
 
+    public static class TL_messageActionGramTransfer extends MessageAction {
+        public static final int constructor = 0x9329ea33;
+
+        public int moneroKind; // local: 0 transfer, 1 request; URI body remains authoritative
+        public boolean paymentVerified; // local Monero scan evidence, never sender-provided
+        public boolean comment_encrypted_preparing; // custom
+        public boolean comment_encrypted;
+        public String peer_address;
+        public String transaction_id;
+        public String comment;
+
+        @Override
+        public void readParams(InputSerializedData stream, boolean exception) {
+            int flags = stream.readInt32(exception);
+            comment_encrypted = hasFlag(flags, FLAG_1);
+            amount = stream.readInt64(exception);
+            peer_address = stream.readString(exception);
+            transaction_id = stream.readString(exception);
+            if (hasFlag(flags, FLAG_0)) {
+                comment = stream.readString(exception);
+            }
+        }
+
+        @Override
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(constructor);
+            int flags = 0;
+            flags = setFlag(flags, FLAG_0, comment != null);
+            flags = setFlag(flags, FLAG_1, comment_encrypted);
+            stream.writeInt32(flags);
+            stream.writeInt64(amount);
+            stream.writeString(peer_address);
+            stream.writeString(transaction_id);
+            if (hasFlag(flags, FLAG_0)) {
+                stream.writeString(comment);
+            }
+        }
+    }
+
+
     public static abstract class MessageAction extends TLObject {
         public String title;
         public String address;
@@ -24717,6 +24757,8 @@ public class TLRPC {
                     return new TL_messageActionPaymentSentMe();
                 case TL_messageActionPaymentSentMe_layer193.constructor:
                     return new TL_messageActionPaymentSentMe_layer193();
+                case TL_messageActionGramTransfer.constructor:
+                    return new TL_messageActionGramTransfer();
                 case TL_messageActionGiftPremium.constructor:
                     return new TL_messageActionGiftPremium();
                 case TL_messageActionGiftPremium_layer216.constructor:

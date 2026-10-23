@@ -110,13 +110,16 @@ public class DiamondSurfaceView extends GLSurfaceView implements Choreographer.F
     }
 
     public DiamondSurfaceView(Context context) {
+        this(context,Icon3D.TYPE_DIAMOND);
+    }
+    public DiamondSurfaceView(Context context,int type){
         super(context);
         setEGLContextClientVersion(3);
         setEGLConfigChooser(8, 8, 8, 8, 16, 0);
         getHolder().setFormat(PixelFormat.TRANSLUCENT);
         // The RGBA surface must sit above the window to blend with its UI background.
         setZOrderOnTop(true);
-        mRenderer = new GLIconRenderer(context, GLIconRenderer.DIALOG_STYLE, Icon3D.TYPE_DIAMOND);
+        mRenderer = new GLIconRenderer(context, GLIconRenderer.DIALOG_STYLE, type);
         setRenderer(new Renderer() {
             private long previous;
             private boolean announced;

@@ -28,6 +28,7 @@ final class DiamondRenderer {
     private float[] frames, planes, anchors, silhouetteWidths, facetProjection, camera;
     private float horizontalScale = 1;
     private int program, width, height, samples;
+    private MoneroRenderer monero;
     private double clock;
     private float previousYaw, previousPitch;
     private boolean hasPreviousYaw;
@@ -37,6 +38,10 @@ final class DiamondRenderer {
     }
 
     DiamondRenderer(Context context, int maxSamples) {
+        this(context,maxSamples,false);
+    }
+    DiamondRenderer(Context context,int maxSamples,boolean moneroSymbol){
+        if(moneroSymbol){monero=new MoneroRenderer(context,maxSamples);return;}
         try {
             String[] names = {"diamond", "sparkle", "copy"};
             for (int n = 0; n < names.length; n++) {
@@ -205,11 +210,13 @@ final class DiamondRenderer {
     int appearance;
 
     void draw(int w, int h, float yaw, float pitch, float roll, float dt, float alpha, float white) {
+        if(monero!=null){monero.resolutionScale=resolutionScale;monero.draw(w,h,yaw,pitch,roll,dt,alpha,white);return;}
         draw(w, h, yaw, pitch, roll, dt, alpha, white, false);
     }
 
     /** Renders once into the resolved texture, ready for GPU composition or readback. */
     void drawToTexture(int side, float yaw, float pitch, float dt) {
+        if(monero!=null){monero.resolutionScale=resolutionScale;monero.drawToTexture(side,yaw,pitch,dt);return;}
         draw(side, side, yaw, pitch, 0, dt, 1, 0, true);
     }
 
@@ -288,6 +295,7 @@ final class DiamondRenderer {
 
     /** Composites the last rendered image into the current EGL window surface. */
     void drawTexture(int w, int h, float alpha) {
+        if(monero!=null){monero.drawTexture(w,h,alpha);return;}
         drawTexture(w, h, alpha, 0);
     }
 
@@ -315,6 +323,7 @@ final class DiamondRenderer {
     }
 
     void destroy() {
+        if(monero!=null){monero.destroy();monero=null;return;}
         for (int p : programs) if (p != 0) GLES30.glDeleteProgram(p);
         GLES30.glDeleteBuffers(buffers.length, buffers, 0);
         GLES30.glDeleteVertexArrays(vaos.length, vaos, 0);

@@ -1,0 +1,14 @@
+{
+  "source_blend": "design/monero-logo.blend",
+  "source_blend_sha256": "4aa66dd9305007648fd1cf207aca1f4af12630ccbdc54764e35022c1f75f83fe",
+  "objects": [
+    "path22",
+    "path26",
+    "Cylinder"
+  ],
+  "vertex_stride_floats": 11,
+  "vertices": 4752,
+  "mesh_sha256": "b9d8fcfa7b9824f9ab8496f5fd6dc713bf4ae560b3592e631b12e22bc4e32dea",
+  "generator": "scripts/export-monero-logo.py",
+  "blender": "5.0.1"
+}
