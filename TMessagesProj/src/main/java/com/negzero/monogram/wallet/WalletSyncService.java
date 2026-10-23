@@ -15,7 +15,7 @@ import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.R;
 import org.telegram.ui.LaunchActivity;
 
-/** Only user-started initial wallet scans run here; never starts or unlocks a wallet. */
+/** Only user-started wallet scans run here; never starts or unlocks a wallet. */
 public final class WalletSyncService extends Service {
     private static final String CHANNEL="monogram_wallet_initial_scan",STOP="stop-initial-wallet-scan";
     private static final int NOTIFICATION=1036;
@@ -37,7 +37,7 @@ public final class WalletSyncService extends Service {
     @Override public void onCreate(){
         super.onCreate();instance=this;
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(CHANNEL,"Initial wallet scan",NotificationManager.IMPORTANCE_LOW);channel.setShowBadge(false);channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);manager.createNotificationChannel(channel);}
+        if(Build.VERSION.SDK_INT>=26){NotificationChannel channel=new NotificationChannel(CHANNEL,"Wallet scanning",NotificationManager.IMPORTANCE_LOW);channel.setShowBadge(false);channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);manager.createNotificationChannel(channel);}
         Notification notification=notification();
         if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);else startForeground(NOTIFICATION,notification);
         PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
@@ -49,7 +49,7 @@ public final class WalletSyncService extends Service {
         String detail=scans.size()==1 ? scans.get(0).status : scans.isEmpty() ? "Finishing scan" : scans.size()+" wallets scanning";
         PendingIntent open=PendingIntent.getActivity(this,NOTIFICATION,new Intent(this,LaunchActivity.class).setAction(Intent.ACTION_MAIN),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,NOTIFICATION,new Intent(this,WalletSyncService.class).setAction(STOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        return new NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.notification).setContentTitle("Monogram · initial wallet scan")
+        return new NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.notification).setContentTitle("Monogram · wallet scanning")
             .setContentText(detail).setContentIntent(open).setOngoing(true).setSilent(true).setOnlyAlertOnce(true).setShowWhen(false)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setCategory(NotificationCompat.CATEGORY_PROGRESS).setProgress(100,scans.size()==1 ? scans.get(0).scanPercent() : 0,scans.size()!=1 || scans.get(0).scanTarget<=0)
             .addAction(0,"Stop scan",stop).build();

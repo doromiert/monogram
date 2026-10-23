@@ -95,7 +95,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     private final TLRPC.User recipientUser;
     private final FrameLayout contentContainer;
     private final FrameLayout amountArea;
-    private final ScrollView amountScroll;
+    private final androidx.core.widget.NestedScrollView contentScroll;
     private final WalletRecipientView recipientView;
     private final ActionBarMenuItem moreItem;
     private final ActionBarMenuItem inlineMoreItem;
@@ -189,11 +189,12 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         contentContainer = new FrameLayout(context);
         contentContainer.setClipChildren(false);
         contentContainer.setClipToPadding(false);
-        addView(contentContainer, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT,
-                LayoutHelper.MATCH_PARENT,
-                Gravity.TOP | Gravity.FILL_HORIZONTAL
-        ));
+        contentScroll=new androidx.core.widget.NestedScrollView(context);
+        contentScroll.setFillViewport(true);contentScroll.setNestedScrollingEnabled(true);
+        contentScroll.setClipToPadding(true);contentScroll.setVerticalScrollBarEnabled(false);
+        contentContainer.setPadding(0,dp(12),0,dp(32));
+        contentScroll.addView(contentContainer,new androidx.core.widget.NestedScrollView.LayoutParams(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT));
+        addView(contentScroll,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.MATCH_PARENT));
 
         final ActionBarMenu menu = parentAlert.actionBar.createMenu();
         moreItem = menu.addItem(31, R.drawable.ic_ab_other);
@@ -247,18 +248,14 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                         .createSimpleBulletin(R.raw.copy, getString(R.string.WalletAddressCopiedBulletin))
                         .show());
         recipientView.setRecipient(recipientUser, recipientAddress);
-        addView(recipientView, LayoutHelper.createFrame(
+        contentContainer.addView(recipientView, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT, 64, Gravity.TOP | Gravity.CENTER_HORIZONTAL,
                 6, 0, 6, 0));
 
         amountArea = new FrameLayout(context);
         amountArea.setClipChildren(false);
         amountArea.setClipToPadding(false);
-        contentContainer.addView(amountArea, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT,
-                LayoutHelper.MATCH_PARENT,
-                Gravity.TOP | Gravity.FILL_HORIZONTAL
-        ));
+        contentContainer.addView(amountArea,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,Gravity.TOP,0,88,0,0));
 
         center = new LinearLayout(context) {
             @Override
@@ -270,16 +267,8 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         center.setClipChildren(false);
         center.setClipToPadding(false);
         center.setOnClickListener(v -> requestAmountKeyboard());
-        amountScroll = new ScrollView(context);
-        amountScroll.setFillViewport(true);
-        amountScroll.setClipToPadding(true);
-        amountScroll.setClipChildren(true);
-        amountScroll.setVerticalScrollBarEnabled(false);
         center.setGravity(Gravity.CENTER_VERTICAL);
-        amountScroll.addView(center, new ScrollView.LayoutParams(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        amountArea.addView(amountScroll, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        amountArea.addView(center,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,Gravity.TOP));
 
         unlockButton = new ButtonWithCounterView(context, resourcesProvider).setRound();
         unlockButton.setText("Unlock wallet");
@@ -415,7 +404,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
             @Override protected void onMeasure(int widthSpec,int heightSpec){
                 super.onMeasure(widthSpec,heightSpec);
                 // Invisible legacy error/hint rows must not reserve an empty block.
-                if(centerBottomVisible && insufficientFundsView!=null && insufficientFundsView.getVisibility()==View.GONE)
+                if(insufficientFundsView!=null && insufficientFundsView.getVisibility()==View.GONE)
                     setMeasuredDimension(getMeasuredWidth(),0);
             }
         };
@@ -445,7 +434,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         centerBottom.setAlpha(0.0f);
         centerBottom.setScaleX(0.8f);
         centerBottom.setScaleY(0.8f);
-        tapToSetAmount.setVisibility(View.VISIBLE);
+        tapToSetAmount.setVisibility(View.GONE);
         tapToSetAmount.setAlpha(1.0f);
         tapToSetAmount.setScaleX(1.0f);
         tapToSetAmount.setScaleY(1.0f);
@@ -540,7 +529,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                 48,
                 Gravity.BOTTOM | Gravity.FILL_HORIZONTAL
         ));
-        contentContainer.addView(bottomContainer, LayoutHelper.createFrame(
+        addView(bottomContainer, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT,
                 92,
                 Gravity.BOTTOM | Gravity.FILL_HORIZONTAL,
@@ -560,13 +549,11 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         if (visible == centerBottomVisible) return;
         centerBottomVisible = visible;
         centerBottom.setVisibility(View.VISIBLE);
-        tapToSetAmount.setVisibility(View.VISIBLE);
+        tapToSetAmount.setVisibility(View.GONE);
         centerBottom.animate().alpha(visible ? 1.0f : 0.0f).scaleX(visible ? 1.0f : 0.8f).scaleY(visible ? 1.0f : 0.8f).withEndAction(() -> {
             centerBottom.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         }).setDuration(320).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
-        tapToSetAmount.animate().alpha(!visible ? 1.0f : 0.0f).scaleX(!visible ? 1.0f : 0.8f).scaleY(!visible ? 1.0f : 0.8f).withEndAction(() -> {
-            tapToSetAmount.setVisibility(!visible ? View.VISIBLE : View.INVISIBLE);
-        }).setDuration(320).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
+        tapToSetAmount.setVisibility(View.GONE);
     }
 
     private void showError(boolean show, boolean insufficientFunds) {
@@ -1612,7 +1599,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     @Override
     public int getListTopPadding() {
         final FrameLayout.LayoutParams layoutParams =
-                (FrameLayout.LayoutParams) contentContainer.getLayoutParams();
+                (FrameLayout.LayoutParams) contentScroll.getLayoutParams();
         return layoutParams == null ? 0 : layoutParams.topMargin;
     }
 
@@ -1623,7 +1610,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
     @Override
     public int getCurrentItemTop() {
-        int top = contentContainer.getTop();
+        int top = contentScroll.getTop()-contentScroll.getScrollY();
         if (top <= 0) {
             top = getListTopPadding();
         }
@@ -1651,7 +1638,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         // Grow the attachment surface instead of shrinking the entire amount/note group.
         if (keyboardVisible || !TextUtils.isEmpty(comment)) {
             padding = dp(56);
-            parentAlert.setAllowNestedScroll(false);
+            parentAlert.setAllowNestedScroll(true);
         } else if (!AndroidUtilities.isTablet()
                 && AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
             padding = (int) (availableHeight / 3.5f);
@@ -1663,23 +1650,14 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
         padding = Math.max(0, padding - dp(1)) + AndroidUtilities.statusBarHeight;
 
         final FrameLayout.LayoutParams layoutParams =
-                (FrameLayout.LayoutParams) contentContainer.getLayoutParams();
+                (FrameLayout.LayoutParams) contentScroll.getLayoutParams();
+        layoutParams.bottomMargin=footerHeight+tabsReservedHeight;
         if (layoutParams.topMargin != padding) {
             layoutParams.topMargin = padding;
-            contentContainer.setLayoutParams(layoutParams);
+            contentScroll.setLayoutParams(layoutParams);
         }
 
-        final int inlineTop = Math.max(0, padding - AndroidUtilities.statusBarHeight + dp(4));
-        final FrameLayout.LayoutParams recipientLayoutParams = (FrameLayout.LayoutParams) recipientView.getLayoutParams();
-        // The parent already places this layout below the status bar. Use the
-        // action bar's content height here so the gap is independent of that inset.
-        final int recipientTop = Math.max(0, keyboardVisible
-                ? ActionBar.getCurrentActionBarHeight() + dp(4)
-                : inlineTop - dp(4));
-        if (recipientLayoutParams.topMargin != recipientTop) {
-            recipientLayoutParams.topMargin = recipientTop;
-            recipientView.setLayoutParams(recipientLayoutParams);
-        }
+        contentContainer.setMinimumHeight(Math.max(0,availableHeight-padding-footerHeight-tabsReservedHeight));
 
         updateCenterBottom();
     }
@@ -1738,34 +1716,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
     }
 
     private void updateCenterGeometry() {
-        if (center.getHeight() <= 0 || bottomContainer.getHeight() <= 0) {
-            return;
-        }
-        final float contentTop = getScreenY(contentContainer);
-        float top = contentTop;
-        if (recipientView.getVisibility() == View.VISIBLE) {
-            final float recipientBottom = getScreenY(recipientView) + recipientView.getPivotY() + (recipientView.getContentBottom() - recipientView.getPivotY()) * recipientView.getScaleY();
-            top = Math.max(top, recipientBottom);
-        }
-        final FrameLayout.LayoutParams footerParams = (FrameLayout.LayoutParams) bottomContainer.getLayoutParams();
-        float bottom = contentTop + contentContainer.getHeight() - footerParams.bottomMargin;
-        bottom = Math.min(bottom, getVisibleTopOnScreen(balanceView));
-        bottom = Math.min(bottom, getVisibleTopOnScreen(feeView));
-        bottom = Math.min(bottom, getVisibleTopOnScreen(sendButton));
-
-        // Keep controls at their designed size. The keyboard reduces the viewport,
-        // never the amount, tabs or note: overflow remains reachable by scrolling.
-        final int viewportHeight = Math.max(0, Math.round(bottom - top) - dp(24));
-        final FrameLayout.LayoutParams scrollParams =
-                (FrameLayout.LayoutParams) amountScroll.getLayoutParams();
-        if (scrollParams.height != viewportHeight) {
-            scrollParams.height = viewportHeight;
-            amountScroll.setLayoutParams(scrollParams);
-        }
-        amountScroll.setTranslationY(top + dp(12) - getScreenY(amountArea));
-        center.setScaleX(1f);
-        center.setScaleY(1f);
-        center.setTranslationY(0f);
+        center.setScaleX(1f);center.setScaleY(1f);center.setTranslationY(0f);
     }
 
     private float getVisibleTopOnScreen(View view) {

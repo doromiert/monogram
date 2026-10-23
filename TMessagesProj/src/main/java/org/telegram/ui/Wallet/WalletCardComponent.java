@@ -54,36 +54,10 @@ public class WalletCardComponent extends FrameLayout implements NotificationCent
     private static Typeface cardNumberTypeface;
     private static Typeface cardHolderTypeface;
 
-    private java.util.function.IntConsumer walletSwipe;
-    private float swipeStartX,swipeStartY;
-    private boolean swiping,swipeVertical;
-    public void setOnWalletSwipe(java.util.function.IntConsumer listener){walletSwipe=listener;}
-    @Override public boolean dispatchTouchEvent(MotionEvent event){
-        if(walletSwipe==null)return super.dispatchTouchEvent(event);
-        int action=event.getActionMasked();
-        if(action==MotionEvent.ACTION_DOWN){swipeStartX=event.getRawX();swipeStartY=event.getRawY();swiping=false;swipeVertical=false;}
-        float dx=event.getRawX()-swipeStartX,dy=event.getRawY()-swipeStartY;
-        if(action==MotionEvent.ACTION_MOVE && !swipeVertical && !swiping){
-            if(Math.abs(dy)>dp(20) && Math.abs(dy)>Math.abs(dx))swipeVertical=true;
-            else if(Math.abs(dx)>dp(24) && Math.abs(dx)>Math.abs(dy)*1.5f){
-                swiping=true;
-                MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
-                super.dispatchTouchEvent(cancel);cancel.recycle();
-                if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(true);
-            }
-        }
-        if(swiping){
-            if(action==MotionEvent.ACTION_MOVE)setTranslationX(dx*.7f);
-            else if(action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL){
-                final int direction=dx<0 ? 1 : -1;
-                final boolean change=action==MotionEvent.ACTION_UP && Math.abs(dx)>dp(64);
-                animate().translationX(0).setDuration(180).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start();
-                swiping=false;if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);
-                if(change)walletSwipe.accept(direction);
-            }
-            return true;
-        }
-        return super.dispatchTouchEvent(event);
+    public void setPageActive(boolean active){
+        setUseGyroscope(active ? 1f : 0f);
+        if(cardView instanceof WalletCardView)((WalletCardView)cardView).setPageFrameRate(active ? 60 : 10);
+        if(!active)setPrecisionAvailable(false);
     }
 
     private boolean preciseBalance;

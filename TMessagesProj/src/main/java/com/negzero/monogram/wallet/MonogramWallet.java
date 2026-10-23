@@ -77,11 +77,11 @@ public final class MonogramWallet {
     }
     public void rename(String name)throws Exception{WalletRegistry.rename(account,owner,network,walletId,name);changed();}
     public void select(String id)throws Exception{
-        check();if(busy)throw new IllegalStateException("Stop syncing or finish the current wallet operation first.");
-        lock();WalletRegistry.select(account,owner,network,id);
+        check();if(busy && !scanning)throw new IllegalStateException("Finish the current wallet operation first.");
+        if(!scanning)lock();WalletRegistry.select(account,owner,network,id);
     }
     public String add(String name)throws Exception{
-        check();if(busy)throw new IllegalStateException("Stop syncing or finish the current wallet operation first.");
+        check();if(busy && !scanning)throw new IllegalStateException("Stop syncing or finish the current wallet operation first.");
         if(!exists()){rename(name);return walletId;}
         return WalletRegistry.add(account,owner,network,name);
     }
@@ -179,6 +179,9 @@ public final class MonogramWallet {
     }
     private void check() {
         if(!walletId.equals(WalletRegistry.active(account,owner,network)))throw new IllegalStateException("The selected wallet changed. Reopen the wallet screen.");
+        checkIdentity();
+    }
+    private void checkIdentity(){
         if(!owner.equals(MonogramController.get(account).accountJid()) || !MonogramXmr.enabled(account))throw new IllegalStateException("Wallet access changed. Reopen Monero settings.");
         try(MonogramXmr settings=new MonogramXmr(account)){if(settings.network()!=network)throw new IllegalStateException("The wallet network changed.");}
     }
@@ -215,9 +218,9 @@ public final class MonogramWallet {
     boolean initialScanComplete(){return config!=null && config.optBoolean("initialScanComplete",scanned());}
     private boolean holdForInitialScan(){
         if(claimId!=null || initialScanComplete() || (!exists() && !busy))return false;
-        try{check();return true;}catch(Exception changed){return false;}
+        try{checkIdentity();return true;}catch(Exception changed){return false;}
     }
-    private void lockAutomatically(){if(!authenticating() && !holdForInitialScan())lock();}
+    private void lockAutomatically(){if(!authenticating() && !holdForInitialScan() && !(claimId==null && scanning && !scanCancelled))lock();}
     public void lock(){
         if(authentication!=null){Authentication old=authentication;authentication=null;old.closed=true;AndroidUtilities.cancelRunOnUIThread(old.timeout);}
         epoch++;scanCancelled=true;recentCacheReady=false;sessionSynced=false;WalletTlsBridge bridge=transport;transport=null;long current=handle;stopper.execute(()->{if(bridge!=null)bridge.close();if(current!=0)WalletNative.stop(current);});
@@ -235,12 +238,13 @@ public final class MonogramWallet {
     }
     private static int nativeNetwork(MoneroPayment.Network n){return n==MoneroPayment.Network.MAINNET ? 0 : n==MoneroPayment.Network.TESTNET ? 1 : 2;}
     private <T> void work(String label,Result<T> result,Callable<T> task){work(label,result,task,()->{});}
-    private <T> void work(String label,Result<T> result,Callable<T> task,Runnable cleanup) {
+    private <T> void work(String label,Result<T> result,Callable<T> task,Runnable cleanup) {work(label,result,task,cleanup,false);}
+    private <T> void work(String label,Result<T> result,Callable<T> task,Runnable cleanup,boolean backgroundScan) {
         check();if(busy)throw new IllegalStateException("Wait for the current wallet operation, or stop syncing first.");
         busy=true;status=label;error="";long generation=epoch;changed();
         actor.execute(()->{
             T value=null;Exception problem=null;
-            try {check();if(generation!=epoch)throw new IllegalStateException("Wallet operation cancelled.");value=task.call();}
+            try {if(backgroundScan)checkIdentity();else check();if(generation!=epoch)throw new IllegalStateException("Wallet operation cancelled.");value=task.call();}
             catch(Exception failure){problem=failure;error=failure.getMessage()==null ? "Wallet operation failed." : failure.getMessage();}
             catch(LinkageError failure){problem=new IllegalStateException("The wallet engine is unavailable in this build.");error=problem.getMessage();}
             finally {cleanup.run();busy=false;if(handle!=0)status="Unlocked";else status="Locked";changed();}
@@ -335,7 +339,7 @@ public final class MonogramWallet {
         if(!unlocked())throw new IllegalStateException("Unlock your wallet first.");if(node().isEmpty())throw new IllegalStateException("Set your Monero node first.");
         check();if(busy)throw new IllegalStateException("Wait for the current wallet operation first.");
         scanCancelled=false;scanning=true;scanHeight=0;scanTarget=0;scanOrigin=0;
-        boolean initial=claimId==null && !initialScanComplete();
+        boolean initial=claimId==null;
         try{if(initial)WalletSyncService.begin(this);work("Connecting to node…",callback,()->{
             sessionSynced=false;
             if(rescan){JSONObject pending=new JSONObject(config.toString());pending.put("initialScanComplete",initialScanComplete()).put("scanned",false).put("scanPolicy",1);save(pending);balance=null;transactions=new String[0];changed();}
@@ -358,11 +362,11 @@ public final class MonogramWallet {
                 save(checkpoint);first=false;changed();
                 if(complete)break;
             }
-            check();read();if(!"true".equals(balance[5]))throw new IllegalStateException("The node has not completed this scan.");
+            checkIdentity();read();if(!"true".equals(balance[5]))throw new IllegalStateException("The node has not completed this scan.");
             JSONObject next=new JSONObject(config.toString());next.put("scanned",true).put("scanPolicy",2).put("scanStart",Long.parseLong(balance[7])).put("initialScanComplete",true);
             if(claimId!=null && fundingStatus().equals("unknown") && new java.math.BigInteger(balance[1]).signum()>0)next.put("fundingStatus","broadcast");
             save(next);rememberSync();return null;
-        },()->{scanning=false;if(initial)WalletSyncService.finish(this);});}
+        },()->{scanning=false;if(initial)WalletSyncService.finish(this);},true);}
         catch(RuntimeException failure){scanning=false;if(initial)WalletSyncService.finish(this);throw failure;}
     }
     public void stop(){scanCancelled=true;recentCacheReady=false;sessionSynced=false;status="Saving scan progress…";changed();WalletTlsBridge bridge=transport;transport=null;long current=handle;stopper.execute(()->{if(bridge!=null)bridge.close();if(current!=0)WalletNative.stop(current);});}

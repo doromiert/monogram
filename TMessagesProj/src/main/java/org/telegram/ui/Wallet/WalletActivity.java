@@ -590,34 +590,17 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         balanceOverlay.setClipChildren(false);
         balanceOverlay.setClipToPadding(false);
 
-        card = new WalletCardComponent(context, use2DCard) {
-            @Override
-            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                final int unconstrainedHeight = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
-                super.onMeasure(widthMeasureSpec, unconstrainedHeight);
-                if (maxCardHeight > 0 && getMeasuredHeight() > maxCardHeight) {
-                    // Shrink the face uniformly, keeping the component's padding unchanged.
-                    final int horizontalPadding = getPaddingLeft() + getPaddingRight();
-                    final int verticalPadding = getPaddingTop() + getPaddingBottom();
-                    final float scale = Math.max(0, maxCardHeight - verticalPadding)
-                            / (float) Math.max(1, getMeasuredHeight() - verticalPadding);
-                    final int width = horizontalPadding
-                            + (int) ((getMeasuredWidth() - horizontalPadding) * scale);
-                    super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), unconstrainedHeight);
-                }
-            }
-        };
+        card = createWalletPage(context,use2DCard);
         card.setDiamondOnCard(true);
-        try{if(GramWallet.getInstance(currentAccount).backend().wallets().size()>1)card.setOnWalletSwipe(this::switchWalletCard);}catch(Exception ignored){}
-        if(walletPageEntry!=0){card.setTranslationX(dp(72)*walletPageEntry);card.setAlpha(0f);card.post(()->card.animate().translationX(0f).alpha(1f).setDuration(220).setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT).start());}
+
         card.setCardOnClickListener(v -> openWalletQRAlert(getContext(), currentAccount, getResourceProvider()));
         listView.addEdgeEffectListener(cardOverscrollListener);
         cardShadowView = new View(context) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                 // Keep a full-width row with the real card's height, including padding, in either mode.
-                card.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-                setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), card.getMeasuredHeight());
+                walletPager.measure(widthMeasureSpec,MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED));
+                setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec),walletPager.getMeasuredHeight());
             }
         };
         cardShadowView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -659,7 +642,8 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         };
         cardLayer.setClipChildren(false);
         cardLayer.setClipToPadding(false);
-        cardLayer.addView(card, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        configureWalletPager(context);
+        cardLayer.addView(walletPager, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         nestedLayout.addView(cardLayer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         listView.setClipChildren(false);
@@ -1402,6 +1386,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
                 || actionBar == null) {
             return;
         }
+        balanceOverlay.setVisibility(addWalletPage ? View.INVISIBLE : View.VISIBLE);
         balanceOverlay.bringToFront();
 
         final View cardItem = listView.layoutManager.findViewByPosition(cardItemPosition);
@@ -1421,20 +1406,20 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         card.setPivotY(0);
         card.setScaleX(cardScale);
         card.setScaleY(cardScale);
-        card.setAlpha(1.0f - Utilities.clamp01(ilerp(progress, 0.75f, 1.0f)));
-        card.setVisibility(cardItem != null && progress < 1.0f
+        walletPager.setAlpha(1.0f - Utilities.clamp01(ilerp(progress, 0.75f, 1.0f)));
+        walletPager.setVisibility(cardItem != null && progress < 1.0f
                 && cardItem.getBottom() > listView.getPaddingTop()
                 && cardItem.getTop() < listView.getHeight() - listView.getPaddingBottom()
                 ? View.VISIBLE : View.INVISIBLE);
         if (cardItem != null) {
             listView.getLocationInWindow(cardListLocation);
             cardLayer.getLocationInWindow(cardLayerLocation);
-            card.setTranslationX(cardListLocation[0] - cardLayerLocation[0] + cardItem.getX() + cardShadowView.getX()
-                    + (cardShadowView.getWidth() - card.getWidth()) / 2f);
-            card.setTranslationY(cardListLocation[1] - cardLayerLocation[1] + cardItem.getY() + cardShadowView.getY() + ty);
+            walletPager.setTranslationX(cardListLocation[0] - cardLayerLocation[0] + cardItem.getX() + cardShadowView.getX()
+                    + (cardShadowView.getWidth() - walletPager.getWidth()) / 2f);
+            walletPager.setTranslationY(cardListLocation[1] - cardLayerLocation[1] + cardItem.getY() + cardShadowView.getY() + ty);
         }
 
-        setBalanceInOverlay(progress > 0.0f);
+        setBalanceInOverlay(!addWalletPage && progress > 0.0f);
         updateBalanceTransitionColors(progress);
 
         if (balanceInOverlay) {
@@ -2989,6 +2974,8 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
     private void update() {
         final GramWallet wallet = GramWallet.getInstance(currentAccount);
         updateWalletTopPanel();
+        if(addWalletPage){buttonsContainer.setVisibility(View.GONE);return;}
+        buttonsContainer.setVisibility(View.VISIBLE);
         try {
             MonogramWallet backend = wallet.backend();
             card.setPrecisionAvailable(backend.unlocked());
@@ -3184,6 +3171,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         items.add(UItem.asCustomShadow(walletTopPanelContainer));
         cardItemPosition = items.size();
         items.add(UItem.asCustomShadow(cardShadowView, true));
+        if(addWalletPage)return;
         items.add(UItem.asCustomShadow(buttonsContainer));
         showingLearnCells = shouldShowLearnCells();
         if (showingLearnCells) {
@@ -3263,12 +3251,9 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
         walletResumed = true;
         try {
             GramWallet selected=GramWallet.getInstance(currentAccount);
-            if(boundWallet!=selected.backend()){
-                if(cancelListen!=null)cancelListen.run();cancelListen=selected.listen();boundWallet=selected.backend();
-                if(walletAuth!=null){walletAuth.destroy();walletAuth=null;}
-                if(transactionsList!=null)transactionsList.cancel();transactionsList=selected.getTransactions();
-                if(nftsList!=null)nftsList.unsubscribe(onNftsChanged);nftsList=selected.getCollectibles();nftsList.subscribe(onNftsChanged);
-            }
+            if(walletPager!=null && (!walletPages.equals(selected.backend().wallets()) || !addWalletPage && walletPageIndex<walletPages.size() && !walletPages.get(walletPageIndex).walletId.equals(selected.backend().walletId))){
+                AndroidUtilities.runOnUIThread(()->{if(!walletDestroyed){WalletActivity refreshed=new WalletActivity();refreshed.setCurrentAccount(currentAccount);presentFragment(refreshed,true,true);}});
+            }else rebindWallet();
         }catch(Exception unavailable){}
         if (walletAuth != null) walletAuth.resume();
         if (recoveryAuth != null) recoveryAuth.resume();
@@ -3359,18 +3344,124 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
     private MonogramWalletAuth walletAuth;
     private boolean walletResumed;
 
-    private int walletPageEntry;
-    private void switchWalletCard(int direction){
+    private androidx.viewpager.widget.ViewPager walletPager;
+    private java.util.List<MonogramWallet> walletPages=new java.util.ArrayList<>();
+    private final java.util.Map<Integer,WalletCardComponent> walletPageViews=new java.util.HashMap<>();
+    private int walletPageIndex,walletPagerState;
+    private boolean addWalletPage;
+    private WalletCardComponent createWalletPage(Context context,boolean use2D){
+        return new WalletCardComponent(context, use2D) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                final int unconstrainedHeight = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+                super.onMeasure(widthMeasureSpec, unconstrainedHeight);
+                if (maxCardHeight > 0 && getMeasuredHeight() > maxCardHeight) {
+                    // Shrink the face uniformly, keeping the component's padding unchanged.
+                    final int horizontalPadding = getPaddingLeft() + getPaddingRight();
+                    final int verticalPadding = getPaddingTop() + getPaddingBottom();
+                    final float scale = Math.max(0, maxCardHeight - verticalPadding)
+                            / (float) Math.max(1, getMeasuredHeight() - verticalPadding);
+                    final int width = horizontalPadding
+                            + (int) ((getMeasuredWidth() - horizontalPadding) * scale);
+                    super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), unconstrainedHeight);
+                }
+            }
+        };
+    }
+    private void configureWalletPager(Context context){
+        try{walletPages=GramWallet.getInstance(currentAccount).backend().wallets();}catch(Exception ignored){}
+        walletPageIndex=0;
+        try{String selected=GramWallet.getInstance(currentAccount).backend().walletId;for(int i=0;i<walletPages.size();i++)if(walletPages.get(i).walletId.equals(selected))walletPageIndex=i;}catch(Exception ignored){}
+        walletPageViews.clear();walletPageViews.put(walletPageIndex,card);
+        walletPager=new androidx.viewpager.widget.ViewPager(context){
+            private float downX,downY;
+            private boolean ownsHorizontalGesture;
+            @Override protected void onSizeChanged(int width,int height,int oldWidth,int oldHeight){
+                super.onSizeChanged(width,height,oldWidth,oldHeight);
+                if(android.os.Build.VERSION.SDK_INT>=29)setSystemGestureExclusionRects(java.util.Collections.singletonList(new android.graphics.Rect(0,0,width,height)));
+            }
+            @Override protected void onMeasure(int widthSpec,int heightSpec){
+                int width=MeasureSpec.getSize(widthSpec);
+                card.measure(MeasureSpec.makeMeasureSpec(Math.max(0,width-getPaddingLeft()-getPaddingRight()),MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED));
+                super.onMeasure(widthSpec,MeasureSpec.makeMeasureSpec(card.getMeasuredHeight(),MeasureSpec.EXACTLY));
+            }
+            @Override public void requestDisallowInterceptTouchEvent(boolean disallow){
+                // Child buttons/3D tilt cannot disable horizontal paging.
+                if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(disallow || ownsHorizontalGesture);
+            }
+            @Override public boolean dispatchTouchEvent(MotionEvent event){
+                int action=event.getActionMasked();
+                if(action==MotionEvent.ACTION_DOWN){ownsHorizontalGesture=true;downX=event.getRawX();downY=event.getRawY();if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(true);}
+                if(action==MotionEvent.ACTION_MOVE && Math.abs(event.getRawY()-downY)>dp(16) && Math.abs(event.getRawY()-downY)>Math.abs(event.getRawX()-downX)*1.5f && getParent()!=null){ownsHorizontalGesture=false;getParent().requestDisallowInterceptTouchEvent(false);}
+                boolean handled=super.dispatchTouchEvent(event);
+                if(action==MotionEvent.ACTION_UP || action==MotionEvent.ACTION_CANCEL){ownsHorizontalGesture=false;if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);}
+                return handled;
+            }
+        };
+        walletPager.setPadding(dp(24),0,dp(24),0);walletPager.setClipToPadding(false);walletPager.setClipChildren(false);
+        walletPager.setPageMargin(dp(4));walletPager.setOffscreenPageLimit(1);
+        walletPager.setAdapter(new androidx.viewpager.widget.PagerAdapter(){
+            @Override public int getCount(){return walletPages.size()+1;}
+            @Override public boolean isViewFromObject(View view,Object item){return view==item;}
+            @Override public Object instantiateItem(ViewGroup container,int position){
+                View page;
+                if(position==walletPages.size())page=createAddWalletCard(context);
+                else {
+                    WalletCardComponent item=walletPageViews.get(position);
+                    if(item==null){item=createWalletPage(context,card.isUse2D());walletPageViews.put(position,item);}
+                    MonogramWallet backend=walletPages.get(position);
+                    item.setCardHolder(backend.name().toUpperCase(java.util.Locale.ROOT));
+                    if(!backend.primary().isEmpty())item.setCardNumber(formatAddress(backend.primary()));
+                    String[] snapshot=backend.balance;
+                    item.getBalanceView().setText(snapshot!=null && snapshot.length>1 ? item.displayBalance(Long.parseLong(snapshot[1])) : "—");
+                    item.getUsdBalanceView().setText(backend.scanning ? backend.scanProgress() : backend.unlocked() ? "" : "Unlock wallet");
+                    final int index=position;
+                    item.setCardOnClickListener(v->{if(index==walletPageIndex)openWalletQRAlert(getContext(),currentAccount,getResourceProvider());else walletPager.setCurrentItem(index,true);});
+                    item.setPageActive(position==walletPageIndex);page=item;
+                }
+                container.addView(page);return page;
+            }
+            @Override public void destroyItem(ViewGroup container,int position,Object item){container.removeView((View)item);if(walletPageViews.get(position)==item)walletPageViews.remove(position);}
+        });
+        walletPager.setCurrentItem(walletPageIndex,false);
+        walletPager.addOnPageChangeListener(new androidx.viewpager.widget.ViewPager.SimpleOnPageChangeListener(){
+            @Override public void onPageSelected(int position){if(walletPagerState==androidx.viewpager.widget.ViewPager.SCROLL_STATE_IDLE)selectWalletPage(position);}
+            @Override public void onPageScrollStateChanged(int state){walletPagerState=state;if(state==androidx.viewpager.widget.ViewPager.SCROLL_STATE_IDLE)selectWalletPage(walletPager.getCurrentItem());}
+        });
+    }
+    private View createAddWalletCard(Context context){
+        FrameLayout frame=new FrameLayout(context);frame.setPadding(dp(12),dp(12),dp(12),dp(12));
+        LinearLayout button=new LinearLayout(context);button.setOrientation(LinearLayout.VERTICAL);button.setGravity(Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable();background.setColor(0x18FFFFFF);background.setCornerRadius(dp(24));button.setBackground(background);
+        TextView plus=new TextView(context);plus.setText("+");plus.setGravity(Gravity.CENTER);plus.setTextSize(48);plus.setTextColor(0xFFFF6A00);button.addView(plus,LayoutHelper.createLinear(64,64));
+        TextView label=new TextView(context);label.setText("Add or create another wallet");label.setTextColor(Color.WHITE);label.setTextSize(16);label.setGravity(Gravity.CENTER);label.setPadding(dp(24),dp(12),dp(24),0);button.addView(label,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT));
+        frame.addView(button,LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,LayoutHelper.MATCH_PARENT));
+
+        button.setOnClickListener(v->presentFragment(new WalletManagementActivity()));return frame;
+    }
+    private void selectWalletPage(int position){
+        if(position==walletPageIndex && addWalletPage==(position==walletPages.size()))return;
         try{
             MonogramWallet current=GramWallet.getInstance(currentAccount).backend();
-            java.util.List<MonogramWallet> wallets=current.wallets();int index=-1;
-            for(int i=0;i<wallets.size();i++)if(wallets.get(i).walletId.equals(current.walletId)){index=i;break;}
-            int next=index+direction;if(index<0 || next<0 || next>=wallets.size())return;
-            if(current.busy)throw new IllegalStateException("Stop syncing before switching wallets.");
-            current.select(wallets.get(next).walletId);GramWallet.cleanup(currentAccount);
-            WalletActivity screen=new WalletActivity();screen.setCurrentAccount(currentAccount);screen.walletPageEntry=direction;
-            presentFragment(screen,true,true);
-        }catch(Exception failure){BulletinFactory.of(this).showForError(failure.getMessage());}
+            if(position<walletPages.size() && !current.walletId.equals(walletPages.get(position).walletId)){
+                current.select(walletPages.get(position).walletId);GramWallet.cleanup(currentAccount);
+            }
+            if(balanceInOverlay)setBalanceInOverlay(false);
+            walletPageIndex=position;addWalletPage=position==walletPages.size();
+            WalletCardComponent selected=walletPageViews.get(position);
+            if(selected!=null){card=selected;card.setDiamondOnCard(true);balanceLayout=card.getBalanceLayout();balanceView=card.getBalanceView();usdBalanceView=card.getUsdBalanceView();card.setOnPrecisionChanged(this::update);}
+            for(java.util.Map.Entry<Integer,WalletCardComponent> page:walletPageViews.entrySet())page.getValue().setPageActive(page.getKey()==position);
+            rebindWallet();update();listView.adapter.update(false);updateHistory(false);listView.post(this::updateBalancePosition);
+        }catch(Exception failure){BulletinFactory.of(this).showForError(failure.getMessage());walletPager.setCurrentItem(walletPageIndex,true);}
+    }
+    private void rebindWallet() throws Exception{
+        GramWallet selected=GramWallet.getInstance(currentAccount);
+        if(boundWallet!=selected.backend()){
+            if(cancelListen!=null)cancelListen.run();cancelListen=selected.listen();boundWallet=selected.backend();
+            if(walletAuth!=null){walletAuth.destroy();walletAuth=null;}
+            if(transactionsList!=null)transactionsList.cancel();transactionsList=selected.getTransactions();
+            if(nftsList!=null)nftsList.unsubscribe(onNftsChanged);nftsList=selected.getCollectibles();nftsList.subscribe(onNftsChanged);
+        }
     }
 
     private void unlockMonero() {
@@ -3400,6 +3491,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
 
     private void scanMonero(MonogramWallet backend) {
         MonogramWallet.Result<Void> done = (value, failure) -> {
+            if(walletDestroyed)return;
             if (failure != null) BulletinFactory.of(this).showForError(failure.getMessage());
             update();
         };

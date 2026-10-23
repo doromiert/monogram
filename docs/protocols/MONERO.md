@@ -1,4 +1,4 @@
-# Monogram Monero messages (private implementation draft)
+# Monogram Monero messages (experimental implementation draft)
 
 Monogram uses ordinary XMPP message bodies and the conversation's existing encryption. No Telegram wallet account, TON service or new XMPP stanza type is involved. These are application conventions, not claims of a standardized XEP.
 

@@ -243,6 +243,7 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
         return capturingGlContent || !showingLoadingCard;
     }
 
+    void setPageFrameRate(int fps){textureView.setRenderFrameRate(fps);}
     void setPrecisionAnimationRunning(boolean running){textureView.setRenderFrameRate(running ? Math.max(60,Math.min(120,Math.round(AndroidUtilities.screenRefreshRate))) : 60);}
     void setDynamicOverlays(View... views){frontFace.setDynamicOverlays(views);}
     void setDetailsOffset(float offset){textureView.renderer.setDetailsOffset(offset);loadingCard.setDetailsOffset(offset);}

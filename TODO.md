@@ -1139,3 +1139,5 @@ Private xmr.14 delivery: final build passed; 8 app checks + 7 core checks passed
 - [ ] Verify locked/unlocked user-wallet UI, attachment scrolling and precision animation frame pacing on device.
 
 - xmr.22 follow-up: swipe wallet cards, exact total/available send balances with confirmation-lock explanation, resume-safe unlock callback, reduced note gap, clipped scroll viewport, compact history and transaction precision toggle with text fitting.
+
+- xmr.25: native continuous wallet-card pager with visible neighbors and final translucent Add wallet card; pager owns card/precision-button gestures; independent scans continue during selection; full attachment body scrolls with sticky header/footer. Two disposable SDK wallets passed concurrent scanning.
