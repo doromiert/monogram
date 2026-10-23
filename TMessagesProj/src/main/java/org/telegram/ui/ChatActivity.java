@@ -1697,6 +1697,35 @@ public class ChatActivity extends BaseFragment implements
     };
 
 
+    public ChatActionCell findWalletSendLanding(org.telegram.tgnet.tl.TL_wallet.walletTransaction transaction) {
+        if (chatListView == null || chatAdapter == null) return null;
+        for (int i = 0; i < chatListView.getChildCount(); i++) {
+            View child = chatListView.getChildAt(i);
+            if (child instanceof ChatActionCell
+                    && org.telegram.ui.Wallet.GramWallet.messageMatchesTransaction(((ChatActionCell) child).getMessageObject(), transaction)) {
+                return (ChatActionCell) child;
+            }
+        }
+        // The pending message can arrive after the destination fragment creates its view.
+        for (int i = 0; i < messages.size(); i++) {
+            if (org.telegram.ui.Wallet.GramWallet.messageMatchesTransaction(messages.get(i), transaction)) {
+                chatListView.stopScroll();
+                chatLayoutManager.scrollToPositionWithOffset(chatAdapter.messagesStartRow + i, 0);
+                break;
+            }
+        }
+        return null;
+    }
+
+    private org.telegram.ui.Wallet.ClaimPaymentLinkFlow moneroClaimFlow;
+
+    public void openMoneroClaim(String uri) {
+        try {
+            if (moneroClaimFlow != null) moneroClaimFlow.close();
+            org.telegram.ui.Wallet.ClaimPaymentLinkFlow.open(this,currentAccount,uri,flow->moneroClaimFlow=flow);
+        } catch (Exception error) { BulletinFactory.of(this).showForError(error.getMessage()); }
+    }
+
     public RecyclerListView getChatListView() {
         return chatListView;
     }
@@ -3425,6 +3454,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        if (moneroClaimFlow != null) moneroClaimFlow.close();
         if(swipeActionsHelper!=null) swipeActionsHelper.detach();
         AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatGone(dialog_id);
@@ -20034,6 +20064,9 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        if (moneroClaimFlow != null && moneroClaimFlow.activityResult(requestCode, resultCode)) return;
+        if (chatAttachAlert != null && chatAttachAlert.getCurrentAttachLayout() instanceof org.telegram.ui.Components.ChatAttachAlertGramLayout
+                && ((org.telegram.ui.Components.ChatAttachAlertGramLayout) chatAttachAlert.getCurrentAttachLayout()).onWalletActivityResult(requestCode, resultCode, data)) return;
         if(captureMonogramExternalResult(requestCode,resultCode,data)) return;
         if (resultCode == Activity.RESULT_OK) {
             if (requestCode == 0 || requestCode == 2) {
@@ -29184,6 +29217,9 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onResume() {
+        if (moneroClaimFlow != null) moneroClaimFlow.resume();
+        if (chatAttachAlert != null && chatAttachAlert.getCurrentAttachLayout() instanceof org.telegram.ui.Components.ChatAttachAlertGramLayout)
+            ((org.telegram.ui.Components.ChatAttachAlertGramLayout) chatAttachAlert.getCurrentAttachLayout()).onWalletResume();
         super.onResume();
         if(actionBar!=null) actionBar.setDrawGlassTitle(org.telegram.utils.settings.MonogramAppearance.chatHeaderBackground.get());
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatOpened(dialog_id);
@@ -29397,6 +29433,9 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onPause() {
+        if (moneroClaimFlow != null) moneroClaimFlow.pause();
+        if (chatAttachAlert != null && chatAttachAlert.getCurrentAttachLayout() instanceof org.telegram.ui.Components.ChatAttachAlertGramLayout)
+            ((org.telegram.ui.Components.ChatAttachAlertGramLayout) chatAttachAlert.getCurrentAttachLayout()).onWalletPause();
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatInactive(dialog_id);
         super.onPause();
         scrolling = false;
@@ -35548,6 +35587,22 @@ public class ChatActivity extends BaseFragment implements
     private void didPressMessageUrl(CharacterStyle url, boolean longPress, MessageObject messageObject, ChatMessageCell cell) {
         if (url == null || getParentActivity() == null) {
             return;
+        }
+        if (!longPress && url instanceof android.text.style.URLSpan && org.telegram.messenger.xmpp.MonogramXmr.enabled(currentAccount)) {
+            String payment = ((android.text.style.URLSpan) url).getURL();
+            if (payment != null && payment.startsWith(com.negzero.monogram.xmpp.MoneroClaim.PREFIX)) { openMoneroClaim(payment); return; }
+            if (payment != null && payment.regionMatches(true, 0, "monero:", 0, 7)) {
+                try {
+                    com.negzero.monogram.xmpp.MoneroPayment request = com.negzero.monogram.xmpp.MoneroPayment.parse(payment, null);
+                    try(org.telegram.messenger.xmpp.MonogramXmr settings=new org.telegram.messenger.xmpp.MonogramXmr(currentAccount)){
+                        if(settings.ownsDestination(request))return;
+                    }
+                    org.telegram.ui.Wallet.WalletSendEnterAmount screen = new org.telegram.ui.Wallet.WalletSendEnterAmount(currentAccount, request.address);
+                    if (request.atomicAmount != null) screen.setAmount(com.negzero.monogram.wallet.WalletAmounts.checkedAtomic(request.atomicAmount));
+                    presentFragment(screen);
+                } catch (Exception error) { BulletinFactory.of(this).showForError(error.getMessage()); }
+                return;
+            }
         }
         boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
         if (url instanceof URLSpanMono) {

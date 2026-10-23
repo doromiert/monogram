@@ -202,7 +202,7 @@ public class WalletDiamondTextureView extends TextureView implements TextureView
         }
 
         DiamondRenderer renderer() {
-            DiamondRenderer result = new DiamondRenderer(context, 2);
+            DiamondRenderer result = new DiamondRenderer(context, 2, true);
             result.appearance = GLIconRenderer.DIAMOND_COOL;
             return result;
         }

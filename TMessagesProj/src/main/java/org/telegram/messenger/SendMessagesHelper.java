@@ -5342,6 +5342,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
             org.telegram.messenger.xmpp.MonogramForwarding.pending(newMsg);
             newMsgObj = new MessageObject(currentAccount, newMsg, reply, true, true);
+            if (sendMessageParams.onLocalMessageCreated != null) sendMessageParams.onLocalMessageCreated.accept(newMsgObj);
             newMsgObj.sendAnimationData = sendAnimationData;
             newMsgObj.wasJustSent = true;
             newMsgObj.sentHighQuality = sendMessageParams.sendingHighQuality;
@@ -12304,6 +12305,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static class SendMessageParams {
         /** Ordinary immediate sends only; true after the native outbox row is confirmed on its storage queue. */
         public java.util.function.Consumer<Boolean> onLocalMessageStored;
+        public java.util.function.Consumer<MessageObject> onLocalMessageCreated;
         public String message;
         public String caption;
         public TLRPC.MessageMedia location;

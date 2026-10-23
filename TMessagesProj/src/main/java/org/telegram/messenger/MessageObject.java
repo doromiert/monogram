@@ -174,6 +174,7 @@ public class MessageObject {
     public static final int TYPE_COMMUNITY_CHANGED = 37;
     public static final int TYPE_UNSUPPORTED = 38;
 
+    public org.telegram.messenger.xmpp.MonogramXmrMessage monogramXmrMessage;
     public int localType;
     public String localName;
     public String localUserName;
@@ -6567,6 +6568,33 @@ public class MessageObject {
     }
 
     public void setType() {
+        monogramXmrMessage = messageOwner != null && org.telegram.messenger.xmpp.MonogramXmr.enabled(currentAccount)
+                && (messageOwner.media == null || messageOwner.media instanceof TLRPC.TL_messageMediaEmpty)
+                ? org.telegram.messenger.xmpp.MonogramXmrMessage.parse(messageOwner.message) : null;
+        if (monogramXmrMessage != null && (monogramXmrMessage.kind == org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.TRANSFER
+                || monogramXmrMessage.kind == org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.REQUEST
+                || monogramXmrMessage.kind == org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.CLAIM) && monogramXmrMessage.payment.atomicAmount != null) {
+            try {
+                TLRPC.TL_messageActionGramTransfer action = new TLRPC.TL_messageActionGramTransfer();
+                action.amount = com.negzero.monogram.wallet.WalletAmounts.checkedAtomic(monogramXmrMessage.payment.atomicAmount);
+                action.peer_address = monogramXmrMessage.payment.address;
+                action.transaction_id = monogramXmrMessage.hashes;
+                action.moneroKind = monogramXmrMessage.kind == org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.REQUEST ? 1
+                        : monogramXmrMessage.kind == org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.CLAIM ? 2 : 0;
+                action.comment = monogramXmrMessage.comment;
+                messageOwner.action = action;
+                messageText = action.moneroKind == 2 ? "XMR payment link" : action.moneroKind == 1 ? "XMR payment request" : isOutOwner() ? "XMR payment sent" : "XMR payment reported";
+                type = TYPE_DATE;
+                contentType = 1;
+                return;
+            } catch (IllegalArgumentException unsupportedAmount) { /* Preserve the original URI for unsupported UI amounts. */ }
+        }
+        if (messageOwner != null && messageOwner.action instanceof TLRPC.TL_messageActionGramTransfer) {
+            messageOwner.action = null;
+            messageText = messageOwner.message;
+            contentType = 0;
+        }
+
         int oldType = type;
         type = 1000;
         isRoundVideoCached = 0;
@@ -7633,6 +7661,7 @@ public class MessageObject {
                 addUrlsByPattern(isOutOwner(), caption, true, 0, 0, true);
             }
 
+            caption = org.telegram.messenger.xmpp.MonogramXmrLinks.update(caption, org.telegram.messenger.xmpp.MonogramXmr.enabled(currentAccount));
             addEntitiesToText(caption, useManualParse);
             caption = FormattedDateSpan.applyFormatedDateEntities(caption);
             if (isVideo()) {
@@ -8553,6 +8582,7 @@ public class MessageObject {
         if (!(messageText instanceof Spannable)) {
             messageText = new SpannableStringBuilder(messageText);
         }
+        messageText = org.telegram.messenger.xmpp.MonogramXmrLinks.update(messageText, org.telegram.messenger.xmpp.MonogramXmr.enabled(currentAccount));
         return addEntitiesToText(messageText, useManualParse);
     }
 

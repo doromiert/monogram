@@ -1720,6 +1720,8 @@ public final class MonogramController {
         });
     }
     public void logout() {
+        com.negzero.monogram.wallet.MonogramWallet.lockAccount(account);
+        org.telegram.ui.Wallet.GramWallet.cleanup(account);
         final String departing=accountJid();
         final long departingEpoch=accountEpoch;
         AndroidUtilities.cancelRunOnUIThread(scheduledWake);
@@ -1742,7 +1744,7 @@ public final class MonogramController {
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);
         }
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); outbox.clear();
+        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); outbox.clear();
         for(TranslationRequest translation:translationRequests.values()) translation.cancel();
         translationRequests.clear();
         try { MonogramTranslation.clearConfiguration(account); }
@@ -3110,6 +3112,7 @@ public final class MonogramController {
     private final java.util.concurrent.ConcurrentHashMap<TLObject,Integer> queuedLocalIds=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,String> queuedEncryption=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,LegacyCaptionTarget> queuedCaptions=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<TLObject,Boolean> queuedXmrPolicies=new java.util.concurrent.ConcurrentHashMap<>();
     private static final class LegacyCaptionTarget {
         final int parent;final boolean placeholder;
         LegacyCaptionTarget(int parent,boolean placeholder) { this.parent=parent;this.placeholder=placeholder; }
@@ -3128,6 +3131,8 @@ public final class MonogramController {
             int parent=Integer.parseInt(message.params.get(MonogramForwarding.CAPTION_PARENT));
             if(parent>0) queuedCaptions.put(request,new LegacyCaptionTarget(parent,Boolean.parseBoolean(message.params.get(MonogramForwarding.CAPTION_EMPTY))));
         } catch(NumberFormatException absent) { /* Normal message, not a generated media caption. */ }
+        if(request instanceof TLRPC.TL_messages_sendMessage && message.params.containsKey(MonogramXmr.REQUEST_PARAM))
+            queuedXmrPolicies.put(request,!"false".equals(message.params.get(MonogramXmr.PRIVATE_PARAM)));
     }
     /** Sends a detached local quick-reply template through the regular Monogram outbox. */
     public void sendQuickReply(long dialogId,MonogramQuickReplies.Outgoing outgoing) {
@@ -3234,6 +3239,7 @@ public final class MonogramController {
     }
     private static final class PendingSend {
         LegacyCaptionTarget caption;
+        Boolean xmrPrivate;
         final long created=System.nanoTime();
         final String encryption;
         final int token,localId; final long owner; final TLObject request; final RequestDelegate completed;
@@ -3287,6 +3293,7 @@ public final class MonogramController {
         if(storyBridge!=null) storyBridge.cancel(token);
         TranslationRequest translation=translationRequests.remove(token);if(translation!=null) translation.cancel();
         PendingSend pending=pendingSends.remove(token);
+        if(pending!=null) queuedXmrPolicies.remove(pending.request);
         if(pending!=null && pending.request instanceof MonogramFileRequest) {
             MonogramFileRequest file=(MonogramFileRequest)pending.request; file.job.cancel();
             finishUpload(file.localId,file.message.attachPath,file.job);
@@ -3297,8 +3304,10 @@ public final class MonogramController {
         String mode=queuedEncryption.remove(request);
         if(mode==null) mode=encryption(sendingPeer(request)).name();
         Integer local=queuedLocalIds.remove(request);
-        PendingSend pending=new PendingSend(token,accountEpoch,request,completed,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local);
+        RequestDelegate finished=(response,error)-> {queuedXmrPolicies.remove(request);completed.run(response,error);};
+        PendingSend pending=new PendingSend(token,accountEpoch,request,finished,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local);
         pending.caption=queuedCaptions.remove(request);
+        pending.xmrPrivate=queuedXmrPolicies.get(request);
         pendingSends.put(token,pending); scheduleSend(pending);
     }
     private void scheduleSend(PendingSend pending) {
@@ -3310,6 +3319,9 @@ public final class MonogramController {
             XmppSession expected=session;
             boolean ready=expected!=null && expected.connection().isAuthenticated();
             long peer=sendingPeer(pending.request);
+            if(pending.xmrPrivate!=null && !MonogramXmr.enabled(account)) {
+                failXmrRequest(pending,"Monero is disabled. This request was not sent.");return;
+            }
             if(ready && peer<0) {
                 boolean autojoin;
                 try { autojoin=store.room(peer).autojoin; } catch(IllegalArgumentException unknown) { autojoin=false; }
@@ -3336,6 +3348,9 @@ public final class MonogramController {
                     Utilities.stageQueue.postRunnable(() -> { if(pending.owner==accountEpoch) pending.completed.run(null,error); });
                 }
                 return;
+            }
+            if(Boolean.TRUE.equals(pending.xmrPrivate) && encryption(peer)==XmppMessage.Encryption.PLAIN) {
+                failXmrRequest(pending,"Encryption is unavailable. This XMR request was not sent. Enable encryption, or explicitly choose sending without encryption in the request screen.");return;
             }
             if(automaticEncryption(peer) && pending.request instanceof MonogramFileRequest) {
                 MonogramFileRequest file=(MonogramFileRequest)pending.request;
@@ -3389,6 +3404,16 @@ public final class MonogramController {
     }
     private void flushPendingSends() {
         sendWorker.execute(() -> pendingSends.values().stream().sorted(java.util.Comparator.comparingLong(send -> send.created)).forEach(this::scheduleSend));
+    }
+    private void failXmrRequest(PendingSend pending,String reason) {
+        if(!pendingSends.remove(pending.token,pending)) return;
+        TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;error.text="MONOGRAM_XMPP_FAILED|"+reason;
+        Utilities.stageQueue.postRunnable(()-> {if(pending.owner==accountEpoch) pending.completed.run(null,error);});
+    }
+    private void checkXmrSending(TLObject request,XmppMessage.Encryption mode) {
+        Boolean policy=queuedXmrPolicies.get(request);if(policy==null) return;
+        if(!MonogramXmr.enabled(account)) throw new IllegalStateException("Monero is disabled. This request was not sent.");
+        if(policy && mode==XmppMessage.Encryption.PLAIN) throw new IllegalStateException("Encryption is unavailable. This XMR request was not sent.");
     }
     /** Hide only a successfully saved local companion; failed/queued captions remain retryable. */
     private void publishLegacyCaptionMerge(long owner,int companion) {
@@ -4175,6 +4200,7 @@ public final class MonogramController {
             if (send.peer.chat_id!=0) {
                 if (send.schedule_date!=0) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;
+                checkXmrSending(send,encryption(dialog));
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
                 com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,encrypted(dialog),outgoingReply(send.reply_to,dialog,encrypted(dialog)),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
@@ -4185,6 +4211,7 @@ public final class MonogramController {
             }
             if (send.schedule_date != 0 || send.peer.user_id == 0) throw new UnsupportedOperationException();
             long peer = send.peer.user_id; XmppMessage.Encryption mode = encryption(peer);
+            checkXmrSending(send,mode);
             ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);
             XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
             String stanza = expected.send(store.jid(peer), markup.body, mode, reply, markup,inline);

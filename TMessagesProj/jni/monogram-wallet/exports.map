@@ -1,0 +1,4 @@
+{
+  global: JNI_OnLoad; Java_com_negzero_monogram_wallet_WalletNative_*;
+  local: *;
+};

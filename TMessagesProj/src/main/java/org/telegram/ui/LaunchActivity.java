@@ -6518,6 +6518,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         pipActivityHandler.onStop();
         Browser.unbindCustomTabsService(this);
         ApplicationLoader.mainInterfaceStopped = true;
+        com.negzero.monogram.wallet.MonogramWallet.lockAll();
         GroupCallPip.updateVisibility(this);
         if (GroupCallActivity.groupCallInstance != null) {
             GroupCallActivity.groupCallInstance.onPause();

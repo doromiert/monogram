@@ -95,6 +95,7 @@ public class Icon3D {
     public static final int TYPE_GOLDEN_STAR = 2;
     public static final int TYPE_DEAL = 3;
     public static final int TYPE_DIAMOND = 4;
+    public static final int TYPE_MONERO = 5;
 
     private static final String[] starModel = new String[] {
         "models/star.binobj"
@@ -114,12 +115,12 @@ public class Icon3D {
 
     public Icon3D(Context context, int type) {
         this.type = type;
-        if (type == TYPE_DIAMOND) {
+        if (type == TYPE_DIAMOND || type == TYPE_MONERO) {
             String version = GLES20.glGetString(GLES20.GL_VERSION);
             if (version == null || !version.startsWith("OpenGL ES 3")) {
                 throw new IllegalStateException("Diamond requires OpenGL ES 3");
             }
-            diamondRenderer = new DiamondRenderer(context);
+            diamondRenderer = new DiamondRenderer(context,4,type==TYPE_MONERO);
             N = 1;
             return;
         }

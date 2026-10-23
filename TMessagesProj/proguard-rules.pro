@@ -63,3 +63,7 @@
 # Use -keep to explicitly keep any other classes shrinking would remove
 #-dontoptimize
 #-dontobfuscate
+
+# JNI bridge/callback names are part of the pinned native wallet ABI.
+-keep class com.negzero.monogram.wallet.WalletNative { *; }
+-keepclassmembers class * implements com.negzero.monogram.wallet.WalletNative$Progress { public void block(long, boolean); }
