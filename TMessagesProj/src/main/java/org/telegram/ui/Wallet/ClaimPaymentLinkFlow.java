@@ -13,6 +13,28 @@ import org.telegram.ui.MonogramWalletAuth;
 
 /** A bearer link is scanned and swept into a fresh address of the user's own wallet. */
 public final class ClaimPaymentLinkFlow {
+    /** Choose the destination before opening a claim scoped to that local wallet. */
+    public static void open(BaseFragment host,int account,String uri,java.util.function.Consumer<ClaimPaymentLinkFlow> opened) {
+        try {
+            MonogramWallet active=GramWallet.getInstance(account).backend();
+            java.util.ArrayList<MonogramWallet> wallets=new java.util.ArrayList<>();
+            for(MonogramWallet wallet:active.wallets())if(wallet.exists())wallets.add(wallet);
+            if(wallets.isEmpty())throw new IllegalStateException("Create or restore a wallet first.");
+            java.util.function.Consumer<MonogramWallet> choose=wallet->{
+                try {
+                    MonogramWallet current=GramWallet.getInstance(account).backend();
+                    if(!current.walletId.equals(wallet.walletId)){current.select(wallet.walletId);GramWallet.cleanup(account);}
+                    ClaimPaymentLinkFlow flow=new ClaimPaymentLinkFlow(host,account,uri);
+                    opened.accept(flow);flow.show();
+                }catch(Exception error){BulletinFactory.of(host).showForError(message(error));}
+            };
+            if(wallets.size()==1){choose.accept(wallets.get(0));return;}
+            CharSequence[] names=new CharSequence[wallets.size()];
+            for(int i=0;i<wallets.size();i++)names[i]=wallets.get(i).name()+(wallets.get(i).walletId.equals(active.walletId) ? " · selected" : "");
+            new AlertDialog.Builder(host.getContext(),host.getResourceProvider()).setTitle("Deposit to which wallet?")
+                .setItems(names,(dialog,index)->choose.accept(wallets.get(index))).setNegativeButton("Cancel",null).show();
+        }catch(Exception error){BulletinFactory.of(host).showForError(message(error));}
+    }
     private final BaseFragment host;
     private final int account;
     private final MonogramWallet main, claim;
@@ -63,7 +85,7 @@ public final class ClaimPaymentLinkFlow {
         initial.feeUnknown = true;
         initial.readOnlyComment = true;
         initial.peer = GramWallet.createRecipientPeer(null, link.payment.address, null);
-        initial.comment = "Deposit this link’s available funds into your selected wallet. The wallet checks confirmations and shows the amount and network fee before you approve. Anyone else holding the link can also spend its funds until they are transferred.";
+        initial.comment = "Deposit into “"+main.name()+"”. The wallet checks confirmations and shows the amount and network fee before you approve. Anyone else holding the link can also spend its funds until they are transferred.";
         initial.actionLabel = "Deposit to your wallet";
         mainAuth.resume();
         claimAuth.resume();
@@ -167,17 +189,21 @@ public final class ClaimPaymentLinkFlow {
     }
 
     private void waitForConfirmations(org.telegram.messenger.Utilities.Callback2<TL_wallet.walletTransaction, String> done) {
+        String[] snapshot=claim.balance;
+        String progress=snapshot!=null && snapshot.length>3
+            ? "Funds: "+com.negzero.monogram.xmpp.MoneroPayment.format(new java.math.BigInteger(snapshot[1]))+" XMR\nSpendable: "+com.negzero.monogram.xmpp.MoneroPayment.format(new java.math.BigInteger(snapshot[2]))+" XMR\nScanned block: "+snapshot[3]+"\n\n" : "";
+        String waiting=progress+"The link’s funds need confirmations before they can be deposited. Checking every 30 seconds. Once spendable, you can review the deposit amount and network fee. No deposit has been sent.";
         if (waitingDialog == null) {
             waitingDialog = new AlertDialog.Builder(host.getContext(), host.getResourceProvider())
                 .setTitle("Waiting for confirmations")
-                .setMessage("This payment is not spendable yet. Checking every 30 seconds; you can review the deposit amount and fee once its funds unlock. Anyone holding the link can still spend the funds until they are transferred.")
+                .setMessage(waiting)
                 .setNegativeButton("Stop waiting", (dialog, which) -> {
                     stopWaiting();busy=false;done.run(null,"Stopped checking. No transaction was sent.");
                 }).create();
             waitingDialog.setCancelable(false);
             waitingDialog.setCanceledOnTouchOutside(false);
             waitingDialog.show();
-        }
+        }else waitingDialog.setMessage(waiting);
         if(retryScan!=null)AndroidUtilities.cancelRunOnUIThread(retryScan);
         retryScan=()->{retryScan=null;if(!closed)scan(done);};
         AndroidUtilities.runOnUIThread(retryScan,30000);

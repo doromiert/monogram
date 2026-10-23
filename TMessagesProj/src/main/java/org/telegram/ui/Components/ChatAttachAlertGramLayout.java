@@ -998,6 +998,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
     private void updateInputModeViews() {
         amountInput.setCurrency(GramWallet.getInstance(currentAccount), inputInCurrency);
+        walletStrip.setDisplayCurrency(GramWallet.getInstance(currentAccount),inputInCurrency);
     }
 
     private int getCurrencyAmountFractionDigits(BigDecimal currencyPerGram) {
@@ -1346,6 +1347,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
 
     private void updateBalance() {
         final GramWallet wallet = GramWallet.getInstance(currentAccount);
+        walletStrip.setDisplayCurrency(wallet,inputInCurrency);
         try{com.negzero.monogram.wallet.MonogramWallet backend=wallet.backend();walletStrip.bind(backend.wallets(),backend.walletId);}catch(Exception ignored){}
         if (!wallet.isReady()) {
 

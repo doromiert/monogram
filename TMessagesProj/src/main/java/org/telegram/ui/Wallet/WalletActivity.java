@@ -1294,8 +1294,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
                     String value = text == null ? "" : text.trim();
                     if (value.startsWith(com.negzero.monogram.xmpp.MoneroClaim.PREFIX)) {
                         if (reclaimFlow != null) reclaimFlow.close();
-                        reclaimFlow = new ClaimPaymentLinkFlow(WalletActivity.this, currentAccount, value);
-                        reclaimFlow.show();
+                        ClaimPaymentLinkFlow.open(WalletActivity.this,currentAccount,value,flow->reclaimFlow=flow);
                         return;
                     }
                     com.negzero.monogram.xmpp.MoneroPayment payment = value.regionMatches(true, 0, "monero:", 0, 7)
@@ -3332,8 +3331,7 @@ public class WalletActivity extends UniversalFragment implements NotificationCen
                                     .setNeutralButton("Deposit to your wallet", (dialog, which) -> {
                                         try {
                                             if (reclaimFlow != null) reclaimFlow.close();
-                                            reclaimFlow = new ClaimPaymentLinkFlow(this, currentAccount, uri);
-                                            reclaimFlow.show();
+                                            ClaimPaymentLinkFlow.open(this,currentAccount,uri,flow->reclaimFlow=flow);
                                         } catch (Exception failure) { BulletinFactory.of(this).showForError(failure.getMessage()); }
                                     }).setNegativeButton(getString(R.string.Close), null).show();
                             } finally { releasePaymentLink(); }

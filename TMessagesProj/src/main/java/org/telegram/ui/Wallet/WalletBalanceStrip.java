@@ -28,6 +28,11 @@ public final class WalletBalanceStrip extends ViewPager {
     private boolean binding,observing,ownsGesture;
     private int scrollState;
     private float downX,downY;
+    private boolean fiatBalances;
+    private com.negzero.monogram.wallet.WalletFiat.Rate fiatRate;
+    public void setDisplayCurrency(GramWallet wallet,boolean fiat){
+        fiatBalances=fiat;fiatRate=wallet.currencies.exactRate();refreshCards();
+    }
     private final class Card extends FrameLayout {
         final WalletCardView material;
         final TextView amount;
@@ -83,8 +88,16 @@ public final class WalletBalanceStrip extends ViewPager {
     }
     private void updateCard(int position,Card card){
         MonogramWallet wallet=wallets.get(position);String[] snapshot=wallet.balance;
-        String amount=wallet.unlocked() && snapshot!=null && snapshot.length>1
-            ? com.negzero.monogram.xmpp.MoneroPayment.format(new java.math.BigInteger(snapshot[1]))+" XMR" : "— XMR";
+        String amount=fiatBalances ? "—" : "— XMR";
+        if(wallet.unlocked() && snapshot!=null && snapshot.length>1){
+            java.math.BigInteger atomic=new java.math.BigInteger(snapshot[1]);
+            if(fiatBalances){
+                if(fiatRate!=null){
+                    java.util.Locale locale=org.telegram.messenger.LocaleController.getInstance().getCurrentLocale();
+                    amount=new com.negzero.monogram.wallet.WalletFiat.Format(fiatRate.currency,locale==null ? java.util.Locale.getDefault() : locale).format(fiatRate.fiatFor(atomic));
+                }
+            }else amount=com.negzero.monogram.xmpp.MoneroPayment.format(atomic)+" XMR";
+        }
         card.amount.setText(amount);card.material.setPageFrameRate(position==getCurrentItem() ? 60 : 10);card.material.setUseGyroscope(position==getCurrentItem() ? 1f : 0f);card.setContentDescription(wallet.name()+", "+amount+(wallet.unlocked() ? "" : ", locked"));
     }
     private void refreshCards(){for(Map.Entry<Integer,Card> entry:cards.entrySet())if(entry.getKey()<wallets.size())updateCard(entry.getKey(),entry.getValue());}

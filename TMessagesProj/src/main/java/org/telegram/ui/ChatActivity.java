@@ -1722,8 +1722,7 @@ public class ChatActivity extends BaseFragment implements
     public void openMoneroClaim(String uri) {
         try {
             if (moneroClaimFlow != null) moneroClaimFlow.close();
-            moneroClaimFlow = new org.telegram.ui.Wallet.ClaimPaymentLinkFlow(this, currentAccount, uri);
-            moneroClaimFlow.show();
+            org.telegram.ui.Wallet.ClaimPaymentLinkFlow.open(this,currentAccount,uri,flow->moneroClaimFlow=flow);
         } catch (Exception error) { BulletinFactory.of(this).showForError(error.getMessage()); }
     }
 
