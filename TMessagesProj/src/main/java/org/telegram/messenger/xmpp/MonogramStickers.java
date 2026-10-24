@@ -75,7 +75,7 @@ public final class MonogramStickers {
         TLRPC.TL_documentAttributeImageSize dimensions = new TLRPC.TL_documentAttributeImageSize(); dimensions.w = dimensions.h = 512;
         if (previous != null) for (TLRPC.DocumentAttribute attribute : previous.attributes)
             if (attribute.w > 0 && attribute.h > 0) { dimensions.w = attribute.w; dimensions.h = attribute.h; }
-        if(previous==null && message.media!=null && message.media.photo!=null && message.attachPath!=null
+        if(message.media!=null && message.media.photo!=null && message.attachPath!=null
                 && !message.attachPath.isEmpty() && new File(message.attachPath).isFile()) {
             long largest=0;
             for(TLRPC.PhotoSize photo:message.media.photo.sizes) if(photo.w>0 && photo.h>0 && (long)photo.w*photo.h>largest) {
@@ -110,6 +110,14 @@ public final class MonogramStickers {
             TLRPC.TL_document document = new TLRPC.TL_document(); document.id = source.id; document.date = source.date;
             document.dc_id = Integer.MIN_VALUE; document.file_reference = new byte[0]; document.mime_type = source.mime_type;
             document.size = source.size; document.localPath = source.localPath; document.thumbs.addAll(source.thumbs); document.flags = source.flags;
+            // Decoding established the real canvas. Do not replace it with the remote 512-square placeholder.
+            TLRPC.PhotoSize largest = null;
+            for (TLRPC.PhotoSize photo : decoded.photo.sizes)
+                if (photo.w > 0 && photo.h > 0 && (largest == null || (long) photo.w * photo.h > (long) largest.w * largest.h)) largest = photo;
+            if (largest != null) {
+                TLRPC.TL_documentAttributeImageSize dimensions = new TLRPC.TL_documentAttributeImageSize();
+                dimensions.w = largest.w; dimensions.h = largest.h; document.attributes.add(dimensions);
+            }
             TLRPC.TL_messageMediaDocument media = new TLRPC.TL_messageMediaDocument(); media.flags = 1; media.document = document; decoded = media;
         }
         preserveAttributes(source, decoded.document);

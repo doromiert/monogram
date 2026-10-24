@@ -7093,7 +7093,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             drawForwardedName = false;
             drawCommentButton = false;
             photoImage.setSideClip(0);
-            photoImage.setAspectFit(messageObject.isGif());
+            photoImage.setAspectFit(messageObject.isGif() || messageObject.isAnyKindOfSticker());
             photoImage.setRoundRadiusEnabled(true);
             fitPhotoImage = false;
             gradientShader = null;

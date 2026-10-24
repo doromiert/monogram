@@ -43,6 +43,21 @@ public class MonogramStickerHintTest {
         File file=store.attachmentFile(link.wireUrl);file.getParentFile().mkdirs();
         Files.write(file.toPath(),Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="));return file;
     }
+    @Test public void decodedStickerCanvasOverridesSquarePlaceholderForWideAndTallFiles() {
+        for (int[] size : new int[][]{{512,249},{140,512}}) {
+            TLRPC.TL_message message=new TLRPC.TL_message();message.id=123;message.message="";
+            TLRPC.TL_messageMediaDocument initial=new TLRPC.TL_messageMediaDocument();initial.document=new TLRPC.TL_document();
+            initial.document.mime_type="image/webp";initial.document.attributes.add(new TLRPC.TL_documentAttributeSticker());
+            TLRPC.TL_documentAttributeImageSize square=new TLRPC.TL_documentAttributeImageSize();square.w=square.h=512;initial.document.attributes.add(square);message.media=initial;
+            TLRPC.TL_messageMediaPhoto decoded=new TLRPC.TL_messageMediaPhoto();decoded.photo=new TLRPC.TL_photo();
+            TLRPC.TL_photoSize thumb=new TLRPC.TL_photoSize();thumb.w=40;thumb.h=40;decoded.photo.sizes.add(thumb);
+            TLRPC.TL_photoSize full=new TLRPC.TL_photoSize();full.w=size[0];full.h=size[1];decoded.photo.sizes.add(full);
+            TLRPC.MessageMedia preserved=MonogramStickers.preserve(message.media,decoded);
+            assertTrue(MonogramStickers.isSticker(preserved.document));
+            TLRPC.DocumentAttribute dimensions=preserved.document.attributes.stream().filter(a->a instanceof TLRPC.TL_documentAttributeImageSize).findFirst().get();
+            assertEquals(size[0],dimensions.w);assertEquals(size[1],dimensions.h);
+        }
+    }
     @Test public void receivedStickerSurvivesAndroidParsingDownloadAndReopen() throws Exception {
         org.jivesoftware.smack.android.AndroidSmackInitializer.initialize(context);
         FileShare.initialize();
