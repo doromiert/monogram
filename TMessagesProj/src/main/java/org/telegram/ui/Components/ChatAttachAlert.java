@@ -4956,6 +4956,11 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         animatorCaptionVisible.setValue(show, animated);
 
         if (show == (frameLayout2.getTag() != null) && (!show || writeButtonContainer.getVisibility()==View.VISIBLE && (writeButtonContainer.getAlpha()>0 || commentsAnimator!=null))) {
+            if (commentsAnimator == null && typeButtonsAvailable && currentAttachLayout == documentLayout) {
+                buttonsRecyclerViewWrapper.setVisibility(show ? View.INVISIBLE : View.VISIBLE);
+                buttonsRecyclerViewWrapper.setAlpha(show ? 0f : 1f);
+                buttonsRecyclerViewWrapper.setTranslationY(0);
+            }
             return false;
         }
         if (commentsAnimator != null) {
@@ -5066,6 +5071,11 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             if (!show) {
                 frameLayout2.setVisibility(View.INVISIBLE);
                 writeButtonContainer.setVisibility(View.INVISIBLE);
+            }
+            if (typeButtonsAvailable && (currentAttachLayout == null || currentAttachLayout.shouldHideBottomButtons())) {
+                buttonsRecyclerViewWrapper.setVisibility(show ? View.INVISIBLE : View.VISIBLE);
+                buttonsRecyclerViewWrapper.setAlpha(show ? 0f : 1f);
+                buttonsRecyclerViewWrapper.setTranslationY(0);
             }
             // actionBarShadow.setTranslationY(currentPanTranslationY);
             if (above) {

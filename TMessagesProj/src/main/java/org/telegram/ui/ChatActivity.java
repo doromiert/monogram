@@ -13786,6 +13786,8 @@ public class ChatActivity extends BaseFragment implements
         if(resultCode!=Activity.RESULT_OK) { org.telegram.messenger.xmpp.MonogramExternalSelections.cancel(token);if(requestCode==0 || requestCode==2) currentPicturePath=null;return true; }
         final org.telegram.messenger.xmpp.MonogramMediaDrafts.Owner owner=org.telegram.messenger.xmpp.MonogramExternalSelections.owner(token,requestCode);
         boolean receiverMatches=org.telegram.messenger.xmpp.MonogramExternalSelections.sameOwner(owner,currentAccount,dialog_id);
+        // Let the native document handler send and dismiss the sheet instead of reopening a draft.
+        if(org.telegram.messenger.xmpp.MonogramExternalSelections.consumeDocumentResult(token,requestCode,currentAccount,dialog_id)) return false;
         boolean captured=org.telegram.messenger.xmpp.MonogramExternalSelections.stage(token,requestCode,data,message -> {
             if(getParentActivity()!=null) BulletinFactory.of(this).createErrorBulletin(message,themeDelegate).show();
         },() -> {
@@ -20039,12 +20041,17 @@ public class ChatActivity extends BaseFragment implements
                 FileLog.e(e);
             }
         }
-        String tempPath = AndroidUtilities.getPath(uri);
+        boolean sendAsUri = "content".equalsIgnoreCase(uri.getScheme()) || !BuildVars.NO_SCOPED_STORAGE;
+        if ("content".equalsIgnoreCase(uri.getScheme())) {
+            try {
+                ApplicationLoader.applicationContext.getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException temporaryGrant) {
+                // GET_CONTENT providers may offer only the activity's temporary read grant.
+            }
+        }
+        String tempPath = sendAsUri ? null : AndroidUtilities.getPath(uri);
         String originalPath = tempPath;
-        boolean sendAsUri = false;
-        if (!BuildVars.NO_SCOPED_STORAGE) {
-            sendAsUri = true;
-        } else if (tempPath == null) {
+        if (!sendAsUri && tempPath == null) {
             originalPath = uri.toString();
             tempPath = MediaController.copyFileToCache(uri, "file");
 
@@ -20116,53 +20123,22 @@ public class ChatActivity extends BaseFragment implements
                 }
                 afterMessageSend();
             } else if (requestCode == 21) {
-                if (data == null) {
+                final ArrayList<Uri> documents = org.telegram.messenger.xmpp.MonogramExternalSelections.documentUris(data);
+                if (documents.isEmpty()) {
                     showAttachmentError();
                     return;
-                }
-                if (editingMessageObject == null && chatMode == MODE_SCHEDULED) {
-                    if (data.getData() != null) {
-                        if (chatAttachAlert != null) {
-                            chatAttachAlert.dismiss();
-                        }
-                        AlertsCreator.createScheduleDatePickerDialog(getParentActivity(), dialog_id, (notify, scheduleDate, scheduleRepeatPeriod) -> {
-                            fillEditingMediaWithCaption(null, null);
-                            sendUriAsDocument(data.getData(), notify, scheduleDate);
-                            afterMessageSend();
-                        }, themeDelegate);
-                        return;
-                    } else if (data.getClipData() != null) {
-                        if (chatAttachAlert != null) {
-                            chatAttachAlert.dismiss();
-                        }
-                        AlertsCreator.createScheduleDatePickerDialog(getParentActivity(), dialog_id, (notify, scheduleDate, scheduleRepeatPeriod) -> {
-                            fillEditingMediaWithCaption(null, null);
-                            ClipData clipData = data.getClipData();
-                            for (int i = 0; i < clipData.getItemCount(); i++) {
-                                sendUriAsDocument(clipData.getItemAt(i).getUri(), notify, scheduleDate);
-                            }
-                            afterMessageSend();
-                        }, themeDelegate);
-                        return;
-                    } else {
-                        showAttachmentError();
-                    }
-                } else {
-                    fillEditingMediaWithCaption(null, null);
-                    if (data.getData() != null) {
-                        sendUriAsDocument(data.getData());
-                    } else if (data.getClipData() != null) {
-                        ClipData clipData = data.getClipData();
-                        for (int i = 0; i < clipData.getItemCount(); i++) {
-                            sendUriAsDocument(clipData.getItemAt(i).getUri());
-                        }
-                    } else {
-                        showAttachmentError();
-                    }
                 }
                 if (chatAttachAlert != null) {
                     chatAttachAlert.dismiss();
                 }
+                if (editingMessageObject == null && chatMode == MODE_SCHEDULED) {
+                    AlertsCreator.createScheduleDatePickerDialog(getParentActivity(), dialog_id, (notify, scheduleDate, scheduleRepeatPeriod) -> {
+                        for (Uri document : documents) sendUriAsDocument(document, notify, scheduleDate);
+                        afterMessageSend();
+                    }, themeDelegate);
+                    return;
+                }
+                for (Uri document : documents) sendUriAsDocument(document);
                 afterMessageSend();
             } else if (requestCode == 28) {
                 if (chatAttachAlert != null) {

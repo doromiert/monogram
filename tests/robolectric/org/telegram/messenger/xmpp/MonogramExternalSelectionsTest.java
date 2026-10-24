@@ -43,6 +43,25 @@ public class MonogramExternalSelectionsTest {
         MonogramMediaDrafts.Session session=MonogramMediaDrafts.bind(account,dialog,errors::add);CountDownLatch ready=new CountDownLatch(1);AtomicReference<MonogramMediaDrafts.Restored> restored=new AtomicReference<>();
         session.restore(value->{restored.set(value);ready.countDown();});assertTrue(ready.await(10,TimeUnit.SECONDS));return restored.get();
     }
+    @Test public void immediateDocumentsConsumeOnceWithoutCreatingDrafts() {
+        String token=MonogramExternalSelections.launch(0,42,21,null);
+        assertFalse(MonogramExternalSelections.consumeDocumentResult(token,21,0,43));
+        assertNotNull(MonogramExternalSelections.owner(token,21));
+        assertFalse(MonogramExternalSelections.consumeDocumentResult(token,21,1,42));
+        assertTrue(MonogramExternalSelections.consumeDocumentResult(token,21,0,42));
+        assertFalse(MonogramExternalSelections.consumeDocumentResult(token,21,0,42));
+        assertFalse(MonogramMediaDrafts.hasComposition(MonogramMediaDrafts.Owner.current(0,42)));
+        String photo=MonogramExternalSelections.launch(0,42,1,null);
+        assertFalse(MonogramExternalSelections.consumeDocumentResult(photo,1,0,42));
+        assertNotNull(MonogramExternalSelections.owner(photo,1));
+    }
+    @Test public void documentResultsIncludeDataAndClipWithoutDuplicates() {
+        Uri a=document("first",true),b=document("second",true);
+        Intent result=new Intent().setData(a);ClipData clip=ClipData.newRawUri("files",a);
+        clip.addItem(new ClipData.Item(b));result.setClipData(clip);
+        assertEquals(Arrays.asList(a,b),MonogramExternalSelections.documentUris(result));
+        assertTrue(MonogramExternalSelections.documentUris(null).isEmpty());
+    }
     @Test public void launchOwnerRequestAndLogoutGenerationMustMatch() {
         String token=MonogramExternalSelections.launch(0,42,21,null);assertNotNull(token);assertTrue(MonogramExternalSelections.matches(token,21,0,42));assertFalse(MonogramExternalSelections.matches(token,1,0,42));assertFalse(MonogramExternalSelections.matches(token,21,1,42));assertFalse(MonogramExternalSelections.matches(token,21,0,43));
         MonogramMediaDrafts.Owner owner=MonogramExternalSelections.owner(token,21);MonogramMediaDrafts.logout(0,owner.jid);assertNull(MonogramExternalSelections.owner(token,21));

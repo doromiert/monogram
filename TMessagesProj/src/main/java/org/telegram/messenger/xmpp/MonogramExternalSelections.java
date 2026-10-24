@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 import org.json.*;
 import org.telegram.messenger.*;
 
-/** Owner-bound Android provider/camera launches. Returned inputs become ordinary native draft selections. */
+/** Owner-bound Android provider/camera launches. Documents send immediately to their original conversation; other results can become draft selections. */
 public final class MonogramExternalSelections {
     private MonogramExternalSelections() {}
     private static android.content.SharedPreferences preferences() { return ApplicationLoader.applicationContext.getSharedPreferences("monogram-external-selections",Context.MODE_PRIVATE); }
@@ -34,6 +34,20 @@ public final class MonogramExternalSelections {
     public static boolean matches(String token,int request,int account,long dialog) {
         MonogramMediaDrafts.Owner expected=owner(token,request),current=MonogramMediaDrafts.Owner.current(account,dialog);
         return expected!=null && current!=null && expected.key.equals(current.key) && expected.epoch.equals(current.epoch);
+    }
+    /** Consume only a verified document return; mismatched results remain recoverable. */
+    public static synchronized boolean consumeDocumentResult(String token,int request,int account,long dialog) {
+        if(request!=21 || account!=UserConfig.selectedAccount || !matches(token,request,account,dialog)) return false;
+        return preferences().edit().remove(token).commit();
+    }
+    public static ArrayList<Uri> documentUris(Intent data) {
+        LinkedHashSet<Uri> uris=new LinkedHashSet<>();
+        if(data!=null) {
+            if(data.getData()!=null) uris.add(data.getData());
+            ClipData clip=data.getClipData();
+            if(clip!=null) for(int i=0;i<clip.getItemCount();i++) if(clip.getItemAt(i).getUri()!=null) uris.add(clip.getItemAt(i).getUri());
+        }
+        return new ArrayList<>(uris);
     }
     public static String cameraPath(String token,int request) {
         try { JSONObject saved=state(token);return saved!=null && saved.getInt("request")==request ? saved.optString("output",null) : null; } catch(Exception unavailable) { return null; }
