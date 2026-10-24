@@ -137,5 +137,30 @@ class Omemo2DeviceTest {
         assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(bob,202,contact.identity()));
         assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(own,303,other.identity()));
         assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust(bob,203,contact.identity()));
+    }    @Test void blindTrustOptInIsScopedHonorsDisableAndInvalidatesOldSessionsOnKeyChanges()throws Exception {
+        Omemo2TestDatabase database=new Omemo2TestDatabase();Omemo2Device alice=new Omemo2Device("alice@example.org",101,database);
+        String bob="bob@example.org";Omemo2Bundle first=new Omemo2Device(bob,202,new Omemo2TestDatabase()).prepare();
+        alice.observe(bob,202,first);assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust(bob,202,first.identity()));
+        java.util.concurrent.atomic.AtomicBoolean enabled=new java.util.concurrent.atomic.AtomicBoolean(true);
+        alice.setBlindTrustPolicy(peer->enabled.get() && peer.equals(bob));
+        alice.trustAutomatically(bob,202,first.identity());assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(bob,202,first.identity()));
+        try(Omemo2Records tx=database.begin()){tx.save(SESSION,bob,202,new byte[]{1});tx.commit();}
+        Omemo2Bundle changed=new Omemo2Device(bob,202,new Omemo2TestDatabase()).prepare();alice.observe(bob,202,changed);
+        assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(bob,202,changed.identity()));
+        try(Omemo2Records tx=database.begin()){assertNull(tx.load(SESSION,bob,202));}
+        alice.observe("carol@example.org",203,first);assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust("carol@example.org",203,first.identity()));
+        enabled.set(false);alice.observe(bob,204,first);assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust(bob,204,first.identity()));
+        assertEquals(Omemo2Device.Trust.TRUSTED,alice.trust(bob,202,changed.identity()));
     }
+    @Test void blindTrustPreservesDeviceBlocksAcrossKeyChangesAndRollsBackFailedWrites()throws Exception {
+        Omemo2TestDatabase db=new Omemo2TestDatabase();Omemo2Device alice=new Omemo2Device("alice@example.org",101,db);
+        String bob="bob@example.org";Omemo2Bundle original=new Omemo2Device(bob,202,new Omemo2TestDatabase()).prepare();
+        alice.observe(bob,202,original);alice.decide(bob,202,original.identity(),false);alice.setBlindTrustPolicy(peer->true);
+        alice.observe(bob,202,original);assertEquals(Omemo2Device.Trust.REJECTED,alice.trust(bob,202,original.identity()));
+        Omemo2Bundle changed=new Omemo2Device(bob,202,new Omemo2TestDatabase()).prepare();alice.observe(bob,202,changed);
+        assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust(bob,202,changed.identity()));
+        db.failCommit=true;assertThrows(java.io.IOException.class,()->alice.observe(bob,203,original));db.failCommit=false;
+        assertEquals(Omemo2Device.Trust.UNDECIDED,alice.trust(bob,203,original.identity()));
+    }
+
 }

@@ -4493,6 +4493,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             scrollOffsetY[0] = scrollOffsetY[1];
 
             setCaptionAbove(captionAbove, false);
+            updateCountButton(0);
             updateDoneItemEnabled();
         };
 
@@ -4952,9 +4953,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     }
 
     private boolean showCommentTextView(boolean show, boolean animated) {
-        animatorCaptionVisible.setValue(show, true);
+        animatorCaptionVisible.setValue(show, animated);
 
-        if (show == (frameLayout2.getTag() != null)) {
+        if (show == (frameLayout2.getTag() != null) && (!show || writeButtonContainer.getVisibility()==View.VISIBLE && (writeButtonContainer.getAlpha()>0 || commentsAnimator!=null))) {
             return false;
         }
         if (commentsAnimator != null) {

@@ -11,11 +11,18 @@ import org.jivesoftware.smackx.omemo.trust.TrustState;
 import org.jivesoftware.smackx.omemo.internal.OmemoDevice;
 import org.jivesoftware.smackx.omemo.trust.OmemoFingerprint;
 
-/** Decisions are bound to the fingerprint, so a replacement identity always needs a new decision. */
+/** Fingerprint decisions remain explicit unless a contact's opt-in blind-trust policy accepts them. */
 public final class IdentityTrust implements OmemoTrustCallback {
     private final File file;
     private final Properties decisions = new Properties();
     private long revision;
+    private volatile java.util.function.Predicate<String> blindTrust=peer->false;
+    public void setBlindTrustPolicy(java.util.function.Predicate<String> policy){blindTrust=Objects.requireNonNull(policy);}
+    private boolean blockedDevice(OmemoDevice device){
+        String prefix=device.getJid()+":"+device.getDeviceId()+":";
+        for(String key:decisions.stringPropertyNames())if(key.startsWith(prefix) && "false".equals(decisions.getProperty(key)))return true;
+        return false;
+    }
     public synchronized long revision() { return revision; }
 
     public IdentityTrust(File file) throws IOException {
@@ -31,6 +38,9 @@ public final class IdentityTrust implements OmemoTrustCallback {
 
     @Override public synchronized TrustState getTrust(OmemoDevice d, OmemoFingerprint f) {
         String value = decisions.getProperty(key(d, f));
+        if(value==null && blindTrust.test(d.getJid().toString()) && !blockedDevice(d)) {
+            setTrust(d,f,true);value="true";
+        }
         return value == null ? TrustState.undecided : "true".equals(value) ? TrustState.trusted : TrustState.untrusted;
     }
     @Override public void setTrust(OmemoDevice d, OmemoFingerprint f, TrustState state) {
@@ -38,10 +48,10 @@ public final class IdentityTrust implements OmemoTrustCallback {
         setTrust(d, f, state == TrustState.trusted);
     }
     public synchronized boolean isTrusted(OmemoDevice d, OmemoFingerprint f) {
-        return "true".equals(decisions.getProperty(key(d, f)));
+        return getTrust(d,f)==TrustState.trusted;
     }
     public synchronized boolean isDecided(OmemoDevice d, OmemoFingerprint f) {
-        return decisions.containsKey(key(d, f));
+        return getTrust(d,f)!=TrustState.undecided;
     }
     public synchronized void setTrust(OmemoDevice d, OmemoFingerprint f, boolean trusted) {
         setTrustAll(Collections.singletonMap(d, f), trusted);

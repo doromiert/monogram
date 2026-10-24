@@ -779,6 +779,8 @@ public final class MonogramController {
                         });
                     }
                 });
+        connecting.setBlindTrustPolicy(address->details.jid.toString().equals(accountJid())
+                && preferences.getBoolean("blind-trust-"+details.jid+"\n"+address,false));
         // Android owns retries; do not race Smack's reconnect thread with replacement sessions.
         org.jivesoftware.smack.ReconnectionManager.getInstanceFor(connecting.connection()).disableAutomaticReconnection();
         Roster roster = Roster.getInstanceFor(connecting.connection());
@@ -2136,6 +2138,13 @@ public final class MonogramController {
         return current;
     }
     public boolean encrypted(long peer) { return preferences.getBoolean("omemo-" + peer, true); }
+    public boolean blindlyTrustContact(long peer) {
+        return peer>0 && peer!=self && preferences.getBoolean("blind-trust-"+accountJid()+"\n"+store.jid(peer),false);
+    }
+    public void setBlindlyTrustContact(long peer,boolean enabled) {
+        if(peer<=0 || peer==self)throw new IllegalArgumentException("Choose a contact, not a room or your own account.");
+        if(!preferences.edit().putBoolean("blind-trust-"+accountJid()+"\n"+store.jid(peer),enabled).commit())throw new IllegalStateException("Could not save blind-trust preference.");
+    }
     public boolean modernEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==2; }
     public XmppMessage.Encryption encryption(long peer) {
         return !encrypted(peer) ? XmppMessage.Encryption.PLAIN : modernEncryption(peer)

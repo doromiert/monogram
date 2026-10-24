@@ -20,6 +20,18 @@ public final class Omemo2Device {
     public final String jid;
     final Omemo2Records.Factory records;
     private final SecureRandom random = new SecureRandom();
+    private volatile java.util.function.Predicate<String> blindTrust=peer->false;
+    public void setBlindTrustPolicy(java.util.function.Predicate<String> policy){blindTrust=java.util.Objects.requireNonNull(policy);}
+    private boolean applyBlindTrust(Omemo2Records tx,String peer,int device,byte[] key)throws Exception {
+        if(!blindTrust.test(peer) || rejected(tx,peer,device).length!=0 || !Arrays.equals(tx.load(SEEN,peer,device),key)
+                || Arrays.equals(tx.load(TRUSTED,peer,device),key))return false;
+        tx.save(TRUSTED,peer,device,key);return true;
+    }
+    void trustAutomatically(String peer,int device,byte[] key)throws Exception {
+        if(!blindTrust.test(peer))return;
+        address(peer,device);
+        try(Omemo2Records tx=records.begin()){if(applyBlindTrust(tx,peer,device,key))tx.commit();}
+    }
     public Omemo2Device(String jid, int id, Omemo2Records.Factory records) throws Exception {
         if (id <= 0 || jid.indexOf('/') >= 0) throw new IllegalArgumentException("Bare account and positive device required");
         this.jid = JidCreate.entityBareFrom(jid).toString(); this.id = id; this.records = records;
@@ -83,7 +95,7 @@ public final class Omemo2Device {
     }
     public void observe(String peer, int device, Omemo2Bundle bundle) throws Exception {
         address(peer,device);
-        try (Omemo2Records tx = records.begin()) { tx.save(SEEN,peer,device,bundle.identity()); tx.commit(); }
+        try (Omemo2Records tx = records.begin()) { tx.save(SEEN,peer,device,bundle.identity());applyBlindTrust(tx,peer,device,bundle.identity());tx.commit(); }
     }
     public byte[] seen(String peer, int device) throws Exception {
         address(peer,device); try (Omemo2Records tx = records.begin()) { return tx.load(SEEN,peer,device); }

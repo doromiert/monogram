@@ -72,6 +72,24 @@ class IdentityTrustTest {
         assertFalse(persisted.isDecided(other, fingerprint));
         assertEquals(0, dir.listFiles((parent, name) -> name.startsWith("trust-") && name.endsWith(".tmp")).length);
     }
+    @Test void blindTrustIsOptInContactScopedPersistentAndStopsApprovingWhenDisabled()throws Exception {
+        File file=new File(dir,"blind.properties");IdentityTrust trust=new IdentityTrust(file);
+        OmemoDevice bob=new OmemoDevice(JidCreate.entityBareFrom("bob@example.org"),42),other=new OmemoDevice(JidCreate.entityBareFrom("carol@example.org"),42);
+        OmemoFingerprint first=new OmemoFingerprint(new String(new char[64]).replace('\0','a')),changed=new OmemoFingerprint(new String(new char[64]).replace('\0','b'));
+        assertFalse(trust.isDecided(bob,first));
+        java.util.concurrent.atomic.AtomicBoolean enabled=new java.util.concurrent.atomic.AtomicBoolean(true);
+        trust.setBlindTrustPolicy(peer->enabled.get() && peer.equals("bob@example.org"));
+        assertTrue(trust.isTrusted(bob,first));assertFalse(trust.isDecided(other,first));assertTrue(trust.isTrusted(bob,changed));
+        enabled.set(false);OmemoDevice later=new OmemoDevice(bob.getJid(),43);assertFalse(trust.isDecided(later,first));
+        IdentityTrust restarted=new IdentityTrust(file);assertTrue(restarted.isTrusted(bob,first));assertTrue(restarted.isTrusted(bob,changed));assertFalse(restarted.isDecided(later,first));
+    }
+    @Test void blindTrustNeverOverridesABlockedDeviceIncludingAReplacementIdentity()throws Exception {
+        IdentityTrust trust=new IdentityTrust(new File(dir,"blocked.properties"));
+        OmemoDevice bob=new OmemoDevice(JidCreate.entityBareFrom("bob@example.org"),42);
+        OmemoFingerprint blocked=new OmemoFingerprint(new String(new char[64]).replace('\0','a')),replacement=new OmemoFingerprint(new String(new char[64]).replace('\0','b'));
+        trust.setTrust(bob,blocked,false);trust.setBlindTrustPolicy(peer->true);
+        assertFalse(trust.isTrusted(bob,blocked));assertFalse(trust.isDecided(bob,replacement));
+    }
     @Test void rejectsMalformedAccounts() {
         assertThrows(Exception.class, () -> new Account("example.org", null, 5222, "Monogram"));
         assertThrows(Exception.class, () -> new Account("a@example.org/resource", null, 5222, "Monogram"));

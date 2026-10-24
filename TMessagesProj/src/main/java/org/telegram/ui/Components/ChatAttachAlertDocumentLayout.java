@@ -759,10 +759,17 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
     }
     public ArrayList<String> getDraftFiles() { return new ArrayList<>(selectedFilesOrder); }
     public void restoreDraftFiles(ArrayList<String> paths) {
-        for(String path:paths) if(!selectedFiles.containsKey(path)) {
-            File file=new File(path);ListItem item=new ListItem();item.file=file;item.title=file.getName();item.subtitle=AndroidUtilities.formatFileSize(file.length());
+        Object owner=parentAlert.mediaDraftOwner();
+        if(owner!=mediaDraftOwner) {
+            selectedFiles.clear();selectedFilesOrder.clear();selectedMessages.clear();listRoots();
+        }
+        mediaDraftOwner=owner;
+        for(String path:paths) {
+            File file=new File(path).getAbsoluteFile();String key=file.getAbsolutePath();
+            if(selectedFiles.containsKey(key))continue;
+            ListItem item=new ListItem();item.file=file;item.title=file.getName();item.subtitle=AndroidUtilities.formatFileSize(file.length());
             int dot=item.title.lastIndexOf('.');item.ext=dot<0 ? "" : item.title.substring(dot+1).toUpperCase();
-            selectedFiles.put(path,item);selectedFilesOrder.add(path);listAdapter.items.add(0,item);
+            selectedFiles.put(key,item);selectedFilesOrder.add(key);listAdapter.items.add(0,item);
         }
         listAdapter.notifyDataSetChanged();parentAlert.updateCountButton(0);
     }
@@ -870,6 +877,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
         if (view instanceof SharedDocumentCell) {
             ((SharedDocumentCell) view).setChecked(add, true);
         }
+        if(listView.getAdapter()!=null)listView.getAdapter().notifyDataSetChanged();
         parentAlert.updateCountButton(add ? 1 : 2);
         return true;
     }
@@ -960,6 +968,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
                 try (Cursor cursor = ApplicationLoader.applicationContext.getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection, MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.DATE_ADDED + " DESC")) {
                     while (cursor.moveToNext()) {
                         File file = new File(cursor.getString(1));
+                        if(!file.isFile() || !file.canRead())continue;
                         long duration = cursor.getLong(2);
                         long fileSize = cursor.getLong(3);
                         String mimeType = cursor.getString(4);
@@ -1003,7 +1012,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
                     checkDirectory(file);
                     continue;
                 }
-                if (file.equals(storiesDir)) {
+                if (file.equals(storiesDir) || !file.isFile() || !file.canRead()) {
                     continue;
                 }
                 ListItem item = new ListItem();
@@ -1534,7 +1543,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
                         documentCell.setTextAndValueAndTypeAndThumb(item.title, item.subtitle, type, item.thumb, 0, false);
                     }
                     if (item.file != null) {
-                        documentCell.setChecked(selectedFiles.containsKey(item.file.toString()), !scrolling);
+                        documentCell.setChecked(selectedFiles.containsKey(item.file.getAbsolutePath()), !scrolling);
                     } else {
                         documentCell.setChecked(false, !scrolling);
                     }
@@ -2232,7 +2241,7 @@ public class ChatAttachAlertDocumentLayout extends ChatAttachAlert.AttachAlertLa
                             documentCell.setTextAndValueAndTypeAndThumb(item.title, item.subtitle, type, item.thumb, 0, false);
                         }
                         if (item.file != null) {
-                            documentCell.setChecked(selectedFiles.containsKey(item.file.toString()), !scrolling);
+                            documentCell.setChecked(selectedFiles.containsKey(item.file.getAbsolutePath()), !scrolling);
                         } else {
                             documentCell.setChecked(false, !scrolling);
                         }

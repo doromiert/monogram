@@ -764,8 +764,20 @@ public class WalletCardView extends FrameLayout implements SensorEventListener {
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
             contentDirty = true;
-            content.setScaleX(w / (float) dp(DESIGN_WIDTH));
-            content.setScaleY(h / (float) dp(designHeight));
+            float verticalScale=h/(float)dp(designHeight);
+            content.setScaleX(compactFace ? verticalScale : w/(float)dp(DESIGN_WIDTH));
+            content.setScaleY(verticalScale);
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec,int heightMeasureSpec) {
+            int width=MeasureSpec.getSize(widthMeasureSpec),height=MeasureSpec.getSize(heightMeasureSpec);
+            if(compactFace && width>0 && height>0) {
+                // Adapt the design width, not the glyph aspect ratio, to this compact viewport.
+                float scale=height/(float)dp(designHeight);
+                content.getLayoutParams().width=Math.max(1,Math.round(width/scale));
+            }
+            super.onMeasure(widthMeasureSpec,heightMeasureSpec);
         }
 
         @Override

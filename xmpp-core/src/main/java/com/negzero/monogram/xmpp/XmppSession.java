@@ -1190,6 +1190,10 @@ public final class XmppSession implements AutoCloseable {
     static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
     public String ownJid() { return omemo.getOwnJid().toString(); }
     public int ownDeviceId() { return omemo.getDeviceId(); }
+    public void setBlindTrustPolicy(java.util.function.Predicate<String> policy){
+        trust.setBlindTrustPolicy(policy);
+        if(modern!=null)modern.device.setBlindTrustPolicy(policy);
+    }
     public org.jivesoftware.smackx.omemo.trust.TrustState trustState(OmemoDevice device, OmemoFingerprint fingerprint) { return trust.getTrust(device, fingerprint); }
     public String senderFingerprint(XmppMessage.Encryption encryption) throws Exception {
         return encryption==XmppMessage.Encryption.PLAIN ? null : encryption==XmppMessage.Encryption.OMEMO2 ? modern().ownFingerprint() : ownFingerprint().toString();

@@ -40,14 +40,14 @@ public class Omemo2AndroidStoreTest {
                 Omemo2Device own = new Omemo2Device(alice,id,() -> begin(a,alice,id));
                 remote = new Omemo2Device(bob,peerId,() -> begin(b,bob,peerId)).prepare(1000000);
                 original = own.prepare(1000000); own.observe(bob,202,remote); own.decide(bob,202,remote.identity(),false);
-                int consumed = original.preKeys()[0];
+                int consumed = Math.toIntExact(original.preKeys()[0]);
                 try (Omemo2Records tx = begin(a,alice,id)) { tx.save(Omemo2Records.PRE_KEY,"",consumed,null); tx.commit(); }
                 rotated = own.prepare(1000000+Omemo2Device.ROTATION);
                 assertEquals(100,rotated.preKeys().length); assertNotEquals(original.signedId,rotated.signedId);
                 assertArrayEquals(original.identity(),rotated.identity());
                 try (Omemo2Records tx = begin(a,alice,id)) {
                     assertNull(tx.load(Omemo2Records.PRE_KEY,"",consumed)); assertNull(tx.load(Omemo2Records.PRE_PUBLIC,"",consumed));
-                    assertNotNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",original.signedId));
+                    assertNotNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",Math.toIntExact(original.signedId)));
                 }
             }
             try (SQLiteOpenHelper a = open(context,file)) {
@@ -57,7 +57,7 @@ public class Omemo2AndroidStoreTest {
                 assertEquals(Omemo2Device.Trust.UNDECIDED,own.trust(bob,203,remote.identity()));
                 own.prepare(1000000+2*Omemo2Device.ROTATION);
                 try (Omemo2Records tx = begin(a,alice,id)) {
-                    assertNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",original.signedId)); assertNotNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",rotated.signedId));
+                    assertNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",Math.toIntExact(original.signedId))); assertNotNull(tx.load(Omemo2Records.SIGNED_PRE_KEY,"",Math.toIntExact(rotated.signedId)));
                 }
             }
         } finally { context.deleteDatabase(file); context.deleteDatabase(other); }

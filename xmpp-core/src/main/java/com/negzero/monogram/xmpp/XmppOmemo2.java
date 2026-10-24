@@ -138,7 +138,7 @@ public final class XmppOmemo2 implements AutoCloseable {
     private synchronized Omemo2Bundle bundle(String peer, int id, boolean refresh) throws Exception {
         String key = peer+"\n"+id;
         Omemo2Bundle known = refresh || !fresh(peer+"\n"+BUNDLES_NODE+"\n"+id) ? null : bundles.get(key);
-        if (known != null) return known;
+        if (known != null) {device.trustAutomatically(peer,id,known.identity());return known;}
         StandardExtensionElement root = item(peer,BUNDLES_NODE,Integer.toString(id));
         if (root == null) throw new java.security.GeneralSecurityException("OMEMO2 bundle unavailable");
         Omemo2Bundle found = Omemo2Bundle.parse(root); device.observe(peer,id,found); bundles.put(key,found); refreshed.put(peer+"\n"+BUNDLES_NODE+"\n"+id,System.nanoTime()); changed.accept(peer); return found;

@@ -225,6 +225,10 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
+        if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
+            items.add(UItem.asCheck(31,"Blindly trust this contact").setChecked(controller.blindlyTrustContact(peer)).setEnabled(!saving));
+            items.add(UItem.asShadow("Automatically trust this contact’s new devices and changed keys in both OMEMO versions. Blocked devices stay blocked. Turning this off stops future automatic approvals; accepted fingerprints remain trusted."));
+        }
         items.add(UItem.asButton(13,"Devices and fingerprints"));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer)))items.add(UItem.asButton(26,"Revoke presence access").setEnabled(!saving));
         items.add(UItem.asHeader("More"));
@@ -258,7 +262,15 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id==30 && accountPage && !saving) {
+        if(item.id==31 && peer>0 && !saving) {
+            if(controller.blindlyTrustContact(peer)) {
+                try{controller.setBlindlyTrustContact(peer,false);refresh();}catch(Exception error){showBlindTrustError(error);}
+            } else showDialog(new AlertDialog.Builder(getContext()).setTitle("Blindly trust this contact?")
+                .setMessage("New devices and changed encryption keys for "+controller.jid(peer)+" will be trusted without fingerprint verification, in both OMEMO versions. An attacker who controls their account or key publication could receive your future messages. Blocked devices stay blocked. This does not change whether messages are encrypted.")
+                .setPositiveButton("Enable blind trust",(dialog,which)->{
+                    try{controller.setBlindlyTrustContact(peer,true);loadIdentities(true);}catch(Exception error){showBlindTrustError(error);}
+                }).setNegativeButton("Cancel",null).create());
+        } else if(item.id==30 && accountPage && !saving) {
             showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
                 .setItems(new CharSequence[]{"OMEMO 2","Legacy OMEMO"},(dialog,which)->{
                     modern=which==0;identities.clear();states.clear();ownFingerprint=null;ownDeviceId=0;loadIdentities(true);
@@ -344,6 +356,9 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     .setPositiveButton("Trust", (d, w) -> decide(selected, true)).setNegativeButton("Block device", (d, w) -> decide(selected, false))
                     .setNeutralButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(fingerprint.toString())).create());
         }
+    }
+    private void showBlindTrustError(Exception error) {
+        showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not save blind trust").setMessage(error.getMessage()).setPositiveButton("OK",null).create());
     }
     private void setRoomRecipient(String address,boolean included) {
         try {
