@@ -4592,6 +4592,12 @@ public class MessageObject {
         TLObject fromObject = fromUser != null ? fromUser : fromChat;
         drawServiceWithDefaultTypeface = false;
 
+        if (org.telegram.messenger.xmpp.MonogramActions.isAction(messageOwner)) {
+            messageText = org.telegram.messenger.xmpp.MonogramActions.presentation(messageOwner,
+                    fromUser != null ? UserObject.getUserName(fromUser) : fromChat != null ? fromChat.title : null);
+            drawServiceWithDefaultTypeface = true;
+            return;
+        }
         if (messageOwner instanceof TLRPC.TL_messageService) {
             if (messageOwner.action != null) {
                 if (messageOwner.action instanceof TLRPC.TL_messageActionNewCreatorPending) {
@@ -6591,6 +6597,12 @@ public class MessageObject {
     }
 
     public void setType() {
+        if (org.telegram.messenger.xmpp.MonogramActions.isAction(messageOwner)) {
+            if (!(messageOwner.action instanceof TLRPC.TL_messageActionCustomAction)) updateMessageText();
+            type = TYPE_DATE;
+            contentType = 1;
+            return;
+        }
         monogramXmrMessage = messageOwner != null && org.telegram.messenger.xmpp.MonogramXmr.enabled(currentAccount)
                 && (messageOwner.media == null || messageOwner.media instanceof TLRPC.TL_messageMediaEmpty)
                 ? org.telegram.messenger.xmpp.MonogramXmrMessage.parse(messageOwner.message) : null;
