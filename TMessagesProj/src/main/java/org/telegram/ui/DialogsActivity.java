@@ -523,6 +523,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ActionBarMenuItem optionsItem;
     private ActionBarMenuItem monogramReconnectItem;
     private ActionBarMenuItem monogramContactRequestsItem;
+    private org.telegram.ui.Components.CounterView monogramRequestsBadge;
     public static boolean switchingTheme;
     private ActionBarMenuItem doneItem;
     private ProxyDrawable proxyDrawable;
@@ -3180,6 +3181,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         ActionBarMenu menu = actionBar.createMenu();
         monogramReconnectItem = null;
         monogramContactRequestsItem = null;
+        monogramRequestsBadge = null;
         menu.setTranslationX(-dp(5));
         searchItem = menu.addItem(0, R.drawable.outline_header_search).setIsSearchField(true, false);
         searchItem.setOnClickListener(v -> {
@@ -3217,7 +3219,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             monogramReconnectItem = menu.addItem(91002, R.drawable.msg_retry);
             monogramReconnectItem.setContentDescription(getString(R.string.MonogramReconnect));
             monogramContactRequestsItem=menu.addItem(91003,R.drawable.msg_addcontact);
-            monogramContactRequestsItem.setContentDescription("Contact requests and room invitations");
+            monogramContactRequestsItem.setContentDescription("Requests and invitations");
+            monogramRequestsBadge=new org.telegram.ui.Components.CounterView(context,getResourceProvider());
+            monogramRequestsBadge.setColors(Theme.key_chats_unreadCounterText,Theme.key_chats_unreadCounter);
+            monogramRequestsBadge.counterDrawable.shortFormat=true;
+            monogramRequestsBadge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            monogramRequestsBadge.setClickable(false);
+            monogramContactRequestsItem.addView(monogramRequestsBadge,LayoutHelper.createFrame(28,20,Gravity.TOP|Gravity.RIGHT,0,2,0,0));
             checkUi_monogramReconnectVisibility();
             doneItem = new ActionBarMenuItem(context, null, getThemedColor(Theme.key_actionBarDefaultSelector), getThemedColor(Theme.key_actionBarDefaultIcon), true);
             doneItem.setText(LocaleController.getString(R.string.Done).toUpperCase());
@@ -13562,8 +13570,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 * (1f - getRightSlidingProgress()) * (1f - animatorDoneButtonVisible.getFloatValue())
                 * (1f - Math.max(progressToActionMode, animatorActionModeVisible.getFloatValue()));
         FragmentFloatingButton.setAnimatedVisibility(monogramReconnectItem, connected ? 0 : factor);
-        if(monogramContactRequestsItem!=null) FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,
-                org.telegram.messenger.xmpp.MonogramController.get(currentAccount).pendingContactRequests().isEmpty() && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).hasRoomInvitations() ? 0 : factor);
+        if(monogramContactRequestsItem!=null) {
+            org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
+            int count=controller.pendingContactRequests().size()+controller.pendingRoomInvitations().size();
+            FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,factor);
+            if(monogramRequestsBadge!=null)monogramRequestsBadge.setCount(count,fragmentView!=null);
+            monogramContactRequestsItem.setContentDescription("Requests and invitations"+(count>0 ? ", "+count+" pending" : ", none pending"));
+        }
     }
 
     private void checkUi_itemPasscodeVisibility() {

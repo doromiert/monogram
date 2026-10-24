@@ -4576,6 +4576,12 @@ public class MessageObject {
     }
 
     private void updateMessageText(AbstractMap<Long, TLRPC.User> users, AbstractMap<Long, TLRPC.Chat> chats, LongSparseArray<TLRPC.User> sUsers, LongSparseArray<TLRPC.Chat> sChats) {
+        // Projected wallet cards keep their service label when decrypted messages are refreshed.
+        // The original URI stays in messageOwner.message for copying and interoperable transport.
+        if (monogramXmrMessage != null && messageOwner.action instanceof TLRPC.TL_messageActionGramTransfer) {
+            messageText = monogramWalletActionText((TLRPC.TL_messageActionGramTransfer) messageOwner.action);
+            return;
+        }
         TLRPC.User fromUser = null;
         TLRPC.Chat fromChat = null;
         if (messageOwner.from_id instanceof TLRPC.TL_peerUser) {
@@ -6567,6 +6573,23 @@ public class MessageObject {
         return false;
     }
 
+    /** Recorded transport only: never infer an old message's security from the chat's current setting. */
+    public int monogramEncryptionMode() {
+        if(messageOwner==null || messageOwner.params==null)return -1;
+        String mode=messageOwner.params.get("monogram-actual-encryption");
+        return "0".equals(mode) ? 0 : "1".equals(mode) ? 1 : "2".equals(mode) ? 2 : -1;
+    }
+    public String monogramEncryptionDescription() {
+        int mode=monogramEncryptionMode();
+        return mode==0 ? "Not end-to-end encrypted" : mode==1 ? "End-to-end encrypted (OMEMO)" : mode==2 ? "End-to-end encrypted (OMEMO 2)" : "";
+    }
+
+    private String monogramWalletActionText(TLRPC.TL_messageActionGramTransfer action) {
+        String label=action.moneroKind == 2 ? "XMR payment link" : action.moneroKind == 1 ? "XMR payment request" : isOutOwner() ? "XMR payment sent" : "XMR payment reported";
+        int encryption=monogramEncryptionMode();
+        return label+(encryption==0 ? " · Unencrypted" : encryption==1 ? " · OMEMO" : encryption==2 ? " · OMEMO 2" : "");
+    }
+
     public void setType() {
         monogramXmrMessage = messageOwner != null && org.telegram.messenger.xmpp.MonogramXmr.enabled(currentAccount)
                 && (messageOwner.media == null || messageOwner.media instanceof TLRPC.TL_messageMediaEmpty)
@@ -6583,7 +6606,7 @@ public class MessageObject {
                         : monogramXmrMessage.kind == org.telegram.messenger.xmpp.MonogramXmrMessage.Kind.CLAIM ? 2 : 0;
                 action.comment = monogramXmrMessage.comment;
                 messageOwner.action = action;
-                messageText = action.moneroKind == 2 ? "XMR payment link" : action.moneroKind == 1 ? "XMR payment request" : isOutOwner() ? "XMR payment sent" : "XMR payment reported";
+                messageText = monogramWalletActionText(action);
                 type = TYPE_DATE;
                 contentType = 1;
                 return;

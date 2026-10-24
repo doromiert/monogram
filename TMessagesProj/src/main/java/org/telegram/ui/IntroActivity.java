@@ -104,6 +104,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
     private ViewPager viewPager;
     private BottomPagesView bottomPages;
     private TextView switchLanguageTextView;
+    private TextView monogramProxyButton;
     private GradientDrawable startMessagingButtonBackground;
     private TextView startMessagingButton;
     private FrameLayout frameLayout2;
@@ -418,6 +419,12 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
             LocaleController.getInstance().applyLanguage(localeInfo, true, false, currentAccount);
         });
 
+        monogramProxyButton=new TextView(context);
+        monogramProxyButton.setText(LocaleController.getString(R.string.ProxySettings));
+        monogramProxyButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP,14);monogramProxyButton.setGravity(Gravity.CENTER);
+        monogramProxyButton.setPadding(dp(12),0,dp(12),0);monogramProxyButton.setMinimumHeight(dp(48));
+        monogramProxyButton.setOnClickListener(v->{if(!startPressed){ProxyListActivity proxy=new ProxyListActivity();proxy.setCurrentAccount(currentAccount);presentFragment(proxy);}});
+        frameContainerView.addView(monogramProxyButton,LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT,48,Gravity.TOP|Gravity.LEFT,themeMargin,themeMargin+8,0,0));
         frameContainerView.addView(themeFrameLayout, LayoutHelper.createFrame(64, 64, Gravity.TOP | Gravity.RIGHT, 0, themeMargin, themeMargin, 0));
 
         fragmentView = scrollView;
@@ -960,6 +967,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
         startMessagingButtonBackground.setColors(new int[]{getThemedColor(Theme.key_featuredStickers_addButton), getThemedColor(Theme.key_featuredStickers_addButton2)});
         fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         switchLanguageTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+        if(monogramProxyButton!=null)monogramProxyButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
         startMessagingButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
         startMessagingButton.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(24), Color.TRANSPARENT, Theme.getColor(Theme.key_featuredStickers_addButtonPressed)));
         darkThemeDrawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_featuredStickers_addButton), PorterDuff.Mode.SRC_IN));

@@ -87,6 +87,7 @@ public final class XmppOmemo2 implements AutoCloseable {
         Omemo2Bundle own = device.prepare();
         publish(BUNDLES_NODE,Integer.toString(device.id),own.xml(),"max");
         announceOwnDevice();
+        ensureOpenAccess(DEVICES_NODE);ensureOpenAccess(BUNDLES_NODE);
         watch(device.jid,DEVICES_NODE); watch(device.jid,BUNDLES_NODE);
         ServiceDiscoveryManager disco = ServiceDiscoveryManager.getInstanceFor(connection);
         disco.addFeature(NS); disco.addFeature(DEVICES_NODE+"+notify"); disco.addFeature(BUNDLES_NODE+"+notify"); ready = true;
@@ -102,12 +103,16 @@ public final class XmppOmemo2 implements AutoCloseable {
         if (ids == null) ids = fetchDevices(peer);
         Map<Integer,Omemo2Bundle> result = new LinkedHashMap<>();
         for (int id : new java.util.TreeSet<>(ids)) if (!peer.equals(device.jid) || id != device.id) {
-            try { result.put(id,bundle(peer,id,false)); }
+            try {
+                Omemo2Bundle found=bundle(peer,id,false);
+                if(device.trust(peer,id,found.identity())!=Omemo2Device.Trust.REJECTED)result.put(id,found);
+            }
             catch(java.security.GeneralSecurityException invalidBundle) {
                 if(!optionalOwnCopy || !peer.equals(device.jid)) throw invalidBundle;
                 lastError=invalidBundle;
             }
         }
+        if(!optionalOwnCopy && !ids.isEmpty() && result.isEmpty())throw new OmemoSendException(OmemoSendException.Reason.NO_TRUSTED_DEVICES);
         return result;
     }
     private String bare(String jid) throws Exception { if (jid == null || jid.indexOf('/') >= 0) throw new IllegalArgumentException("Bare peer required"); return JidCreate.entityBareFrom(jid).toString(); }
@@ -134,6 +139,10 @@ public final class XmppOmemo2 implements AutoCloseable {
             return StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(value.toXML().toString()));
         } catch (XMPPErrorException absent) {
             StanzaError.Condition condition = absent.getStanzaError().getCondition();
+            if(condition==StanzaError.Condition.forbidden || condition==StanzaError.Condition.not_authorized
+                    || absent.getStanzaError().getExtension("presence-subscription-required",PUBSUB+"#errors")!=null) {
+                OmemoSendException denied=new OmemoSendException(OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED,peer);denied.initCause(absent);throw denied;
+            }
             // Unsupported/unavailable is not evidence that our existing account list is empty.
             boolean ownList=device.jid.equals(peer) && DEVICES_NODE.equals(node);
             if (condition == StanzaError.Condition.item_not_found || !ownList && (condition == StanzaError.Condition.feature_not_implemented || condition == StanzaError.Condition.service_unavailable)) return null;
@@ -193,6 +202,22 @@ public final class XmppOmemo2 implements AutoCloseable {
             iq(owner,StandardExtensionElement.builder("configure",owner).addAttribute("node",node).addElement(form(PUBSUB+"#node_config",maximum)).build());
             iq(PUBSUB,published,options);
         }
+    }
+    /** Publish options do not reliably repair an already-created restricted PEP node. */
+    private void ensureOpenAccess(String node)throws Exception {
+        if(!DEVICES_NODE.equals(node) && !BUNDLES_NODE.equals(node))throw new IllegalArgumentException("Not an OMEMO2 node");
+        try {
+            Node published=PubSubManager.getInstanceFor(connection,JidCreate.entityBareFrom(device.jid)).getNode(node);
+            if(published.getNodeConfiguration().getAccessModel()==AccessModel.open)return;
+            String owner=PUBSUB+"#owner";
+            // Submit only this field: retain unrelated node configuration and all device/bundle items.
+            StandardExtensionElement form=StandardExtensionElement.builder("x",FORMS).addAttribute("type","submit")
+                .addElement(StandardExtensionElement.builder("field",FORMS).addAttribute("var","FORM_TYPE").addAttribute("type","hidden").addElement("value",PUBSUB+"#node_config").build())
+                .addElement(StandardExtensionElement.builder("field",FORMS).addAttribute("var","pubsub#access_model").addElement("value","open").build()).build();
+            iq(owner,StandardExtensionElement.builder("configure",owner).addAttribute("node",node).addElement(form).build());
+            if(published.getNodeConfiguration().getAccessModel()!=AccessModel.open)throw new java.security.GeneralSecurityException("OMEMO2 key access remains restricted");
+        }catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw interrupted;}
+        catch(Exception failure){throw new XmppRequestException("Could not enable public OMEMO2 key access",failure);}
     }
     private void announceOwnDevice() throws Exception {
         StandardExtensionElement verified=Omemo2DeviceList.announce(new Omemo2DeviceList.Store(){

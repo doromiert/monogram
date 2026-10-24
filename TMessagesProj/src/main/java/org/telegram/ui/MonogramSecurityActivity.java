@@ -133,9 +133,9 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 for(Map.Entry<OmemoDevice,OmemoFingerprint> entry:identities.entrySet()) {
                     OmemoDevice device=entry.getKey(); String state;
                     try { if(selectedModern) switch(session.modern().device.trust(device.getJid().toString(),device.getDeviceId(),Utilities.hexToBytes(entry.getValue().toString()))) {
-                        case TRUSTED: state="Trusted"; break; case REJECTED: state="Distrusted"; break; default: state="Not reviewed";
+                        case TRUSTED: state="Trusted"; break; case REJECTED: state="Blocked"; break; default: state="Not reviewed";
                     } else switch(session.trustState(device,entry.getValue())) {
-                        case trusted: state="Trusted"; break; case untrusted: state="Distrusted"; break; default: state="Not reviewed";
+                        case trusted: state="Trusted"; break; case untrusted: state="Blocked"; break; default: state="Not reviewed";
                     } } catch(Exception unavailable) { state="Trust state unavailable"; }
                     states.put(device,state);
                 }
@@ -162,6 +162,10 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         Map<OmemoDevice,OmemoFingerprint> displayed=displayedIdentities();
         if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
+        if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
+            items.add(UItem.asButton(8,R.drawable.msg_addcontact,"Contact authorization"));
+            if(status!=null && !status.startsWith("Loading"))items.add(UItem.asShadow(status));
+        }
         if(!displayed.isEmpty()) {
             items.add(UItem.asButton(2,saving ? "Saving trust decisions…" : "Trust all fingerprints").accent().setEnabled(!saving));
             items.add(UItem.asShadow("Verify fingerprints before trusting devices."));
@@ -189,12 +193,14 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(fingerprintsPage) { fillFingerprints(items);return; }
         items.add(UItem.asHeader("Encryption"));
         items.add(UItem.asCheck(25,"Choose encryption automatically").setChecked(controller.automaticEncryption(peer)));
+        items.add(UItem.asShadow("A closed lock beside a message’s time marks recorded end-to-end encryption. Unencrypted messages have no lock. Queued messages receive an indicator only after sending is confirmed."));
 
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
         if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         else items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
-        items.add(UItem.asButton(13,"Fingerprints"));
+        items.add(UItem.asButton(13,"Devices and fingerprints"));
+        if(peer>0 && !controller.accountJid().equals(controller.jid(peer)))items.add(UItem.asButton(26,"Revoke presence access").setEnabled(!saving));
         items.add(UItem.asHeader("More"));
         if(peer<0 && !roomMembers.isEmpty()) {
             java.util.Set<String> excluded=controller.excludedRoomRecipients(peer);
@@ -261,6 +267,16 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 if(!contacts.isEmpty()) showDialog(new AlertDialog.Builder(getContext()).setTitle("Contact authorization")
                     .setItems(contacts.toArray(new CharSequence[0]),(dialog,which) -> presentFragment(new MonogramContactActivity(currentAccount,contacts.get(which)))).create());
             }
+        } else if(item.id==26 && peer>0 && !saving) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Revoke presence access?")
+                .setMessage("This contact will stop receiving your online status. Public profile information and OMEMO public keys remain available. Use Devices and fingerprints to block a device from future encrypted messages.")
+                .setPositiveButton("Revoke access",(dialog,which)->{
+                    saving=true;refresh();
+                    controller.contactAuthorization(controller.jid(peer),com.negzero.monogram.xmpp.XmppContacts.Action.REVOKE,error->{
+                        saving=false;if(error!=null)showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not revoke access").setMessage(error).setPositiveButton("OK",null).create());
+                        loadIdentities();
+                    });
+                }).setNegativeButton("Cancel",null).create());
         } else if(item.id==7) {
             if(controller.plainReactionsAllowed(peer)) { controller.setPlainReactions(peer,false); refresh(); }
             else showDialog(new AlertDialog.Builder(getContext()).setTitle("Allow unencrypted reactions?")
@@ -283,14 +299,14 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         else if (item.id == 2 && !saving) {
             Map<OmemoDevice,OmemoFingerprint> selected=displayedIdentities();
             showDialog(new AlertDialog.Builder(getContext()).setTitle("Trust all fingerprints?")
-                    .setMessage("Trust the " + selected.size() + (modern ? " OMEMO 2" : " legacy OMEMO") + " fingerprints in this list, including any marked Distrusted. New devices and changed keys will still need review.")
+                    .setMessage("Trust the " + selected.size() + (modern ? " OMEMO 2" : " legacy OMEMO") + " fingerprints in this list, including any marked Blocked. New devices and changed keys will still need review.")
                     .setPositiveButton("Trust all", (dialog, which) -> decide(selected, true)).setNegativeButton("Cancel", null).create());
         } else if (item.object instanceof OmemoDevice && item.object2 instanceof OmemoFingerprint && !saving) {
             OmemoDevice device=(OmemoDevice)item.object;
             OmemoFingerprint fingerprint=(OmemoFingerprint)item.object2;
             Map<OmemoDevice,OmemoFingerprint> selected=new LinkedHashMap<>();selected.put(device,fingerprint);
-            showDialog(new AlertDialog.Builder(getContext()).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint)
-                    .setPositiveButton("Trust", (d, w) -> decide(selected, true)).setNegativeButton("Distrust", (d, w) -> decide(selected, false))
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Device " + device.getDeviceId()).setMessage(device.getJid() + "\n\n" + fingerprint + "\n\nBlock this device to stop providing keys for future messages. Previously received messages remain readable. Trusting it again restores permission for new messages.")
+                    .setPositiveButton("Trust", (d, w) -> decide(selected, true)).setNegativeButton("Block device", (d, w) -> decide(selected, false))
                     .setNeutralButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(fingerprint.toString())).create());
         }
     }

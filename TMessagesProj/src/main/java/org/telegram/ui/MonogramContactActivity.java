@@ -54,7 +54,7 @@ public final class MonogramContactActivity extends MonogramSettingsActivity impl
                 if(state.outgoingPending) {
                     items.add(UItem.asButton(4,"Cancel outgoing request").setEnabled(!busy));
                 } else if(!state.seesTheirPresence) items.add(UItem.asButton(1,"Request contact authorization").accent().setEnabled(!busy));
-                if(state.sharesOwnPresence) items.add(UItem.asButton(5,"Stop sharing your presence").setEnabled(!busy));
+                if(state.sharesOwnPresence) items.add(UItem.asButton(5,"Revoke presence access").setEnabled(!busy));
             }
             items.add(UItem.asShadow(address+(state==null ? "\n\nReconnect to view or change authorization. Saved incoming requests remain available." : state.outgoingPending ? "\n\nRequest sent. Waiting for this contact to accept." : "")));
             if(requests.contains(address)) {
@@ -82,9 +82,9 @@ public final class MonogramContactActivity extends MonogramSettingsActivity impl
             case 2: act(XmppContacts.Action.ACCEPT); break;
             case 3: act(XmppContacts.Action.DENY); break;
             case 4: act(XmppContacts.Action.CANCEL); break;
-            case 5: showDialog(new AlertDialog.Builder(getContext()).setTitle("Stop sharing presence?")
+            case 5: showDialog(new AlertDialog.Builder(getContext()).setTitle("Revoke presence access?")
                 .setMessage("This contact will no longer receive your online status. Their server may also restrict access to presence-protected OMEMO keys. Your messages and trust decisions remain saved.")
-                .setPositiveButton("Stop sharing",(dialog,which) -> act(XmppContacts.Action.REVOKE)).setNegativeButton("Cancel",null).create()); break;
+                .setPositiveButton("Revoke access",(dialog,which) -> act(XmppContacts.Action.REVOKE)).setNegativeButton("Cancel",null).create()); break;
         }
     }
     private void act(XmppContacts.Action action) {

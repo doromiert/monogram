@@ -66,5 +66,12 @@ public final class MonogramXmrMessage {
         }catch(Exception invalid){/* Leave unsupported or invalid bodies as ordinary text. */}
         return null;
     }
+    /** Requests follow the chat policy; bearer claims must never downgrade to plaintext. */
+    public static boolean requiresEncryption(String body,boolean requested) {
+        MonogramXmrMessage payment=parse(body);
+        if(payment!=null && payment.kind==Kind.REQUEST)return false;
+        if(payment!=null && payment.kind==Kind.CLAIM)return true;
+        return requested;
+    }
     @Override public String toString(){return "MonogramXmrMessage["+kind+"]";}
 }

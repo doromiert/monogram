@@ -53,6 +53,20 @@ public class MonogramXmrMessageTest {
             assertNull(MonogramXmrMessage.parse(body+"\nUnverified extra instructions"));
         }finally{java.util.Arrays.fill(synthetic,'\0');}
     }
+    @Test public void publicRequestsFollowConversationEncryptionIncludingOldQueuedRequests() {
+        MoneroPayment payment=MoneroPayment.create(ADDRESS,"1000000","","A request, not a spending key",null);
+        String request="XMR payment request\n"+payment.uri();
+        assertFalse(MonogramXmrMessage.requiresEncryption(request,true));
+        assertFalse(MonogramXmrMessage.requiresEncryption(request,false));
+    }
+    @Test public void bearerClaimsNeverAcceptAPlaintextOverride() {
+        char[] synthetic=String.join(" ",Collections.nCopies(25,"abbey")).toCharArray();
+        try(MoneroClaim claim=new MoneroClaim(MoneroPayment.create(ADDRESS,"0.1","","",null),3790000,synthetic)) {
+            assertTrue(MonogramXmrMessage.requiresEncryption(MonogramXmrMessage.claimBody(claim,""),false));
+            assertTrue(MonogramXmrMessage.requiresEncryption(claim.uri(),false));
+        }finally{java.util.Arrays.fill(synthetic,'\0');}
+        assertTrue(MonogramXmrMessage.requiresEncryption("unrecognized payment payload",true));
+    }
     @Test public void invalidBodiesRemainOrdinaryMessages() {
         assertNull(MonogramXmrMessage.parse("monero:" + ADDRESS + "?tx_amount=0"));
         assertNull(MonogramXmrMessage.parse("monogram-xmr:claim?v=1#not-a-wallet"));

@@ -1299,6 +1299,8 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         message.flags = 256; message.dialog_id = peer;
         int payload = payload(id);
+        message.params=new java.util.HashMap<>();
+        message.params.put("monogram-actual-encryption",Integer.toString(encryptionOf(id)));
         if (payload != id) {
             try (Cursor c = getReadableDatabase().rawQuery("SELECT body,time FROM messages WHERE id=?", new String[]{Integer.toString(payload)})) {
                 if (c.moveToFirst()) { body = c.getString(0); message.message = body; message.edit_date = c.getInt(1); message.flags |= TLRPC.MESSAGE_FLAG_EDITED; }

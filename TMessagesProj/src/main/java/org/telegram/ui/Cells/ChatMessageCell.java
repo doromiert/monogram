@@ -18458,7 +18458,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 currentTimeString = TextUtils.concat(formatString(R.string.MessageScheduledRepeatSeconds, period), ", ", currentTimeString);
             }
         }
-        timeTextWidth = timeWidth = (int) Math.ceil(Theme.chat_timePaint.measureText(currentTimeString, 0, currentTimeString == null ? 0 : currentTimeString.length()));
+        int recordedEncryption=messageObject.monogramEncryptionMode();
+        if(recordedEncryption>0 && currentTimeString!=null) {
+            SpannableStringBuilder secureTime=new SpannableStringBuilder("\uFFFC ");
+            ColoredImageSpan encryptionIcon=new ColoredImageSpan(R.drawable.msg_secret,ColoredImageSpan.ALIGN_CENTER);
+            encryptionIcon.setSize(dp(10));
+            secureTime.setSpan(encryptionIcon,0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            secureTime.append(currentTimeString);currentTimeString=secureTime;
+        }
+        timeTextWidth = timeWidth = (int) Math.ceil(currentTimeString==null ? 0 : Layout.getDesiredWidth(currentTimeString,Theme.chat_timePaint));
         if (currentMessageObject.scheduled && currentMessageObject.messageOwner.date == 0x7FFFFFFE || currentMessageObject.notime) {
             timeWidth -= dp(8);
         }
@@ -27248,6 +27256,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         };
                         sb.setSpan(underlineSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     }
+                    String encryptionDescription=currentMessageObject.monogramEncryptionDescription();
+                    if(!encryptionDescription.isEmpty())sb.append("\n").append(encryptionDescription);
                     accessibilityText = sb;
                     accessibilityTextUnread = unread;
                     accessibilityTextContentUnread = contentUnread;

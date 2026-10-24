@@ -1168,7 +1168,7 @@ public class ChatAttachAlertGramLayout extends ChatAttachAlert.AttachAlertLayout
                     settings.createRequest(id, payment, peer);
                     java.util.HashMap<String, String> params = new java.util.HashMap<>();
                     params.put(org.telegram.messenger.xmpp.MonogramXmr.REQUEST_PARAM, id);
-                    params.put(org.telegram.messenger.xmpp.MonogramXmr.PRIVATE_PARAM, "true");
+                    params.put(org.telegram.messenger.xmpp.MonogramXmr.PRIVATE_PARAM, "false");
                     org.telegram.messenger.SendMessagesHelper.getInstance(currentAccount).sendMessage(
                             org.telegram.messenger.SendMessagesHelper.SendMessageParams.of("XMR payment request\n" + payment.uri(),
                                     recipientUser.id, null, null, null, false, null, null, params, true, 0, 0, null, false));

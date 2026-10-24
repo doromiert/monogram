@@ -127,7 +127,13 @@ public final class MonogramController {
             String details;
             try {
                 if(owner!=accountEpoch) return;
-                details="Monogram "+org.telegram.messenger.BuildVars.BUILD_VERSION_STRING+" · Android API "+android.os.Build.VERSION.SDK_INT+"\nDisplayed media type: "+rendered+"\nDisplayed as sticker: "+object.isAnyKindOfSticker()+"\n\n"+store.debugMessage(id,self);
+                details="Monogram "+org.telegram.messenger.BuildVars.BUILD_VERSION_STRING+" · Android API "+android.os.Build.VERSION.SDK_INT+"\nDisplayed media type: "+rendered+"\nDisplayed as sticker: "+object.isAnyKindOfSticker()+"\n\n";
+                if(id<=0) {
+                    // Unsent Telegram outbox IDs have not been committed to the XMPP message store.
+                    details+="Local outbox message ID: "+id+"\nSend state: "+object.messageOwner.send_state
+                            +"\nNot committed to XMPP history yet."
+                            +"\nQueued encryption: "+(object.messageOwner.params==null ? "Unknown" : object.messageOwner.params.getOrDefault(QUEUED_ENCRYPTION,"Unknown"));
+                } else details+=store.debugMessage(id,self);
             } catch(Exception unavailable) { details="Message diagnostics unavailable: "+unavailable.getClass().getSimpleName(); }
             final String result=details;
             AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch) callback.accept(result); });
@@ -607,7 +613,8 @@ public final class MonogramController {
         if (UserConfig.getInstance(account).isClientActivated() && UserConfig.getInstance(account).getClientUserId() == self
                 && details.jid.toString().equals(accountJid())) publishProfile(self, epoch);
         final int modernDevice = modernStore.device(details.jid.toString());
-        XmppSession connecting = new XmppSession(details, password, device,
+        Account proxiedDetails=new Account(details.jid.toString(),details.host,details.port,details.resource.toString(),MonogramProxy.current());
+        XmppSession connecting = new XmppSession(proxiedDetails, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
                 new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
                         () -> modernStore.begin(details.jid.toString(),modernDevice)),recovery,
@@ -1697,7 +1704,7 @@ public final class MonogramController {
         worker.execute(() -> {
             boolean created=false,signingIn=false;Exception error=null;
             try {
-                requireRegistrationSlot(owner);Account details=new Account(jid,host,port,"Monogram");invitation.validate(details);
+                requireRegistrationSlot(owner);Account details=new Account(jid,host,port,"Monogram",MonogramProxy.current());invitation.validate(details);
                 String sealed=vault.encrypt(password);
                 AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
                 com.negzero.monogram.xmpp.XmppRegistration.create(invitation,details,password);created=true;
@@ -3113,6 +3120,7 @@ public final class MonogramController {
     private final java.util.concurrent.ConcurrentHashMap<TLObject,String> queuedEncryption=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,LegacyCaptionTarget> queuedCaptions=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,Boolean> queuedXmrPolicies=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<TLObject,java.util.HashMap<String,String>> queuedSecurityParams=new java.util.concurrent.ConcurrentHashMap<>();
     private static final class LegacyCaptionTarget {
         final int parent;final boolean placeholder;
         LegacyCaptionTarget(int parent,boolean placeholder) { this.parent=parent;this.placeholder=placeholder; }
@@ -3127,12 +3135,15 @@ public final class MonogramController {
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request) && !MonogramPolls.supports(request)) return;
         MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
+        message.params.remove("monogram-actual-encryption");
+        queuedSecurityParams.put(request,message.params);
         if(request instanceof TLRPC.TL_messages_sendMessage && message.params.containsKey(MonogramForwarding.CAPTION_PARENT)) try {
             int parent=Integer.parseInt(message.params.get(MonogramForwarding.CAPTION_PARENT));
             if(parent>0) queuedCaptions.put(request,new LegacyCaptionTarget(parent,Boolean.parseBoolean(message.params.get(MonogramForwarding.CAPTION_EMPTY))));
         } catch(NumberFormatException absent) { /* Normal message, not a generated media caption. */ }
         if(request instanceof TLRPC.TL_messages_sendMessage && message.params.containsKey(MonogramXmr.REQUEST_PARAM))
-            queuedXmrPolicies.put(request,!"false".equals(message.params.get(MonogramXmr.PRIVATE_PARAM)));
+            queuedXmrPolicies.put(request,MonogramXmrMessage.requiresEncryption(((TLRPC.TL_messages_sendMessage)request).message,
+                    !"false".equals(message.params.get(MonogramXmr.PRIVATE_PARAM))));
     }
     /** Sends a detached local quick-reply template through the regular Monogram outbox. */
     public void sendQuickReply(long dialogId,MonogramQuickReplies.Outgoing outgoing) {
@@ -3304,7 +3315,20 @@ public final class MonogramController {
         String mode=queuedEncryption.remove(request);
         if(mode==null) mode=encryption(sendingPeer(request)).name();
         Integer local=queuedLocalIds.remove(request);
-        RequestDelegate finished=(response,error)-> {queuedXmrPolicies.remove(request);completed.run(response,error);};
+        java.util.HashMap<String,String> securityParams=queuedSecurityParams.remove(request);
+        RequestDelegate finished=(response,error)-> {
+            queuedXmrPolicies.remove(request);
+            if(error==null && response instanceof TLRPC.TL_updateShortSentMessage && securityParams!=null) {
+                try {
+                    String recorded=Integer.toString(store.encryptionOf(((TLRPC.TL_updateShortSentMessage)response).id));
+                    AndroidUtilities.runOnUIThread(()->{
+                        securityParams.put("monogram-actual-encryption",recorded);
+                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_STATUS);
+                    });
+                }catch(IllegalArgumentException notCommitted){/* Leave unknown rather than infer security from the selected mode. */}
+            }
+            completed.run(response,error);
+        };
         PendingSend pending=new PendingSend(token,accountEpoch,request,finished,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local);
         pending.caption=queuedCaptions.remove(request);
         pending.xmrPrivate=queuedXmrPolicies.get(request);

@@ -215,6 +215,7 @@ public final class XmppSession implements AutoCloseable {
                 .setResource(account.resource).setSecurityMode(SecurityMode.required)
                 .setSendPresence(false).setCompressionEnabled(false).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
+        if(account.proxy!=null)config.setProxyInfo(account.proxy);
         connection = new ManagedConnection(config.build());
         XmppStories.initialize(connection);
         connection.setReplyTimeout(15000);

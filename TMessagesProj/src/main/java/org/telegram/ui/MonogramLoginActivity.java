@@ -107,6 +107,7 @@ public class MonogramLoginActivity extends BaseFragment {
         floatingButton.setEnabled(!value);
         for (EditTextBoldCursor field : xmppView.fields) field.setEnabled(!value);
         xmppView.advancedButton.setEnabled(!value);
+        xmppView.proxyButton.setEnabled(!value);
         xmppView.invitationButton.setEnabled(!value);
         xmppView.createAccountButton.setEnabled(!value);
         xmppView.fields[0].setEnabled(!value && (invitation==null || invitation.username==null));
@@ -316,7 +317,8 @@ public class MonogramLoginActivity extends BaseFragment {
         if (error != null) {
             if (!destroyed && getParentActivity() != null) {
                 setConnecting(false);
-                String detail=error instanceof com.negzero.monogram.xmpp.XmppInvitations.InvitationException ? error.getMessage()
+                String detail=error instanceof org.telegram.messenger.xmpp.MonogramProxy.ConfigurationException ? error.getMessage()
+                        : error instanceof com.negzero.monogram.xmpp.XmppInvitations.InvitationException ? error.getMessage()
                         : invitation!=null && !accountCreated ? com.negzero.monogram.xmpp.XmppRequestException.describe(error) : com.negzero.monogram.xmpp.XmppRequestException.describeLogin(error);
                 xmppView.error(1,(accountCreated ? "Account created; sign-in failed. " : "")+detail);
             }
@@ -342,6 +344,7 @@ public class MonogramLoginActivity extends BaseFragment {
         final EditTextBoldCursor[] fields = new EditTextBoldCursor[4];
         final OutlineTextContainerView[] outlines = new OutlineTextContainerView[4];
         final TextView titleView, confirmTextView, advancedButton, errorView,invitationButton,createAccountButton;
+        final TextView proxyButton;
         final LinearLayout advancedFields;
         XmppView(Context context) {
             super(context);
@@ -403,6 +406,12 @@ public class MonogramLoginActivity extends BaseFragment {
             createAccountButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));
             createAccountButton.setOnClickListener(v -> createAccount());
             addView(createAccountButton,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,48,16,0,16,0));
+            proxyButton=new TextView(context);
+            proxyButton.setText(getString(R.string.ProxySettings));proxyButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP,15);
+            proxyButton.setGravity(Gravity.CENTER);proxyButton.setMinimumHeight(dp(48));
+            proxyButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));
+            proxyButton.setOnClickListener(v->{if(!connecting){AndroidUtilities.hideKeyboard(proxyButton);ProxyListActivity screen=new ProxyListActivity();screen.setCurrentAccount(currentAccount);presentFragment(screen);}});
+            addView(proxyButton,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,48,16,0,16,0));
             errorView = new TextView(context);
             errorView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             errorView.setGravity(Gravity.CENTER);
@@ -455,6 +464,7 @@ public class MonogramLoginActivity extends BaseFragment {
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             confirmTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
             advancedButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+            proxyButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             createAccountButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             invitationButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             errorView.setTextColor(Theme.getColor(Theme.key_text_RedRegular));

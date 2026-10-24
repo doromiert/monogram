@@ -29,6 +29,7 @@ public final class XmppRegistration {
             .setXmppDomain(invitation.server).setPort(account.port).setSecurityMode(SecurityMode.required)
             .setSendPresence(false).setCompressionEnabled(false);
         if(account.host!=null) config.setHost(account.host);
+        if(account.proxy!=null)config.setProxyInfo(account.proxy);
         XMPPTCPConnection connection=new XMPPTCPConnection(config.build());connection.setReplyTimeout(15000);
         try {
             connection.connect();
