@@ -121,18 +121,37 @@ public final class MonogramWallet {
         if(!MonogramXmr.enabled(account))return false;
         try(MonogramXmr settings=new MonogramXmr(account)){return get(account,settings.network()).exists();}catch(Exception unavailable){return false;}
     }
+    private static boolean validClaimId(String id){return id!=null && id.matches("[a-f0-9-]{36}|[a-f0-9]{64}");}
+    /** Include removed wallet slots: their independent payment-link vaults remain recoverable. */
+    private static List<MonogramWallet> claimScopes(int account,MoneroPayment.Network network)throws Exception {
+        ArrayList<MonogramWallet> scopes=new ArrayList<>();
+        MonogramWallet active=get(account,network),base=getWallet(account,network,WalletRegistry.DEFAULT);
+        scopes.add(active);if(active!=base)scopes.add(base);
+        File[] slots=new File(base.root,"wallets").listFiles();
+        if(slots!=null)for(File slot:slots)if(slot.isDirectory() && slot.getName().matches("[a-f0-9-]{36}") && !slot.getName().equals(active.walletId))
+            scopes.add(getWallet(account,network,slot.getName()));
+        return scopes;
+    }
+    private static synchronized MonogramWallet claimIn(MonogramWallet scope,String id)throws Exception {
+        String key=scope.account+"\n"+scope.owner+"\n"+scope.network.name()+"\n"+scope.walletId+"\nclaim:"+id;
+        MonogramWallet wallet=instances.get(key);
+        if(wallet==null){wallet=new MonogramWallet(scope.account,scope.owner,scope.network,scope.walletId,id);instances.put(key,wallet);}return wallet;
+    }
     public static synchronized MonogramWallet getClaim(int account,MoneroPayment.Network network,String id) throws Exception {
-        if(id==null || !id.matches("[a-f0-9-]{36}|[a-f0-9]{64}"))throw new IllegalArgumentException("Invalid claim identifier.");
-        String owner=MonogramController.get(account).accountJid();if(owner.isEmpty())throw new IllegalStateException("Sign in first.");
-        String walletId=WalletRegistry.active(account,owner,network);
-        String key=account+"\n"+owner+"\n"+network.name()+"\n"+walletId+"\nclaim:"+id;
-        MonogramWallet wallet=instances.get(key);if(wallet==null){wallet=new MonogramWallet(account,owner,network,walletId,id);instances.put(key,wallet);}return wallet;
+        if(!validClaimId(id))throw new IllegalArgumentException("Invalid claim identifier.");
+        // Reuse the original vault and Keystore alias; never move or delete a claim's keys.
+        for(MonogramWallet scope:claimScopes(account,network))
+            if(new File(new File(new File(scope.root,"claims"),id),"wallet.json").exists())return claimIn(scope,id);
+        return claimIn(get(account,network),id);
     }
     public List<MonogramWallet> claims() throws Exception {
         check();if(claimId!=null)throw new IllegalStateException("Open your main wallet.");
-        ArrayList<MonogramWallet> result=new ArrayList<>();File[] dirs=new File(root,"claims").listFiles();
-        if(dirs!=null)for(File dir:dirs)if(dir.isDirectory() && dir.getName().matches("[a-f0-9-]{36}|[a-f0-9]{64}")){
-            MonogramWallet claim=getClaim(account,network,dir.getName());if(claim.exists())result.add(claim);
+        ArrayList<MonogramWallet> result=new ArrayList<>();
+        for(MonogramWallet scope:claimScopes(account,network)){
+            File[] dirs=new File(scope.root,"claims").listFiles();
+            if(dirs!=null)for(File dir:dirs)if(dir.isDirectory() && validClaimId(dir.getName())){
+                MonogramWallet claim=claimIn(scope,dir.getName());if(claim.exists())result.add(claim);
+            }
         }
         result.sort((a,b)->Long.compare(b.config.optLong("created"),a.config.optLong("created")));return result;
     }
@@ -223,7 +242,7 @@ public final class MonogramWallet {
         }
     }
     private void check() {
-        if(!walletId.equals(WalletRegistry.active(account,owner,network)))throw new IllegalStateException("The selected wallet changed. Reopen the wallet screen.");
+        if(claimId==null && !walletId.equals(WalletRegistry.active(account,owner,network)))throw new IllegalStateException("The selected wallet changed. Reopen the wallet screen.");
         checkIdentity();
     }
     private void checkIdentity(){
@@ -334,8 +353,7 @@ public final class MonogramWallet {
     }
     public void remove(Result<Void> callback){
         if(claimId!=null)throw new IllegalStateException("Use payment-link recovery for claim wallets.");
-        File[] links=new File(root,"claims").listFiles();
-        if(links!=null)for(File link:links)if(new File(link,"wallet.json").exists())throw new IllegalStateException("Resolve your saved payment links before removing this wallet.");
+        // Claim vaults have independent seeds and device keys. Keep them in place.
         work("Removing local wallet…",callback,()->{
             if(handle!=0){long old=handle;handle=0;WalletNative.close(old);}
             WalletTlsBridge bridge=transport;transport=null;if(bridge!=null)bridge.close();
