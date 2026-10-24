@@ -98,6 +98,21 @@ public final class XmppOmemo2 implements AutoCloseable {
         for (int id : new java.util.TreeSet<>(fetchDevices(peer))) if (!peer.equals(device.jid) || id != device.id) result.put(id,bundle(peer,id,true));
         return result;
     }
+    /** UI discovery can retain good fingerprints; encryption still requires every non-blocked target. */
+    public synchronized Map<Integer,Omemo2Bundle> discoverFingerprints(String peer,Consumer<Map<Integer,Omemo2Bundle>> progress)throws Exception {
+        peer=bare(peer);Map<Integer,Omemo2Bundle> found=new LinkedHashMap<>();List<String> failures=new java.util.ArrayList<>();
+        for(int id:new java.util.TreeSet<>(fetchDevices(peer)))if(!peer.equals(device.jid) || id!=device.id) {
+            try {found.put(id,bundle(peer,id,true));progress.accept(new LinkedHashMap<>(found));}
+            catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw interrupted;}
+            catch(Exception failure){failures.add("Device "+id+": "+XmppRequestException.describe(failure));}
+        }
+        if(!failures.isEmpty()) {
+            Map<org.jivesoftware.smackx.omemo.internal.OmemoDevice,org.jivesoftware.smackx.omemo.trust.OmemoFingerprint> visible=new LinkedHashMap<>();
+            for(Map.Entry<Integer,Omemo2Bundle> entry:found.entrySet())visible.put(new org.jivesoftware.smackx.omemo.internal.OmemoDevice(JidCreate.entityBareFrom(peer),entry.getKey()),new org.jivesoftware.smackx.omemo.trust.OmemoFingerprint(XmppSession.hex(entry.getValue().identity())));
+            throw new XmppFingerprints.Partial(visible,String.join("; ",failures));
+        }
+        return found;
+    }
     private synchronized Map<Integer,Omemo2Bundle> targets(String peer,boolean optionalOwnCopy) throws Exception {
         Set<Integer> ids = fresh(peer+"\n"+DEVICES_NODE) ? lists.get(peer) : null;
         if (ids == null) ids = fetchDevices(peer);

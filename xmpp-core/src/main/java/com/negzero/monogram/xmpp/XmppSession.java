@@ -269,8 +269,14 @@ public final class XmppSession implements AutoCloseable {
         legacyDiscovery=new XmppLegacyDiscovery(connection,deviceId);
         fingerprints=new XmppFingerprints((XmppFingerprints.ProgressSource)(address,useModern,progress) -> {
             java.util.Map<OmemoDevice,OmemoFingerprint> found=new java.util.LinkedHashMap<>();
-            if(useModern) for(java.util.Map.Entry<Integer,Omemo2Bundle> entry:modern().discover(address).entrySet())
-                found.put(new OmemoDevice(JidCreate.entityBareFrom(address),entry.getKey()),new OmemoFingerprint(hex(entry.getValue().identity())));
+            if(useModern) {
+                org.jxmpp.jid.EntityBareJid fingerprintJid=JidCreate.entityBareFrom(address);
+                modern().discoverFingerprints(address,bundles->{
+                    found.clear();
+                    for(java.util.Map.Entry<Integer,Omemo2Bundle> entry:bundles.entrySet())found.put(new OmemoDevice(fingerprintJid,entry.getKey()),new OmemoFingerprint(hex(entry.getValue().identity())));
+                    progress.accept(new java.util.LinkedHashMap<>(found));
+                });
+            }
             else {
                 java.util.List<String> failures=new java.util.ArrayList<>();
                 for(OmemoDevice device:legacyDiscovery.devices(JidCreate.bareFrom(address))) {

@@ -155,7 +155,7 @@ public final class Omemo2Device {
         address(peer,device);
         if (!Arrays.equals(tx.load(TRUSTED,peer,device),bundle.identity())) throw new OmemoSendException(OmemoSendException.Reason.TRUST_REQUIRED);
         if (tx.load(SESSION,peer,device) != null) return;
-        int[] keys = bundle.preKeys(); int key = keys[random.nextInt(keys.length)];
+        long[] keys = bundle.preKeys(); long key = keys[random.nextInt(keys.length)];
         Omemo2Native.build(tx,id,peer,device,key,bundle.preKey(key),bundle.signedId,bundle.signedKey(),bundle.signature(),bundle.identity());
     }
     void devices(String peer, Set<Integer> devices) throws Exception {

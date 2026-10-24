@@ -57,6 +57,7 @@ public final class XmppRequestException extends Exception {
         if(error instanceof OmemoSendException && ((OmemoSendException)error).reason==OmemoSendException.Reason.CONTACT_AUTHORIZATION_REQUIRED)
             return "contact authorization is required";
         if(error instanceof Omemo2Native.Failure) return "OMEMO2 ratchet failed ("+((Omemo2Native.Failure)error).code+")";
+        if(error instanceof Omemo2Bundle.InvalidKeyId)return error.getMessage();
         if(error instanceof java.security.GeneralSecurityException) {
             // Only expose fixed local diagnostics, never arbitrary provider/server messages.
             String detail=error.getMessage();

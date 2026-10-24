@@ -104,6 +104,22 @@ class Omemo2NativeTest {
         assertThrows(java.io.IOException.class, () -> alice.encrypt(BOB,202,"Failed read"));
         assertArrayEquals(before,alice.get(Omemo2Native.SESSION,BOB,202));
     }
+    @Test void parsedUnsignedBundleIdsEstablishADecryptableSession()throws Exception {
+        for(long keyId:new long[]{0,2147483648L,4294967295L}) {
+            Records alice=new Records(101),bob=new Records(202);
+            // Simulate an external client that indexes its existing keys by uint32 IDs.
+            bob.put(Omemo2Native.PRE_KEY,"",(int)keyId,bob.get(Omemo2Native.PRE_KEY,"",11));
+            bob.put(Omemo2Native.SIGNED_PRE_KEY,"",(int)keyId,bob.get(Omemo2Native.SIGNED_PRE_KEY,"",22));
+            java.util.Map<Long,byte[]> keys=java.util.Collections.singletonMap(keyId,bob.get(Omemo2Native.PRE_KEY,"",12));
+            Omemo2Bundle bundle=new Omemo2Bundle(bob.get(Omemo2Native.IDENTITY,"",1),keyId,bob.get(Omemo2Native.SIGNED_PRE_KEY,"",23),bob.get(Omemo2Native.SIGNED_PRE_KEY,"",24),keys);
+            Omemo2Bundle parsed=Omemo2Bundle.parse(org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE.parse(org.jivesoftware.smack.util.PacketParserUtils.getParserFor(bundle.xml().toXML().toString())));
+            alice.trust(BOB,202,bob);bob.trust(ALICE,101,alice);
+            Omemo2Device sender=new Omemo2Device(ALICE,101,()->alice);
+            alice.transaction(()->{sender.session(alice,BOB,202,parsed);return null;});
+            byte[][] encrypted=alice.encrypt(BOB,202,"Unsigned prekeys "+keyId);
+            assertEquals("Unsigned prekeys "+keyId,bob.decrypt(ALICE,101,encrypted));
+        }
+    }
     @Test void modernBoundaryRejectsMalformedInputsAndAcceptsFullUnsignedPrekeyIds() throws Exception {
         Records alice = new Records(101), bob = new Records(202); alice.trust(BOB,202,bob); bob.trust(ALICE,101,alice);
         alice.transaction(() -> {

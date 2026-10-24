@@ -41,6 +41,19 @@ class Omemo2PepAccessIntegrationTest {
             assertArrayEquals(original,Omemo2Bundle.parse(org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE.parse(org.jivesoftware.smack.util.PacketParserUtils.getParserFor(publishedBundle.get(0).getPayload().toXML().toString()))).identity());
         }
     }
+    @Test void badBundleDoesNotHideOtherFingerprintsAndStillBlocksStrictEncryptionDiscovery()throws Exception {
+        try(Omemo2IntegrationTest.Client alice=new Omemo2IntegrationTest.Client("partialalice",501);
+            Omemo2IntegrationTest.Client bob=new Omemo2IntegrationTest.Client("partialbob",502)) {
+            LeafNode devices=PubSubManager.getInstanceFor(alice.connection,JidCreate.entityBareFrom(alice.device.jid)).getLeafNode(XmppOmemo2.DEVICES_NODE);
+            StandardExtensionElement list=StandardExtensionElement.builder("devices",XmppOmemo2.NS)
+                .addElement(StandardExtensionElement.builder("device",XmppOmemo2.NS).addAttribute("id","501").build())
+                .addElement(StandardExtensionElement.builder("device",XmppOmemo2.NS).addAttribute("id","503").build()).build();
+            devices.publish(new PayloadItem<ExtensionElement>("current",list));
+            XmppFingerprints.Partial partial=assertThrows(XmppFingerprints.Partial.class,()->bob.service.discoverFingerprints(alice.device.jid,ignored->{}));
+            assertEquals(1,partial.identities.size());assertTrue(partial.getMessage().contains("Device 503: OMEMO2 bundle unavailable"));
+            assertThrows(java.security.GeneralSecurityException.class,()->bob.service.discover(alice.device.jid));
+        }
+    }
     @Test void explicitlyBlockedDeviceGetsNoNewKeysAndBlockingAllDevicesFailsClosed()throws Exception {
         try(Omemo2IntegrationTest.Client alice=new Omemo2IntegrationTest.Client("blockdevicealice",401);
             Omemo2IntegrationTest.Client bob=new Omemo2IntegrationTest.Client("blockdevicebob",402);

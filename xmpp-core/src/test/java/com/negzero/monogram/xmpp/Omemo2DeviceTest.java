@@ -16,22 +16,45 @@ class Omemo2DeviceTest {
     @Test void unusablePrekeyIdsDoNotInvalidateOtherSignedBundleKeys() throws Exception {
         Omemo2Bundle original=new Omemo2Device("alice@example.org",101,new Omemo2TestDatabase()).prepare();
         String xml=original.xml().toXML().toString();
-        String bad="<pk id='0'>not-a-valid-key</pk><pk id='2147483648'>invalid</pk><pk>invalid</pk>";
+        String bad="<pk id='-1'>not-a-valid-key</pk><pk id='4294967296'>invalid</pk><pk>invalid</pk>";
         xml=xml.replaceFirst("(<prekeys[^>]*>)","$1"+bad);
         Omemo2Bundle parsed=parse(xml);
         assertArrayEquals(original.identity(),parsed.identity());assertEquals(original.signedId,parsed.signedId);
         assertArrayEquals(original.preKeys(),parsed.preKeys());
-        for(int id:parsed.preKeys()) assertTrue(id>0);
+        for(long id:parsed.preKeys()) assertTrue(id>0);
     }
     @Test void invalidOnlyBundlesDuplicateIdsAndInvalidSignedKeysRemainRejected() throws Exception {
         Omemo2Bundle original=new Omemo2Device("alice@example.org",101,new Omemo2TestDatabase()).prepare();
         String xml=original.xml().toXML().toString();
         String none=xml.replaceAll("(<pk[^>]*?id=)['\"][0-9]+['\"]","$1'0'");
         assertThrows(java.security.GeneralSecurityException.class,()->parse(none));
-        String signed=xml.replaceAll("(<spk[^>]*?id=)['\"][0-9]+['\"]","$1'0'");
+        String signed=xml.replaceAll("(<spk[^>]*?id=)['\"][0-9]+['\"]","$1'4294967296'");
         assertThrows(java.security.GeneralSecurityException.class,()->parse(signed));
         String duplicate=xml.replaceFirst("(<prekeys[^>]*>)","$1<pk id='1'>"+java.util.Base64.getEncoder().encodeToString(original.preKey(1))+"</pk>");
         assertThrows(java.security.GeneralSecurityException.class,()->parse(duplicate));
+    }
+    @Test void fullUnsignedPrekeyIdsRoundTripWithoutRelaxingDeviceIdOrSignatureChecks()throws Exception {
+        Omemo2Bundle original=new Omemo2Device("alice@example.org",101,new Omemo2TestDatabase()).prepare();
+        for(long id:new long[]{0,2147483648L,4294967295L}) {
+            java.util.Map<Long,byte[]> keys=java.util.Collections.singletonMap(id,original.preKey(original.preKeys()[0]));
+            Omemo2Bundle wire=new Omemo2Bundle(original.identity(),id,original.signedKey(),original.signature(),keys);
+            Omemo2Bundle parsed=parse(wire.xml().toXML().toString());
+            assertEquals(id,parsed.signedId);assertArrayEquals(new long[]{id},parsed.preKeys());assertArrayEquals(original.identity(),parsed.identity());
+            byte[] invalidSignature=original.signature();invalidSignature[0]^=1;
+            assertThrows(java.security.GeneralSecurityException.class,()->new Omemo2Bundle(original.identity(),id,original.signedKey(),invalidSignature,keys));
+        }
+        assertThrows(java.security.GeneralSecurityException.class,()->Omemo2Bundle.positive("0"));
+        assertThrows(java.security.GeneralSecurityException.class,()->Omemo2Bundle.positive("2147483648"));
+    }
+    @Test void signedPrekeyIdFailuresExplainTheBoundWithoutEchoingArbitraryXml()throws Exception {
+        Omemo2Bundle original=new Omemo2Device("alice@example.org",101,new Omemo2TestDatabase()).prepare();
+        String xml=original.xml().toXML().toString();
+        for(String invalid:new String[]{"4294967296","-1","private-value"}) {
+            String changed=xml.replaceFirst("(<spk[^>]*?id=)['\"][0-9]+['\"]","$1'"+invalid+"'");
+            Exception failure=assertThrows(Omemo2Bundle.InvalidKeyId.class,()->parse(changed));
+            String description=XmppRequestException.describe(failure);
+            assertTrue(description.contains("expected 0..4294967295"));assertFalse(description.contains("private-value"));
+        }
     }
     @Test void identitySurvivesReopenAndConsumedPrekeysAreReplenishedWithoutReuse() throws Exception {
         Omemo2TestDatabase database = new Omemo2TestDatabase(); Omemo2Device first = new Omemo2Device("alice@example.org",101,database);
@@ -39,7 +62,7 @@ class Omemo2DeviceTest {
         Omemo2Bundle parsed = Omemo2Bundle.parse(StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(bundle.xml().toXML().toString())));
         assertArrayEquals(bundle.identity(),parsed.identity()); assertEquals(100,parsed.preKeys().length);
         assertEquals(bundle.xml().toXML().toString(),new Omemo2Device("alice@example.org",101,database).prepare(1000001).xml().toXML().toString());
-        int consumed = bundle.preKeys()[0];
+        int consumed = Math.toIntExact(bundle.preKeys()[0]);
         try (Omemo2Records tx = database.begin()) { tx.save(PRE_KEY,"",consumed,null); tx.commit(); }
         Omemo2Bundle refreshed = first.prepare(1000002); assertEquals(100,refreshed.preKeys().length);
         assertFalse(Arrays.stream(refreshed.preKeys()).anyMatch(id -> id==consumed)); assertArrayEquals(bundle.identity(),refreshed.identity());
@@ -49,9 +72,9 @@ class Omemo2DeviceTest {
         Omemo2TestDatabase database = new Omemo2TestDatabase(); Omemo2Device device = new Omemo2Device("alice@example.org",101,database);
         Omemo2Bundle original = device.prepare(1000000), rotated = device.prepare(1000000+Omemo2Device.ROTATION);
         assertNotEquals(original.signedId,rotated.signedId); assertArrayEquals(original.identity(),rotated.identity());
-        try (Omemo2Records tx = database.begin()) { assertNotNull(tx.load(SIGNED_PRE_KEY,"",original.signedId)); }
+        try (Omemo2Records tx = database.begin()) { assertNotNull(tx.load(SIGNED_PRE_KEY,"",Math.toIntExact(original.signedId))); }
         device.prepare(1000000+Omemo2Device.ROTATION*2);
-        try (Omemo2Records tx = database.begin()) { assertNull(tx.load(SIGNED_PRE_KEY,"",original.signedId)); assertNotNull(tx.load(SIGNED_PRE_KEY,"",rotated.signedId)); }
+        try (Omemo2Records tx = database.begin()) { assertNull(tx.load(SIGNED_PRE_KEY,"",Math.toIntExact(original.signedId))); assertNotNull(tx.load(SIGNED_PRE_KEY,"",Math.toIntExact(rotated.signedId))); }
     }
     @Test void incompleteStateAndFailedCommitNeverReplaceAnExistingIdentity() throws Exception {
         Omemo2TestDatabase database = new Omemo2TestDatabase(); Omemo2Device device = new Omemo2Device("alice@example.org",101,database);
