@@ -22,6 +22,8 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     private final long peer;
     private final boolean fingerprintsPage;
     private final String fingerprintContact;
+    private boolean accountPage;
+    private int ownDeviceId;
     private final Map<OmemoDevice, OmemoFingerprint> identities = new LinkedHashMap<>();
     private final Map<OmemoDevice, String> states = new LinkedHashMap<>();
     private final ArrayList<String> roomMembers=new ArrayList<>();
@@ -36,6 +38,17 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     public MonogramSecurityActivity(int account, long peer) { this(account,peer,false,null); }
     private MonogramSecurityActivity(int account,long peer,boolean fingerprintsPage,String contact) {
         currentAccount=account;this.peer=peer;this.fingerprintsPage=fingerprintsPage;fingerprintContact=contact;
+    }
+    public static MonogramSecurityActivity forAccount(int account) {
+        MonogramController controller=MonogramController.get(account);
+        MonogramSecurityActivity page=new MonogramSecurityActivity(account,org.telegram.messenger.UserConfig.getInstance(account).getClientUserId(),true,controller.accountJid());
+        page.accountPage=true;page.modern=true;return page;
+    }
+    private static String groupedFingerprint(String fingerprint) {
+        if(fingerprint==null)return "Loading fingerprint…";
+        StringBuilder grouped=new StringBuilder();
+        for(int i=0;i<fingerprint.length();i+=8){if(i>0)grouped.append(i%32==0 ? '\n' : ' ');grouped.append(fingerprint.substring(i,Math.min(i+8,fingerprint.length())));}
+        return grouped.toString();
     }
     private void openFingerprints(String contact) {
         MonogramSecurityActivity page=new MonogramSecurityActivity(currentAccount,peer,true,contact);
@@ -68,7 +81,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(fingerprintSetupTask!=null) fingerprintSetupTask.cancel(true);
         if(fingerprintRequest!=null) fingerprintRequest.close();
         if(force) try { controller.session().rooms.retryUnavailable(); } catch(Exception disconnected) {}
-        final boolean selectedModern=controller.modernEncryption(peer);
+        final boolean selectedModern=accountPage ? modern : controller.modernEncryption(peer);
         if(modern!=selectedModern) { identities.clear(); states.clear(); ownFingerprint=null; }
         modern=selectedModern; status=!fingerprintsPage ? "Checking conversation…" : identities.isEmpty() ? "Loading fingerprints…" : "Showing cached fingerprints; refreshing…"; refresh();
         fingerprintSetupTask=fingerprintSetup.submit(() -> {
@@ -76,7 +89,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 com.negzero.monogram.xmpp.XmppSession session=controller.session();
                 if(selectedModern && !session.modernAvailable()) throw new IllegalStateException("OMEMO 2 is not initialized");
                 String own=selectedModern ? Utilities.bytesToHex(session.modern().device.prepare().identity()).toLowerCase(java.util.Locale.ROOT) : session.ownFingerprint().toString();
-                AndroidUtilities.runOnUIThread(() -> { if(loading==generation) { loadedSession=session; ownFingerprint=own; refresh(); } });
+                AndroidUtilities.runOnUIThread(() -> { if(loading==generation) { loadedSession=session; ownFingerprint=own;ownDeviceId=selectedModern ? session.modern().device.id : session.ownDeviceId(); refresh(); } });
                 java.util.Set<String> addresses=controller.knownFingerprintAddresses(peer);
                 loadFingerprintAddresses(session,addresses,selectedModern,force,loading,peer<0 ? "Checking room members…" : null);
                 if(peer<0) {
@@ -156,11 +169,19 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(fingerprintRequest!=null) fingerprintRequest.close();
         fingerprintSetup.shutdownNow(); super.onFragmentDestroy();
     }
-    @Override protected CharSequence getTitle() { return !fingerprintsPage ? "Conversation security" : fingerprintContact==null ? "Fingerprints" : "Devices"; }
+    @Override protected CharSequence getTitle() { return accountPage ? "Account OMEMO" : !fingerprintsPage ? "Conversation security" : fingerprintContact==null ? "Fingerprints" : "Devices"; }
     private void fillFingerprints(ArrayList<UItem> items) {
         MonogramController controller=MonogramController.get(currentAccount);
         Map<OmemoDevice,OmemoFingerprint> displayed=displayedIdentities();
-        if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
+        if(accountPage) {
+            items.add(UItem.asShadow(controller.accountJid()));
+            items.add(UItem.asButton(30,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+            items.add(UItem.asHeader("This device"));
+            if(ownDeviceId>0)items.add(UItem.asSettingsCell(0,"Device ID",Integer.toString(ownDeviceId)).setEnabled(false));
+            items.add(UItem.asShadow(groupedFingerprint(ownFingerprint)));
+            if(ownFingerprint!=null)items.add(UItem.asButton(3,R.drawable.msg_copy,"Copy this device’s fingerprint"));
+            items.add(UItem.asHeader("Other encryption devices on your account"));
+        } else if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
             items.add(UItem.asButton(8,R.drawable.msg_addcontact,"Contact authorization"));
@@ -182,10 +203,15 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 String label=(peer>0 && device.getJid().toString().equals(controller.accountJid()) ? "Your device " : "Device ")+device.getDeviceId();
                 UItem row=UItem.asButton(id++,label,states.get(device)).setEnabled(!saving);
                 row.object=device;row.object2=entry.getValue();items.add(row);
+                if(accountPage)items.add(UItem.asShadow(groupedFingerprint(entry.getValue().toString())));
             }
-        } else items.add(UItem.asShadow(status!=null && status.startsWith("Loading") ? "Loading fingerprints…" : "No devices available. See Diagnostics for details."));
+        } else items.add(UItem.asShadow(status!=null && status.startsWith("Loading") ? "Loading fingerprints…" : accountPage ? "No other encryption devices found for this OMEMO version." : "No devices available. See Diagnostics for details."));
         items.add(UItem.asShadow(null));
-        if(ownFingerprint!=null) items.add(UItem.asButton(3,"Your fingerprint"));
+        if(accountPage) {
+            if(status!=null)items.add(UItem.asShadow(status));
+            items.add(UItem.asShadow("These are published encryption devices, not a list of active login sessions. Verify fingerprints before trusting another device. Blocking stops new message keys from being sent to that identity; it does not sign that client out or erase previously received messages."));
+        }
+        if(ownFingerprint!=null && !accountPage) items.add(UItem.asButton(3,"Your fingerprint"));
         items.add(UItem.asButton(11,"Diagnostics"));
     }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
@@ -232,7 +258,12 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id==13) {
+        if(item.id==30 && accountPage && !saving) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
+                .setItems(new CharSequence[]{"OMEMO 2","Legacy OMEMO"},(dialog,which)->{
+                    modern=which==0;identities.clear();states.clear();ownFingerprint=null;ownDeviceId=0;loadIdentities(true);
+                }).create());
+        } else if(item.id==13) {
             openFingerprints(null);
         } else if(fingerprintsPage && item.object instanceof String) {
             openFingerprints((String)item.object);
@@ -294,6 +325,10 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 }).create());
         else if (item.id==6 && !saving) loadIdentities(true);
         else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));
+        else if(item.id==3 && accountPage && ownFingerprint!=null) {
+            AndroidUtilities.addToClipboard(ownFingerprint);
+            org.telegram.ui.Components.BulletinFactory.of(this).createCopyBulletin("Fingerprint copied").show();
+        }
         else if (item.id == 3) showDialog(new AlertDialog.Builder(getContext()).setTitle("Your fingerprint").setMessage(ownFingerprint)
                 .setPositiveButton("Copy", (d, w) -> AndroidUtilities.addToClipboard(ownFingerprint)).setNegativeButton("Close", null).create());
         else if (item.id == 2 && !saving) {
