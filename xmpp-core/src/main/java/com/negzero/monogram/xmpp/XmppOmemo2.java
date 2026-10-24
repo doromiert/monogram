@@ -69,10 +69,8 @@ public final class XmppOmemo2 implements AutoCloseable {
                 synchronized (XmppOmemo2.this) {
                     if (closed || !ready) return;
                     bundles.keySet().removeIf(key -> key.startsWith(from.toString()+"\n"));
-                    Set<Integer> ids = fetchDevices(from.toString());
-                    if (from.toString().equals(device.jid) && !ids.contains(device.id)) {
-                        ids.add(device.id); publishDevices(ids); device.devices(device.jid,ids); lists.put(device.jid,new HashSet<>(ids));
-                    }
+                    if (from.toString().equals(device.jid)) announceOwnDevice();
+                    else fetchDevices(from.toString());
                     changed.accept(from.toString());
                 }
             } catch (Exception error) { lastError = error; }
@@ -84,9 +82,11 @@ public final class XmppOmemo2 implements AutoCloseable {
     public synchronized void initialize() throws Exception {
         if (closed || !connection.isAuthenticated() || !connection.getUser().asBareJid().toString().equals(device.jid)) throw new IllegalStateException("OMEMO2 account changed");
         ready = false; lastError = null; bundles.clear(); lists.clear(); watched.clear(); refreshed.clear(); watchAttempts.clear();
+        // A failed own-list read must abort before publishing anything to the account.
+        fetchDevices(device.jid);
         Omemo2Bundle own = device.prepare();
         publish(BUNDLES_NODE,Integer.toString(device.id),own.xml(),"max");
-        Set<Integer> ids = fetchDevices(device.jid); ids.add(device.id); publishDevices(ids); device.devices(device.jid,ids); lists.put(device.jid,new HashSet<>(ids));
+        announceOwnDevice();
         watch(device.jid,DEVICES_NODE); watch(device.jid,BUNDLES_NODE);
         ServiceDiscoveryManager disco = ServiceDiscoveryManager.getInstanceFor(connection);
         disco.addFeature(NS); disco.addFeature(DEVICES_NODE+"+notify"); disco.addFeature(BUNDLES_NODE+"+notify"); ready = true;
@@ -112,14 +112,7 @@ public final class XmppOmemo2 implements AutoCloseable {
     }
     private String bare(String jid) throws Exception { if (jid == null || jid.indexOf('/') >= 0) throw new IllegalArgumentException("Bare peer required"); return JidCreate.entityBareFrom(jid).toString(); }
     private synchronized Set<Integer> fetchDevices(String peer) throws Exception {
-        StandardExtensionElement root = item(peer,DEVICES_NODE,null); Set<Integer> ids = new HashSet<>();
-        if (root != null) {
-            if (!"devices".equals(root.getElementName()) || !NS.equals(root.getNamespace()) || root.toXML().length() > 65536) throw Omemo2Bundle.invalid();
-            for (StandardExtensionElement child : root.getElements()) {
-                if (!"device".equals(child.getElementName()) || !NS.equals(child.getNamespace())) continue;
-                if (ids.size() >= 500 || !ids.add(Omemo2Bundle.positive(child.getAttributeValue("id")))) throw Omemo2Bundle.invalid();
-            }
-        }
+        Set<Integer> ids = Omemo2DeviceList.ids(item(peer,DEVICES_NODE,null));
         device.devices(peer,ids); lists.put(peer,new HashSet<>(ids)); refreshed.put(peer+"\n"+DEVICES_NODE,System.nanoTime()); return ids;
     }
     private synchronized Omemo2Bundle bundle(String peer, int id, boolean refresh) throws Exception {
@@ -141,7 +134,9 @@ public final class XmppOmemo2 implements AutoCloseable {
             return StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(value.toXML().toString()));
         } catch (XMPPErrorException absent) {
             StanzaError.Condition condition = absent.getStanzaError().getCondition();
-            if (condition == StanzaError.Condition.item_not_found || condition == StanzaError.Condition.feature_not_implemented || condition == StanzaError.Condition.service_unavailable) return null;
+            // Unsupported/unavailable is not evidence that our existing account list is empty.
+            boolean ownList=device.jid.equals(peer) && DEVICES_NODE.equals(node);
+            if (condition == StanzaError.Condition.item_not_found || !ownList && (condition == StanzaError.Condition.feature_not_implemented || condition == StanzaError.Condition.service_unavailable)) return null;
             throw absent;
         }
     }
@@ -183,6 +178,10 @@ public final class XmppOmemo2 implements AutoCloseable {
         request.setType(IQ.Type.set); connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
     }
     private void publish(String node, String id, StandardExtensionElement value, String maximum) throws Exception {
+        if (!DEVICES_NODE.equals(node) || !"current".equals(id)) {
+            if (!BUNDLES_NODE.equals(node) || !Integer.toString(device.id).equals(id)) throw new IllegalArgumentException("Cannot publish another device's OMEMO data");
+        }
+        if (!connection.isAuthenticated() || !connection.getUser().asBareJid().toString().equals(device.jid)) throw new IllegalStateException("OMEMO2 account changed");
         StandardExtensionElement published = StandardExtensionElement.builder("publish",PUBSUB).addAttribute("node",node)
                 .addElement(StandardExtensionElement.builder("item",PUBSUB).addAttribute("id",id).addElement(value).build()).build();
         StandardExtensionElement options = StandardExtensionElement.builder("publish-options",PUBSUB).addElement(form(PUBSUB+"#publish-options",maximum)).build();
@@ -195,10 +194,13 @@ public final class XmppOmemo2 implements AutoCloseable {
             iq(PUBSUB,published,options);
         }
     }
-    private void publishDevices(Set<Integer> ids) throws Exception {
-        StandardExtensionElement.Builder list = StandardExtensionElement.builder("devices",NS);
-        for (int id : new java.util.TreeSet<>(ids)) list.addElement(StandardExtensionElement.builder("device",NS).addAttribute("id",Integer.toString(id)).build());
-        publish(DEVICES_NODE,"current",list.build(),"1");
+    private void announceOwnDevice() throws Exception {
+        StandardExtensionElement verified=Omemo2DeviceList.announce(new Omemo2DeviceList.Store(){
+            public StandardExtensionElement read()throws Exception{return item(device.jid,DEVICES_NODE,null);}
+            public void publish(StandardExtensionElement value)throws Exception{XmppOmemo2.this.publish(DEVICES_NODE,"current",value,"1");}
+        },device.id);
+        Set<Integer> ids=Omemo2DeviceList.ids(verified);
+        device.devices(device.jid,ids);lists.put(device.jid,new HashSet<>(ids));refreshed.put(device.jid+"\n"+DEVICES_NODE,System.nanoTime());
     }
     private void requireReady() { if (!ready()) throw new IllegalStateException("OMEMO2 is not initialized"); }
     public Message encrypt(Message plaintext) throws Exception {
