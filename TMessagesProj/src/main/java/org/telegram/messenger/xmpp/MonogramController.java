@@ -56,6 +56,7 @@ public final class MonogramController {
     private final int account;
     private final ExecutorService fileWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService profileWorker = Executors.newFixedThreadPool(2);
+    private final ExecutorService developerWorker=Executors.newSingleThreadExecutor();
     private final ExecutorService fingerprintWorker=Executors.newFixedThreadPool(2);
     private final ExecutorService autoDownloadWorker = Executors.newSingleThreadExecutor();
     private final java.util.concurrent.ConcurrentHashMap<Integer, FileTransfer.Job> fileJobs = new java.util.concurrent.ConcurrentHashMap<>();
@@ -2160,6 +2161,21 @@ public final class MonogramController {
         XmppSession current = session;
         if (current == null || !current.connection().isAuthenticated()) throw new IllegalStateException("XMPP is disconnected");
         return current;
+    }
+    public interface DeveloperTask<T> { T run(com.negzero.monogram.xmpp.XmppDeveloperTools tools) throws Exception; }
+    /** Developer requests never hold up message sends; account/session changes invalidate results. */
+    public <T> void developerRequest(DeveloperTask<T> task,java.util.function.BiConsumer<T,String> completed) {
+        final long epoch=accountEpoch;final XmppSession expected=session;
+        developerWorker.execute(() -> {
+            T value=null;String error=null;
+            try {
+                if(epoch!=accountEpoch || expected==null || expected!=session) throw new IllegalStateException("Account connection changed. Reopen Developer tools.");
+                value=task.run(new com.negzero.monogram.xmpp.XmppDeveloperTools(expected.connection()));
+                if(epoch!=accountEpoch || expected!=session) throw new IllegalStateException("Account connection changed. Reopen Developer tools.");
+            } catch(Exception failed) { error=failed instanceof IllegalArgumentException || failed instanceof IllegalStateException ? failed.getMessage() : com.negzero.monogram.xmpp.XmppRequestException.describe(failed); }
+            final T result=value;final String failure=error;
+            AndroidUtilities.runOnUIThread(() -> {if(epoch==accountEpoch) completed.accept(result,failure);});
+        });
     }
     public boolean encrypted(long peer) { return preferences.getBoolean("omemo-" + peer, true); }
     public boolean blindlyTrustContact(long peer) {

@@ -23,8 +23,12 @@ import org.telegram.ui.Components.UniversalAdapter;
 public final class MonogramDebugActivity extends MonogramSettingsActivity {
     private List<XmppDebugLog.Entry> entries=Collections.emptyList();
     public MonogramDebugActivity(int account) { currentAccount=account; }
-    @Override protected CharSequence getTitle() { return "XMPP debugging"; }
+    @Override protected CharSequence getTitle() { return "Developer tools"; }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
+        items.add(UItem.asButton(10,R.drawable.msg_search,"Service discovery"));
+        items.add(UItem.asButton(11,R.drawable.msg_settings,"Ad-hoc commands"));
+        items.add(UItem.asShadow("Browse XMPP services, identities, features and nodes, or run commands offered to your account."));
+        items.add(UItem.asHeader("Message diagnostics"));
         XmppDebugLog log=MonogramController.get(currentAccount).debugLog;
         items.add(UItem.asCheck(1,"Capture message XML").setChecked(log.enabled()));
         items.add(UItem.asShadow("Captures new sent and received message stanzas, including history responses. Encrypted messages show their wire XML, not decrypted text. Capture stays in memory for this account: up to 100 entries, with large entries truncated. Turning capture off, logging out or restarting clears it. While enabled, long-press a chat message for Message diagnostics."));
@@ -42,6 +46,9 @@ public final class MonogramDebugActivity extends MonogramSettingsActivity {
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         XmppDebugLog log=MonogramController.get(currentAccount).debugLog;
+        if(item.id==10 || item.id==11) {
+            presentFragment(new MonogramServiceDiscoveryActivity(currentAccount,null,null,item.id==11));return;
+        }
         if(item.id==1) MonogramController.get(currentAccount).debugCapture(!log.enabled());
         else if(item.id==3) log.clear();
         else if(item.id>=100 && item.id-100<entries.size()) {

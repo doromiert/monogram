@@ -51,7 +51,7 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
             items.add(UItem.asButton(5,R.drawable.msg_notifications,"Connection notice",visibility));
         }
         items.add(UItem.asShadow("Monogram keeps its XMPP connection in a foreground notification. Android battery optimization and additional phone-specific restrictions can still interrupt it; allow background activity in the system settings. To hide the ongoing notice, turn off only the Connection notification category in Android settings. Keep message notifications enabled."));
-        items.add(UItem.asButton(6,R.drawable.msg_settings,"XMPP debugging"));
+        items.add(UItem.asButton(6,R.drawable.msg_settings,"Developer tools"));
         items.add(UItem.asButton(7,R.drawable.msg_link,"Link previews",controller.linkPreviews.enabled() ? "Enabled" : "Off"));
         items.add(UItem.asShadow(null));
         items.add(UItem.asHeader("Contacts and rooms"));

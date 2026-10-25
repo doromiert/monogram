@@ -11707,4 +11707,5 @@
     <string name="MonogramForwardedAddressMissing">The original XMPP address was not included in this older forward.</string>
     <string name="MonogramWalletAddNote">Add a note</string>
     <string name="MonogramWalletNoteHint">Optional note for the recipient</string>
+    <string name="MonogramSettingsAccountInfo">XMPP address, name, bio</string>
 </resources>

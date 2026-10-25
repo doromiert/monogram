@@ -3045,8 +3045,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 } else if (open_settings == 4) {
                     fragment = new FiltersSetupActivity();
                 } else if (open_settings == 5) {
-                    fragment = new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER);
-                    closePrevious = true;
+                    fragment = new UserInfoActivity();
                 } else if (open_settings == 6) {
                     fragment = new EditWidgetActivity(open_widget_edit_type, open_widget_edit);
                 } else if (open_settings == 10) {
@@ -3056,7 +3055,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 } else if (open_settings == 12) {
                     fragment = new PrivacySettingsActivity();
                 } else if (open_settings == 14) {
-                    fragment = new PrivacyControlActivity(ContactsController.PRIVACY_RULES_TYPE_PHONE);
+                    fragment = new PrivacySettingsActivity();
                 } else if (open_settings == 15) {
 
                     ConnectionsManager.getInstance(currentAccount).sendRequest(new TL_account.getPassword(), (response, error) -> {

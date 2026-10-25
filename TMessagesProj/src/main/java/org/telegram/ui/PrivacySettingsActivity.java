@@ -710,7 +710,7 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
         sessionsDetailRow = rowCount++;
 
         privacySectionRow = rowCount++;
-        phoneNumberRow = rowCount++;
+        phoneNumberRow = -1;
         lastSeenRow = rowCount++;
         monogramTypingRow = rowCount++;
         monogramReadReceiptsRow = rowCount++;
@@ -754,11 +754,11 @@ public class PrivacySettingsActivity extends BaseFragment implements Notificatio
             botsDetailRow = -1;
             botsAndWebsitesShadowRow = rowCount++;
         }
-        contactsSectionRow = rowCount++;
-        contactsDeleteRow = rowCount++;
-        contactsSyncRow = rowCount++;
-        contactsSuggestRow = rowCount++;
-        contactsDetailRow = rowCount++;
+        contactsSectionRow = -1;
+        contactsDeleteRow = -1;
+        contactsSyncRow = -1;
+        contactsSuggestRow = -1;
+        contactsDetailRow = -1;
         secretSectionRow = rowCount++;
         secretMapRow = rowCount++;
         secretWebpageRow = rowCount++;

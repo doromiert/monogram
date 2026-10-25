@@ -13,13 +13,13 @@ import org.telegram.ui.Components.*;
 public final class MonogramProfileFieldsActivity extends MonogramSettingsActivity {
     private boolean busy;
     private final ArrayList<String> fields=new ArrayList<>(XmppProfile.EDITABLE_FIELDS.keySet());
-    public MonogramProfileFieldsActivity(int account) { currentAccount=account; }
+    public MonogramProfileFieldsActivity(int account) { currentAccount=account;fields.remove("TEL/NUMBER"); }
     @Override protected CharSequence getTitle() { return "Profile fields"; }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         Map<String,String> values=MonogramController.get(currentAccount).ownProfileFields();
         items.add(UItem.asHeader("Public XMPP profile"));
         for(int i=0;i<fields.size();i++) items.add(UItem.asButton(i+1,XmppProfile.EDITABLE_FIELDS.get(fields.get(i)),values.getOrDefault(fields.get(i),"").isEmpty() ? "Add" : values.get(fields.get(i))).setEnabled(!busy));
-        items.add(UItem.asShadow("Saved in your XMPP vCard. Leave a field empty to remove its value. Other fields and additional email, phone and address entries are preserved."));
+        items.add(UItem.asShadow("Saved in your XMPP vCard. Leave a field empty to remove its value. Other fields and additional entries are preserved."));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(busy || item.id<1 || item.id>fields.size()) return;

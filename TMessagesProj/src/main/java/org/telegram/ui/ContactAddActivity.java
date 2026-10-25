@@ -533,7 +533,7 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
         actionBar.setAdaptiveBackground(listView);
 
-        if (addContact && needAddException) {
+        if (!monogramContact() && addContact && needAddException) {
             checkShare = true;
         }
         listView.adapter.update(false);
@@ -562,7 +562,7 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
             }
         }
 
-        if (addContact && needAddException) {
+        if (!monogramContact() && addContact && needAddException) {
             items.add(UItem.asCheck(2, getString(R.string.AddContactShareNumber)).setChecked(checkShare));
             items.add(UItem.asShadow(formatString(R.string.AddContactShareNumberInfo, UserObject.getFirstName(user))));
         }
@@ -723,7 +723,9 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
         if (user == null) {
             return;
         }
-        if (TextUtils.isEmpty(getPhone())) {
+        if (monogramContact()) {
+            nameTextView.setText(UserObject.getUserName(user));
+        } else if (TextUtils.isEmpty(getPhone())) {
             nameTextView.setText(getString(R.string.MobileHidden));
         } else {
             nameTextView.setText(PhoneFormat.getInstance().format("+" + getPhone()));

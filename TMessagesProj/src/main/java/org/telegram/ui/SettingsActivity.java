@@ -618,21 +618,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         });
 
         final Set<String> suggestions = getMessagesController().pendingSuggestions;
-        if (suggestions.contains("VALIDATE_PHONE_NUMBER") && getUserConfig().getCurrentUser() != null) {
-            items.add(SuggestionCell.Factory.of(
-                formatString(R.string.CheckPhoneNumber, PhoneFormat.getInstance().format("+" + getUserConfig().getCurrentUser().phone)),
-                replaceSingleTag(getString(R.string.CheckPhoneNumberInfo), () -> {
-                    Browser.openUrl(getContext(), getString(R.string.CheckPhoneNumberLearnMoreUrl));
-                }),
-                getString(R.string.CheckPhoneNumberNo), v -> {
-                    presentFragment(new ActionIntroActivity(ActionIntroActivity.ACTION_TYPE_CHANGE_PHONE_NUMBER));
-                },
-                replaceUnderstood(getString(R.string.CheckPhoneNumberYes2)), v -> {
-                    getMessagesController().removeSuggestion(0, "VALIDATE_PHONE_NUMBER");
-                }
-            ));
-            items.add(UItem.asShadow(null));
-        } else if (suggestions.contains("VALIDATE_PASSWORD")) {
+        if (suggestions.contains("VALIDATE_PASSWORD")) {
             items.add(SuggestionCell.Factory.of(
                 getString(R.string.YourPasswordHeader),
                 getString(R.string.YourPasswordRemember),
@@ -654,7 +640,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(UItem.asShadow(null));
         }
 
-        items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
+        items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.MonogramSettingsAccountInfo)));
         items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
         items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
         items.add(SettingCell.Factory.of(5, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.settings_sounds, getString(R.string.SettingsNotifications), getString(R.string.SettingsNotificationsInfo)));
@@ -697,6 +683,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(SettingCell.Factory.of(22, 0xFFF45255, 0xFFDF3955, 0, getString(R.string.DebugClearLogs)));
         }
 
+        items.add(SettingCell.Factory.of(1011, IconBackgroundColors.GRAY.top, IconBackgroundColors.GRAY.bottom,
+                R.drawable.msg_settings, "Developer tools", "Service discovery, commands and XML diagnostics"));
         items.add(SettingCell.Factory.of(1010, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom,
                 R.drawable.settings_features, "Check for updates", "Monogram GitHub releases"));
         items.add(UItem.asCustomShadow(versionView));
@@ -772,6 +760,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 6:
                 presentSettingFragment(new DataSettingsActivity());
+                break;
+            case 1011:
+                presentSettingFragment(new MonogramDebugActivity(currentAccount));
                 break;
             case 1010:
                 if (getParentActivity() instanceof LaunchActivity) ((LaunchActivity)getParentActivity()).checkAppUpdate(true, null);

@@ -24,6 +24,15 @@ public class MonogramProfileCacheTest {
         Bitmap image=Bitmap.createBitmap(4,4,Bitmap.Config.ARGB_8888);ByteArrayOutputStream bytes=new ByteArrayOutputStream();
         assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,bytes));image.recycle();return bytes.toByteArray();
     }
+    @Test public void profileDetailsHideTelephoneFieldsWithoutChangingTheStoredVcard() throws Exception {
+        XmppProfile profile=new XmppProfile("<vCard xmlns='vcard-temp'><FN>Bob</FN><TEL><NUMBER>+48123456789</NUMBER></TEL><EMAIL><USERID>bob@example.org</USERID></EMAIL></vCard>",null,null);
+        java.util.Map<String,String> shown=MonogramProfiles.details(profile,"bob@example.org");
+        assertEquals("bob@example.org",shown.get("XMPP ID"));assertEquals("bob@example.org",shown.get("Email 1"));
+        assertFalse(shown.keySet().stream().anyMatch(key->key.toLowerCase(java.util.Locale.ROOT).contains("phone")));
+        assertFalse(shown.values().contains("+48123456789"));
+        assertEquals("+48123456789",profile.field("TEL","NUMBER"));
+        assertEquals("+48123456789",profile.editField("URL","https://example.org").field("TEL","NUMBER"));
+    }
     @Test public void retainsExactSourceAcrossReopenWithoutLoadingBytesForOrdinaryProfileReads() throws Exception {
         byte[] source=avatar();long peer;
         try(MonogramStore store=new MonogramStore(context,file)) {

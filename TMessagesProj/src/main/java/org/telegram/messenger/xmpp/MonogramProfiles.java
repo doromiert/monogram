@@ -89,12 +89,11 @@ public final class MonogramProfiles {
         add(fields, "Website", profile.field("URL")); add(fields, "Birthday", profile.field("BDAY"));
         add(fields, "Organization", profile.field("ORG", "ORGNAME")); add(fields, "Department", profile.field("ORG", "ORGUNIT"));
         add(fields, "Title", profile.field("TITLE")); add(fields, "Role", profile.field("ROLE"));
-        int email = 0, phone = 0, address = 0;
+        int email = 0, address = 0;
         for (org.jivesoftware.smack.packet.StandardExtensionElement element : profileElements(profile)) {
             String name = element.getElementName();
             if (!XmppProfile.VCARD.equals(element.getNamespace())) continue;
             if ("EMAIL".equals(name)) add(fields, "Email " + ++email, value(element, "USERID"));
-            else if ("TEL".equals(name)) add(fields, "Phone " + ++phone, value(element, "NUMBER"));
             else if ("ADR".equals(name)) {
                 StringBuilder text = new StringBuilder();
                 for (String part : new String[]{"POBOX", "EXTADR", "STREET", "LOCALITY", "REGION", "PCODE", "CTRY"}) {
