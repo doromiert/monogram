@@ -13,7 +13,7 @@ public final class MonogramChatBehavior {
     public static boolean groupMessageMenu(int account) { return get(account,"group-message-menu"); }
     public static void groupMessageMenu(int account,boolean enabled) { save(account,"group-message-menu",enabled); }
     public static boolean showCopyPhotoButton(int account) { return get(account,"show-copy-photo"); }
-    public static boolean showDetailsButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-details",false); }
+    public static boolean showDetailsButton(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-show-details",true); }
     public static void showCopyPhotoButton(int account,boolean enabled) { save(account,"show-copy-photo",enabled); }
     public static void showDetailsButton(int account,boolean enabled) { save(account,"show-details",enabled); }
     public static boolean swipeLoop(int account) { return MessagesController.getMainSettings(account).getBoolean("monogram-extera-swipe-loop",false); }

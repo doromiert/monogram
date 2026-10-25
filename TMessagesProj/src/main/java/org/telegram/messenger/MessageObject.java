@@ -11690,7 +11690,7 @@ public class MessageObject {
         }
         final TLRPC.MessageMedia media = getMedia(message);
         if (message.peer_id.chat_id != 0 || message.peer_id.user_id != 0 && chat == null) {
-            return !scheduled && message.id > 0 && message.out && message.rich_message == null
+            return !scheduled && message.id > 0 && message.out
                     && (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage
                     || org.telegram.messenger.xmpp.MonogramAttachments.has(message));
         }

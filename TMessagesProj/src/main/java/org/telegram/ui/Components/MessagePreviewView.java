@@ -954,18 +954,7 @@ public class MessagePreviewView extends FrameLayout {
                     menu.addView(btn1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
                 }
 
-                if (!messagePreviewParams.monoforum && !messagePreviewParams.noforwards && !messagePreviewParams.hasSecretMessages) {
-                    FrameLayout btn2 = new FrameLayout(context);
-                    replyAnotherChatButton = new ActionBarMenuSubItem(context, true, false, false, resourcesProvider);
-                    replyAnotherChatButton.setTextAndIcon(LocaleController.getString(R.string.ReplyToAnotherChat), R.drawable.msg_forward_replace);
-                    replyAnotherChatButton.setOnClickListener(v -> selectAnotherChat(false));
-                    quoteAnotherChatButton = new ActionBarMenuSubItem(context, true, false, false, resourcesProvider);
-                    quoteAnotherChatButton.setTextAndIcon(LocaleController.getString(R.string.QuoteToAnotherChat), R.drawable.msg_forward_replace);
-                    quoteAnotherChatButton.setOnClickListener(v -> selectAnotherChat(false));
-                    btn2.addView(quoteAnotherChatButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48));
-                    btn2.addView(replyAnotherChatButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48));
-                    menu.addView(btn2, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
-                }
+                // XMPP reply references are conversation-scoped; do not offer Telegram's cross-chat reply/quote action.
 
                 if (!messagePreviewParams.noforwards && !messagePreviewParams.hasSecretMessages) {
                     ActionBarPopupWindow.GapView gap2 = new ActionBarPopupWindow.GapView(context, resourcesProvider);

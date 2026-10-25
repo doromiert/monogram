@@ -130,6 +130,16 @@ public final class MonogramArticles {
         if(t instanceof TL_iv.textUrl && t.url!=null) return "["+value+"](<"+t.url.replace("<","%3C").replace(">","%3E").replace("\n","").replace("\r","")+">)";
         return value;
     }
+    /** Recognize real GFM tables even when a sender has no text/markdown content hint. */
+    public static boolean applyTables(TLRPC.Message message,String source) {
+        if(MonogramAttachments.has(message) || message.media!=null && !(message.media instanceof TLRPC.TL_messageMediaEmpty) && !(message.media instanceof TLRPC.TL_messageMediaWebPage)) return false;
+        if(source==null || source.length()>MAX_LENGTH || source.indexOf('|')<0 || source.indexOf('\n')<0 || source.indexOf('-')<0) return false;
+        try {
+            TL_iv.RichMessage rich=new TL_iv.RichMessage();MarkdownParser.parseMessage(source,rich.blocks);
+            if(rich.blocks.size()>2048 || rich.blocks.stream().noneMatch(block -> block instanceof TL_iv.pageBlockTable)) return false;
+            message.rich_message=rich;message.flags2|=8192;return true;
+        } catch(RuntimeException invalid) { return false; }
+    }
     public static void apply(TLRPC.Message message,String source) {
         if(source==null || source.length()>MAX_LENGTH) return;
         try {

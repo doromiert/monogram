@@ -43,6 +43,32 @@ public class MonogramArticlesTest {
             assertEquals("Apples | pears",org.telegram.ui.Components.MarkdownParser.richTextToString(projected.rows.get(1).cells.get(0).text));
         } finally { store.close();context.deleteDatabase("articles.db"); }
     }
+    @Test public void unhintedIncomingTableRendersAfterHistoryReopenAndRemainsEditableWhenOutgoing() throws Exception {
+        String wire="| Item | Count |\n| --- | --- |\n| Apples | 3 |";
+        Context context=RuntimeEnvironment.getApplication();context.deleteDatabase("plain-tables.db");MonogramStore store=new MonogramStore(context,"plain-tables.db");
+        try {
+            long self=store.peer("alice@example.org");store.peer("bob@example.org");
+            int id=store.save(MessageFixture.replyMessage("plain-table","plain-table",null,wire,true,false,100000,"phone",true,null).withMarkup(MessageMarkup.body(wire)));
+            store.close();store=new MonogramStore(context,"plain-tables.db");TLRPC.Message restored=store.getMessage(id,self);
+            assertEquals(wire,restored.message);assertNotNull(restored.rich_message);
+            assertTrue(restored.rich_message.blocks.stream().anyMatch(block -> block instanceof TL_iv.pageBlockTable));
+            restored.out=true;
+            assertTrue(org.telegram.messenger.MessageObject.canEditMessage(0,restored,null,false));
+            assertTrue(org.telegram.messenger.MessageObject.canEditMessageAnytime(0,restored,null));
+            restored.out=false;assertFalse(org.telegram.messenger.MessageObject.canEditMessage(0,restored,null,false));
+        } finally {store.close();context.deleteDatabase("plain-tables.db");}
+    }
+    @Test public void unhintedPlainTextCodeAndSpoilersAreNotReinterpretedAsTables() {
+        for(String wire:new String[]{"a | b\nnot a table", "```\n| a | b |\n| - | - |\n```"}) {
+            TLRPC.Message message=new TLRPC.TL_message();message.message=wire;
+            MonogramFormatting.apply(message,MessageMarkup.body(wire));assertNull(message.rich_message);
+        }
+        String table="| a | b |\n| - | - |\n| c | d |";
+        TLRPC.Message message=new TLRPC.TL_message();message.message=table;
+        MonogramFormatting.apply(message,MessageMarkup.body(table).withSpoiler(true));assertNull(message.rich_message);
+        TLRPC.Message caption=new TLRPC.TL_message();caption.message=table;caption.media=new TLRPC.TL_messageMediaDocument();
+        MonogramFormatting.apply(caption,MessageMarkup.body(table));assertNull(caption.rich_message);
+    }
     @Test public void literalMarkersCodeLinksAndFormattingSurviveConversion() {
         TL_iv.pageBlockParagraph paragraph=new TL_iv.pageBlockParagraph();TL_iv.textConcat concat=new TL_iv.textConcat();paragraph.text=concat;
         concat.texts.add(text(">greentext * literal | "));

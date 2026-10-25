@@ -1936,7 +1936,11 @@ public class ImageLoader {
             }
             if (imageReceiverArray.isEmpty()) {
                 if (imageLocation != null) {
-                    if (!forceLoadingImages.containsKey(key)) {
+                    // XMPP transfers belong to the account, not to a visible chat cell.
+                    // Detaching its last receiver must not cancel the job or discard its partial bytes.
+                    // Explicit FileLoader cancellation still reaches MonogramController.cancelFile.
+                    if (!forceLoadingImages.containsKey(key)
+                            && !org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isFileLoading(url)) {
                         if (imageLocation.location != null) {
                             FileLoader.getInstance(currentAccount).cancelLoadFile(imageLocation.location, ext);
                         } else if (imageLocation.document != null) {

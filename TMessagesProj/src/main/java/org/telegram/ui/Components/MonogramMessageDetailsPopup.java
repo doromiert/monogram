@@ -126,6 +126,20 @@ public final class MonogramMessageDetailsPopup {
             row.setOnLongClickListener(view -> { copy(entry.value);return true; });
             rows.addView(row,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,56));
         }
+        addGap();
+        ActionBarMenuSubItem raw=new ActionBarMenuSubItem(layout.getContext(),false,true,provider);
+        raw.setTextAndIcon("Stored message data",R.drawable.msg_log);
+        raw.setSubtext("Body and XMPP metadata");raw.setItemHeight(56);
+        raw.setOnClickListener(view -> {
+            if(!active()) return;
+            final String body=message.messageOwner.message;
+            MonogramController.get(account).inspectMessage(message,text -> {
+                if(!active() || fragment.getParentActivity()==null) return;
+                opening=false;if(closeMenu!=null) closeMenu.run();
+                org.telegram.ui.MonogramDebugActivity.showText(fragment,"Stored message data","Body:\n"+(body==null ? "" : body)+"\n\n"+text);
+            });
+        });
+        rows.addView(raw,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,56));
         layout.requestLayout();
     }
     private void addGap() {

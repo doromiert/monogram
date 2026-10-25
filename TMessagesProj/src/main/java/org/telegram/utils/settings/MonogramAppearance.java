@@ -17,6 +17,7 @@ public final class MonogramAppearance {
     public static final BooleanSetting loading = BooleanSetting.of("appearance_material_loading", false);
     public static final BooleanSetting slider = BooleanSetting.of("appearance_material_slider", false);
     public static final BooleanSetting switches = BooleanSetting.of("appearance_material_switches", false);
+    public static final BooleanSetting showCallButton = BooleanSetting.of("appearance_show_call_button", true);
     public static final BooleanSetting chatHeaderBackground = BooleanSetting.of("appearance_chat_header_background", true);
     public static final BooleanSetting chatHeader = BooleanSetting.of("appearance_material_chat_header", false);
     public static final BooleanSetting navigationStyle = BooleanSetting.of("appearance_material_navigation", false);

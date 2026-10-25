@@ -59,6 +59,9 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
         flag(items,"Sender mini avatars",senderAvatars);
         choice(items,5,"Home title",title,"Monogram","XMPP ID","Your name","Chats");
         items.add(UItem.asShadow("Search remains available from its icon. Hiding stories does not delete them."));
+        items.add(UItem.asHeader("Chat Header"));
+        flag(items,"Show call button",showCallButton,"Show the call shortcut in chat headers.");
+        items.add(UItem.asShadow(null));
         items.add(UItem.asHeader("Chat Folders"));
         items.add(UItem.asCustom(folderPreview));
         items.add(UItem.asButton(6,"Folder tabs",new String[]{"Names only","Icons only","Icons and names"}[MonogramFolderIcons.displayMode(currentAccount)]));
@@ -146,7 +149,8 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         if(item.id>=100 && item.id<100+flags.size()) {
             BooleanSetting setting=flags.get(item.id-100);boolean checked=setting.toggle();animateToggle(item,view,checked);rebuild();
-            if(setting==systemFonts) refreshFontsAfterToggle();return;
+            if(setting==systemFonts) refreshFontsAfterToggle();
+            if(setting==showCallButton) refreshOtherScreens();return;
         }
         switch(item.id) {
             case 2:MonogramUiPreferences.setCenterHomeTitle(currentAccount,!MonogramUiPreferences.centerHomeTitle(currentAccount));break;
