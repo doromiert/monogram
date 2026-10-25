@@ -644,6 +644,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int deleteReactionRow;
     private int reportReactionRow;
     private int reportDividerRow;
+    private int monogramContactRequestRow=-1,monogramControlAccessRow=-1;
+    private boolean monogramContactRequestBusy;
+    private int monogramContactRequestGeneration;
     private int addToContactsRow;
     private int addToGroupButtonRow;
     private int addToGroupInfoRow;
@@ -2313,6 +2316,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onFragmentDestroy() {
+        monogramContactRequestGeneration++;
         super.onFragmentDestroy();
         if (sharedMediaLayout != null) {
             sharedMediaLayout.onDestroy();
@@ -4240,6 +4244,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 return;
             }
             listView.stopScroll();
+            if(position==monogramContactRequestRow) {requestMonogramContact();return;}
+            if(position==monogramControlAccessRow) {
+                String address=monogramAccessAddress();if(address!=null)presentFragment(new MonogramContactActivity(currentAccount,address));return;
+            }
             if (isMonogramProfileRow(position)) {
                 if(userId==getUserConfig().getClientUserId() && !"XMPP ID".equals(monogramProfileDetails.get(position-monogramProfileStart).getKey())) { presentFragment(new MonogramProfileFieldsActivity(currentAccount));return; }
                 AndroidUtilities.addToClipboard(monogramProfileDetails.get(position - monogramProfileStart).getValue());
@@ -8643,7 +8651,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             updateOnlineCount(true);
             updateProfileData(false);
         } else if (id == NotificationCenter.contactsDidLoad || id == NotificationCenter.channelRightsUpdated) {
-            createActionBarMenu(true);
+            createActionBarMenu(true);refreshMonogramAccessRows();
         } else if (id == NotificationCenter.encryptedChatCreated) {
             if (creatingChat) {
                 AndroidUtilities.runOnUIThread(() -> {
@@ -9049,9 +9057,40 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    private String monogramAccessAddress() {
+        if(userId<=0 || userId==getUserConfig().getClientUserId() || currentEncryptedChat!=null) return null;
+        try {
+            String address=org.telegram.messenger.xmpp.MonogramController.get(currentAccount).jid(userId);
+            return org.jxmpp.jid.impl.JidCreate.from(address).isEntityBareJid() ? address : null;
+        } catch(Exception unavailable) {return null;}
+    }
+    private com.negzero.monogram.xmpp.XmppContacts.State monogramAccessState() {
+        String address=monogramAccessAddress();if(address==null)return null;
+        try {return org.telegram.messenger.xmpp.MonogramController.get(currentAccount).contactAuthorization(address);}
+        catch(Exception unavailable) {return null;}
+    }
+    private void refreshMonogramAccessRows() {
+        if(listAdapter==null)return;
+        if(monogramContactRequestRow>=0)listAdapter.notifyItemChanged(monogramContactRequestRow);
+        if(monogramControlAccessRow>=0)listAdapter.notifyItemChanged(monogramControlAccessRow);
+    }
+    private void requestMonogramContact() {
+        if(monogramContactRequestBusy)return;
+        String address=monogramAccessAddress();if(address==null)return;
+        com.negzero.monogram.xmpp.XmppContacts.State state=monogramAccessState();
+        if(state==null || state.seesTheirPresence || state.outgoingPending) {presentFragment(new MonogramContactActivity(currentAccount,address));return;}
+        monogramContactRequestBusy=true;refreshMonogramAccessRows();final int generation=++monogramContactRequestGeneration;
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).contactAuthorization(address,com.negzero.monogram.xmpp.XmppContacts.Action.REQUEST,error -> {
+            if(generation!=monogramContactRequestGeneration)return;
+            monogramContactRequestBusy=false;refreshMonogramAccessRows();if(getParentActivity()==null)return;
+            if(error==null) BulletinFactory.of(this).createSimpleBulletin(R.drawable.msg_contact_add,"Contact request sent").show();
+            else BulletinFactory.of(this).createErrorBulletin("Could not send contact request: "+error).show();
+        });
+    }
+
     @Override
     public void onResume() {
-        super.onResume();
+        super.onResume();refreshMonogramAccessRows();
         if(chatId>0) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).refreshRoomRoster(-chatId,false);
         if (sharedMediaLayout != null) {
             sharedMediaLayout.onResume();
@@ -9936,6 +9975,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         int prevRowsCount = rowCount;
         rowCount = 0;
         monogramProfileStart = -1;
+        monogramContactRequestRow=monogramControlAccessRow=-1;
         monogramProfileDetails.clear();
         if (userId > 0) monogramProfileDetails.addAll(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).profileDetails(userId).entrySet());
 
@@ -10232,7 +10272,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
 
                 boolean divider = false;
-
+                if(monogramAccessAddress()!=null) {
+                    monogramContactRequestRow=rowCount++;
+                    monogramControlAccessRow=rowCount++;
+                    divider=true;
+                }
 
                 if (user != null && isBot && !user.bot_nochats) {
                     addToGroupButtonRow = rowCount++;
@@ -13024,6 +13068,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         textCell.setTextAndIcon(LocaleController.getString(R.string.AddMember), R.drawable.msg_contact_add, membersSectionRow == -1 || isNextPositionMember);
                     } else if (position == sendMessageRow) {
                         textCell.setText(LocaleController.getString(R.string.SendMessageLocation), true);
+                    } else if(position==monogramContactRequestRow || position==monogramControlAccessRow) {
+                        com.negzero.monogram.xmpp.XmppContacts.State access=monogramAccessState();
+                        String value=position==monogramContactRequestRow ? monogramContactRequestBusy ? "Sending…" : access==null ? "Reconnect" : access.seesTheirPresence ? "Access granted" : access.outgoingPending ? "Pending" : "Send request"
+                                : access==null ? "" : access.sharesOwnPresence ? "Allowed" : access.preApproved ? "Pre-approved" : access.allowRequests ? "Waiting for request" : "Not allowed";
+                        textCell.setTextAndValueAndIcon(position==monogramContactRequestRow ? "Contact request" : "Control access",value,
+                                position==monogramContactRequestRow ? R.drawable.msg_contact_add : R.drawable.msg_secret,position==monogramContactRequestRow);
+                        textCell.setColors(Theme.key_windowBackgroundWhiteGrayIcon,Theme.key_windowBackgroundWhiteBlackText);
                     } else if (position == addToContactsRow) {
                         textCell.setTextAndIcon(LocaleController.getString(R.string.AddToContacts), R.drawable.msg_contact_add, false);
                         textCell.setColors(Theme.key_windowBackgroundWhiteGrayIcon, Theme.key_windowBackgroundWhiteBlackText);
@@ -13427,6 +13478,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            if(holder.getAdapterPosition()==monogramContactRequestRow && monogramContactRequestRow>=0) return !monogramContactRequestBusy;
+            if(holder.getAdapterPosition()==monogramControlAccessRow && monogramControlAccessRow>=0) return true;
             if (notificationRow != -1) {
                 int position = holder.getAdapterPosition();
                 return position == notificationRow || position == numberRow || position == privacyRow ||
@@ -13481,7 +13534,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     position == questionRow || position == devicesRow || position == filtersRow || position == stickersRow ||
                     position == faqRow || position == policyRow || position == sendLogsRow || position == sendLastLogsRow ||
                     position == clearLogsRow || position == switchBackendRow || position == setAvatarRow || position == addToGroupButtonRow ||
-                    position == addToContactsRow || position == liteModeRow || position == premiumGiftingRow || position == businessRow ||
+                    position == addToContactsRow || position == monogramContactRequestRow || position == monogramControlAccessRow || position == liteModeRow || position == premiumGiftingRow || position == businessRow ||
                     position == botStarsBalanceRow || position == botTonBalanceRow || position == channelBalanceRow || position == botPermissionLocation ||
                     position == botPermissionBiometry || position == tonRow
             ) {
@@ -14836,6 +14889,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             put(++pointer, deleteReactionRow, sparseIntArray);
             put(++pointer, reportReactionRow, sparseIntArray);
             put(++pointer, addToContactsRow, sparseIntArray);
+            put(++pointer, monogramContactRequestRow, sparseIntArray);
+            put(++pointer, monogramControlAccessRow, sparseIntArray);
             put(++pointer, settingsTimerRow, sparseIntArray);
             put(++pointer, settingsKeyRow, sparseIntArray);
             put(++pointer, secretSettingsSectionRow, sparseIntArray);

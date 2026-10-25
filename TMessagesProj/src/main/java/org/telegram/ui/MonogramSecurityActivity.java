@@ -184,7 +184,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         } else if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
-            items.add(UItem.asButton(8,R.drawable.msg_addcontact,"Contact authorization"));
+            items.add(UItem.asButton(8,R.drawable.msg_addcontact,"Control access"));
             if(status!=null && !status.startsWith("Loading"))items.add(UItem.asShadow(status));
         }
         if(!displayed.isEmpty()) {
@@ -245,7 +245,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
             }
         }
         items.add(UItem.asCheck(7,"Allow unencrypted reactions").setChecked(controller.plainReactionsAllowed(peer)));
-        items.add(UItem.asButton(8,"Contact authorization").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
+        items.add(UItem.asButton(8,"Control access").setEnabled(peer>0 ? !controller.accountJid().equals(controller.jid(peer)) : roomMembers.stream().anyMatch(member -> !controller.accountJid().equals(member))));
         items.add(UItem.asButton(4, R.drawable.msg_retry, "XMPP connection"));
         items.add(UItem.asButton(10,"About encryption"));
         items.add(UItem.asButton(11,"Diagnostics",controller.lastSendError(peer)!=null ? "Send failed" : null));
@@ -307,7 +307,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
             if(peer>0) presentFragment(new MonogramContactActivity(currentAccount,controller.jid(peer)));
             else {
                 ArrayList<String> contacts=new ArrayList<>(roomMembers); contacts.remove(controller.accountJid());
-                if(!contacts.isEmpty()) showDialog(new AlertDialog.Builder(getContext()).setTitle("Contact authorization")
+                if(!contacts.isEmpty()) showDialog(new AlertDialog.Builder(getContext()).setTitle("Control access")
                     .setItems(contacts.toArray(new CharSequence[0]),(dialog,which) -> presentFragment(new MonogramContactActivity(currentAccount,contacts.get(which)))).create());
             }
         } else if(item.id==26 && peer>0 && !saving) {

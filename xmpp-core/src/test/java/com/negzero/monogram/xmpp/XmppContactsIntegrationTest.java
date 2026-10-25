@@ -75,6 +75,7 @@ class XmppContactsIntegrationTest {
             bob.contacts.act(a,XmppContacts.Action.REVOKE);
             await(() -> { try { return !alice.contacts.state(b).seesTheirPresence; } catch(Exception failed) { return false; } });
             assertFalse(alice.contacts.presence(b).visible);
+            assertTrue(bob.contacts.state(a).seesTheirPresence,"Revoking their access must preserve your independent subscription to them");
             assertEquals(0,alice.contacts.lastSeen(b).lastSeen);
             alice.contacts.act(b,XmppContacts.Action.REQUEST); assertEquals(a,bobRequests.poll(10,TimeUnit.SECONDS));
             alice.contacts.act(b,XmppContacts.Action.CANCEL); assertEquals(a,bobCancelled.poll(10,TimeUnit.SECONDS));

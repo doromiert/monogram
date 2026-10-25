@@ -376,12 +376,21 @@ public final class MonogramController {
             String error=null;
             try {
                 if(owner!=accountEpoch || !jid.equals(accountJid())) throw new IllegalStateException("Account changed");
-                XmppSession expected=session(); expected.contacts.act(address,action);
+                XmppSession expected=session();
+                if(action==com.negzero.monogram.xmpp.XmppContacts.Action.ALLOW || action==com.negzero.monogram.xmpp.XmppContacts.Action.REVOKE || action==com.negzero.monogram.xmpp.XmppContacts.Action.DENY) {
+                    expected.contacts.state(address); // Validate target before changing a saved permission.
+                    String target=org.jxmpp.jid.impl.JidCreate.entityBareFrom(address).toString();
+                    java.util.Set<String> allowed=new java.util.HashSet<>(expected.contacts.allowedContacts());
+                    if(action==com.negzero.monogram.xmpp.XmppContacts.Action.ALLOW)allowed.add(target);else allowed.remove(target);
+                    if(!preferences.edit().putStringSet("contact-access-allow-"+jid,allowed).commit())throw new IllegalStateException("Could not save contact access.");
+                    expected.contacts.restoreAllowedContacts(allowed);
+                }
+                expected.contacts.act(address,action);
                 if(expected!=session || owner!=accountEpoch) throw new IllegalStateException("Account changed");
-                if(action==com.negzero.monogram.xmpp.XmppContacts.Action.ACCEPT || action==com.negzero.monogram.xmpp.XmppContacts.Action.DENY
+                if(action==com.negzero.monogram.xmpp.XmppContacts.Action.ACCEPT || action==com.negzero.monogram.xmpp.XmppContacts.Action.ALLOW || action==com.negzero.monogram.xmpp.XmppContacts.Action.DENY
                         || action==com.negzero.monogram.xmpp.XmppContacts.Action.REVOKE) recordContactRequest(jid,address,false);
                 contactAuthorizationsChanged();
-            } catch(Exception failed) { error=com.negzero.monogram.xmpp.XmppRequestException.describe(failed); }
+            } catch(Exception failed) { error=failed instanceof UnsupportedOperationException ? failed.getMessage() : com.negzero.monogram.xmpp.XmppRequestException.describe(failed); }
             final String failure=error;
             AndroidUtilities.runOnUIThread(() -> completed.accept(owner==accountEpoch ? failure : "Account changed"));
         });
@@ -785,6 +794,7 @@ public final class MonogramController {
                         });
                     }
                 });
+        connecting.contacts.restoreAllowedContacts(preferences.getStringSet("contact-access-allow-"+details.jid,java.util.Collections.emptySet()));
         connecting.setBlindTrustPolicy(address->details.jid.toString().equals(accountJid())
                 && preferences.getBoolean("blind-trust-"+details.jid+"\n"+address,false));
         // Android owns retries; do not race Smack's reconnect thread with replacement sessions.
@@ -1766,7 +1776,7 @@ public final class MonogramController {
         try { MonogramTranslation.clearConfiguration(account); }
         catch(java.io.IOException unavailable) { throw new IllegalStateException("Cannot clear translation settings",unavailable); }
         SharedPreferences.Editor roomPasswords=preferences.edit();
-        for(String key:preferences.getAll().keySet()) if(key.startsWith("private-read-") || key.startsWith("group-read-receipts-enabled-") || key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("automatic-room-recipients-") || key.startsWith("blocked-jids-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
+        for(String key:preferences.getAll().keySet()) if(key.startsWith("private-read-") || key.startsWith("group-read-receipts-enabled-") || key.startsWith("read-receipts-enabled-") || key.startsWith("room-password-") || key.startsWith("plain-reactions-") || key.startsWith("last-send-error-") || key.startsWith("room-recipient-exclusions-") || key.startsWith("contact-requests-") || key.startsWith("contact-access-allow-") || key.startsWith("automatic-room-recipients-") || key.startsWith("blocked-jids-") || key.startsWith("unavailable-room-recipients-") || key.startsWith("last-skipped-") || key.startsWith("last-room-invite-error-") || key.startsWith("last-disconnect-")) roomPasswords.remove(key);
         if(!roomPasswords.commit()) throw new IllegalStateException("Cannot remove room credentials");
         AndroidUtilities.cancelRunOnUIThread(retryConnection);
         worker.execute(() -> {
