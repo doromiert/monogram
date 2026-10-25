@@ -422,6 +422,10 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     /** Apply membership differences, rather than rewriting every occupant on each presence stanza. */
     synchronized boolean roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
+        return roomState(state,self,null);
+    }
+    synchronized boolean roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self,java.util.Set<Long> affectedUsers) {
+        java.util.Set<Long> affected=new java.util.LinkedHashSet<>();
         long dialog=knownRoom(state.room.toString()); if(dialog==0) return false;
         Room previous=room(dialog);SQLiteDatabase db=getWritableDatabase();
         boolean changed=false;db.beginTransaction();
@@ -443,8 +447,9 @@ final class MonogramStore extends SQLiteOpenHelper {
                 }
             }
             java.util.Map<String,String> identities=new java.util.HashMap<>();java.util.Set<String> active=new java.util.HashSet<>();
-            try(Cursor rows=db.rawQuery("SELECT occupant,real_jid,active FROM room_participants WHERE room=?",new String[]{Long.toString(-dialog)})) {
-                while(rows.moveToNext()) {String occupant=rows.getString(0);identities.put(occupant,rows.getString(1));if(rows.getInt(2)!=0)active.add(occupant);}
+            java.util.Map<String,Long> previousUsers=new java.util.HashMap<>();
+            try(Cursor rows=db.rawQuery("SELECT occupant,real_jid,active,user FROM room_participants WHERE room=?",new String[]{Long.toString(-dialog)})) {
+                while(rows.moveToNext()) {String occupant=rows.getString(0);identities.put(occupant,rows.getString(1));previousUsers.put(occupant,rows.getLong(3));if(rows.getInt(2)!=0)active.add(occupant);}
             }
             for(com.negzero.monogram.xmpp.XmppRooms.Occupant occupant:state.occupants) {
                 if(!occupant.address.startsWith(previous.jid+"/")) throw new IllegalArgumentException("Occupant belongs to another room");
@@ -452,16 +457,22 @@ final class MonogramStore extends SQLiteOpenHelper {
                 boolean sameIdentity=identities.containsKey(occupant.address) && java.util.Objects.equals(identities.get(occupant.address),occupant.realJid);
                 if(wasActive && sameIdentity) continue;
                 ContentValues participant=new ContentValues();participant.put("active",1);
-                if(!sameIdentity) {participant.put("real_jid",occupant.realJid);participant.put("user",roomUser(dialog,occupant.address,occupant.realJid,self));}
+                Long oldUser=previousUsers.get(occupant.address);if(oldUser!=null)affected.add(oldUser);
+                if(!sameIdentity) {
+                    long user=roomUser(dialog,occupant.address,occupant.realJid,self);affected.add(user);
+                    participant.put("real_jid",occupant.realJid);participant.put("user",user);
+                }
                 db.update("room_participants",participant,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant.address});changed=true;
             }
             for(String occupant:active) {
+                affected.add(previousUsers.get(occupant));
                 ContentValues inactive=new ContentValues();inactive.put("active",0);
                 db.update("room_participants",inactive,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant});changed=true;
             }
             db.setTransactionSuccessful();
         } finally {db.endTransaction();}
         if(changed) mentionNamesCache.remove(dialog);
+        if(affectedUsers!=null)affectedUsers.addAll(affected);
         return changed;
     }
     synchronized java.util.Map<Long,String> mentionNames(long dialog,long self) {
@@ -492,6 +503,12 @@ final class MonogramStore extends SQLiteOpenHelper {
             while(c.moveToNext()) ids.add(c.getLong(0));
         }
         ArrayList<TLRPC.User> result=new ArrayList<>(); for (long id:ids) result.add(user(id,self)); return result;
+    }
+    synchronized ArrayList<TLRPC.User> roomPresenceUsers(long dialog,long self,java.util.Collection<Long> changed) {
+        if(changed==null) return roomUsers(dialog,self);
+        ArrayList<TLRPC.User> result=new ArrayList<>();
+        for(long id:new java.util.LinkedHashSet<>(changed)) if(id>0)result.add(user(id,self));
+        return result;
     }
     synchronized boolean roomMember(long chat,long peer) {
         if(chat<=0 || peer<=0) return false;

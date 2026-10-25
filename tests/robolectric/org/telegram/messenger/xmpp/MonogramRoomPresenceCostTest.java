@@ -52,15 +52,33 @@ public class MonogramRoomPresenceCostTest {
             }
         }
     }
+    @Test public void presenceProjectionDoesNotRebuildHistoricalRoomUsers() throws Exception {
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer("alice@example.org"),room=store.room(address,"Alice");
+            for(int i=0;i<200;i++)store.roomUser(room,address+"/Historical"+i,null,self);
+            XmppRooms.Occupant bob=occupant("Bob",null);store.roomState(state(Collections.singletonList(bob),true,"participant"),self);
+            long member=store.knownOccupant(bob.address);
+            for(int trial=0;trial<3;trial++) {
+                long start=System.nanoTime();int projected=0;
+                for(int i=0;i<20;i++)projected+=store.roomPresenceUsers(room,self,Collections.singleton(member)).size();
+                System.out.println("PRESENCE_PROJECTION trial="+trial+" historical=200 updates=20 projected="+projected+" elapsed_ms="+(System.nanoTime()-start)/1000000);
+                assertEquals("Only the affected user needs publishing",20,projected);
+            }
+            assertEquals(202,store.roomUsers(room,self).size());
+            assertEquals(1,store.activeRoomUsers(room).size());
+        }
+    }
     @Test public void departuresRejoinsIdentityChangesAndPermissionsStillUpdate() throws Exception {
         try(MonogramStore store=new MonogramStore(context,file)) {
             long self=store.peer("alice@example.org"),room=store.room(address,"Alice");
             XmppRooms.Occupant bob=occupant("Bob",null),carol=occupant("Carol","carol@example.org");
             store.roomState(state(Arrays.asList(bob,carol),true,"participant"),self);
             long anonymous=store.knownOccupant(bob.address);assertTrue(anonymous>0);assertEquals(2,store.activeRoomUsers(room).size());
-            store.roomState(state(Collections.singletonList(carol),true,"participant"),self);assertEquals(0,store.knownOccupant(bob.address));assertEquals(1,store.activeRoomUsers(room).size());
+            Set<Long> affected=new LinkedHashSet<>();
+            store.roomState(state(Collections.singletonList(carol),true,"participant"),self,affected);assertEquals(Collections.singleton(anonymous),affected);assertEquals(0,store.knownOccupant(bob.address));assertEquals(1,store.activeRoomUsers(room).size());
             store.roomState(state(Arrays.asList(bob,carol),true,"participant"),self);assertEquals(anonymous,store.knownOccupant(bob.address));
-            XmppRooms.Occupant knownBob=occupant("Bob","bob@example.org");store.roomState(state(Arrays.asList(knownBob,carol),true,"moderator"),self);
+            affected.clear();XmppRooms.Occupant knownBob=occupant("Bob","bob@example.org");store.roomState(state(Arrays.asList(knownBob,carol),true,"moderator"),self,affected);
+            assertEquals(new HashSet<>(Arrays.asList(anonymous,store.knownPeer("bob@example.org"))),affected);
             assertEquals(store.knownPeer("bob@example.org"),store.knownOccupant(bob.address));
             try(android.database.Cursor row=store.getReadableDatabase().rawQuery("SELECT role FROM room_permissions WHERE room=?",new String[]{Long.toString(-room)})) {assertTrue(row.moveToFirst());assertEquals("moderator",row.getString(0));}
             assertFalse(store.roomState(state(Arrays.asList(knownBob,carol),true,"moderator"),self));

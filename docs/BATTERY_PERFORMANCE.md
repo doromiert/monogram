@@ -59,3 +59,33 @@ across a comparable charge interval is needed for that.
 Raw diagnostic files remain in ignored `.state/`; reports above contain no chat
 contents, wallet secrets or contact addresses. No speculative wallet, notification
 or connection policy changes were bundled with the measured roster fix.
+
+## Follow-up: incremental presence publication
+
+The first follow-up phone trace still showed `publishRoom → roomUsers` consuming
+23.9% of sampled CPU. Total short-sample CPU did not fall (129 vs 197 samples at
+100 Hz); live traffic/startup were not controlled, so this is not evidence of a
+whole-app battery improvement. It identified the next specific workload instead:
+for every real member change, `roomUsers` rebuilt all users retained from departed
+occupants and historical messages, not just current/changed members.
+
+Presence persistence now returns the exact affected user IDs, including the old
+and new identities when a nickname is remapped. Routine room publication projects
+only those users. Explicit full-roster loads remain unchanged, as do historical
+message authors and their profiles. Metadata-only changes update the chat without
+rebuilding unrelated user objects.
+
+Second isolated workload: 200 historical occupants plus one current member,
+20 native presence projections per trial, three trials on the same machine.
+
+| Metric | Before incremental publication | After |
+|---|---|---|
+| User objects projected per trial | 4,040 / 4,040 / 4,040 | 20 / 20 / 20 |
+| Elapsed milliseconds | 447 / 197 / 184 | 5 / 3 / 3 |
+| Median milliseconds | 197 | 3 |
+
+The regression budget is one projected user per single-user change, independent
+of how many historical users the room retains. Tests also assert that the full
+roster remains available, departed users are included in the update delta, and
+both old/new IDs are included for an identity replacement. This second fix is
+measured independently from the no-op database-write reduction above.

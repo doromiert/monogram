@@ -660,12 +660,13 @@ public final class MonogramController {
                     }
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
-                            boolean changed=store.roomState(room,self);long dialog=store.knownRoom(room.room.toString());
+                            java.util.Set<Long> affectedUsers=new java.util.LinkedHashSet<>();
+                            boolean changed=store.roomState(room,self,affectedUsers);long dialog=store.knownRoom(room.room.toString());
                             boolean joined=dialog!=0 && room.joined && joinedRooms.add(dialog);
                             boolean left=dialog!=0 && !room.joined && joinedRooms.remove(dialog);
                             if(room.joined && (changed || joined)) flushPendingSends();
                             if(changed && dialog!=0 && (room.title!=null || room.description!=null)) profileVersions.merge(dialog,1L,Long::sum);
-                            if(dialog!=0 && (changed || joined || left)) publishRoom(dialog);
+                            if(dialog!=0 && (changed || joined || left)) publishRoom(dialog,affectedUsers);
                             if(joined) {refreshRoomRoster(dialog,true);queueRoomArchive(dialog,session);}
                             if(dialog!=0 && pendingRecoveryRooms.remove(room.room.toString())) session.recoverRoomIncoming(room.room.toString());
                         } });
@@ -1087,9 +1088,10 @@ public final class MonogramController {
             final Exception result=error; AndroidUtilities.runOnUIThread(() -> callback.accept(found,result));
         });
     }
-    private void publishRoom(long dialog) {
+    private void publishRoom(long dialog) {publishRoom(dialog,null);}
+    private void publishRoom(long dialog,java.util.Collection<Long> affectedUsers) {
         TLRPC.Chat chat=store.roomChat(dialog,self); ArrayList<TLRPC.Chat> chats=new ArrayList<>(); chats.add(chat);
-        ArrayList<TLRPC.User> users=store.roomUsers(dialog,self);
+        ArrayList<TLRPC.User> users=store.roomPresenceUsers(dialog,self,affectedUsers);
         if(store.profile(dialog)==null) refreshProfile(dialog);
         java.util.Set<Long> active=store.activeRoomUsers(dialog);
         for(TLRPC.User user:users) if(user.id!=self && active.contains(user.id) && store.profile(user.id)==null) refreshProfile(user.id);
