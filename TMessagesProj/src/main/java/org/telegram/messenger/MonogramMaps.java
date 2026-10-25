@@ -14,6 +14,8 @@ public final class MonogramMaps {
     private static SharedPreferences settings(Context context) {
         return context.getSharedPreferences("monogram-maps", Context.MODE_PRIVATE);
     }
+    public static boolean previewsEnabled(Context context) { return settings(context).getBoolean("previews",true); }
+    public static void previewsEnabled(Context context,boolean enabled) { settings(context).edit().putBoolean("previews",enabled).apply();if(!enabled) MonogramMapPreview.cancelRequests(); }
     public static int selected(Context context) {
         return settings(context).getInt("provider", OPEN_STREET_MAP) == GOOGLE ? GOOGLE : OPEN_STREET_MAP;
     }

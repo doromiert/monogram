@@ -83,12 +83,13 @@ public final class MonogramFormatting {
         if(markup==null) return;
         if(MonogramPolls.parse(markup.body)!=null) markup=markup.preservingBody();
         if(message.media!=null) message.media.spoiler=markup.spoiler;
-        if(!markup.spoiler && (markup.markdown || MonogramArticles.applyTables(message,markup.body))) {
+        MessageMarkup display=markup.display();
+        boolean hiddenRange=markup.ranges.stream().anyMatch(range -> range.styles.contains(MessageMarkup.Style.SPOILER));
+        if(!markup.spoiler && !hiddenRange && (markup.markdown || markup.ranges.isEmpty() && display.body.equals(markup.body) && MonogramArticles.applyMarkdown(message,markup.body))) {
             message.message=markup.body;message.entities.clear();message.flags&=~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
             if(markup.markdown) MonogramArticles.apply(message,markup.body);
             return;
         }
-        MessageMarkup display=markup.display();
         if(!Objects.equals(message.message,display.body)) message.entities.clear();
         else message.entities.removeIf(entity -> style(entity)!=null);
         message.message=display.body;message.entities.addAll(entities(display));

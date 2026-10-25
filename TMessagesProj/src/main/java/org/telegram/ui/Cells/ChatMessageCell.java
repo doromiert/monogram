@@ -9515,13 +9515,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         SvgHelper.SvgDrawable drawable = (SvgHelper.SvgDrawable) ((ClipRoundedDrawable) locationLoadingThumb).getDrawable();
                         drawable.setColorKey(messageObject.isOutOwner() ? Theme.key_chat_outLocationIcon : Theme.key_chat_inLocationIcon, resourcesProvider);
                     }
-                    // A received encrypted point must not be disclosed to a tile server merely by opening its chat.
+                    // XMPP previews use the same keyless OSM tile cache as the full map.
                     boolean privateXmppMap=!org.telegram.messenger.xmpp.MonogramController.get(currentAccount).accountJid().isEmpty();
                     if(privateXmppMap) currentMapProvider=-1;
                     photoImage.setCrossfadeDuration(2 * ImageReceiver.DEFAULT_CROSSFADE_DURATION);
                     photoImage.setCrossfadeByScale(.05f);
                     if (currentMapProvider == -1) {
-                        photoImage.setImage(null, null, privateXmppMap?locationLoadingThumb:null, null, messageObject, 0);
+                        Drawable preview=privateXmppMap && org.telegram.messenger.MonogramMaps.previewsEnabled(getContext())
+                                ? new ClipRoundedDrawable(new org.telegram.messenger.MonogramMapPreview(this,lat,lon,photoWidth,photoHeight)) : privateXmppMap ? locationLoadingThumb : null;
+                        photoImage.setImage(null, null, preview, null, messageObject, 0);
                     } else if (currentMapProvider == 2) {
                         if (currentWebFile != null) {
                             ImageLocation lastLocation;

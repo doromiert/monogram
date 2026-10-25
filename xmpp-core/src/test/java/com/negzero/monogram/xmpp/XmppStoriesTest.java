@@ -14,6 +14,13 @@ class XmppStoriesTest {
         XmppStories.Story old=new XmppStories.Story("old","alice@example.org",story.url,story.mime,"old",now-XmppStories.LIFETIME-1);
         assertNull(XmppStories.parse("alice@example.org","old",old.entry()));
     }
+    @Test void profilePostsOutliveStoriesWithoutChangingStoryExpiry() {
+        XmppStories.Story old=new XmppStories.Story("saved","alice@example.org","https://example.org/photo.jpg","image/jpeg","Saved",System.currentTimeMillis()-2*XmppStories.LIFETIME);
+        assertNull(XmppStories.parse(old.owner,old.id,old.entry()));
+        assertNotNull(XmppStories.parseProfile(old.owner,old.id,old.entry()));
+        assertNull(XmppStories.parseProfile("mallory@example.org",old.id,old.entry()));
+        assertNotEquals(XmppStories.NODE,XmppStories.PROFILE_NODE);
+    }
     @Test void ambiguousEnclosuresAndUnsafeMediaDoNotBecomeStories() {
         StandardExtensionElement link=StandardExtensionElement.builder("link",XmppStories.ATOM).addAttribute("rel","enclosure")
                 .addAttribute("href","https://example.org/a.jpg").addAttribute("type","image/jpeg").build();

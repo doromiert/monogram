@@ -223,6 +223,8 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
 
     @Override
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        items.add(UItem.asButton(9901, R.drawable.msg_edit, "XMPP profile fields"));
+        items.add(UItem.asShadow(null));
         addAccountRow = -1;
         numberRow = -1;
         updateAccounts();
@@ -281,6 +283,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
 
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
+        if(item.id==9901) { presentFragment(new MonogramProfileFieldsActivity(currentAccount));return; }
         if (item.id == BUTTON_ADD_ACCOUNT) {
             int availableAccount = UserConfig.getFreeAccount();
             if (availableAccount >= 0) {

@@ -38,7 +38,7 @@ instance instead of assuming an unlimited public service.
 
 The native full-screen map/picker uses an `IMapsProvider` implementation backed by
 OpenStreetMap raster tiles, without a Google API key or Play Services location.
-Only visible tiles in an explicitly opened map are requested, with two download
+Only visible tiles in the full-screen map are requested, with two download
 workers, at most 48 pending requests per map, stale queued viewport suppression,
 a bounded memory/disk cache, a seven-day default freshness period and retry
 cooldown. Attribution links to OpenStreetMap's copyright page. Map panning, pinch
@@ -49,13 +49,9 @@ required to display the phone's position; lookup/update subscriptions exist only
 while that map is resumed and location display is enabled, and stop on pause or
 destroy. Manually viewing/choosing a point needs no device-position permission.
 
-Ordinary chat bubbles use a local map placeholder. Receiving/opening a chat does
-not send its coordinates to a map provider. Explicitly opening the map requests
-its visible area from tile.openstreetmap.org, revealing the map area and IP address
-to that provider. External directions/open-map actions offer a generic `geo:` app
-intent, avoiding a mandatory Google Maps installation or automatic submission of
-the phone's current position to a Google directions URL. Missing external apps
-leave the built-in map available.
+Location bubbles now suppress the canonical `geo:` transport body from their captions while retaining it for transport, copying and diagnostics. They display an OSM raster preview that loads nearby tiles automatically, with a local pin shown immediately, two shared workers, request deduplication, a bounded bitmap cache and the same seven-day tile-file cache used by the full map. The preview is bounded to 640×400 pixels, keeps attribution visible and never requests the phone's position. Failed tiles have a retry cooldown.
+
+Chat settings → Load map previews controls automatic requests. Disabling it prevents queued requests from starting and disconnects active preview requests; the full-screen map still loads after an explicit tap. Previews use OpenStreetMap regardless of the full-screen provider selection. Loading a preview or explicitly opening the map reveals its map area and IP address to the tile provider. External directions/open-map actions offer a generic `geo:` app intent, avoiding a mandatory Google Maps installation or automatic submission of the phone's current position to a Google directions URL. Missing external apps leave the built-in map available.
 
 Published in 0.2.120 after two core geo parsing and two native transport/projection/forwarding checks pass, with successful Nix arm64 packaging. No real location was captured, shared or viewed. Native gesture/layout behavior and independent-client exchange remain unverified. Capture/restore backup work remains separate.
 

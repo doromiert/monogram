@@ -4241,6 +4241,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
             listView.stopScroll();
             if (isMonogramProfileRow(position)) {
+                if(userId==getUserConfig().getClientUserId() && !"XMPP ID".equals(monogramProfileDetails.get(position-monogramProfileStart).getKey())) { presentFragment(new MonogramProfileFieldsActivity(currentAccount));return; }
                 AndroidUtilities.addToClipboard(monogramProfileDetails.get(position - monogramProfileStart).getValue());
                 BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
                 return;
@@ -11483,7 +11484,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 if (!UserObject.isDeleted(user) && !isBot && currentEncryptedChat == null && !userBlocked && userId != 333000 && userId != 777000 && userId != 42777) {
 
-                    otherItem.addSubItem(start_secret_chat, R.drawable.msg_secret, LocaleController.getString(R.string.StartEncryptedChat));
+                    // OMEMO is configured on the existing XMPP conversation; Telegram secret-chat RPCs are unavailable.
 
 
 

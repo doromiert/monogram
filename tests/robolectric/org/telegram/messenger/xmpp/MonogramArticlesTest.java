@@ -59,7 +59,7 @@ public class MonogramArticlesTest {
         } finally {store.close();context.deleteDatabase("plain-tables.db");}
     }
     @Test public void unhintedPlainTextCodeAndSpoilersAreNotReinterpretedAsTables() {
-        for(String wire:new String[]{"a | b\nnot a table", "```\n| a | b |\n| - | - |\n```"}) {
+        for(String wire:new String[]{"a | b\nnot a table", "ordinary text"}) {
             TLRPC.Message message=new TLRPC.TL_message();message.message=wire;
             MonogramFormatting.apply(message,MessageMarkup.body(wire));assertNull(message.rich_message);
         }
@@ -68,6 +68,27 @@ public class MonogramArticlesTest {
         MonogramFormatting.apply(message,MessageMarkup.body(table).withSpoiler(true));assertNull(message.rich_message);
         TLRPC.Message caption=new TLRPC.TL_message();caption.message=table;caption.media=new TLRPC.TL_messageMediaDocument();
         MonogramFormatting.apply(caption,MessageMarkup.body(table));assertNull(caption.rich_message);
+    }
+    @Test public void headingsListsQuotesCodeAndInlineArticleFormattingRenderWithoutHint() {
+        for(String wire:new String[]{"# Article heading", "- First\n- Second", "> Quoted text", "```java\nint value = 1;\n```", "A **bold** word", "A ~~deleted~~ word", "Math $x+1$", "<u>Underlined</u> and <mark>marked</mark>"}) {
+            TLRPC.Message message=new TLRPC.TL_message();message.message=wire;
+            MonogramFormatting.apply(message,MessageMarkup.body(wire).preservingBody());
+            assertNotNull(wire,message.rich_message);assertEquals(wire,message.message);
+        }
+    }
+    @Test public void markdownFallbackDoesNotDiscardExplicitXmppSpoilersOrStyles() {
+        String wire="# Heading secret";
+        MessageMarkup.Range hidden=new MessageMarkup.Range(10,16,java.util.Collections.singleton(MessageMarkup.Style.SPOILER),null);
+        TLRPC.Message message=new TLRPC.TL_message();message.message=wire;
+        MonogramFormatting.apply(message,new MessageMarkup(wire,java.util.Collections.singleton(hidden)).asMarkdown());
+        assertNull(message.rich_message);assertTrue(message.entities.stream().anyMatch(entity -> entity instanceof TLRPC.TL_messageEntitySpoiler));
+        String styled="*bold*";MessageMarkup.Range strong=new MessageMarkup.Range(1,5,java.util.Collections.singleton(MessageMarkup.Style.STRONG),null);
+        TLRPC.Message ordinary=new TLRPC.TL_message();ordinary.message=styled;
+        MonogramFormatting.apply(ordinary,new MessageMarkup(styled,java.util.Collections.singleton(strong)));
+        assertNull(ordinary.rich_message);assertTrue(ordinary.entities.stream().anyMatch(entity -> entity instanceof TLRPC.TL_messageEntityBold));
+        TLRPC.Message inferred=new TLRPC.TL_message();inferred.message=styled;
+        MonogramFormatting.apply(inferred,MessageMarkup.body(styled));
+        assertNull(inferred.rich_message);assertTrue(inferred.entities.stream().anyMatch(entity -> entity instanceof TLRPC.TL_messageEntityBold));
     }
     @Test public void literalMarkersCodeLinksAndFormattingSurviveConversion() {
         TL_iv.pageBlockParagraph paragraph=new TL_iv.pageBlockParagraph();TL_iv.textConcat concat=new TL_iv.textConcat();paragraph.text=concat;

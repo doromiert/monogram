@@ -176,13 +176,16 @@ public final class XmppChatStates implements AutoCloseable {
             if (added) roomListener.accept(from, true);
         } else if (roomComposing.remove(from) != null) roomListener.accept(from, false);
     }
-    synchronized void receive(Message message) {
+    /** Only XmppSession's validated, live received-carbon path may relax full-resource routing. */
+    synchronized void receivedCarbon(Message message) { if(message.getType()!=Message.Type.groupchat) receive(message,true); }
+    synchronized void receive(Message message) { receive(message,false); }
+    private void receive(Message message,boolean receivedCarbon) {
         if (message.getType() == Message.Type.groupchat) { receiveRoom(message); return; }
         if (closed || connection.getUser() == null || message.getType() != Message.Type.chat || message.getFrom() == null) return;
         EntityBareJid peer = message.getFrom().asEntityBareJidIfPossible();
         if (peer == null || rooms != null && rooms.known(peer) || peer.equals(connection.getUser().asEntityBareJid())
                 || message.getTo() != null && !connection.getUser().asEntityBareJid().equals(message.getTo().asEntityBareJidIfPossible())
-                || message.getTo() != null && message.getTo().isEntityFullJid() && !message.getTo().equals(connection.getUser())
+                || !receivedCarbon && message.getTo() != null && message.getTo().isEntityFullJid() && !message.getTo().equals(connection.getUser())
                 || message.hasExtension("urn:xmpp:delay") || message.hasExtension("jabber:x:delay")
                 || message.hasExtension("urn:xmpp:forward:0") || message.hasExtension("urn:xmpp:carbons:2")
                 || message.hasExtension("urn:xmpp:mam:2") || message.hasExtension("urn:xmpp:mam:1")) return;

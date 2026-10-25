@@ -32,6 +32,18 @@ class XmppProfileTest {
         XmppProfile removed = changed.avatar(new byte[]{1, 2, 3}, "image/png").avatar(new byte[0], "image/png");
         assertEquals(0, removed.avatar.length); assertEquals(2, removed.card.getElements("EMAIL").size());
     }
+    @Test void publicFieldEditsPreserveRepeatedEntriesUnknownNamespacesAndAvatar() throws Exception {
+        XmppProfile original=new XmppProfile(CARD,null,null);
+        XmppProfile changed=original.editField("EMAIL/USERID","new@example.org").editField("ORG/ORGNAME","New org").editField("URL","https://example.org");
+        assertEquals("new@example.org",changed.field("EMAIL","USERID"));
+        assertEquals(2,changed.card.getElements("EMAIL").size());
+        assertEquals("work@example.org",changed.card.getElements("EMAIL").get(1).getFirstElement("USERID").getText());
+        assertEquals("Team",changed.field("ORG","ORGUNIT"));assertEquals("New org",changed.field("ORG","ORGNAME"));
+        assertEquals("https://example.org",changed.field("URL"));assertEquals("ali",changed.nickname);
+        assertNotNull(changed.card.getFirstElement("extra","urn:example:profile"));
+        assertEquals("",changed.editField("URL","").field("URL"));
+        assertThrows(IllegalArgumentException.class,() -> original.editField("PHOTO/BINVAL","changed"));
+    }
     @Test void invalidAndOversizedAvatarsDoNotBecomeUnboundedPayloads() throws Exception {
         assertThrows(IllegalArgumentException.class, () -> new XmppProfile("<vCard xmlns='wrong'/>", null, null));
         XmppProfile invalid = new XmppProfile("<vCard xmlns='vcard-temp'><PHOTO><TYPE>image/png</TYPE><BINVAL>!</BINVAL></PHOTO></vCard>", null, null);

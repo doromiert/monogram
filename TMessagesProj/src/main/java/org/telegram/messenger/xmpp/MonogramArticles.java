@@ -10,6 +10,7 @@ import org.telegram.ui.Components.MarkdownParser;
 public final class MonogramArticles {
     public static final int MAX_LENGTH=32768;
     public static final class Failure extends IllegalArgumentException { private Failure(String message) { super(message); } }
+    private static final java.util.regex.Pattern STRUCTURE=java.util.regex.Pattern.compile("(?m)^ {0,3}(?:#{1,6}\\s|>\\s?|[-+*]\\s|[0-9]+[.)]\\s|`{3}|~{3}|\\||[-=_]{3,}\\s*$|\\$\\$)");
     private int nodes;
     private void check(int depth) {
         if(depth>24 || ++nodes>2048) throw new Failure("Article is too complex");
@@ -130,15 +131,20 @@ public final class MonogramArticles {
         if(t instanceof TL_iv.textUrl && t.url!=null) return "["+value+"](<"+t.url.replace("<","%3C").replace(">","%3E").replace("\n","").replace("\r","")+">)";
         return value;
     }
-    /** Recognize real GFM tables even when a sender has no text/markdown content hint. */
-    public static boolean applyTables(TLRPC.Message message,String source) {
+    /** Recognize structured Markdown even when a sender has no text/markdown content hint. */
+    public static boolean applyMarkdown(TLRPC.Message message,String source) {
         if(MonogramAttachments.has(message) || message.media!=null && !(message.media instanceof TLRPC.TL_messageMediaEmpty) && !(message.media instanceof TLRPC.TL_messageMediaWebPage)) return false;
-        if(source==null || source.length()>MAX_LENGTH || source.indexOf('|')<0 || source.indexOf('\n')<0 || source.indexOf('-')<0) return false;
+        if(source==null || source.length()>MAX_LENGTH || !STRUCTURE.matcher(source).find() && source.indexOf('*')<0 && source.indexOf('_')<0 && source.indexOf('`')<0 && source.indexOf('[')<0 && source.indexOf('<')<0 && source.indexOf('~')<0 && source.indexOf('$')<0) return false;
         try {
             TL_iv.RichMessage rich=new TL_iv.RichMessage();MarkdownParser.parseMessage(source,rich.blocks);
-            if(rich.blocks.size()>2048 || rich.blocks.stream().noneMatch(block -> block instanceof TL_iv.pageBlockTable)) return false;
+            if(rich.blocks.size()>2048 || rich.blocks.stream().noneMatch(block -> !(block instanceof TL_iv.pageBlockParagraph) || richInline(block.text))) return false;
             message.rich_message=rich;message.flags2|=8192;return true;
         } catch(RuntimeException invalid) { return false; }
+    }
+    private static boolean richInline(TL_iv.RichText text) {
+        if(text==null || text instanceof TL_iv.textPlain || text instanceof TL_iv.textEmpty) return false;
+        if(text instanceof TL_iv.textConcat) return text.texts.stream().anyMatch(MonogramArticles::richInline);
+        return true;
     }
     public static void apply(TLRPC.Message message,String source) {
         if(source==null || source.length()>MAX_LENGTH) return;

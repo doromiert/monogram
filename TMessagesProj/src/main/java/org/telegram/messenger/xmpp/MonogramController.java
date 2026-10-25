@@ -1781,6 +1781,28 @@ public final class MonogramController {
         catch (IllegalArgumentException unknown) { return java.util.Collections.emptyMap(); }
     }
     public com.negzero.monogram.xmpp.XmppProfile cachedProfile(long peer) { return store.profile(peer); }
+    public java.util.Map<String,String> ownProfileFields() {
+        java.util.Map<String,String> values=new java.util.LinkedHashMap<>();
+        com.negzero.monogram.xmpp.XmppProfile profile=store.profile(self);
+        for(String field:com.negzero.monogram.xmpp.XmppProfile.EDITABLE_FIELDS.keySet()) values.put(field,profile==null ? "" : profile.field(field.split("/")));
+        return values;
+    }
+    public void editOwnProfileField(String field,String value,java.util.function.Consumer<String> completed) {
+        final long owner=accountEpoch;
+        sendWorker.execute(() -> {
+            String error=null;
+            try {
+                if(owner!=accountEpoch) return;
+                XmppSession expected=session();
+                profileVersions.merge(self,1L,Long::sum);
+                com.negzero.monogram.xmpp.XmppProfile changed=expected.profiles.editField(field,value,store.profile(self));
+                if(owner!=accountEpoch || expected!=session) return;
+                store.profile(self,changed);profileVersions.merge(self,1L,Long::sum);publishProfile(self,sessionEpoch);
+            } catch(Exception failure) { error="Could not save this profile field: "+failure.getClass().getSimpleName(); }
+            final String result=error;
+            AndroidUtilities.runOnUIThread(() -> {if(owner==accountEpoch) completed.accept(result);});
+        });
+    }
     public String localName(long peer) { return store.localName(peer); }
     public void localName(long peer,String name,java.util.function.Consumer<String> completed) {
         final long owner=accountEpoch;final String jid=accountJid();
@@ -1967,6 +1989,8 @@ public final class MonogramController {
     private TLRPC.TL_users_userFull profileResult(long peer) {
         TLRPC.TL_users_userFull result = new TLRPC.TL_users_userFull();
         result.full_user = store.fullUser(peer, self);
+        // XMPP feed availability is discovered by querying it; let the native Posts tab load its count.
+        result.full_user.stories_pinned_available=true;
         result.full_user.blocked=blockingCache().blocked(store.jid(peer));
         applyCallCapabilities(peer,result.full_user);result.users.add(result.full_user.user);return result;
     }
@@ -3088,6 +3112,7 @@ public final class MonogramController {
         };
         if(request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_sendStory
                 || request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_deleteStories
+                || request instanceof org.telegram.tgnet.tl.TL_stories.togglePinned
                 || request instanceof org.telegram.tgnet.tl.TL_stories.TL_stories_editStory) {
             stories().request(token,request,completed);return;
         }
@@ -3136,6 +3161,7 @@ public final class MonogramController {
     }
     public void prepareOutgoingMessage(TLRPC.Message message) {
         if(message.params==null) message.params=new java.util.HashMap<>();
+        if(message.media instanceof TLRPC.TL_messageMediaGeo || message.media instanceof TLRPC.TL_messageMediaVenue) message.params.put("monogram-location","1");
         if (message.dialog_id>0 && message.dialog_id!=self) MonogramReceipts.pending(message);
         message.params.putIfAbsent(QUEUED_ENCRYPTION,encryption(message.dialog_id).name());
     }

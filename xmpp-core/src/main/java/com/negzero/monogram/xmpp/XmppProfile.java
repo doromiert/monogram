@@ -80,6 +80,34 @@ public final class XmppProfile {
         if (about != null) fields.put("DESC", text("DESC", about));
         return new XmppProfile(replace(card, fields), null, avatar);
     }
+    public static final Map<String,String> EDITABLE_FIELDS;
+    static {
+        Map<String,String> fields=new LinkedHashMap<>();
+        String[][] names={{"NICKNAME","Nickname"},{"FN","Full name"},{"DESC","About"},{"URL","Website"},{"BDAY","Birthday"},{"ORG/ORGNAME","Organization"},{"ORG/ORGUNIT","Department"},{"TITLE","Title"},{"ROLE","Role"},{"EMAIL/USERID","Email"},{"TEL/NUMBER","Phone"},{"ADR/STREET","Street"},{"ADR/LOCALITY","City"},{"ADR/REGION","Region"},{"ADR/PCODE","Postcode"},{"ADR/CTRY","Country"}};
+        for(String[] field:names) fields.put(field[0],field[1]);
+        EDITABLE_FIELDS=java.util.Collections.unmodifiableMap(fields);
+    }
+    public XmppProfile editField(String field,String value) {
+        if(!EDITABLE_FIELDS.containsKey(field) || value==null || value.length()>4096 || value.codePoints().anyMatch(c -> Character.isISOControl(c) && c!='\n' && c!='\t')) throw new IllegalArgumentException("Invalid profile field");
+        return new XmppProfile(editFirst(card,field.split("/"),0,value),null,avatar);
+    }
+    private static StandardExtensionElement editFirst(StandardExtensionElement parent,String[] path,int depth,String value) {
+        StandardExtensionElement.Builder builder=StandardExtensionElement.builder(parent.getElementName(),parent.getNamespace()).addAttributes(parent.getAttributes());
+        if(parent.getText()!=null) builder.setText(parent.getText());
+        boolean replaced=false;
+        for(StandardExtensionElement child:parent.getElements()) {
+            if(!replaced && VCARD.equals(child.getNamespace()) && path[depth].equals(child.getElementName())) {
+                replaced=true;
+                if(depth+1<path.length) builder.addElement(editFirst(child,path,depth+1,value));
+                else if(!value.isEmpty()) builder.addElement(StandardExtensionElement.builder(child.getElementName(),VCARD).addAttributes(child.getAttributes()).setText(value).build());
+            } else builder.addElement(child);
+        }
+        if(!replaced && !value.isEmpty()) {
+            StandardExtensionElement child=StandardExtensionElement.builder(path[depth],VCARD).build();
+            builder.addElement(depth+1<path.length ? editFirst(child,path,depth+1,value) : text(path[depth],value));
+        }
+        return builder.build();
+    }
     public XmppProfile avatar(byte[] bytes, String mime) {
         checkedAvatar(bytes);
         Map<String, StandardExtensionElement> fields = new LinkedHashMap<>();

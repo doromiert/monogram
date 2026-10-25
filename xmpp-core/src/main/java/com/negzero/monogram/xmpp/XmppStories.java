@@ -18,6 +18,7 @@ import org.jxmpp.jid.impl.JidCreate;
 /** XEP-0501/0472 Atom stories, matching Monocles' one-enclosure representation. */
 public final class XmppStories {
     public static final String NODE="urn:xmpp:pubsub-social-feed:stories:0";
+    public static final String PROFILE_NODE="urn:monogram:profile-posts:0";
     public static final String ATOM="http://www.w3.org/2005/Atom";
     public static final long LIFETIME=86400000L;
     private XmppStories() {}
@@ -49,9 +50,11 @@ public final class XmppStories {
     public static void initialize(XMPPConnection connection) {
         ProviderManager.addExtensionProvider("entry",ATOM,StandardExtensionElementProvider.INSTANCE);
         ServiceDiscoveryManager discovery=ServiceDiscoveryManager.getInstanceFor(connection);
-        discovery.addFeature("urn:xmpp:pubsub-social-feed:1");discovery.addFeature(NODE);discovery.addFeature(NODE+"+notify");
+        discovery.addFeature("urn:xmpp:pubsub-social-feed:1");discovery.addFeature(NODE);discovery.addFeature(NODE+"+notify");discovery.addFeature(PROFILE_NODE);discovery.addFeature(PROFILE_NODE+"+notify");
     }
-    public static Story parse(String owner,String itemId,StandardExtensionElement entry) {
+    public static Story parse(String owner,String itemId,StandardExtensionElement entry) { return parse(owner,itemId,entry,true); }
+    public static Story parseProfile(String owner,String itemId,StandardExtensionElement entry) { return parse(owner,itemId,entry,false); }
+    private static Story parse(String owner,String itemId,StandardExtensionElement entry,boolean expiring) {
         if(entry==null || !"entry".equals(entry.getElementName()) || !ATOM.equals(entry.getNamespace()) || entry.toXML().length()>65536) return null;
         try {
             StandardExtensionElement author=entry.getFirstElement("author",ATOM);
@@ -73,7 +76,7 @@ public final class XmppStories {
             long time=Instant.parse(stamp.getText()).toEpochMilli();
             StandardExtensionElement title=entry.getFirstElement("title",ATOM);
             Story result=new Story(itemId,owner,enclosure.getAttributeValue("href"),enclosure.getAttributeValue("type"),title==null?"":title.getText(),time);
-            return result.expired(System.currentTimeMillis()) ? null : result;
+            return expiring && result.expired(System.currentTimeMillis()) ? null : result;
         } catch(Exception malformed) { return null; }
     }
     public static List<Story> fetch(XMPPConnection connection,String owner) throws Exception {
@@ -102,6 +105,40 @@ public final class XmppStories {
             if(condition==StanzaError.Condition.item_not_found || condition==StanzaError.Condition.forbidden) return Collections.emptyList();
             throw absent;
         }
+    }
+    public static List<Story> fetchProfile(XMPPConnection connection,String owner) throws Exception {
+        initialize(connection);
+        try {
+            LeafNode node=PubSubManager.getInstanceFor(connection,JidCreate.entityBareFrom(owner)).getLeafNode(PROFILE_NODE);
+            List<Story> result=new ArrayList<>();
+            for(Item item:node.getItems(1000)) if(item instanceof PayloadItem) {
+                Object payload=((PayloadItem<?>)item).getPayload();
+                if(payload instanceof StandardExtensionElement) { Story story=parseProfile(owner,item.getId(),(StandardExtensionElement)payload);if(story!=null) result.add(story); }
+            }
+            result.sort(Comparator.comparingLong(story -> story.published));return result;
+        } catch(XMPPErrorException absent) {
+            StanzaError.Condition condition=absent.getStanzaError().getCondition();
+            if(condition==StanzaError.Condition.item_not_found || condition==StanzaError.Condition.forbidden) return Collections.emptyList();
+            throw absent;
+        }
+    }
+    public static void saveToProfile(XMPPConnection connection,Story story) throws Exception {
+        if(!connection.getUser().asEntityBareJid().toString().equals(story.owner)) throw new IllegalArgumentException("Only your stories can be saved to your profile");
+        initialize(connection);PubSubManager manager=PubSubManager.getInstanceFor(connection,connection.getUser().asEntityBareJid());LeafNode node;
+        try { node=manager.getLeafNode(PROFILE_NODE); }
+        catch(XMPPErrorException absent) {
+            if(absent.getStanzaError().getCondition()!=StanzaError.Condition.item_not_found) throw absent;
+            FillableConfigureForm form=manager.getDefaultConfiguration().getFillableForm();configureProfile(form);node=(LeafNode)manager.createNode(PROFILE_NODE,form);
+        }
+        FillableConfigureForm form=node.getNodeConfiguration().getFillableForm();configureProfile(form);node.sendConfigurationForm(form);
+        node.publish(new PayloadItem<StandardExtensionElement>(story.id,story.entry()));
+    }
+    private static void configureProfile(FillableConfigureForm config) {
+        config.setAccessModel(AccessModel.presence);config.setPersistentItems(true);config.setAnswer("pubsub#max_items","max");config.setNotifyRetract(true);config.setDeliverPayloads(false);config.setDataType("urn:xmpp:pubsub-social-feed:1");
+    }
+    public static void removeFromProfile(XMPPConnection connection,String id) throws Exception {
+        try { PubSubManager.getInstanceFor(connection,connection.getUser().asEntityBareJid()).getLeafNode(PROFILE_NODE).deleteItem(id); }
+        catch(XMPPErrorException absent) { if(absent.getStanzaError().getCondition()!=StanzaError.Condition.item_not_found) throw absent; }
     }
     public static Story publish(XMPPConnection connection,String id,String url,String mime,String title,boolean publicAudience) throws Exception {
         if(publicAudience) throw new IllegalArgumentException("XMPP stories use subscribed-contact visibility");

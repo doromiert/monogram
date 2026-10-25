@@ -7621,6 +7621,10 @@ public class MessageObject {
     }
 
     public void generateCaption() {
+        if (type == TYPE_GEO && messageOwner.params != null && messageOwner.params.containsKey("monogram-location")) {
+            caption = null;
+            return;
+        }
         if (isRoundVideo()) return;
         if (caption != null &&
             (translated && (messageOwner.translatedText != null || summarized && messageOwner.translatedSummaryText != null)) == captionTranslated &&

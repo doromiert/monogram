@@ -33,6 +33,8 @@ final class MonogramLocation {
         if(location.uncertainty>0) { point.flags|=1;point.accuracy_radius=(int)Math.ceil(location.uncertainty); }
         media.geo=point;
         if(media instanceof TLRPC.TL_messageMediaVenue) { media.title=location.title;media.address=location.address;media.provider="";media.venue_id="";media.venue_type=""; }
+        if(message.params==null) message.params=new java.util.HashMap<>();
+        message.params.put("monogram-location","1");
         message.media=media;message.flags|=512;message.entities.clear(); // Keep canonical geo body for copy/reply excerpts and durable resend.
     }
 }

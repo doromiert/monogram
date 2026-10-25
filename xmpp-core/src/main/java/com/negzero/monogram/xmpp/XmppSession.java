@@ -222,7 +222,7 @@ public final class XmppSession implements AutoCloseable {
         this.listener = listener;
         connection.addAsyncStanzaListener(stanza -> {
             org.jivesoftware.smackx.pubsub.EventElement event=org.jivesoftware.smackx.pubsub.EventElement.from(stanza);
-            if(event!=null && XmppStories.NODE.equals(event.getEvent().getNode()) && stanza.getFrom()!=null
+            if(event!=null && (XmppStories.NODE.equals(event.getEvent().getNode()) || XmppStories.PROFILE_NODE.equals(event.getEvent().getNode())) && stanza.getFrom()!=null
                     && stanza.getFrom().asEntityBareJidIfPossible()!=null)
                 listener.storiesChanged(stanza.getFrom().asEntityBareJidIfPossible().toString());
         },stanza -> stanza.hasExtension("event","http://jabber.org/protocol/pubsub#event"));
@@ -339,6 +339,8 @@ public final class XmppSession implements AutoCloseable {
         CarbonManager.getInstanceFor(connection).addCarbonCopyReceivedListener((direction, carbon, wrapping) -> {
             if (validCarbon(wrapping) && !rooms.known(carbon.getFrom()) && !rooms.known(carbon.getTo())) {
                 receipt(carbon);
+                if(direction==org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.received
+                        && connection.getUser().equals(wrapping.getTo())) chatStates.receivedCarbon(carbon);
                 if(direction==org.jivesoftware.smackx.carbons.packet.CarbonExtension.Direction.sent) {
                     MessageReceipt read=MessageReceipt.ownDisplayed(carbon,connection.getUser().asEntityBareJid());
                     if(read!=null) listener.ownDisplayed(read.peer,read.id);

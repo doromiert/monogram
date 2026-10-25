@@ -22,6 +22,14 @@ public class MonogramLocationTest {
         org.telegram.messenger.SendMessagesHelper.SendMessageParams forwarded=MonogramForwarding.copy(message,23,true);
         assertTrue(forwarded.location instanceof TLRPC.TL_messageMediaVenue);assertNotSame(message.media,forwarded.location);assertEquals(51.5,forwarded.location.geo.lat,1e-7);
     }
+    @Test public void nativeLocationSuppressesTransportCaptionButKeepsCanonicalBody() throws Exception {
+        TLRPC.Message message=new TLRPC.TL_message();message.message="geo:51.5,-0.12\nA place\nAn address";message.media=new TLRPC.TL_messageMediaEmpty();
+        MonogramLocation.decorate(message);assertTrue(message.media instanceof TLRPC.TL_messageMediaVenue);
+        Class<?> allocator=Class.forName("sun.misc.Unsafe");java.lang.reflect.Field field=allocator.getDeclaredField("theUnsafe");field.setAccessible(true);
+        org.telegram.messenger.MessageObject object=(org.telegram.messenger.MessageObject)allocator.getMethod("allocateInstance",Class.class).invoke(field.get(null),org.telegram.messenger.MessageObject.class);
+        object.messageOwner=message;object.type=org.telegram.messenger.MessageObject.TYPE_GEO;object.caption="stale transport text";object.generateCaption();
+        assertNull(object.caption);assertTrue(message.message.startsWith("geo:"));
+    }
     @Test public void liveAndInvalidPointsCannotTurnIntoSuccessfulStaticShares() {
         TLRPC.TL_messages_sendMedia live=new TLRPC.TL_messages_sendMedia();live.media=new TLRPC.TL_inputMediaGeoLive();assertFalse(MonogramLocation.supports(live));
         try { MonogramLocation.text(live);fail(); } catch(IllegalArgumentException expected) { }

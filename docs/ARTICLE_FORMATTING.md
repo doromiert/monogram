@@ -20,3 +20,9 @@ The conversion handles headings, basic inline formatting, explicit links, code, 
 The content hint is stored in the existing formatting record, with a versioned backward-readable local codec. Reply-prefix slicing preserves the hint. OMEMO 2 includes it inside authenticated protected content. Legacy OMEMO encrypts the Markdown body and sends only the empty renderer hint publicly: receivers accept this hint only as a presentation selector for the decrypted body. They never accept alternative public content in its place. A server may remove/change that legacy hint, affecting rendering but not the decrypted text. This matches legacy OMEMO's inability to authenticate arbitrary extensions.
 
 Incoming Markdown is limited to 32,768 UTF-16 units before parsing; outgoing articles also have a 32 KiB UTF-8 limit. Native recursive rendering is preceded by AST depth/node limits. Unparseable or oversized incoming content remains readable as the original text. No external HTML or scripts are executed by this conversion.
+
+## Receiving without a content hint
+
+Monogram also recognizes supported structured Markdown and inline rich formatting directly in a text body when the empty content hint is absent. Headings, lists, quotes, fenced code, tables and rich inline text use the same native article renderer and retain the original body. Plain text stays plain, and attachment captions and whole-message spoilers do not opt into this fallback. Explicit XMPP formatting ranges and inferred XEP-0393 body directives take precedence over automatic Markdown inference; a spoiler range prevents rich projection even when a Markdown hint is present, so native spoilers cannot be lost. The same parser size, depth and node bounds apply.
+
+XMPP edit permissions now allow outgoing text articles, including tables; the normal sender/conversation checks remain in place.

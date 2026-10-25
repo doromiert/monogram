@@ -53,6 +53,8 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
         items.add(UItem.asShadow("Choose which camera opens first, or ask each time you record a round video."));
         items.add(UItem.asHeader(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.MonogramMapsTitle)));
         android.content.Context context = org.telegram.messenger.ApplicationLoader.applicationContext;
+        items.add(UItem.asCheck(24,"Load map previews").setChecked(org.telegram.messenger.MonogramMaps.previewsEnabled(context)));
+        items.add(UItem.asShadow("Location previews fetch nearby OpenStreetMap tiles. Opening a full map uses the map provider selected below."));
         int provider = org.telegram.messenger.MonogramMaps.selected(context);
         items.add(UItem.asRadio(11,"OpenStreetMap").setChecked(provider == org.telegram.messenger.MonogramMaps.OPEN_STREET_MAP));
         items.add(UItem.asRadio(12,"Google Maps").setChecked(provider == org.telegram.messenger.MonogramMaps.GOOGLE));
@@ -61,6 +63,10 @@ public final class MonogramChatBehaviorActivity extends MonogramSettingsActivity
                 : org.telegram.messenger.R.string.MonogramMapsOsmInfo)));
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
+        if(item.id==24) {
+            android.content.Context context=org.telegram.messenger.ApplicationLoader.applicationContext;
+            org.telegram.messenger.MonogramMaps.previewsEnabled(context,!org.telegram.messenger.MonogramMaps.previewsEnabled(context));listView.adapter.update(true);return;
+        }
         if(item.id==14) { presentFragment(new MonogramLinkPreviewsActivity(currentAccount));return; }
         if(item.id==15) {
             QuickRepliesActivity fragment=new QuickRepliesActivity();

@@ -202,6 +202,13 @@ public final class XmppProfiles {
         return new XmppProfile(changed.card,first!=null || last!=null ? changed.nickname
                 : cached!=null ? cached.nickname : changed.nickname,cached!=null ? cached.avatar : changed.avatar);
     }
+    public XmppProfile editField(String field,String value,XmppProfile cached) throws Exception {
+        XmppProfile changed=card(connection.getUser().asEntityBareJid(),true).editField(field,value);
+        saveCard(changed);
+        if("NICKNAME".equals(field) && PepManager.getInstanceFor(connection).isSupported()) PepManager.getInstanceFor(connection).publish(NICK,
+                new PayloadItem<>(StandardExtensionElement.builder("nick",NICK).setText(value).build()));
+        return new XmppProfile(changed.card,"NICKNAME".equals(field) ? value : cached!=null ? cached.nickname : changed.nickname,cached!=null ? cached.avatar : changed.avatar);
+    }
     public XmppProfile avatar(byte[] png) throws Exception {
         XmppProfile.checkedAvatar(png);
         XmppProfile changed = card(connection.getUser().asEntityBareJid(), true).avatar(png, "image/png");
