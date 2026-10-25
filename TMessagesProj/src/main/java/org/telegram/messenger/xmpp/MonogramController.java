@@ -660,9 +660,13 @@ public final class MonogramController {
                     }
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
-                            store.roomState(room,self); if(room.joined) flushPendingSends(); long dialog=store.knownRoom(room.room.toString());
-                            if(dialog!=0 && (room.title!=null || room.description!=null)) profileVersions.merge(dialog,1L,Long::sum);
-                            if(dialog!=0) { publishRoom(dialog); if(room.joined && joinedRooms.add(dialog)) { refreshRoomRoster(dialog,true); queueRoomArchive(dialog,session); } else if(!room.joined) joinedRooms.remove(dialog); }
+                            boolean changed=store.roomState(room,self);long dialog=store.knownRoom(room.room.toString());
+                            boolean joined=dialog!=0 && room.joined && joinedRooms.add(dialog);
+                            boolean left=dialog!=0 && !room.joined && joinedRooms.remove(dialog);
+                            if(room.joined && (changed || joined)) flushPendingSends();
+                            if(changed && dialog!=0 && (room.title!=null || room.description!=null)) profileVersions.merge(dialog,1L,Long::sum);
+                            if(dialog!=0 && (changed || joined || left)) publishRoom(dialog);
+                            if(joined) {refreshRoomRoster(dialog,true);queueRoomArchive(dialog,session);}
                             if(dialog!=0 && pendingRecoveryRooms.remove(room.room.toString())) session.recoverRoomIncoming(room.room.toString());
                         } });
                     }

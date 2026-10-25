@@ -31695,7 +31695,7 @@ public class ChatActivity extends BaseFragment implements
                 popupX += location[0];
             }
             int totalHeight = contentView.getHeight();
-            int height = scrimPopupContainerLayout.getMeasuredHeight() + AndroidUtilities.dp(48);
+            int height = scrimPopupContainerLayout.getInitialVisibleHeight() + AndroidUtilities.dp(48);
             int keyboardHeight = contentView.measureKeyboardHeight();
             if (keyboardHeight > AndroidUtilities.dp(20)) {
                 totalHeight += keyboardHeight;
@@ -31713,9 +31713,8 @@ public class ChatActivity extends BaseFragment implements
                     chatListView.getLocationInWindow(location);
                     minY = dp(24);
                     maxY = Math.min(location[1] + chatListView.getMeasuredHeight(), AndroidUtilities.displaySize.y) - dp(8) - height;
-                } else if (height - backgroundPaddings.top - backgroundPaddings.bottom > AndroidUtilities.dp(240)) {
-                    popupY += AndroidUtilities.dp(240) - height;
                 }
+                // Stay near the touched bubble; shift upward only to fit the viewport.
                 popupY = Utilities.clamp(popupY, maxY, minY);
             } else {
                 popupY = inBubbleMode ? 0 : AndroidUtilities.statusBarHeight;

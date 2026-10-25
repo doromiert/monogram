@@ -76,3 +76,11 @@ map/file opening and copy; missing-media errors; and logout while metadata or
 clipboard preparation is pending.
 
 0.2.123 release gate: Nix arm64 packaging and seven focused Android cases pass. Two native-graphics clipboard cases cover byte-preserving independent export/MIME sniffing and malformed-image rejection with no export residue; chat-menu preferences cover APK defaults and independent account choices. Details UI/media extraction and phone interaction remain unverified.
+
+## Popup positioning
+
+The initial message menu uses the visible root page height for placement. Hidden
+swipe-back pages still reserve window space but do not push the root menu upward.
+The menu stays near the tapped bubble and is shifted only as needed to fit the
+viewport. Message details uses a capped, content-sized scroll view so a menu
+opened near the bottom edge can still reach all of its rows.

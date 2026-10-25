@@ -420,27 +420,49 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(description!=null) values.put("description",description);
         if(values.size()>0) getWritableDatabase().update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
     }
-    synchronized void roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
-        long dialog=knownRoom(state.room.toString()); if (dialog==0) return;
-        mentionNamesCache.remove(dialog);
-        SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
+    /** Apply membership differences, rather than rewriting every occupant on each presence stanza. */
+    synchronized boolean roomState(com.negzero.monogram.xmpp.XmppRooms.State state,long self) {
+        long dialog=knownRoom(state.room.toString()); if(dialog==0) return false;
+        Room previous=room(dialog);SQLiteDatabase db=getWritableDatabase();
+        boolean changed=false;db.beginTransaction();
         try {
-            ContentValues values=new ContentValues(); values.put("subject",state.subject);
-            if(state.title!=null && !state.title.trim().isEmpty()) values.put("title",state.title);
-            if(state.description!=null) values.put("description",state.description);
-            if (!state.nickname.isEmpty()) values.put("nickname",state.nickname);
-            db.update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});
+            ContentValues values=new ContentValues();
+            if(!java.util.Objects.equals(previous.subject,state.subject)) values.put("subject",state.subject);
+            if(state.title!=null && !state.title.trim().isEmpty() && !state.title.equals(previous.title)) values.put("title",state.title);
+            if(state.description!=null && !state.description.equals(previous.description)) values.put("description",state.description);
+            if(!state.nickname.isEmpty() && !state.nickname.equals(previous.nickname)) values.put("nickname",state.nickname);
+            if(values.size()>0) {db.update("rooms",values,"id=?",new String[]{Long.toString(-dialog)});changed=true;}
             if(state.joined && !state.role.isEmpty()) {
-                ContentValues permissions=new ContentValues(); permissions.put("room",-dialog); permissions.put("role",state.role); permissions.put("affiliation",state.affiliation);
-                db.insertWithOnConflict("room_permissions",null,permissions,SQLiteDatabase.CONFLICT_REPLACE);
+                boolean same;
+                try(Cursor row=db.rawQuery("SELECT role,affiliation FROM room_permissions WHERE room=?",new String[]{Long.toString(-dialog)})) {
+                    same=row.moveToFirst() && state.role.equals(row.getString(0)) && state.affiliation.equals(row.getString(1));
+                }
+                if(!same) {
+                    ContentValues permissions=new ContentValues();permissions.put("room",-dialog);permissions.put("role",state.role);permissions.put("affiliation",state.affiliation);
+                    db.insertWithOnConflict("room_permissions",null,permissions,SQLiteDatabase.CONFLICT_REPLACE);changed=true;
+                }
             }
-            db.execSQL("UPDATE room_participants SET active=0 WHERE room=?",new Object[]{-dialog});
-            for (com.negzero.monogram.xmpp.XmppRooms.Occupant occupant:state.occupants) {
-                roomUser(dialog,occupant.address,occupant.realJid,self);
-                db.execSQL("UPDATE room_participants SET active=1,real_jid=?,user=? WHERE room=? AND occupant=?",new Object[]{occupant.realJid,occupant.realJid==null ? peer(occupant.address) : peer(occupant.realJid),-dialog,occupant.address});
+            java.util.Map<String,String> identities=new java.util.HashMap<>();java.util.Set<String> active=new java.util.HashSet<>();
+            try(Cursor rows=db.rawQuery("SELECT occupant,real_jid,active FROM room_participants WHERE room=?",new String[]{Long.toString(-dialog)})) {
+                while(rows.moveToNext()) {String occupant=rows.getString(0);identities.put(occupant,rows.getString(1));if(rows.getInt(2)!=0)active.add(occupant);}
+            }
+            for(com.negzero.monogram.xmpp.XmppRooms.Occupant occupant:state.occupants) {
+                if(!occupant.address.startsWith(previous.jid+"/")) throw new IllegalArgumentException("Occupant belongs to another room");
+                boolean wasActive=active.remove(occupant.address);
+                boolean sameIdentity=identities.containsKey(occupant.address) && java.util.Objects.equals(identities.get(occupant.address),occupant.realJid);
+                if(wasActive && sameIdentity) continue;
+                ContentValues participant=new ContentValues();participant.put("active",1);
+                if(!sameIdentity) {participant.put("real_jid",occupant.realJid);participant.put("user",roomUser(dialog,occupant.address,occupant.realJid,self));}
+                db.update("room_participants",participant,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant.address});changed=true;
+            }
+            for(String occupant:active) {
+                ContentValues inactive=new ContentValues();inactive.put("active",0);
+                db.update("room_participants",inactive,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant});changed=true;
             }
             db.setTransactionSuccessful();
-        } finally { db.endTransaction(); }
+        } finally {db.endTransaction();}
+        if(changed) mentionNamesCache.remove(dialog);
+        return changed;
     }
     synchronized java.util.Map<Long,String> mentionNames(long dialog,long self) {
         if(mentionNamesCache.containsKey(dialog)) return mentionNamesCache.get(dialog);

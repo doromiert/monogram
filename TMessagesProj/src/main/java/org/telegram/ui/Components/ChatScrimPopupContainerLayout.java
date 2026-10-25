@@ -125,6 +125,15 @@ public class ChatScrimPopupContainerLayout extends LinearLayout {
         maxHeight = getMeasuredHeight();
     }
 
+    /** Hidden swipe-back pages reserve window space, but must not move the visible root menu. */
+    public int getInitialVisibleHeight() {
+        if(popupWindowLayout==null || popupWindowLayout.getSwipeBack()==null
+                || popupWindowLayout.getSwipeBack().getChildCount()==0) return getMeasuredHeight();
+        PopupSwipeBackLayout pages=popupWindowLayout.getSwipeBack();
+        int hiddenExtra=Math.max(0,pages.getMeasuredHeight()-pages.getChildAt(0).getMeasuredHeight());
+        return Math.max(0,getMeasuredHeight()-hiddenExtra);
+    }
+
     private void updatePopupTranslation() {
         float x = (1f - progressToSwipeBack) * popupLayoutLeftOffset;
         popupWindowLayout.setTranslationX(x);

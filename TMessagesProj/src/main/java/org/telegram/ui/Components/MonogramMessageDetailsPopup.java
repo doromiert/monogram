@@ -84,8 +84,9 @@ public final class MonogramMessageDetailsPopup {
         scroll.setVerticalScrollBarEnabled(false);
         rows=new LinearLayout(context);rows.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(rows,LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT,android.view.Gravity.TOP));
-        int viewport=Math.max(AndroidUtilities.dp(112),Math.min(AndroidUtilities.dp(392),AndroidUtilities.displaySize.y/2));
-        layout.addView(scroll,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,viewport));
+        // The menu can open near the bottom edge. Let the capped scroll view use the
+        // available height instead of forcing a viewport beyond the popup's bounds.
+        layout.addView(scroll,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT));
         addGap();
         ActionBarMenuSubItem loading=new ActionBarMenuSubItem(context,false,true,provider);
         loading.setItemHeight(56);loading.setTextAndIcon(LocaleController.getString(R.string.Loading),0);loading.setEnabled(false);
