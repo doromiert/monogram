@@ -62,12 +62,25 @@ public class MonogramArticlesTest {
         for(String url:new String[]{"https://x.com/_lyraaa_/status/123", "https://example.org/a__b__c?q=~~value~~", "www.example.org/_name_/a*b", "https://example.org/a_(b)/_c_"}) {
             TLRPC.Message message=new TLRPC.TL_message();message.message=url;
             MonogramFormatting.apply(message,MessageMarkup.body(url));
-            assertEquals(url,message.message);assertNotNull(message.rich_message);
-            TL_iv.RichText text=message.rich_message.blocks.get(0).text;
+            assertEquals(url,message.message);assertNull(message.rich_message);assertEquals(0,message.flags2 & 8192);
+            ArrayList<TL_iv.PageBlock> parsed=new ArrayList<>();org.telegram.ui.Components.MarkdownParser.parseMessage(url,parsed);
+            TL_iv.RichText text=parsed.get(0).text;
             assertTrue(text instanceof TL_iv.textUrl);
             assertEquals(url,org.telegram.ui.Components.MarkdownParser.richTextToString(text));
             assertEquals(url.startsWith("www.") ? "https://"+url : url,((TL_iv.textUrl)text).url);
         }
+    }
+    @Test public void underscoreUrlsUseNativePreviewsEvenAfterCachedPageProjection() {
+        String url="https://x.com/__lyraaa__/status/2113833330429083662";
+        for(String body:new String[]{url,"Look at "+url+" please"}) {
+            TLRPC.Message message=new TLRPC.TL_message();message.id=55;message.message=body;
+            TLRPC.TL_messageMediaWebPage media=new TLRPC.TL_messageMediaWebPage();media.webpage=new TLRPC.TL_webPage();media.webpage.url=url;message.media=media;
+            MonogramFormatting.apply(message,MessageMarkup.body(body));
+            assertEquals(body,message.message);assertNull(message.rich_message);assertEquals(0,message.flags2 & 8192);
+            assertSame(media,message.media);assertTrue(MonogramLinkPreviews.candidate(message));assertEquals(url,MonogramLinkPreviews.firstUrl(body));
+        }
+        TLRPC.Message explicit=new TLRPC.TL_message();String markdown="["+url+"]("+url+")";explicit.message=markdown;
+        assertTrue(MonogramArticles.applyMarkdown(explicit,markdown));assertNotNull(explicit.rich_message);
     }
     @Test public void urlParsingPreservesOutsideFormattingCodeAndMarkdownLinks() {
         String url="https://x.com/_lyraaa_/status/123";

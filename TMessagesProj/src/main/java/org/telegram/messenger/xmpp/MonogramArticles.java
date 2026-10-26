@@ -138,8 +138,20 @@ public final class MonogramArticles {
         try {
             TL_iv.RichMessage rich=new TL_iv.RichMessage();MarkdownParser.parseMessage(source,rich.blocks);
             if(rich.blocks.size()>2048 || rich.blocks.stream().noneMatch(block -> !(block instanceof TL_iv.pageBlockParagraph) || richInline(block.text))) return false;
+            // Bare URL recognition protects its literal characters; it does not make
+            // ordinary chat text an article or replace the native webpage preview.
+            if(rich.blocks.stream().allMatch(block -> block instanceof TL_iv.pageBlockParagraph && literalInline(block.text))) {
+                StringBuilder plain=new StringBuilder();
+                for(TL_iv.PageBlock block:rich.blocks) { if(plain.length()>0)plain.append("\n\n");plain.append(MarkdownParser.richTextToString(block.text)); }
+                if(source.equals(plain.toString()))return false;
+            }
             message.rich_message=rich;message.flags2|=8192;return true;
         } catch(RuntimeException invalid) { return false; }
+    }
+    private static boolean literalInline(TL_iv.RichText text) {
+        if(text==null || text instanceof TL_iv.textPlain || text instanceof TL_iv.textEmpty)return true;
+        if(text instanceof TL_iv.textConcat)return text.texts.stream().allMatch(MonogramArticles::literalInline);
+        return text instanceof TL_iv.textUrl && literalInline(text.text);
     }
     private static boolean richInline(TL_iv.RichText text) {
         if(text==null || text instanceof TL_iv.textPlain || text instanceof TL_iv.textEmpty) return false;
