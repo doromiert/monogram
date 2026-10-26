@@ -11708,4 +11708,6 @@
     <string name="MonogramWalletAddNote">Add a note</string>
     <string name="MonogramWalletNoteHint">Optional note for the recipient</string>
     <string name="MonogramSettingsAccountInfo">XMPP address, name, bio</string>
+    <string name="MonogramContactAddFailed">Could not add the contact. Please reconnect and try again.</string>
+    <string name="MonogramContactRemoveFailed">Could not remove the contact. Please reconnect and try again.</string>
 </resources>

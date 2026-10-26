@@ -106,3 +106,21 @@ IDs. The core server/MAM separation fixture also records the new alias. Online
 DM/MUC result/reply navigation, repeated timestamp boundaries, expired IDs,
 reconnect timing and native row-cache layout still need the authorized release
 acceptance gate.
+
+
+## Repairs found by navigation imports
+
+Date and around-message pages refresh the native message cache, loaded message
+objects and dialog previews when they repair a timestamp or unreadable encrypted
+placeholder. The publication uses the importing account's JID and incarnation,
+without requiring an ordinary archive-sync object to still exist. Queued UI work
+is rejected after account replacement. Plaintext already recovered from an earlier
+copy remains intact if an encrypted replay cannot be decrypted a second time.
+Unchanged pages do not republish dialogs or create new-message notifications.
+
+Three focused controller regressions cover direct timestamp repair, recovered
+plaintext plus duplicate replay, and a room repair with account replacement before
+UI delivery. These are prepared for the next build/test gate. This change does not
+claim to rebuild native chat day groups after a changed date; that renderer path
+requires separate verification. Ordinary synchronization cursors and read state
+remain independent of navigation imports.

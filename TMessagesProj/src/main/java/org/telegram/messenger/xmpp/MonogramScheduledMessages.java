@@ -57,6 +57,8 @@ public final class MonogramScheduledMessages {
         public final boolean silent;
         public final long createdAt;
         public final long dueAt;
+        /** Planned occurrence time, independent of the retry deadline in {@link #dueAt}. */
+        public final long occurrenceAt;
         public final int repeatPeriod;
         public final int attempts;
         /** Stable for retries of this occurrence; a repeated schedule receives a new value. */
@@ -76,6 +78,15 @@ public final class MonogramScheduledMessages {
                 ArrayList<TLRPC.MessageEntity> entities, TLRPC.InputReplyTo replyTo,
                 String encryption, boolean manualEncryption, boolean noWebpage, boolean silent,
                 long createdAt, long dueAt, int repeatPeriod, int attempts, long randomId, String payload) {
+            this(id, localId, peer, destination, body, entities, replyTo, encryption, manualEncryption,
+                    noWebpage, silent, createdAt, dueAt, repeatPeriod, attempts, randomId, payload, dueAt);
+        }
+
+        private Entry(int id, int localId, long peer, String destination, String body,
+                ArrayList<TLRPC.MessageEntity> entities, TLRPC.InputReplyTo replyTo,
+                String encryption, boolean manualEncryption, boolean noWebpage, boolean silent,
+                long createdAt, long dueAt, int repeatPeriod, int attempts, long randomId, String payload,
+                long occurrenceAt) {
             this.id = id;
             this.localId = localId;
             this.peer = peer;
@@ -89,6 +100,7 @@ public final class MonogramScheduledMessages {
             this.silent = silent;
             this.createdAt = createdAt;
             this.dueAt = dueAt;
+            this.occurrenceAt = occurrenceAt;
             this.repeatPeriod = Math.max(0, repeatPeriod);
             this.attempts = Math.max(0, attempts);
             this.randomId = randomId == 0 ? stableRandomId(id, createdAt, dueAt) : randomId;
@@ -123,6 +135,11 @@ public final class MonogramScheduledMessages {
         Entry withDue(long dueAt, int attempts) {
             return new Entry(id, localId, peer, destination, body, entities, replyTo, encryption, manualEncryption,
                     noWebpage, silent, createdAt, dueAt, repeatPeriod, attempts, randomId, payload);
+        }
+
+        Entry withRetryAt(long retryAt, int attempts) {
+            return new Entry(id, localId, peer, destination, body, entities, replyTo, encryption, manualEncryption,
+                    noWebpage, silent, createdAt, retryAt, repeatPeriod, attempts, randomId, payload, occurrenceAt);
         }
 
         Entry nextOccurrence(long dueAt) {
@@ -302,7 +319,7 @@ public final class MonogramScheduledMessages {
             Entry next = null;
             if (row.entry.repeatPeriod == 0) journal.entries.remove(row.entry.id);
             else {
-                next = row.entry.nextOccurrence(nextDue(row.entry.dueAt, row.entry.repeatPeriod, now));
+                next = row.entry.nextOccurrence(nextDue(row.entry.occurrenceAt, row.entry.repeatPeriod, now));
                 journal.entries.put(row.entry.id, new Row(next));
             }
             boolean saved=write(claim.account, claim.owner, journal);
@@ -467,7 +484,7 @@ public final class MonogramScheduledMessages {
                     row.entry = new Entry(migrated, legacy.id, legacy.peer, legacy.destination, legacy.body,
                             legacy.entities, legacy.replyTo, legacy.encryption, legacy.manualEncryption,
                             legacy.noWebpage, legacy.silent, legacy.createdAt, legacy.dueAt,
-                            legacy.repeatPeriod, legacy.attempts, legacy.randomId, legacy.payload);
+                            legacy.repeatPeriod, legacy.attempts, legacy.randomId, legacy.payload, legacy.occurrenceAt);
                 }
                 if (row.entry.id > 0 && row.entry.localId < 0) journal.entries.put(row.entry.id, row);
             }
@@ -502,7 +519,7 @@ public final class MonogramScheduledMessages {
         Row(Entry entry) { this.entry = entry; }
 
         void release(long now, long delay) {
-            entry = entry.withDue(Math.max(entry.dueAt, now + delay), entry.attempts + 1);
+            entry = entry.withRetryAt(Math.max(entry.dueAt, now + delay), entry.attempts + 1);
             claimed = false; claimedAt = 0; generation = 0; token = "";
         }
 
@@ -512,7 +529,7 @@ public final class MonogramScheduledMessages {
                     .put("entities", encodeObjects(entry.entities)).put("reply", encodeObject(entry.replyTo))
                     .put("encryption", entry.encryption).put("manual", entry.manualEncryption)
                     .put("noWebpage", entry.noWebpage).put("silent", entry.silent).put("created", entry.createdAt)
-                    .put("due", entry.dueAt).put("repeat", entry.repeatPeriod).put("attempts", entry.attempts)
+                    .put("due", entry.dueAt).put("occurrence", entry.occurrenceAt).put("repeat", entry.repeatPeriod).put("attempts", entry.attempts)
                     .put("payload", entry.payload).put("rid", entry.randomId).put("claimed", claimed).put("claimedAt", claimedAt)
                     .put("generation", generation).put("token", token);
             return row;
@@ -525,7 +542,8 @@ public final class MonogramScheduledMessages {
                         decodeEntities(row.optString("entities")), decodeReply(row.optString("reply")),
                         row.optString("encryption"), row.optBoolean("manual"), row.optBoolean("noWebpage"),
                         row.optBoolean("silent"), row.optLong("created"), row.getLong("due"),
-                        row.optInt("repeat"), row.optInt("attempts"), row.optLong("rid"), row.optString("payload"));
+                        row.optInt("repeat"), row.optInt("attempts"), row.optLong("rid"), row.optString("payload"),
+                        row.optLong("occurrence", row.getLong("due")));
                 Row result = new Row(entry);
                 result.claimed = row.optBoolean("claimed"); result.claimedAt = row.optLong("claimedAt");
                 result.generation = row.optLong("generation"); result.token = row.optString("token");

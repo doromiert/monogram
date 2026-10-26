@@ -2375,8 +2375,15 @@ public class ContactsController extends BaseController {
             req.flags |= 2;
             req.note = note;
         }
+        final long ownerId = getUserConfig().getClientUserId();
         getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (error != null) {
+            if (getUserConfig().getClientUserId() != ownerId) return;
+            if (error != null || !(response instanceof TLRPC.Updates)) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (getUserConfig().getClientUserId() != ownerId) return;
+                    NotificationCenter.getGlobalInstance().postNotificationName(
+                        NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.getString(R.string.MonogramContactAddFailed));
+                });
                 return;
             }
             final TLRPC.Updates res = (TLRPC.Updates) response;
@@ -2482,6 +2489,9 @@ public class ContactsController extends BaseController {
         for (int i = 0, N = users.size(); i < N; i++) {
             TLRPC.User user = users.get(i);
             TLRPC.TL_contact contact = contactsDict.get(user.id);
+            if (contact == null) {
+                continue;
+            }
 
             user.contact = false;
             contacts.remove(contact);
@@ -2497,21 +2507,25 @@ public class ContactsController extends BaseController {
         layout.setTimer();
         layout.textView.setText(LocaleController.formatPluralString("ContactsDeletedUndo", deletedContacts.size()));
         Bulletin.UndoButton undoButton = new Bulletin.UndoButton(context, true, true, fragment.getResourceProvider());
-        undoButton.setUndoAction(() -> {
+        final long ownerId = getUserConfig().getClientUserId();
+        Runnable restore = () -> {
+            if (getUserConfig().getClientUserId() != ownerId) return;
             for (HashMap.Entry<TLRPC.User, TLRPC.TL_contact> entry : deletedContacts.entrySet()) {
                 TLRPC.User user = entry.getKey();
                 TLRPC.TL_contact contact = entry.getValue();
 
                 user.contact = true;
-                contacts.add(contact);
-                contactsDict.put(user.id, contact);
+                TLRPC.User currentUser = getMessagesController().getUser(user.id);
+                if (currentUser != null) currentUser.contact = true;
+                if (contactsDict.putIfAbsent(user.id, contact) == null) contacts.add(contact);
             }
             buildContactsSectionsArrays(true);
             getNotificationCenter().postNotificationName(NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_NAME);
             getNotificationCenter().postNotificationName(NotificationCenter.contactsDidLoad);
-        });
+        };
+        undoButton.setUndoAction(restore);
         undoButton.setDelayedAction(() -> {
-            deleteContact(users, false);
+            if (getUserConfig().getClientUserId() == ownerId) deleteContact(users, false, restore);
         });
         layout.setButton(undoButton);
         Bulletin bulletin = Bulletin.make(fragment, layout, Bulletin.DURATION_PROLONG);
@@ -2519,6 +2533,10 @@ public class ContactsController extends BaseController {
     }
 
     public void deleteContact(final ArrayList<TLRPC.User> users, boolean showBulletin) {
+        deleteContact(users, showBulletin, null);
+    }
+
+    private void deleteContact(final ArrayList<TLRPC.User> users, boolean showBulletin, Runnable onFailure) {
         if (users == null || users.isEmpty()) {
             return;
         }
@@ -2526,18 +2544,30 @@ public class ContactsController extends BaseController {
         final ArrayList<Long> uids = new ArrayList<>();
         for (int a = 0, N = users.size(); a < N; a++) {
             TLRPC.User user = users.get(a);
-            getMessagesController().getStoriesController().removeContact(user.id);
             TLRPC.InputUser inputUser = getMessagesController().getInputUser(user);
             if (inputUser == null) {
                 continue;
             }
-            user.contact = false;
             uids.add(user.id);
             req.id.add(inputUser);
         }
+        if (req.id.isEmpty()) {
+            if (onFailure != null) onFailure.run();
+            return;
+        }
+        final long ownerId = getUserConfig().getClientUserId();
         String userName = users.get(0).first_name;
         getConnectionsManager().sendRequest(req, (response, error) -> {
-            if (error != null) {
+            if (getUserConfig().getClientUserId() != ownerId) return;
+            if (error != null || !(response instanceof TLRPC.Updates)) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (getUserConfig().getClientUserId() != ownerId) return;
+                    if (onFailure != null) onFailure.run();
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR,
+                            LocaleController.getString(R.string.MonogramContactRemoveFailed));
+                    // A multi-contact server request may have partly succeeded; refresh the authoritative roster.
+                    loadContacts(false, 0);
+                });
                 return;
             }
             getMessagesController().processUpdates((TLRPC.Updates) response, false);
@@ -2564,8 +2594,15 @@ public class ContactsController extends BaseController {
             }
 
             AndroidUtilities.runOnUIThread(() -> {
+                if (getUserConfig().getClientUserId() != ownerId) return;
                 boolean remove = false;
                 for (TLRPC.User user : users) {
+                    if (!uids.contains(user.id)) continue;
+                    user.contact = false;
+                    user.mutual_contact = false;
+                    TLRPC.User currentUser = getMessagesController().getUser(user.id);
+                    if (currentUser != null) { currentUser.contact = false; currentUser.mutual_contact = false; }
+                    getMessagesController().getStoriesController().removeContact(user.id);
                     TLRPC.TL_contact contact = contactsDict.get(user.id);
                     if (contact != null) {
                         remove = true;

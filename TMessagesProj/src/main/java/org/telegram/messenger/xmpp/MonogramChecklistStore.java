@@ -68,6 +68,7 @@ final class MonogramChecklistStore {
         synchronized (store) {
             SQLiteDatabase db = store.getWritableDatabase(); db.beginTransaction();
             try {
+                if (controlMessage > 0 && !messageMatches(db, controlMessage, peer)) return Collections.emptySet();
                 if (controlMessage > 0) controlLocked(db, controlMessage);
                 ContentValues values = new ContentValues(); values.put("peer", peer); values.put("target", content.target);
                 values.put("actor", bare(authenticatedBare)); values.put("nonce", mutation.nonce); values.put("data", content.data); values.put("source", controlMessage);
@@ -122,21 +123,21 @@ final class MonogramChecklistStore {
     }
 
     MonogramChecklists.Checklist checklist(int message) {
-        try (Cursor row = store.getReadableDatabase().rawQuery("SELECT data FROM checklist_documents WHERE message=?", new String[]{Integer.toString(message)})) {
+        try (Cursor row = store.getReadableDatabase().rawQuery("SELECT d.data FROM checklist_documents d JOIN messages m ON m.id=d.message WHERE d.message=? AND m.deleted=0 AND m.readable=1", new String[]{Integer.toString(message)})) {
             return row.moveToFirst() ? MonogramChecklists.decode(row.getString(0)) : null;
         }
     }
 
     /** Snapshot for a native toggle/append request; the peer check prevents cross-dialog local IDs. */
     MonogramChecklists.Checklist snapshot(int message, long peer) {
-        try (Cursor row = store.getReadableDatabase().rawQuery("SELECT data FROM checklist_documents WHERE message=? AND peer=?", new String[]{Integer.toString(message), Long.toString(peer)})) {
+        try (Cursor row = store.getReadableDatabase().rawQuery("SELECT d.data FROM checklist_documents d JOIN messages m ON m.id=d.message WHERE d.message=? AND d.peer=? AND m.peer=d.peer AND m.deleted=0 AND m.readable=1", new String[]{Integer.toString(message), Long.toString(peer)})) {
             return row.moveToFirst() ? MonogramChecklists.decode(row.getString(0)) : null;
         }
     }
 
     /** Returns a stable XMPP alias, never a local database id, for a native toggle/append action. */
     String target(int message, long peer) {
-        if (checklist(message) == null || store.hiddenCorrection(message)) throw new IllegalArgumentException("Checklist is unavailable");
+        if (snapshot(message, peer) == null || store.hiddenCorrection(message)) throw new IllegalArgumentException("Checklist is unavailable");
         String kind = peer < 0 ? "archive" : null, found = null;
         String query = peer < 0 ? "SELECT value FROM message_ids WHERE message=? AND peer=? AND kind='archive'"
                 : "SELECT kind,value FROM message_ids WHERE message=? AND peer=? AND kind IN ('origin','stanza') ORDER BY CASE kind WHEN 'origin' THEN 0 ELSE 1 END,rowid";
@@ -167,6 +168,7 @@ final class MonogramChecklistStore {
                     int message = resolve(db, peer, target);
                     if (mutation == null || !target.equals(mutation.reference)) { reject(db, id); continue; }
                     if (message == 0) continue;
+                    if (!messageMatches(db, message, peer) || store.hiddenCorrection(message)) { reject(db, id); continue; }
                     Document document = document(db, message);
                     if (document == null) continue;
                     MonogramChecklists.Checklist current = MonogramChecklists.decode(document.data);
@@ -205,7 +207,10 @@ final class MonogramChecklistStore {
         String[] args = peer < 0 ? new String[]{Long.toString(peer), Long.toString(peer), target}
                 : new String[]{Long.toString(peer), Long.toString(peer), target, target};
         int result = 0;
-        try (Cursor rows = db.rawQuery("SELECT DISTINCT d.message FROM checklist_documents d JOIN message_ids i ON i.message=d.message WHERE d.peer=? AND i.peer=? AND (" + match + ")", args)) {
+        // Resolve across every message, including tombstones and ordinary text. Restricting this
+        // query to checklist_documents hides collisions with a non-checklist origin/stanza ID and
+        // could apply a control to an arbitrary checklist in that dialog.
+        try (Cursor rows = db.rawQuery("SELECT DISTINCT m.id FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND i.peer=? AND (" + match + ")", args)) {
             while (rows.moveToNext()) { int candidate = rows.getInt(0); if (result != 0 && result != candidate) return 0; result = candidate; }
         }
         return result;
@@ -235,9 +240,10 @@ final class MonogramChecklistStore {
 
     private static String bare(String value) {
         if (value == null) throw new IllegalArgumentException("Missing sender");
-        int slash = value.indexOf('/'); String result = (slash < 0 ? value : value.substring(0, slash));
-        if (result.isEmpty() || result.length() > 1024 || result.indexOf('@') <= 0 || result.endsWith("@")) throw new IllegalArgumentException("Invalid sender");
-        return result;
+        if (value.length() > 1024 || value.codePoints().anyMatch(Character::isISOControl))
+            throw new IllegalArgumentException("Invalid sender");
+        try { return org.jxmpp.jid.impl.JidCreate.entityFrom(value).asEntityBareJid().toString(); }
+        catch (org.jxmpp.stringprep.XmppStringprepException invalid) { throw new IllegalArgumentException("Invalid sender", invalid); }
     }
 
     private static String suffix(String value) {

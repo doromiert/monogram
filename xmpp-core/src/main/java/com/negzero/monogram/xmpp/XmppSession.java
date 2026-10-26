@@ -503,6 +503,7 @@ public final class XmppSession implements AutoCloseable {
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) { /* The session closed before dispatch. */ }
     }
     private void deliverDecodedModern(XmppMessage message,XmppOmemo2.Received received,DeliveryAcknowledgement receipt) {
+        if(!directIncomingRoute(message)) return;
         java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
         listener.message(message,() -> { if(accepted.compareAndSet(false,true)) afterModern(received,receipt!=null && receipt.accepts(message) ? receipt : null); });
     }
@@ -654,11 +655,18 @@ public final class XmppSession implements AutoCloseable {
 
     private void deliverLegacy(LegacyIncomingJournal.Received received) {
         if(closed) return;
+        if(received.message!=null && !directIncomingRoute(received.message)) return;
         java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
         Runnable stored=() -> { if(accepted.compareAndSet(false,true)) acceptLegacy(received); };
         if(received.roomMessage!=null) listener.roomMessage(received.roomMessage,stored);
         else if(received.message!=null) listener.message(received.message,stored);
         else acceptLegacy(received);
+    }
+    /** A retained direct journal must not bypass room metadata restored before recovery. */
+    private boolean directIncomingRoute(XmppMessage message) {
+        if(closed || message==null || rooms.known(message.peer)) return false;
+        try { return !rooms.known(JidCreate.from(message.sender)); }
+        catch(Exception invalid) { return false; }
     }
     void acceptLegacy(LegacyIncomingJournal.Received received) {
         try {

@@ -203,7 +203,7 @@ public class ContactAddActivity extends BaseFragment implements NotificationCent
                     if(monogramContact()) {
                         doneButton.setEnabled(false);
                         String name=(firstNameField.getText().toString()+" "+lastNameField.getText()).trim();
-                        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).editLocalContact(user_id,name,noteField.getText().toString(),error->{
+                        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).editLocalContact(user_id,name,noteField.getText().toString(),addContact,error->{
                             doneButton.setEnabled(true);monogramContactError(error);
                             if(error==null) { finishFragment();if(delegate!=null) delegate.didAddToContacts(); }
                         });

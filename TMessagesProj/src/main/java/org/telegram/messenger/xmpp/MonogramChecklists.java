@@ -69,7 +69,7 @@ public final class MonogramChecklists {
                 if (item == null || item.id <= 0 || !ids.add(item.id)) throw new Invalid("Invalid checklist item");
                 copy.add(item);
             }
-            if (encodedBytes(this.title, copy) > MAX_TEXT_BYTES) throw new Invalid("Checklist is too large");
+            if (encodedBytes(this.owner, this.title, copy) > MAX_TEXT_BYTES) throw new Invalid("Checklist is too large");
             this.items = Collections.unmodifiableList(copy);
         }
     }
@@ -342,8 +342,11 @@ public final class MonogramChecklists {
         } else {
             return null;
         }
-        return new Checklist(current.owner, current.revision + 1, current.othersCanAppend,
-                current.othersCanComplete, current.title, items);
+        if (current.revision == Long.MAX_VALUE) return null;
+        try {
+            return new Checklist(current.owner, current.revision + 1, current.othersCanAppend,
+                    current.othersCanComplete, current.title, items);
+        } catch (Invalid invalid) { return null; }
     }
 
     /** Owners may replace title, permissions, and items via an XEP-0308 message replacement. */
@@ -402,9 +405,11 @@ public final class MonogramChecklists {
         return escaped.toString().replace("\n", "<br>");
     }
 
-    private static int encodedBytes(String title, List<Item> items) {
-        int size = bytes(title);
-        for (Item item : items) size += bytes(item.title) + (item.completed ? bytes(item.completedBy) : 0);
+    private static int encodedBytes(String owner, String title, List<Item> items) {
+        // Include magic/version, revisions/flags, count, every length prefix and item metadata.
+        // Counting only text accepted states which encode() could not put on the wire.
+        int size = 21 + bytes(owner) + bytes(title);
+        for (Item item : items) size += 7 + bytes(item.title) + (item.completed ? 6 + bytes(item.completedBy) : 0);
         return size;
     }
 
@@ -419,16 +424,20 @@ public final class MonogramChecklists {
 
     private static String bare(String value) {
         if (value == null) throw new Invalid("Missing checklist owner");
-        int slash = value.indexOf('/');
-        String bare = (slash < 0 ? value : value.substring(0, slash)).trim();
-        if (bare.length() == 0 || bare.length() > 1024 || bare.indexOf('@') <= 0 || bare.endsWith("@")
-                || bare.codePoints().anyMatch(Character::isISOControl)) throw new Invalid("Invalid checklist owner");
-        return bare;
+        if (value.length() > 1024 || value.codePoints().anyMatch(Character::isISOControl))
+            throw new Invalid("Invalid checklist owner");
+        try { return org.jxmpp.jid.impl.JidCreate.entityFrom(value).asEntityBareJid().toString(); }
+        catch (org.jxmpp.stringprep.XmppStringprepException invalid) { throw new Invalid("Invalid checklist owner", invalid); }
     }
 
     private static String reference(String value) {
         if (value == null || value.isEmpty() || value.length() > 1024 || value.codePoints().anyMatch(Character::isISOControl))
             throw new Invalid("Invalid checklist message reference");
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < 0x21 || c > 0x7e || c == '\'' || c == '"' || c == '<' || c == '>' || c == '&')
+                throw new Invalid("Invalid checklist message reference");
+        }
         return value;
     }
 

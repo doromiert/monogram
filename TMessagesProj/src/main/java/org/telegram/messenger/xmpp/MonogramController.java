@@ -809,7 +809,7 @@ public final class MonogramController {
                         if(entry!=null && entry.canSeeMyPresence()) recordContactRequest(details.jid.toString(),jid.asBareJid().toString(),false);
                         long peer = store.knownPeer(jid.asBareJid().toString());
                         if (peer == 0 && entry != null) peer = store.peer(jid.asBareJid().toString());
-                        if (peer != 0) { store.rosterName(peer, entry == null ? "" : entry.getName()); publishProfile(peer, epoch); refreshProfile(peer); MonogramController.this.presenceChanged(peer,connecting,epoch,peer==presencePeer); }
+                        if (peer != 0) { store.rosterContact(peer,entry!=null); store.rosterName(peer, entry == null ? "" : entry.getName()); publishProfile(peer, epoch); refreshProfile(peer); MonogramController.this.presenceChanged(peer,connecting,epoch,peer==presencePeer); }
                     }
                     contactAuthorizationsChanged();
                 });
@@ -839,9 +839,12 @@ public final class MonogramController {
             connecting.setDisplayedMarkersEnabled(displayedReady && readReceiptsEnabled());
         }
         synchronized(readSyncLock) { connecting.readSync.setEnabled(preferences.getBoolean("private-read-enabled-"+details.jid,true)); }
+        java.util.List<String> rosterAddresses=new ArrayList<>();
         for (RosterEntry entry : Roster.getInstanceFor(connecting.connection()).getEntries()) {
+            rosterAddresses.add(entry.getJid().toString());
             long peer = store.peer(entry.getJid().toString()); store.rosterName(peer, entry.getName());
         }
+        if(roster.isLoaded())store.rosterContacts(rosterAddresses);
         refreshProfile(self);
         for (long peer : store.peers()) if (peer != self) refreshProfile(peer);
         state(ConnectionsManager.ConnectionStateConnected); lastPresenceQueries.clear(); refreshPresence(); MonogramPacks.maybeAutoSync(account);
@@ -1401,7 +1404,10 @@ public final class MonogramController {
         }
     }
     private void publishArchiveMessages(ArchiveSync sync, java.util.Set<Integer> updated) {
-        if(updated.isEmpty() || !UserConfig.getInstance(account).isClientActivated()) return;
+        publishArchiveMessages(sync.epoch,sync.jid,updated);
+    }
+    private void publishArchiveMessages(long owner,String own,java.util.Set<Integer> updated) {
+        if(updated.isEmpty() || !sameAccount(owner,own) || !UserConfig.getInstance(account).isClientActivated()) return;
         ArrayList<TLRPC.Message> messages=new ArrayList<>();
         java.util.Map<Long,ArrayList<MessageObject>> byPeer=new java.util.HashMap<>();
         for(int id:updated) if(!store.hiddenMessage(id)) {
@@ -1417,7 +1423,7 @@ public final class MonogramController {
         }
         MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
         AndroidUtilities.runOnUIThread(() -> {
-            if(!sameAccount(sync.epoch,sync.jid)) return;
+            if(!sameAccount(owner,own)) return;
             for(java.util.Map.Entry<Long,ArrayList<MessageObject>> entry:byPeer.entrySet())
                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,entry.getKey(),entry.getValue(),true);
         });
@@ -1634,7 +1640,7 @@ public final class MonogramController {
         if(!sameAccount(owner,own)) return null;
         java.util.Set<Integer> updated=new java.util.HashSet<>();
         store.saveCalendar(peer,page,backwards,updated);
-        page.stored();calendarPageSaved(peer,updated);
+        page.stored();calendarPageSaved(peer,owner,own,updated);
         java.util.List<String> ids=new ArrayList<>();for(com.negzero.monogram.xmpp.XmppMessage message:page.messages) ids.add(message.ids.get("archive"));
         return new MonogramCalendarWindow.Page(page.firstId,page.lastId,store.calendarIds(peer,ids),page.complete);
     }
@@ -1642,14 +1648,23 @@ public final class MonogramController {
         if(!sameAccount(owner,own)) return null;
         java.util.Set<Integer> updated=new java.util.HashSet<>();
         store.saveRoomCalendar(peer,page,backwards,self,updated);
-        page.stored();calendarPageSaved(peer,updated);
+        page.stored();calendarPageSaved(peer,owner,own,updated);
         java.util.List<String> ids=new ArrayList<>();for(com.negzero.monogram.xmpp.XmppRoomMessage message:page.messages) ids.add(message.ids.get("mam"));
         return new MonogramCalendarWindow.Page(page.firstId,page.lastId,store.calendarIds(peer,ids),page.complete);
     }
-    private void calendarPageSaved(long peer,java.util.Set<Integer> updated) {
+    private void calendarPageSaved(long peer,long owner,String own,java.util.Set<Integer> updated) {
         applyRetractions(peer);MonogramStore.CorrectionChanges corrections=store.reconcileCorrections(peer,updated);
         updated.addAll(corrections.edited);publishCorrections(peer,correctionUpdates(corrections,0));
         refreshNotifications(updated);refreshReplies(peer,updated);publishReactions(peer,null);
+        // Calendar/message jumps import the same canonical records as ordinary MAM sync.
+        // Refresh loaded rows and the native cache even when this page only repairs a
+        // known timestamp or unreadable placeholder; the history callback alone cannot
+        // replace every already-visible row or dialog preview.
+        if(!updated.isEmpty() && sameAccount(owner,own) && UserConfig.getInstance(account).isClientActivated()) {
+            if(peer<0) publishRoom(peer);
+            publishArchiveMessages(owner,own,updated);
+            publishDialogs(dialogs(),() -> sameAccount(owner,own),null);
+        }
     }
     private void loadHistory(long peer,int offset,int count,int loadType,int date,long epoch,ArrayList<TLRPC.Message> pending,java.util.function.BiConsumer<TLRPC.messages_Messages,Boolean> completed) {
         loadHistory(peer,offset,count,loadType,date,epoch,pending,null,completed);
@@ -1770,7 +1785,7 @@ public final class MonogramController {
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);
         }
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); outbox.clear();
+        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedPinnedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); outbox.clear();
         for(TranslationRequest translation:translationRequests.values()) translation.cancel();
         translationRequests.clear();
         try { MonogramTranslation.clearConfiguration(account); }
@@ -1840,12 +1855,21 @@ public final class MonogramController {
     }
     public String contactNote(long peer) { return MonogramContactDetails.note(account,accountJid(),store.jid(peer)); }
     public void editLocalContact(long peer,String name,String note,java.util.function.Consumer<String> completed) {
+        editLocalContact(peer,name,note,false,completed);
+    }
+    public void editLocalContact(long peer,String name,String note,boolean add,java.util.function.Consumer<String> completed) {
         final long epoch=accountEpoch;final String owner=accountJid();
-        cacheWorker.execute(()->{
+        (add ? worker : cacheWorker).execute(()->{
             String error=null;
             try {
                 if(!sameAccount(epoch,owner) || peer<=0 || peer==self) throw new IllegalArgumentException("Choose another contact");
                 if(note.length()>8192) throw new IllegalArgumentException("Notes can contain up to 8192 characters");
+                if(add) {
+                    XmppSession expected=session();long connected=sessionEpoch;
+                    expected.contacts.add(store.jid(peer),name);requireRoomSession(expected,connected);
+                    if(!sameAccount(epoch,owner))throw new IllegalStateException("Account changed");
+                    store.rosterContact(peer,true);contactAuthorizationsChanged();
+                }
                 store.localName(peer,name);MonogramContactDetails.note(account,owner,store.jid(peer),note);
             } catch(Exception failed) { error=failed instanceof IllegalArgumentException ? failed.getMessage() : "Could not save contact details"; }
             final String result=error;AndroidUtilities.runOnUIThread(()->{
@@ -2972,7 +2996,9 @@ public final class MonogramController {
         synchronized(fileNames) {
             fileJobs.remove(id, job);
             for(String alias:downloadNames(name,job)) {
-                fileNames.remove(alias,job);clearProgress(alias);
+                // Cancellation can release the alias before this worker exits. A retry
+                // may already own it, so only clear progress that still belongs to us.
+                if(fileNames.remove(alias,job)) clearProgress(alias);
             }
         }
         if(automaticJobs.remove(id,job)) {
@@ -3184,6 +3210,7 @@ public final class MonogramController {
     private static final String QUEUED_ENCRYPTION="monogram-encryption";
     private final java.util.concurrent.ConcurrentHashMap<TLObject,Integer> queuedLocalIds=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,String> queuedEncryption=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<TLObject> queuedPinnedEncryption=java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,LegacyCaptionTarget> queuedCaptions=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,Boolean> queuedXmrPolicies=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<TLObject,java.util.HashMap<String,String>> queuedSecurityParams=new java.util.concurrent.ConcurrentHashMap<>();
@@ -3276,7 +3303,8 @@ public final class MonogramController {
             TLRPC.TL_messages_sendMessage request=entry.request(MessagesController.getInstance(account).getInputPeer(entry.peer));
             // The scheduled projection has a native positive id.  A fired XMPP request is a new
             // ordinary outbox item, never that scheduled id, or native storage can conflate both.
-            queuedEncryption.put(request,entry.manualEncryption ? encryption(entry.peer).name() : entry.encryption);
+            queuedEncryption.put(request,entry.manualEncryption ? entry.encryption : encryption(entry.peer).name());
+            if(entry.manualEncryption) queuedPinnedEncryption.add(request);
             queueSend(0,request,(response,error) -> completeScheduledClaim(claim,response,error,owner,epoch));
         } catch(Exception failed) {
             MonogramScheduledMessages.fail(claim,System.currentTimeMillis()); armScheduledWake();
@@ -3320,9 +3348,11 @@ public final class MonogramController {
         Boolean xmrPrivate;
         final long created=System.nanoTime();
         final String encryption;
+        final boolean pinnedEncryption;
         final int token,localId; final long owner; final TLObject request; final RequestDelegate completed;
         final java.util.concurrent.atomic.AtomicBoolean scheduled=new java.util.concurrent.atomic.AtomicBoolean();
-        PendingSend(int token,long owner,TLObject request,RequestDelegate completed,String encryption,int localId) { this.localId=localId; this.encryption=encryption; this.token=token; this.owner=owner; this.request=request; this.completed=completed; }
+        PendingSend(int token,long owner,TLObject request,RequestDelegate completed,String encryption,int localId) { this(token,owner,request,completed,encryption,localId,false); }
+        PendingSend(int token,long owner,TLObject request,RequestDelegate completed,String encryption,int localId,boolean pinnedEncryption) { this.localId=localId; this.encryption=encryption; this.pinnedEncryption=pinnedEncryption; this.token=token; this.owner=owner; this.request=request; this.completed=completed; }
     }
     private final java.util.concurrent.ConcurrentHashMap<Integer,PendingSend> pendingSends=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.atomic.AtomicInteger localSendToken=new java.util.concurrent.atomic.AtomicInteger(-1);
@@ -3396,7 +3426,7 @@ public final class MonogramController {
             }
             completed.run(response,error);
         };
-        PendingSend pending=new PendingSend(token,accountEpoch,request,finished,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local);
+        PendingSend pending=new PendingSend(token,accountEpoch,request,finished,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local,queuedPinnedEncryption.remove(request));
         pending.caption=queuedCaptions.remove(request);
         pending.xmrPrivate=queuedXmrPolicies.get(request);
         pendingSends.put(token,pending); scheduleSend(pending);
@@ -3448,7 +3478,7 @@ public final class MonogramController {
                 if(file.message.params==null) file.message.params=new java.util.HashMap<>();
                 file.message.params.put(QUEUED_ENCRYPTION,encryption(peer).name());
             }
-            if(!automaticEncryption(peer) && !pending.encryption.equals(encryption(peer).name())) {
+            if((pending.pinnedEncryption || !automaticEncryption(peer)) && !pending.encryption.equals(encryption(peer).name())) {
                 if(pendingSends.remove(pending.token,pending)) {
                     if(pending.request instanceof MonogramFileRequest) {
                         MonogramFileRequest file=(MonogramFileRequest)pending.request;
@@ -3490,7 +3520,7 @@ public final class MonogramController {
                         });
                     } else pending.completed.run(response,error);
                 }
-            },pending.owner);
+            },pending.owner,pending.pinnedEncryption ? pending.encryption : null);
         });
     }
     private void flushPendingSends() {
@@ -3614,6 +3644,9 @@ public final class MonogramController {
     }
     private void dispatchRequest(TLObject request,RequestDelegate callback) { dispatchRequest(request,callback,accountEpoch); }
     private void dispatchRequest(TLObject request, RequestDelegate callback,long epoch) {
+        dispatchRequest(request,callback,epoch,null);
+    }
+    private void dispatchRequest(TLObject request, RequestDelegate callback,long epoch,String requiredEncryption) {
         if (request instanceof MonogramFileRequest) {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
@@ -3632,8 +3665,13 @@ public final class MonogramController {
                 || request instanceof TLRPC.TL_messages_getMessageReadParticipants
                 || request instanceof TLRPC.TL_messages_getMessageEditData || request instanceof TLRPC.TL_messages_getFullChat || request instanceof TLRPC.TL_messages_getChats;
         (cached ? cacheWorker : roomMutation(request) ? roomWorker : sendingPeer(request)!=0 || request instanceof TLRPC.TL_messages_sendReaction || request instanceof TLRPC.TL_messages_sendVote ? sendWorker : worker).execute(() -> {
+            if(epoch==accountEpoch && requiredEncryption!=null && !requiredEncryption.equals(encryption(sendingPeer(request)).name())) {
+                TLRPC.TL_error changed=new TLRPC.TL_error();changed.code=400;changed.text="MONOGRAM_SENDING_MODE_CHANGED";
+                if(callback!=null) Utilities.stageQueue.postRunnable(() -> { if(epoch==accountEpoch) callback.run(null,changed); });
+                return;
+            }
             TLObject response = null; TLRPC.TL_error error = null;
-            try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request); }
+            try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request,requiredEncryption); }
             catch (Exception e) {
                 if(debugLog.enabled() && (sendingPeer(request)!=0 || e instanceof java.security.GeneralSecurityException
                         || request instanceof TLRPC.TL_messages_sendReaction)) {
@@ -3818,6 +3856,46 @@ public final class MonogramController {
         if(block) expected.blocking.block(target);else expected.blocking.unblock(target);
         requireRoomSession(expected,epoch);rememberBlocked(expected,epoch);return new TLRPC.TL_boolTrue();
     }
+    private long rosterPeer(TLRPC.InputUser input) throws Exception {
+        if(!(input instanceof TLRPC.TL_inputUser) || input.user_id<=0 || input.user_id==self)
+            throw new IllegalArgumentException("Choose another contact");
+        String address=store.jid(input.user_id);
+        if(!org.jxmpp.jid.impl.JidCreate.from(address).isEntityBareJid())
+            throw new IllegalArgumentException("A contact's bare XMPP address is required");
+        return input.user_id;
+    }
+    private Updates rosterMutation(TLObject request) throws Exception {
+        XmppSession expected=session();long connected=sessionEpoch;String own=accountJid();long owner=accountEpoch;
+        Updates result=new Updates();result.date=now();
+        if(request instanceof TLRPC.TL_contacts_deleteContacts) {
+            java.util.LinkedHashMap<Long,String> targets=new java.util.LinkedHashMap<>();
+            for(TLRPC.InputUser input:((TLRPC.TL_contacts_deleteContacts)request).id) {
+                long peer=rosterPeer(input);String address=store.jid(peer);expected.contacts.state(address);targets.put(peer,address);
+            }
+            java.util.Set<String> allowed=new java.util.HashSet<>(expected.contacts.allowedContacts());allowed.removeAll(targets.values());
+            if(!preferences.edit().putStringSet("contact-access-allow-"+own,allowed).commit())
+                throw new IllegalStateException("Could not save contact access");
+            expected.contacts.restoreAllowedContacts(allowed);
+            try {
+                for(java.util.Map.Entry<Long,String> target:targets.entrySet()) {
+                    requireRoomSession(expected,connected);if(!sameAccount(owner,own))throw new IllegalStateException("Account changed");
+                    expected.contacts.remove(target.getValue());requireRoomSession(expected,connected);
+                    if(!sameAccount(owner,own))throw new IllegalStateException("Account changed");
+                    store.rosterContact(target.getKey(),false);store.rosterName(target.getKey(),"");
+                    recordContactRequest(own,target.getValue(),false);result.users.add(store.user(target.getKey(),self));
+                }
+            } finally { if(sameAccount(owner,own))contactAuthorizationsChanged(); }
+        } else {
+            TLRPC.TL_contacts_addContact add=(TLRPC.TL_contacts_addContact)request;
+            if(add.note!=null && add.note.text!=null && !add.note.text.isEmpty())
+                throw new UnsupportedOperationException("Use the contact editor to save a private note");
+            long peer=rosterPeer(add.id);String name=((add.first_name==null ? "" : add.first_name)+" "+(add.last_name==null ? "" : add.last_name)).trim();
+            expected.contacts.add(store.jid(peer),name);requireRoomSession(expected,connected);
+            if(!sameAccount(owner,own))throw new IllegalStateException("Account changed");
+            store.rosterContact(peer,true);store.rosterName(peer,name);result.users.add(store.user(peer,self));contactAuthorizationsChanged();
+        }
+        return result;
+    }
     private long scheduledPeer(TLRPC.InputPeer peer) {
         if(peer instanceof TLRPC.TL_inputPeerSelf) return self;
         if(peer==null || peer.channel_id!=0) throw new IllegalArgumentException("Conversation required");
@@ -3845,7 +3923,8 @@ public final class MonogramController {
         if(storyBridge==null) storyBridge=new MonogramStories(account,store,()->session());
         return storyBridge;
     }
-    private TLObject handle(TLObject request) throws Exception {
+    private TLObject handle(TLObject request) throws Exception { return handle(request,null); }
+    private TLObject handle(TLObject request,String requiredEncryption) throws Exception {
         TLObject localFilters=MonogramLocalFilters.handle(request);if(localFilters!=null) return localFilters;
         TLObject storyResult=stories().handle(request);if(storyResult!=null) return storyResult;
         if(request instanceof TLRPC.TL_messages_getQuickReplyMessages) {
@@ -3995,13 +4074,20 @@ public final class MonogramController {
         if (request instanceof TLRPC.TL_updates_getDifference) {
             TLRPC.TL_updates_differenceEmpty result = new TLRPC.TL_updates_differenceEmpty(); result.date = now(); return result;
         }
+        if(request instanceof TLRPC.TL_contacts_addContact || request instanceof TLRPC.TL_contacts_deleteContacts)return rosterMutation(request);
         if (request instanceof TLRPC.TL_contacts_getContacts) {
             session();
+            Roster contactsRoster=Roster.getInstanceFor(session().connection());
+            if(!contactsRoster.isLoaded())contactsRoster.reloadAndWait();
+            if(!contactsRoster.isLoaded())throw new IllegalStateException("The contact list is not available yet");
             TLRPC.TL_contacts_contacts result = new TLRPC.TL_contacts_contacts();
-            for (RosterEntry entry : Roster.getInstanceFor(session().connection()).getEntries()) {
-                long id = store.peer(entry.getJid().toString()); store.rosterName(id, entry.getName()); result.users.add(store.user(id, self));
+            java.util.List<String> addresses=new ArrayList<>();
+            for (RosterEntry entry : contactsRoster.getEntries()) {
+                addresses.add(entry.getJid().toString());
+                long id = store.peer(entry.getJid().toString()); store.rosterContact(id,true);store.rosterName(id, entry.getName()); result.users.add(store.user(id, self));
                 TLRPC.TL_contact contact = new TLRPC.TL_contact(); contact.user_id = id; contact.mutual = entry.canSeeMyPresence(); result.contacts.add(contact);
             }
+            store.rosterContacts(addresses);
             return result;
         }
         if(request instanceof TLRPC.TL_messages_getMessageReadParticipants) {
@@ -4291,9 +4377,10 @@ public final class MonogramController {
             if (send.peer.chat_id!=0) {
                 if (send.schedule_date!=0) throw new UnsupportedOperationException();
                 long dialog=-send.peer.chat_id;
-                checkXmrSending(send,encryption(dialog));
+                XmppMessage.Encryption mode=requiredEncryption==null ? encryption(dialog) : XmppMessage.Encryption.valueOf(requiredEncryption);
+                checkXmrSending(send,mode);
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,encrypted(dialog),outgoingReply(send.reply_to,dialog,encrypted(dialog)),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,mode!=XmppMessage.Encryption.PLAIN,outgoingReply(send.reply_to,dialog,mode!=XmppMessage.Encryption.PLAIN),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
@@ -4301,7 +4388,7 @@ public final class MonogramController {
                 result.pts_count=1; result.pts=MessagesStorage.getInstance(account).getLastPtsValue()+1; return result;
             }
             if (send.schedule_date != 0 || send.peer.user_id == 0) throw new UnsupportedOperationException();
-            long peer = send.peer.user_id; XmppMessage.Encryption mode = encryption(peer);
+            long peer = send.peer.user_id; XmppMessage.Encryption mode = requiredEncryption==null ? encryption(peer) : XmppMessage.Encryption.valueOf(requiredEncryption);
             checkXmrSending(send,mode);
             ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);
             XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);

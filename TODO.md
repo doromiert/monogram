@@ -1,3 +1,9 @@
+## 0.2.174 — contact management and daily-use correctness
+
+Native Add contact now creates a server roster item without implicit presence authorization; Delete contact removes the roster item and this device's future auto-approval, preserving history/keys. Schema 34 persists actual roster membership independently of message authors; failed/undoable deletion restores UI state and reloads the roster. Also fix repeat cadence after retries, pin manual scheduled encryption through actual dispatch, publish calendar-import repairs, preserve replacement-download progress after cancellation and reject recovered known-room PMs from direct-message routes. Harden the unexposed checklist draft without claiming interactive collaboration. Remaining genuine gaps: docs/FEATURE_GAPS_2026_10_26.md.
+
+Arm64 APK packaging/audit and original signer verified; 42 focused Android tests plus five core/local-server checks pass. No phone screenshots or real-contact messages/requests used. Visual acceptance and the remaining checklist/privacy/session/profile interoperability work are not certified complete.
+
 ## 0.2.152 — configurable chat identity header
 
 Add Appearance → Blur Options → Chat header background. The enabled default preserves the original header; disabling it removes the idle glass pill behind the avatar/name/status for DMs and rooms while retaining the native placement, back/menu backgrounds and search transition. Reset avatar measurements after header-style changes and calculate circular clipping from the actual measured width.

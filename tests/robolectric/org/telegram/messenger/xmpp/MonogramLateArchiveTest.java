@@ -106,7 +106,7 @@ public class MonogramLateArchiveTest {
         Constructor<?> constructor=type.getDeclaredConstructor(parameters);constructor.setAccessible(true);return constructor.newInstance(args);
     }
     private Object sync() throws Exception {
-        return construct(syncClass,new Class<?>[]{XmppSession.class,long.class,String.class},MonogramScreenWakeTest.session(),7L,"alice@example.org");
+        return construct(syncClass,new Class<?>[]{XmppSession.class,long.class,String.class},Shadow.newInstanceOf(XmppSession.class),7L,"alice@example.org");
     }
     private Runnable delayedPage(Object oldSync,XmppSession.ArchivePage page) throws Exception {
         Object task=construct(taskClass,new Class<?>[]{long.class},peer);
@@ -119,17 +119,55 @@ public class MonogramLateArchiveTest {
     @Test public void delayedPageSurvivesReplacedSyncAndSessionWithoutCommittingOldCursorOrNewMessageEvents() throws Exception {
         Object oldSync=sync();Runnable completed=delayedPage(oldSync,page());
         ReflectionHelpers.setField(controller,"archiveSync",sync());
-        ReflectionHelpers.setField(controller,"session",MonogramScreenWakeTest.session());
+        ReflectionHelpers.setField(controller,"session",Shadow.newInstanceOf(XmppSession.class));
         // The replacement sync is also obsolete here; neither session may suppress retained authenticated data.
         completed.run();
         assertNull(store.archiveCursor(peer,false));assertNull(store.archiveCursor(false));
         assertEquals(1,store.history(peer,self,0,10).size());
         assertEquals("Recovered after reconnect",Storage.saved.get(0).message);
-        ReflectionHelpers.setField(controller,"session",MonogramScreenWakeTest.session());
+        ReflectionHelpers.setField(controller,"session",Shadow.newInstanceOf(XmppSession.class));
         Ui.drain();
         assertEquals(1,Events.replaced.size());assertEquals(Storage.saved.get(0).id,Events.replaced.get(0).getId());
         assertEquals(1,NativeDialogs.publications);assertEquals(1,Notifications.edits);
         assertEquals(0,store.save(page().messages.get(0))); // A duplicate replay cannot be relied on to publish this later.
+    }
+    private void calendar(XmppSession.ArchivePage page) {
+        ReflectionHelpers.callInstanceMethod(controller,"saveCalendarPage",ReflectionHelpers.ClassParameter.from(long.class,peer),
+                ReflectionHelpers.ClassParameter.from(long.class,7L),ReflectionHelpers.ClassParameter.from(String.class,"alice@example.org"),
+                ReflectionHelpers.ClassParameter.from(XmppSession.ArchivePage.class,page),ReflectionHelpers.ClassParameter.from(boolean.class,true));
+    }
+    @Test public void calendarTimestampRepairPublishesExistingRowAndNativeDialogWithoutAdvancingSync() throws Exception {
+        int id=store.save(MessageFixture.modern("calendar-date","mam-calendar-date","Keep plaintext",false,200000,null,null,null));
+        calendar(MessageFixture.page(MessageFixture.modern("calendar-date","mam-calendar-date",null,false,100000,null,null,null)));
+        assertEquals(id,Storage.saved.get(0).id);assertEquals(100,Storage.saved.get(0).date);
+        assertEquals("Keep plaintext",Storage.saved.get(0).message);
+        assertNull(store.archiveCursor(peer,true));assertNull(store.archiveCursor(peer,false));
+        Ui.drain();assertEquals(1,Events.replaced.size());assertEquals(id,Events.replaced.get(0).getId());
+        assertEquals(1,NativeDialogs.publications);assertEquals(0,NativeDialogs.liveUpdates);assertEquals(0,Notifications.pushes);
+    }
+    @Test public void calendarDecryptRepairPublishesPlaceholderReplacementAndUnchangedReplayIsSilent() throws Exception {
+        int id=store.save(MessageFixture.modern("calendar-decoded","mam-calendar-decoded",null,false,100000,null,null,null));
+        XmppSession.ArchivePage decoded=MessageFixture.page(MessageFixture.modern("calendar-decoded","mam-calendar-decoded","Recovered in date window",false,100000,null,null,null));
+        calendar(decoded);Ui.drain();
+        assertEquals(1,Storage.saved.size());assertEquals(id,Storage.saved.get(0).id);
+        assertEquals("Recovered in date window",Events.replaced.get(0).messageOwner.message);
+        int publications=NativeDialogs.publications;calendar(decoded);Ui.drain();
+        assertEquals(1,Storage.saved.size());assertEquals(1,Events.replaced.size());assertEquals(publications,NativeDialogs.publications);
+        assertEquals(0,NativeDialogs.liveUpdates);assertEquals(0,Notifications.pushes);
+    }
+    @Test public void calendarRoomRepairPublishesWithoutDependingOnAnActiveArchiveSyncAndFencesQueuedUi() throws Exception {
+        String roomJid="calendar@conference.example.org";long room=store.room(roomJid,"Alice");
+        int id=store.saveRoom(MessageFixture.roomArchive(roomJid,"Bob","calendar-room","sid-calendar-room","mam-calendar-room",null,200000,true),self);
+        XmppRoomMessage decoded=MessageFixture.roomArchive(roomJid,"Bob","calendar-room","sid-calendar-room","mam-calendar-room","Room recovered in date window",100000,true);
+        XmppRooms.ArchivePage page=new XmppRooms.ArchivePage(Collections.singletonList(decoded),"mam-calendar-room","mam-calendar-room",true);
+        ReflectionHelpers.callInstanceMethod(controller,"saveCalendarPage",ReflectionHelpers.ClassParameter.from(long.class,room),
+                ReflectionHelpers.ClassParameter.from(long.class,7L),ReflectionHelpers.ClassParameter.from(String.class,"alice@example.org"),
+                ReflectionHelpers.ClassParameter.from(XmppRooms.ArchivePage.class,page),ReflectionHelpers.ClassParameter.from(boolean.class,false));
+        assertNull(ReflectionHelpers.getField(controller,"archiveSync"));assertEquals(1,Storage.saved.size());assertEquals(id,Storage.saved.get(0).id);
+        assertEquals("Room recovered in date window",Storage.saved.get(0).message);assertEquals(100,Storage.saved.get(0).date);
+        assertNull(store.archiveCursor(room,true));assertNull(store.archiveCursor(room,false));
+        ReflectionHelpers.setField(controller,"accountEpoch",8L);Ui.drain();
+        assertTrue(Events.replaced.isEmpty());assertEquals(0,NativeDialogs.publications);assertEquals(0,Notifications.pushes);
     }
     @Test public void changedAccountRejectsLatePageAndQueuedUiPublication() throws Exception {
         Runnable completed=delayedPage(sync(),page());

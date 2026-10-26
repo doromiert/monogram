@@ -153,6 +153,32 @@ public final class XmppContacts implements AutoCloseable {
             case CANCEL: presence(jid,Presence.Type.unsubscribe); break;
         }
     }
+    /** Save a roster contact without requesting or granting presence access. */
+    public void add(String address,String name) throws Exception {
+        EntityBareJid jid=contact(address);
+        requireLoadedRoster();
+        RosterEntry entry=roster.getEntry(jid);
+        java.util.List<String> groups=new java.util.ArrayList<>();
+        if(entry!=null)for(RosterGroup group:entry.getGroups())groups.add(group.getName());
+        roster.createItem(jid,name,groups.toArray(new String[0]));
+        roster.reloadAndWait();requireLoadedRoster();
+    }
+    private void requireLoadedRoster() throws Exception {
+        if(!roster.isLoaded())roster.reloadAndWait();
+        if(!roster.isLoaded())throw new IllegalStateException("The contact list is not available yet. Please retry.");
+    }
+    /** Remove only the server roster item/subscriptions, never local history or cryptographic keys. */
+    public void remove(String address) throws Exception {
+        EntityBareJid jid=contact(address);
+        allowedContacts.remove(jid.toString());
+        requireLoadedRoster();
+        RosterEntry entry=roster.getEntry(jid);
+        if(entry!=null)roster.removeEntry(entry);
+        else presence(jid,Presence.Type.unsubscribed);
+        roster.reloadAndWait();requireLoadedRoster();
+        if(roster.getEntry(jid)!=null)throw new IllegalStateException("The server did not remove the contact");
+        pendingRequests.remove(jid.toString());incoming.accept(jid.toString(),false);
+    }
     private void presence(EntityBareJid jid,Presence.Type type) throws Exception {
         connection.sendStanza(connection.getStanzaFactory().buildPresenceStanza().to(jid).ofType(type).build());
     }

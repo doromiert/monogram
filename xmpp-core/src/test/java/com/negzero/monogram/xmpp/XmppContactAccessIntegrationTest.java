@@ -76,6 +76,18 @@ class XmppContactAccessIntegrationTest {
                 await(()->{try{return otherDevice.contacts.state(a).sharesOwnPresence;}catch(Exception unavailable){return false;}});
                 otherDevice.contacts.act(a,XmppContacts.Action.REVOKE);await(()->!sees(alice,b));
             }
+            bob.contacts.add(a,"Saved Alice");
+            assertTrue(bob.contacts.state(a).listed);assertFalse(bob.contacts.state(a).seesTheirPresence);
+            assertEquals("Saved Alice",Roster.getInstanceFor(bob.connection()).getEntry(JidCreate.bareFrom(a)).getName());
+            assertTrue(Roster.getInstanceFor(bob.connection()).getEntry(JidCreate.bareFrom(a)).getGroups().stream().anyMatch(group->"Family".equals(group.getName())));
+            bob.contacts.act(a,XmppContacts.Action.ALLOW);
+            int device=bob.ownDeviceId();
+            bob.contacts.remove(a);await(()->{try{return !bob.contacts.state(a).listed;}catch(Exception unavailable){return false;}});
+            assertFalse(bob.contacts.state(a).allowRequests);assertEquals(device,bob.ownDeviceId());
+            bob.contacts.add(a,"Alice again");assertTrue(bob.contacts.state(a).listed);
+            assertFalse(bob.contacts.state(a).seesTheirPresence);assertFalse(bob.contacts.state(a).sharesOwnPresence);
+            assertThrows(IllegalArgumentException.class,()->bob.contacts.remove(b));
+            assertThrows(IllegalArgumentException.class,()->bob.contacts.add(a+"/device","Invalid"));
             assertThrows(IllegalArgumentException.class,()->bob.contacts.act(b,XmppContacts.Action.ALLOW));
             assertThrows(IllegalArgumentException.class,()->bob.contacts.act(a+"/device",XmppContacts.Action.ALLOW));
         }
