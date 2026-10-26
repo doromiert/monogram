@@ -7603,7 +7603,7 @@ public class MediaDataController extends BaseController {
         return true;
     }
 
-    private CharSequence parsePattern(CharSequence cs, Pattern pattern, ArrayList<TLRPC.MessageEntity> entities, GenericProvider<Void, TLRPC.MessageEntity> entityProvider) {
+    private static CharSequence parsePattern(CharSequence cs, Pattern pattern, ArrayList<TLRPC.MessageEntity> entities, GenericProvider<Void, TLRPC.MessageEntity> entityProvider) {
         Matcher m = pattern.matcher(cs);
         int offset = 0;
         while (m.find()) {
@@ -7617,10 +7617,11 @@ public class MediaDataController extends BaseController {
                 }
             }
             if (allowEntity) {
-                // check if it is inside a code block: do not convert __ ** || to styles inside code
+                // Preserve literal link addresses and code before parsing formatting delimiters.
                 for (int i = 0; i < entities.size(); ++i) {
                     final TLRPC.MessageEntity entity = entities.get(i);
-                    if (entity instanceof TLRPC.TL_messageEntityPre || entity instanceof TLRPC.TL_messageEntityCode) {
+                    if (entity instanceof TLRPC.TL_messageEntityPre || entity instanceof TLRPC.TL_messageEntityCode
+                            || entity instanceof TLRPC.TL_messageEntityUrl || entity instanceof TLRPC.TL_messageEntityTextUrl) {
                         if (AndroidUtilities.intersect1d(m.start() - offset, m.end() - offset, entity.offset, entity.offset + entity.length)) {
                             allowEntity = false;
                             break;
@@ -7638,9 +7639,8 @@ public class MediaDataController extends BaseController {
 
                 removeOffset4After(entity.offset, entity.offset + entity.length, entities);
                 entities.add(entity);
+                offset += m.end() - m.start() - gr.length();
             }
-
-            offset += m.end() - m.start() - gr.length();
         }
         return cs;
     }

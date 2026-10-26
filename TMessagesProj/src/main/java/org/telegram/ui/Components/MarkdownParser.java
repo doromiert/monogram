@@ -202,6 +202,8 @@ public class MarkdownParser {
             }
         });
         inlinePlugin.factoryBuilder().addInlineProcessor(new SingleDollarLatexInlineProcessor());
+        for(char initial:new char[]{'h','H','w','W'})
+            inlinePlugin.factoryBuilder().addInlineProcessor(new LiteralUrlInlineProcessor(initial));
         final Parser.Builder parserBuilder = Parser.builder().extensions(extensions);
         inlinePlugin.configureParser(parserBuilder);
         latexPlugin.configureParser(parserBuilder);
@@ -234,6 +236,33 @@ public class MarkdownParser {
             if (!(blocks.get(i) instanceof TL_iv.pageBlockParagraph) || !(blocks.get(i).text instanceof TL_iv.textPlain))
                 return true;
         return false;
+    }
+
+    /** Consume bare URLs before emphasis delimiters can split their literal address. */
+    private static final class LiteralUrlInlineProcessor extends io.noties.markwon.inlineparser.InlineProcessor {
+        private static final java.util.regex.Pattern URL=java.util.regex.Pattern.compile(
+                "(?i)(?:https?://|www\\.)[^\\s<>`\"']+");
+        private final char initial;
+        LiteralUrlInlineProcessor(char initial) { this.initial=initial; }
+        @Override public char specialCharacter() { return initial; }
+        @Override protected Node parse() {
+            int start=index;
+            if(start>0 && Character.isLetterOrDigit(input.charAt(start-1)))return null;
+            String value=match(URL);if(value==null)return null;
+            int end=value.length(),opens=0,closes=0;
+            if(lastBracket()!=null && value.indexOf(']')>=0)end=value.indexOf(']');
+            for(int i=0;i<end;i++) { if(value.charAt(i)=='(')opens++;else if(value.charAt(i)==')')closes++; }
+            while(end>0) {
+                char last=value.charAt(end-1);
+                if(".,!?:;".indexOf(last)>=0)end--;
+                else if(last==')' && closes>opens) { closes--;end--; }
+                else break;
+            }
+            value=value.substring(0,end);index=start+end;
+            if(lastBracket()!=null)return new Text(value);
+            Link link=new Link(value.regionMatches(true,0,"www.",0,4) ? "https://"+value : value,null);
+            link.appendChild(new Text(value));return link;
+        }
     }
 
     public static class SingleDollarLatexInlineProcessor extends io.noties.markwon.inlineparser.InlineProcessor {

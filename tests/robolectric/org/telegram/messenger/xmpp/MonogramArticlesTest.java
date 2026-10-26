@@ -58,6 +58,32 @@ public class MonogramArticlesTest {
             restored.out=false;assertFalse(org.telegram.messenger.MessageObject.canEditMessage(0,restored,null,false));
         } finally {store.close();context.deleteDatabase("plain-tables.db");}
     }
+    @Test public void bareUrlsKeepFormattingCharactersAndExactClickTargets() {
+        for(String url:new String[]{"https://x.com/_lyraaa_/status/123", "https://example.org/a__b__c?q=~~value~~", "www.example.org/_name_/a*b", "https://example.org/a_(b)/_c_"}) {
+            TLRPC.Message message=new TLRPC.TL_message();message.message=url;
+            MonogramFormatting.apply(message,MessageMarkup.body(url));
+            assertEquals(url,message.message);assertNotNull(message.rich_message);
+            TL_iv.RichText text=message.rich_message.blocks.get(0).text;
+            assertTrue(text instanceof TL_iv.textUrl);
+            assertEquals(url,org.telegram.ui.Components.MarkdownParser.richTextToString(text));
+            assertEquals(url.startsWith("www.") ? "https://"+url : url,((TL_iv.textUrl)text).url);
+        }
+    }
+    @Test public void urlParsingPreservesOutsideFormattingCodeAndMarkdownLinks() {
+        String url="https://x.com/_lyraaa_/status/123";
+        ArrayList<TL_iv.PageBlock> blocks=new ArrayList<>();
+        org.telegram.ui.Components.MarkdownParser.parseMessage("*outside* ("+url+"). `"+url+"` [label]("+url+")",blocks);
+        TL_iv.textConcat text=(TL_iv.textConcat)blocks.get(0).text;
+        assertTrue(text.texts.stream().anyMatch(t->t instanceof TL_iv.textItalic));
+        assertTrue(text.texts.stream().anyMatch(t->t instanceof TL_iv.textFixed));
+        List<TL_iv.textUrl> links=new ArrayList<>();for(TL_iv.RichText item:text.texts)if(item instanceof TL_iv.textUrl)links.add((TL_iv.textUrl)item);
+        assertEquals(2,links.size());assertEquals(url,links.get(0).url);assertEquals(url,links.get(1).url);
+        assertEquals("outside ("+url+"). "+url+" label",org.telegram.ui.Components.MarkdownParser.richTextToString(text));
+        blocks.clear();org.telegram.ui.Components.MarkdownParser.parseMessage("["+url+"](https://example.org/destination)",blocks);
+        assertTrue(blocks.get(0).text instanceof TL_iv.textUrl);
+        assertEquals("https://example.org/destination",((TL_iv.textUrl)blocks.get(0).text).url);
+        assertEquals(url,org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(0).text));
+    }
     @Test public void unhintedPlainTextCodeAndSpoilersAreNotReinterpretedAsTables() {
         for(String wire:new String[]{"a | b\nnot a table", "ordinary text"}) {
             TLRPC.Message message=new TLRPC.TL_message();message.message=wire;

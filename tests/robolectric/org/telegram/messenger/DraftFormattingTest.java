@@ -43,6 +43,21 @@ public class DraftFormattingTest {
         assertFalse(MediaDataController.draftEntitiesEqual(linked, changed));
     }
 
+    @Test public void formattingInsideUrlEntitiesIsLiteralAndDoesNotShiftLaterStyles() {
+        String url="https://x.com/__lyraaa__/status/123";
+        ArrayList<TLRPC.MessageEntity> entities=new ArrayList<>();
+        TLRPC.TL_messageEntityUrl link=new TLRPC.TL_messageEntityUrl();link.offset=0;link.length=url.length();entities.add(link);
+        GenericProvider<Void,TLRPC.MessageEntity> provider=unused->new TLRPC.TL_messageEntityItalic();
+        CharSequence result=org.robolectric.util.ReflectionHelpers.callStaticMethod(MediaDataController.class,"parsePattern",
+            org.robolectric.util.ReflectionHelpers.ClassParameter.from(CharSequence.class,url+" __outside__"),
+            org.robolectric.util.ReflectionHelpers.ClassParameter.from(java.util.regex.Pattern.class,java.util.regex.Pattern.compile("__(.+?)__")),
+            org.robolectric.util.ReflectionHelpers.ClassParameter.from(ArrayList.class,entities),
+            org.robolectric.util.ReflectionHelpers.ClassParameter.from(GenericProvider.class,provider));
+        assertEquals(url+" outside",result.toString());assertEquals(url.length(),link.length);
+        assertEquals(2,entities.size());assertTrue(entities.get(1) instanceof TLRPC.TL_messageEntityItalic);
+        assertEquals(url.length()+1,entities.get(1).offset);assertEquals(7,entities.get(1).length);
+    }
+
     @Test public void movingOrFormattingQuoteDoesNotDiscardDraftChange() {
         TLRPC.TL_inputReplyToMessage a = new TLRPC.TL_inputReplyToMessage();
         TLRPC.TL_inputReplyToMessage b = new TLRPC.TL_inputReplyToMessage();
