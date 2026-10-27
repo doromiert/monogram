@@ -49,6 +49,23 @@ public class MonogramLinkPreviewsTest {
         assertEquals("https://example.org/page",MonogramLinkPreviews.firstUrl("look: https://example.org/page)."));
         assertNull(MonogramLinkPreviews.firstUrl("aesgcm://example.org/file#secret"));
     }
+    @Test public void schemelessChatLinksUseHttpsAndPreserveNativePreviewAndSpoilerPrivacy() throws Exception {
+        String shown="github.com/doromiert/monogram",url="https://"+shown;
+        assertEquals(url,MonogramLinkPreviews.firstUrl(shown));
+        assertEquals(url,MonogramLinkPreviews.firstUrl("See ("+shown+")."));
+        assertEquals("https://www.example.org/_user_/post",MonogramLinkPreviews.firstUrl("www.example.org/_user_/post"));
+        for(String privateAddress:Arrays.asList("alice@example.org","xmpp:alice@files.example.org","aesgcm://files.example.org/file#secret","http://example.org/path","tg://example.org/path"))
+            assertNull(privateAddress,MonogramLinkPreviews.firstUrl(privateAddress));
+        assertEquals(url,MonogramLinkPreviews.firstUrl("alice@example.org "+shown));
+        TLRPC.Message message=new TLRPC.TL_message();message.id=55;message.message="😀 "+shown;
+        assertTrue(MonogramLinkPreviews.candidate(message));
+        TLRPC.TL_messageEntitySpoiler spoiler=new TLRPC.TL_messageEntitySpoiler();spoiler.offset=3;spoiler.length=shown.length();message.entities.add(spoiler);
+        assertFalse(MonogramLinkPreviews.candidate(message));
+        int id=store.save(MessageFixture.replyMessage("bare-link","bare-link",null,shown,true,false,100000,"phone",true,null));
+        store.saveLinkPreview(url,page(url),System.currentTimeMillis()+60000);
+        TLRPC.Message restored=store.getMessage(id,self);assertEquals(shown,restored.message);assertNull(restored.rich_message);
+        assertTrue(restored.media instanceof TLRPC.TL_messageMediaWebPage);assertEquals(url,((TLRPC.TL_messageMediaWebPage)restored.media).webpage.url);
+    }
     @Test public void boundedHttpBodyHandlesChunksAndRejectsOversizeAmbiguousAndTruncatedResponses() throws Exception {
         Map<String,String> headers=new HashMap<>();headers.put("transfer-encoding","chunked");
         byte[] chunks="3\r\nabc\r\n2;test=1\r\nde\r\n0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
@@ -141,7 +158,7 @@ public class MonogramLinkPreviewsTest {
     @Test public void schema27MigrationPreservesMessagesAndAddsEmptyPreviewCache() throws Exception {
         int id=store.save(MessageFixture.replyMessage("preserve","preserve",null,"Keep me",true,false,100000,"phone",true,null));
         store.getWritableDatabase().execSQL("DROP TABLE link_previews");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_tag_names");store.getWritableDatabase().setVersion(27);store.close();store=new MonogramStore(context,"previews.db");
-        assertEquals(29,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
+        assertEquals(34,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
     }
     @Test public void keepsDirectMediaRedirectsAndSignedVideoUrlsWithoutAcceptingHtmlPlayers() throws Exception {
         java.net.URI page=new java.net.URI("https://example.org/post");

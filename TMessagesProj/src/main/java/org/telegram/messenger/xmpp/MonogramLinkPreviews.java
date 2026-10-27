@@ -17,13 +17,14 @@ import java.util.function.BooleanSupplier;
 import java.util.regex.*;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LinkifyPort;
 import org.telegram.tgnet.TLRPC;
 
 /** Device-local previews: no preview proxy, XMPP payload, cookies, JavaScript or remote image locations. */
 public final class MonogramLinkPreviews {
     static final int LOCAL_DC=Integer.MIN_VALUE+43;
     private static final long LIFETIME=7L*24*60*60*1000;
-    private static final Pattern URL=Pattern.compile("https://[^\\s<>\\\"\\u0000-\\u001f]+",Pattern.CASE_INSENSITIVE);
+    private static final Pattern URL=Pattern.compile("https://[^\\s<>\\\"\\u0000-\\u001f]+"+"|"+LinkifyPort.WEB_URL.pattern(),Pattern.CASE_INSENSITIVE);
     private static final Pattern META=Pattern.compile("<meta\\b[^>]{0,8192}>",Pattern.CASE_INSENSITIVE);
     private static final Pattern ATTR=Pattern.compile("([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))");
     private static final Pattern TITLE=Pattern.compile("<title\\b[^>]*>(.*?)</title\\s*>",Pattern.CASE_INSENSITIVE|Pattern.DOTALL);
@@ -47,20 +48,30 @@ public final class MonogramLinkPreviews {
     void clear() {
         cancel();store.clearLinkPreviews();File[] files=directory().listFiles();if(files!=null) for(File file:files) file.delete();
     }
-    static String firstUrl(String body) {
-        if(body==null || body.length()>65536) return null;
-        Matcher found=URL.matcher(body);
-        if(!found.find()) return null;
-        String value=found.group();
+    private static String previewUrl(String value) {
         while(!value.isEmpty() && ".,;:!?)]}".indexOf(value.charAt(value.length()-1))>=0) value=value.substring(0,value.length()-1);
+        if(!value.contains("://"))value="https://"+value;
         try { return MonogramPreviewHttp.safeUrl(value).toASCIIString(); } catch(IOException invalid) { return null; }
+    }
+    private static Matcher firstUrlMatch(String body) {
+        if(body==null || body.length()>65536)return null;
+        Matcher found=URL.matcher(body);
+        while(found.find()) {
+            // A domain inside an address, encrypted-file URI or path is not a bare web link.
+            if(found.start()>0 && "@./:#".indexOf(body.charAt(found.start()-1))>=0)continue;
+            if(previewUrl(found.group())!=null)return found;
+        }
+        return null;
+    }
+    static String firstUrl(String body) {
+        Matcher found=firstUrlMatch(body);return found==null ? null : previewUrl(found.group());
     }
     static boolean candidate(TLRPC.Message message) {
         if(message!=null && MonogramPolls.parse(message.message)!=null) return false;
         // A preview must never reveal a URL that the sender hid behind a spoiler.
         if(message!=null && message.message!=null) {
-            Matcher url=URL.matcher(message.message);
-            if(url.find()) for(TLRPC.MessageEntity entity:message.entities) if(entity instanceof TLRPC.TL_messageEntitySpoiler
+            Matcher url=firstUrlMatch(message.message);
+            if(url!=null) for(TLRPC.MessageEntity entity:message.entities) if(entity instanceof TLRPC.TL_messageEntitySpoiler
                     && entity.offset<url.end() && (long)entity.offset+entity.length>url.start()) return false;
         }
         return message!=null && message.id>0 && !(message instanceof TLRPC.TL_messageService)
