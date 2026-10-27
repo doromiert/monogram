@@ -122,6 +122,34 @@ class XmppRoomsIntegrationTest {
         }
         public void close() { alice.close();bob.close(); }
     }
+    @Test void repeatedProbeDoublesWarmGroupSendMembershipQueries() throws Exception {
+        try(RecoveryRoom fixture=new RecoveryRoom(3991,true,Collections.emptyMap())) {
+            fixture.bob.setBlindTrustPolicy(address->address.equals(fixture.alice.ownJid()));
+            fixture.alice.rooms.send(fixture.room,"Warm group send",true,Collections.emptySet(),true);
+            readable(fixture.messages,"Warm group send");
+            java.util.concurrent.atomic.AtomicInteger queries=new java.util.concurrent.atomic.AtomicInteger();
+            fixture.alice.connection().addStanzaInterceptor(stanza->queries.incrementAndGet(),stanza ->
+                stanza instanceof org.jivesoftware.smack.packet.IQ && stanza.getTo()!=null && fixture.room.equals(stanza.getTo().toString())
+                && (stanza instanceof org.jivesoftware.smackx.muc.packet.MUCAdmin || stanza instanceof org.jivesoftware.smackx.disco.packet.DiscoverInfo));
+            long[] repeated=new long[5],retained=new long[5];
+            for(int i=0;i<5;i++) {
+                // Alternate order so neither path consistently benefits from warmer caches.
+                for(int n=0;n<2;n++) {
+                    boolean probe=(i+n)%2==0;queries.set(0);long started=System.nanoTime();
+                    if(probe)fixture.alice.rooms.probeEncryption(fixture.room,Collections.emptySet(),true);
+                    String body="Measured "+i+" "+n;
+                    XmppRoomMessage sent=fixture.alice.rooms.send(fixture.room,body,true,Collections.emptySet(),true);
+                    long elapsed=System.nanoTime()-started;
+                    assertTrue(sent.encrypted);assertTrue(sent.skippedRecipients.isEmpty());
+                    assertEquals(probe ? 16 : 8,queries.get(),"Keep both membership checks on the real encrypted send");
+                    (probe ? repeated : retained)[i]=elapsed;
+                    assertTrue(readable(fixture.messages,body).encrypted);
+                }
+            }
+            Arrays.sort(repeated);Arrays.sort(retained);
+            System.out.printf(java.util.Locale.ROOT,"GROUP_SEND_MEASUREMENT repeated_probe_median_ms=%.2f retained_selection_median_ms=%.2f membership_queries=16->8 samples=5_each localhost%n",repeated[2]/1e6,retained[2]/1e6);
+        }
+    }
     @Test void roomOptInUsesTheSharedLegacyTrustStoreButNeverOverridesBlocks() throws Exception {
         try(RecoveryRoom fixture=new RecoveryRoom(3981,false,Collections.emptyMap())) {
             fixture.alice.setBlindTrustPolicy(address->address.equals(fixture.bob.ownJid()));

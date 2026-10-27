@@ -675,9 +675,9 @@ public final class MonogramController {
                             long direct=store.knownPeer(address);
                             for(long dialog:store.rooms()) {
                                 java.util.Set<String> verified=verifiedRoomTrustMembers.get(dialog);
-                                if(automaticEncryption(dialog) && (address.equals(details.jid.toString()) || verified!=null && verified.contains(address) || direct>0 && store.roomMember(-dialog,direct)))setAutomaticEncryption(dialog,true);
+                                if(automaticEncryption(dialog) && (address.equals(details.jid.toString()) || verified!=null && verified.contains(address) || direct>0 && store.roomMember(-dialog,direct)))invalidateAutomaticEncryption(dialog);
                             }
-                            if(direct>0 && automaticEncryption(direct))setAutomaticEncryption(direct,true);
+                            if(direct>0)invalidateAutomaticEncryption(direct);
                             AndroidUtilities.runOnUIThread(()->{if(owner==accountEpoch && sessionEpoch==epoch)NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.monogramEncryptionDevicesChanged,address);});
                         });
                     }
@@ -695,7 +695,7 @@ public final class MonogramController {
                             if(dialog!=0 && (changed || joined || left)) publishRoom(dialog,affectedUsers);
                             if(dialog!=0 && (joined || left || !affectedUsers.isEmpty())) {
                                 verifiedRoomTrustMembers.remove(dialog);
-                                if(automaticEncryption(dialog))setAutomaticEncryption(dialog,true);
+                                invalidateAutomaticEncryption(dialog);
                             }
                             if(dialog!=0 && (joined || left || !affectedUsers.isEmpty()))AndroidUtilities.runOnUIThread(()->{
                                 if(owner==accountEpoch && sessionEpoch==epoch)NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.monogramEncryptionDevicesChanged,dialog);
@@ -2279,6 +2279,11 @@ public final class MonogramController {
     public boolean automaticEncryption(long peer) { return peer!=0 && encryptionPolicy.automatic(accountJid(),store.jid(peer)); }
     public void setAutomaticEncryption(long peer,boolean enabled) {
         encryptionPolicy.automatic(accountJid(),store.jid(peer),enabled);encryptionPolicyEpoch++;
+    }
+    void invalidateAutomaticEncryption(long peer) {
+        // Actual sends recheck recipients and trust. Only plaintext needs a new upgrade probe.
+        if(automaticEncryption(peer) && encryptionPolicy.cached(accountJid(),store.jid(peer),System.currentTimeMillis())==XmppMessage.Encryption.PLAIN)
+            setAutomaticEncryption(peer,true);
     }
     private void selectDailyEncryption(XmppSession expected,long peer,long owner) throws Exception {
         if(!automaticEncryption(peer)) return;

@@ -38,4 +38,17 @@ public class MonogramRoomBlindTrustTest {
         prefs.edit().putString("jid","other@example.org").commit();assertFalse(controller.blindlyTrustAddress("new@example.org"));
         prefs.edit().putString("jid","alice@example.org").commit();controller.setBlindlyTrustRoom(room,false);assertFalse(controller.blindlyTrustAddress("new@example.org"));
     }
+    @Test public void deviceAndMemberEventsRetainEncryptedSelectionButRecheckPlaintext()throws Exception {
+        MonogramEncryptionPolicy policy=new MonogramEncryptionPolicy(prefs);
+        String own="alice@example.org",address=store.jid(room);long now=1000000;android.os.SystemClock.setCurrentTimeMillis(now);
+        for(com.negzero.monogram.xmpp.XmppMessage.Encryption mode:com.negzero.monogram.xmpp.XmppMessage.Encryption.values()) {
+            policy.selected(own,address,room,mode,now);
+            controller.invalidateAutomaticEncryption(room);
+            if(mode==com.negzero.monogram.xmpp.XmppMessage.Encryption.PLAIN)assertNull(policy.cached(own,address,now));
+            else assertEquals("Already encrypted sends must not repeat the encryption probe after a passive event",mode,policy.cached(own,address,now));
+        }
+        controller.setAutomaticEncryption(room,false);controller.invalidateAutomaticEncryption(room);
+        assertFalse(controller.automaticEncryption(room));
+    }
+
 }

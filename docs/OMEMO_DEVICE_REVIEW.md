@@ -21,8 +21,10 @@ membership and includes newly added/offline members. Device decisions are accoun
 wide, so approvals also apply in DMs. Disabling the policy does not revoke earlier
 approvals. Explicit device blocks are not overridden by automatic trust.
 
-Key/member/trust changes invalidate affected automatic-encryption decisions so a
-cached plaintext fallback is reconsidered. Manual encryption pins remain intact.
+Key/member events invalidate cached plaintext fallbacks so encryption can be
+reconsidered. They retain a valid encrypted selection: the real encrypted send
+already checks membership and device trust. Explicit user trust/setting changes
+still force selection to refresh. Manual encryption pins remain intact.
 Room membership is already checked on every encrypted send; this is not a second
 room encryption implementation or a global trust-all default.
 
@@ -38,3 +40,13 @@ DM/room exchange and preserved blocks against disposable local Prosody accounts.
 No real contact fingerprints were trusted/blocked, and no real messages were sent.
 These tests do not diagnose Bob's particular unreadable message without its
 message diagnostics, nor establish support for receiving OMEMO 2 room payloads.
+
+Send-delay regression (0.2.179): 0.2.178 discarded encrypted selections on passive
+device/member events, causing the next send to probe and then encrypt a second
+time. Five alternating warm runs on disposable local Prosody accounts measured
+167.60 ms median with the redundant probe versus 84.13 ms with the selection
+retained. Membership IQs fell from 16 to 8 per send; both pre/post-encryption
+membership checks remain. These are localhost preparation times, not phone or
+federated-server latency. The regression check also verifies plaintext results
+are invalidated and manual pins stay manual. Existing trusted/untrusted/new-device
+integration tests still pass. No trust checks or recipient validation were removed.

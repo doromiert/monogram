@@ -1,3 +1,7 @@
+## 0.2.179 — avoid repeating encrypted group-send probes
+
+Retain a valid encrypted daily selection across passive device/member events. Recheck cached plaintext for upgrades; keep actual per-send membership, device and trust validation and explicit trust-setting invalidation. Reproduced the 0.2.178 cache regression before fixing it. Five alternating local Prosody measurements: median send preparation 167.60 → 84.13 ms and membership queries 16 → 8. Ten focused Android checks and three local encrypted-room checks pass. Phone/federation latency and the newly requested OMEMO 2 group implementation are not verified by these checks.
+
 ## 0.2.178 — device review, room trust and self-signed XMPP certificates
 
 Add foreground trust/deny review for exact unreviewed fingerprints in DMs/MUCs, default-off per-room automatic trust, explicit legacy room selection, validated-member/key-change discovery and stable partial fingerprint display. Reconsider automatic encryption after trust/membership/device changes while preserving manual pins. Room and DM legacy encryption retain the same backend/trust store. Add exact self-signed leaf approval/revocation scoped to XMPP service and configured endpoint, available in sign-in/connection settings; preserve STARTTLS, hostname and expiry validation. See docs/OMEMO_DEVICE_REVIEW.md and docs/SELF_SIGNED_CERTIFICATES.md.
