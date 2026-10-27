@@ -142,7 +142,8 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 queued.set(false);
                 if(loading!=generation || lookup!=fingerprintLookup) return;
                 com.negzero.monogram.xmpp.XmppFingerprints.Snapshot found=latest.get();
-                loadedSession=session; identities.clear(); identities.putAll(found.identities); states.clear();
+                loadedSession=session;
+                com.negzero.monogram.xmpp.XmppFingerprints.mergeDisplay(identities,lookupAddresses,found);states.clear();
                 for(Map.Entry<OmemoDevice,OmemoFingerprint> entry:identities.entrySet()) {
                     OmemoDevice device=entry.getKey(); String state;
                     try { if(selectedModern) switch(session.modern().device.trust(device.getJid().toString(),device.getDeviceId(),Utilities.hexToBytes(entry.getValue().toString()))) {
@@ -150,7 +151,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     } else switch(session.trustState(device,entry.getValue())) {
                         case trusted: state="Trusted"; break; case untrusted: state="Blocked"; break; default: state="Not reviewed";
                     } } catch(Exception unavailable) { state="Trust state unavailable"; }
-                    states.put(device,state);
+                    states.put(device,found.complete && found.failures.containsKey(device.getJid().toString()) ? state+" · cached; refresh failed" : state);
                 }
                 String progress=!found.complete ? "Loading fingerprints: "+found.completed+"/"+found.total+" accounts…"
                     : found.failed>0 ? "Loaded available fingerprints; "+found.failed+" account lookups failed or timed out. Refresh to retry."
@@ -221,13 +222,17 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         items.add(UItem.asCheck(25,"Choose encryption automatically").setChecked(controller.automaticEncryption(peer)));
         items.add(UItem.asShadow("A closed lock beside a message’s time marks recorded end-to-end encryption. Unencrypted messages have no lock. Queued messages receive an indicator only after sending is confirmed."));
 
-        items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
-        if(peer>0) items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
-        else items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
+        items.add(UItem.asCheck(1, peer<0 ? "Use legacy OMEMO encryption" : "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
+        items.add(UItem.asButton(5,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        if(peer<0) items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
             items.add(UItem.asCheck(31,"Blindly trust this contact").setChecked(controller.blindlyTrustContact(peer)).setEnabled(!saving));
             items.add(UItem.asShadow("Automatically trust this contact’s new devices and changed keys in both OMEMO versions. Blocked devices stay blocked. Turning this off stops future automatic approvals; accepted fingerprints remain trusted."));
+        }
+        if(peer<0) {
+            items.add(UItem.asCheck(32,"Automatically trust room fingerprints").setChecked(controller.blindlyTrustRoom(peer)).setEnabled(!saving));
+            items.add(UItem.asShadow("Trusts new devices and changed keys for known members of this room. Blocked devices stay blocked. Decisions are shared with direct chats and remain trusted when this is turned off."));
         }
         items.add(UItem.asButton(13,"Devices and fingerprints"));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer)))items.add(UItem.asButton(26,"Revoke presence access").setEnabled(!saving));
@@ -262,7 +267,15 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         MonogramController controller = MonogramController.get(currentAccount);
-        if(item.id==31 && peer>0 && !saving) {
+        if(item.id==32 && peer<0 && !saving) {
+            if(controller.blindlyTrustRoom(peer)) {
+                try {controller.setBlindlyTrustRoom(peer,false);refresh();}catch(Exception error){showBlindTrustError(error);}
+            } else showDialog(new AlertDialog.Builder(getContext()).setTitle("Automatically trust room fingerprints?")
+                .setMessage("New devices and changed keys of known members will be trusted without verification. A compromised member account or key publication can expose future messages. These device decisions also apply in direct chats; turning this off does not undo them. Explicitly blocked devices stay blocked.")
+                .setPositiveButton("Enable automatic trust",(dialog,which)->{
+                    try {controller.setBlindlyTrustRoom(peer,true);loadIdentities(true);}catch(Exception error){showBlindTrustError(error);}
+                }).setNegativeButton("Cancel",null).create());
+        } else if(item.id==31 && peer>0 && !saving) {
             if(controller.blindlyTrustContact(peer)) {
                 try{controller.setBlindlyTrustContact(peer,false);refresh();}catch(Exception error){showBlindTrustError(error);}
             } else showDialog(new AlertDialog.Builder(getContext()).setTitle("Blindly trust this contact?")
@@ -331,6 +344,11 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); refresh(); })
                     .setNegativeButton("Cancel", null).create());
             else { controller.setEncrypted(peer, true); refresh(); }
+        } else if(item.id==5 && peer<0 && !saving) {
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Room encryption")
+                .setMessage("This Monogram version supports legacy OMEMO in rooms. Select it explicitly to disable automatic selection. This controls your outgoing messages; it cannot change another member’s OMEMO version.")
+                .setPositiveButton("Use legacy OMEMO",(dialog,which)->{controller.setEncryption(peer,XmppMessage.Encryption.LEGACY_OMEMO);loadIdentities(true);})
+                .setNegativeButton("Cancel",null).create());
         } else if (item.id==5 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
                 .setItems(new CharSequence[]{"OMEMO 2 · encrypted captions","Legacy OMEMO · older clients"},(dialog,which) -> {
                     controller.setEncryption(peer,which==0 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
@@ -387,6 +405,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     loadedSession.modern().device.decideAll(batch,trusted);
                     if (trusted) controller.retryEncryptedHistory(peer,batch.containsKey(loadedSession.ownJid()));
                 } else loadedSession.decideAll(selected, trusted);
+                controller.trustDecisionsChanged(peer);
                 AndroidUtilities.runOnUIThread(() -> { for (OmemoDevice device : selected.keySet()) states.put(device, trusted ? "Trusted" : "Distrusted"); saving = false; refresh(); });
             } catch (Exception failed) {
                 AndroidUtilities.runOnUIThread(() -> { saving = false; refresh(); if (getParentActivity() != null) showDialog(new AlertDialog.Builder(getContext())

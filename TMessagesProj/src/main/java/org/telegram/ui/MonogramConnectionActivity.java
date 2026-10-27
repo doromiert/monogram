@@ -39,6 +39,7 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
         String failure=controller.lastDisconnect();
         if(failure!=null) details+="\n\nLast disconnect: "+failure;
         items.add(UItem.asShadow(details));
+        items.add(UItem.asButton(8,R.drawable.msg_secret,"Server certificate"));
         android.os.PowerManager power=(android.os.PowerManager)getContext().getSystemService(android.content.Context.POWER_SERVICE);
         boolean unrestricted=power!=null && power.isIgnoringBatteryOptimizations(getContext().getPackageName());
         items.add(UItem.asHeader("Background connection"));
@@ -60,6 +61,10 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
     }
     @Override protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.id == 1) MonogramController.get(currentAccount).reconnect();
+        else if(item.id==8) {
+            try {MonogramController controller=MonogramController.get(currentAccount);presentFragment(new MonogramCertificatesActivity(currentAccount,controller.registrationTemplate(),controller::reconnect));}
+            catch(Exception unavailable){showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext()).setTitle("Server certificate").setMessage("No configured account is available.").setPositiveButton("OK",null).create());}
+        }
         else if(item.id==6) presentFragment(new MonogramDebugActivity(currentAccount));
         else if(item.id==7) presentFragment(new MonogramLinkPreviewsActivity(currentAccount));
         else if(item.id==2) presentFragment(new MonogramContactActivity(currentAccount,null));

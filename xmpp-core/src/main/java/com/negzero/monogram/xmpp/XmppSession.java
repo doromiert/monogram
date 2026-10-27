@@ -47,11 +47,13 @@ public final class XmppSession implements AutoCloseable {
         default void roomMessagePending(XmppRoomMessage message) { roomMessage(message); }
         default void messagePending(XmppMessage message) { message(message); }
         default void roomChanged(XmppRooms.State room) {}
+        default void roomMembersVerified(String room,java.util.Set<String> members) {}
         default void roomInvitation(String room,String inviter,String reason,String password) {}
         default void roomInviteFailed(String room,String target,String condition) {}
         default void roomMetadataChanged(String room) {}
         default void bookmarksChanged() {}
         default void storiesChanged(String owner) {}
+        default void devicesChanged(String owner) {}
         default void readSyncChanged() {}
         default void blockedChanged(List<String> addresses) {}
         default void reactionRejected(String from,String id) {}
@@ -216,12 +218,17 @@ public final class XmppSession implements AutoCloseable {
                 .setSendPresence(false).setCompressionEnabled(false).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
         if(account.proxy!=null)config.setProxyInfo(account.proxy);
+        if(account.certificateTrust!=null)config.setCustomX509TrustManager(account.certificateTrust);
         connection = new ManagedConnection(config.build());
         XmppStories.initialize(connection);
         connection.setReplyTimeout(15000);
         this.listener = listener;
         connection.addAsyncStanzaListener(stanza -> {
             org.jivesoftware.smackx.pubsub.EventElement event=org.jivesoftware.smackx.pubsub.EventElement.from(stanza);
+            if(event!=null && stanza.getFrom()!=null && stanza.getFrom().isEntityBareJid()
+                    && ("eu.siacs.conversations.axolotl.devicelist".equals(event.getEvent().getNode()) || "urn:xmpp:omemo:2:devices".equals(event.getEvent().getNode()))) {
+                String owner=stanza.getFrom().asBareJid().toString();invalidateDevices(owner);
+            }
             if(event!=null && (XmppStories.NODE.equals(event.getEvent().getNode()) || XmppStories.PROFILE_NODE.equals(event.getEvent().getNode())) && stanza.getFrom()!=null
                     && stanza.getFrom().asEntityBareJidIfPossible()!=null)
                 listener.storiesChanged(stanza.getFrom().asEntityBareJidIfPossible().toString());
@@ -1200,6 +1207,7 @@ public final class XmppSession implements AutoCloseable {
     static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
     public String ownJid() { return omemo.getOwnJid().toString(); }
     public int ownDeviceId() { return omemo.getDeviceId(); }
+    private void invalidateDevices(String owner) {fingerprints.invalidate(owner);listener.devicesChanged(owner);}
     public void setBlindTrustPolicy(java.util.function.Predicate<String> policy){
         trust.setBlindTrustPolicy(policy);
         if(modern!=null)modern.device.setBlindTrustPolicy(policy);

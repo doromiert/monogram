@@ -107,7 +107,7 @@ public class MonogramLoginActivity extends BaseFragment {
         floatingButton.setEnabled(!value);
         for (EditTextBoldCursor field : xmppView.fields) field.setEnabled(!value);
         xmppView.advancedButton.setEnabled(!value);
-        xmppView.proxyButton.setEnabled(!value);
+        xmppView.proxyButton.setEnabled(!value);xmppView.certificateButton.setEnabled(!value);
         xmppView.invitationButton.setEnabled(!value);
         xmppView.createAccountButton.setEnabled(!value);
         xmppView.fields[0].setEnabled(!value && (invitation==null || invitation.username==null));
@@ -344,7 +344,7 @@ public class MonogramLoginActivity extends BaseFragment {
         final EditTextBoldCursor[] fields = new EditTextBoldCursor[4];
         final OutlineTextContainerView[] outlines = new OutlineTextContainerView[4];
         final TextView titleView, confirmTextView, advancedButton, errorView,invitationButton,createAccountButton;
-        final TextView proxyButton;
+        final TextView proxyButton,certificateButton;
         final LinearLayout advancedFields;
         XmppView(Context context) {
             super(context);
@@ -412,6 +412,14 @@ public class MonogramLoginActivity extends BaseFragment {
             proxyButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));
             proxyButton.setOnClickListener(v->{if(!connecting){AndroidUtilities.hideKeyboard(proxyButton);ProxyListActivity screen=new ProxyListActivity();screen.setCurrentAccount(currentAccount);presentFragment(screen);}});
             addView(proxyButton,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,48,16,0,16,0));
+            certificateButton=new TextView(context);certificateButton.setText("Server certificate");certificateButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP,15);
+            certificateButton.setGravity(Gravity.CENTER);certificateButton.setMinimumHeight(dp(48));certificateButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));
+            certificateButton.setOnClickListener(v->{if(!connecting)try {
+                String portText=fields[3].getText().toString().trim();
+                com.negzero.monogram.xmpp.Account server=new com.negzero.monogram.xmpp.Account(fields[0].getText().toString().trim(),fields[2].getText().toString().trim(),portText.isEmpty()?5222:Integer.parseInt(portText),"Monogram");
+                AndroidUtilities.hideKeyboard(certificateButton);presentFragment(new MonogramCertificatesActivity(currentAccount,server,null));
+            }catch(Exception invalid){error(0,"Enter your account address and server details first.");}});
+            addView(certificateButton,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,48,16,0,16,0));
             errorView = new TextView(context);
             errorView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             errorView.setGravity(Gravity.CENTER);
@@ -465,6 +473,7 @@ public class MonogramLoginActivity extends BaseFragment {
             confirmTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
             advancedButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             proxyButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+            certificateButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             createAccountButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             invitationButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             errorView.setTextColor(Theme.getColor(Theme.key_text_RedRegular));

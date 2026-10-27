@@ -122,6 +122,21 @@ class XmppRoomsIntegrationTest {
         }
         public void close() { alice.close();bob.close(); }
     }
+    @Test void roomOptInUsesTheSharedLegacyTrustStoreButNeverOverridesBlocks() throws Exception {
+        try(RecoveryRoom fixture=new RecoveryRoom(3981,false,Collections.emptyMap())) {
+            fixture.alice.setBlindTrustPolicy(address->address.equals(fixture.bob.ownJid()));
+            fixture.bob.setBlindTrustPolicy(address->address.equals(fixture.alice.ownJid()));
+            XmppRoomMessage sent=fixture.alice.rooms.send(fixture.room,"Explicit room trust opt-in",true,Collections.emptySet(),true);
+            assertTrue(sent.encrypted);assertTrue(sent.skippedRecipients.isEmpty());assertTrue(readable(fixture.messages,"Explicit room trust opt-in").encrypted);
+            for(org.jivesoftware.smackx.omemo.internal.OmemoDevice device:fixture.alice.devices(fixture.bob.ownJid())) {
+                org.jivesoftware.smackx.omemo.trust.OmemoFingerprint key=fixture.alice.fingerprint(device);
+                assertEquals(org.jivesoftware.smackx.omemo.trust.TrustState.trusted,fixture.alice.trustState(device,key));
+                fixture.alice.decide(device,key,false);assertEquals(org.jivesoftware.smackx.omemo.trust.TrustState.untrusted,fixture.alice.trustState(device,key));
+            }
+            assertEquals(OmemoSendException.Reason.NO_TRUSTED_DEVICES,assertThrows(OmemoSendException.class,
+                ()->fixture.alice.rooms.send(fixture.room,"Blocked device stays blocked",true,Collections.emptySet(),true)).reason);
+        }
+    }
     @Test void newAndDistrustedDevicesCannotBlockTrustedRoomRecipients() throws Exception {
         try(RecoveryRoom fixture=new RecoveryRoom(3971,true,Collections.emptyMap());
                 XmppSession extra=new XmppSession(new Account(fixture.bob.ownJid(),"127.0.0.1",Integer.parseInt(System.getenv("MONOGRAM_IT_PORT")),"Unverified-room-device"),

@@ -13,6 +13,25 @@ class XmppFingerprintsTest {
     Map<OmemoDevice,OmemoFingerprint> identity(String jid) throws Exception {
         return Collections.singletonMap(new OmemoDevice(JidCreate.entityBareFrom(jid),42),new OmemoFingerprint(String.join("",Collections.nCopies(64,"a"))));
     }
+    @Test void partialAndFailedRefreshesKeepRowsUntilSuccessfulRemovalIsProven() throws Exception {
+        Map<OmemoDevice,OmemoFingerprint> shown=new LinkedHashMap<>();shown.putAll(identity("bob@example.org"));shown.putAll(identity("carol@example.org"));
+        Set<String> requested=new LinkedHashSet<>(Arrays.asList("bob@example.org","carol@example.org"));
+        XmppFingerprints.mergeDisplay(shown,requested,new XmppFingerprints.Snapshot(Collections.emptyMap(),0,2,0,false,Collections.emptyMap()));assertEquals(2,shown.size());
+        XmppFingerprints.mergeDisplay(shown,requested,new XmppFingerprints.Snapshot(Collections.emptyMap(),2,2,1,true,Collections.singletonMap("carol@example.org","Timed out")));
+        assertEquals(identity("carol@example.org"),shown);
+        XmppFingerprints.mergeDisplay(shown,requested,new XmppFingerprints.Snapshot(Collections.emptyMap(),2,2,0,true,Collections.emptyMap()));assertTrue(shown.isEmpty());
+    }
+    @Test void publishedDeviceChangeInvalidatesSuccessfulDisplayCache() throws Exception {
+        AtomicInteger calls=new AtomicInteger();BlockingQueue<XmppFingerprints.Snapshot> updates=new LinkedBlockingQueue<>();
+        try(XmppFingerprints loader=new XmppFingerprints((jid,modern)->{calls.incrementAndGet();return identity(jid);},2000)) {
+            for(int round=0;round<2;round++) {
+                if(round==1)loader.invalidate("bob@example.org");
+                loader.load(Collections.singleton("bob@example.org"),false,false,updates::add);
+                XmppFingerprints.Snapshot result;do{result=updates.poll(3,TimeUnit.SECONDS);assertNotNull(result);}while(!result.complete);
+                assertEquals(1,result.identities.size());assertEquals(round+1,calls.get());
+            }
+        }
+    }
     @Test void deadlineKeepsSuccessfulAccountsAndSharedCacheAvoidsRepeatedFetches() throws Exception {
         AtomicInteger fetched=new AtomicInteger(); CountDownLatch stalled=new CountDownLatch(1),started=new CountDownLatch(1);
         BlockingQueue<XmppFingerprints.Snapshot> updates=new LinkedBlockingQueue<>();

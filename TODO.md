@@ -1,3 +1,9 @@
+## 0.2.178 — device review, room trust and self-signed XMPP certificates
+
+Add foreground trust/deny review for exact unreviewed fingerprints in DMs/MUCs, default-off per-room automatic trust, explicit legacy room selection, validated-member/key-change discovery and stable partial fingerprint display. Reconsider automatic encryption after trust/membership/device changes while preserving manual pins. Room and DM legacy encryption retain the same backend/trust store. Add exact self-signed leaf approval/revocation scoped to XMPP service and configured endpoint, available in sign-in/connection settings; preserve STARTTLS, hostname and expiry validation. See docs/OMEMO_DEVICE_REVIEW.md and docs/SELF_SIGNED_CERTIFICATES.md.
+
+17 focused Android checks, 16 core checks and five real local-server checks pass; TLS socket tests include wrong-host rejection after approval. Arm64 packaging and original signer/native/assets audit pass. No real-contact trust changes, real messages or production certificate approvals; no new phone screenshots. The exact reported ping/unreadable-message failure remains unverified, and OMEMO 2 groups are not implemented.
+
 ## 0.2.174 — contact management and daily-use correctness
 
 Native Add contact now creates a server roster item without implicit presence authorization; Delete contact removes the roster item and this device's future auto-approval, preserving history/keys. Schema 34 persists actual roster membership independently of message authors; failed/undoable deletion restores UI state and reloads the roster. Also fix repeat cadence after retries, pin manual scheduled encryption through actual dispatch, publish calendar-import repairs, preserve replacement-download progress after cancellation and reject recovered known-room PMs from direct-message routes. Harden the unexposed checklist draft without claiming interactive collaboration. Remaining genuine gaps: docs/FEATURE_GAPS_2026_10_26.md.

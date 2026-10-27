@@ -12,7 +12,7 @@ import org.telegram.messenger.ApplicationLoader;
 import org.telegram.tgnet.TLRPC;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows=MonogramArticlesTest.Utilities.class)
 public class MonogramMentionsTest {
     private Context context;private MonogramStore store;private long self,dialog,bob;
     private static final String ROOM="friends@conference.example.org";

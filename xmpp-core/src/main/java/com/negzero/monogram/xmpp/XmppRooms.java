@@ -550,6 +550,8 @@ public final class XmppRooms implements AutoCloseable {
                 throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
         }
         if (!members.contains(connection.getUser().asBareJid())) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
+        Set<String> verified=new LinkedHashSet<>();for(BareJid member:members)verified.add(member.toString());
+        listener.roomMembersVerified(chat.getRoom().toString(),Collections.unmodifiableSet(verified));
         return members;
     }
     static Set<BareJid> memberLists(XMPPConnection connection,EntityBareJid room) throws Exception {

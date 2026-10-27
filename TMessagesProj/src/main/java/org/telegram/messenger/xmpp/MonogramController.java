@@ -604,6 +604,7 @@ public final class MonogramController {
         retrySeconds = Math.min(60, retrySeconds * 2);
     }
     private void connect(Account details, String password) throws Exception {
+        verifiedRoomTrustMembers.clear();
         if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
         joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();calendarHistory.clear();calendarWindows.clear();
         final long epoch = ++sessionEpoch, owner=accountEpoch;
@@ -623,7 +624,7 @@ public final class MonogramController {
         if (UserConfig.getInstance(account).isClientActivated() && UserConfig.getInstance(account).getClientUserId() == self
                 && details.jid.toString().equals(accountJid())) publishProfile(self, epoch);
         final int modernDevice = modernStore.device(details.jid.toString());
-        Account proxiedDetails=new Account(details.jid.toString(),details.host,details.port,details.resource.toString(),MonogramProxy.current());
+        Account proxiedDetails=MonogramCertificates.configure(new Account(details.jid.toString(),details.host,details.port,details.resource.toString(),MonogramProxy.current()));
         XmppSession connecting = new XmppSession(proxiedDetails, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
                 new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
@@ -664,6 +665,22 @@ public final class MonogramController {
                             decryptionTimeout(owner,details.jid.toString(),id,() -> incomingRoom(message));
                         });
                     }
+                    @Override public void roomMembersVerified(String room,java.util.Set<String> members) {
+                        if(owner!=accountEpoch || sessionEpoch!=epoch)return;
+                        long dialog=store.knownRoom(room);if(dialog!=0)verifiedRoomTrustMembers.put(dialog,members);
+                    }
+                    @Override public void devicesChanged(String address) {
+                        if(owner==accountEpoch && sessionEpoch==epoch)worker.execute(()->{
+                            if(owner!=accountEpoch || sessionEpoch!=epoch)return;
+                            long direct=store.knownPeer(address);
+                            for(long dialog:store.rooms()) {
+                                java.util.Set<String> verified=verifiedRoomTrustMembers.get(dialog);
+                                if(automaticEncryption(dialog) && (address.equals(details.jid.toString()) || verified!=null && verified.contains(address) || direct>0 && store.roomMember(-dialog,direct)))setAutomaticEncryption(dialog,true);
+                            }
+                            if(direct>0 && automaticEncryption(direct))setAutomaticEncryption(direct,true);
+                            AndroidUtilities.runOnUIThread(()->{if(owner==accountEpoch && sessionEpoch==epoch)NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.monogramEncryptionDevicesChanged,address);});
+                        });
+                    }
                     @Override public void contactRequest(String address,boolean pending) {
                         worker.execute(() -> { if(sessionEpoch==epoch) recordContactRequest(details.jid.toString(),address,pending); });
                     }
@@ -676,6 +693,13 @@ public final class MonogramController {
                             if(room.joined && (changed || joined)) flushPendingSends();
                             if(changed && dialog!=0 && (room.title!=null || room.description!=null)) profileVersions.merge(dialog,1L,Long::sum);
                             if(dialog!=0 && (changed || joined || left)) publishRoom(dialog,affectedUsers);
+                            if(dialog!=0 && (joined || left || !affectedUsers.isEmpty())) {
+                                verifiedRoomTrustMembers.remove(dialog);
+                                if(automaticEncryption(dialog))setAutomaticEncryption(dialog,true);
+                            }
+                            if(dialog!=0 && (joined || left || !affectedUsers.isEmpty()))AndroidUtilities.runOnUIThread(()->{
+                                if(owner==accountEpoch && sessionEpoch==epoch)NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.monogramEncryptionDevicesChanged,dialog);
+                            });
                             if(joined) {refreshRoomRoster(dialog,true);queueRoomArchive(dialog,session);}
                             if(dialog!=0 && pendingRecoveryRooms.remove(room.room.toString())) session.recoverRoomIncoming(room.room.toString());
                         } });
@@ -796,7 +820,7 @@ public final class MonogramController {
                 });
         connecting.contacts.restoreAllowedContacts(preferences.getStringSet("contact-access-allow-"+details.jid,java.util.Collections.emptySet()));
         connecting.setBlindTrustPolicy(address->details.jid.toString().equals(accountJid())
-                && preferences.getBoolean("blind-trust-"+details.jid+"\n"+address,false));
+                && blindlyTrustAddress(address));
         // Android owns retries; do not race Smack's reconnect thread with replacement sessions.
         org.jivesoftware.smack.ReconnectionManager.getInstanceFor(connecting.connection()).disableAutomaticReconnection();
         Roster roster = Roster.getInstanceFor(connecting.connection());
@@ -1738,7 +1762,7 @@ public final class MonogramController {
         worker.execute(() -> {
             boolean created=false,signingIn=false;Exception error=null;
             try {
-                requireRegistrationSlot(owner);Account details=new Account(jid,host,port,"Monogram",MonogramProxy.current());invitation.validate(details);
+                requireRegistrationSlot(owner);Account details=MonogramCertificates.configure(new Account(jid,host,port,"Monogram",MonogramProxy.current()));invitation.validate(details);
                 String sealed=vault.encrypt(password);
                 AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
                 com.negzero.monogram.xmpp.XmppRegistration.create(invitation,details,password);created=true;
@@ -1785,7 +1809,7 @@ public final class MonogramController {
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);
         }
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); queuedEncryption.clear(); queuedPinnedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); outbox.clear();
+        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); verifiedRoomTrustMembers.clear(); queuedEncryption.clear(); queuedPinnedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); outbox.clear();
         for(TranslationRequest translation:translationRequests.values()) translation.cancel();
         translationRequests.clear();
         try { MonogramTranslation.clearConfiguration(account); }
@@ -2224,6 +2248,28 @@ public final class MonogramController {
     public void setBlindlyTrustContact(long peer,boolean enabled) {
         if(peer<=0 || peer==self)throw new IllegalArgumentException("Choose a contact, not a room or your own account.");
         if(!preferences.edit().putBoolean("blind-trust-"+accountJid()+"\n"+store.jid(peer),enabled).commit())throw new IllegalStateException("Could not save blind-trust preference.");
+        trustDecisionsChanged(peer);
+    }
+    private final java.util.concurrent.ConcurrentHashMap<Long,java.util.Set<String>> verifiedRoomTrustMembers=new java.util.concurrent.ConcurrentHashMap<>();
+    public boolean blindlyTrustRoom(long peer) {
+        return peer<0 && preferences.getBoolean("blind-trust-room-"+accountJid()+"\n"+store.jid(peer),false);
+    }
+    public void setBlindlyTrustRoom(long peer,boolean enabled) {
+        if(peer>=0)throw new IllegalArgumentException("Choose a room");
+        store.room(peer);
+        if(!preferences.edit().putBoolean("blind-trust-room-"+accountJid()+"\n"+store.jid(peer),enabled).commit())
+            throw new IllegalStateException("Could not save room trust preference");
+        trustDecisionsChanged(peer);
+    }
+    boolean blindlyTrustAddress(String address) {
+        if(accountJid().isEmpty() || accountJid().equals(address))return false;
+        if(preferences.getBoolean("blind-trust-"+accountJid()+"\n"+address,false))return true;
+        long user=store.knownPeer(address);
+        for(long room:store.rooms())if(blindlyTrustRoom(room) && store.room(room).autojoin) {
+            java.util.Set<String> verified=verifiedRoomTrustMembers.get(room);
+            if(verified!=null ? verified.contains(address) : user>0 && store.roomMember(-room,user))return true;
+        }
+        return false;
     }
     public boolean modernEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==2; }
     public XmppMessage.Encryption encryption(long peer) {
@@ -2267,6 +2313,10 @@ public final class MonogramController {
         setAutomaticEncryption(peer,false);
         if (!preferences.edit().putBoolean("omemo-"+peer,mode!=XmppMessage.Encryption.PLAIN)
                 .putInt("omemo-version-"+peer,mode==XmppMessage.Encryption.OMEMO2 ? 2 : 1).commit()) throw new IllegalStateException("Cannot save encryption preference");
+    }
+    public void trustDecisionsChanged(long peer) {
+        if(automaticEncryption(peer))setAutomaticEncryption(peer,true);
+        try {session().rooms.retryUnavailable();}catch(Exception disconnected){}
     }
     public void retryEncryptedHistory(long peer,boolean ownDevices) {
         worker.execute(() -> {

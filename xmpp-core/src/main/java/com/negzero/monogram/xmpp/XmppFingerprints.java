@@ -152,6 +152,19 @@ public final class XmppFingerprints implements AutoCloseable {
         for(String address:unique) fetch(address,modern,force,request).whenComplete((result,error) -> request.received(address,result,error));
         return request;
     }
+    /** Partial/failed lookups cannot prove a previously displayed device disappeared. */
+    public static void mergeDisplay(Map<OmemoDevice,OmemoFingerprint> display,Set<String> requested,Snapshot found) {
+        display.entrySet().removeIf(entry->!requested.contains(entry.getKey().getJid().toString())
+            || found.complete && !found.failures.containsKey(entry.getKey().getJid().toString()) && !found.identities.containsKey(entry.getKey()));
+        display.putAll(found.identities);
+    }
+    public void invalidate(String address) {
+        List<Fetch> stale=new ArrayList<>();
+        synchronized(this) {
+            for(boolean modern:new boolean[]{false,true}) {String key=key(address,modern);cache.remove(key);Fetch fetch=pending.remove(key);if(fetch!=null)stale.add(fetch);}
+        }
+        for(Fetch fetch:stale) {fetch.task.cancel(true);fetch.result.completeExceptionally(new CancellationException("Device list changed; refresh required"));}
+    }
     public ScheduledFuture<?> afterTimeout(Runnable action) { return deadlines.schedule(action,timeoutMillis,TimeUnit.MILLISECONDS); }
     @Override public void close() {
         List<Fetch> abandoned;

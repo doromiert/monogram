@@ -3042,6 +3042,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.chatInfoDidLoad)
             .add(NotificationCenter.groupRestrictionsUnlockedByBoosts)
             .add(NotificationCenter.customStickerCreated)
+            .add(NotificationCenter.monogramEncryptionDevicesChanged)
             .add(NotificationCenter.contactsDidLoad)
             .add(NotificationCenter.messagePlayingProgressDidChanged)
             .add(NotificationCenter.messagePlayingDidReset)
@@ -3454,6 +3455,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        if(monogramTrustPrompt!=null)monogramTrustPrompt.close();
         if (moneroClaimFlow != null) moneroClaimFlow.close();
         if(swipeActionsHelper!=null) swipeActionsHelper.detach();
         AndroidUtilities.cancelRunOnUIThread(saveInputDraftRunnable);
@@ -20240,6 +20242,11 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void didReceivedNotification(int id, int account, final Object... args) {
+        if(monogramTrustPrompt!=null) {
+            if(id==NotificationCenter.monogramEncryptionDevicesChanged && args.length>0)monogramTrustPrompt.devicesChanged(args[0]);
+            else if(id==NotificationCenter.didReceiveNewMessages && args.length>0 && args[0] instanceof Number && ((Number)args[0]).longValue()==dialog_id)monogramTrustPrompt.changed(false);
+            else if(id==NotificationCenter.chatInfoDidLoad && args.length>0 && args[0] instanceof TLRPC.ChatFull && ((TLRPC.ChatFull)args[0]).id==-dialog_id)monogramTrustPrompt.changed(false,true);
+        }
         if (id == NotificationCenter.messagesDidLoad) {
             didReceivedNotification_messagesDidLoad(id, account, args);
         } else {
@@ -29196,6 +29203,7 @@ public class ChatActivity extends BaseFragment implements
 
     Bulletin.Delegate bulletinDelegate;
 
+    private MonogramTrustPrompt monogramTrustPrompt;
     @Override
     public void onResume() {
         if (moneroClaimFlow != null) moneroClaimFlow.resume();
@@ -29204,6 +29212,10 @@ public class ChatActivity extends BaseFragment implements
         super.onResume();
         if(actionBar!=null) actionBar.setDrawGlassTitle(org.telegram.utils.settings.MonogramAppearance.chatHeaderBackground.get());
         if (chatMode == MODE_DEFAULT && threadMessageId == 0 && !inPreviewMode) org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatOpened(dialog_id);
+        if(chatMode==MODE_DEFAULT && threadMessageId==0 && !inPreviewMode && currentEncryptedChat==null) {
+            if(monogramTrustPrompt==null)monogramTrustPrompt=new MonogramTrustPrompt();
+            monogramTrustPrompt.resume(this,dialog_id);
+        }
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
@@ -29414,6 +29426,7 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onPause() {
+        if(monogramTrustPrompt!=null)monogramTrustPrompt.pause();
         if (moneroClaimFlow != null) moneroClaimFlow.pause();
         if (chatAttachAlert != null && chatAttachAlert.getCurrentAttachLayout() instanceof org.telegram.ui.Components.ChatAttachAlertGramLayout)
             ((org.telegram.ui.Components.ChatAttachAlertGramLayout) chatAttachAlert.getCurrentAttachLayout()).onWalletPause();

@@ -377,6 +377,7 @@ public class NotificationCenter {
     public static final int communityPendingRequestsUpdate = totalEvents++;
     public static final int communitySwitchedCollapsed = totalEvents++;
     public static final int monogramAvatarShapeChanged = totalEvents++;
+    public static final int monogramEncryptionDevicesChanged = totalEvents++;
 
     public static boolean alreadyLogged;
 
