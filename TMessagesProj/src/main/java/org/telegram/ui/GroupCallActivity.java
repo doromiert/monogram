@@ -1640,6 +1640,21 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
     }
 
     private void updateItems() {
+        if (isMonogramCall()) {
+            inviteItem.setVisibility(View.GONE);
+            enableComments.setVisibility(View.GONE);
+            disableComments.setVisibility(View.GONE);
+            noiseItem.setVisibility(View.GONE);
+            leaveItem.setVisibility(View.GONE);
+            editTitleItem.setVisibility(View.GONE);
+            recordItem.setVisibility(View.GONE);
+            screenItem.setVisibility(View.GONE);
+            screenShareItem.setVisibility(View.GONE);
+            permissionItem.setVisibility(View.GONE);
+            soundItemDivider.setVisibility(View.GONE);
+            soundItem.setVisibility(View.VISIBLE);
+            return;
+        }
         if (call == null || call.isScheduled()) {
             pipItem.setVisibility(View.INVISIBLE);
             screenShareItem.setVisibility(View.GONE);
@@ -5301,7 +5316,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
             }
         });
 
-        if (call != null) {
+        if (call != null && !isMonogramCall()) {
             groupCallMessagesListView.setGroupCall(accountInstance.getCurrentAccount(), call.getInputGroupCall(false));
         }
         containerView.addView(groupCallMessagesListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, 0, 0, 0, 0, 0));
@@ -5829,6 +5844,15 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
         avatarsViewPager.setPinchToZoomHelper(pinchToZoomHelper);
 
         cameraButton.setOnClickListener((View) -> {
+            if (isMonogramCall()) {
+                VoIPService service = VoIPService.getSharedInstance();
+                if (service != null && service.isVideoAvailable()) {
+                    service.setVideoState(false, service.getVideoState(false) == Instance.VIDEO_STATE_ACTIVE
+                        ? Instance.VIDEO_STATE_INACTIVE : Instance.VIDEO_STATE_ACTIVE);
+                    updateState(true, false);
+                }
+                return;
+            }
             if (Build.VERSION.SDK_INT >= 23 && parentActivity != null && parentActivity.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 parentActivity.requestPermissions(new String[]{Manifest.permission.CAMERA}, 104);
                 return;
@@ -6273,7 +6297,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
             renderersContainer.setGroupCall(call);
             tabletGridAdapter.setGroupCall(call);
         }
-        if (groupCallMessagesListView != null) {
+        if (groupCallMessagesListView != null && !isMonogramCall()) {
             groupCallMessagesListView.setGroupCall(accountInstance.getCurrentAccount(), call.getInputGroupCall(false));
         }
         actionBar.setTitleRightMargin(dp(48) * 2);
@@ -6445,6 +6469,15 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
 
     @Override
     public void onStateChanged(int state) {
+        if (isMonogramCall() && (state == VoIPService.STATE_ENDED || state == VoIPService.STATE_FAILED)) {
+            VoIPService service = VoIPService.getSharedInstance();
+            if (state == VoIPService.STATE_FAILED && parentActivity != null && service != null) {
+                new AlertDialog.Builder(parentActivity).setTitle("Group call").setMessage(service.getLastError())
+                    .setPositiveButton(getString(R.string.OK), null).show();
+            }
+            dismiss();
+            return;
+        }
         currentCallState = state;
         updateState(isShowing(), false);
     }
@@ -6602,6 +6635,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
     private String[] invites = new String[2];
 
     private void getLink(boolean copy) {
+        if (isMonogramCall()) return;
         TLRPC.Chat newChat = accountInstance.getMessagesController().getChat(getChatId());
         if (newChat != null && !ChatObject.isPublic(newChat)) {
             TLRPC.ChatFull chatFull = accountInstance.getMessagesController().getChatFull(getChatId());
@@ -6727,6 +6761,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
     }
 
     private void inviteUserToCall(long id, boolean shouldAdd) {
+        if (isMonogramCall()) return;
         if (call == null) {
             return;
         }
@@ -7590,7 +7625,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
         ChatObject.Call call = service.groupCall;
 
         long selfId = service.getSelfId();
-        if (doNotAsk || !ChatObject.canManageCalls(currentChat)) {
+        if (doNotAsk || service.isMonogramGroupCall() || !ChatObject.canManageCalls(currentChat)) {
             processOnLeave(call, false, selfId, onLeave);
             return;
         }
@@ -8049,6 +8084,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
         } else {
             isAdmin = peerId == -getChatId();
         }
+        if (isMonogramCall() && view.isSelfUser()) return false;
         if (view.isSelfUser()) {
             if (isConference() && view.isHandRaised()) {
                 items.add(getString(R.string.VoipGroupCancelRaiseHand));
@@ -8329,6 +8365,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
     }
 
     private void startScreenCapture() {
+        if (isMonogramCall()) return;
         if (parentActivity == null) {
             return;
         }
@@ -8594,7 +8631,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
             rowsCount = 0;
             hasSelfUser = call.participants.indexOfKey(MessageObject.getPeerId(selfPeer)) >= 0;
 
-            if (isConference()/* && call.participants.size() > 1*/) {
+            if (isMonogramCall() || isConference()/* && call.participants.size() > 1*/) {
                 encryptionRow = rowsCount++;
             }
 
@@ -8646,7 +8683,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
             if (isConference()) {
                 conferenceAddPeopleRow = rowsCount++;
                 conferenceShareLinkRow = rowsCount++;
-            } else if (!isRtmpStream() && ((!ChatObject.isChannel(currentChat) || currentChat != null && currentChat.megagroup) && ChatObject.canWriteToChat(currentChat) ||
+            } else if (!isMonogramCall() && !isRtmpStream() && ((!ChatObject.isChannel(currentChat) || currentChat != null && currentChat.megagroup) && ChatObject.canWriteToChat(currentChat) ||
                     ChatObject.isChannel(currentChat) && currentChat != null && !currentChat.megagroup && ChatObject.isPublic(currentChat))) {
                 addMemberRow = rowsCount++;
             }
@@ -8945,6 +8982,16 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
                     view = textView;
                     break;
                 case VIEW_TYPE_ENCRYPTION:
+                    if (isMonogramCall()) {
+                        TextView info = new TextView(mContext);
+                        info.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                        info.setTextColor(Theme.getColor(Theme.key_voipgroup_lastSeenText));
+                        info.setGravity(Gravity.CENTER);
+                        info.setPadding(dp(24), dp(12), dp(24), dp(12));
+                        info.setText(R.string.MonogramMujiSecurity);
+                        view = info;
+                        break;
+                    }
                     if (encryptionDrawable == null) {
                         encryptionDrawable = new CallEncryptionCellDrawable(mContext);
                     }
@@ -9175,6 +9222,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
     }
 
     private void toggleAdminSpeak() {
+        if (isMonogramCall()) return;
         if (call == null || call.call == null) {
             return;
         }
@@ -9192,6 +9240,7 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
     private Boolean pendingCommentsEnabled;
 
     private void setCommentsEnabled(boolean enabled) {
+        if (isMonogramCall()) return;
         if (call == null) {
             return;
         }
@@ -9589,7 +9638,12 @@ public class GroupCallActivity extends BottomSheet implements NotificationCenter
         return voip != null && voip.isConference();
     }
 
+    private boolean isMonogramCall() {
+        return call instanceof org.telegram.messenger.xmpp.MonogramMujiCall;
+    }
+
     public boolean canManageCall() {
+        if (isMonogramCall()) return false;
         final VoIPService voip = VoIPService.getSharedInstance();
         if (voip != null && voip.isConference()) {
             return call != null && call.call != null && call.call.creator;

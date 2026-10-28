@@ -979,8 +979,9 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	}
 
     public static VoIPServiceState getSharedState() {
-        if (sharedInstance != null) {
-            return sharedInstance;
+        VoIPService service = getSharedInstance();
+        if (service != null) {
+            return service;
         }
 		if (VoIPGroupNotification.currentState != null) {
 			return VoIPGroupNotification.currentState;
@@ -992,8 +993,13 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
     }
 
 	public static VoIPService getSharedInstance() {
-		return sharedInstance;
+		if (sharedInstance != null) return sharedInstance;
+		org.telegram.messenger.xmpp.MonogramMujiService muji = org.telegram.messenger.xmpp.MonogramMujiService.current;
+		return muji != null && muji.groupCall != null ? muji : null;
 	}
+
+	/** Reuse the native group-call presentation without starting Telegram's call engine. */
+	public boolean isMonogramGroupCall() { return false; }
 
 	public TLRPC.User getUser() {
 		return user;
@@ -4218,6 +4224,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 
 	@Override
 	public void onDestroy() {
+		if (isMonogramGroupCall()) { super.onDestroy(); return; }
 		if (BuildVars.LOGS_ENABLED) {
 			FileLog.d("=============== VoIPService STOPPING ===============");
 		}
@@ -4720,6 +4727,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		if (isMonogramGroupCall()) return;
 		if (BuildVars.LOGS_ENABLED) {
 			FileLog.d("=============== VoIPService STARTING ===============");
 		}
@@ -5761,6 +5769,7 @@ public class VoIPService extends Service implements SensorEventListener, AudioMa
 	}
 
 	public static boolean isAnyKindOfCallActive() {
+		if (org.telegram.messenger.xmpp.MonogramMujiService.active()) return true;
 		VoIPCallController controller = VoIPCallControllers.get();
 		if (controller != null) {
 			return controller.getCallState() != VoIPService.STATE_WAITING_INCOMING;

@@ -1,3 +1,7 @@
+## 0.2.182 — Reuse Telegram’s group-call UI for MUJI
+
+Replace the settings-style MUJI screen with Telegram’s existing GroupCallActivity, participant cells, video grid/fullscreen renderers and floating call control. Adapt the foreground MUJI service to its native VoIP hooks while bypassing Telegram engine initialization/cleanup. Keep MUJI’s bounded mesh, explicit join/permissions, call privacy and proxy refusal. Route mic, camera, camera flip, audio routes and per-person local mute/volume to WebRTC; collapse multiple resources into one person’s row. Hide unsupported Telegram scheduling, recording, screen sharing, call messages, invite links and moderation. Native renderer targets detach synchronously before media teardown; notification returns directly to the native call sheet. No phone access or screenshots.
+
 ## 0.2.181 — MUJI calls, mentions-only notifications and explicit picture retries
 
 Add native room group-call controls backed by XEP-0272 presence coordination and bounded real-full-JID Jingle legs. Share WebRTC capture/factory across the eight-person mesh, retain call privacy and block rules, and fence foreground/audio/camera cleanup. Documented scope and Monocles source reference: docs/MUJI_GROUP_CALLS.md. Add account/room-scoped Mentions only to existing popup/custom settings and profile summary, using native mention routing. Explicit photo taps start XMPP downloads despite an unchanged failed decoder key; promote automatic transfers to manual without throwing away downloaded bytes.

@@ -11711,4 +11711,5 @@
     <string name="MonogramContactAddFailed">Could not add the contact. Please reconnect and try again.</string>
     <string name="MonogramContactRemoveFailed">Could not remove the contact. Please reconnect and try again.</string>
     <string name="MonogramMentionsOnly">Mentions only</string>
+    <string name="MonogramMujiSecurity">Encrypted media · Participant identities are not cryptographically verified</string>
 </resources>

@@ -23,11 +23,12 @@ public final class MonogramMujiMedia implements AutoCloseable {
     private volatile boolean closed;private volatile EglBase.Context eglContext;
     private EglBase egl;private PeerConnectionFactory factory;private JavaAudioDeviceModule audioDevice;
     private AudioSource audioSource;private AudioTrack audioTrack;private VideoSource videoSource;private VideoTrack videoTrack;
-    private CameraVideoCapturer camera;private SurfaceTextureHelper texture;
+    private CameraVideoCapturer camera;private SurfaceTextureHelper texture;private VideoSink localSink;
     private List<PeerConnection.IceServer> servers;private boolean relayOnly,muted,cameraRunning;
     private final Map<String,Boolean> direct=new HashMap<>();
+    private final Map<String,Double> volumes=new HashMap<>();
     private final class Peer {
-        final String address;PeerConnection connection;VideoTrack remote;VideoSink sink;
+        final String address;PeerConnection connection;VideoTrack remote;org.webrtc.AudioTrack remoteAudio;VideoSink sink;
         final List<IceCandidate> remoteCandidates=new ArrayList<>(),localCandidates=new ArrayList<>();
         boolean remoteSet,published;ScheduledFuture<?> disconnected;
         Peer(String address){this.address=address;}
@@ -61,7 +62,7 @@ public final class MonogramMujiMedia implements AutoCloseable {
             if(camera==null)for(String name:enumerator.getDeviceNames()){camera=enumerator.createCapturer(name,cameraEvents());if(camera!=null)break;}
             if(camera==null)throw new IllegalStateException("Camera unavailable");
             texture=SurfaceTextureHelper.create("muji-camera",eglContext);videoSource=factory.createVideoSource(false);camera.initialize(texture,context,videoSource.getCapturerObserver());
-            videoTrack=factory.createVideoTrack("muji-video",videoSource);if(closed)return;camera.startCapture(640,360,24);cameraRunning=true;
+            videoTrack=factory.createVideoTrack("muji-video",videoSource);if(localSink!=null)videoTrack.addSink(localSink);if(closed)return;camera.startCapture(640,360,24);cameraRunning=true;
         }
         if(!closed)listener.ready();
     });}
@@ -102,7 +103,10 @@ public final class MonogramMujiMedia implements AutoCloseable {
     public void muted(boolean value){execute(null,()->{muted=value;if(audioTrack!=null)audioTrack.setEnabled(!value);if(audioDevice!=null)audioDevice.setMicrophoneMute(value);});}
     public void videoEnabled(boolean value){execute(null,()->{if(videoTrack!=null){permission(Manifest.permission.CAMERA);videoTrack.setEnabled(value);if(!value && cameraRunning){try{camera.stopCapture();}catch(InterruptedException e){Thread.currentThread().interrupt();}cameraRunning=false;}else if(value && !cameraRunning){camera.startCapture(640,360,24);cameraRunning=true;}}});}
     public void sink(String address,VideoSink sink){execute(address,()->{Peer p=peers.get(address);if(p==null)return;if(p.remote!=null && p.sink!=null)p.remote.removeSink(p.sink);p.sink=sink;if(p.remote!=null && sink!=null)p.remote.addSink(sink);});}
-    public void remove(String address){execute(address,()->dispose(peers.remove(address)));}
+    public void localSink(VideoSink sink){execute(null,()->{if(videoTrack!=null && localSink!=null)videoTrack.removeSink(localSink);localSink=sink;if(videoTrack!=null && sink!=null)videoTrack.addSink(sink);});}
+    public void switchCamera(CameraVideoCapturer.CameraSwitchHandler handler){execute(null,()->{if(camera!=null)camera.switchCamera(handler);});}
+    public void volume(String address,double volume){execute(address,()->{double value=Math.max(0,Math.min(2,volume));volumes.put(address,value);Peer p=peers.get(address);if(p!=null && p.remoteAudio!=null)p.remoteAudio.setVolume(value);});}
+    public void remove(String address){execute(address,()->{dispose(peers.remove(address));volumes.remove(address);});}
     private static void release(Runnable work){try{work.run();}catch(RuntimeException ignored){}}
     private void dispose(Peer p){if(p==null)return;if(p.disconnected!=null)p.disconnected.cancel(false);if(p.remote!=null && p.sink!=null)p.remote.removeSink(p.sink);p.connection.close();p.connection.dispose();}
     private PeerConnection.Observer observer(Peer p){return new PeerConnection.Observer(){
@@ -115,7 +119,7 @@ public final class MonogramMujiMedia implements AutoCloseable {
             else if(state==PeerConnection.PeerConnectionState.FAILED)listener.failed(p.address,"Media connection failed");
         });}
         public void onIceCandidate(IceCandidate candidate){execute(p.address,()->{if(p.published)listener.candidate(p.address,candidate.sdpMid,candidate.sdpMLineIndex,candidate.sdp);else{if(p.localCandidates.size()>=128)throw new IllegalStateException("Candidate queue full");p.localCandidates.add(candidate);}});}
-        public void onTrack(RtpTransceiver transceiver){execute(p.address,()->{MediaStreamTrack track=transceiver.getReceiver().track();if(track instanceof VideoTrack){p.remote=(VideoTrack)track;if(p.sink!=null)p.remote.addSink(p.sink);listener.video(p.address,true);}});}
+        public void onTrack(RtpTransceiver transceiver){execute(p.address,()->{MediaStreamTrack track=transceiver.getReceiver().track();if(track instanceof org.webrtc.AudioTrack){p.remoteAudio=(org.webrtc.AudioTrack)track;p.remoteAudio.setVolume(volumes.getOrDefault(p.address,1.0));}else if(track instanceof VideoTrack){p.remote=(VideoTrack)track;if(p.sink!=null)p.remote.addSink(p.sink);listener.video(p.address,true);}});}
         public void onRemoveTrack(RtpReceiver receiver){execute(p.address,()->{if(p.remote!=null && receiver.track()==p.remote){if(p.sink!=null)p.remote.removeSink(p.sink);p.remote=null;listener.video(p.address,false);}});}
     };}
     private class Sdp implements SdpObserver {
@@ -127,6 +131,7 @@ public final class MonogramMujiMedia implements AutoCloseable {
         try{worker.execute(()->{try{
             for(Peer p:peers.values())release(()->dispose(p));peers.clear();
             if(camera!=null){if(cameraRunning)try{camera.stopCapture();}catch(InterruptedException e){Thread.currentThread().interrupt();}catch(RuntimeException ignored){}release(camera::dispose);}
+            if(videoTrack!=null && localSink!=null)release(()->videoTrack.removeSink(localSink));localSink=null;
             if(videoTrack!=null)release(videoTrack::dispose);if(videoSource!=null)release(videoSource::dispose);if(texture!=null)release(texture::dispose);
             if(audioTrack!=null)release(audioTrack::dispose);if(audioSource!=null)release(audioSource::dispose);if(factory!=null)release(factory::dispose);if(audioDevice!=null)release(audioDevice::release);if(egl!=null)release(egl::release);eglContext=null;
         }finally{disposed.complete(null);worker.shutdown();}});}catch(RejectedExecutionException ignored){disposed.complete(null);}

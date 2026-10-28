@@ -3796,7 +3796,7 @@ public class ChatActivity extends BaseFragment implements
                     presentFragment(new MonogramSecurityActivity(currentAccount, dialog_id));
                     return;
                 }
-                if(id==91003 && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) {presentFragment(new MonogramGroupCallActivity(currentAccount,dialog_id,currentChat==null?"Group call":currentChat.title));return;}
+                if(id==91003 && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) {org.telegram.ui.Components.MonogramMujiUi.open(ChatActivity.this,dialog_id,currentChat==null?"Group call":currentChat.title);return;}
                 if (id == 91002 && dialog_id<0) { presentFragment(new MonogramRoomActivity(currentAccount,dialog_id)); return; }
                 if (id == -1) {
                     if (isInPollAddOptionMode()) {
@@ -34527,6 +34527,8 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public ChatObject.Call getGroupCall() {
+        org.telegram.messenger.xmpp.MonogramMujiService muji = org.telegram.messenger.xmpp.MonogramMujiService.current;
+        if (chatMode == 0 && muji != null && muji.account == currentAccount && muji.peer == dialog_id && muji.isJoined()) return muji.groupCall;
         return chatMode == 0 && groupCall != null && groupCall.call instanceof TLRPC.TL_groupCall ? groupCall : null;
     }
 

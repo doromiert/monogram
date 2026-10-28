@@ -1,9 +1,19 @@
 # MUJI group calls
 
 Open a room's existing menu → Group call → Join voice call or Join video call.
-Opening the screen does not start capture. Permission and an explicit join are
-required. The ongoing notification keeps the call available in the background
-and provides Leave. Microphone, camera and speaker controls use native cells.
+Opening the join prompt does not start capture. Permission and an explicit join
+are required. Calls open Telegram's existing `GroupCallActivity` sheet, with its
+microphone, camera, flip-camera, audio-route controls, participant rows, video grid
+and fullscreen tiles. The native floating call control and ongoing notification
+return to the same sheet. The separate settings-style call screen is removed.
+
+`MonogramMujiService` implements the existing VoIP service hooks for that UI, but
+skips Telegram engine initialization and cleanup. `MonogramMujiCall` projects the
+MUJI roster into its native presentation model without creating an RPC handle.
+One person with multiple resources has one row; local mute/volume controls apply
+to that person's resources. Scheduling, recording, screen sharing, Telegram call
+messages, invite links and server moderation controls stay hidden. Video calls
+negotiate their camera at join time; voice calls cannot add video mid-call.
 
 The implementation follows [XEP-0272 version 0.2.0](https://xmpp.org/extensions/xep-0272.html)
 and was checked against the [Monocles MUJI coordinator](https://codeberg.org/monocles/monocles_chat/src/commit/e7d071a782da1c4149b1a42c5dbb473316dbffe7/src/main/java/eu/siacs/conversations/xmpp/jingle/MujiConferenceManager.java).
@@ -33,5 +43,7 @@ Tests cover three-participant audio/video offer/answer, scoped trickle ICE,
 outsider rejection, participant departure and blocking over disposable local
 Prosody connections. SDP is synthetic in these tests. Android checks cover capture
 permissions, queued-close fencing, SDP content naming and existing direct-call
-lifecycle behavior. Live multi-device audio/video and Monocles runtime
+lifecycle behavior. Native-UI adapter checks cover service discovery without a
+private-call registration or Telegram engine, resource grouping and departure,
+mic/camera/volume routing, and synchronous renderer detach before disposal. Live multi-device audio/video and Monocles runtime
 interoperability have not been verified; no phone access or screenshots were used.

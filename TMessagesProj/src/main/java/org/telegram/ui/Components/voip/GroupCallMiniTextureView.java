@@ -487,7 +487,8 @@ public class GroupCallMiniTextureView extends FrameLayout implements GroupCallSt
         this.attachedRenderers = attachedRenderers;
         this.activity = activity;
 
-        textureView.renderer.init(VideoCapturerDevice.getEglBase().getEglBaseContext(), new RendererCommon.RendererEvents() {
+        textureView.renderer.init(VoIPService.getSharedInstance() != null && VoIPService.getSharedInstance().isMonogramGroupCall()
+                ? VoIPService.getSharedInstance().getEglContext() : VideoCapturerDevice.getEglBase().getEglBaseContext(), new RendererCommon.RendererEvents() {
             @Override
             public void onFirstFrameRendered() {
                 for (int i = 0; i < onFirstFrameRunnables.size(); i++) {
