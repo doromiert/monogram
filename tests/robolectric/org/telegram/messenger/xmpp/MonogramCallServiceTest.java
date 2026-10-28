@@ -37,6 +37,7 @@ public class MonogramCallServiceTest {
     public static class Signalling {
         static int declines,ends,ignores;
         @Implementation public void __constructor__(XMPPConnection connection) {}
+        @Implementation public void __constructor__(XMPPConnection connection,String room) {}
         @Implementation public void reject(String sid) { declines++; }
         @Implementation public void ignore(String sid) { ignores++; }
         @Implementation public void end(String sid) { ends++; }

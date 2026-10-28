@@ -3796,6 +3796,7 @@ public class ChatActivity extends BaseFragment implements
                     presentFragment(new MonogramSecurityActivity(currentAccount, dialog_id));
                     return;
                 }
+                if(id==91003 && org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) {presentFragment(new MonogramGroupCallActivity(currentAccount,dialog_id,currentChat==null?"Group call":currentChat.title));return;}
                 if (id == 91002 && dialog_id<0) { presentFragment(new MonogramRoomActivity(currentAccount,dialog_id)); return; }
                 if (id == -1) {
                     if (isInPollAddOptionMode()) {
@@ -4347,6 +4348,7 @@ public class ChatActivity extends BaseFragment implements
                 headerItem.lazilyAddSubItem(91001, R.drawable.msg_secret, getString(R.string.MonogramConversationSecurity));
             }
             if (org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id)) headerItem.lazilyAddSubItem(91002, R.drawable.msg_groups, "Room settings");
+            if(org.telegram.messenger.xmpp.MonogramController.get(currentAccount).isRoom(dialog_id))headerItem.lazilyAddSubItem(91003,R.drawable.msg_callback,"Group call");
 
             if (currentUser != null && currentUser.self && chatMode != MODE_SAVED) {
                 savedChatsItem = headerItem.lazilyAddSubItem(view_as_topics, R.drawable.msg_topics, LocaleController.getString(R.string.SavedViewAsChats));

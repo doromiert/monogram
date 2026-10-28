@@ -119,6 +119,7 @@ public final class XmppSession implements AutoCloseable {
     }
     private final ManagedConnection connection;
     public final com.negzero.monogram.xmpp.calls.XmppCalls calls;
+    public final com.negzero.monogram.xmpp.calls.XmppMuji muji;
     public final XmppProfiles profiles;
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
@@ -300,7 +301,13 @@ public final class XmppSession implements AutoCloseable {
         chatStates = new XmppChatStates(connection, listener::typing, rooms, listener::roomTyping);
         rooms.chatStates = chatStates;
         contacts=new XmppContacts(connection,rooms,listener::contactRequest);
-        blocking=new XmppBlocking(connection,listener::blockedChanged);
+        blocking=new XmppBlocking(connection,this::blockingChanged);
+        muji=new com.negzero.monogram.xmpp.calls.XmppMuji(connection,calls,address->{
+            java.util.List<String> denied=blocking.snapshot();
+            if(denied==null)return true;
+            try {org.jxmpp.jid.Jid peer=JidCreate.from(address);for(String item:denied){org.jxmpp.jid.Jid rule=JidCreate.from(item);if(rule.equals(peer) || rule.equals(peer.asBareJid()) || rule.isDomainBareJid() && rule.equals(peer.asDomainBareJid()))return true;}return false;}
+            catch(Exception invalid){return true;}
+        });
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
         readSync=new XmppReadSync(connection,listener::readSyncChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
@@ -1207,6 +1214,7 @@ public final class XmppSession implements AutoCloseable {
     static String hex(byte[] bytes) { StringBuilder result=new StringBuilder(); for(byte value:bytes) result.append(String.format(java.util.Locale.ROOT,"%02x",value&255)); return result.toString(); }
     public String ownJid() { return omemo.getOwnJid().toString(); }
     public int ownDeviceId() { return omemo.getDeviceId(); }
+    private void blockingChanged(java.util.List<String> blocked){listener.blockedChanged(blocked);if(muji!=null)muji.refreshPermissions();}
     private void invalidateDevices(String owner) {fingerprints.invalidate(owner);listener.devicesChanged(owner);}
     public void setBlindTrustPolicy(java.util.function.Predicate<String> policy){
         trust.setBlindTrustPolicy(policy);
@@ -1258,7 +1266,7 @@ public final class XmppSession implements AutoCloseable {
         synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }
         MonogramLegacyOmemoService.instance().unregister(omemo);legacyWorker.shutdownNow();
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
-        calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); readSync.close(); fingerprints.close();
+        muji.close(); calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); readSync.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

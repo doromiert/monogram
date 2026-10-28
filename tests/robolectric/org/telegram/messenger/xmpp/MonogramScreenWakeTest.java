@@ -39,6 +39,8 @@ public class MonogramScreenWakeTest {
     }
     @Implements(value=XmppSession.class,isInAndroidSdk=false)
     public static class Session {
+        @Implementation public void __constructor__(com.negzero.monogram.xmpp.Account account,String password,int device,java.io.File trust,com.negzero.monogram.xmpp.Omemo2Device modern,com.negzero.monogram.xmpp.XmppRecovery recovery,com.negzero.monogram.xmpp.XmppSession.Listener listener){}
+
         XMPPTCPConnection connection;
         int probes;
         @Implementation public void __constructor__(com.negzero.monogram.xmpp.Account account,String password,int device,java.io.File trust,com.negzero.monogram.xmpp.Omemo2Device modern,XmppSession.Listener listener) {}

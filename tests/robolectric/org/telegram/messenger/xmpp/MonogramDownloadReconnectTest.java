@@ -99,4 +99,12 @@ public class MonogramDownloadReconnectTest {
         assertFalse(controller.isFileLoading("picture.jpg"));
     }
 
+    @Test public void explicitTapPromotesAnAutomaticJobWithoutCancellingOrRestartingItsBytes()throws Exception {
+        FileTransfer.Job job=new FileTransfer.Job();
+        Map<Integer,FileTransfer.Job> jobs=ReflectionHelpers.getField(controller,"fileJobs"),automatic=ReflectionHelpers.getField(controller,"automaticJobs");
+        jobs.put(id,job);automatic.put(id,job);
+        controller.download(new MessageObject(0,store.getMessage(id,self),true,true));
+        assertSame(job,jobs.get(id));assertFalse(automatic.containsKey(id));assertFalse(job.cancelled());assertEquals(0,transfers);
+    }
+
 }

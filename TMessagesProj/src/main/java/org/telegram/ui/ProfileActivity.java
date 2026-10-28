@@ -13197,6 +13197,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         if (val == null) {
                             val = LocaleController.getString(R.string.NotificationsOff);
                         }
+                        if(NotificationsController.getInstance(currentAccount).isMentionsOnly(did,topicId))val=LocaleController.getString(R.string.MonogramMentionsOnly);
                         if (notificationsExceptionTopics != null && !notificationsExceptionTopics.isEmpty()) {
                             val = String.format(Locale.US, LocaleController.getPluralString("NotificationTopicExceptionsDesctription", notificationsExceptionTopics.size()), val, notificationsExceptionTopics.size());
                         }

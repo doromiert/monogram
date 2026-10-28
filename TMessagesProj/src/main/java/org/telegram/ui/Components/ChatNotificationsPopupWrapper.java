@@ -31,6 +31,8 @@ public class ChatNotificationsPopupWrapper {
 
     View backItem;
     ActionBarMenuSubItem soundToggle;
+    ActionBarMenuSubItem mentionsOnly;
+    private long mentionsDialog,mentionsTopic;
     ActionBarMenuSubItem muteUnmuteButton;
     ActionBarMenuSubItem muteForLastSelected;
     ActionBarMenuSubItem muteForLastSelected2;
@@ -84,6 +86,13 @@ public class ChatNotificationsPopupWrapper {
         soundToggle.setOnClickListener(view -> {
             dismiss();
             callback.toggleSound();
+        });
+
+        mentionsOnly=ActionBarMenuItem.addItem(windowLayout,R.drawable.filled_chatlist_mention,LocaleController.getString(R.string.MonogramMentionsOnly),true,resourcesProvider);
+        mentionsOnly.setOnClickListener(view->{
+            dismiss();
+            NotificationsController notifications=NotificationsController.getInstance(currentAccount);
+            notifications.setMentionsOnly(mentionsDialog,mentionsTopic,!notifications.isMentionsOnly(mentionsDialog,mentionsTopic));
         });
 
         muteForLastSelected = ActionBarMenuItem.addItem(windowLayout, R.drawable.msg_mute_1h, LocaleController.getString(R.string.MuteFor1h), false, resourcesProvider);
@@ -172,6 +181,9 @@ public class ChatNotificationsPopupWrapper {
             });
             return;
         }
+        mentionsDialog=dialogId;mentionsTopic=topicId;
+        mentionsOnly.setVisibility(dialogId<0 ? View.VISIBLE : View.GONE);
+        mentionsOnly.setChecked(NotificationsController.getInstance(currentAccount).isMentionsOnly(dialogId,topicId));
         boolean muted = MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId);
 
         int color;
@@ -343,6 +355,10 @@ public class ChatNotificationsPopupWrapper {
 
         final ItemOptions options = o.makeSwipeback();
         options.add(R.drawable.msg_arrow_back, getString(R.string.Back), o::closeSwipeback);
+        if(dialogId<0)options.addChecked(NotificationsController.getInstance(currentAccount).isMentionsOnly(dialogId,topicId),R.drawable.filled_chatlist_mention,getString(R.string.MonogramMentionsOnly),()->{
+            o.dismiss();NotificationsController notifications=NotificationsController.getInstance(currentAccount);
+            notifications.setMentionsOnly(dialogId,topicId,!notifications.isMentionsOnly(dialogId,topicId));
+        });
         options.add(R.drawable.msg_tone_on, getString(R.string.SoundOn), () -> {
             o.dismiss();
             SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
@@ -394,7 +410,7 @@ public class ChatNotificationsPopupWrapper {
         final ActionBarMenuSubItem muteUnmuteButton = options.getLast();
 
         Runnable update = () -> {
-            boolean muted = MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId);
+        boolean muted = MessagesController.getInstance(currentAccount).isDialogMuted(dialogId, topicId);
 
             int color;
             if (muted) {

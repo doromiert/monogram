@@ -69,7 +69,7 @@ public final class MonogramCallService extends Service {
                     if(!binding.valid()) return;
                     XmppCalls.Call current=binding.session.calls.current();
                     if(current==null || !current.sid.equals(call.sid)) return;
-                    if(user==null || VoIPCallControllers.get()!=null) { session.calls.reject(call.sid);return; }
+                    if(user==null || VoIPCallControllers.get()!=null || MonogramMujiService.active()) { session.calls.reject(call.sid);return; }
                     Controller c=new Controller(binding,call,user);
                     if(!VoIPCallControllers.register(c)) { session.calls.reject(call.sid);return; }
                     c.state=VoIPService.STATE_WAITING_INCOMING;
@@ -119,7 +119,7 @@ public final class MonogramCallService extends Service {
     public static void start(Context context,int account,long peer,boolean video) {
         AndroidUtilities.runOnUIThread(() -> {
             Binding binding=bindings.get(account);
-            if(binding==null || !binding.valid() || !binding.session.connection().isAuthenticated() || VoIPCallControllers.get()!=null) {
+            if(binding==null || !binding.valid() || !binding.session.connection().isAuthenticated() || VoIPCallControllers.get()!=null || MonogramMujiService.active()) {
                 Toast.makeText(context,LocaleController.getString(R.string.VoipFailed),Toast.LENGTH_SHORT).show();return;
             }
             MonogramController.get(account).resolveCallUser(MonogramController.get(account).jid(peer),false,binding.session,user -> {

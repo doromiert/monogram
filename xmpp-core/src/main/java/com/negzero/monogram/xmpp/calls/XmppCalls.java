@@ -45,6 +45,9 @@ public final class XmppCalls implements AutoCloseable {
         Entry(Call call,State state) { this.call=call;this.state=state; }
     }
     private final XMPPConnection connection;
+    private final String conferenceRoom;
+    private volatile java.util.function.Predicate<IQ> conferenceHandler;
+    private volatile java.util.function.BooleanSupplier conferenceBusy=()->false;
     private final ScheduledThreadPoolExecutor events=new ScheduledThreadPoolExecutor(1,r -> { Thread t=new Thread(r,"Monogram Jingle");t.setDaemon(true);return t; });
     private final ThreadPoolExecutor network=new ThreadPoolExecutor(2,2,30,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r -> { Thread t=new Thread(r,"Monogram call discovery");t.setDaemon(true);return t; },new ThreadPoolExecutor.AbortPolicy());
     private final Set<CompletableFuture<?>> requests=Collections.newSetFromMap(new ConcurrentHashMap<CompletableFuture<?>,Boolean>());
@@ -61,8 +64,10 @@ public final class XmppCalls implements AutoCloseable {
     private final StanzaListener messages,presences;
     private final ConnectionListener lifecycle;
     private final CarbonCopyReceivedListener carbons;
-    public XmppCalls(XMPPConnection connection) {
-        this.connection=connection;ice=new XmppIceServers(connection);initialize();events.setRemoveOnCancelPolicy(true);network.allowCoreThreadTimeOut(true);
+    public XmppCalls(XMPPConnection connection) { this(connection,null); }
+    private XmppCalls(XMPPConnection connection,String room) {
+        conferenceRoom=room;this.connection=connection;ice=new XmppIceServers(connection);initialize();events.setRemoveOnCancelPolicy(true);network.allowCoreThreadTimeOut(true);
+        if(room!=null) { handler=null;messages=null;presences=null;lifecycle=null;carbons=null;return; }
         ServiceDiscoveryManager disco=ServiceDiscoveryManager.getInstanceFor(connection);
         for(String ns:Arrays.asList(NS,RTP,ICE,DTLS,GROUP,JMI,"urn:xmpp:jingle:apps:rtp:audio","urn:xmpp:jingle:apps:rtp:video")) disco.addFeature(ns);
         handler=new AbstractIqRequestHandler("jingle",NS,IQ.Type.set,IQRequestHandler.Mode.async) {
@@ -82,6 +87,18 @@ public final class XmppCalls implements AutoCloseable {
             @Override public void connectionClosed() { disconnected(); }
             @Override public void connectionClosedOnError(Exception error) { disconnected(); }
         };connection.addConnectionListener(lifecycle);
+    }
+    public void setConferenceHandler(java.util.function.Predicate<IQ> handler) { conferenceHandler=handler; }
+    public void setConferenceBusy(java.util.function.BooleanSupplier busy){conferenceBusy=busy;}
+    XmppCalls conferenceLeg(String room) { return new XmppCalls(connection,room); }
+    void receiveConference(IQ iq) { execute(()->incomingIq(iq)); }
+    synchronized Call startConference(String fullPeer,boolean video) throws Exception {
+        if(conferenceRoom==null || closed || active!=null || !connection.isAuthenticated())throw new IllegalStateException("Conference leg unavailable");
+        org.jxmpp.jid.EntityFullJid peer=JidCreate.entityFullFrom(fullPeer);
+        Call call=new Call(UUID.randomUUID().toString(),peer.asBareJid().toString(),peer.toString(),true,video);
+        active=new Entry(call,State.CONNECTING);
+        if(!execute(()->{emit(State.CONNECTING,null);requestDescription(active,true);timeout(call.sid,45000,"timeout");})) {active=null;throw new IllegalStateException("Conference queue full");}
+        return call;
     }
     public void setListener(Listener listener) { this.listener=listener==null?NONE:listener; }
     public synchronized Call current() { return active==null?null:active.call; }
@@ -130,7 +147,7 @@ public final class XmppCalls implements AutoCloseable {
         catch(RejectedExecutionException busy) { future.completeExceptionally(busy); }return future;
     }
     public synchronized Call start(String peer,boolean video) {
-        if(closed || !connection.isAuthenticated()) throw new IllegalStateException("XMPP is disconnected");if(active!=null) throw new IllegalStateException("Another call is active");
+        if(closed || !connection.isAuthenticated()) throw new IllegalStateException("XMPP is disconnected");if(active!=null || conferenceBusy.getAsBoolean()) throw new IllegalStateException("Another call is active");
         try { peer=JidCreate.entityBareFrom(peer).toString(); }catch(Exception bad) { throw invalid("Invalid peer"); }
         if(peer.equals(connection.getUser().asBareJid().toString())) throw invalid("Cannot call this account");
         Capabilities known=capabilities.get(peer);String resource=null;
@@ -140,15 +157,15 @@ public final class XmppCalls implements AutoCloseable {
     }
     public void accept(String sid) { command(sid,e -> {
         if(e.call.outgoing || e.accepted) return;e.accepted=true;
-        jmi("accept",connection.getUser().asBareJid().toString(),e.call);
-        if(e.remote==null) jmi("proceed",e.call.fullPeer,e.call);
-        else { listener.remoteDescription(e.call,true,JingleSdp.serialize(e.remote));requestDescription(e,false); }
+        if(conferenceRoom==null)jmi("accept",connection.getUser().asBareJid().toString(),e.call);
+        if(e.remote==null && conferenceRoom==null) jmi("proceed",e.call.fullPeer,e.call);
+        else if(e.remote!=null) { listener.remoteDescription(e.call,true,JingleSdp.serialize(e.remote));requestDescription(e,false); }
         emit(State.CONNECTING,null);timeout(sid,45000,"timeout");
     }); }
     /** A locally unavailable resource must not decline the call on the account's other devices. */
     public void ignore(String sid) { command(sid,e -> { if(!e.call.outgoing && !e.accepted) finish("local-unavailable"); }); }
-    public void reject(String sid) { command(sid,e -> { if(e.local==null && e.remote==null) { jmi("reject",e.call.fullPeer==null?e.call.peer:e.call.fullPeer,e.call);jmi("reject",connection.getUser().asBareJid().toString(),e.call);finish("decline"); }else terminate("decline"); }); }
-    public void end(String sid) { command(sid,e -> { if(e.local==null && e.remote==null) { jmi(e.call.outgoing?"retract":"reject",e.call.fullPeer==null?e.call.peer:e.call.fullPeer,e.call);finish("cancel"); }else terminate("success"); }); }
+    public void reject(String sid) { command(sid,e -> { if(conferenceRoom!=null) { terminate("decline");return; }if(e.local==null && e.remote==null) { jmi("reject",e.call.fullPeer==null?e.call.peer:e.call.fullPeer,e.call);jmi("reject",connection.getUser().asBareJid().toString(),e.call);finish("decline"); }else terminate("decline"); }); }
+    public void end(String sid) { command(sid,e -> { if(conferenceRoom!=null) {terminate("success");return;}if(e.local==null && e.remote==null) { jmi(e.call.outgoing?"retract":"reject",e.call.fullPeer==null?e.call.peer:e.call.fullPeer,e.call);finish("cancel"); }else terminate("success"); }); }
     public void localDescription(String sid,boolean offer,String sdp) { command(sid,e -> {
         try {
             CallDescription parsed=JingleSdp.parse(sdp);
@@ -212,7 +229,10 @@ public final class XmppCalls implements AutoCloseable {
     private void iq(String action,StandardExtensionElement payload,String reason) {
         if(active==null || active.call.fullPeer==null) return;Call call=active.call;
         StandardExtensionElement.Builder b=StandardExtensionElement.builder("jingle",NS).addAttribute("action",action).addAttribute("sid",call.sid);
-        if("session-initiate".equals(action)) b.addAttribute("initiator",connection.getUser().toString());
+        if("session-initiate".equals(action)) {
+            b.addAttribute("initiator",connection.getUser().toString());
+            if(conferenceRoom!=null)b.addElement(StandardExtensionElement.builder("muji",XmppMuji.NS).addAttribute("room",conferenceRoom).build());
+        }
         if("session-accept".equals(action)) b.addAttribute("responder",connection.getUser().toString());
         if(payload!=null) for(StandardExtensionElement c:payload.getElements()) b.addElement(c);
         if(reason!=null) b.addElement(StandardExtensionElement.builder("reason",NS).addElement(StandardExtensionElement.builder(reason,NS).build()).build());
@@ -251,6 +271,7 @@ public final class XmppCalls implements AutoCloseable {
             boolean audio=false,video=false;Set<String> media=new HashSet<>();if(action.getElements().size()>2) return;
             for(StandardExtensionElement c:action.getElements()) { String kind=c.getAttributeValue("media");if(!RTP.equals(c.getNamespace()) || !"description".equals(c.getElementName()) || !Arrays.asList("audio","video").contains(kind) || !media.add(kind)) return;audio|="audio".equals(kind);video|="video".equals(kind); }if(!audio) return;
             Call incoming=new Call(sid,bare,from,false,video);
+            if(conferenceBusy.getAsBoolean()){jmi("reject",from,incoming);return;}
             if(active!=null) {
                 if(active.call.sid.equals(sid) && active.call.peer.equals(bare)) return;
                 if(active.call.outgoing && active.call.peer.equals(bare) && active.state==State.PROPOSING && own.compareTo(bare)>0) { jmi("retract",active.call.peer,active.call);finish("alternative-session"); }
@@ -268,12 +289,15 @@ public final class XmppCalls implements AutoCloseable {
         else if("reject".equals(name) && !e.call.outgoing && e.accepted && e.remote==null) finish("answered-elsewhere");
     }
     private synchronized void incomingIq(IQ iq) {
+        java.util.function.Predicate<IQ> route=conferenceHandler;
+        if(conferenceRoom==null && route!=null && route.test(iq))return;
         if(!(iq instanceof Packet) || !connection.isAuthenticated() || iq.getFrom()==null || !iq.getFrom().isEntityFullJid() || iq.getTo()!=null && !iq.getTo().equals(connection.getUser())) { reply(iq,StanzaError.Condition.bad_request);return; }
         StandardExtensionElement root=((Packet)iq).element;String sid=root.getAttributeValue("sid"),action=root.getAttributeValue("action");String key=iq.getFrom()+"\n"+sid+"\n"+iq.getStanzaId();
         if(seenIq.contains(key)) { reply(iq,null);return; }
         try {
             token(sid,128);String from=iq.getFrom().toString(),peer=iq.getFrom().asBareJid().toString();
             if("session-initiate".equals(action)) {
+                if(conferenceRoom==null && conferenceBusy.getAsBoolean()){reply(iq,StanzaError.Condition.conflict);return;}
                 CallDescription remote=JingleSdp.fromJingle(root,true);validateRoles(remote,true);
                 if(root.getAttributeValue("initiator")!=null && !from.equals(root.getAttributeValue("initiator"))) throw invalid("Wrong initiator");
                 if(active==null) { Call incoming=new Call(sid,peer,from,false,remote.video());active=new Entry(incoming,State.RINGING);active.remote=remote;listener.incoming(incoming);emit(State.RINGING,null);timeout(sid,45000,"timeout"); }
@@ -336,10 +360,11 @@ public final class XmppCalls implements AutoCloseable {
     @Override public void close() {
         synchronized(this) { if(closed) return;
             if(active!=null && connection.isAuthenticated()) {
-                if(active.local!=null || active.remote!=null) iq("session-terminate",null,"gone");
+                if(conferenceRoom!=null || active.local!=null || active.remote!=null) iq("session-terminate",null,"gone");
                 else jmi(active.call.outgoing?"retract":"reject",active.call.fullPeer==null?active.call.peer:active.call.fullPeer,active.call);
             }
             finish("closed");closed=true;generation++;capabilities.clear();discoveredAt.clear();discoveries.clear();requestedPeers.clear();for(ScheduledFuture<?> pending:refreshes.values()) pending.cancel(false);refreshes.clear();for(CompletableFuture<?> pending:requests) pending.completeExceptionally(new IllegalStateException("XMPP session closed")); }
-        connection.unregisterIQRequestHandler(handler);connection.removeAsyncStanzaListener(messages);connection.removeAsyncStanzaListener(presences);connection.removeConnectionListener(lifecycle);CarbonManager.getInstanceFor(connection).removeCarbonCopyReceivedListener(carbons);ice.clear();network.shutdownNow();events.shutdownNow();listener=NONE;
+        if(handler!=null) {connection.unregisterIQRequestHandler(handler);connection.removeAsyncStanzaListener(messages);connection.removeAsyncStanzaListener(presences);connection.removeConnectionListener(lifecycle);CarbonManager.getInstanceFor(connection).removeCarbonCopyReceivedListener(carbons);}
+        conferenceHandler=null;ice.clear();network.shutdownNow();events.shutdownNow();listener=NONE;
     }
 }

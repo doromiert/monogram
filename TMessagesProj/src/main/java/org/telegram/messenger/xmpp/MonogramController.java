@@ -3079,7 +3079,11 @@ public final class MonogramController {
         if (!MonogramAttachments.has(object.messageOwner)) return;
         int id = object.getId();
         FileTransfer.Job job = new FileTransfer.Job();
-        if (fileJobs.putIfAbsent(id, job) != null) return;
+        FileTransfer.Job existing=fileJobs.putIfAbsent(id,job);
+        if(existing!=null) {
+            if(!automatic)automaticJobs.remove(id,existing);
+            return;
+        }
         downloadErrors.remove(id);
         if (automatic) automaticJobs.put(id, job);
         String name = object.getFileName(); fileNames.put(name, job);
@@ -3131,6 +3135,10 @@ public final class MonogramController {
                 };
                 FileTransfer.DownloadPolicy policy = automatic ? (mime, size) -> DownloadController.getInstance(account).getMonogramDownloadLimit(
                         object.messageOwner, MonogramAttachments.remoteMedia(id, filename, sharing==null ? mime : sharing.mime, size), size) : null;
+                if(automatic) {
+                    FileTransfer.DownloadPolicy automaticPolicy=policy;
+                    policy=(mime,size)->automaticJobs.get(id)==job ? automaticPolicy.limit(mime,size) : FileTransfer.MAX_BYTES;
+                }
                 boolean cached = store.hasCachedAttachment(address, path);
                 if (cached && sharing != null) {
                     try { sharing.verify(path, job); }
@@ -3139,7 +3147,9 @@ public final class MonogramController {
                 boolean downloaded = cached || (sharing == null ? FileTransfer.download(link, path, job, onProgress, policy, metadata) : FileTransfer.download(sharing, path, job, onProgress, policy, metadata));
                 if (!downloaded) {
                     java.util.Set<String> names=downloadNames(name,job);
+                    boolean manuallyRequested=automatic && automaticJobs.get(id)!=job;
                     finishDownload(id, name, job);
+                    if(manuallyRequested) { download(object,false);return; }
                     AndroidUtilities.runOnUIThread(() -> {
                         if(owner==accountEpoch) for(String alias:names) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, alias, 0);
                     });
@@ -3189,6 +3199,7 @@ public final class MonogramController {
     private void downloadError(String name, MessageObject object, FileTransfer.Job job, Exception error, boolean automatic,long owner) {
         if(owner!=accountEpoch)return;
         String failure=downloadFailure(error);
+        boolean manual=!automatic || automaticJobs.get(object.getId())!=job;
         if(!job.cancelled()) {
             if(downloadErrors.size()>=128)downloadErrors.clear();
             downloadErrors.put(object.getId(),failure);
@@ -3197,7 +3208,7 @@ public final class MonogramController {
         AndroidUtilities.runOnUIThread(() -> {
             if(owner!=accountEpoch) return;
             for(String alias:names) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, alias, 0);
-            if (!automatic && !job.cancelled()) {
+            if (manual && !job.cancelled()) {
                 TLRPC.TL_error reported=new TLRPC.TL_error();reported.code=400;reported.text=failure;
                 org.telegram.ui.Components.AlertsCreator.processError(account, reported, null,
                         new MonogramFileRequest(object.messageOwner, null, "application/octet-stream", ""));

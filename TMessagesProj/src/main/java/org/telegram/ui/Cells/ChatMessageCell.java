@@ -17824,6 +17824,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
                 final int cacheType = currentMessageObject.shouldEncryptPhotoOrVideo() ? 2 : 0;
                 if (currentMessageObject.type == MessageObject.TYPE_PHOTO || currentMessageObject.type == MessageObject.TYPE_EXTENDED_MEDIA_PREVIEW) {
+                    // An unchanged image key can suppress ImageReceiver's retry after a failed placeholder load.
+                    if (org.telegram.messenger.xmpp.MonogramAttachments.has(currentMessageObject.messageOwner))
+                        FileLoader.getInstance(currentAccount).loadFile(ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentMessageObject, "jpg", FileLoader.PRIORITY_NORMAL_UP, cacheType);
                     photoImage.setForceLoading(true);
                     photoImage.setImage(ImageLocation.getForObject(currentPhotoObject, photoParentObject), currentPhotoFilter, ImageLocation.getForObject(currentPhotoObjectThumb, photoParentObject), currentPhotoFilterThumb, currentPhotoObjectThumbStripped, currentPhotoObject.size, null, currentMessageObject, cacheType);
                 } else if (currentMessageObject.type == MessageObject.TYPE_GIF) {

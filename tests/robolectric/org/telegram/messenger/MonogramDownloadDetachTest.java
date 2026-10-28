@@ -20,11 +20,12 @@ public class MonogramDownloadDetachTest {
     private static final Map<Integer,FileTransfer.Job> jobs=new HashMap<>();
     private static MonogramController controller;
     private static FileLoader files;
-    private static int cancellations;
+    private static int cancellations,downloads;
     @Implements(value=MonogramController.class,isInAndroidSdk=false)
     public static class Transfers {
         @Implementation public void __constructor__(int account) {}
         @Implementation public static MonogramController get(int account) { return controller; }
+        @Implementation public void download(MessageObject object){downloads++;}
         @Implementation public boolean isFileLoading(String name) { return NAME.equals(name) && jobs.containsKey(0); }
         @Implementation public void cancelFile(String name) {
             cancellations++;FileTransfer.Job job=jobs.remove(0);if(job!=null) job.cancel();
@@ -45,7 +46,7 @@ public class MonogramDownloadDetachTest {
         return type.cast(allocator.getMethod("allocateInstance",Class.class).invoke(field.get(null),type));
     }
     @Before public void setup() throws Exception {
-        jobs.clear();cancellations=0;controller=ReflectionHelpers.callConstructor(MonogramController.class,ReflectionHelpers.ClassParameter.from(int.class,0));
+        jobs.clear();cancellations=0;downloads=0;controller=ReflectionHelpers.callConstructor(MonogramController.class,ReflectionHelpers.ClassParameter.from(int.class,0));
         files=ReflectionHelpers.callConstructor(FileLoader.class,ReflectionHelpers.ClassParameter.from(int.class,0));
         ReflectionHelpers.setField(files,"loadOperationPathsUI",new ConcurrentHashMap<>());
         ReflectionHelpers.setField(files,"loadOperationPaths",new ConcurrentHashMap<>());
@@ -84,4 +85,11 @@ public class MonogramDownloadDetachTest {
         FileLoader.getInstance(0).cancelLoadFile(NAME);
         assertEquals(1,cancellations);assertTrue(job.cancelled());assertFalse(jobs.containsKey(0));
     }
+    @Test public void explicitPhotoLoadReachesXmppEvenWhenItsImageLocationCannotBeDecoded()throws Exception {
+        MessageObject photo=shell(MessageObject.class);photo.messageOwner=new TLRPC.TL_message();photo.messageOwner.params=new HashMap<>();
+        photo.messageOwner.params.put("monogramAttachment","https://files.example.org/picture.jpg");
+        FileLoader.getInstance(0).loadFile((ImageLocation)null,photo,"jpg",FileLoader.PRIORITY_NORMAL_UP,0);
+        assertEquals(1,downloads);
+    }
+
 }

@@ -1,3 +1,9 @@
+## 0.2.181 — MUJI calls, mentions-only notifications and explicit picture retries
+
+Add native room group-call controls backed by XEP-0272 presence coordination and bounded real-full-JID Jingle legs. Share WebRTC capture/factory across the eight-person mesh, retain call privacy and block rules, and fence foreground/audio/camera cleanup. Documented scope and Monocles source reference: docs/MUJI_GROUP_CALLS.md. Add account/room-scoped Mentions only to existing popup/custom settings and profile summary, using native mention routing. Explicit photo taps start XMPP downloads despite an unchanged failed decoder key; promote automatic transfers to manual without throwing away downloaded bytes.
+
+35 Android checks, 17 core checks and four real local Prosody signaling checks pass. Three-participant voice/video tests use synthetic SDP: live device media and Monocles runtime interoperability remain unverified. The reported picture still needs a device retry. No phone screenshots, ADB access or real contact messages/calls were used.
+
 ## 0.2.180 — keep media downloads across XMPP reconnects
 
 Fix completed HTTP downloads silently losing their cache/UI update when the XMPP session reconnects. Keep account ownership, explicit cancellation and attachment-reference/integrity checks. Add a bounded in-memory last-download-error category to Message diagnostics; errors no longer misleadingly require an XMPP connection and never include exception text that could expose private media URLs. Diagnostics clear on retry/success/logout and app restart.

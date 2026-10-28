@@ -39,10 +39,11 @@ public class MonogramNotificationSettingsTest {
     @Implements(value=BaseController.class,isInAndroidSdk=false)
     public static class Base { @Implementation public void __constructor__(int account) {} }
     @Implements(value=NotificationsController.class,isInAndroidSdk=false)
-    public static class Notifications { @Implementation public static void __staticInitializer__() {} }
+    public static class Notifications extends Base { @Implementation public static void __staticInitializer__() {} @Implementation public void __constructor__(int account){} }
     @Implements(value=MessageObject.class,isInAndroidSdk=false)
     public static class Objects { @Implementation public static void __staticInitializer__() {} }
     @Before public void setup() {
+        ReflectionHelpers.setStaticField(NotificationsController.class,"sharedPrefCachedKeys",new androidx.collection.LongSparseArray<String>());
         Settings.getNotificationsSettings(0).edit().clear().commit();
         Settings.getNotificationsSettings(1).edit().clear().commit();
     }
@@ -97,4 +98,18 @@ public class MonogramNotificationSettingsTest {
         assertEquals(0,response.mute_until);assertEquals(4,response.flags&4);
         assertEquals(0,prefs.getInt("notify2_-7",-1));
     }
+    @Test public void mentionsOnlyUsesExistingMentionSenderOverrideAndSurvivesRefreshWithoutMutingOtherRooms() {
+        SharedPreferences prefs=Settings.getNotificationsSettings(0);prefs.edit().putBoolean("mentions_only_-7",true).commit();
+        NotificationsSettingsFacade facade=new NotificationsSettingsFacade(0);
+        NotificationsController notifications=ReflectionHelpers.callConstructor(NotificationsController.class,ReflectionHelpers.ClassParameter.from(int.class,0));
+        ReflectionHelpers.setField(notifications,"dialogsNotificationsFacade",facade);
+        assertTrue(notifications.isMentionsOnly(-7,0));assertFalse(notifications.isMentionsOnly(-8,0));assertFalse(notifications.isMentionsOnly(7,0));
+        int room=ReflectionHelpers.callInstanceMethod(notifications,"getNotifyOverride",ReflectionHelpers.ClassParameter.from(SharedPreferences.class,prefs),ReflectionHelpers.ClassParameter.from(long.class,-7L),ReflectionHelpers.ClassParameter.from(long.class,0L));
+        int mentionSender=ReflectionHelpers.callInstanceMethod(notifications,"getNotifyOverride",ReflectionHelpers.ClassParameter.from(SharedPreferences.class,prefs),ReflectionHelpers.ClassParameter.from(long.class,42L),ReflectionHelpers.ClassParameter.from(long.class,0L));
+        assertEquals(2,room);assertEquals(-1,mentionSender);
+        refresh(0,-7);assertTrue(new NotificationsSettingsFacade(0).getProperty(NotificationsSettingsFacade.PROPERTY_MENTIONS_ONLY,-7,0,false));
+        assertFalse(new NotificationsSettingsFacade(1).getProperty(NotificationsSettingsFacade.PROPERTY_MENTIONS_ONLY,-7,0,false));
+        facade.clearPreference(-7,0);assertFalse(notifications.isMentionsOnly(-7,0));
+    }
+
 }

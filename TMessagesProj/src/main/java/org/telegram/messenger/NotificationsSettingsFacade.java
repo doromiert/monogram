@@ -13,6 +13,7 @@ import org.telegram.ui.NotificationsSoundActivity;
 public class NotificationsSettingsFacade {
 
     public final static String PROPERTY_NOTIFY = "notify2_";
+    public final static String PROPERTY_MENTIONS_ONLY = "mentions_only_";
     public final static String PROPERTY_CUSTOM = "custom_";
     public final static String PROPERTY_NOTIFY_UNTIL = "notifyuntil_";
     public final static String PROPERTY_CONTENT_PREVIEW = "content_preview_";
@@ -34,6 +35,7 @@ public class NotificationsSettingsFacade {
     public void clearPreference(long dialogId, long topicId) {
         String key = NotificationsController.getSharedPrefKey(dialogId, topicId, true);
         getPreferences().edit()
+                .remove(PROPERTY_MENTIONS_ONLY + key)
                 .remove(PROPERTY_NOTIFY + key)
                 .remove(PROPERTY_CUSTOM + key)
                 .remove(PROPERTY_NOTIFY_UNTIL + key)

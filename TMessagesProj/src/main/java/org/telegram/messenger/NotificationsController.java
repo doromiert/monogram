@@ -342,6 +342,7 @@ public class NotificationsController extends BaseController implements Notificat
             boolean defaultEnabled = NotificationsController.getInstance(currentAccount).isGlobalNotificationsEnabled(did, false, false);
 
             String sharedPrefKey = NotificationsController.getSharedPrefKey(did, topicId);
+            editor.remove(NotificationsSettingsFacade.PROPERTY_MENTIONS_ONLY+sharedPrefKey);
             if (selectedTimeInSeconds == Integer.MAX_VALUE) {
                 if (!defaultEnabled && !override) {
                     editor.remove("notify2_" + sharedPrefKey);
@@ -3296,7 +3297,20 @@ public class NotificationsController extends BaseController implements Notificat
                 && (messageObject.messageOwner.action == null || messageObject.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) || messageObject.isStoryReactionPush;
     }
 
+    public boolean isMentionsOnly(long dialogId,long topicId) {
+        return dialogId<0 && dialogsNotificationsFacade.getProperty(NotificationsSettingsFacade.PROPERTY_MENTIONS_ONLY,dialogId,topicId,false);
+    }
+    public void setMentionsOnly(long dialogId,long topicId,boolean enabled) {
+        if(dialogId>=0)return;
+        if(enabled)muteDialog(dialogId,topicId,false);
+        MessagesController.getNotificationsSettings(currentAccount).edit()
+                .putBoolean(NotificationsSettingsFacade.PROPERTY_MENTIONS_ONLY+getSharedPrefKey(dialogId,topicId),enabled).apply();
+        removeNotificationsForDialog(dialogId);
+        NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.notificationsSettingsUpdated);
+    }
     private int getNotifyOverride(SharedPreferences preferences, long dialog_id, long topicId) {
+        // Existing mention handling checks the sender's override after marking a room mention.
+        if(isMentionsOnly(dialog_id,topicId))return 2;
         int notifyOverride = dialogsNotificationsFacade.getProperty(NotificationsSettingsFacade.PROPERTY_NOTIFY, dialog_id, topicId, -1);
         if (notifyOverride == 3) {
             int muteUntil = dialogsNotificationsFacade.getProperty(NotificationsSettingsFacade.PROPERTY_NOTIFY_UNTIL, dialog_id, topicId, 0);
@@ -6323,6 +6337,7 @@ public class NotificationsController extends BaseController implements Notificat
             boolean override = topicId != 0;
             SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
             SharedPreferences.Editor editor = preferences.edit();
+            editor.remove(NotificationsSettingsFacade.PROPERTY_MENTIONS_ONLY+getSharedPrefKey(dialog_id,topicId));
             if (defaultEnabled && !override) {
                 editor.remove("notify2_" + getSharedPrefKey(dialog_id, topicId));
             } else {

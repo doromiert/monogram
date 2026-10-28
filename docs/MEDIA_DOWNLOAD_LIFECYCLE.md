@@ -24,3 +24,11 @@ Transfers interrupted by a process exit or explicit cancellation still restart
 from the beginning. HTTP range resume is not implemented, and an encrypted file
 is committed to the cache only after complete authenticated decryption and any
 advertised file hashes have been verified.
+
+A manual picture-button tap explicitly enters the XMPP FileLoader route before
+updating ImageReceiver. This prevents an unchanged failed image key from
+suppressing the retry. A tap during an automatic job promotes that same job to
+manual rather than cancelling its existing bytes. If an automatic size policy
+already declined it, the promoted request retries without that automatic limit;
+the hard byte bound and authenticated decryption remain mandatory. Transfer
+errors remain available in Message diagnostics without private URL text.

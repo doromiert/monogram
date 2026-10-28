@@ -92,6 +92,7 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
     private int avatarSectionRow;
     private int enableRow;
     private int previewRow;
+    private int mentionsOnlyRow;
     private int soundRow;
     private int vibrateRow;
     private int smartRow;
@@ -164,6 +165,7 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
         } else {
             enableRow = -1;
         }
+        mentionsOnlyRow=dialogId<0 ? rowCount++ : -1;
         storiesRow = -1;
         if (!DialogObject.isEncryptedDialog(dialogId)) {
             previewRow = rowCount++;
@@ -390,7 +392,7 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
                         .setPositiveButton(LocaleController.getString(R.string.Reset), (d, w) -> {
                             needReset = true;
 
-                            MessagesController.getNotificationsSettings(currentAccount).edit().putBoolean("custom_" + key, false).remove("notify2_" + key).apply();
+                            MessagesController.getNotificationsSettings(currentAccount).edit().putBoolean("custom_" + key, false).remove("mentions_only_"+key).remove("notify2_" + key).apply();
                             finishFragment();
                             if (delegate != null) {
                                 delegate.didRemoveException(dialogId);
@@ -447,8 +449,13 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
             } else if (position == enableRow) {
                 TextCheckCell checkCell = (TextCheckCell) view;
                 notificationsEnabled = !checkCell.isChecked();
+                if(!notificationsEnabled){MessagesController.getNotificationsSettings(currentAccount).edit().remove("mentions_only_"+key).apply();if(mentionsOnlyRow>=0)adapter.notifyItemChanged(mentionsOnlyRow);}
                 checkCell.setChecked(notificationsEnabled);
                 checkRowsEnabled();
+            } else if(position==mentionsOnlyRow) {
+                NotificationsController notifications=NotificationsController.getInstance(currentAccount);
+                notifications.setMentionsOnly(dialogId,topicId,!notifications.isMentionsOnly(dialogId,topicId));
+                notificationsEnabled=true;adapter.notifyDataSetChanged();checkRowsEnabled();
             } else if (position == previewRow) {
                 TextCheckCell checkCell = (TextCheckCell) view;
                 MessagesController.getNotificationsSettings(currentAccount).edit().putBoolean("content_preview_" + key, !checkCell.isChecked()).apply();
@@ -921,6 +928,8 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
                     SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
                     if (position == enableRow) {
                         checkCell.setTextAndCheck(LocaleController.getString(R.string.Notifications), notificationsEnabled, true);
+                    } else if(position==mentionsOnlyRow) {
+                        checkCell.setTextAndCheck(LocaleController.getString(R.string.MonogramMentionsOnly),NotificationsController.getInstance(currentAccount).isMentionsOnly(dialogId,topicId),true);
                     } else if (position == previewRow) {
                         String key = NotificationsController.getSharedPrefKey(dialogId, topicId);
                         checkCell.setTextAndCheck(LocaleController.getString(R.string.MessagePreview), preferences.getBoolean("content_preview_" + key, true), true);
@@ -1000,7 +1009,7 @@ public class ProfileNotificationsActivity extends BaseFragment implements Notifi
                 return VIEW_TYPE_USER;
             } else if (position == avatarSectionRow || position == customResetShadowRow) {
                 return VIEW_TYPE_SHADOW;
-            } else if (position == enableRow || position == previewRow || position == storiesRow) {
+            } else if (position == enableRow || position == mentionsOnlyRow || position == previewRow || position == storiesRow) {
                 return VIEW_TYPE_TEXT_CHECK;
             }
             return VIEW_TYPE_HEADER;

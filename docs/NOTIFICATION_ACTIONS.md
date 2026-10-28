@@ -54,3 +54,13 @@ cover cold DM/MUC reply, offline reply then reconnect/restart, later incoming
 messages remaining unread, app passcode, mark-read while locked, storage failure,
 account logout/reuse and timeout completion. No real-contact message was sent
 and no phone action was performed during implementation.
+
+## Mentions-only room mode
+
+The existing chat notification popup (both native variants) and custom notification
+screen expose Mentions only for rooms. The profile notification row shows the
+selected mode. This is a per-account, per-room preference with native topic
+inheritance, retained across dialog/full-chat refreshes. Ordinary room messages
+use the suppressed-room override; messages marked as mentions take the existing
+native sender-override path. Unread/history state is preserved. Explicit mute,
+unmute or resetting custom settings removes the mode. Direct chats are unaffected.
