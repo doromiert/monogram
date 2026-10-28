@@ -60,6 +60,7 @@ public final class MonogramController {
     private final ExecutorService fingerprintWorker=Executors.newFixedThreadPool(2);
     private final ExecutorService autoDownloadWorker = Executors.newSingleThreadExecutor();
     private final java.util.concurrent.ConcurrentHashMap<Integer, FileTransfer.Job> fileJobs = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<Integer,String> downloadErrors=new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<String, FileTransfer.Job> fileNames = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<Integer, FileTransfer.Job> automaticJobs = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Integer> autoAttempted = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Integer, Boolean>());
@@ -134,7 +135,14 @@ public final class MonogramController {
                     details+="Local outbox message ID: "+id+"\nSend state: "+object.messageOwner.send_state
                             +"\nNot committed to XMPP history yet."
                             +"\nQueued encryption: "+(object.messageOwner.params==null ? "Unknown" : object.messageOwner.params.getOrDefault(QUEUED_ENCRYPTION,"Unknown"));
-                } else details+=store.debugMessage(id,self);
+                } else {
+                    details+=store.debugMessage(id,self);
+                    if(MonogramAttachments.has(object.messageOwner)) {
+                        details+="\nDownload active: "+fileJobs.containsKey(id);
+                        String failure=downloadErrors.get(id);
+                        if(failure!=null)details+="\nLast download failure (since app start): "+failure;
+                    }
+                }
             } catch(Exception unavailable) { details="Message diagnostics unavailable: "+unavailable.getClass().getSimpleName(); }
             final String result=details;
             AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch) callback.accept(result); });
@@ -1826,7 +1834,7 @@ public final class MonogramController {
             try { if(!departing.isEmpty()) { modernStore.clearIncoming(departing);legacyStore.clearIncoming(departing); } }
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
-            automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear();
+            automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear(); downloadErrors.clear();
             savedTagColors=java.util.Collections.emptyMap();linkPreviews.clear();store.clear(); self = 0;
             state(ConnectionsManager.ConnectionStateWaitingForNetwork);
         });
@@ -3072,10 +3080,10 @@ public final class MonogramController {
         int id = object.getId();
         FileTransfer.Job job = new FileTransfer.Job();
         if (fileJobs.putIfAbsent(id, job) != null) return;
+        downloadErrors.remove(id);
         if (automatic) automaticJobs.put(id, job);
         String name = object.getFileName(); fileNames.put(name, job);
         String address = object.messageOwner.params.get(MonogramAttachments.PARAM);
-        long epoch = sessionEpoch;
         long owner = accountEpoch;
         (automatic ? autoDownloadWorker : fileWorker).execute(() -> {
             try {
@@ -3098,7 +3106,7 @@ public final class MonogramController {
                     if(sharing!=null) return;
                     worker.execute(() -> {
                         try {
-                            if(job.cancelled() || sessionEpoch!=epoch || owner!=accountEpoch || fileJobs.get(id)!=null && fileJobs.get(id)!=job) return;
+                            if(job.cancelled() || owner!=accountEpoch || fileJobs.get(id)!=null && fileJobs.get(id)!=job) return;
                             TLRPC.Message saved=store.getMessage(id,self);
                             TLRPC.MessageMedia remote=MonogramStickers.preserve(saved.media,MonogramAttachments.remoteMedia(id,filename,mime,size));
                             MonogramAttachments.preserveMediaAttributes(saved.media,remote);
@@ -3114,7 +3122,7 @@ public final class MonogramController {
                             ArrayList<TLRPC.Message> messages=new ArrayList<>();messages.add(updated);
                             MessagesStorage.getInstance(account).putMessages(messages,false,true,false,0,0,0);
                             AndroidUtilities.runOnUIThread(() -> {
-                                if(owner!=accountEpoch || sessionEpoch!=epoch || job.cancelled()) return;
+                                if(owner!=accountEpoch || job.cancelled()) return;
                                 ArrayList<MessageObject> objects=new ArrayList<>();objects.add(replacement);
                                 NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects,updated.dialog_id,objects);
                             });
@@ -3147,11 +3155,13 @@ public final class MonogramController {
                     boolean sourceChanged=false;
                     try {
                         job.check();
-                        if (sessionEpoch != epoch || owner!=accountEpoch || store.hiddenMessage(id)) return;
+                        if (owner!=accountEpoch || store.hiddenMessage(id)) return;
                         TLRPC.Message saved = store.getMessage(id, self);
                         if(decoded.document!=null) decoded.document.date=saved.date;
                         if(decoded.photo!=null) decoded.photo.date=saved.date;
+                        // HTTP verification belongs to the account/reference, not the XMPP connection.
                         if(!store.attachDownloaded(id,address,sharing,path,decoded)) { sourceChanged=true;return; }
+                        downloadErrors.remove(id);
                         mediaInfoScanned.remove(id);
                         TLRPC.Message updated = store.getMessage(id, self);
                         MonogramAttachments.apply(object.messageOwner, link, path, updated.media, updated.message, filename);
@@ -3159,7 +3169,7 @@ public final class MonogramController {
                         MessagesStorage.getInstance(account).putMessages(messages, false, true, false, 0, 0, 0);
                         java.util.Set<String> completedNames=downloadNames(name,job);
                         AndroidUtilities.runOnUIThread(() -> {
-                            if(owner!=accountEpoch || sessionEpoch!=epoch) return;
+                            if(owner!=accountEpoch) return;
                             ArrayList<MessageObject> objects = new ArrayList<>(); objects.add(new MessageObject(account, updated, true, true));
                             NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.replaceMessagesObjects, updated.dialog_id, objects);
                             for(String alias:completedNames) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoaded, alias, path);
@@ -3167,7 +3177,7 @@ public final class MonogramController {
                     } catch (Exception e) { downloadError(name, object, job, e, automatic,owner); }
                     finally {
                         finishDownload(id, name, job);
-                        if(sourceChanged && automatic && owner==accountEpoch && sessionEpoch==epoch && !store.hiddenMessage(id))
+                        if(sourceChanged && automatic && owner==accountEpoch && !store.hiddenMessage(id))
                             maybeAutoDownload(store.getMessage(id,self));
                     }
                 });
@@ -3177,13 +3187,27 @@ public final class MonogramController {
         });
     }
     private void downloadError(String name, MessageObject object, FileTransfer.Job job, Exception error, boolean automatic,long owner) {
+        if(owner!=accountEpoch)return;
+        String failure=downloadFailure(error);
+        if(!job.cancelled()) {
+            if(downloadErrors.size()>=128)downloadErrors.clear();
+            downloadErrors.put(object.getId(),failure);
+        }
         java.util.Set<String> names=downloadNames(name,job);
         AndroidUtilities.runOnUIThread(() -> {
             if(owner!=accountEpoch) return;
             for(String alias:names) NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, alias, 0);
-            if (!automatic && !job.cancelled()) org.telegram.ui.Components.AlertsCreator.processError(account, fileError(error), null,
-                    new MonogramFileRequest(object.messageOwner, null, "application/octet-stream", ""));
+            if (!automatic && !job.cancelled()) {
+                TLRPC.TL_error reported=new TLRPC.TL_error();reported.code=400;reported.text=failure;
+                org.telegram.ui.Components.AlertsCreator.processError(account, reported, null,
+                        new MonogramFileRequest(object.messageOwner, null, "application/octet-stream", ""));
+            }
         });
+    }
+    static String downloadFailure(Exception error) {
+        // Exception messages may contain private download URLs; retain only the safe category.
+        return error instanceof FileTransfer.Failure ? "MONOGRAM_FILE_"+((FileTransfer.Failure)error).reason
+                : "MONOGRAM_FILE_TRANSFER_FAILED|"+error.getClass().getSimpleName();
     }
     public static long sendingPeer(TLObject request) {
         if(request instanceof MonogramFileRequest) return ((MonogramFileRequest)request).message.dialog_id;

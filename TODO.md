@@ -1,3 +1,9 @@
+## 0.2.180 — keep media downloads across XMPP reconnects
+
+Fix completed HTTP downloads silently losing their cache/UI update when the XMPP session reconnects. Keep account ownership, explicit cancellation and attachment-reference/integrity checks. Add a bounded in-memory last-download-error category to Message diagnostics; errors no longer misleadingly require an XMPP connection and never include exception text that could expose private media URLs. Diagnostics clear on retry/success/logout and app restart.
+
+Ten Android download/cache/cancellation checks and 14 core URL/HTTP/integrity checks pass; the reconnect test fails on 0.2.179 and passes after the fix. No ADB or phone captures used. The reported individual picture cannot be diagnosed from its screenshot alone; its exact failure is still needed if retrying on this build does not help.
+
 ## 0.2.179 — avoid repeating encrypted group-send probes
 
 Retain a valid encrypted daily selection across passive device/member events. Recheck cached plaintext for upgrades; keep actual per-send membership, device and trust validation and explicit trust-setting invalidation. Reproduced the 0.2.178 cache regression before fixing it. Five alternating local Prosody measurements: median send preparation 167.60 → 84.13 ms and membership queries 16 → 8. Ten focused Android checks and three local encrypted-room checks pass. Phone/federation latency and the newly requested OMEMO 2 group implementation are not verified by these checks.
