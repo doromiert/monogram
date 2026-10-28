@@ -322,7 +322,7 @@ public final class MonogramMujiService extends VoIPService {
         changed();current=null;NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.didEndCall);
         uiListeners.clear();if(media!=null){media.close();media.disposed().whenComplete((done,failure)->closing=false);}setup.shutdownNow();
         if(wake!=null && wake.isHeld())wake.release();
-        if(audio!=null){if(Build.VERSION.SDK_INT>=26 && focus!=null)audio.abandonAudioFocusRequest(focus);else if(legacyFocus!=null)audio.abandonAudioFocus(legacyFocus);audio.setSpeakerphoneOn(oldSpeaker);audio.setMode(oldMode);}
+        if(audio!=null){if(Build.VERSION.SDK_INT>=26 && focus!=null)audio.abandonAudioFocusRequest(focus);else if(legacyFocus!=null)audio.abandonAudioFocus(legacyFocus);if(Build.VERSION.SDK_INT>=31)audio.clearCommunicationDevice();audio.setSpeakerphoneOn(oldSpeaker);audio.setMode(oldMode);}
         stopForeground(true);super.onDestroy();
     }
 }

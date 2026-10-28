@@ -45,5 +45,6 @@ Prosody connections. SDP is synthetic in these tests. Android checks cover captu
 permissions, queued-close fencing, SDP content naming and existing direct-call
 lifecycle behavior. Native-UI adapter checks cover service discovery without a
 private-call registration or Telegram engine, resource grouping and departure,
-mic/camera/volume routing, and synchronous renderer detach before disposal. Live multi-device audio/video and Monocles runtime
+mic/camera/volume routing, communication-device release and audio-mode restore,
+and synchronous renderer detach before disposal. Live multi-device audio/video and Monocles runtime
 interoperability have not been verified; no phone access or screenshots were used.

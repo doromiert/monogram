@@ -61,7 +61,7 @@ public class MonogramMujiNativeUiTest {
         ReflectionHelpers.setField(service,"media",new MonogramMujiMedia(RuntimeEnvironment.getApplication(),null));
         Media.local=null;Media.sinks.clear();Media.volumes.clear();
     }
-    @After public void cleanup(){lifecycle.destroy();assertNull(MonogramMujiService.current);}
+    @After public void cleanup(){if(lifecycle!=null)lifecycle.destroy();assertNull(MonogramMujiService.current);}
     private static TLRPC.User user(long id){TLRPC.TL_user user=new TLRPC.TL_user();user.id=id;user.first_name="User "+id;return user;}
     private static XmppMuji.Participant participant(String address)throws Exception{
         Constructor<XmppMuji.Participant> c=XmppMuji.Participant.class.getDeclaredConstructor(String.class,String.class,boolean.class,boolean.class);c.setAccessible(true);
@@ -100,6 +100,18 @@ public class MonogramMujiNativeUiTest {
         service.editCallMember(user(20),true,null,null,null,null);assertTrue(model.participants.get(20).muted_by_you);assertEquals(0.0,Media.volumes.get(peer+"\nsid"),0.0);
         service.editCallMember(user(20),false,null,7500,null,null);assertFalse(model.participants.get(20).muted_by_you);assertEquals(7500,model.participants.get(20).volume);assertEquals(0.75,Media.volumes.get(peer+"\nsid"),0.0);
         assertNull(model.getInputGroupCall());assertNull(model.getInputGroupCall(false));model.loadMembers(true);model.reloadGroupCall();
+    }
+    @Test public void leavingReleasesTheSelectedCommunicationDeviceAndRestoresAudioMode(){
+        android.media.AudioManager audio=(android.media.AudioManager)RuntimeEnvironment.getApplication().getSystemService(Context.AUDIO_SERVICE);
+        android.media.AudioDeviceInfo speaker=org.robolectric.shadows.AudioDeviceInfoBuilder.newBuilder().setType(android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER).build();
+        Shadows.shadowOf(audio).setAvailableCommunicationDevices(Collections.singletonList(speaker));
+        ReflectionHelpers.setField(service,"audio",audio);
+        ReflectionHelpers.setField(service,"oldMode",android.media.AudioManager.MODE_NORMAL);
+        ReflectionHelpers.setField(service,"oldSpeaker",false);
+        audio.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
+        service.setAudioOutput(VoIPCallController.AUDIO_OUTPUT_SPEAKER);assertSame(speaker,audio.getCommunicationDevice());
+        lifecycle.destroy();lifecycle=null;
+        assertNull(audio.getCommunicationDevice());assertEquals(android.media.AudioManager.MODE_NORMAL,audio.getMode());assertFalse(audio.isSpeakerphoneOn());
     }
     @Test public void rendererTargetsDetachSynchronouslyBeforeMediaDisposal(){
         AtomicInteger frames=new AtomicInteger();service.setLocalSink(frame->frames.incrementAndGet(),false);
