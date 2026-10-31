@@ -13195,6 +13195,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             Bundle args = new Bundle();
             presentFragment(new GroupCreateActivity(args));
         });
+        if (org.telegram.messenger.xmpp.MonogramFreeFeatures.local(currentAccount)) {
+            io.add(R.drawable.msg_folders, "Spaces and channels", () -> presentFragment(new MonogramSpacesActivity(currentAccount)));
+        }
         io.add(R.drawable.outline_saved_24, getString(R.string.SavedMessages), () -> {
             Bundle args = new Bundle();
             args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());

@@ -201,6 +201,19 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         return arguments!=null && arguments.getBoolean("monogramCompose",false) && !returnAsResult && !createSecretChat;
     }
 
+    boolean openMonogramComposeAction(int row) {
+        if (!isMonogramCompose() || row < 0 || row > 2) return false;
+        BaseFragment destination;
+        if (row == 0) {
+            if (MessagesController.getInstance(currentAccount).isFrozen()) { AccountFrozenAlert.show(currentAccount); return true; }
+            destination = new GroupCreateActivity(new Bundle());
+        } else if (row == 1) destination = new MonogramSpacesActivity(currentAccount);
+        else destination = new MonogramRoomActivity(currentAccount, 0);
+        destination.setCurrentAccount(currentAccount);
+        presentFragment(destination, false);
+        return true;
+    }
+
 
 
     public interface ContactsActivityDelegate {
@@ -682,6 +695,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
 //                    section--;
 //                }
                 if ((!onlyUsers || inviteViaLink != 0) && section == 0) {
+                    if (!needPhonebook && inviteViaLink == 0 && openMonogramComposeAction(row)) return;
                     if (needPhonebook) {
                         if (row == 0) {
                             if (MessagesController.getInstance(currentAccount).isFrozen()) {
@@ -709,10 +723,6 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
                             Bundle args = new Bundle();
                             presentFragment(new GroupCreateActivity(args), false);
                         } else if (row == 1) {
-                            if(isMonogramCompose()) {
-                                presentFragment(new MonogramRoomActivity(currentAccount,0));
-                                return;
-                            }
                             if (MessagesController.getInstance(currentAccount).isFrozen()) {
                                 AccountFrozenAlert.show(currentAccount);
                                 return;

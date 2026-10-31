@@ -1,6 +1,6 @@
 # MIX channels and spaces
 
-Open **New conversation → Spaces and MIX channels**. MIX conversations use Monogram's normal native chat screen, attachment picker and message storage.
+Tap the main chat-list **compose FAB → Spaces and channels**. The entry appears alongside **New group** and **Join XMPP room**, including when the contact list is empty. It is also available from the chat-list menu. MIX conversations use Monogram's normal native chat screen, attachment picker and message storage.
 
 ## Channels
 

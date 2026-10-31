@@ -84,6 +84,11 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
         this.fragment = fragment;
     }
 
+    private boolean isMonogramCompose() {
+        return onlyUsers == 0 && !needPhonebook && !isAdmin && fragment instanceof org.telegram.ui.ContactsActivity
+                && ((org.telegram.ui.ContactsActivity)fragment).isMonogramCompose();
+    }
+
     public void setDisableSections(boolean value) {
         disableSections = value;
     }
@@ -243,6 +248,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
             return row < arr.size();
         } else {
             if (section == 0) {
+                if (isMonogramCompose()) { int action = row - (includeSearch ? 1 : 0); return action >= 0 && action < 3; }
                 if (isAdmin) {
                     return row < 1;
                 } else if (needPhonebook) {
@@ -339,6 +345,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
             }
         } else {
             if (section == 0) {
+                if (isMonogramCompose()) return (includeSearch ? 1 : 0) + (isEmpty ? 4 : 5);
                 if (isEmpty) {
                     return (includeSearch ? 1 : 0) + 2;
                 }
@@ -484,6 +491,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                         if (!isAdmin && !needPhonebook) {
                             totalHeight += cellHeight;
                         }
+                        if (isMonogramCompose()) totalHeight += cellHeight;
 
                         height -= parent.getPaddingTop();
                         height -= parent.getPaddingBottom();
@@ -560,7 +568,11 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                     textCell.setColors(Theme.key_telegram_color_text, Theme.key_telegram_color_text);
                 }
                 if (section == 0) {
-                    if (needPhonebook) {
+                    if (isMonogramCompose()) {
+                        if (position == 0) textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewGroup), "", false, R.drawable.settings_group, 0xFF1CA5ED, 0xFF1488E1, false);
+                        else if (position == 1) textCell.setTextAndValueAndColorfulIcon("Spaces and channels", "", false, R.drawable.msg_folders, 0xFF8B64DD, 0xFF7045C1, false);
+                        else if (position == 2) textCell.setTextAndValueAndColorfulIcon("Join XMPP room", "", false, R.drawable.msg_link2, 0xFF55CA47, 0xFF27B434, false);
+                    } else if (needPhonebook) {
                         if (position == 0) {
                             textCell.setTextAndValueAndColorfulIcon(getString(R.string.InviteFriends), "", false, R.drawable.settings_invite, 0xFF1CA5ED, 0xFF1488E1, false);
                         } else if (position == 1) {
@@ -576,9 +588,7 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
                         if (position == 0) {
                             textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewGroup), "", false, R.drawable.settings_group, 0xFF1CA5ED, 0xFF1488E1, false);
                         } else if (position == 1) {
-                            boolean xmppCompose=fragment instanceof org.telegram.ui.ContactsActivity && ((org.telegram.ui.ContactsActivity)fragment).isMonogramCompose();
-                            textCell.setTextAndValueAndColorfulIcon(xmppCompose ? "Join XMPP room" : getString(R.string.NewChannel), "", false,
-                                    xmppCompose ? R.drawable.msg_link2 : R.drawable.settings_channel, 0xFF55CA47, 0xFF27B434, false);
+                            textCell.setTextAndValueAndColorfulIcon(getString(R.string.NewChannel), "", false, R.drawable.settings_channel, 0xFF55CA47, 0xFF27B434, false);
                         }
                     }
                 } else {
@@ -646,6 +656,11 @@ public class ContactsAdapter extends RecyclerListView.SectionsAdapter {
             return position < arr.size() ? USER_CELL : DIVIDER_CELL;
         } else {
             if (section == 0) {
+                if (isMonogramCompose()) {
+                    if (position < 3) return TEXT_CELL;
+                    if (position == 3) return SHADOW_CELL;
+                    return sortType == SORT_TYPE_BY_NAME || sortType == SORT_TYPE_BY_TIME ? HEADER_CELL : GRAY_CELL;
+                }
                 if (isAdmin) {
                     if (position == 1) {
                         return SHADOW_CELL;
