@@ -9,4 +9,8 @@ dependencies {
     api 'org.igniterealtime.smack:smack-experimental:4.4.8'
     api 'org.igniterealtime.smack:smack-omemo-signal:4.4.8'
     api 'org.igniterealtime.smack:smack-resolver-minidns:4.4.8'
+    testImplementation 'org.igniterealtime.smack:smack-java8:4.4.8'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 }
+test { useJUnitPlatform() }

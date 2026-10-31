@@ -7,6 +7,17 @@ import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
+    public static XmppRooms.State mixState(String address,String participantId,boolean joined) throws Exception {
+        java.util.List<XmppMix.Participant> participants=java.util.Arrays.asList(new XmppMix.Participant(participantId,"Alice","alice@example.org"),new XmppMix.Participant("bob-id","Bob","bob@example.org"));
+        return new XmppRooms.State(new XmppMix.Channel(JidCreate.entityBareFrom(address),participantId,"Alice","General","MIX channel",joined,participants));
+    }
+    public static XmppRoomMessage mixMessage(String address,String participant,String real,String serverId,String origin,boolean historical) throws Exception {
+        Message wire=new Message(JidCreate.entityBareFrom("alice@example.org"),Message.Type.groupchat);
+        wire.setFrom(JidCreate.entityFullFrom(address+"/"+participant));wire.setStanzaId(serverId);wire.setBody("A MIX message");wire.addExtension(new OriginIdElement(origin));
+        XmppRoomMessage message=XmppRoomMessage.archived(wire,JidCreate.entityBareFrom(address),JidCreate.entityBareFrom("alice@example.org"),"",wire.getBody(),false,true,historical?serverId:null,historical?new Date(100000):null);
+        java.util.Map<String,String> ids=new java.util.LinkedHashMap<>(message.ids);ids.put("archive",serverId);ids.put("mix-origin",real+"\n"+origin);
+        return message.canonical(ids,message.timestamp,historical,"alice@example.org".equals(real),real,true,historical?null:participant);
+    }
     public static XmppRoomMessage withRoomAliases(XmppRoomMessage message,java.util.Map<String,String> aliases) {
         return message.withAliases(aliases);
     }

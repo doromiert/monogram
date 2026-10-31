@@ -58,6 +58,12 @@ public final class MonogramRoomActivity extends MonogramSettingsActivity impleme
         return super.createView(context);
     }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
+        if(dialog!=0 && MonogramController.get(currentAccount).isMix(dialog)) {
+            items.add(UItem.asHeader(MonogramController.get(currentAccount).jid(dialog)));
+            items.add(UItem.asButton(9,R.drawable.msg_groups,"MIX channel settings and participants"));
+            items.add(UItem.asButton(4,R.drawable.msg_secret,"Conversation security"));
+            items.add(UItem.asButton(10,R.drawable.msg_folders,"Spaces and channels"));return;
+        }
         if(dialog==0) {
             items.add(UItem.asHeader("Room")); items.add(UItem.asCustom(address));
             if(creating) {
@@ -127,6 +133,8 @@ public final class MonogramRoomActivity extends MonogramSettingsActivity impleme
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         MonogramController controller=MonogramController.get(currentAccount);
+        if(item.id==9){presentFragment(new MonogramMixChannelActivity(currentAccount,dialog,null));return;}
+        if(item.id==10){presentFragment(new MonogramSpacesActivity(currentAccount));return;}
         if(item.id>=100 && item.id-100<invitations.size()) { presentFragment(new MonogramRoomActivity(currentAccount,0,false,invitations.get(item.id-100))); return; }
         if(item.id==7) { presentFragment(new MonogramRoomActivity(currentAccount,0,true,null)); return; }
         if(item.id==8 && dialog!=0) { presentFragment(new MonogramRoomMembersActivity(currentAccount,dialog)); return; }

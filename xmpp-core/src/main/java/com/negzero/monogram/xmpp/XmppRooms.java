@@ -26,14 +26,20 @@ public final class XmppRooms implements AutoCloseable {
             role=occupant==null || occupant.getRole()==null ? "" : occupant.getRole().toString();
             affiliation=occupant==null || occupant.getAffiliation()==null ? "" : occupant.getAffiliation().toString();
         }
+        Occupant(XmppMix.Channel channel,XmppMix.Participant participant) {
+            presence=null;address=channel.jid+"/"+participant.id;nickname=participant.nickname;realJid=participant.jid;
+            role="participant";affiliation="member";
+        }
     }
     public static final class State {
         public final EntityBareJid room;
         public final String nickname,subject,title,description,role,affiliation;
-        public final boolean joined;
+        public final boolean joined,mix;
+        public final String participantId;
         public final List<Occupant> occupants;
         State(MultiUserChat chat) { this(chat,null,null); }
         State(MultiUserChat chat,String title,String description) {
+            mix=false;participantId="";
             this.description=description; this.title=title; room=chat.getRoom(); nickname=chat.getNickname()==null ? "" : chat.getNickname().toString();
             subject=chat.getSubject()==null ? "" : chat.getSubject(); joined=chat.isJoined();
             org.jivesoftware.smackx.muc.Occupant own=chat.getNickname()==null ? null : chat.getOccupant(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()));
@@ -43,8 +49,15 @@ public final class XmppRooms implements AutoCloseable {
             for (EntityFullJid jid:chat.getOccupants()) found.add(new Occupant(jid,chat.getOccupant(jid),chat.getOccupantPresence(jid)));
             occupants=Collections.unmodifiableList(found);
         }
+        State(XmppMix.Channel channel) {
+            mix=true;participantId=channel.participantId;room=channel.jid;nickname=channel.nickname;title=channel.title;description=channel.description;
+            subject="";joined=channel.joined;role="participant";affiliation="member";
+            List<Occupant> found=new ArrayList<>();if(channel.joined)for(XmppMix.Participant participant:channel.participants)found.add(new Occupant(channel,participant));
+            occupants=Collections.unmodifiableList(found);
+        }
     }
     private final XMPPConnection connection;
+    public final XmppMix mix;
     private final OmemoManager omemo;
     XmppChatStates chatStates;
     private final XmppSession.Listener listener;
@@ -95,6 +108,7 @@ public final class XmppRooms implements AutoCloseable {
     XmppSession legacySession;
     XmppRooms(XMPPConnection connection,OmemoManager omemo,XmppSession.Listener listener,DeviceLookup deviceLookup) {
         this.connection=connection; this.omemo=omemo; this.listener=listener; this.deviceLookup=deviceLookup;
+        mix=new XmppMix(connection,listener);
         recoveryLookups.allowCoreThreadTimeOut(true);connection.addConnectionListener(recoveryLifecycle);
         org.jivesoftware.smack.provider.ProviderManager.addExtensionProvider("occupant-id",OCCUPANT_ID,
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
@@ -127,6 +141,7 @@ public final class XmppRooms implements AutoCloseable {
     }
     LegacyIncomingJournal.Context legacyContext(Message wire,boolean live,String archiveId,Date time) throws Exception {
         if(closed || connection.getUser()==null || wire.getFrom()==null || MessageReactions.publicLegacy(wire)) return null;
+        if(mix.known(wire.getFrom()))return mix.legacyContext(wire,live,archiveId,time);
         MultiUserChat chat=chats.get(wire.getFrom().asEntityBareJidIfPossible());
         if(chat==null || !chat.isJoined()) return null;
         String author;
@@ -157,7 +172,8 @@ public final class XmppRooms implements AutoCloseable {
     public Collection<HostedRoom> discover(String service) throws Exception {
         return MultiUserChatManager.getInstanceFor(connection).getRoomsHostedBy(JidCreate.domainBareFrom(service)).values();
     }
-    public boolean known(Jid jid) { return jid!=null && chats.containsKey(jid.asEntityBareJidIfPossible()); }
+    public boolean known(Jid jid) { return mix.known(jid) || jid!=null && chats.containsKey(jid.asEntityBareJidIfPossible()); }
+    public boolean isMix(String jid) {try{return mix.known(JidCreate.from(jid));}catch(Exception invalid){return false;}}
     boolean canSendChatState(EntityBareJid room) {
         MultiUserChat chat=chats.get(room);
         if(chat==null || !chat.isJoined() || chat.getNickname()==null) return false;
@@ -191,7 +207,7 @@ public final class XmppRooms implements AutoCloseable {
         String current=chatStateIdentity(from);
         return current!=null && (!stableOccupants.contains(from.asEntityBareJid()) || current.equals("id:"+occupantId(message)));
     }
-    public State state(String jid) throws Exception { return new State(chat(jid)); }
+    public State state(String jid) throws Exception { return isMix(jid)?new State(mix.state(jid)):new State(chat(jid)); }
     private MultiUserChat chat(String jid) throws Exception {
         MultiUserChat chat=chats.get(JidCreate.entityBareFrom(jid));
         if (chat==null) throw new IllegalArgumentException("Unknown room");
@@ -203,7 +219,7 @@ public final class XmppRooms implements AutoCloseable {
         return chats.computeIfAbsent(room,key -> {
             MultiUserChat created=MultiUserChatManager.getInstanceFor(connection).getMultiUserChat(key);
             created.addMessageListener(message -> {
-                if (closed || connection.getUser()==null) return;
+                if (closed || connection.getUser()==null || mix.known(created.getRoom())) return;
                 RoomDisplayedMarker marker=displayed(created,message,false);
                 if(marker!=null) { listener.roomDisplayed(marker);return; }
                 boolean encrypted=message.hasExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE) || message.hasExtension("encrypted",XmppOmemo2.NS);
@@ -242,6 +258,7 @@ public final class XmppRooms implements AutoCloseable {
         } catch(java.util.concurrent.RejectedExecutionException stopped) { if(!closed) throw stopped; }
     }
     public State join(String jid,String nickname,String password) throws Exception {
+        if(isMix(jid))return new State(mix.join(jid,nickname));
         MultiUserChat chat=managed(jid);
         RoomInfo info=MultiUserChatManager.getInstanceFor(connection).getRoomInfo(chat.getRoom());
         org.jivesoftware.smackx.disco.packet.DiscoverInfo features=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).discoverInfo(chat.getRoom());
@@ -340,7 +357,10 @@ public final class XmppRooms implements AutoCloseable {
         queueState(chat);
     }
     public Map<String,String> affiliations(String jid) throws Exception { return affiliations(jid,true); }
-    public Map<String,String> roster(String jid) throws Exception { return affiliations(jid,false); }
+    public Map<String,String> roster(String jid) throws Exception {
+        if(isMix(jid)){Map<String,String> found=new LinkedHashMap<>();for(XmppMix.Participant member:mix.refresh(jid).participants)if(member.jid!=null)found.put(member.jid,"member");return found;}
+        return affiliations(jid,false);
+    }
     private Map<String,String> affiliations(String jid,boolean includeOutcasts) throws Exception {
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Join the room before managing memberships.");
@@ -415,6 +435,7 @@ public final class XmppRooms implements AutoCloseable {
         return id==null || id.isEmpty() || id.length()>128 ? null : id;
     }
     public boolean sendDisplayed(String jid,String id) throws Exception {
+        if(isMix(jid))return false; // MIX uses server read-marker IQs, not MUC displayed messages.
         MultiUserChat chat=chat(jid);
         if(closed || !chat.isJoined() || !assignedIds.contains(chat.getRoom()) || !MessageReceipt.valid(id)) return false;
         Message marker=new Message(chat.getRoom(),Message.Type.groupchat);
@@ -461,6 +482,7 @@ public final class XmppRooms implements AutoCloseable {
         public void stored() { if(stored.compareAndSet(false,true)) for(Runnable action:accepted) action.run(); }
     }
     public boolean hasArchive(String jid) throws Exception {
+        if(isMix(jid))return org.jivesoftware.smackx.mam.MamManager.getInstanceFor(connection,JidCreate.entityBareFrom(jid)).isSupported();
         return org.jivesoftware.smackx.mam.MamManager.getInstanceFor(chat(jid)).isSupported();
     }
     public ArchivePage archiveSince(String jid,Date since,int limit) throws Exception {
@@ -471,6 +493,7 @@ public final class XmppRooms implements AutoCloseable {
         return archive(jid,before,after,limit,null);
     }
     private ArchivePage archive(String jid,String before,String after,int limit,Date since) throws Exception {
+        if(isMix(jid))return mixArchive(jid,before,after,limit,since);
         MultiUserChat chat=chat(jid); if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.Builder args=org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.builder()
                 .setResultPageSizeTo(Math.min(Math.max(limit,1),100));
@@ -525,12 +548,45 @@ public final class XmppRooms implements AutoCloseable {
         org.jivesoftware.smackx.rsm.packet.RSMSet rsm=query.getPage().getMamFinIq().getRSMSet();
         return new ArchivePage(messages,rsm==null ? null : rsm.getFirst(),rsm==null ? null : rsm.getLast(),query.isComplete(),accepted);
     }
+    private ArchivePage mixArchive(String jid,String before,String after,int limit,Date since) throws Exception {
+        if(!mix.state(jid).joined)throw new IllegalStateException("Join the MIX channel first.");
+        org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.Builder args=org.jivesoftware.smackx.mam.MamManager.MamQueryArgs.builder().setResultPageSizeTo(Math.min(Math.max(limit,1),100));
+        if(before!=null)args.beforeUid(before);if(after!=null)args.afterUid(after);if(since!=null)args.limitResultsSince(since);
+        org.jivesoftware.smackx.mam.MamManager.MamQuery query=org.jivesoftware.smackx.mam.MamManager.getInstanceFor(connection,JidCreate.entityBareFrom(jid)).queryArchive(args.build());
+        List<XmppRoomMessage> messages=new ArrayList<>();List<Runnable> accepted=new ArrayList<>();
+        for(org.jivesoftware.smackx.mam.element.MamElements.MamResultExtension result:query.getMamResultExtensions()) {
+            org.jivesoftware.smackx.forward.packet.Forwarded<Message> forwarded=result.getForwarded();
+            if(forwarded.getDelayInformation()==null || result.getId()==null)throw new java.io.IOException("MIX archive result has no timestamp or ID");
+            Message wire=forwarded.getForwardedStanza();Date time=forwarded.getDelayInformation().getStamp();
+            if(wire.getFrom()==null || !jid.equals(wire.getFrom().asBareJid().toString()))continue;
+            boolean modern=wire.hasExtension("encrypted",XmppOmemo2.NS),publicReaction=MessageReactions.publicLegacy(wire);
+            org.jivesoftware.smackx.omemo.element.OmemoElement element=wire.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
+            boolean encrypted=!publicReaction && (modern || element!=null);
+            if(element!=null && !modern && !publicReaction) {
+                if(element.isKeyTransportElement())continue;
+                LegacyIncomingJournal.Context context=mix.legacyContext(wire,false,result.getId(),time);
+                if(context!=null)try {
+                    LegacyIncomingJournal.Received decoded=legacySession.receiveLegacyArchive(context);
+                    if(decoded.roomMessage!=null)messages.add(decoded.roomMessage);
+                    else {XmppRoomMessage placeholder=mix.project(wire,null,true,false,result.getId(),time);if(placeholder!=null)messages.add(placeholder.withAliases(legacySession.legacyAliases(context)));}
+                    accepted.add(()->legacySession.acceptLegacy(decoded));continue;
+                }catch(org.jivesoftware.smackx.omemo.exceptions.CorruptedOmemoKeyException
+                        | org.jivesoftware.smackx.omemo.exceptions.NoRawSessionException
+                        | org.jivesoftware.smackx.omemo.exceptions.CryptoFailedException unavailable){/* Preserve an unreadable placeholder and existing decoded cache. */}
+            }
+            XmppRoomMessage message=mix.project(wire,encrypted?null:wire.getBody(),encrypted,!encrypted,result.getId(),time);if(message!=null)messages.add(message);
+        }
+        org.jivesoftware.smackx.rsm.packet.RSMSet rsm=query.getPage().getMamFinIq().getRSMSet();
+        return new ArchivePage(messages,rsm==null?null:rsm.getFirst(),rsm==null?null:rsm.getLast(),query.isComplete(),accepted);
+    }
     public void leave(String jid) throws Exception {
+        if(isMix(jid)){mix.leave(jid);return;}
         MultiUserChat chat=chat(jid);nonAnonymousRooms.remove(chat.getRoom());
         if(chatStates!=null) chatStates.roomLeft(chat.getRoom());
         if (chat.isJoined()) chat.leave(); listener.roomChanged(new State(chat));
     }
     public void nickname(String jid,String nickname) throws Exception {
+        if(isMix(jid)){mix.nickname(jid,nickname);return;}
         Resourcepart.from(nickname); MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         String previous=chat.getNickname().toString(),password=passwords.get(chat.getRoom());
@@ -540,6 +596,7 @@ public final class XmppRooms implements AutoCloseable {
         catch(Exception failed) { try { join(jid,previous,password); } catch(Exception restore) { failed.addSuppressed(restore); } throw failed; }
     }
     public Set<BareJid> members(String jid) throws Exception {
+        if(isMix(jid))return mix.members(jid);
         MultiUserChat chat=chat(jid);
         if (!chat.isJoined()) throw new OmemoSendException(OmemoSendException.Reason.ROOM_UNSUPPORTED);
         Set<BareJid> members=memberLists(connection,chat.getRoom());
@@ -663,34 +720,39 @@ public final class XmppRooms implements AutoCloseable {
         if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
-        MultiUserChat chat=chat(jid);
-        if (!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        boolean mixed=isMix(jid);MultiUserChat chat=mixed?null:chat(jid);
+        State state=state(jid);
+        if (!state.joined) throw new IllegalStateException("Room is not joined");
         Map<String,Unavailable> failures=new LinkedHashMap<>();
         try {
         String wireBody=reply==null ? body : reply.wireBody(body);
         Map<String,String> skipped=new TreeMap<>();
         Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped,failures);
         if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
-        if(!encrypted && markup!=null) { MessageMarkup publicMarkup=nonAnonymousRooms.contains(chat.getRoom()) ? markup : markup.withMentions(Collections.emptyList());
+        if(!encrypted && markup!=null) { MessageMarkup publicMarkup=nonAnonymousRooms.contains(state.room) || mixed && state.occupants.stream().allMatch(p->p.realJid!=null) ? markup : markup.withMentions(Collections.emptyList());
             publicMarkup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message); }
         if(sharing!=null) sharing.addTo(message,wireBody);
         if(displayStickerHint && encrypted) StickerHint.addTo(message);
         if(encrypted && markup!=null) { markup.addContentHint(message);markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addLegacySpoilers(message); }
         if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
-        XmppRoomMessage sent=XmppRoomMessage.sentFile(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,body,encrypted,sharing,reply,correction);
-        if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
+        XmppRoomMessage sent=XmppRoomMessage.sentFile(state.room,connection.getUser().asEntityBareJid(),mixed?state.participantId:state.nickname,id,body,encrypted,sharing,reply,correction);
+        if(mixed) {sent=sent.withOccupantId(state.participantId);Map<String,String> aliases=new LinkedHashMap<>(sent.ids);aliases.put("mix-origin",connection.getUser().asBareJid()+"\n"+id);sent=sent.withAliases(aliases);}
+        else if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
         if(displayStickerHint) sent=sent.withDisplayStickerHint(true);
         if(markup!=null) sent=sent.withMarkup(markup);
         if(inline!=null) sent=sent.withInlineEmoji(inline);
         sent=sent.withSenderFingerprint(encrypted ? omemo.getOwnFingerprint().toString() : null);
-        chatStates.decorate(message); chat.sendMessage(message); chatStates.sent(message); return sent.withSkippedRecipients(skipped);
+        if(mixed)connection.sendStanza(message);
+        else {chatStates.decorate(message);chat.sendMessage(message);chatStates.sent(message);}
+        return sent.withSkippedRecipients(skipped);
         } finally { if(automatic && encrypted) recoverUnavailable(failures); }
     }
     /** Encrypt and discard a local check; never send or await a room echo. */
     public void probeEncryption(String jid,Set<String> excluded,boolean automatic) throws Exception {
-        MultiUserChat chat=chat(jid);
-        if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
+        boolean mixed=isMix(jid);MultiUserChat chat=mixed?null:chat(jid);
+        State state=state(jid);
+        if(!state.joined) throw new IllegalStateException("Room is not joined");
         roomMessage(chat,jid,"Monogram encryption check",true,excluded,automatic,new TreeMap<>(),new LinkedHashMap<>());
     }
     private Message roomMessage(MultiUserChat chat,String jid,String wireBody,boolean encrypted,Set<String> excluded,boolean automatic,Map<String,String> skipped,Map<String,Unavailable> failures) throws Exception {
@@ -703,8 +765,8 @@ public final class XmppRooms implements AutoCloseable {
             OmemoMessage.Sent ciphertext=encryptRecipients(recipients,wireBody,skipped,automatic,failures);
             try { if (!members(jid).equals(members)) throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED); }
             catch(org.jivesoftware.smack.SmackException.NoResponseException timeout) { throw lookupTimeout("The room server did not answer the final membership check.",timeout); }
-            message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),chat.getRoom());
-        } else { message=new Message(chat.getRoom(),Message.Type.groupchat); message.setBody(wireBody); }
+            message=ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.groupchat),JidCreate.entityBareFrom(jid));
+        } else { message=new Message(JidCreate.entityBareFrom(jid),Message.Type.groupchat); message.setBody(wireBody); }
         return message;
     }
     private static final int MAX_UNAVAILABLE=512,MAX_RECOVERED=32,MAX_BUNDLE_CHARS=256*1024,MAX_RECOVERED_CHARS=1024*1024;
@@ -1049,7 +1111,7 @@ public final class XmppRooms implements AutoCloseable {
         OmemoSendException error=new OmemoSendException(OmemoSendException.Reason.LOOKUP_TIMEOUT,detail); error.initCause(cause); return error;
     }
     /** Explicit plaintext metadata, matching XEP-0444 clients that use legacy OMEMO for text. */
-    public boolean legacyRetractions(String jid) throws Exception { return legacyRetractions.getOrDefault(chat(jid).getRoom(),false); }
+    public boolean legacyRetractions(String jid) throws Exception { return isMix(jid)?false:legacyRetractions.getOrDefault(chat(jid).getRoom(),false); }
     /** Null means unknown; lack of a completed capability lookup must never force quote-only replies. */
     public Boolean supportsReplies(String jid) {
         try {
@@ -1059,6 +1121,22 @@ public final class XmppRooms implements AutoCloseable {
         } catch(Exception invalid) { return null; }
     }
     public void sendRetraction(String jid,MessageRetraction request,String originalSender,String originalStable,boolean encrypted,Set<String> excluded,boolean automatic) throws Exception {
+        if(isMix(jid)) {
+            State state=state(jid);
+            if(!state.joined || !(jid+"/"+state.participantId).equals(originalSender) && !state.participantId.equals(originalStable))throw new IllegalArgumentException("This message does not belong to your MIX participant.");
+            Map<String,Unavailable> failures=new LinkedHashMap<>();
+            try {
+                Message wire=roomMessage(null,jid,MessageRetraction.FALLBACK_BODY,encrypted,excluded,automatic,new TreeMap<>(),failures);
+                String id=UUID.randomUUID().toString();wire.setStanzaId(id);wire.addExtension(new OriginIdElement(id));request.addMetadataTo(wire);
+                org.jivesoftware.smack.StanzaCollector collector=connection.createStanzaCollector(stanza-> {
+                    if(!(stanza instanceof Message) || stanza.getFrom()==null || !state.room.equals(stanza.getFrom().asBareJid()))return false;
+                    OriginIdElement origin=OriginIdElement.getOriginId((Message)stanza);
+                    return ((Message)stanza).getType()==Message.Type.error && id.equals(stanza.getStanzaId()) || (jid+"/"+state.participantId).equals(stanza.getFrom().toString()) && origin!=null && id.equals(origin.getId());
+                });
+                try {connection.sendStanza(wire);Message echo=collector.nextResultOrThrow();MessageRetraction confirmed=MessageRetraction.from(echo);if(confirmed==null || !request.id.equals(confirmed.id))throw new java.io.IOException("MIX did not confirm the retraction.");}finally{collector.cancel();}
+            }finally{if(automatic && encrypted)recoverUnavailable(failures);}
+            return;
+        }
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         EntityFullJid own=JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname());
@@ -1086,6 +1164,11 @@ public final class XmppRooms implements AutoCloseable {
         } finally { if(automatic && encrypted) recoverUnavailable(failures); }
     }
     public XmppRoomMessage sendReactions(String jid,MessageReactions reactions) throws Exception {
+        if(isMix(jid)) {
+            State state=state(jid);if(!state.joined)throw new IllegalStateException("Join the MIX channel first.");
+            Message message=new Message(state.room,Message.Type.groupchat);String id=UUID.randomUUID().toString();message.setStanzaId(id);reactions.addTo(message);message.addExtension(new OriginIdElement(id));
+            connection.sendStanza(message);return XmppRoomMessage.sentReactions(state.room,connection.getUser().asEntityBareJid(),state.participantId,id,reactions).withOccupantId(state.participantId);
+        }
         MultiUserChat chat=chat(jid);
         if(!chat.isJoined()) throw new IllegalStateException("Room is not joined");
         Message message=new Message(chat.getRoom(),Message.Type.groupchat);
@@ -1094,5 +1177,5 @@ public final class XmppRooms implements AutoCloseable {
         message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         chat.sendMessage(message); return XmppRoomMessage.sentReactions(chat.getRoom(),connection.getUser().asEntityBareJid(),chat.getNickname().toString(),id,reactions);
     }
-    @Override public void close() { closed=true;cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); assignedIds.clear(); replyCapabilitiesKnown.clear(); nonAnonymousRooms.clear(); }
+    @Override public void close() { closed=true;mix.close();cancelRecovery();recoveryLookups.shutdownNow();connection.removeConnectionListener(recoveryLifecycle); for(Future<?> future:pendingBundles) future.cancel(true); bundleLookups.shutdownNow(); pendingBundles.clear(); connection.removeStanzaInterceptor(invitationInterceptor); connection.removeAsyncStanzaListener(invitationErrors); connection.removeAsyncStanzaListener(metadataChanges); outgoingInvitations.clear(); presenceUpdates.shutdownNow(); pendingPresence.clear(); chats.clear(); passwords.clear(); stableOccupants.clear(); assignedIds.clear(); replyCapabilitiesKnown.clear(); nonAnonymousRooms.clear(); }
 }

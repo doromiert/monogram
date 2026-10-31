@@ -52,6 +52,7 @@ public final class XmppSession implements AutoCloseable {
         default void roomInviteFailed(String room,String target,String condition) {}
         default void roomMetadataChanged(String room) {}
         default void bookmarksChanged() {}
+        default void spacesChanged() {}
         default void storiesChanged(String owner) {}
         default void devicesChanged(String owner) {}
         default void readSyncChanged() {}
@@ -123,6 +124,7 @@ public final class XmppSession implements AutoCloseable {
     public final XmppProfiles profiles;
     public final XmppRooms rooms;
     public final XmppBookmarks bookmarks;
+    public final XmppSpaces spaces;
     public final XmppReadSync readSync;
     public final XmppContacts contacts;
     public final XmppBlocking blocking;
@@ -309,6 +311,7 @@ public final class XmppSession implements AutoCloseable {
             catch(Exception invalid){return true;}
         });
         bookmarks=new XmppBookmarks(connection,listener::bookmarksChanged);
+        spaces=new XmppSpaces(connection,listener::spacesChanged);
         readSync=new XmppReadSync(connection,listener::readSyncChanged);
         connection.addConnectionListener(new org.jivesoftware.smack.ConnectionListener() {
             @Override public void connectionClosed() { disconnected(null); }
@@ -1266,7 +1269,7 @@ public final class XmppSession implements AutoCloseable {
         synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }
         MonogramLegacyOmemoService.instance().unregister(omemo);legacyWorker.shutdownNow();
         if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
-        muji.close(); calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); readSync.close(); fingerprints.close();
+        muji.close(); calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); spaces.close(); readSync.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();
         connection.disconnect();

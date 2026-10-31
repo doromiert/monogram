@@ -673,6 +673,9 @@ public final class MonogramController {
                             decryptionTimeout(owner,details.jid.toString(),id,() -> incomingRoom(message));
                         });
                     }
+                    @Override public void spacesChanged() {
+                        if(owner==accountEpoch && sessionEpoch==epoch)AndroidUtilities.runOnUIThread(()->NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_CHAT_MEMBERS));
+                    }
                     @Override public void roomMembersVerified(String room,java.util.Set<String> members) {
                         if(owner!=accountEpoch || sessionEpoch!=epoch)return;
                         long dialog=store.knownRoom(room);if(dialog!=0)verifiedRoomTrustMembers.put(dialog,members);
@@ -694,6 +697,10 @@ public final class MonogramController {
                     }
                     @Override public void roomChanged(com.negzero.monogram.xmpp.XmppRooms.State room) {
                         worker.execute(() -> { if (sessionEpoch==epoch && session!=null) {
+                            if(room.mix) {
+                                long saved=store.knownRoom(room.room.toString());if(saved==0)saved=store.room(room.room.toString(),room.nickname);
+                                store.mixChannel(saved,room.participantId,room.joined);
+                            }
                             java.util.Set<Long> affectedUsers=new java.util.LinkedHashSet<>();
                             boolean changed=store.roomState(room,self,affectedUsers);long dialog=store.knownRoom(room.room.toString());
                             boolean joined=dialog!=0 && room.joined && joinedRooms.add(dialog);
@@ -837,6 +844,7 @@ public final class MonogramController {
                 worker.execute(() -> {
                     if (sessionEpoch != epoch || session != connecting) return;
                     for (org.jxmpp.jid.Jid jid : addresses) {
+                        if(connecting.rooms.mix.known(jid))continue;
                         RosterEntry entry = roster.getEntry(jid.asBareJid());
                         if(entry!=null && entry.canSeeMyPresence()) recordContactRequest(details.jid.toString(),jid.asBareJid().toString(),false);
                         long peer = store.knownPeer(jid.asBareJid().toString());
@@ -861,7 +869,11 @@ public final class MonogramController {
         });
         MonogramCallService.bind(account,connecting,() -> sessionEpoch==epoch && sameAccount(owner,details.jid.toString()));
         bindUnavailableRecipients(connecting,epoch,owner,details.jid.toString());
-        for(long room:store.rooms()) connecting.rooms.remember(store.jid(room));
+        for(long room:store.rooms()) {
+            if(store.isMix(room))connecting.rooms.mix.remember(store.jid(room),store.mixParticipantId(room),store.room(room).nickname);
+            else connecting.rooms.remember(store.jid(room));
+        }
+        for(com.negzero.monogram.xmpp.XmppSpaces.Reference space:savedSpaces())connecting.spaces.watch(space);
         connecting.chatStates.setEnabled(typingEnabled());
         connecting.recoverIncoming();
         connecting.readSync.setEnabled(preferences.getBoolean("private-read-enabled-"+details.jid,true));
@@ -873,6 +885,7 @@ public final class MonogramController {
         synchronized(readSyncLock) { connecting.readSync.setEnabled(preferences.getBoolean("private-read-enabled-"+details.jid,true)); }
         java.util.List<String> rosterAddresses=new ArrayList<>();
         for (RosterEntry entry : Roster.getInstanceFor(connecting.connection()).getEntries()) {
+            if(connecting.rooms.mix.known(entry.getJid()))continue;
             rosterAddresses.add(entry.getJid().toString());
             long peer = store.peer(entry.getJid().toString()); store.rosterName(peer, entry.getName());
         }
@@ -886,10 +899,15 @@ public final class MonogramController {
     }
     private void rejoinRooms(XmppSession expected,long epoch) {
         roomWorker.execute(() -> {
+            try {expected.rooms.mix.refreshRoster();}catch(Exception unavailable){if(BuildVars.LOGS_ENABLED)FileLog.e("Monogram MIX roster: "+unavailable.getClass().getSimpleName());}
             for (long dialog:store.rooms()) {
                 if (session!=expected || sessionEpoch!=epoch || !expected.connection().isAuthenticated()) return;
                 try {
                     MonogramStore.Room room=store.room(dialog);
+                    if(store.isMix(dialog)) {
+                        if(expected.rooms.state(room.jid).joined) {expected.rooms.mix.refresh(room.jid);joinedRooms.add(dialog);flushPendingSends();}
+                        continue; // MIX membership is server-persistent; reconnecting must not rejoin a channel left on another client.
+                    }
                     com.negzero.monogram.xmpp.XmppRooms.State current=expected.rooms.state(room.jid);
                     if(!room.autojoin) { if(current.joined) expected.rooms.leave(room.jid); continue; }
                     if(current.joined) { if(!room.nickname.equals(current.nickname)) expected.rooms.nickname(room.jid,room.nickname); continue; }
@@ -930,6 +948,7 @@ public final class MonogramController {
                         java.util.Set<String> present=new java.util.HashSet<>();
                         for(com.negzero.monogram.xmpp.XmppBookmarks.Bookmark bookmark:snapshot.bookmarks) {
                             present.add(bookmark.jid);
+                            if(store.isMix(store.knownRoom(bookmark.jid)))continue;
                             store.importBookmark(bookmark,vault.encrypt(bookmark.xml()),ownUser().first_name);
                             long dialog=store.knownRoom(bookmark.jid); sync.session.rooms.remember(bookmark.jid);
                             String passwordKey="room-password-"+dialog,localKey="room-password-local-"+dialog;
@@ -991,10 +1010,63 @@ public final class MonogramController {
         }
     }
     private void dirtyRoomBookmark(long dialog) {
+        if(store.isMix(dialog))return; // MIX uses PAM roster membership, not MUC bookmarks.
         store.dirtyBookmark(dialog); XmppSession expected=session;
         if(expected!=null && expected.connection().isAuthenticated()) syncBookmarks(expected,sessionEpoch,null);
     }
     public boolean isRoom(long dialog) { return dialog<0 && store.rooms().contains(dialog); }
+    public boolean isMix(long dialog) {return store.isMix(dialog);}
+    public java.util.List<TLRPC.Chat> mixChannels() {
+        java.util.List<TLRPC.Chat> result=new ArrayList<>();for(long dialog:store.rooms())if(store.isMix(dialog) && store.room(dialog).autojoin)result.add(store.roomChat(dialog,self));return result;
+    }
+    public interface MixTask<T> {T run(com.negzero.monogram.xmpp.XmppMix mix) throws Exception;}
+    public interface SpacesTask<T> {T run(com.negzero.monogram.xmpp.XmppSpaces spaces) throws Exception;}
+    public <T> void mixRequest(MixTask<T> task,java.util.function.BiConsumer<T,String> callback) {
+        final long owner=accountEpoch;final XmppSession expected=session;
+        roomWorker.execute(()->{T value=null;String error=null;
+            try {if(owner!=accountEpoch || expected==null || expected!=session)throw new IllegalStateException("Reconnect your account and retry.");value=task.run(expected.rooms.mix);if(owner!=accountEpoch || expected!=session)throw new IllegalStateException("Account connection changed.");}
+            catch(Exception failed){error=roomError(failed);}
+            final T result=value;final String failure=error;AndroidUtilities.runOnUIThread(()->{if(owner==accountEpoch)callback.accept(expected==session?result:null,expected==session?failure:"Connection changed. Try again.");});
+        });
+    }
+    public <T> void spacesRequest(SpacesTask<T> task,java.util.function.BiConsumer<T,String> callback) {
+        final long owner=accountEpoch;final XmppSession expected=session;
+        roomWorker.execute(()->{T value=null;String error=null;
+            try {if(owner!=accountEpoch || expected==null || expected!=session)throw new IllegalStateException("Reconnect your account and retry.");value=task.run(expected.spaces);if(owner!=accountEpoch || expected!=session)throw new IllegalStateException("Account connection changed.");}
+            catch(Exception failed){error=roomError(failed);}
+            final T result=value;final String failure=error;AndroidUtilities.runOnUIThread(()->{if(owner==accountEpoch)callback.accept(expected==session?result:null,expected==session?failure:"Connection changed. Try again.");});
+        });
+    }
+    public void openMixChannel(String address,String nickname,boolean create,RequestDelegate callback) {
+        final long owner=accountEpoch;final XmppSession expected=session;
+        roomWorker.execute(()->{try {
+            if(owner!=accountEpoch || expected==null || expected!=session)throw new IllegalStateException("Reconnect your XMPP account first.");
+            String jid=com.negzero.monogram.xmpp.XmppMix.channel(address).toString();long existing=store.knownRoom(jid);
+            if(existing!=0 && !store.isMix(existing))throw new IllegalStateException("This address is already saved as a MUC room. Open that conversation instead.");
+            if(create)expected.rooms.mix.create(jid);
+            com.negzero.monogram.xmpp.XmppMix.Channel channel=expected.rooms.mix.join(jid,nickname);
+            com.negzero.monogram.xmpp.XmppRooms.State joined=expected.rooms.state(jid);
+            worker.execute(()->{if(owner!=accountEpoch)return;if(expected!=session){roomResult(callback,new IllegalStateException("Connection changed. Try again."));return;}
+                long dialog=store.room(jid,channel.nickname);store.mixChannel(dialog,channel.participantId,true);store.roomState(joined,self);publishRoom(dialog);
+                TLRPC.Chat chat=store.roomChat(dialog,self);publishDialogs(dialogs(),()->owner==accountEpoch && expected==session,()->callback.run(chat,null));
+            });
+        }catch(Exception failed){roomResult(callback,failed);}});
+    }
+    private String spacesKey(){return "mix-spaces-"+accountJid();}
+    public java.util.List<com.negzero.monogram.xmpp.XmppSpaces.Reference> savedSpaces() {
+        java.util.List<com.negzero.monogram.xmpp.XmppSpaces.Reference> result=new ArrayList<>();
+        try {org.json.JSONArray entries=new org.json.JSONArray(preferences.getString(spacesKey(),"[]"));
+            for(int i=0;i<entries.length();i++){org.json.JSONObject entry=entries.getJSONObject(i);result.add(new com.negzero.monogram.xmpp.XmppSpaces.Reference(entry.getString("service"),entry.getString("node"),entry.optString("name")));}
+        }catch(Exception invalid){if(BuildVars.LOGS_ENABLED)FileLog.e("Invalid saved spaces");}
+        return result;
+    }
+    public void saveSpace(com.negzero.monogram.xmpp.XmppSpaces.Reference space,boolean saved) {
+        org.json.JSONArray entries=new org.json.JSONArray();
+        try {for(com.negzero.monogram.xmpp.XmppSpaces.Reference entry:savedSpaces())if(!entry.key().equals(space.key()))entries.put(new org.json.JSONObject().put("service",entry.service).put("node",entry.node).put("name",entry.name));
+            if(saved)entries.put(new org.json.JSONObject().put("service",space.service).put("node",space.node).put("name",space.name));
+        }catch(org.json.JSONException invalid){throw new IllegalArgumentException(invalid);}
+        if(!preferences.edit().putString(spacesKey(),entries.toString()).commit())throw new IllegalStateException("Could not save the space.");
+    }
     public String roomNickname(long dialog) { return store.room(dialog).nickname; }
     public String lastRoomInviteError(long dialog) { return preferences.getString("last-room-invite-error-"+dialog,null); }
     private String roomInvitationsKey() { return "room-invitations-"+accountJid(); }
@@ -1113,6 +1185,10 @@ public final class MonogramController {
         } catch(Exception failed) { roomResult(callback,failed); } });
     }
     public void leaveRoom(long dialog,RequestDelegate callback) {
+        if(store.isMix(dialog)) {mixRequest(mix->{mix.leave(store.jid(dialog));return true;},(value,error)->{
+            if(error!=null){roomResult(callback,new IllegalStateException(error));return;}
+            worker.execute(()->{store.leaveRoom(dialog);publishRoom(dialog);AndroidUtilities.runOnUIThread(()->callback.run(new TLRPC.TL_boolTrue(),null));});
+        });return;}
         long owner=accountEpoch;
         worker.execute(() -> { try {
             if(accountEpoch!=owner) throw new IllegalStateException("Account changed");

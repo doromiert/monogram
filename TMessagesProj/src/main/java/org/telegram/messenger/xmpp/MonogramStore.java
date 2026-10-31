@@ -35,7 +35,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     private final java.util.Map<Long,java.util.Map<Long,String>> mentionNamesCache=new java.util.HashMap<>();
     private final java.util.Map<Long, com.negzero.monogram.xmpp.XmppProfile> profileCache = new java.util.HashMap<>();
     MonogramStore(int account) { this(ApplicationLoader.applicationContext, "monogram-" + account + ".db");this.account=account; }
-    MonogramStore(Context context, String name) { super(context, name, null, 34); storeContext = context; database = new java.io.File(name).getName(); }
+    MonogramStore(Context context, String name) { super(context, name, null, 35); storeContext = context; database = new java.io.File(name).getName(); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE peers (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL UNIQUE)");
         db.execSQL("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, peer INTEGER NOT NULL, stanza TEXT NOT NULL, body TEXT NOT NULL, encrypted INTEGER NOT NULL, outgoing INTEGER NOT NULL, time INTEGER NOT NULL, UNIQUE(peer,stanza,outgoing))");
@@ -49,7 +49,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         addLocalNames(db);
         addStickerHints(db);
         addLinkPreviews(db);
-        MonogramSavedTags.create(db);addForwardedMetadata(db);MonogramLegacyCaptions.create(db);addRosterContacts(db);
+        MonogramSavedTags.create(db);addForwardedMetadata(db);MonogramLegacyCaptions.create(db);addRosterContacts(db);addMixChannels(db);
     }
     synchronized boolean linkLegacyCaption(int parent,int companion,boolean placeholder) {
         return MonogramLegacyCaptions.link(getWritableDatabase(),parent,companion,placeholder);
@@ -199,7 +199,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (newVersion != 34 || oldVersion < 1 || oldVersion > 33) throw new IllegalStateException("Unknown database migration");
+        if (newVersion != 35 || oldVersion < 1 || oldVersion > 34) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
         else if (oldVersion == 2) db.execSQL("UPDATE message_ids SET kind='legacy-stanza' WHERE kind='stanza'");
         if (oldVersion < 4) addAttachments(db);
@@ -232,6 +232,20 @@ final class MonogramStore extends SQLiteOpenHelper {
         if(oldVersion<32) addForwardedMetadata(db);
         if(oldVersion<33) { MonogramLegacyCaptions.create(db);MonogramLegacyCaptions.recoverPlaceholders(db); }
         if(oldVersion<34)addRosterContacts(db);
+        if(oldVersion<35)addMixChannels(db);
+    }
+    private static void addMixChannels(SQLiteDatabase db) {db.execSQL("CREATE TABLE IF NOT EXISTS mix_channels (room INTEGER PRIMARY KEY,participant_id TEXT NOT NULL)");}
+    synchronized boolean isMix(long dialog) {
+        if(dialog>=0)return false;
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT 1 FROM mix_channels WHERE room=?",new String[]{Long.toString(-dialog)})){return row.moveToFirst();}
+    }
+    synchronized String mixParticipantId(long dialog) {
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT participant_id FROM mix_channels WHERE room=?",new String[]{Long.toString(-dialog)})){return row.moveToFirst()?row.getString(0):"";}
+    }
+    synchronized void mixChannel(long dialog,String participantId,boolean joined) {
+        ContentValues values=new ContentValues();values.put("room",-dialog);values.put("participant_id",participantId);
+        getWritableDatabase().insertWithOnConflict("mix_channels",null,values,SQLiteDatabase.CONFLICT_REPLACE);
+        getWritableDatabase().execSQL("UPDATE rooms SET autojoin=? WHERE id=?",new Object[]{joined?1:0,-dialog});
     }
     private static void addProfileSources(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS profile_avatar_sources (peer INTEGER PRIMARY KEY,bytes BLOB NOT NULL)");
@@ -346,7 +360,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         profileCache.clear();mentionNamesCache.clear();
         pendingDecryptions.clear();
         db.beginTransaction();
-        try { db.delete("roster_contacts",null,null); db.delete("local_media_captions",null,null); db.delete("local_forwarded_messages",null,null); db.delete("saved_message_tags",null,null); db.delete("saved_tag_names",null,null); db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("room_readers",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
+        try { db.delete("mix_channels",null,null);db.delete("roster_contacts",null,null); db.delete("local_media_captions",null,null); db.delete("local_forwarded_messages",null,null); db.delete("saved_message_tags",null,null); db.delete("saved_tag_names",null,null); db.delete("link_previews",null,null); MonogramEmojis.clear(db,storeContext,database); db.delete("message_formatting",null,null); db.delete("call_events",null,null); db.delete("pending_displayed",null,null); db.delete("displayed_anchors",null,null); db.delete("markable_messages",null,null); db.delete("local_read_messages",null,null); db.delete("local_read_anchors",null,null); db.delete("message_receipts",null,null); db.delete("room_readers",null,null); db.delete("retraction_sources",null,null); db.delete("message_retractions",null,null); db.delete("reaction_events",null,null); db.delete("reaction_sources",null,null); db.delete("room_affiliations",null,null); db.delete("room_permissions",null,null); db.delete("room_message_actors",null,null); db.delete("room_bookmarks", null, null); db.delete("room_senders", null, null); db.delete("room_participants", null, null); db.delete("rooms", null, null); db.delete("applied_corrections", null, null); db.delete("corrections", null, null); db.delete("replies", null, null); db.delete("message_senders", null, null); db.delete("profile_avatar_sources",null,null); db.delete("local_contact_names",null,null); db.delete("profiles", null, null); db.delete("attachments", null, null); db.delete("message_ids", null, null); db.delete("archive_state", null, null); db.delete("messages", null, null); db.delete("peers", null, null); db.setTransactionSuccessful(); }
         finally { db.endTransaction(); }
     }
     private void addRooms(SQLiteDatabase db) {
@@ -468,11 +482,13 @@ final class MonogramStore extends SQLiteOpenHelper {
                 if(!occupant.address.startsWith(previous.jid+"/")) throw new IllegalArgumentException("Occupant belongs to another room");
                 boolean wasActive=active.remove(occupant.address);
                 boolean sameIdentity=identities.containsKey(occupant.address) && java.util.Objects.equals(identities.get(occupant.address),occupant.realJid);
+                if(state.mix && occupant.realJid==null && previousUsers.containsKey(occupant.address))rosterName(previousUsers.get(occupant.address),occupant.nickname);
                 if(wasActive && sameIdentity) continue;
                 ContentValues participant=new ContentValues();participant.put("active",1);
                 Long oldUser=previousUsers.get(occupant.address);if(oldUser!=null)affected.add(oldUser);
                 if(!sameIdentity) {
                     long user=roomUser(dialog,occupant.address,occupant.realJid,self);affected.add(user);
+                    if(state.mix && occupant.realJid==null)rosterName(user,occupant.nickname);
                     participant.put("real_jid",occupant.realJid);participant.put("user",user);
                 }
                 db.update("room_participants",participant,"room=? AND occupant=?",new String[]{Long.toString(-dialog),occupant.address});changed=true;
