@@ -1409,6 +1409,8 @@ public class PeerColorActivity extends BaseFragment {
 
         @Override
         public void draw(@NonNull Canvas canvas) {
+            int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, "ui.PeerColorActivity.LevelLock");
+            try {
             int left = getBounds().left;
             int cy = getBounds().centerY();
 
@@ -1425,12 +1427,16 @@ public class PeerColorActivity extends BaseFragment {
             lock.draw(canvas);
 
             text.draw(canvas, left + dp(3.66f) + lock.getIntrinsicWidth() * lockScale, cy, Color.WHITE, 1f);
-        }
+
+            } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, "ui.PeerColorActivity.LevelLock", packLayer); }
+}
 
         @Override
-        public void setAlpha(int alpha) {}
+        public void setAlpha(int alpha) {
+            org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);}
         @Override
-        public void setColorFilter(@Nullable ColorFilter colorFilter) {}
+        public void setColorFilter(@Nullable ColorFilter colorFilter) {
+            org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);}
 
         @Override
         public int getOpacity() {

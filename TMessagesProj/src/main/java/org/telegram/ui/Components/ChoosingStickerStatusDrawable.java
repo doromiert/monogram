@@ -50,6 +50,7 @@ public class ChoosingStickerStatusDrawable extends StatusDrawable {
 
     @Override
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         if (this.color != color) {
             fillPaint.setColor(color);
             strokePaint.setColor(color);
@@ -59,6 +60,9 @@ public class ChoosingStickerStatusDrawable extends StatusDrawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.ChoosingStickerStatusDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         float animationProgress = Math.min(progress, 1f);
         float k = 0.3f;
         float p = CubicBezierInterpolator.EASE_IN.getInterpolation(animationProgress < k ? animationProgress / k : 1f);
@@ -94,6 +98,8 @@ public class ChoosingStickerStatusDrawable extends StatusDrawable {
         if (started) {
             update();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     private void update() {
@@ -114,11 +120,13 @@ public class ChoosingStickerStatusDrawable extends StatusDrawable {
 
     @Override
     public void setAlpha(int i) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, i);
 
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 

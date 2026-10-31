@@ -35,6 +35,7 @@ public class SendingFileDrawable extends StatusDrawable {
 
     @Override
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         if (currentPaint != null) {
             currentPaint.setColor(color);
         }
@@ -71,6 +72,9 @@ public class SendingFileDrawable extends StatusDrawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.SendingFileDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         Paint paint = currentPaint == null ? Theme.chat_statusRecordPaint : currentPaint;
         for (int a = 0; a < 3; a++) {
             if (a == 0) {
@@ -88,15 +92,19 @@ public class SendingFileDrawable extends StatusDrawable {
         if (started) {
             update();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
 
     }
 

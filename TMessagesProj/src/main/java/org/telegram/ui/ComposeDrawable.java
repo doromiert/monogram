@@ -55,6 +55,9 @@ public class ComposeDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.ComposeDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         final float iconVisible = animatedIconVisible.set(this.iconVisible);
 
         background.setAlpha(alpha);
@@ -75,6 +78,8 @@ public class ComposeDrawable extends Drawable {
             icon.draw(canvas);
             canvas.restore();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
@@ -90,11 +95,13 @@ public class ComposeDrawable extends Drawable {
     private int alpha = 0xFF;
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         this.alpha = alpha;
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         background.setColorFilter(colorFilter);
         icon.setColorFilter(colorFilter);
     }

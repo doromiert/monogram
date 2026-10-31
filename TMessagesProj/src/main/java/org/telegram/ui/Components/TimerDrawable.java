@@ -148,6 +148,9 @@ public class TimerDrawable extends Drawable {
     }
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.TimerDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         int width = getIntrinsicWidth();
         int height = getIntrinsicHeight();
 
@@ -200,16 +203,20 @@ public class TimerDrawable extends Drawable {
 
             }
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     ColorFilter currentColorFilter;
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
         currentColorFilter = cf;
         if (isStaticIcon) {
             currentTtlIcon.setColorFilter(cf);

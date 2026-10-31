@@ -108,12 +108,14 @@ public class Emoji {
         preloadEmoji(code,LOAD_PREFETCH);
     }
     public static void preloadEmoji(CharSequence code,int priority) {
+        if (SharedConfig.useSystemEmoji) return;
         final DrawableInfo info = getDrawableInfo(code);
         if (info != null) {
             loadEmoji(info.page, info.page2,priority);
         }
     }
     public static void preloadVisibleEmojis(java.util.List<String> codes) {
+        if (SharedConfig.useSystemEmoji) return;
         java.util.ArrayList<Integer> keys=new java.util.ArrayList<>();
         for(String code:codes) {
             DrawableInfo info=getDrawableInfo(code);
@@ -221,6 +223,11 @@ public class Emoji {
     }
 
     public static EmojiDrawable getEmojiDrawable(CharSequence code) {
+        if (SharedConfig.useSystemEmoji && code != null && (getDrawableInfo(code) != null || CompoundEmoji.isHandshake(code.toString()) != null)) {
+            SystemEmojiDrawable drawable = new SystemEmojiDrawable(code.toString());
+            drawable.setBounds(0, 0, drawImgSize, drawImgSize);
+            return drawable;
+        }
         DrawableInfo info = getDrawableInfo(code);
         if (info == null) {
             if (code != null) {
@@ -233,6 +240,7 @@ public class Emoji {
             return null;
         }
         EmojiDrawable ed = new SimpleEmojiDrawable(info, endsWithRightArrow(code));
+        ed.systemCode = code.toString();
         ed.setBounds(0, 0, drawImgSize, drawImgSize);
         return ed;
     }
@@ -273,6 +281,11 @@ public class Emoji {
     }
 
     public static Drawable getEmojiBigDrawable(String code) {
+        if (SharedConfig.useSystemEmoji) {
+            EmojiDrawable system = getEmojiDrawable(code);
+            if (system != null) { system.setBounds(0, 0, bigImgSize, bigImgSize); system.fullSize = true; }
+            return system;
+        }
         EmojiDrawable ed = null;
         CompoundEmoji.CompoundEmojiDrawable compoundEmojiDrawable = CompoundEmoji.getCompoundEmojiDrawable(code);
         if (compoundEmojiDrawable != null) {
@@ -297,6 +310,12 @@ public class Emoji {
     }
 
     public static abstract class EmojiDrawable extends Drawable {
+        String systemCode;
+        protected boolean drawSystem(Canvas canvas) {
+            if (!SharedConfig.useSystemEmoji || systemCode == null) return false;
+            SystemEmojiDrawable.draw(canvas, systemCode, getBounds(), getAlpha());
+            return true;
+        }
         public boolean fullSize = false;
         int placeholderColor = 0x10000000;
 
@@ -304,6 +323,33 @@ public class Emoji {
             return false;
         }
         public void preload() {}
+    }
+
+    /** Draws the device's emoji font, including complete ZWJ/skin-tone sequences. */
+    public static final class SystemEmojiDrawable extends EmojiDrawable {
+        private int alpha = 255;
+        private static final ThreadLocal<Paint> paints = new ThreadLocal<Paint>() {
+          @Override protected Paint initialValue() {
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            paint.setTypeface(android.graphics.Typeface.DEFAULT);
+            paint.setTextAlign(Paint.Align.CENTER);
+            return paint;
+          }
+        };
+        SystemEmojiDrawable(String code) { systemCode = code; }
+        static void draw(Canvas canvas, String code, Rect bounds, int alpha) {
+            if (bounds.isEmpty()) return;
+            Paint paint = paints.get();paint.setAlpha(alpha);paint.setTextSize(bounds.height() * .85f);
+            float width = paint.measureText(code);
+            if (width > bounds.width()) paint.setTextSize(paint.getTextSize() * bounds.width() / width);
+            canvas.drawText(code, bounds.exactCenterX(), bounds.exactCenterY() - (paint.ascent() + paint.descent()) / 2, paint);
+        }
+        @Override public void draw(Canvas canvas) { draw(canvas, systemCode, getBounds(), alpha); }
+        @Override public boolean isLoaded() { return true; }
+        @Override public void setAlpha(int value) { alpha = value; }
+        @Override public int getAlpha() { return alpha; }
+        @Override public void setColorFilter(ColorFilter filter) {}
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
     }
 
     public static class SimpleEmojiDrawable extends EmojiDrawable {
@@ -333,6 +379,7 @@ public class Emoji {
 
         @Override
         public void draw(Canvas canvas) {
+            if (drawSystem(canvas)) return;
             if (!isLoaded()) {
                 loadEmoji(info.page, info.page2);
                 placeholderPaint.setColor(placeholderColor);
@@ -377,6 +424,7 @@ public class Emoji {
 
         @Override
         public boolean isLoaded() {
+            if (SharedConfig.useSystemEmoji) return true;
             return emojiBmp[info.page][info.page2] != null;
         }
 
@@ -586,6 +634,18 @@ public class Emoji {
         return emojis;
     }
 
+    private static CharSequence systemText(CharSequence text, boolean copy) {
+        if (!(text instanceof Spanned)) return text;
+        EmojiSpan[] spans = ((Spanned) text).getSpans(0, text.length(), EmojiSpan.class);
+        AnimatedEmojiSpan[] animated = ((Spanned) text).getSpans(0, text.length(), AnimatedEmojiSpan.class);
+        boolean automatic = false;for (AnimatedEmojiSpan span : animated) automatic |= span.standard;
+        if (spans.length == 0 && !automatic) return text;
+        Spannable clean = !copy && text instanceof Spannable ? (Spannable) text : new android.text.SpannableString(text);
+        for (EmojiSpan span : spans) clean.removeSpan(span);
+        for (AnimatedEmojiSpan span : animated) if (span.standard) clean.removeSpan(span);
+        return clean;
+    }
+
     public static CharSequence replaceEmoji(CharSequence cs, Paint.FontMetricsInt fontMetrics, boolean createNew) {
         return replaceEmoji(cs, fontMetrics, createNew, null);
     }
@@ -603,9 +663,8 @@ public class Emoji {
     }
 
     public static CharSequence replaceEmoji(CharSequence cs, Paint.FontMetricsInt fontMetrics, boolean createNew, int[] emojiOnly, int alignment, float scale, int minusLimit) {
-        if (SharedConfig.useSystemEmoji || cs == null || cs.length() == 0) {
-            return cs;
-        }
+        if (cs == null || cs.length() == 0) return cs;
+        if (SharedConfig.useSystemEmoji) { if (emojiOnly != null) parseEmojis(cs, emojiOnly); return systemText(cs, createNew); }
         Spannable s;
         if (!createNew && cs instanceof Spannable) {
             s = (Spannable) cs;
@@ -677,9 +736,8 @@ public class Emoji {
     }
 
     public static CharSequence replaceWithRestrictedEmoji(CharSequence cs, Paint.FontMetricsInt fontMetrics, int cacheType, Runnable update) {
-        if (SharedConfig.useSystemEmoji || cs == null || cs.length() == 0) {
-            return cs;
-        }
+        if (cs == null || cs.length() == 0) return cs;
+        if (SharedConfig.useSystemEmoji) return systemText(cs, false);
 
         final int currentAccount = UserConfig.selectedAccount;
         TLRPC.InputStickerSet inputStickerSet = new TLRPC.TL_inputStickerSetShortName();

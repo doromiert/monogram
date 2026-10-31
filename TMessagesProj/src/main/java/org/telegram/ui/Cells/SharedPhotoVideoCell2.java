@@ -1277,7 +1277,7 @@ public class SharedPhotoVideoCell2 extends FrameLayout {
             if (bitmap != null) {
                 return bitmap;
             }
-            bitmap = BitmapFactory.decodeResource(context.getResources(), resId);
+            bitmap = org.telegram.messenger.MonogramIconPacks.decodeResource(context.getResources(), resId);
             Bitmap shadowBitmap = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(), Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(shadowBitmap);
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);

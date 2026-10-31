@@ -45,6 +45,7 @@ public class TypingDotsDrawable extends StatusDrawable {
 
     @Override
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         if (currentPaint != null) {
             currentPaint.setColor(color);
         }
@@ -106,6 +107,9 @@ public class TypingDotsDrawable extends StatusDrawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.TypingDotsDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         int x = getBounds().left;
         int y;
         if (isChat) {
@@ -125,6 +129,8 @@ public class TypingDotsDrawable extends StatusDrawable {
         canvas.drawCircle(x + AndroidUtilities.dp(9), y, scales[1] * AndroidUtilities.density, paint);
         canvas.drawCircle(x + AndroidUtilities.dp(15), y, scales[2] * AndroidUtilities.density, paint);
         checkUpdate();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     private void checkUpdate() {
@@ -143,11 +149,13 @@ public class TypingDotsDrawable extends StatusDrawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
         if (currentPaint != null) {
             currentPaint.setColorFilter(cf);
         }

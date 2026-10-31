@@ -52,7 +52,7 @@ public class ToggleButton extends View implements FlashViews.Invertable {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (activeBitmap == null) {
-            activeBitmap = BitmapFactory.decodeResource(getResources(), activeResId);
+            activeBitmap = org.telegram.messenger.MonogramIconPacks.decodeResource(getResources(), activeResId);
         }
     }
 

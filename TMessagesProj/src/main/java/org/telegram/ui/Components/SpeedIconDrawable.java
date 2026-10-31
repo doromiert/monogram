@@ -83,6 +83,9 @@ public class SpeedIconDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.SpeedIconDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (outlinePaint != null) {
             outlinePaint.setStrokeWidth(AndroidUtilities.dpf2(1.6f));
             AndroidUtilities.rectTmp.set(
@@ -97,6 +100,8 @@ public class SpeedIconDrawable extends Drawable {
         textDrawable.getPaint().setStrokeWidth(AndroidUtilities.dpf2(.3f));
         textDrawable.setBounds(0, (int) ((getIntrinsicHeight() - textDrawable.getHeight()) / 2F), getIntrinsicWidth(), (int) ((getIntrinsicHeight() + textDrawable.getHeight()) / 2F));
         textDrawable.draw(canvas);
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
@@ -111,6 +116,7 @@ public class SpeedIconDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         textDrawable.setAlpha(alpha);
         if (outlinePaint != null) {
             outlinePaint.setAlpha(alpha);
@@ -118,6 +124,7 @@ public class SpeedIconDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         textDrawable.setTextColor(color);
         if (outlinePaint != null) {
             outlinePaint.setColor(color);
@@ -126,6 +133,7 @@ public class SpeedIconDrawable extends Drawable {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 //        textDrawable.setColorFilter(colorFilter);
 //        if (outlinePaint != null) {
 //            outlinePaint.setColorFilter(colorFilter);

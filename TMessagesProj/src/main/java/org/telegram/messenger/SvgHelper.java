@@ -106,6 +106,8 @@ public class SvgHelper {
     }
 
     public static class SvgDrawable extends Drawable {
+        private int packResourceId;
+        private final Paint packPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
         protected ArrayList<Object> commands = new ArrayList<>();
         protected HashMap<Object, Paint> paints = new HashMap<>();
@@ -170,6 +172,11 @@ public class SvgHelper {
         }
 
         public void drawInternal(Canvas canvas, boolean drawInBackground, int threadIndex, long time, float x, float y, float w, float h) {
+            if (packResourceId != 0) {
+                if (overridePaint != null) packPaint.set(overridePaint);
+                packPaint.setAlpha((int)(255 * crossfadeAlpha));
+                if (MonogramIconPacks.drawResource(canvas,packResourceId,new RectF(x,y,x+w,y+h),packPaint)) return;
+            }
             if (currentColorKey >= 0) {
                 setupGradient(currentColorKey, currentResourcesProvider, colorAlpha, drawInBackground);
             }
@@ -301,7 +308,7 @@ public class SvgHelper {
 
         @Override
         public void setColorFilter(ColorFilter colorFilter) {
-
+            packPaint.setColorFilter(colorFilter);
         }
 
         @Override
@@ -551,7 +558,7 @@ public class SvgHelper {
             SVGHandler handler = new SVGHandler(0, 0, color, true, 1f);
             xr.setContentHandler(handler);
             xr.parse(new InputSource(ApplicationLoader.applicationContext.getResources().openRawResource(resId)));
-            return handler.getDrawable();
+            SvgDrawable drawable=handler.getDrawable();if(drawable!=null){drawable.packResourceId=resId;if(color!=null)drawable.packPaint.setColorFilter(new android.graphics.PorterDuffColorFilter(color,android.graphics.PorterDuff.Mode.SRC_IN));}return drawable;
         } catch (Exception e) {
             FileLog.e(e);
             return null;

@@ -50,7 +50,7 @@ public final class OpenStreetMapProvider implements IMapsProvider {
         LatLng point=new LatLng(0,0);Bitmap bitmap;float ax=.5f,ay=1;
         public IMarkerOptions position(LatLng point) { this.point=point;return this; }
         public IMarkerOptions icon(Bitmap bitmap) { this.bitmap=bitmap;return this; }
-        public IMarkerOptions icon(int id) { bitmap=BitmapFactory.decodeResource(ApplicationLoader.applicationContext.getResources(),id);return this; }
+        public IMarkerOptions icon(int id) { bitmap=org.telegram.messenger.MonogramIconPacks.decodeResource(ApplicationLoader.applicationContext.getResources(),id);return this; }
         public IMarkerOptions anchor(float x,float y) { ax=x;ay=y;return this; }
         public IMarkerOptions title(String value) { return this; }
         public IMarkerOptions snippet(String value) { return this; }
@@ -210,7 +210,7 @@ public final class OpenStreetMapProvider implements IMapsProvider {
             Marker(MarkerOptions value) { point=value.point;bitmap=value.bitmap;ax=value.ax;ay=value.ay; }
             public Object getTag() { return tag; }public void setTag(Object value) { tag=value; }public LatLng getPosition() { return point; }
             public void setPosition(LatLng value) { point=value;invalidate(); }public void setRotation(int value) { rotation=value;invalidate(); }
-            public void setIcon(Bitmap value) { bitmap=value;invalidate(); }public void setIcon(int id) { bitmap=BitmapFactory.decodeResource(getResources(),id);invalidate(); }
+            public void setIcon(Bitmap value) { bitmap=value;invalidate(); }public void setIcon(int id) { bitmap=org.telegram.messenger.MonogramIconPacks.decodeResource(getResources(),id);invalidate(); }
             public void remove() { markers.remove(this);invalidate(); }
             void draw(Canvas canvas) { Point screen=project(point);if(bitmap!=null) { canvas.save();canvas.rotate(rotation,screen.x,screen.y);canvas.drawBitmap(bitmap,screen.x-bitmap.getWidth()*ax,screen.y-bitmap.getHeight()*ay,paint);canvas.restore(); }else { paint.setColor(0xffe84b3c);canvas.drawCircle(screen.x,screen.y-10,10,paint);canvas.drawCircle(screen.x,screen.y,4,paint); } }
         }

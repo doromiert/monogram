@@ -157,6 +157,10 @@ public class GroupCreateCheckBox extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        String packKey = "ui.GroupCreateCheckBox." + (isChecked ? "checked" : "unchecked");
+        android.graphics.RectF packBounds = new android.graphics.RectF(0,0,getWidth(),getHeight());
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustomBounds(canvas, packKey, packBounds);
+        try {
         if (getVisibility() != VISIBLE) {
             return;
         }
@@ -199,5 +203,7 @@ public class GroupCreateCheckBox extends View {
             x -= AndroidUtilities.dp(1.2f);
             canvas.drawLine(x, y, x + side, y - side, checkPaint);
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustomBounds(canvas, packKey, packBounds, packLayer); }
     }
 }

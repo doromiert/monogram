@@ -104,6 +104,7 @@ public class CombinedDrawable extends Drawable implements Drawable.Callback {
 
     @Override
     public void setColorFilter(ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         icon.setColorFilter(colorFilter);
         if (both) {
             background.setColorFilter(colorFilter);
@@ -143,6 +144,9 @@ public class CombinedDrawable extends Drawable implements Drawable.Callback {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.CombinedDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         canvas.save();
         canvas.translate(translateX, translateY);
         if (center) {
@@ -182,10 +186,13 @@ public class CombinedDrawable extends Drawable implements Drawable.Callback {
             icon.draw(canvas);
         }
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         icon.setAlpha(alpha);
         background.setAlpha(alpha);
     }

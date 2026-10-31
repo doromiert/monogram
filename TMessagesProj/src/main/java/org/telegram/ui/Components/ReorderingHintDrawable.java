@@ -66,6 +66,9 @@ public class ReorderingHintDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.ReorderingHintDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (startedTime > 0) {
             int passedTime = (int) (System.currentTimeMillis() - startedTime) - DURATION_DELAY1;
             if (passedTime >= 0) {
@@ -102,6 +105,8 @@ public class ReorderingHintDrawable extends Drawable {
         } else {
             drawStage1(canvas, 0f);
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     private void drawStage1(Canvas canvas, float progress) {
@@ -172,10 +177,12 @@ public class ReorderingHintDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         primaryRectDrawable.setColorFilter(colorFilter);
         secondaryRectDrawable.setColorFilter(colorFilter);
         invalidateSelf();
@@ -209,16 +216,19 @@ public class ReorderingHintDrawable extends Drawable {
         }
 
         public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
             paint.setColor(color);
         }
 
         @Override
         public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
             paint.setAlpha(alpha);
         }
 
         @Override
         public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
             paint.setColorFilter(colorFilter);
         }
 

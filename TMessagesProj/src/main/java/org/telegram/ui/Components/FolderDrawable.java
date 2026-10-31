@@ -53,6 +53,9 @@ public class FolderDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.FolderDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (path != null) {
             canvas.saveLayerAlpha(getBounds().left, getBounds().top, getBounds().right, getBounds().bottom, 0xFF);
             drawable.setBounds(getBounds());
@@ -76,6 +79,8 @@ public class FolderDrawable extends Drawable {
             drawable.setBounds(getBounds());
             drawable.draw(canvas);
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     int x(float x) {
@@ -93,11 +98,13 @@ public class FolderDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         drawable.setAlpha(alpha);
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         drawable.setColorFilter(colorFilter);
     }
 

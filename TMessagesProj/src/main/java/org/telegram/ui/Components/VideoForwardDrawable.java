@@ -110,16 +110,19 @@ public class VideoForwardDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         paint.setAlpha(alpha);
         textPaint.setAlpha(alpha);
     }
 
     @Override
     public void setColorFilter(ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         paint.setColorFilter(colorFilter);
     }
 
     public void setColor(int value) {
+        org.telegram.messenger.MonogramIconPacks.color(this, value);
         paint.setColor(value);
     }
 
@@ -130,6 +133,9 @@ public class VideoForwardDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.VideoForwardDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         android.graphics.Rect rect = getBounds();
 
         int x = rect.left + (rect.width() - getIntrinsicWidth()) / 2;
@@ -271,6 +277,8 @@ public class VideoForwardDrawable extends Drawable {
                 }
             }
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void setShowing(boolean showing) {

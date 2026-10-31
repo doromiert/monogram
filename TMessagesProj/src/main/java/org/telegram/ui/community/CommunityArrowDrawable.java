@@ -37,6 +37,9 @@ public class CommunityArrowDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.CommunityArrowDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         final float cx = getBounds().exactCenterX();
         final float cy = getBounds().exactCenterY();
 
@@ -58,6 +61,8 @@ public class CommunityArrowDrawable extends Drawable {
         canvas.rotate(90, cx, cy);
         DrawableUtils.drawWithScale(canvas, arrowDrawable, 0.8f);
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
@@ -74,6 +79,7 @@ public class CommunityArrowDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         this.alpha = alpha;
         arrowDrawable.setAlpha(alpha);
     }
@@ -85,6 +91,7 @@ public class CommunityArrowDrawable extends Drawable {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 

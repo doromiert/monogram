@@ -95,6 +95,9 @@ public class BadgeLevelDrawable extends Drawable implements Drawable.Callback {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.BadgeLevelDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (outer == null || inner == null) {
             return;
         }
@@ -106,6 +109,8 @@ public class BadgeLevelDrawable extends Drawable implements Drawable.Callback {
         canvas.translate(getBounds().exactCenterX(), getBounds().exactCenterY());
         text.draw(canvas);
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
@@ -115,6 +120,7 @@ public class BadgeLevelDrawable extends Drawable implements Drawable.Callback {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 
@@ -130,6 +136,7 @@ public class BadgeLevelDrawable extends Drawable implements Drawable.Callback {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         setInnerColor(ColorUtils.setAlphaComponent(innerColor, alpha));
         setOuterColor(ColorUtils.setAlphaComponent(outerColor, alpha));
         setTextColor(ColorUtils.setAlphaComponent(textColor, alpha));

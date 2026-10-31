@@ -57,6 +57,9 @@ public class MotionPhotoDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.MotionPhotoDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         strokePaint.setStrokeWidth(dpf2(1.66f));
         clearPaint.setStrokeWidth(dpf2(1.66f + 1.66f));
 
@@ -115,6 +118,8 @@ public class MotionPhotoDrawable extends Drawable {
         }
 
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
@@ -130,6 +135,7 @@ public class MotionPhotoDrawable extends Drawable {
 //    private float alpha = 1.0f;
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         strokePaint.setAlpha(alpha);
         playPaint.setAlpha(alpha);
 //        this.alpha = alpha / 255.0f;
@@ -137,6 +143,7 @@ public class MotionPhotoDrawable extends Drawable {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         playPaint.setColorFilter(colorFilter);
         strokePaint.setColorFilter(colorFilter);
     }

@@ -55,8 +55,13 @@ public class AnimatedArrowDrawable extends Drawable {
 
     @Override
     public void draw(Canvas c) {
+        String packKey = "ui.AnimatedArrowDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, c, packKey);
+        try {
         c.drawPath(path, paint);
         checkAnimation();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, c, packKey, packLayer); }
     }
 
     private void updatePath() {
@@ -123,6 +128,7 @@ public class AnimatedArrowDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         paint.setColor(color);
         invalidateSelf();
     }
@@ -134,11 +140,13 @@ public class AnimatedArrowDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         paint.setColorFilter(colorFilter);
     }
 

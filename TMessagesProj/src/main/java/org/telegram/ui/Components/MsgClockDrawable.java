@@ -32,6 +32,9 @@ public class MsgClockDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.MsgClockDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         Rect bounds = getBounds();
         int r = Math.min(bounds.width(), bounds.height());
         canvas.drawCircle(bounds.centerX(), bounds.centerY(), (r >> 1) - AndroidUtilities.dp(0.5f), paint);
@@ -49,9 +52,12 @@ public class MsgClockDrawable extends Drawable {
         canvas.rotate(360 * ((currentTime - startTime) % rotateHourTime) / rotateHourTime, bounds.centerX(), bounds.centerY());
         canvas.drawLine(bounds.centerX(), bounds.centerY(), bounds.centerX() + AndroidUtilities.dp(2.3f), bounds.centerY(), paint);
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         if (color != this.color) {
             colorAlpha = Color.alpha(color);
             paint.setColor(ColorUtils.setAlphaComponent(color, (int) (alpha * (colorAlpha / 255f))));
@@ -71,6 +77,7 @@ public class MsgClockDrawable extends Drawable {
 
     @Override
     public void setAlpha(int i) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, i);
         if (alpha != i) {
             alpha = i;
             paint.setAlpha((int) (alpha * (colorAlpha / 255f)));
@@ -79,6 +86,7 @@ public class MsgClockDrawable extends Drawable {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 

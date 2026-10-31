@@ -119,6 +119,9 @@ public class MenuDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.MenuDrawable." + (finalRotation >= .5f ? "back" : type == TYPE_UDPATE_AVAILABLE ? "update_available" : type == TYPE_UDPATE_DOWNLOADING ? "update_downloading" : "menu");
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         long newTime = SystemClock.elapsedRealtime();
         long dt = newTime - lastFrameTime;
         if (currentRotation != finalRotation) {
@@ -267,6 +270,8 @@ public class MenuDrawable extends Drawable {
             }
         }
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void setUpdateDownloadProgress(float value, boolean animated) {
@@ -286,6 +291,7 @@ public class MenuDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         if (this.alpha != alpha) {
             this.alpha = alpha;
             paint.setAlpha(alpha);
@@ -296,6 +302,7 @@ public class MenuDrawable extends Drawable {
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
 
     }
 

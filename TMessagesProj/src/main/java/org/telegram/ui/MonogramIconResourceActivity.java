@@ -14,7 +14,7 @@ public final class MonogramIconResourceActivity extends MonogramSettingsActivity
     private String query="";
     public MonogramIconResourceActivity(int account,java.util.function.Consumer<String> chosen) {
         currentAccount=account;this.chosen=chosen;
-        for(java.lang.reflect.Field field:R.drawable.class.getFields()) {String name=field.getName();if(name.startsWith("msg_")||name.startsWith("menu_")||name.startsWith("outline_")||name.startsWith("filter_")||name.startsWith("ic_ab_"))all.add(name);}Collections.sort(all);
+        all.addAll(MonogramIconPacks.resourceNames());
     }
     @Override protected CharSequence getTitle(){return "Choose icon";}
     @Override public View createView(Context context) {
@@ -24,7 +24,7 @@ public final class MonogramIconResourceActivity extends MonogramSettingsActivity
         });return view;
     }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
-        shown.clear();for(String name:all)if(name.contains(query)){int i=shown.size();shown.add(name);int id=getContext().getResources().getIdentifier(name,"drawable",getContext().getPackageName());items.add(UItem.asButton(100+i,id,name));}
+        shown.clear();for(String name:all)if(name.contains(query)){int i=shown.size();shown.add(name);int id=name.startsWith("raw.")?0:MonogramIconPacks.resourceId(getContext().getResources(),name);items.add(UItem.asButton(100+i,id,name));}
         if(shown.isEmpty())items.add(UItem.asShadow("No matching icons"));
     }
     @Override protected void onClick(UItem item,View v,int p,float x,float y) {if(item.id>=100&&item.id-100<shown.size()){String name=shown.get(item.id-100);finishFragment();AndroidUtilities.runOnUIThread(()->chosen.accept(name),250);}}

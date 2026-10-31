@@ -55,6 +55,7 @@ public class ScamDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         textPaint.setColor(color);
         paint.setColor(color);
         colorAlpha = Color.alpha(color);
@@ -62,6 +63,7 @@ public class ScamDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         if (this.alpha != alpha) {
             int localAlpha = (int) (colorAlpha * (alpha / 255f));
             paint.setAlpha(localAlpha);
@@ -81,13 +83,19 @@ public class ScamDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.ScamDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         rect.set(getBounds());
         canvas.drawRoundRect(rect, AndroidUtilities.dp(2), AndroidUtilities.dp(2), paint);
         canvas.drawText(text, rect.left + AndroidUtilities.dp(5), rect.top + AndroidUtilities.dp(12), textPaint);
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setColorFilter(ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 

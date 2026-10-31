@@ -133,7 +133,7 @@ public class ToggleButton2 extends View implements FlashViews.Invertable {
             activeBitmap = null;
         }
         if (activeBitmap == null && iconRes != 0) {
-            activeBitmap = BitmapFactory.decodeResource(getResources(), iconRes);
+            activeBitmap = org.telegram.messenger.MonogramIconPacks.decodeResource(getResources(), iconRes);
         }
         invalidate();
     }
@@ -196,7 +196,7 @@ public class ToggleButton2 extends View implements FlashViews.Invertable {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         if (activeBitmap == null && currentIcon != 0) {
-            activeBitmap = BitmapFactory.decodeResource(getResources(), currentIcon);
+            activeBitmap = org.telegram.messenger.MonogramIconPacks.decodeResource(getResources(), currentIcon);
         }
     }
 

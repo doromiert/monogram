@@ -747,6 +747,7 @@ public class PullForegroundDrawable {
         }
 
         public void setColor(int color) {
+            org.telegram.messenger.MonogramIconPacks.color(this, color);
             paint.setColor(color);
         }
 
@@ -762,6 +763,8 @@ public class PullForegroundDrawable {
 
         @Override
         public void draw(@NonNull Canvas canvas) {
+            int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, "ui.PullForegroundDrawable.ArrowDrawable");
+            try {
             if (lastDensity != AndroidUtilities.density) {
                 updatePath();
             }
@@ -771,15 +774,19 @@ public class PullForegroundDrawable {
             int h = AndroidUtilities.dp(18);
             canvas.drawRect(AndroidUtilities.dpf2(7.56f), AndroidUtilities.dpf2(8f), h - AndroidUtilities.dpf2(7.56f), AndroidUtilities.dpf2(11.1f), paint);
             canvas.restore();
-        }
+
+            } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, "ui.PullForegroundDrawable.ArrowDrawable", packLayer); }
+}
 
         @Override
         public void setAlpha(int alpha) {
+            org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
         }
 
         @Override
         public void setColorFilter(@Nullable ColorFilter colorFilter) {
+            org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
         }
 

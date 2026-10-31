@@ -394,6 +394,10 @@ public class CheckBoxBase {
     }
 
     public void draw(Canvas canvas) {
+        String packKey = "ui.CheckBoxBase." + (forbidden ? "forbidden" : checkedText != null ? "numbered" : isChecked ? "checked" : "unchecked");
+        android.graphics.RectF packBounds = new android.graphics.RectF(bounds);
+        int packLayer = !drawUnchecked && progress == 0 && !forbidden ? -1 : org.telegram.messenger.MonogramIconPacks.beginCustomBounds(canvas, packKey, packBounds);
+        try {
         float rad = dp(size / 2);
         float outerRad = rad;
         if (backgroundType == 12 || backgroundType == 13) {
@@ -652,6 +656,15 @@ public class CheckBoxBase {
         }
         if (cutCheck) {
             canvas.restore();
+        }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustomBounds(canvas, packKey, packBounds, packLayer); }
+        if (packLayer >= 0 && checkedText != null && textPaint != null && progress > .5f && !forbidden) {
+            int save = canvas.save();
+            canvas.scale((progress - .5f) * 2, 1, bounds.centerX(), bounds.centerY());
+            float y = checkedText.length() <= 2 ? 18 : checkedText.length() == 3 ? 16.5f : 15.75f;
+            canvas.drawText(checkedText, bounds.centerX() - textPaint.measureText(checkedText) / 2, dp(y), textPaint);
+            canvas.restoreToCount(save);
         }
     }
 

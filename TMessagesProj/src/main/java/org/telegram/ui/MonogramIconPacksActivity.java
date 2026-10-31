@@ -37,7 +37,7 @@ public final class MonogramIconPacksActivity extends MonogramSettingsActivity {
         if(busy){items.add(UItem.asShadow("Updating icon pack…"));return;}
         if(packId==null){
             items.add(UItem.asButton(1,"Create icon pack"));items.add(UItem.asButton(2,"Import icon pack"));
-            items.add(UItem.asShadow("Import exteraGram-compatible ZIP packs. Tap a pack to enable it; hold it to edit or share. Earlier packs override later ones."));
+            items.add(UItem.asShadow("Import ZIP packs for static, animated and code-drawn UI icons. Tap a pack to enable it; hold it to edit or share. Earlier packs override later ones."));
             items.add(UItem.asHeader("Installed packs"));orderSection=adapter.reorderSectionStart();
             for(int i=0;i<packs.size();i++)items.add(UItem.asCheck(100+i,packs.get(i).name).setChecked(MonogramIconPacks.enabled(packs.get(i))).setReordering(true));
             adapter.reorderSectionEnd();
@@ -47,7 +47,7 @@ public final class MonogramIconPacksActivity extends MonogramSettingsActivity {
             items.add(UItem.asShadow("Tap an icon to replace its image. Hold an icon to remove its override."));
             items.add(UItem.asHeader("Icons"));Iterator<String> it=pack.mappings().keys();while(it.hasNext())resources.add(it.next());Collections.sort(resources);
             for(int i=0;i<resources.size();i++) {
-                int id=getContext().getResources().getIdentifier(resources.get(i),"drawable",getContext().getPackageName());
+                int id=resources.get(i).startsWith("raw.")?0:MonogramIconPacks.resourceId(getContext().getResources(),resources.get(i));
                 items.add(UItem.asButton(100+i,id,resources.get(i)));
             }
             if(resources.isEmpty())items.add(UItem.asShadow("No icons yet. Add an icon to override its built-in image."));

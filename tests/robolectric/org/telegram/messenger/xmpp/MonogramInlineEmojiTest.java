@@ -12,11 +12,11 @@ import org.jxmpp.jid.impl.JidCreate;
 import org.telegram.tgnet.TLRPC;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows=org.telegram.messenger.MonogramSystemEmojiTest.Device.class)
 public class MonogramInlineEmojiTest {
     private static final String DATABASE="inline-emoji-fixture.db",OWN="alice@example.org",PEER="bob@example.org",BODY="A 😀 B 😀";
     private Context context;private MonogramStore store;private long self;
-    @Before public void setup() { context=RuntimeEnvironment.getApplication();context.deleteDatabase(DATABASE);store=new MonogramStore(context,DATABASE);self=store.peer(OWN); }
+    @Before public void setup() { context=RuntimeEnvironment.getApplication();org.telegram.messenger.ApplicationLoader.applicationContext=context;org.telegram.messenger.ApplicationLoader.applicationHandler=new android.os.Handler(android.os.Looper.getMainLooper());org.telegram.messenger.AndroidUtilities.density=1;context.deleteDatabase(DATABASE);store=new MonogramStore(context,DATABASE);self=store.peer(OWN); }
     @After public void cleanup() { MonogramEmojis.clear(store.getWritableDatabase(),context,DATABASE);store.close();context.deleteDatabase(DATABASE); }
     private InlineEmoji model() {
         byte[] png=Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDPsAAAAASUVORK5CYII=");

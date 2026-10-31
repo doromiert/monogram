@@ -108,6 +108,9 @@ public class SeekSpeedDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.SeekSpeedDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         final Rect bounds = getBounds();
         final float speedRectWidth = speedText.getCurrentWidth() + dp(9 + 8 + 20 + 9);
 
@@ -214,6 +217,8 @@ public class SeekSpeedDrawable extends Drawable {
 
             canvas.restore();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void setShown(boolean shown, boolean animated) {
@@ -260,11 +265,13 @@ public class SeekSpeedDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 

@@ -38,11 +38,15 @@ public class PlayPauseDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         paint.setColor(color);
     }
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.PlayPauseDrawable." + (pause ? "pause" : "play");
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         long newUpdateTime = AnimationUtils.currentAnimationTimeMillis();
         long dt = newUpdateTime - lastUpdateTime;
         lastUpdateTime = newUpdateTime;
@@ -94,6 +98,8 @@ public class PlayPauseDrawable extends Drawable {
             Theme.playPauseAnimator.draw(canvas, paint, ms);
         }
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void setPause(boolean pause) {
@@ -113,11 +119,13 @@ public class PlayPauseDrawable extends Drawable {
 
     @Override
     public void setAlpha(int i) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, i);
         alpha = i;
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         paint.setColorFilter(colorFilter);
     }
 

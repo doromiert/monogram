@@ -60,6 +60,9 @@ public class CircularProgressDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.CircularProgressDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (start < 0) {
             start = SystemClock.elapsedRealtime();
         }
@@ -72,6 +75,8 @@ public class CircularProgressDrawable extends Drawable {
             paint
         );
         invalidateSelf();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void reset() {
@@ -96,16 +101,19 @@ public class CircularProgressDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         paint.setColor(color);
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         paint.setAlpha(alpha);
     }
 
     @Override
-    public void setColorFilter(@Nullable ColorFilter colorFilter) {}
+    public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);}
 
     @Override
     public int getOpacity() {

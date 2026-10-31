@@ -79,20 +79,27 @@ public class ForumBubbleDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.ForumBubbleDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         gradientMatrix.reset();
         gradientMatrix.setScale(1f, getBounds().height() / 100f);
         gradient.setLocalMatrix(gradientMatrix);
         svgDrawable.setBounds(getBounds());
         svgDrawable.draw(canvas);
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         svgDrawable.setAlpha(alpha);
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 
@@ -167,6 +174,7 @@ public class ForumBubbleDrawable extends Drawable {
     int color = -1;
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         if (this.color == color && this.color == -1) {
             return;
         }

@@ -58,6 +58,9 @@ public class PollAddButtonDrawable extends PollButtonDrawableBase implements Fac
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.PollAddButtonDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         final Rect bounds = getBounds();
         getSelectorDrawable().draw(canvas);
 
@@ -70,6 +73,8 @@ public class PollAddButtonDrawable extends PollButtonDrawableBase implements Fac
             addAnOptionText.draw(canvas);
             canvas.restore();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
 

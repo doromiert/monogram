@@ -232,6 +232,10 @@ public class CheckBox extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        String packKey = "ui.CheckBox." + (isChecked ? "checked" : "unchecked");
+        android.graphics.RectF packBounds = new android.graphics.RectF(0,0,getWidth(),getHeight());
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustomBounds(canvas, packKey, packBounds);
+        try {
         if (getVisibility() != VISIBLE || drawBitmap == null || checkBitmap == null) {
             return;
         }
@@ -282,6 +286,8 @@ public class CheckBox extends View {
 
             canvas.drawBitmap(checkBitmap, 0, 0, null);
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustomBounds(canvas, packKey, packBounds, packLayer); }
     }
 
     @Override

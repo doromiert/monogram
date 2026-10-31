@@ -108,6 +108,7 @@ public class MediaActionDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
@@ -117,6 +118,7 @@ public class MediaActionDrawable extends Drawable {
 
     @Override
     public void setColorFilter(ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         paint.setColorFilter(colorFilter);
         paint2.setColorFilter(colorFilter);
         paint3.setColorFilter(colorFilter);
@@ -124,6 +126,7 @@ public class MediaActionDrawable extends Drawable {
     }
 
     public void setColor(int value) {
+        org.telegram.messenger.MonogramIconPacks.color(this, value);
         paint.setColor(value | 0xff000000);
         paint2.setColor(value | 0xff000000);
         paint3.setColor(value | 0xff000000);
@@ -292,6 +295,9 @@ public class MediaActionDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.MediaActionDrawable." + packIconName();
+        int packLayer = nextIcon == ICON_NONE ? -1 : org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         android.graphics.Rect bounds = getBounds();
 
         if (messageDrawable != null && messageDrawable.hasGradient() && !hasOverlayImage) {
@@ -897,6 +903,8 @@ public class MediaActionDrawable extends Drawable {
         if (saveCount >= 1) {
             canvas.restoreToCount(saveCount);
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
@@ -917,5 +925,27 @@ public class MediaActionDrawable extends Drawable {
     @Override
     public int getMinimumHeight() {
         return AndroidUtilities.dp(48);
+    }
+
+    private String packIconName() {
+        switch(nextIcon) {
+            case ICON_PLAY: return "play";
+            case ICON_PAUSE: return "pause";
+            case ICON_DOWNLOAD: return "download";
+            case ICON_CANCEL: return "cancel";
+            case ICON_NONE: return "none";
+            case ICON_FILE: return "file";
+            case ICON_CHECK: return "check";
+            case ICON_FIRE: return "fire";
+            case ICON_GIF: return "gif";
+            case ICON_SECRETCHECK: return "secretcheck";
+            case ICON_EMPTY: return "empty";
+            case ICON_EMPTY_NOPROGRESS: return "empty_noprogress";
+            case ICON_CANCEL_NOPROFRESS: return "cancel_noprogress";
+            case ICON_CANCEL_PERCENT: return "cancel_percent";
+            case ICON_CANCEL_FILL: return "cancel_fill";
+            case ICON_UPDATE: return "update";
+            default: return "none";
+        }
     }
 }

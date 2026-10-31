@@ -396,7 +396,7 @@ public class QrActivity extends BaseFragment {
         paint.setColor(Color.WHITE);
         canvas.drawRoundRect(AndroidUtilities.rectTmp, dp(5), dp(5), paint);
         paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
-        Bitmap bitmap = BitmapFactory.decodeResource(ApplicationLoader.applicationContext.getResources(), R.drawable.msg_qr_mini);
+        Bitmap bitmap = org.telegram.messenger.MonogramIconPacks.decodeResource(ApplicationLoader.applicationContext.getResources(), R.drawable.msg_qr_mini);
         canvas.drawBitmap(bitmap, (emojiThemeIcon.getWidth() - bitmap.getWidth()) * 0.5f, (emojiThemeIcon.getHeight() - bitmap.getHeight()) * 0.5f, paint);
         canvas.setBitmap(null);
 

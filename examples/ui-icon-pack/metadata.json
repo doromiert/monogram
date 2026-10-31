@@ -1,0 +1,13 @@
+{
+  "packId": "monogram.example.icons",
+  "packName": "Monogram example icons",
+  "author": "Monogram",
+  "version": "1.0",
+  "icons": {
+    "msg_settings": "icons/settings.svg",
+    "raw.camera_flip": "icons/camera-flip.svg",
+    "ui.BackDrawable.back": "icons/back.svg",
+    "ui.BackDrawable.close": "icons/close.svg",
+    "ui.MediaActionDrawable.download": "icons/download.svg"
+  }
+}

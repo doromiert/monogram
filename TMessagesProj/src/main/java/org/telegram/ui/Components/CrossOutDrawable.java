@@ -61,6 +61,9 @@ public class CrossOutDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.CrossOutDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (cross && progress != 1f) {
             progress += 16f / 150f;
             invalidateSelf();
@@ -104,14 +107,18 @@ public class CrossOutDrawable extends Drawable {
         canvas.drawLine(startX, startY - offsetY, stopX, stopY - offsetY, xRefPaint);
         canvas.drawLine(startX, startY, stopX, stopY, paint);
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int i) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, i);
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
 
     }
 

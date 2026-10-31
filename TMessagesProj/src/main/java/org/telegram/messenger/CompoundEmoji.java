@@ -172,6 +172,7 @@ public class CompoundEmoji {
         private DrawableInfo newLeft, newRight;
 
         public CompoundEmojiDrawable(DrawableInfo left, DrawableInfo right) {
+            systemCode = left.skin < 0 && right.skin < 0 ? "🤝" : "🫱" + (left.skin < 0 ? "" : skinTones.get(left.skin)) + "‍🫲" + (right.skin < 0 ? "" : skinTones.get(right.skin));
             this.left = left;
             this.right = right;
         }
@@ -188,6 +189,7 @@ public class CompoundEmoji {
 
         @Override
         public void draw(Canvas canvas) {
+            if (drawSystem(canvas)) return;
             if (!isLoaded()) {
                 preload();
                 Emoji.placeholderPaint.setColor(placeholderColor);

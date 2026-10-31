@@ -72,6 +72,9 @@ public class PollInstantButtonDrawable extends PollButtonDrawableBase {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.PollInstantButtonDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         final float loadingFactor = animatorProgressVisible.getFloatValue();
         if (loadingFactor < 1) {
             DrawableUtils.drawWithScale(canvas, buttonTextAnimatedDrawable, 1f - loadingFactor);
@@ -84,6 +87,8 @@ public class PollInstantButtonDrawable extends PollButtonDrawableBase {
             radialProgress.draw(canvas);
             canvas.restore();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override

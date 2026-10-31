@@ -42,6 +42,7 @@ public class PlayingGameDrawable extends StatusDrawable {
 
     @Override
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
     }
 
     private void update() {
@@ -75,6 +76,9 @@ public class PlayingGameDrawable extends StatusDrawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.PlayingGameDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         int size = AndroidUtilities.dp(10);
         int y = getBounds().top + (getIntrinsicHeight() - size) / 2;
         if (isChat) {
@@ -113,6 +117,8 @@ public class PlayingGameDrawable extends StatusDrawable {
         canvas.drawCircle(AndroidUtilities.dp(4), y + size / 2 - AndroidUtilities.dp(2), AndroidUtilities.dp(1), paint);
 
         checkUpdate();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     private void checkUpdate() {
@@ -127,11 +133,13 @@ public class PlayingGameDrawable extends StatusDrawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
 
     }
 

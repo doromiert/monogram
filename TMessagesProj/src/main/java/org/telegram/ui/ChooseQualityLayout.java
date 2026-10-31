@@ -195,6 +195,8 @@ public class ChooseQualityLayout {
 
         @Override
         public void draw(@NonNull Canvas canvas) {
+            int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, "ui.ChooseQualityLayout.QualityIcon");
+            try {
             final float casting = animatedCast.set(cast);
             final float top_w = dp(5) * topText.isNotEmpty() + topText.getCurrentWidth();
             final float bottom_w = dp(5) * bottomText.isNotEmpty() + bottomText.getCurrentWidth();
@@ -269,15 +271,19 @@ public class ChooseQualityLayout {
             }
 
             canvas.restoreToCount(restoreCount);
-        }
+
+            } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, "ui.ChooseQualityLayout.QualityIcon", packLayer); }
+}
 
         @Override
         public void setAlpha(int alpha) {
+            org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
             base.setAlpha(alpha);
         }
 
         @Override
         public void setColorFilter(@Nullable ColorFilter colorFilter) {
+            org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
             base.setColorFilter(colorFilter);
         }
 

@@ -120,6 +120,8 @@ public class RadialProgress {
 
         @Override
         public void draw(Canvas canvas) {
+            int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, "ui.RadialProgress.CheckDrawable");
+            try {
             int x = getBounds().centerX() - AndroidUtilities.dp(12);
             int y = getBounds().centerY() - AndroidUtilities.dp(6);
             float p = progress != 1.0f ? decelerateInterpolator.getInterpolation(progress) : 1.0f;
@@ -129,15 +131,19 @@ public class RadialProgress {
             endX = (int) (AndroidUtilities.dpf2(7.0f) + AndroidUtilities.dp(13) * p);
             endY = (int) (AndroidUtilities.dpf2(13.0f) - AndroidUtilities.dp(13) * p);
             canvas.drawLine(x + (int) AndroidUtilities.dpf2(7.0f), y + (int) AndroidUtilities.dpf2(13.0f), x + endX, y + endY, paint);
-        }
+
+            } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, "ui.RadialProgress.CheckDrawable", packLayer); }
+}
 
         @Override
         public void setAlpha(int alpha) {
+            org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
             paint.setAlpha(alpha);
         }
 
         @Override
         public void setColorFilter(ColorFilter cf) {
+            org.telegram.messenger.MonogramIconPacks.filter(this, cf);
             paint.setColorFilter(cf);
         }
 

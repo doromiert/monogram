@@ -34,6 +34,9 @@ public class CloseProgressDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.CloseProgressDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         long newTime = System.currentTimeMillis();
         if (lastFrameTime != 0) {
             long dt = (newTime - lastFrameTime);
@@ -62,15 +65,19 @@ public class CloseProgressDrawable extends Drawable {
 
         lastFrameTime = newTime;
         invalidateSelf();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
 
     }
 

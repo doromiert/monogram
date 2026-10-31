@@ -126,6 +126,7 @@ public class SearchStateDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         paint.setColor(color);
         alpha = paint.getAlpha();
         paint.setAlpha(0xFF);
@@ -133,6 +134,9 @@ public class SearchStateDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.SearchStateDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         final Rect bounds = getBounds();
         this.mn = Math.min(bounds.width(), bounds.height());
         this.cx = bounds.centerX();
@@ -247,6 +251,8 @@ public class SearchStateDrawable extends Drawable {
         if (value < 1) {
             invalidateSelf();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     private boolean containsAngle(float angle, float angleFrom, float angleTo) {
@@ -316,11 +322,13 @@ public class SearchStateDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         this.alpha = alpha;
     }
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         paint.setColorFilter(colorFilter);
     }
 

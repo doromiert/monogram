@@ -71,6 +71,9 @@ public class ShareLocationDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.ShareLocationDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         int size;
         int drawableW = drawable.getIntrinsicWidth();
         int drawableH = drawable.getIntrinsicHeight();
@@ -161,15 +164,19 @@ public class ShareLocationDrawable extends Drawable {
         }
 
         update();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
         drawable.setColorFilter(cf);
         drawableLeft.setColorFilter(cf);
         drawableRight.setColorFilter(cf);

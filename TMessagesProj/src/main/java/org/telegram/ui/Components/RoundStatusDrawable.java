@@ -33,6 +33,7 @@ public class RoundStatusDrawable extends StatusDrawable {
 
     @Override
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         if (currentPaint != null) {
             currentPaint.setColor(color);
         }
@@ -73,21 +74,28 @@ public class RoundStatusDrawable extends StatusDrawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.RoundStatusDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         Paint paint = currentPaint == null ? Theme.chat_statusPaint : currentPaint;
         paint.setAlpha(55 + (int) (200 * progress));
         canvas.drawCircle(AndroidUtilities.dp(6), AndroidUtilities.dp(isChat ? 8 : 9), AndroidUtilities.dp(4), paint);
         if (started) {
             update();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
 
     }
 

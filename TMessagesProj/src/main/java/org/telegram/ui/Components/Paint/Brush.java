@@ -75,7 +75,7 @@ public abstract class Brush {
     public Bitmap getStamp() {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inScaled = false;
-        return BitmapFactory.decodeResource(ApplicationLoader.applicationContext.getResources(), getStampResId(), options);
+        return org.telegram.messenger.MonogramIconPacks.decodeResource(ApplicationLoader.applicationContext.getResources(), getStampResId(), options);
     }
 
     public float getSmoothThicknessRate() {

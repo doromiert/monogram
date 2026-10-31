@@ -62,6 +62,7 @@ import me.vkryl.core.reference.ReferenceList;
 public class RLottieDrawable extends BitmapDrawable implements Animatable, BitmapsCache.Cacheable {
 
     public boolean skipFrameUpdate;
+    private int packResourceId;
 
     protected final int width;
     protected final int height;
@@ -636,6 +637,7 @@ public class RLottieDrawable extends BitmapDrawable implements Animatable, Bitma
     }
 
     public RLottieDrawable(@RawRes int rawRes, int w, int h, boolean startDecode, int[] colorReplacement) {
+        packResourceId = rawRes;
         width = w;
         height = h;
         autoRepeat = 0;
@@ -1135,6 +1137,9 @@ public class RLottieDrawable extends BitmapDrawable implements Animatable, Bitma
         if (paint.getAlpha() == 0) {
             return;
         }
+
+        if (packResourceId != 0 && org.telegram.messenger.MonogramIconPacks.drawResource(canvas, packResourceId,
+                drawInBackground ? dstRectBackground[threadIndex] : new RectF(getBounds()), paint)) return;
 
         if (isInvalid || renderingBitmap == null) {
             return;

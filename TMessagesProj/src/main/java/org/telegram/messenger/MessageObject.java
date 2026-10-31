@@ -1981,7 +1981,7 @@ public class MessageObject {
     protected void checkBigAnimatedEmoji() {
         emojiAnimatedSticker = null;
         emojiAnimatedStickerId = null;
-        if (emojiOnlyCount == 1 && !(getMedia(messageOwner) instanceof TLRPC.TL_messageMediaWebPage) && !(getMedia(messageOwner) instanceof TLRPC.TL_messageMediaInvoice) && (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaEmpty || getMedia(messageOwner) == null) && this.messageOwner.grouped_id == 0) {
+        if (emojiOnlyCount == 1 && (!SharedConfig.useSystemEmoji || messageOwner.entities.size() == 1 && messageOwner.entities.get(0) instanceof TLRPC.TL_messageEntityCustomEmoji) && !(getMedia(messageOwner) instanceof TLRPC.TL_messageMediaWebPage) && !(getMedia(messageOwner) instanceof TLRPC.TL_messageMediaInvoice) && (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaEmpty || getMedia(messageOwner) == null) && this.messageOwner.grouped_id == 0) {
             if (messageOwner.entities.isEmpty()) {
                 CharSequence emoji = messageText;
                 int index;
@@ -6816,7 +6816,15 @@ public class MessageObject {
         }
     }
 
+    private boolean systemEmojiLayout = SharedConfig.useSystemEmoji;
     public boolean checkLayout() {
+        if (systemEmojiLayout != SharedConfig.useSystemEmoji) {
+            systemEmojiLayout = SharedConfig.useSystemEmoji;
+            layoutCreated = false;
+            if (emojiAnimatedSticker != null && messageOwner.entities.isEmpty() && (getMedia(messageOwner) == null || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaEmpty)) {
+                emojiAnimatedSticker = null;emojiAnimatedStickerId = null;type = TYPE_TEXT;
+            }
+        }
         if (type != TYPE_TEXT && type != TYPE_EMOJIS && type != TYPE_ARTICLE || messageOwner.peer_id == null || messageText == null || messageText.length() == 0 && !isBotPendingDraft) {
             return false;
         }
@@ -7971,6 +7979,7 @@ public class MessageObject {
     }
 
     public void replaceEmojiToLottieFrame(CharSequence text, int[] emojiOnly) {
+        if (SharedConfig.useSystemEmoji) return;
         if (!(text instanceof Spannable)) {
             return;
         }

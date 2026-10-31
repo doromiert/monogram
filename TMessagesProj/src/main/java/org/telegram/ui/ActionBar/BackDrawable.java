@@ -54,6 +54,7 @@ public class BackDrawable extends Drawable {
     }
 
     public void setColor(int value) {
+        org.telegram.messenger.MonogramIconPacks.color(this, value);
         color = value;
         invalidateSelf();
     }
@@ -100,6 +101,9 @@ public class BackDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.BackDrawable." + (alwaysClose || finalRotation >= .5f ? "close" : "back");
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (currentRotation != finalRotation) {
             if (lastFrameTime != 0) {
                 long dt = System.currentTimeMillis() - lastFrameTime;
@@ -142,15 +146,19 @@ public class BackDrawable extends Drawable {
         canvas.drawLine(startXDiff, -startYDiff, endXDiff, -endYDiff, paint);
         canvas.drawLine(startXDiff, startYDiff, endXDiff, endYDiff, paint);
         canvas.restore();
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         paint.setAlpha(alpha);
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
         paint.setColorFilter(cf);
     }
 

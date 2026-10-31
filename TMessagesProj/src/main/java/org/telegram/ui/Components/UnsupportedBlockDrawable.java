@@ -168,6 +168,9 @@ public class UnsupportedBlockDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.UnsupportedBlockDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (titleLayout == null || subtitleLayout == null || buttonLayout == null) return;
 
         final int left = getBounds().left;
@@ -212,13 +215,17 @@ public class UnsupportedBlockDrawable extends Drawable {
 
         DrawableUtils.setBounds(planeDrawable, left + dp(29.66f), cy + 1, Gravity.CENTER);
         planeDrawable.draw(canvas);
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
-    public void setAlpha(int alpha) {}
+    public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);}
 
     @Override
-    public void setColorFilter(@Nullable ColorFilter colorFilter) {}
+    public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);}
 
     @Override
     public int getOpacity() {

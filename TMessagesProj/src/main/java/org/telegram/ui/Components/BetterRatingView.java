@@ -25,8 +25,8 @@ public class BetterRatingView extends View {
 
 	public BetterRatingView(Context context) {
 		super(context);
-		filledStar = BitmapFactory.decodeResource(getResources(), R.drawable.ic_rating_star_filled).extractAlpha();
-		hollowStar = BitmapFactory.decodeResource(getResources(), R.drawable.ic_rating_star).extractAlpha();
+		filledStar = org.telegram.messenger.MonogramIconPacks.decodeResource(getResources(), R.drawable.ic_rating_star_filled).extractAlpha();
+		hollowStar = org.telegram.messenger.MonogramIconPacks.decodeResource(getResources(), R.drawable.ic_rating_star).extractAlpha();
 	}
 
 	@Override

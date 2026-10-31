@@ -157,6 +157,10 @@ public class RadioButton extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        String packKey = "ui.RadioButton." + (isChecked ? "checked" : "unchecked");
+        android.graphics.RectF packBounds = new android.graphics.RectF(0,0,getWidth(),getHeight());
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustomBounds(canvas, packKey, packBounds);
+        try {
         float circleProgress;
         if (progress <= 0.5f) {
             paint.setColor(color);
@@ -199,5 +203,7 @@ public class RadioButton extends View {
             );
             icon.draw(canvas);
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustomBounds(canvas, packKey, packBounds, packLayer); }
     }
 }

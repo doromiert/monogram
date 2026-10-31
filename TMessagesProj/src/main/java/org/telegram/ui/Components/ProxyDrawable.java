@@ -55,6 +55,9 @@ public class ProxyDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.ProxyDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         long newTime = SystemClock.elapsedRealtime();
         long dt = newTime - lastUpdateTime;
         lastUpdateTime = newTime;
@@ -99,6 +102,8 @@ public class ProxyDrawable extends Drawable {
             }
             invalidateSelf();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     private void setBounds(Drawable drawable) {
@@ -113,11 +118,13 @@ public class ProxyDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
 
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
         emptyDrawable.setColorFilter(cf);
         fullDrawable.setColorFilter(cf);
         outerPaint.setColorFilter(cf);

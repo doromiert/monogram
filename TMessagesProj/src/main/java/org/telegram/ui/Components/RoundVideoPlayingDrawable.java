@@ -103,6 +103,9 @@ public class RoundVideoPlayingDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
+        String packKey = "ui.RoundVideoPlayingDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         paint.setColor(ColorUtils.blendARGB(getThemedColor(Theme.key_chat_serviceText), timeColor, colorProgress));
         if (alpha != 255) {
             paint.setAlpha((int) (alpha * (paint.getAlpha() / 255f)));
@@ -117,15 +120,19 @@ public class RoundVideoPlayingDrawable extends Drawable {
         if (started) {
             update();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         this.alpha = alpha;
     }
 
     @Override
     public void setColorFilter(ColorFilter cf) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, cf);
 
     }
 

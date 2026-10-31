@@ -163,7 +163,7 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
             case 9:presentFragment(new MonogramAppIconsActivity(currentAccount));return;
             case 10:presentFragment(new MonogramIconPacksActivity(currentAccount));return;
             case 11:presentFragment(new MonogramPillsActivity(currentAccount));return;
-            case 12:SharedConfig.useSystemEmoji=!SharedConfig.useSystemEmoji;org.telegram.messenger.MessagesController.getGlobalMainSettings().edit().putBoolean("useSystemEmoji",SharedConfig.useSystemEmoji).apply();break;
+            case 12:SharedConfig.useSystemEmoji=!SharedConfig.useSystemEmoji;org.telegram.messenger.MessagesController.getGlobalMainSettings().edit().putBoolean("useSystemEmoji",SharedConfig.useSystemEmoji).apply();org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(org.telegram.messenger.NotificationCenter.emojiLoaded);refreshOtherScreens();break;
             case 13:
                 materialExpanded=!materialExpanded;listView.adapter.update(true);return;
             case 14:if(dividers.get()!=2) separateHeaders.toggle();break;

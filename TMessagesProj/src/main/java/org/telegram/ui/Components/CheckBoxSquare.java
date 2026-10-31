@@ -138,6 +138,10 @@ public class CheckBoxSquare extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        String packKey = "ui.CheckBoxSquare." + (isChecked ? "checked" : "unchecked");
+        android.graphics.RectF packBounds = new android.graphics.RectF(0,0,getWidth(),getHeight());
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustomBounds(canvas, packKey, packBounds);
+        try {
         if (getVisibility() != VISIBLE) {
             return;
         }
@@ -185,6 +189,8 @@ public class CheckBoxSquare extends View {
             drawCanvas.drawLine((int) AndroidUtilities.dpf2(7), (int) AndroidUtilities.dpf2(13), endX, endY, Theme.checkboxSquare_checkPaint);
         }
         canvas.drawBitmap(drawBitmap, 0, 0, null);
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustomBounds(canvas, packKey, packBounds, packLayer); }
     }
 
     protected int getThemedColor(int key) {

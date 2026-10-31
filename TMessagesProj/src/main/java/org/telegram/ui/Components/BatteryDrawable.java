@@ -62,6 +62,7 @@ public class BatteryDrawable extends Drawable {
     }
 
     public void setColor(int color) {
+        org.telegram.messenger.MonogramIconPacks.color(this, color);
         setColor(color, color);
     }
 
@@ -109,6 +110,9 @@ public class BatteryDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
+        String packKey = "ui.BatteryDrawable";
+        int packLayer = org.telegram.messenger.MonogramIconPacks.beginCustom(this, canvas, packKey);
+        try {
         if (getBounds() == null) {
             return;
         }
@@ -155,6 +159,8 @@ public class BatteryDrawable extends Drawable {
         if (scale != 1) {
             canvas.restore();
         }
+
+        } finally { org.telegram.messenger.MonogramIconPacks.finishCustom(this, canvas, packKey, packLayer); }
     }
 
     public void setTranslationY(float translateY) {
@@ -163,6 +169,7 @@ public class BatteryDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        org.telegram.messenger.MonogramIconPacks.alpha(this, alpha);
         strokePaint.setAlpha(alpha);
         connectorPaint.setAlpha(alpha);
         fillPaint.setAlpha(alpha);
@@ -170,6 +177,7 @@ public class BatteryDrawable extends Drawable {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+        org.telegram.messenger.MonogramIconPacks.filter(this, colorFilter);
         strokePaint.setColorFilter(colorFilter);
         connectorPaint.setColorFilter(colorFilter);
         fillPaint.setColorFilter(colorFilter);

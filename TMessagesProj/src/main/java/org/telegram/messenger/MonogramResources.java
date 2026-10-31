@@ -15,8 +15,8 @@ public final class MonogramResources extends Resources {
         if(!wrapper.getConfiguration().equals(base.getConfiguration()))wrapper.updateConfiguration(base.getConfiguration(),base.getDisplayMetrics());
         return wrapper;
     }
-    @Override public Drawable getDrawable(int id,Theme theme) throws NotFoundException {Drawable d=MonogramIconPacks.drawable(this,id);return d!=null?d:super.getDrawable(id,theme);}
+    @Override public Drawable getDrawable(int id,Theme theme) throws NotFoundException {return MonogramIconPacks.drawable(this,id,super.getDrawable(id,theme));}
     @Override public Drawable getDrawable(int id) throws NotFoundException {return getDrawable(id,null);}
-    @Override public Drawable getDrawableForDensity(int id,int density,Theme theme) throws NotFoundException {Drawable d=MonogramIconPacks.drawable(this,id);return d!=null?d:super.getDrawableForDensity(id,density,theme);}
+    @Override public Drawable getDrawableForDensity(int id,int density,Theme theme) throws NotFoundException {return MonogramIconPacks.drawable(this,id,super.getDrawableForDensity(id,density,theme));}
     @Override public Drawable getDrawableForDensity(int id,int density) throws NotFoundException {return getDrawableForDensity(id,density,null);}
 }
