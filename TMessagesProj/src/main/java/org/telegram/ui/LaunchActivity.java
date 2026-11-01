@@ -263,6 +263,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private ArrayList<String> documentsOriginalPathsArray;
     private ArrayList<TLRPC.User> contactsToSend;
     private Uri contactsToSendUri;
+    private MonogramConnectionNotice monogramConnectionNotice;
     private int currentConnectionState;
     private final ArrayList<BaseFragment> mainFragmentsStack = new ArrayList<>();
     private final ArrayList<BaseFragment> layerFragmentsStack = new ArrayList<>();
@@ -720,6 +721,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
 
         Bulletin.addDelegate(frameLayout, new Bulletin.Delegate() {
+            @Override
+            public int getTopOffset(int tag) {
+                return AndroidUtilities.statusBarHeight + dp(8);
+            }
+
             @Override
             public int getBottomOffset(int tag) {
                 return AndroidUtilities.navigationBarHeight + dp(16);
@@ -6449,6 +6455,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onPause() {
         super.onPause();
         isResumed = false;
+        if (monogramConnectionNotice != null) monogramConnectionNotice.hide();
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
         ApplicationLoader.mainInterfacePaused = true;
@@ -6574,6 +6581,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onDestroy() {
+        if (monogramConnectionNotice != null) monogramConnectionNotice.hide();
         isActive = false;
         activeInstanceCount--;
         unregisterReceiver(batteryReceiver);
@@ -7924,6 +7932,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             titleId = R.string.Connecting;
         }
         actionBarLayout.setTitleOverlayText(title, titleId, action);
+        if (frameLayout != null) {
+            if (monogramConnectionNotice == null) {
+                monogramConnectionNotice = new MonogramConnectionNotice(frameLayout,
+                        selected -> org.telegram.messenger.xmpp.MonogramController.get(selected).reconnect());
+            }
+            monogramConnectionNotice.update(currentAccount, isResumed && UserConfig.getInstance(currentAccount).isClientActivated(), currentConnectionState);
+        }
     }
 
     public void hideVisibleActionMode() {
