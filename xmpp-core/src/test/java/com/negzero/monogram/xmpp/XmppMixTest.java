@@ -19,6 +19,22 @@ class XmppMixTest {
         public void roomMessage(XmppRoomMessage message){messages.add(message);}
         public void roomChanged(XmppRooms.State state){states.add(state);}
     }
+    @Test void serverAndTransportAddressesAreNotRooms() throws Exception {
+        try(MixTestConnection connection=new MixTestConnection();XmppRooms rooms=new XmppRooms(connection,null,new Listener(),contact->Collections.emptySet())) {
+            rooms.mix.remember(jid,"self","Alice");rooms.remember("room@conference.example.org");
+            assertFalse(rooms.mix.known(null));assertFalse(rooms.known(null));
+            for(String address:Arrays.asList("example.org","transport.example.org/resource")) {
+                org.jxmpp.jid.Jid service=JidCreate.from(address);
+                assertFalse(rooms.mix.known(service));assertFalse(rooms.known(service));
+                Message message=new Message();message.setFrom(service);message.setBody("Server notice");
+                assertNull(rooms.legacyContext(message,true,null,null));
+            }
+            assertFalse(rooms.known(JidCreate.from("bob@example.org")));
+            assertTrue(rooms.mix.known(JidCreate.from(jid+"/participant")));
+            assertTrue(rooms.known(JidCreate.from(jid)));
+            assertTrue(rooms.known(JidCreate.from("room@conference.example.org/nickname")));
+        }
+    }
     @Test void joinsViaPamToOwnBareAccountAndKeepsOfflineParticipants()throws Exception{
         try(MixTestConnection connection=new MixTestConnection();XmppMix mix=new XmppMix(connection,new Listener())){
             XmppMix.Channel channel=mix.join(jid,"Alice");assertTrue(channel.joined);assertEquals("self",channel.participantId);assertEquals("General",channel.title);assertEquals(2,channel.participants.size());

@@ -73,7 +73,10 @@ public final class XmppMix implements AutoCloseable {
         return value;
     }
     private EntityBareJid own() {if(closed || !connection.isAuthenticated() || connection.getUser()==null)throw new IllegalStateException("Reconnect your XMPP account first.");return connection.getUser().asEntityBareJid();}
-    public boolean known(Jid jid) {return jid!=null && channels.containsKey(jid.asEntityBareJidIfPossible());}
+    public boolean known(Jid jid) {
+        EntityBareJid channel=jid==null?null:jid.asEntityBareJidIfPossible();
+        return channel!=null && channels.containsKey(channel);
+    }
     public Channel state(String address) throws Exception {Channel state=channels.get(channel(address));if(state==null)throw new IllegalArgumentException("Unknown MIX channel");return state;}
     public void remember(String address,String id,String nickname) throws Exception {
         EntityBareJid jid=channel(address);if(id!=null && !id.isEmpty())participantId(id);

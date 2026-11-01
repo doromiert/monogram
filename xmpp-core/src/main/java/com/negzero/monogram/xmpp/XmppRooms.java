@@ -141,8 +141,10 @@ public final class XmppRooms implements AutoCloseable {
     }
     LegacyIncomingJournal.Context legacyContext(Message wire,boolean live,String archiveId,Date time) throws Exception {
         if(closed || connection.getUser()==null || wire.getFrom()==null || MessageReactions.publicLegacy(wire)) return null;
-        if(mix.known(wire.getFrom()))return mix.legacyContext(wire,live,archiveId,time);
-        MultiUserChat chat=chats.get(wire.getFrom().asEntityBareJidIfPossible());
+        EntityBareJid room=wire.getFrom().asEntityBareJidIfPossible();
+        if(room==null)return null;
+        if(mix.known(room))return mix.legacyContext(wire,live,archiveId,time);
+        MultiUserChat chat=chats.get(room);
         if(chat==null || !chat.isJoined()) return null;
         String author;
         if(archiveId!=null || staleInvitation(wire)) {
@@ -172,7 +174,10 @@ public final class XmppRooms implements AutoCloseable {
     public Collection<HostedRoom> discover(String service) throws Exception {
         return MultiUserChatManager.getInstanceFor(connection).getRoomsHostedBy(JidCreate.domainBareFrom(service)).values();
     }
-    public boolean known(Jid jid) { return mix.known(jid) || jid!=null && chats.containsKey(jid.asEntityBareJidIfPossible()); }
+    public boolean known(Jid jid) {
+        EntityBareJid room=jid==null?null:jid.asEntityBareJidIfPossible();
+        return room!=null && (mix.known(room) || chats.containsKey(room));
+    }
     public boolean isMix(String jid) {try{return mix.known(JidCreate.from(jid));}catch(Exception invalid){return false;}}
     boolean canSendChatState(EntityBareJid room) {
         MultiUserChat chat=chats.get(room);
