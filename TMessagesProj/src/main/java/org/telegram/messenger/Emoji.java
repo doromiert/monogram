@@ -664,14 +664,21 @@ public class Emoji {
 
     public static CharSequence replaceEmoji(CharSequence cs, Paint.FontMetricsInt fontMetrics, boolean createNew, int[] emojiOnly, int alignment, float scale, int minusLimit) {
         if (cs == null || cs.length() == 0) return cs;
-        if (SharedConfig.useSystemEmoji) { if (emojiOnly != null) parseEmojis(cs, emojiOnly); return systemText(cs, createNew); }
+        ArrayList<EmojiSpanRange> emojis = null;
+        if (SharedConfig.useSystemEmoji) {
+            cs = systemText(cs, createNew);
+            if (emojiOnly == null) return cs;
+            emojis = parseEmojis(cs, emojiOnly);
+            if (emojiOnly[0] == 0) return cs;
+            // Emoji-only messages need resizable spans too; getEmojiDrawable still uses the device font.
+        }
         Spannable s;
         if (!createNew && cs instanceof Spannable) {
             s = (Spannable) cs;
         } else {
             s = Spannable.Factory.getInstance().newSpannable(cs);
         }
-        ArrayList<EmojiSpanRange> emojis = parseEmojis(s, emojiOnly);
+        if (emojis == null) emojis = parseEmojis(s, emojiOnly);
         if (emojis.isEmpty()) {
             return cs;
         }

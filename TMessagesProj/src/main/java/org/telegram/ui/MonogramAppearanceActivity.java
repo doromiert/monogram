@@ -77,6 +77,7 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
         items.add(UItem.asCustom(fabPreview));
         flag(items,"Use system fonts",systemFonts);
         items.add(UItem.asCheck(12,"Use system emoji").setChecked(SharedConfig.useSystemEmoji));
+        items.add(UItem.asCheck(17,"Big emoji","Enlarge messages containing only emoji. This does not enable animations.",true).setChecked(SharedConfig.allowBigEmoji));
         items.add(UItem.asExpandableSwitch(13,"Material Design 3",materialCount()+"/6")
                 .setChecked(materialAny()).setCollapsed(!materialExpanded).setClickCallback(v -> {
                     boolean on=!materialAny();
@@ -164,6 +165,7 @@ public final class MonogramAppearanceActivity extends MonogramSettingsActivity {
             case 10:presentFragment(new MonogramIconPacksActivity(currentAccount));return;
             case 11:presentFragment(new MonogramPillsActivity(currentAccount));return;
             case 12:SharedConfig.useSystemEmoji=!SharedConfig.useSystemEmoji;org.telegram.messenger.MessagesController.getGlobalMainSettings().edit().putBoolean("useSystemEmoji",SharedConfig.useSystemEmoji).apply();org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(org.telegram.messenger.NotificationCenter.emojiLoaded);refreshOtherScreens();break;
+            case 17:SharedConfig.toggleBigEmoji();org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(org.telegram.messenger.NotificationCenter.emojiLoaded);refreshOtherScreens();break;
             case 13:
                 materialExpanded=!materialExpanded;listView.adapter.update(true);return;
             case 14:if(dividers.get()!=2) separateHeaders.toggle();break;

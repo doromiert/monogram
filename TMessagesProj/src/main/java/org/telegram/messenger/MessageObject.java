@@ -2093,6 +2093,8 @@ public class MessageObject {
     }
 
     private void checkEmojiOnly(Integer emojiOnly) {
+        emojiOnlyCount = animatedEmojiCount = 0;
+        hasUnwrappedEmoji = false;
         if (emojiOnly != null && emojiOnly >= 1 && messageOwner != null && !hasNonEmojiEntities()) {
             Emoji.EmojiSpan[] spans = ((Spannable) messageText).getSpans(0, messageText.length(), Emoji.EmojiSpan.class);
             AnimatedEmojiSpan[] aspans = ((Spannable) messageText).getSpans(0, messageText.length(), AnimatedEmojiSpan.class);
@@ -6817,10 +6819,16 @@ public class MessageObject {
     }
 
     private boolean systemEmojiLayout = SharedConfig.useSystemEmoji;
+    private boolean bigEmojiLayout = SharedConfig.allowBigEmoji;
     public boolean checkLayout() {
-        if (systemEmojiLayout != SharedConfig.useSystemEmoji) {
+        if (systemEmojiLayout != SharedConfig.useSystemEmoji || bigEmojiLayout != SharedConfig.allowBigEmoji) {
             systemEmojiLayout = SharedConfig.useSystemEmoji;
+            bigEmojiLayout = SharedConfig.allowBigEmoji;
             layoutCreated = false;
+            if (messageText instanceof Spannable) {
+                Spannable text = (Spannable) messageText;
+                for (Emoji.EmojiSpan span : text.getSpans(0, text.length(), Emoji.EmojiSpan.class)) text.removeSpan(span);
+            }
             if (emojiAnimatedSticker != null && messageOwner.entities.isEmpty() && (getMedia(messageOwner) == null || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaEmpty)) {
                 emojiAnimatedSticker = null;emojiAnimatedStickerId = null;type = TYPE_TEXT;
             }

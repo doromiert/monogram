@@ -14,7 +14,7 @@ import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
-        shadows={MonogramSystemEmojiTest.Device.class,MonogramSystemEmojiTest.Config.class})
+        shadows={MonogramSystemEmojiTest.Device.class,MonogramSystemEmojiTest.Config.class,MonogramSystemEmojiTest.Colors.class})
 public class MonogramSystemEmojiTest {
     @Implements(value=AndroidUtilities.class,isInAndroidSdk=false)
     public static class Device {
@@ -27,8 +27,12 @@ public class MonogramSystemEmojiTest {
         @Implementation public static void __staticInitializer__(){}
         @Implementation public static int getDevicePerformanceClass(){return 2;}
     }
+    @Implements(value=org.telegram.ui.ActionBar.Theme.class,isInAndroidSdk=false)
+    public static class Colors {
+        @Implementation public static void __staticInitializer__(){}
+    }
     @Before public void setup(){ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();SharedConfig.useSystemEmoji=false;AndroidUtilities.density=1;}
-    @After public void cleanup(){SharedConfig.useSystemEmoji=false;}
+    @After public void cleanup(){SharedConfig.useSystemEmoji=false;SharedConfig.allowBigEmoji=true;}
     @Test public void pickerUsesDeviceFontForSimpleAndCompoundEmoji(){
         SharedConfig.useSystemEmoji=true;
         for(String code:new String[]{"😀","❤️","👍🏽","🫱🏻‍🫲🏽"}){
@@ -55,4 +59,42 @@ public class MonogramSystemEmojiTest {
         SharedConfig.useSystemEmoji=true;assertTrue(Emoji.getEmojiDrawable("😀") instanceof Emoji.SystemEmojiDrawable);
         SharedConfig.useSystemEmoji=false;assertTrue(Emoji.getEmojiDrawable("😀") instanceof Emoji.SimpleEmojiDrawable);
     }
+    private MessageObject emojiMessage(String text) throws Exception {
+        org.telegram.ui.ActionBar.Theme.chat_msgTextPaint=new TextPaint();org.telegram.ui.ActionBar.Theme.chat_msgTextPaint.setTextSize(16);
+        org.telegram.ui.ActionBar.Theme.chat_msgTextPaintEmoji=new TextPaint[6];
+        for(int i=0;i<6;i++){org.telegram.ui.ActionBar.Theme.chat_msgTextPaintEmoji[i]=new TextPaint();org.telegram.ui.ActionBar.Theme.chat_msgTextPaintEmoji[i].setTextSize(48-i*4);}
+        Class<?> allocator=Class.forName("sun.misc.Unsafe");java.lang.reflect.Field field=allocator.getDeclaredField("theUnsafe");field.setAccessible(true);
+        MessageObject message=(MessageObject)allocator.getMethod("allocateInstance",Class.class).invoke(field.get(null),MessageObject.class);
+        message.messageOwner=new org.telegram.tgnet.TLRPC.TL_message();
+        int[] count=new int[1];message.messageText=Emoji.replaceEmoji(new SpannableString(text),new Paint().getFontMetricsInt(),false,count);
+        org.robolectric.util.ReflectionHelpers.callInstanceMethod(message,"checkEmojiOnly",org.robolectric.util.ReflectionHelpers.ClassParameter.from(Integer.class,Integer.valueOf(count[0])));
+        return message;
+    }
+    @Test public void systemEmojiOnlyMessagesUseLargeStaticDeviceFontSpans() throws Exception {
+        SharedConfig.useSystemEmoji=true;
+        for(String text:new String[]{"😀","😀 👍🏽"}){
+            MessageObject message=emojiMessage(text);assertTrue(message.emojiOnlyCount>0);assertFalse(org.robolectric.util.ReflectionHelpers.<Boolean>getField(message,"hasUnwrappedEmoji"));
+            Emoji.EmojiSpan[] spans=((Spanned)message.messageText).getSpans(0,message.messageText.length(),Emoji.EmojiSpan.class);
+            assertEquals(message.emojiOnlyCount,spans.length);
+            for(Emoji.EmojiSpan span:spans){assertTrue(span.getDrawable() instanceof Emoji.SystemEmojiDrawable);assertTrue(span.size>16);}
+            assertEquals(0,((Spanned)message.messageText).getSpans(0,message.messageText.length(),AnimatedEmojiSpan.class).length);
+        }
+    }
+    @Test public void mixedTextStaysAtNormalSystemFontSize() throws Exception {
+        SharedConfig.useSystemEmoji=true;MessageObject message=emojiMessage("hello 😀");
+        assertEquals(0,message.emojiOnlyCount);
+        assertEquals(0,((Spanned)message.messageText).getSpans(0,message.messageText.length(),Emoji.EmojiSpan.class).length);
+    }
+    @Test public void turningBigEmojiOffInvalidatesCachedLayoutAndClearsBigCounts() throws Exception {
+        SharedConfig.useSystemEmoji=true;SharedConfig.allowBigEmoji=true;MessageObject message=emojiMessage("😀");
+        org.robolectric.util.ReflectionHelpers.setField(message,"systemEmojiLayout",true);
+        org.robolectric.util.ReflectionHelpers.setField(message,"bigEmojiLayout",true);
+        org.robolectric.util.ReflectionHelpers.setField(message,"layoutCreated",true);
+        SharedConfig.allowBigEmoji=false;message.checkLayout();
+        assertFalse(org.robolectric.util.ReflectionHelpers.<Boolean>getField(message,"layoutCreated"));
+        assertEquals(0,((Spanned)message.messageText).getSpans(0,message.messageText.length(),Emoji.EmojiSpan.class).length);
+        org.robolectric.util.ReflectionHelpers.callInstanceMethod(message,"checkEmojiOnly",org.robolectric.util.ReflectionHelpers.ClassParameter.from(Integer.class,null));
+        assertEquals(0,message.emojiOnlyCount);assertFalse(org.robolectric.util.ReflectionHelpers.<Boolean>getField(message,"hasUnwrappedEmoji"));
+    }
+
 }
