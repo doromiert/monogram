@@ -128,7 +128,30 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static final int MEDIA_TYPE_RICH = 13;
     private final HashMap<String, ArrayList<DelayedMessage>> delayedMessages = new HashMap<>();
     private final SparseArray<MessageObject> unsentMessages = new SparseArray<>();
-    private final HashMap<MessageObject, Runnable> monogramVideoConversions = new HashMap<>();
+    private final HashMap<MessageObject, VideoConversion> monogramVideoConversions = new HashMap<>();
+    static final class VideoConversion implements Runnable {
+        final Runnable ready;
+        float progress;
+        VideoConversion(Runnable ready) { this.ready = ready; }
+        @Override public void run() { ready.run(); }
+    }
+    public float videoPreparationProgress(int messageId) {
+        for (java.util.Map.Entry<MessageObject, VideoConversion> entry : monogramVideoConversions.entrySet())
+            if (entry.getKey().getId() == messageId) return entry.getValue().progress;
+        return -1;
+    }
+    private void videoPreparationProgress(MessageObject message, Float progress) {
+        VideoConversion conversion = monogramVideoConversions.get(message);
+        if (conversion == null) return;
+        if (progress != null && !Float.isNaN(progress) && !Float.isInfinite(progress))
+            conversion.progress = Math.max(conversion.progress, Math.max(0, Math.min(.999f, progress)));
+        String path = message.messageOwner.attachPath;
+        if (TextUtils.isEmpty(path)) return;
+        // These are preparation units, never bytes sent to the upload service.
+        long done = (long) (conversion.progress * 1000);
+        ImageLoader.getInstance().setFileProgress(path, done, 1000);
+        getNotificationCenter().postNotificationName(NotificationCenter.fileUploadProgressChanged, path, done, 1000L, false);
+    }
     private final SparseArray<TLRPC.Message> sendingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> editingMessages = new SparseArray<>();
     private final SparseArray<TLRPC.Message> uploadMessages = new SparseArray<>();
@@ -1290,6 +1313,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             long finalSize = (Long) args[3];
             Float progress = (Float) args[4];
             if (monogramVideoConversions.containsKey(messageObject)) {
+                if (finalSize == 0) videoPreparationProgress(messageObject, progress);
                 if (finalSize > 0) {
                     Runnable ready = monogramVideoConversions.remove(messageObject);
                     removeFromUploadingMessages(messageObject.getId(), false);
@@ -5417,7 +5441,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     };
                     if (convert) {
                         outgoing.videoEditedInfo = videoEditedInfo;
-                        monogramVideoConversions.put(outgoing, sendFile);
+                        monogramVideoConversions.put(outgoing, new VideoConversion(sendFile));
+                        videoPreparationProgress(outgoing, 0f);
                         putToSendingMessages(outgoing.messageOwner, false);
                         putToUploadingMessages(outgoing);
                         if (!MediaController.getInstance().scheduleVideoConvert(outgoing, false, true, false)) {

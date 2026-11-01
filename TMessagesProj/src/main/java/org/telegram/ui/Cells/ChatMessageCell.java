@@ -18208,6 +18208,14 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     public void onProgressUpload(String fileName, long uploadedSize, long totalSize, boolean isEncrypted) {
+        float preparing = SendMessagesHelper.getInstance(currentAccount).videoPreparationProgress(currentMessageObject.getId());
+        if (preparing >= 0) {
+            currentMessageObject.loadedFileSize = 0;
+            radialProgress.setProgress(preparing, true);
+            createLoadingProgressLayout(uploadedSize, totalSize);
+            invalidate();
+            return;
+        }
         float progress = totalSize == 0 ? 0 : Math.min(1f, uploadedSize / (float) totalSize);
         currentMessageObject.loadedFileSize = uploadedSize;
         radialProgress.setProgress(progress, true);
@@ -18239,6 +18247,19 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void createLoadingProgressLayout(long loadedSize, long totalSize) {
+        float preparing = currentMessageObject == null ? -1 : SendMessagesHelper.getInstance(currentAccount).videoPreparationProgress(currentMessageObject.getId());
+        if (preparing >= 0 && documentAttach != null) {
+            int percent = (int) (preparing * 100);
+            long hash = Long.MIN_VALUE + percent;
+            if (loadingProgressLayout == null || loadingProgressLayoutHash != hash) {
+                String text = getString(R.string.PreparingVideo) + " " + percent + "%";
+                int width = (int) Math.ceil(Theme.chat_infoPaint.measureText(text));
+                loadingProgressLayout = new StaticLayout(text, Theme.chat_infoPaint, Math.max(1, width), Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
+                loadingProgressLayoutHash = hash;
+            }
+            lastLoadingSizeTotal = 0;
+            return;
+        }
         if (totalSize <= 0 || documentAttach == null) {
             loadingProgressLayout = null;
             return;
@@ -27103,9 +27124,14 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         if (buttonState == 1 && loadingProgressLayout != null) {
                             sb.append("\n");
                             final boolean sending = currentMessageObject.isSending();
-                            final String key = sending ? "AccDescrUploadProgress" : "AccDescrDownloadProgress";
-                            final int resId = sending ? R.string.AccDescrUploadProgress : R.string.AccDescrDownloadProgress;
-                            sb.append(formatString(key, resId, AndroidUtilities.formatFileSize(currentMessageObject.loadedFileSize), AndroidUtilities.formatFileSize(lastLoadingSizeTotal)));
+                            final float preparing = SendMessagesHelper.getInstance(currentAccount).videoPreparationProgress(currentMessageObject.getId());
+                            if (preparing >= 0) {
+                                sb.append(getString(R.string.PreparingVideo)).append(" ").append(Integer.toString((int) (preparing * 100))).append("%");
+                            } else {
+                                final String key = sending ? "AccDescrUploadProgress" : "AccDescrDownloadProgress";
+                                final int resId = sending ? R.string.AccDescrUploadProgress : R.string.AccDescrDownloadProgress;
+                                sb.append(formatString(key, resId, AndroidUtilities.formatFileSize(currentMessageObject.loadedFileSize), AndroidUtilities.formatFileSize(lastLoadingSizeTotal)));
+                            }
                         }
                     }
                     if (currentMessageObject.isMusic()) {
