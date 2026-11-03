@@ -58,6 +58,8 @@ public final class XmppRequestException extends Exception {
             return "contact authorization is required";
         if(error instanceof Omemo2Native.Failure) return "OMEMO2 ratchet failed ("+((Omemo2Native.Failure)error).code+")";
         if(error instanceof Omemo2Bundle.InvalidKeyId)return error.getMessage();
+        if(error instanceof org.signal.libsignal.protocol.UntrustedIdentityException)
+            return "Review the separate PQ hybrid fingerprints in Conversation security before sending";
         if(error instanceof java.security.GeneralSecurityException) {
             // Only expose fixed local diagnostics, never arbitrary provider/server messages.
             String detail=error.getMessage();
@@ -67,6 +69,11 @@ public final class XmppRequestException extends Exception {
                 case "OMEMO2 identity changed; refresh before approving":
                 case "Incomplete OMEMO2 state; existing identity was preserved":
                 case "Unsupported protected content":
+                case "Experimental PQ OMEMO is not ready":
+                case "Incomplete PQ identity; existing state preserved":
+                case "PQ fingerprint changed; refresh before approving":
+                case "Invalid experimental PQ OMEMO bundle":
+                case "Contact has no unblocked experimental PQ devices":
                 case "OMEMO2 message is not addressed to this device":
                 case "OMEMO2 message is not addressed to an active or recovery device": return detail;
             }

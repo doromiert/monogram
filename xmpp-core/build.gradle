@@ -2,7 +2,17 @@ plugins { id 'java-library' }
 repositories { mavenCentral() }
 sourceCompatibility = JavaVersion.VERSION_1_8
 targetCompatibility = JavaVersion.VERSION_1_8
+def pqRevision = '10861bff671740174f4e99f7e30dc492fcf6ec8b'
+def pqJar = rootProject.file(".state/pq/backend/${pqRevision}/libsignal-client.jar")
+def preparePqJava = tasks.register('preparePqJava', Exec) {
+    inputs.file(rootProject.file('scripts/build-pq-omemo.sh'))
+    outputs.file(pqJar)
+    commandLine 'bash', rootProject.file('scripts/build-pq-omemo.sh'), 'java'
+}
 dependencies {
+    api files(pqJar).builtBy(preparePqJava)
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.20'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2'
     implementation 'org.bouncycastle:bcprov-jdk15to18:1.80'
     api 'org.igniterealtime.smack:smack-tcp:4.4.8'
     api 'org.igniterealtime.smack:smack-extensions:4.4.8'
@@ -14,3 +24,37 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 }
 test { useJUnitPlatform() }
+tasks.register('pqTest', Test) {
+    description = 'PQ protocol tests against the pinned native fork (build host JNI first).'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform()
+    include '**/PqOmemo*Test.class'
+    systemProperty 'java.library.path', providers.gradleProperty('pqNativeDirectory').getOrElse(
+        rootProject.file(".state/pq/backend/${pqRevision}/jni/host").absolutePath)
+    if (System.getenv('MONOGRAM_PQ_IT_TRUST')) {
+        systemProperty 'javax.net.ssl.trustStore', System.getenv('MONOGRAM_PQ_IT_TRUST')
+        systemProperty 'javax.net.ssl.trustStorePassword', 'monogram-pq-test'
+    }
+}
+test { exclude '**/PqOmemoNativeTest.class' }
+sourceSets {
+    pqInterop {
+        java.srcDirs = [rootProject.file('tests/pq-interop/java'), rootProject.file('.state/pq/reference-java')]
+        compileClasspath += sourceSets.main.output + sourceSets.test.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+tasks.register('preparePqReference', Exec) {
+    inputs.file(rootProject.file('scripts/prepare-pq-interop.sh'))
+    outputs.dir(rootProject.file('.state/pq/reference-java'))
+    commandLine 'bash', rootProject.file('scripts/prepare-pq-interop.sh')
+}
+tasks.named('compilePqInteropJava').configure { dependsOn 'preparePqReference', 'testClasses' }
+tasks.register('pqInteropTest', Test) {
+    testClassesDirs = sourceSets.pqInterop.output.classesDirs
+    classpath = sourceSets.pqInterop.runtimeClasspath
+    useJUnitPlatform()
+    systemProperty 'java.library.path', providers.gradleProperty('pqNativeDirectory').getOrElse(
+        rootProject.file(".state/pq/backend/${pqRevision}/jni/host").absolutePath)
+}

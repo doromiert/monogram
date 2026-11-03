@@ -13,6 +13,24 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
 public class MonogramProtocolStoreTest {
+    @Test public void pqEditsAndFingerprintRemainSeparateFromClassicalOmemo() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();String file="protocol-pq.db";context.deleteDatabase(file);
+        org.jxmpp.jid.Jid own=org.jxmpp.jid.impl.JidCreate.entityFullFrom("alice@example.org/phone");
+        String fingerprint=new String(new char[128]).replace('\0','a');
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer("alice@example.org"),peer=store.peer("bob@example.org");
+            XmppMessage original=XmppMessage.sent(own,"bob@example.org","pq-original","Before",XmppMessage.Encryption.PQ_OMEMO,null,null).withSenderFingerprint(fingerprint);
+            int id=store.save(original);
+            XmppMessage update=XmppMessage.sent(own,"bob@example.org","pq-edit","After",XmppMessage.Encryption.PQ_OMEMO,null,new MessageCorrection("pq-original")).withSenderFingerprint(fingerprint);
+            store.save(update);store.reconcileCorrections(peer);
+            assertEquals("After",store.getMessage(id,self).message);
+            assertEquals(XmppMessage.Encryption.PQ_OMEMO,store.editTarget(id,peer,self).encryption);
+            assertEquals("3",store.getMessage(id,self).params.get("monogram-actual-encryption"));
+            XmppMessage classical=XmppMessage.sent(own,"bob@example.org","classical-edit","Do not replace PQ text",XmppMessage.Encryption.OMEMO2,null,new MessageCorrection("pq-original"));
+            int unrelated=store.save(classical);store.reconcileCorrections(peer);
+            assertFalse(store.hiddenCorrection(unrelated));assertEquals("After",store.getMessage(id,self).message);
+        } finally {context.deleteDatabase(file);}
+    }
     private int protocol(MonogramStore store,int id) {
         try (Cursor c=store.getReadableDatabase().rawQuery("SELECT encryption FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
             assertTrue(c.moveToFirst()); return c.getInt(0);

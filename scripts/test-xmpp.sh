@@ -5,6 +5,7 @@ for command in prosody prosodyctl openssl keytool mvn; do
     command -v "$command" >/dev/null || { echo "Run inside nix develop .#test" >&2; exit 1; }
 done
 mkdir -p .state
+bash ./scripts/build-pq-omemo.sh java > .state/pq-java-build.log 2>&1
 ./scripts/build-omemo2.sh host > .state/omemo2-host-build.log 2>&1
 export MONOGRAM_OMEMO2=1
 state=$(mktemp -d "$PWD/.state/integration.XXXXXX")

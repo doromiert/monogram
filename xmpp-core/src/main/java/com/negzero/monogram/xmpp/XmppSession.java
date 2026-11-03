@@ -136,6 +136,9 @@ public final class XmppSession implements AutoCloseable {
     private final java.util.Map<String,Long> deviceListRefresh=new java.util.concurrent.ConcurrentHashMap<>();
     private final IdentityTrust trust;
     private final XmppOmemo2 modern;
+    private volatile XmppPqOmemo pq;
+    private volatile Exception pqFailure;
+    private final String configuredJid;
     private final LegacyIncomingJournal legacyIncoming;
     private final String legacyCapacityKey,modernCapacityKey;
     private boolean foreignAckScheduled;
@@ -213,6 +216,7 @@ public final class XmppSession implements AutoCloseable {
         this(account,password,deviceId,trustFile,modernDevice,null,listener);
     }
     public XmppSession(Account account,String password,int deviceId,File trustFile,Omemo2Device modernDevice,XmppRecovery recovery,Listener listener) throws Exception {
+        configuredJid = account.jid.toString();
         if (keyRoot == null) throw new IllegalStateException("Initialize the private OMEMO store first");
         if (deviceId < 1) throw new IllegalArgumentException("OMEMO device ID must be positive and persistent");
         XMPPTCPConnectionConfiguration.Builder config = XMPPTCPConnectionConfiguration.builder()
@@ -340,7 +344,7 @@ public final class XmppSession implements AutoCloseable {
         ping.registerPingFailedListener(() -> { if (!closed) connection.pingTimedOut(); });
         MonogramLegacyOmemoService.instance().register(omemo,legacyIncoming,new MonogramLegacyOmemoService.Receiver() {
             public LegacyIncomingJournal.Context context(Message stanza,boolean live) throws Exception {
-                if(closed || connection.getUser()==null || isModern(stanza) || MessageReactions.publicLegacy(stanza)) return null;
+                if(closed || connection.getUser()==null || isModern(stanza) || isPq(stanza) || MessageReactions.publicLegacy(stanza)) return null;
                 if(stanza.getType()==Message.Type.groupchat) return live ? rooms.legacyContext(stanza,true,null,null) : null;
                 if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return null;
                 return LegacyIncomingJournal.Context.direct(stanza,connection.getUser().asEntityBareJid(),live,null,null);
@@ -362,7 +366,7 @@ public final class XmppSession implements AutoCloseable {
                     MessageReceipt read=MessageReceipt.ownDisplayed(carbon,connection.getUser().asEntityBareJid());
                     if(read!=null) listener.ownDisplayed(read.peer,read.id);
                 }
-                if (isModern(carbon)) deliverModern(carbon,false);
+                if (isModern(carbon) || isPq(carbon)) deliverModern(carbon,false);
                 else if (!encrypted(carbon)) deliver(listener, carbon, carbon.getBody(), false,null,false);
                 else legacyPending(carbon);
             }
@@ -376,7 +380,7 @@ public final class XmppSession implements AutoCloseable {
         connection.addAsyncStanzaListener(stanza -> {
             Message message = (Message) stanza;
             if (rooms.known(message.getFrom())) return;
-            if (isModern(message)) deliverModern(message,true);
+            if (isModern(message) || isPq(message)) deliverModern(message,true);
             else if (!encrypted(message)) deliver(listener, message, message.getBody(), false,null,true);
             else legacyPending(message);
         }, stanza -> stanza instanceof Message && (((Message) stanza).getType() == Message.Type.chat
@@ -433,7 +437,12 @@ public final class XmppSession implements AutoCloseable {
     }
 
     private static boolean encrypted(Message message) {
-        return isModern(message) || message.hasExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE);
+        return isModern(message) || isPq(message) || message.hasExtension(OmemoElement.NAME_ENCRYPTED, OmemoElement_VAxolotl.NAMESPACE);
+    }
+    private static boolean isPq(Message message) { return message.hasExtension("encrypted",XmppPqOmemo.NS); }
+    private static boolean pqPayload(Message message) {
+        org.jivesoftware.smack.packet.ExtensionElement root = message.getExtension("encrypted",XmppPqOmemo.NS);
+        return root instanceof StandardExtensionElement && ((StandardExtensionElement)root).getFirstElement("payload",XmppPqOmemo.NS) != null;
     }
     private static boolean isModern(Message message) { return message.hasExtension("encrypted",XmppOmemo2.NS); }
     private static boolean modernPayload(Message message) {
@@ -444,8 +453,9 @@ public final class XmppSession implements AutoCloseable {
     private void deliverModern(Message stanza,boolean live) {
         if(rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) return;
         if (closed) return;
-        if (connection.getUser()!=null && modernPayload(stanza)) {
-            XmppMessage pending=XmppMessage.modern(stanza,null,connection.getUser().asEntityBareJid(),null,null);
+        if (connection.getUser()!=null && (modernPayload(stanza) || pqPayload(stanza))) {
+            XmppMessage pending=isPq(stanza) ? XmppMessage.pq(stanza,null,connection.getUser().asEntityBareJid(),null,null,null,null)
+                    : XmppMessage.modern(stanza,null,connection.getUser().asEntityBareJid(),null,null);
             if (pending!=null) listener.messagePending(pending);
         }
         queueModern(new IncomingModern(stanza,live ? DeliveryAcknowledgement.from(stanza,connection.getUser()==null ? null : connection.getUser().asEntityBareJid()) : null));
@@ -490,6 +500,7 @@ public final class XmppSession implements AutoCloseable {
         try {
         crypto.execute(() -> {
             if (closed || connection.getUser() == null) return;
+            if (isPq(stanza)) { decryptPq(incoming,setupOverflow); return; }
             XmppOmemo2.Received received = null;
             Exception failed=null;
             long revision;
@@ -524,6 +535,51 @@ public final class XmppSession implements AutoCloseable {
         java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
         listener.message(message,() -> { if(accepted.compareAndSet(false,true)) afterModern(received,receipt!=null && receipt.accepts(message) ? receipt : null); });
     }
+    private void decryptPq(IncomingModern incoming,boolean setupOverflow) {
+        Message stanza = incoming.stanza;
+        try {
+            if (setupOverflow || !pqAvailable()) throw new IllegalStateException("Experimental PQ OMEMO is not ready");
+            String sender = stanza.getFrom().asBareJid().toString(), destination = stanza.getTo().asBareJid().toString();
+            if (!sender.equals(configuredJid) && !destination.equals(configuredJid)) throw PqOmemoBundle.invalid();
+            java.util.Date delayed = org.jivesoftware.smackx.delay.DelayInformationManager.getDelayTimestamp(stanza);
+            XmppPqOmemo.Received received = pq().receive(stanza,sender,destination,delayed == null ? System.currentTimeMillis() : delayed.getTime(),null);
+            deliverPq(received,incoming.receipt);
+        } catch (PqOmemoJournal.Full full) {
+            boolean recover;
+            synchronized(modernInboxLock) { recover = !journalBlocked; journalBlocked = true; }
+            queueModern(incoming); if (recover) recoverPqIncoming();
+        } catch (org.signal.libsignal.protocol.DuplicateMessageException duplicate) {
+            // Already accepted ciphertext is never decrypted again or replaced with a placeholder.
+        } catch (Exception failure) {
+            pqFailure = failure;
+            if (pqPayload(stanza)) {
+                XmppMessage pending = XmppMessage.pq(stanza,null,connection.getUser().asEntityBareJid(),null,null,null,null);
+                if (pending != null) listener.messagePending(pending);
+            }
+        }
+    }
+    private void deliverPq(XmppPqOmemo.Received received,DeliveryAcknowledgement receipt) {
+        if (closed) return;
+        if (received.content == null) { afterPq(received,null); return; }
+        XmppMessage message = XmppMessage.pq(received.outer,received.content,JidCreate.entityBareFromOrThrowUnchecked(configuredJid),
+                received.archiveId,new Date(received.timestamp),received.fingerprint,received.digest);
+        if (message == null || !directIncomingRoute(message)) return;
+        java.util.concurrent.atomic.AtomicBoolean accepted = new java.util.concurrent.atomic.AtomicBoolean();
+        listener.message(message,() -> { if (accepted.compareAndSet(false,true)) afterPq(received,receipt != null && receipt.accepts(message) ? receipt : null); });
+    }
+    private void afterPq(XmppPqOmemo.Received received,DeliveryAcknowledgement receipt) {
+        try { pq().accepted(received); incomingCapacityChanged(); }
+        catch(Exception failure) { pqFailure = failure; return; }
+        if (receipt != null) acknowledgeDelivery(receipt);
+        if (closed) return;
+        try { crypto.execute(() -> { try { if (pqAvailable()) pq().replenishIfNeeded(); } catch(Exception failure) { pqFailure = failure; } }); }
+        catch(java.util.concurrent.RejectedExecutionException stopped) { /* Accepted content remains in the message database. */ }
+    }
+    private void recoverPqIncoming() {
+        if (pq == null || closed) return;
+        try { for (XmppPqOmemo.Received received : pq.pending()) { if (closed) return; deliverPq(received,null); } }
+        catch(Exception failure) { pqFailure = failure; }
+    }
     /** Explicit cold-migration opt-in, before connecting. Never activates or publishes an account. */
     public void configureLegacyRecovery(org.jivesoftware.smackx.omemo.MonogramLegacyReceiveOnly recovery) {
         if(closed) throw new IllegalStateException("Session is closed");
@@ -533,6 +589,7 @@ public final class XmppSession implements AutoCloseable {
     /** Local recovery also runs before connecting: authenticated plaintext must not depend on network availability. */
     public void recoverIncoming() {
         if(closed) return;
+        recoverPqIncoming();
         try { for(LegacyIncomingJournal.Received pending:MonogramLegacyOmemoService.instance().pending(omemo,legacyIncoming)) { if(closed) return;deliverLegacy(pending); } }
         catch(Exception failure) { legacyFailure=failure; }
         if(modern==null) return;
@@ -630,6 +687,24 @@ public final class XmppSession implements AutoCloseable {
         }
     }
     public boolean modernAvailable() { return modern != null && modern.ready(); }
+    /** Explicit account opt-in. Call on the account worker, before connect or while authenticated. */
+    public synchronized void configurePq(PqOmemoRecords.Factory records) throws Exception {
+        if (closed) throw new IllegalStateException("Session closed");
+        if (pq == null) {
+            try { pq = new XmppPqOmemo(connection,new PqOmemoDevice(accountJid(),records),listener::devicesChanged); }
+            catch (LinkageError missingBackend) { pqFailure = new IllegalStateException("Experimental PQ native backend is unavailable",missingBackend); throw pqFailure; }
+        }
+    }
+    private String accountJid() { return configuredJid; }
+    public synchronized void enablePq(PqOmemoRecords.Factory records) throws Exception {
+        configurePq(records);
+        if (!connection.isAuthenticated()) throw new IllegalStateException("Connect to enable experimental PQ OMEMO");
+        try { pq.initialize(); pqFailure = null; }
+        catch(Exception failure) { pqFailure = failure; throw failure; }
+    }
+    public boolean pqAvailable() { return pq != null && pq.ready(); }
+    public Exception pqFailure() { return pqFailure; }
+    public XmppPqOmemo pq() { if (pq == null) throw new IllegalStateException("Experimental PQ OMEMO is not enabled"); return pq; }
     public Exception modernFailure() { return modernFailure; }
     public XmppOmemo2 modern() {
         if (modern == null) throw new IllegalStateException("Modern OMEMO was not configured"); return modern;
@@ -837,6 +912,21 @@ public final class XmppSession implements AutoCloseable {
             if (rooms.known(stanza.getFrom()) || rooms.known(stanza.getTo())) continue;
             if (forwarded.getDelayInformation() == null) throw new java.io.IOException("Archive result has no timestamp");
             Date time = forwarded.getDelayInformation().getStamp();
+            if (isPq(stanza)) {
+                if (!pqPayload(stanza) || XmppMessage.pq(stanza,null,own,result.getId(),time,null,null) == null) continue;
+                XmppPqOmemo.Received received = null;
+                try {
+                    if (pqAvailable()) received = pq().receive(stanza,stanza.getFrom().asBareJid().toString(),stanza.getTo().asBareJid().toString(),time.getTime(),result.getId());
+                } catch (PqOmemoJournal.Full full) { pqFailure = full; throw full; }
+                catch (org.signal.libsignal.protocol.DuplicateMessageException duplicate) { continue; }
+                catch (Exception failure) { pqFailure = failure; }
+                XmppMessage message = received == null ? XmppMessage.pq(stanza,null,own,result.getId(),time,null,null)
+                        : XmppMessage.pq(stanza,received.content,own,result.getId(),time,received.fingerprint,received.digest);
+                if (message != null && directIncomingRoute(message)) messages.add(message);
+                final XmppPqOmemo.Received decoded = received;
+                if (decoded != null) accepted.add(() -> afterPq(decoded,null));
+                continue;
+            }
             if (isModern(stanza)) {
                 if (!modernPayload(stanza) || XmppMessage.modern(stanza,null,own,result.getId(),time) == null) continue;
                 awaitModernSetup();long generation=lifecycle.get();
@@ -919,6 +1009,11 @@ public final class XmppSession implements AutoCloseable {
             catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
             catch (Exception unsupported) { modernFailure = unsupported; }
         }
+        if (pq != null) {
+            try { pq.initialize(); pqFailure = null; }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
+            catch (Exception unsupported) { pqFailure = unsupported; }
+        }
         CarbonManager carbons = CarbonManager.getInstanceFor(connection);
         if (carbons.isSupportedByServer()) carbons.enableCarbons();
         connection.sendStanza(new org.jivesoftware.smack.packet.Presence(org.jivesoftware.smack.packet.Presence.Type.available));
@@ -930,29 +1025,35 @@ public final class XmppSession implements AutoCloseable {
         return send(jid, body, encrypted, false, reply);
     }
     public String send(String jid, String body, XmppMessage.Encryption encryption, ReplyReference reply) throws Exception {
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,null,null,null,null,null);
         return encryption == XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,null,null)
                 : send(jid,body,encryption != XmppMessage.Encryption.PLAIN,reply);
     }
     public String correct(String jid, String body, XmppMessage.Encryption encryption, ReplyReference reply, MessageCorrection correction) throws Exception {
         if (correction == null) throw new IllegalArgumentException("Missing correction reference");
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,correction,null,null,null,null);
         return encryption == XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null)
                 : correct(jid,body,encryption != XmppMessage.Encryption.PLAIN,reply,correction);
     }
     public String send(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageMarkup markup) throws Exception {
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,null,null,null,markup,null);
         return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,null,null,null,markup)
                 : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,null,null,null,markup);
     }
     public String correct(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageCorrection correction,MessageMarkup markup) throws Exception {
         if(correction==null) throw new IllegalArgumentException("Missing correction reference");
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,correction,null,null,markup,null);
         return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null,null,markup)
                 : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,correction,null,null,markup);
     }
     public String send(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,null,null,null,markup,inline);
         return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,null,null,null,markup,inline)
                 : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,null,null,null,markup,inline);
     }
     public String correct(String jid,String body,XmppMessage.Encryption encryption,ReplyReference reply,MessageCorrection correction,MessageMarkup markup,InlineEmoji inline) throws Exception {
         if(correction==null) throw new IllegalArgumentException("Missing correction reference");
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,correction,null,null,markup,inline);
         return encryption==XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,correction,null,null,markup,inline)
                 : send(jid,body,encryption!=XmppMessage.Encryption.PLAIN,false,reply,correction,null,null,markup,inline);
     }
@@ -987,6 +1088,10 @@ public final class XmppSession implements AutoCloseable {
         return send(jid, sharing.body(caption), false, false, reply, null, sharing);
     }
     public String correctFile(String jid, FileShare sharing, String caption, XmppMessage.Encryption encryption, ReplyReference reply, MessageCorrection correction) throws Exception {
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) {
+            if(sharing==null || correction==null || !sharing.link.encrypted()) throw new IllegalArgumentException("Caption encryption mismatch");
+            return sendProtected(encryption,jid,sharing.body(caption),reply,correction,sharing,null,null,null);
+        }
         if (sharing == null || correction == null || encryption == XmppMessage.Encryption.LEGACY_OMEMO
                 || sharing.link.encrypted() != (encryption == XmppMessage.Encryption.OMEMO2))
             throw new IllegalArgumentException("Caption encryption mode mismatch");
@@ -999,7 +1104,20 @@ public final class XmppSession implements AutoCloseable {
         return sharing.link.encrypted() ? sendModern(jid,body,reply,null,sharing,null,full)
                 : send(jid,body,false,false,reply,null,sharing,null,full);
     }
+    public String sendFile(String jid,FileShare sharing,String caption,ReplyReference reply,MessageMarkup markup,XmppMessage.Encryption mode) throws Exception {
+        if (sharing == null || mode == XmppMessage.Encryption.LEGACY_OMEMO || sharing.link.encrypted() != (mode != XmppMessage.Encryption.PLAIN)) throw new IllegalArgumentException("Attachment encryption mismatch");
+        if (mode != XmppMessage.Encryption.PQ_OMEMO) return sendFile(jid,sharing,caption,reply,markup);
+        if (sharing == null || !sharing.link.encrypted()) throw new IllegalArgumentException("PQ attachment must be encrypted");
+        if (markup != null && !markup.body.equals(caption == null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
+        String body = sharing.body(caption);
+        return sendProtected(mode,jid,body,reply,null,sharing,null,markup == null ? null : markup.inBody(body,0),null);
+    }
     public String correctFile(String jid,FileShare sharing,String caption,XmppMessage.Encryption encryption,ReplyReference reply,MessageCorrection correction,MessageMarkup markup) throws Exception {
+        if(markup!=null && !markup.body.equals(caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) {
+            if(sharing==null || correction==null || !sharing.link.encrypted()) throw new IllegalArgumentException("Caption encryption mismatch");
+            return sendProtected(encryption,jid,sharing.body(caption),reply,correction,sharing,null,markup==null ? null : markup.inBody(sharing.body(caption),0),null);
+        }
         if(markup!=null && !markup.body.equals(caption==null ? "" : caption)) throw new IllegalArgumentException("Markup belongs to another caption");
         if(sharing==null || correction==null || encryption==XmppMessage.Encryption.LEGACY_OMEMO || sharing.link.encrypted()!=(encryption==XmppMessage.Encryption.OMEMO2))
             throw new IllegalArgumentException("Caption encryption mode mismatch");
@@ -1017,10 +1135,14 @@ public final class XmppSession implements AutoCloseable {
         return sendModern(jid,body,reply,correction,sharing,retraction,markup,null);
     }
     private String sendModern(String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        return sendProtected(XmppMessage.Encryption.OMEMO2,jid,body,reply,correction,sharing,retraction,markup,inline);
+    }
+    private String sendProtected(XmppMessage.Encryption protocol,String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline) throws Exception {
         if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
-        if (!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
+        if (protocol==XmppMessage.Encryption.PQ_OMEMO && !pqAvailable()) throw new java.security.GeneralSecurityException("Experimental PQ OMEMO is not ready");
+        if (protocol!=XmppMessage.Encryption.PQ_OMEMO && !modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
         if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
         Message clear = new Message(directRecipient(jid),Message.Type.chat);
         clear.setFrom(connection.getUser()); String id = UUID.randomUUID().toString(); clear.setStanzaId(id);
@@ -1029,7 +1151,7 @@ public final class XmppSession implements AutoCloseable {
         if(markup!=null) markup.inBody(body,prefix).addTo(clear);
         if(inline!=null) inline.inBody(body,prefix).addTo(clear);
         if(retraction!=null) retraction.addMetadataTo(clear);
-        Message wire = modern.encrypt(clear);
+        Message wire = protocol==XmppMessage.Encryption.PQ_OMEMO ? pq().encrypt(clear) : modern.encrypt(clear);
         if(retraction!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         wire.addExtension(new OriginIdElement(id)); DeliveryReceiptManager.addDeliveryReceiptRequest(wire); chatStates.decorate(wire);
         if (retraction == null) wire.addExtension(StandardExtensionElement.builder("markable", MessageReceipt.MARKERS).build());
@@ -1096,7 +1218,8 @@ public final class XmppSession implements AutoCloseable {
         return false;
     }
     public void sendRetraction(String jid,MessageRetraction request,XmppMessage.Encryption encryption) throws Exception {
-        if(encryption==XmppMessage.Encryption.OMEMO2) sendModern(jid,MessageRetraction.FALLBACK_BODY,null,null,null,request);
+        if(encryption==XmppMessage.Encryption.PQ_OMEMO) sendProtected(encryption,jid,MessageRetraction.FALLBACK_BODY,null,null,null,request,null,null);
+        else if(encryption==XmppMessage.Encryption.OMEMO2) sendModern(jid,MessageRetraction.FALLBACK_BODY,null,null,null,request);
         else send(jid,MessageRetraction.FALLBACK_BODY,encryption!=XmppMessage.Encryption.PLAIN,false,null,null,null,request);
     }
     public String sendReactions(String jid,MessageReactions reactions,XmppMessage.Encryption encryption) throws Exception {
@@ -1106,9 +1229,9 @@ public final class XmppSession implements AutoCloseable {
         clear.setFrom(connection.getUser()); String id=UUID.randomUUID().toString(); clear.setStanzaId(id);
         reactions.addTo(clear);
         Message wire=clear;
-        if(encryption==XmppMessage.Encryption.OMEMO2) {
-            if(!modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
-            wire=modern.encrypt(clear);
+        if(encryption==XmppMessage.Encryption.OMEMO2 || encryption==XmppMessage.Encryption.PQ_OMEMO) {
+            if(encryption==XmppMessage.Encryption.PQ_OMEMO ? !pqAvailable() : !modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
+            wire=encryption==XmppMessage.Encryption.PQ_OMEMO ? pq().encrypt(clear) : modern.encrypt(clear);
         }
         wire.addExtension(new OriginIdElement(id));
         wire.addExtension(org.jivesoftware.smack.packet.StandardExtensionElement.builder("store","urn:xmpp:hints").build());
@@ -1143,8 +1266,13 @@ public final class XmppSession implements AutoCloseable {
     public boolean probeEncryption(String jid,XmppMessage.Encryption mode,boolean room,java.util.Set<String> excluded,boolean automatic) throws Exception {
         if(!connection.isAuthenticated()) throw new org.jivesoftware.smack.SmackException.NotConnectedException();
         if(room) {
-            if(mode==XmppMessage.Encryption.OMEMO2) return false;
+            if(mode==XmppMessage.Encryption.OMEMO2 || mode==XmppMessage.Encryption.PQ_OMEMO) return false;
             rooms.probeEncryption(jid,excluded,automatic);return true;
+        }
+        if(mode==XmppMessage.Encryption.PQ_OMEMO) {
+            if(!pqAvailable()) return false;
+            java.util.List<PqOmemoDevice.Fingerprint> devices=pq().discover(jid);
+            return devices.stream().anyMatch(device -> device.trusted) && devices.stream().allMatch(device -> device.trusted || device.blocked);
         }
         if(mode==XmppMessage.Encryption.OMEMO2) {
             awaitModernSetup();
@@ -1225,7 +1353,7 @@ public final class XmppSession implements AutoCloseable {
     }
     public org.jivesoftware.smackx.omemo.trust.TrustState trustState(OmemoDevice device, OmemoFingerprint fingerprint) { return trust.getTrust(device, fingerprint); }
     public String senderFingerprint(XmppMessage.Encryption encryption) throws Exception {
-        return encryption==XmppMessage.Encryption.PLAIN ? null : encryption==XmppMessage.Encryption.OMEMO2 ? modern().ownFingerprint() : ownFingerprint().toString();
+        return encryption==XmppMessage.Encryption.PLAIN ? null : encryption==XmppMessage.Encryption.PQ_OMEMO ? pq().ownFingerprint() : encryption==XmppMessage.Encryption.OMEMO2 ? modern().ownFingerprint() : ownFingerprint().toString();
     }
     public OmemoFingerprint ownFingerprint() throws Exception { return legacyDiscovery.ownFingerprint(); }
     public void decide(OmemoDevice device, OmemoFingerprint fingerprint, boolean trusted) { decideAll(java.util.Collections.singletonMap(device,fingerprint),trusted); }
@@ -1268,7 +1396,7 @@ public final class XmppSession implements AutoCloseable {
         synchronized(modernInboxLock) { modernInbox.clear();modernInboxBytes=0;modernInboxLock.notifyAll(); }
         synchronized(legacyInboxLock) { legacyInbox.clear();legacyInboxBytes=0;legacyInboxLock.notifyAll(); }
         MonogramLegacyOmemoService.instance().unregister(omemo);legacyWorker.shutdownNow();
-        if (modern != null) modern.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
+        if (modern != null) modern.close(); if (pq != null) pq.close(); crypto.shutdownNow(); deviceRefreshWorker.shutdownNow();
         muji.close(); calls.close(); chatStates.close(); contacts.close(); blocking.close(); rooms.close(); bookmarks.close(); spaces.close(); readSync.close(); fingerprints.close();
         ReconnectionManager manager = ReconnectionManager.getInstanceFor(connection);
         manager.disableAutomaticReconnection(); manager.abortPossiblyRunningReconnection();

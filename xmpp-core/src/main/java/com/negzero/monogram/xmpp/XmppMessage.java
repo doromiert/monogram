@@ -13,7 +13,7 @@ import org.jxmpp.jid.EntityBareJid;
 
 /** One direct message, independent of whether it arrived live, via carbons or MAM. */
 public final class XmppMessage {
-    public enum Encryption { PLAIN, LEGACY_OMEMO, OMEMO2 }
+    public enum Encryption { PLAIN, LEGACY_OMEMO, OMEMO2, PQ_OMEMO }
     public final EntityBareJid peer;
     public final String sender;
     public final Map<String, String> ids;
@@ -67,7 +67,24 @@ public final class XmppMessage {
         } catch(Exception malformedEnvelope) { /* Preserve the existing unreadable placeholder for unsupported ciphertext. */ }
         return message;
     }
+    static XmppMessage pq(Message outer,Message authenticated,EntityBareJid own,String archiveId,Date archiveTime,String fingerprint,String digest) {
+        if (authenticated != null && (!java.util.Objects.equals(outer.getFrom(),authenticated.getFrom())
+                || !java.util.Objects.equals(outer.getTo(),authenticated.getTo()) || outer.getType() != authenticated.getType()))
+            throw new IllegalArgumentException("Protected routing does not match its stanza");
+        XmppMessage message = from(outer,authenticated,own,authenticated == null ? null : authenticated.getBody(),Encryption.PQ_OMEMO,
+                authenticated != null,archiveId,archiveTime);
+        if (message == null) return null;
+        Map<String,String> ids = new LinkedHashMap<>(message.ids); if (digest != null) ids.put("pq-cipher",digest);
+        return new XmppMessage(message.peer,message.sender,ids,message.body,Encryption.PQ_OMEMO,message.readable,message.outgoing,message.archived,message.timestamp,
+                message.attachment,message.reply,message.correction,message.sharing,message.caption,message.reactions,message.retraction,fingerprint,message.markableId,message.markup,message.captionMarkup,message.inlineEmoji,false);
+    }
     XmppMessage withAliases(Map<String,String> aliases) { return canonical(aliases,timestamp,archived,markableId); }
+    /** Outgoing models are labelled only after the chosen protocol's send operation succeeds. */
+    public XmppMessage sentWithProtocol(Encryption protocol) {
+        if (!outgoing || protocol == null || (protocol != Encryption.PLAIN) != encrypted) throw new IllegalArgumentException("Outgoing encryption mismatch");
+        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,protocol,readable,outgoing,archived,timestamp,
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint);
+    }
     XmppMessage canonical(Map<String,String> ids,long timestamp,boolean archived,String markableId) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
                 attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint);
@@ -224,6 +241,7 @@ public final class XmppMessage {
         if (reply != null) { reply.addTo(message); body = reply.wireBody(body); }
         if (correction != null) correction.addTo(message);
         message.setBody(body);
+        if (encryption == Encryption.PQ_OMEMO) return from(message,message,own.asEntityBareJidIfPossible(),body,encryption,true,null,null);
         return encryption == Encryption.OMEMO2 ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)
                 : from(message, own.asEntityBareJidIfPossible(), body, encryption != Encryption.PLAIN, true, null, null);
     }
@@ -231,6 +249,7 @@ public final class XmppMessage {
         if(encryption==Encryption.LEGACY_OMEMO) throw new IllegalArgumentException("Legacy OMEMO cannot protect reactions");
         Message message=new Message(org.jxmpp.jid.impl.JidCreate.entityBareFrom(peer),Message.Type.chat);
         message.setFrom(own); message.setStanzaId(id); message.addExtension(new OriginIdElement(id)); reactions.addTo(message);
+        if (encryption == Encryption.PQ_OMEMO) return from(message,message,own.asEntityBareJidIfPossible(),null,encryption,true,null,null);
         return encryption==Encryption.OMEMO2 ? modern(message,message,own.asEntityBareJidIfPossible(),null,null)
                 : from(message,own.asEntityBareJidIfPossible(),null,false,true,null,null);
     }

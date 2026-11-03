@@ -176,7 +176,7 @@ final class MonogramReactions {
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT actor,user,stamp,protocol,emojis FROM reaction_events WHERE message=? AND failed=0 AND stamp<=? ORDER BY stamp,id",new String[]{Integer.toString(message),Long.toString(cutoff)})) {
             while(c.moveToNext()) {
                 State before=latest.get(c.getString(0)),next=new State(c);
-                if(before==null || before.protocol!=2 || next.protocol==2) latest.put(c.getString(0),next);
+                if(before==null || before.protocol<2 || next.protocol>=2) latest.put(c.getString(0),next);
             }
         }
         TLRPC.TL_messageReactions result=new TLRPC.TL_messageReactions(); result.can_see_list=true; result.flags=2;

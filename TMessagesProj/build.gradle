@@ -107,6 +107,7 @@ dependencies {
 android {
     sourceSets.test.java.srcDirs += ['../tests/android', '../tests/robolectric']
     sourceSets.main.jniLibs.srcDirs += [rootProject.file('.state/xmr-engine/jni')]
+    sourceSets.main.jniLibs.srcDirs += [rootProject.file('.state/pq/backend/10861bff671740174f4e99f7e30dc492fcf6ec8b/jni')]
     compileSdkVersion 36
     buildToolsVersion '36.0.0'
     ndkVersion "27.2.12479018"
@@ -293,3 +294,14 @@ tasks.register('verifyMoneroWalletSdk') {
     }
 }
 tasks.named('preBuild').configure { dependsOn 'verifyMoneroWalletSdk' }
+
+tasks.register('verifyPqOmemoSdk') {
+    doLast {
+        def directory = rootProject.file('.state/pq/backend/10861bff671740174f4e99f7e30dc492fcf6ec8b/jni')
+        (findProperty('monogramAbi') ?: 'armeabi-v7a,arm64-v8a,x86,x86_64').split(',').each { abi ->
+            if (!new File(directory,"${abi}/libsignal_jni.so").isFile())
+                throw new GradleException("Build the pinned PQ backend first: bash scripts/build-pq-omemo.sh ${abi}")
+        }
+    }
+}
+tasks.matching { it.name.matches('merge.*JniLibFolders') }.configureEach { dependsOn 'verifyPqOmemoSdk' }

@@ -38,10 +38,10 @@
         MONOGRAM_OMEMO2_PEER = "${omemo2Peer}/bin/python3";
       };
       test = pkgs.mkShell {
-        packages = [ pkgs.jdk11 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.check pkgs.gcc pkgs.protobufc pkgs.meson ];
+        packages = [ pkgs.jdk21 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.check pkgs.gcc pkgs.protobufc pkgs.meson ];
         LIBOMEMO_C_SOURCE = libomemo-c.outPath;
         PROTOBUF_C_SOURCE = pkgs.protobufc.src;
-        JAVA_HOME = "${pkgs.jdk11}/lib/openjdk";
+        JAVA_HOME = "${pkgs.jdk21}/lib/openjdk";
         shellHook = ''
           export MAVEN_OPTS="-Dmaven.repo.local=$PWD/.m2/repository ''${MAVEN_OPTS:-}"
         '';

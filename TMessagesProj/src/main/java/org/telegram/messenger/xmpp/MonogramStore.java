@@ -195,9 +195,9 @@ final class MonogramStore extends SQLiteOpenHelper {
         db.execSQL("DELETE FROM archive_state");
     }
     private static int protocol(XmppMessage message) {
-        return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : message.encrypted ? 1 : 0;
+        return message.encryption.ordinal();
     }
-    private static int namespace(XmppMessage message) { return message.encryption == XmppMessage.Encryption.OMEMO2 ? 2 : 0; }
+    private static int namespace(XmppMessage message) { return message.encryption.ordinal() >= 2 ? message.encryption.ordinal() : 0; }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (newVersion != 35 || oldVersion < 1 || oldVersion > 34) throw new IllegalStateException("Unknown database migration");
         if (oldVersion == 1) addMessageMetadata(db);
@@ -1166,7 +1166,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         final com.negzero.monogram.xmpp.FileShare sharing;
         EditTarget(String id, int protocol, ReplyReference reply, com.negzero.monogram.xmpp.FileShare sharing) {
             this.correction = new com.negzero.monogram.xmpp.MessageCorrection(id); this.encrypted = protocol > 0; this.reply = reply;
-            this.encryption = protocol == 2 ? XmppMessage.Encryption.OMEMO2 : protocol == 1 ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
+            this.encryption = protocol == 3 ? XmppMessage.Encryption.PQ_OMEMO : protocol == 2 ? XmppMessage.Encryption.OMEMO2 : protocol == 1 ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
             this.sharing = sharing;
         }
     }
@@ -1229,7 +1229,7 @@ final class MonogramStore extends SQLiteOpenHelper {
     }
     synchronized java.util.Set<Long> unreadableModernPeers() {
         java.util.Set<Long> peers=new java.util.HashSet<>();
-        try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT peer FROM messages WHERE encryption=2 AND readable=0",null)) {
+        try (Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT peer FROM messages WHERE encryption IN (2,3) AND readable=0",null)) {
             while(c.moveToNext()) peers.add(c.getLong(0));
         }
         return peers;
@@ -1593,7 +1593,7 @@ final class MonogramStore extends SQLiteOpenHelper {
         TLRPC.Message message=getMessage(id,self);
         result.put("peer",jid(org.telegram.messenger.DialogObject.getPeerDialogId(message.peer_id)));
         int mode=encryptionOf(id);
-        result.put("encryption",mode==0 ? "Plaintext" : mode==2 ? "OMEMO 2" : "OMEMO");
+        result.put("encryption",mode==0 ? "Plaintext" : mode==3 ? "PQ OMEMO (experimental)" : mode==2 ? "OMEMO 2" : "OMEMO");
         try(Cursor cursor=getReadableDatabase().rawQuery("SELECT sender FROM message_senders WHERE message=? ORDER BY instr(sender,'/') DESC LIMIT 1",new String[]{Integer.toString(id)})) {
             if(cursor.moveToFirst()) result.put("sender",cursor.getString(0));
         }

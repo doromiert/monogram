@@ -6585,17 +6585,17 @@ public class MessageObject {
     public int monogramEncryptionMode() {
         if(messageOwner==null || messageOwner.params==null)return -1;
         String mode=messageOwner.params.get("monogram-actual-encryption");
-        return "0".equals(mode) ? 0 : "1".equals(mode) ? 1 : "2".equals(mode) ? 2 : -1;
+        return "0".equals(mode) ? 0 : "1".equals(mode) ? 1 : "2".equals(mode) ? 2 : "3".equals(mode) ? 3 : -1;
     }
     public String monogramEncryptionDescription() {
         int mode=monogramEncryptionMode();
-        return mode==0 ? "Not end-to-end encrypted" : mode==1 ? "End-to-end encrypted (OMEMO)" : mode==2 ? "End-to-end encrypted (OMEMO 2)" : "";
+        return mode==0 ? "Not end-to-end encrypted" : mode==1 ? "End-to-end encrypted (OMEMO)" : mode==2 ? "End-to-end encrypted (OMEMO 2)" : mode==3 ? "End-to-end encrypted (experimental PQ OMEMO)" : "";
     }
 
     private String monogramWalletActionText(TLRPC.TL_messageActionGramTransfer action) {
         String label=action.moneroKind == 2 ? "XMR payment link" : action.moneroKind == 1 ? "XMR payment request" : isOutOwner() ? "XMR payment sent" : "XMR payment reported";
         int encryption=monogramEncryptionMode();
-        return label+(encryption==0 ? " · Unencrypted" : encryption==1 ? " · OMEMO" : encryption==2 ? " · OMEMO 2" : "");
+        return label+(encryption==0 ? " · Unencrypted" : encryption==1 ? " · OMEMO" : encryption==2 ? " · OMEMO 2" : encryption==3 ? " · PQ OMEMO" : "");
     }
 
     public void setType() {

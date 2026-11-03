@@ -3,6 +3,10 @@
   <groupId>com.negzero.monogram</groupId><artifactId>xmpp-core</artifactId><version>0.1.0-SNAPSHOT</version>
   <properties><maven.compiler.release>8</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding><smack.version>4.4.8</smack.version></properties>
   <dependencies>
+    <!-- Built from the pinned Monocles fork, not the wire-incompatible upstream Maven artifact. -->
+    <dependency><groupId>org.monocles</groupId><artifactId>pq-omemo-libsignal</artifactId><version>0.94.1-10861bff</version><scope>system</scope><systemPath>${project.basedir}/../.state/pq/backend/10861bff671740174f4e99f7e30dc492fcf6ec8b/libsignal-client.jar</systemPath></dependency>
+    <dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-stdlib</artifactId><version>2.2.20</version></dependency>
+    <dependency><groupId>org.jetbrains.kotlinx</groupId><artifactId>kotlinx-coroutines-core-jvm</artifactId><version>1.10.2</version></dependency>
     <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk15to18</artifactId><version>1.80</version></dependency>
     <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-tcp</artifactId><version>${smack.version}</version></dependency>
     <dependency><groupId>org.igniterealtime.smack</groupId><artifactId>smack-extensions</artifactId><version>${smack.version}</version></dependency>
@@ -14,6 +18,6 @@
   </dependencies>
   <build><plugins>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
-    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version><configuration><excludes><exclude>**/PqOmemoNativeTest.java</exclude></excludes></configuration></plugin>
   </plugins></build>
 </project>

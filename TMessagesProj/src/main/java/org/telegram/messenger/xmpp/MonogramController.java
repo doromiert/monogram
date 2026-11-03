@@ -75,6 +75,7 @@ public final class MonogramController {
     private final MonogramEncryptionPolicy encryptionPolicy;
     private volatile long encryptionPolicyEpoch;
     private final MonogramOmemo2Store modernStore;
+    private final MonogramPqOmemoStore pqStore;
     private final MonogramLegacyOmemoStore legacyStore;
     private final AccountVault vault;
     private volatile XmppSession session;
@@ -105,7 +106,7 @@ public final class MonogramController {
     private MonogramController(int account) {
         this.account = account;
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
-        store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account);
+        store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account); pqStore = new MonogramPqOmemoStore(account);
         linkPreviews=new MonogramLinkPreviews(account,preferences,store);
         encryptionPolicy=new MonogramEncryptionPolicy(preferences);
         privateReads=new MonogramReadSyncState(store,preferences);
@@ -833,6 +834,10 @@ public final class MonogramController {
                         });
                     }
                 });
+        if (preferences.getBoolean("pq-enabled-" + details.jid,false)) {
+            try { connecting.configurePq(pqStore.factory(details.jid.toString())); }
+            catch (Exception unavailable) { org.telegram.messenger.FileLog.e(unavailable); }
+        }
         connecting.contacts.restoreAllowedContacts(preferences.getStringSet("contact-access-allow-"+details.jid,java.util.Collections.emptySet()));
         connecting.setBlindTrustPolicy(address->details.jid.toString().equals(accountJid())
                 && blindlyTrustAddress(address));
@@ -1907,7 +1912,7 @@ public final class MonogramController {
             typingAddresses.clear(); clearRoomTyping(); presences.clear(); lastPresenceQueries.clear(); presencePeer=0;
             if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
             sessionEpoch++;cancelSearchLoads(archiveSync); archiveSync = null;pendingRecoveryRooms.clear();
-            try { if(!departing.isEmpty()) { modernStore.clearIncoming(departing);legacyStore.clearIncoming(departing); } }
+            try { if(!departing.isEmpty()) { modernStore.clearIncoming(departing);legacyStore.clearIncoming(departing);pqStore.clearIncoming(departing); } }
             catch(Exception failure) { throw new IllegalStateException("Cannot clear pending encrypted messages",failure); }
             cancelFileTransfers();
             automaticJobs.clear(); autoAttempted.clear(); mediaInfoScanned.clear(); downloadErrors.clear();
@@ -2356,8 +2361,21 @@ public final class MonogramController {
         return false;
     }
     public boolean modernEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==2; }
+    public boolean pqEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==3; }
+    public void enablePq(java.util.function.Consumer<Exception> completed) {
+        worker.execute(() -> {
+            Exception failure = null;
+            try {
+                XmppSession expected = session(); String owner = accountJid();
+                if (!preferences.edit().putBoolean("pq-enabled-" + owner,true).commit()) throw new java.io.IOException("Cannot save PQ setting");
+                if (!expected.pqAvailable()) expected.enablePq(pqStore.factory(owner));
+                if (session != expected || !owner.equals(accountJid())) throw new IllegalStateException("Account connection changed");
+            } catch (Exception error) { failure = error; }
+            final Exception result = failure; AndroidUtilities.runOnUIThread(() -> completed.accept(result));
+        });
+    }
     public XmppMessage.Encryption encryption(long peer) {
-        return !encrypted(peer) ? XmppMessage.Encryption.PLAIN : modernEncryption(peer)
+        return !encrypted(peer) ? XmppMessage.Encryption.PLAIN : pqEncryption(peer) ? XmppMessage.Encryption.PQ_OMEMO : modernEncryption(peer)
                 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO;
     }
     public boolean automaticEncryption(long peer) { return peer!=0 && encryptionPolicy.automatic(accountJid(),store.jid(peer)); }
@@ -2398,10 +2416,11 @@ public final class MonogramController {
         },200);
     }
     public void setEncryption(long peer,XmppMessage.Encryption mode) {
+        if (mode == XmppMessage.Encryption.PQ_OMEMO && peer < 0) throw new UnsupportedOperationException("Experimental PQ mode currently supports direct chats");
         if (peer<0 && mode==XmppMessage.Encryption.OMEMO2) throw new UnsupportedOperationException("OMEMO 2 rooms are not implemented");
         setAutomaticEncryption(peer,false);
         if (!preferences.edit().putBoolean("omemo-"+peer,mode!=XmppMessage.Encryption.PLAIN)
-                .putInt("omemo-version-"+peer,mode==XmppMessage.Encryption.OMEMO2 ? 2 : 1).commit()) throw new IllegalStateException("Cannot save encryption preference");
+                .putInt("omemo-version-"+peer,mode==XmppMessage.Encryption.PQ_OMEMO ? 3 : mode==XmppMessage.Encryption.OMEMO2 ? 2 : 1).commit()) throw new IllegalStateException("Cannot save encryption preference");
     }
     public void trustDecisionsChanged(long peer) {
         if(automaticEncryption(peer))setAutomaticEncryption(peer,true);
@@ -2905,6 +2924,7 @@ public final class MonogramController {
         if (e instanceof ReplyUnavailable) error.text = "MONOGRAM_REPLY_UNAVAILABLE";
         else if (e instanceof FileTransfer.Failure) error.text = "MONOGRAM_FILE_" + ((FileTransfer.Failure) e).reason;
         else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
+        else if (e instanceof org.signal.libsignal.protocol.UntrustedIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
         else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = omemoSendError((com.negzero.monogram.xmpp.OmemoSendException)e);
         else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
         else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
@@ -3008,7 +3028,7 @@ public final class MonogramController {
             return;
         }
         XmppMessage.Encryption mode = encryption(request.message.dialog_id);
-        boolean encrypted = mode != XmppMessage.Encryption.PLAIN, modern = mode == XmppMessage.Encryption.OMEMO2;
+        boolean encrypted = mode != XmppMessage.Encryption.PLAIN, modern = mode == XmppMessage.Encryption.OMEMO2 || mode == XmppMessage.Encryption.PQ_OMEMO;
         final boolean displayStickerHint = encrypted && !modern && request.message.media != null && MonogramStickers.isSticker(request.message.media.document);
         String peer = store.jid(request.message.dialog_id);
         final ReplyReference reply;
@@ -3073,10 +3093,10 @@ public final class MonogramController {
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
                             String fingerprint=expected.senderFingerprint(mode);
-                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup);
+                            String stanza=encrypted && !modern ? expected.sendFile(peer,link,true,reply,displayStickerHint,captionMarkup.spoiler) : expected.sendFile(peer,sharing,captionMarkup.body,reply,captionMarkup,mode);
                             XmppMessage message=encrypted && !modern ? XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,link,true,reply).withMarkup(MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler))
                                     : XmppMessage.sentFile(expected.connection().getUser(),peer,stanza,sharing,captionMarkup.body,reply).withMarkup(captionMarkup);
-                            message=message.withSenderFingerprint(fingerprint).withDisplayStickerHint(displayStickerHint);
+                            message=message.sentWithProtocol(mode).withSenderFingerprint(fingerprint).withDisplayStickerHint(displayStickerHint);
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
                         }
                         if(encrypted && !modern) store.forwarded(id,forwardedFile);
@@ -3860,6 +3880,7 @@ public final class MonogramController {
                 else if ((request instanceof TLRPC.TL_messages_editMessage || request instanceof TLRPC.TL_messages_getMessageEditData)
                         && e instanceof IllegalArgumentException) error.text = "MONOGRAM_EDIT_UNAVAILABLE";
                 else if (e instanceof org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
+                else if (e instanceof org.signal.libsignal.protocol.UntrustedIdentityException) error.text = "MONOGRAM_OMEMO_TRUST_REQUIRED";
                 else if (e instanceof com.negzero.monogram.xmpp.OmemoSendException) error.text = omemoSendError((com.negzero.monogram.xmpp.OmemoSendException)e);
                 else if (e instanceof UnsupportedOperationException) error.text = "MONOGRAM_FEATURE_UNAVAILABLE";
                 else if (session == null || !session.connection().isAuthenticated()) error.text = "MONOGRAM_XMPP_DISCONNECTED";
@@ -3892,6 +3913,7 @@ public final class MonogramController {
     private static final class ReactionConsentRequired extends IllegalStateException {}
     private XmppMessage.Encryption reactionEncryption(int id,long peer) {
         int original=store.encryptionOf(id);
+        if(original==3 || encryption(peer)==XmppMessage.Encryption.PQ_OMEMO) return XmppMessage.Encryption.PQ_OMEMO;
         if(original==2 || encryption(peer)==XmppMessage.Encryption.OMEMO2) return XmppMessage.Encryption.OMEMO2;
         return original==1 || encrypted(peer) ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
     }

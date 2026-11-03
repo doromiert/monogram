@@ -38,6 +38,7 @@ final class MonogramTrustPrompt {
     private void scan() {
         if(!active || dialog!=null || fragment.getParentActivity()==null)return;
         MonogramController controller=MonogramController.get(fragment.getCurrentAccount());
+        if(controller.pqEncryption(peer)) { scanPq(controller); return; }
         if(!controller.encrypted(peer) && !controller.automaticEncryption(peer))return;
         lastScan=android.os.SystemClock.elapsedRealtime();long stamp=++generation;
         boolean refresh=force;force=false;urgent=false;dirty=false;boolean modern=controller.modernEncryption(peer);String own=controller.accountJid();
@@ -67,6 +68,36 @@ final class MonogramTrustPrompt {
                 });
                 if(!active || generation!=stamp)request.close();
             }catch(Exception unavailable){/* Conversation security retains explicit retry/diagnostics. */}
+        });
+    }
+    private void scanPq(MonogramController controller) {
+        if(!controller.encrypted(peer)) return;
+        lastScan=android.os.SystemClock.elapsedRealtime();long stamp=++generation;
+        force=false;urgent=false;dirty=false;
+        if(task!=null)task.cancel(true);if(request!=null)request.close();
+        task=worker.submit(()->{
+            try {
+                XmppSession session=controller.session();String own=controller.accountJid();
+                if(!session.pqAvailable())return;
+                StringBuilder details=new StringBuilder();Set<String> candidates=new LinkedHashSet<>();
+                for(String owner:new LinkedHashSet<>(Arrays.asList(controller.jid(peer),own))) {
+                    for(PqOmemoDevice.Fingerprint device:session.pq().discover(owner)) if(device.active && !device.trusted && !device.blocked) {
+                        String key="pq:"+owner+":"+device.device+":"+device.fingerprint;
+                        if(shown.contains(key))continue;candidates.add(key);
+                        details.append(owner).append(" · device ").append(device.device).append('\n');
+                    }
+                }
+                if(candidates.isEmpty())return;
+                AndroidUtilities.runOnUIThread(()->{
+                    if(!current(controller,session,own,false,stamp) || !controller.pqEncryption(peer) || dialog!=null)return;
+                    shown.addAll(candidates);
+                    dialog=new AlertDialog.Builder(fragment.getParentActivity()).setTitle("Unreviewed PQ fingerprints")
+                        .setMessage(details+"\nReview and trust or block the hybrid fingerprints before sending. Classical OMEMO trust decisions do not approve these identities.")
+                        .setPositiveButton("Review devices",(d,w)->fragment.presentFragment(new MonogramPqSecurityActivity(fragment.getCurrentAccount(),peer)))
+                        .setNegativeButton("Later",null).create();
+                    dialog.setOnDismissListener(d->{dialog=null;if(active && dirty)changed(force,urgent);});fragment.showDialog(dialog);
+                });
+            } catch(Exception unavailable) { /* Explicit diagnostics remain in PQ settings. */ }
         });
     }
     private boolean current(MonogramController controller,XmppSession session,String own,boolean modern,long stamp) {

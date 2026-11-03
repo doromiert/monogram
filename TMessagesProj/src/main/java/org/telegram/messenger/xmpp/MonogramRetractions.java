@@ -17,7 +17,7 @@ final class MonogramRetractions {
         db.execSQL("CREATE INDEX pending_retractions ON message_retractions(peer,resolved)");
     }
     static String fingerprint(String value) {
-        return value!=null && value.matches("(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{66})") ? value.toLowerCase(Locale.ROOT) : null;
+        return value!=null && value.matches("(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{66}|[0-9a-fA-F]{128})") ? value.toLowerCase(Locale.ROOT) : null;
     }
     void save(XmppMessage message) {
         if(!message.readable || message.encrypted && fingerprint(message.senderFingerprint)==null) return;
@@ -32,7 +32,7 @@ final class MonogramRetractions {
         source(peer,message.sender,message.ids,message.encryption.ordinal());
     }
     private void source(long peer,String sender,Map<String,String> ids,int protocol) {
-        String wire=ids.get("stanza"); if(protocol!=2 || wire==null) return;
+        String wire=ids.get("stanza"); if(protocol<2 || wire==null) return;
         SQLiteDatabase db=store.getWritableDatabase();
         // A protected control stanza may already have an unreadable outer-stanza placeholder.
         try(Cursor c=db.rawQuery("SELECT DISTINCT m.id FROM messages m JOIN message_ids i ON i.message=m.id WHERE m.peer=? AND m.encryption=? AND m.readable=0 AND i.kind='stanza' AND i.value=? AND i.namespace=?",
