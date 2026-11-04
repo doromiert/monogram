@@ -42,7 +42,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     public static MonogramSecurityActivity forAccount(int account) {
         MonogramController controller=MonogramController.get(account);
         MonogramSecurityActivity page=new MonogramSecurityActivity(account,org.telegram.messenger.UserConfig.getInstance(account).getClientUserId(),true,controller.accountJid());
-        page.accountPage=true;page.modern=true;return page;
+        page.accountPage=true;page.modern=controller.accountFingerprintModern();return page;
     }
     private static String groupedFingerprint(String fingerprint) {
         if(fingerprint==null)return "Loading fingerprint…";
@@ -180,7 +180,8 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         Map<OmemoDevice,OmemoFingerprint> displayed=displayedIdentities();
         if(accountPage) {
             items.add(UItem.asShadow(controller.accountJid()));
-            items.add(UItem.asButton(30,"OMEMO version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+            items.add(UItem.asButton(30,"Fingerprint version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+            items.add(UItem.asShadow("Select which version’s account fingerprints to view. Sending encryption is set in each chat’s Conversation security."));
             items.add(UItem.asHeader("This device"));
             if(ownDeviceId>0)items.add(UItem.asSettingsCell(0,"Device ID",Integer.toString(ownDeviceId)).setEnabled(false));
             items.add(UItem.asShadow(groupedFingerprint(ownFingerprint)));
@@ -289,9 +290,14 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     try{controller.setBlindlyTrustContact(peer,true);loadIdentities(true);}catch(Exception error){showBlindTrustError(error);}
                 }).setNegativeButton("Cancel",null).create());
         } else if(item.id==30 && accountPage && !saving) {
-            showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
+            showDialog(new AlertDialog.Builder(getContext()).setTitle("Fingerprint version")
                 .setItems(new CharSequence[]{"OMEMO 2","Legacy OMEMO"},(dialog,which)->{
-                    modern=which==0;identities.clear();states.clear();ownFingerprint=null;ownDeviceId=0;loadIdentities(true);
+                    try {
+                        controller.setAccountFingerprintModern(which==0);
+                        modern=controller.accountFingerprintModern();identities.clear();states.clear();ownFingerprint=null;ownDeviceId=0;loadIdentities(true);
+                    } catch(Exception failed) {
+                        showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not save fingerprint version").setMessage("Try again.").setPositiveButton("OK",null).create());
+                    }
                 }).create());
         } else if(item.id==51 || item.id==13 && controller.pqEncryption(peer)) {
             presentFragment(new MonogramPqSecurityActivity(currentAccount,peer));

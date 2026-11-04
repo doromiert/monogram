@@ -2360,6 +2360,13 @@ public final class MonogramController {
         }
         return false;
     }
+    public boolean accountFingerprintModern() {
+        return preferences.getBoolean("account-fingerprint-modern-"+accountJid(),true);
+    }
+    public void setAccountFingerprintModern(boolean modern) {
+        if(!preferences.edit().putBoolean("account-fingerprint-modern-"+accountJid(),modern).commit())
+            throw new IllegalStateException("Cannot save fingerprint version");
+    }
     public boolean modernEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==2; }
     public boolean pqEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==3; }
     public void enablePq(java.util.function.Consumer<Exception> completed) {
