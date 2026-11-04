@@ -66,7 +66,7 @@ final class PqOmemoPep {
                 xml.rightAngleBracket(); for (StandardExtensionElement child : elements) xml.append(child.toXML(namespace)); return xml;
             }
         };
-        request.setType(IQ.Type.set); connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
+        request.setType(IQ.Type.set); connection.sendIqRequestAsync(request).getOrThrow();
     }
     private void publish(String node,String id,StandardExtensionElement value,String maximum) throws Exception {
         if (!(DEVICES.equals(node) && "current".equals(id)) && !(BUNDLES.equals(node) && Integer.toString(device.id).equals(id)))

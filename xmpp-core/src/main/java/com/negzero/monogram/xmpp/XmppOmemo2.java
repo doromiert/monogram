@@ -199,7 +199,7 @@ public final class XmppOmemo2 implements AutoCloseable {
                 xml.rightAngleBracket(); for (StandardExtensionElement element : elements) xml.append(element.toXML(namespace)); return xml;
             }
         };
-        request.setType(IQ.Type.set); connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
+        request.setType(IQ.Type.set); connection.sendIqRequestAsync(request).getOrThrow();
     }
     private void publish(String node, String id, StandardExtensionElement value, String maximum) throws Exception {
         if (!DEVICES_NODE.equals(node) || !"current".equals(id)) {
