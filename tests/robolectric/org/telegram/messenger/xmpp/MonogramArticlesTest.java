@@ -25,6 +25,36 @@ public class MonogramArticlesTest {
     @Before public void setup() { ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();ApplicationLoader.applicationLoaderInstance=new ApplicationLoader(); }
     TL_iv.textPlain text(String s) { TL_iv.textPlain t=new TL_iv.textPlain();t.text=s;return t; }
     TL_iv.TL_inputRichMessage article(TL_iv.PageBlock... blocks) { TL_iv.TL_inputRichMessage r=new TL_iv.TL_inputRichMessage();r.blocks.addAll(Arrays.asList(blocks));return r; }
+    @Test public void chatQuotesRequireSpaceAndEveryLineMustOptIn() {
+        String source="> line 1\n> line 2\nthis line isn't a quote\n> line 3";
+        ArrayList<TL_iv.PageBlock> blocks=new ArrayList<>();
+        org.telegram.ui.Components.MarkdownParser.parseMessage(source,blocks);
+        assertEquals(3,blocks.size());
+        assertTrue(blocks.get(0) instanceof TL_iv.pageBlockBlockquote);
+        assertEquals("line 1\nline 2",org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(0).text));
+        assertTrue(blocks.get(1) instanceof TL_iv.pageBlockParagraph);
+        assertEquals("this line isn't a quote",org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(1).text));
+        assertTrue(blocks.get(2) instanceof TL_iv.pageBlockBlockquote);
+        assertEquals("line 3",org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(2).text));
+        for(String literal:Arrays.asList(">greentext",">>nested",">",">\ttab")) {
+            blocks.clear();org.telegram.ui.Components.MarkdownParser.parseMessage(literal,blocks);
+            assertEquals(1,blocks.size());assertTrue(blocks.get(0) instanceof TL_iv.pageBlockParagraph);
+            assertEquals(literal,org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(0).text));
+        }
+        blocks.clear();org.telegram.ui.Components.MarkdownParser.parseMessage("> quoted\n>greentext\nplain\n> **bold**",blocks);
+        assertEquals(3,blocks.size());assertTrue(blocks.get(1) instanceof TL_iv.pageBlockParagraph);
+        assertEquals(">greentext plain",org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(1).text));
+        assertEquals("bold",org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(2).text));
+        assertTrue(blocks.get(2).text instanceof TL_iv.textBold);
+    }
+    @Test public void chatQuoteRulesLeaveCodeAndMarkdownDocumentsAlone() {
+        ArrayList<TL_iv.PageBlock> blocks=new ArrayList<>();
+        org.telegram.ui.Components.MarkdownParser.parseMessage("```\n> literal\n>greentext\n```",blocks);
+        assertEquals(1,blocks.size());assertTrue(blocks.get(0) instanceof TL_iv.pageBlockPreformatted);
+        assertEquals("> literal\n>greentext\n",org.telegram.ui.Components.MarkdownParser.richTextToString(blocks.get(0).text));
+        blocks.clear();org.telegram.ui.Components.MarkdownParser.parse(">document\ncontinuation",blocks);
+        assertEquals(1,blocks.size());assertTrue(blocks.get(0) instanceof TL_iv.pageBlockBlockquote);
+    }
     @Test public void tableSurvivesMarkdownNativeProjectionAndDatabaseReopen() throws Exception {
         TL_iv.pageBlockTable table=new TL_iv.pageBlockTable();table.title=text("Shopping");
         for(String[] cells:new String[][]{{"Item","Count"},{"Apples | pears","😀 3"}}) {

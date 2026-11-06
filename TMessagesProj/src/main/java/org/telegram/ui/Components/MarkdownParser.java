@@ -205,6 +205,12 @@ public class MarkdownParser {
         for(char initial:new char[]{'h','H','w','W'})
             inlinePlugin.factoryBuilder().addInlineProcessor(new LiteralUrlInlineProcessor(initial));
         final Parser.Builder parserBuilder = Parser.builder().extensions(extensions);
+        if (bounded) {
+            parserBuilder.enabledBlockTypes(new java.util.HashSet<>(Arrays.asList(
+                Heading.class, FencedCodeBlock.class, HtmlBlock.class, ThematicBreak.class,
+                org.commonmark.node.ListBlock.class, IndentedCodeBlock.class)));
+            parserBuilder.customBlockParserFactory(new ChatQuoteParser.Factory());
+        }
         inlinePlugin.configureParser(parserBuilder);
         latexPlugin.configureParser(parserBuilder);
         final Parser parser = parserBuilder.build();
@@ -228,6 +234,49 @@ public class MarkdownParser {
             return richTextToString(blockVisitor.title);
         }
         return null;
+    }
+
+    /** Chat quotes require an explicit "> " on every line; no lazy paragraph continuation. */
+    private static final class ChatQuoteParser extends org.commonmark.parser.block.AbstractBlockParser {
+        private final BlockQuote block = new BlockQuote();
+        private final Paragraph paragraph = new Paragraph();
+        private final StringBuilder content = new StringBuilder();
+        private boolean firstLine = true;
+        ChatQuoteParser() { block.appendChild(paragraph); }
+        @Override public BlockQuote getBlock() { return block; }
+        private static int prefix(org.commonmark.parser.block.ParserState state) {
+            int index = state.getNextNonSpaceIndex();
+            CharSequence line = state.getLine();
+            return state.getIndent() < 4 && index + 1 < line.length()
+                && line.charAt(index) == '>' && line.charAt(index + 1) == ' ' ? index + 2 : -1;
+        }
+        @Override public org.commonmark.parser.block.BlockContinue tryContinue(org.commonmark.parser.block.ParserState state) {
+            int index = prefix(state);
+            return index < 0 ? org.commonmark.parser.block.BlockContinue.none()
+                : org.commonmark.parser.block.BlockContinue.atIndex(index);
+        }
+        @Override public void addLine(CharSequence line) {
+            if (!firstLine) content.append('\n');
+            firstLine = false;
+            content.append(line);
+        }
+        @Override public void parseInlines(org.commonmark.parser.InlineParser parser) {
+            parser.parse(content.toString(), paragraph);
+            paragraph.accept(new AbstractVisitor() {
+                @Override public void visit(SoftLineBreak lineBreak) {
+                    lineBreak.insertBefore(new HardLineBreak());
+                    lineBreak.unlink();
+                }
+            });
+        }
+        private static final class Factory extends org.commonmark.parser.block.AbstractBlockParserFactory {
+            @Override public org.commonmark.parser.block.BlockStart tryStart(org.commonmark.parser.block.ParserState state,
+                    org.commonmark.parser.block.MatchedBlockParser matched) {
+                int index = prefix(state);
+                return index < 0 ? org.commonmark.parser.block.BlockStart.none()
+                    : org.commonmark.parser.block.BlockStart.of(new ChatQuoteParser()).atIndex(index);
+            }
+        }
     }
 
     public static boolean isMarkdown(ArrayList<TL_iv.PageBlock> blocks) {
