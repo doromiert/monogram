@@ -168,7 +168,9 @@ public final class XmppSession implements AutoCloseable {
     private static final class IncomingModern {
         final Message stanza;
         final DeliveryAcknowledgement receipt;
-        IncomingModern(Message stanza,DeliveryAcknowledgement receipt) { this.stanza=stanza;this.receipt=receipt; }
+        final RoomCryptoContext room;
+        IncomingModern(Message stanza,DeliveryAcknowledgement receipt) { this(stanza,receipt,null); }
+        IncomingModern(Message stanza,DeliveryAcknowledgement receipt,RoomCryptoContext room) { this.stanza=stanza;this.receipt=receipt;this.room=room; }
     }
     private final java.util.ArrayDeque<IncomingModern> modernInbox=new java.util.ArrayDeque<>();
     private long modernInboxBytes;
@@ -460,6 +462,15 @@ public final class XmppSession implements AutoCloseable {
         }
         queueModern(new IncomingModern(stanza,live ? DeliveryAcknowledgement.from(stanza,connection.getUser()==null ? null : connection.getUser().asEntityBareJid()) : null));
     }
+    void receivePqRoom(LegacyIncomingJournal.Context context) throws Exception {
+        RoomCryptoContext route=new RoomCryptoContext(context,configuredJid);
+        queueModern(new IncomingModern(route.outer,null,route));
+    }
+    XmppPqOmemo.Received receivePqRoomArchive(LegacyIncomingJournal.Context context,String archive) throws Exception {
+        return pq().receive(new RoomCryptoContext(context,configuredJid),archive);
+    }
+    void acceptPqRoomArchive(XmppPqOmemo.Received received) { afterPq(received,null); }
+    void pqRoomFailure(Exception failure) {pqFailure=failure;}
     private long beginModernSetup() {
         synchronized(modernInboxLock) { modernSetup=true;modernInboxLock.notifyAll();return lifecycle.incrementAndGet(); }
     }
@@ -539,6 +550,12 @@ public final class XmppSession implements AutoCloseable {
         Message stanza = incoming.stanza;
         try {
             if (setupOverflow || !pqAvailable()) throw new IllegalStateException("Experimental PQ OMEMO is not ready");
+            if(incoming.room!=null) {
+                StandardExtensionElement encrypted=stanza.getExtension("encrypted",XmppPqOmemo.NS);
+                StandardExtensionElement header=PqOmemoBundle.one(encrypted,"header");
+                if(configuredJid.equals(incoming.room.author) && Integer.toString(pq().device.id).equals(header.getAttributeValue("sid")))return;
+                deliverPq(pq().receive(incoming.room,null),null);return;
+            }
             String sender = stanza.getFrom().asBareJid().toString(), destination = stanza.getTo().asBareJid().toString();
             if (!sender.equals(configuredJid) && !destination.equals(configuredJid)) throw PqOmemoBundle.invalid();
             java.util.Date delayed = org.jivesoftware.smackx.delay.DelayInformationManager.getDelayTimestamp(stanza);
@@ -552,7 +569,13 @@ public final class XmppSession implements AutoCloseable {
             // Already accepted ciphertext is never decrypted again or replaced with a placeholder.
         } catch (Exception failure) {
             pqFailure = failure;
-            if (pqPayload(stanza)) {
+            if(incoming.room!=null) {
+                RoomCryptoContext route=incoming.room;
+                XmppRoomMessage pending=XmppRoomMessage.archived(stanza,JidCreate.entityBareFromOrThrowUnchecked(route.room),
+                    JidCreate.entityBareFromOrThrowUnchecked(route.owner),route.nickname,null,true,false,null,null);
+                if(pending!=null)listener.roomMessagePending(pending.canonical(route.ids,route.timestamp,route.archived,
+                    route.owner.equals(route.author),route.author,true,route.occupant));
+            } else if (pqPayload(stanza)) {
                 XmppMessage pending = XmppMessage.pq(stanza,null,connection.getUser().asEntityBareJid(),null,null,null,null);
                 if (pending != null) listener.messagePending(pending);
             }
@@ -560,6 +583,17 @@ public final class XmppSession implements AutoCloseable {
     }
     private void deliverPq(XmppPqOmemo.Received received,DeliveryAcknowledgement receipt) {
         if (closed) return;
+        if(received.room!=null) {
+            if(!configuredJid.equals(received.room.owner))return;
+            try {
+                XmppRoomMessage message=received.room.model(received.content,XmppMessage.Encryption.PQ_OMEMO,
+                    received.fingerprint,received.archiveId,new Date(received.timestamp));
+                if(message==null) {afterPq(received,null);return;}
+                java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean();
+                listener.roomMessage(message,() -> {if(accepted.compareAndSet(false,true))afterPq(received,null);});
+            } catch(Exception failure) {pqFailure=failure;}
+            return;
+        }
         if (received.content == null) { afterPq(received,null); return; }
         XmppMessage message = XmppMessage.pq(received.outer,received.content,JidCreate.entityBareFromOrThrowUnchecked(configuredJid),
                 received.archiveId,new Date(received.timestamp),received.fingerprint,received.digest);
@@ -603,6 +637,8 @@ public final class XmppSession implements AutoCloseable {
     /** Retry only a room whose native metadata has just become available. No connection or join is needed. */
     public void recoverRoomIncoming(String room) {
         if(closed || room==null) return;
+        if(pq!=null)try {for(XmppPqOmemo.Received pending:pq.pending()) if(pending.room!=null && room.equals(pending.room.room))deliverPq(pending,null);}
+        catch(Exception failure){pqFailure=failure;}
         try { for(LegacyIncomingJournal.Received pending:MonogramLegacyOmemoService.instance().pending(omemo,legacyIncoming))
             if(!closed && pending.roomMessage!=null && room.equals(pending.roomMessage.room.toString())) deliverLegacy(pending);
         } catch(Exception failure) { legacyFailure=failure; }

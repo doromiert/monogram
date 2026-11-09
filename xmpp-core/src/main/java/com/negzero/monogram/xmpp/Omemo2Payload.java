@@ -63,7 +63,7 @@ final class Omemo2Payload {
         } finally { Arrays.fill(key,(byte)0); Arrays.fill(expanded,(byte)0); }
     }
     static byte[] envelope(Message message, SecureRandom random) throws Exception {
-        direct(message);
+        routing(message);
         MessageMarkup.validateProtected(message);
         StandardExtensionElement.Builder content = StandardExtensionElement.builder("content",SCE);
         for (Message.Body body : message.getBodies()) {
@@ -99,13 +99,17 @@ final class Omemo2Payload {
         return content(outer,plaintext,delayed == null ? System.currentTimeMillis() : delayed.getTime());
     }
     static Message content(Message outer, byte[] plaintext, long sentTime) throws Exception {
-        direct(outer); if (plaintext.length > MAX) throw Omemo2Bundle.invalid();
+        return content(outer,plaintext,sentTime,false);
+    }
+    static Message content(Message outer,byte[] plaintext,long sentTime,boolean ignoreUnknownContent) throws Exception {
+        routing(outer); if (plaintext.length > MAX) throw Omemo2Bundle.invalid();
         String xml = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(plaintext)).toString();
         if (xml.contains("<!")) throw Omemo2Bundle.invalid();
         StandardExtensionElement envelope = StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(xml));
         if (!"envelope".equals(envelope.getElementName()) || !SCE.equals(envelope.getNamespace())) throw Omemo2Bundle.invalid();
         StandardExtensionElement content = Omemo2Bundle.single(envelope,"content",SCE);
         Omemo2Bundle.single(envelope,"rpad",SCE);
+        if(outer.getType()==Message.Type.groupchat)Omemo2Bundle.single(envelope,"to",SCE);
         for (StandardExtensionElement affix : envelope.getElements()) {
             if (!SCE.equals(affix.getNamespace())) throw Omemo2Bundle.invalid();
             String name = affix.getElementName();
@@ -123,7 +127,10 @@ final class Omemo2Payload {
         }
         StringBuilder stanza = new StringBuilder("<message xmlns='jabber:client'>");
         for (StandardExtensionElement child : content.getElements()) {
-            if (!allowed(child.getElementName(),child.getNamespace())) throw Omemo2Bundle.invalid();
+            if (!allowed(child.getElementName(),child.getNamespace())) {
+                if(ignoreUnknownContent)continue;
+                throw Omemo2Bundle.invalid();
+            }
             stanza.append(child.toXML(CLIENT));
         }
         stanza.append("</message>");
@@ -158,7 +165,11 @@ final class Omemo2Payload {
                 || name.equals("apply-to") && MessageRetraction.FASTEN.equals(namespace);
     }
     static void direct(Message message) throws GeneralSecurityException {
-        if ((message.getType() != Message.Type.chat && message.getType() != Message.Type.normal) || message.getFrom() == null || message.getTo() == null
+        routing(message);
+        if(message.getType()==Message.Type.groupchat)throw Omemo2Bundle.invalid();
+    }
+    static void routing(Message message) throws GeneralSecurityException {
+        if ((message.getType() != Message.Type.chat && message.getType() != Message.Type.normal && message.getType()!=Message.Type.groupchat) || message.getFrom() == null || message.getTo() == null
                 || message.getFrom().asEntityBareJidIfPossible() == null || message.getTo().asEntityBareJidIfPossible() == null
                 || message.hasExtension("x","http://jabber.org/protocol/muc#user")) throw Omemo2Bundle.invalid();
     }

@@ -116,12 +116,20 @@ public final class XmppPqOmemo implements AutoCloseable {
         public final Message outer,content;
         public final String fingerprint,digest,archiveId;
         public final long timestamp;
+        final RoomCryptoContext room;
         Received(PqOmemoJournal.Entry entry) {
-            outer = entry.outer; content = entry.content; fingerprint = entry.fingerprint;
+            room=entry.room;outer = entry.outer; content = entry.content; fingerprint = entry.fingerprint;
             digest = entry.digest; timestamp = entry.timestamp; archiveId = entry.archive;
         }
     }
     public synchronized Received receive(Message outer,String sender,String destination,long timestamp,String archive) throws Exception {
+        Omemo2Payload.direct(outer);
+        return receive(outer,sender,destination,timestamp,archive,null);
+    }
+    synchronized Received receive(RoomCryptoContext route,String archive) throws Exception {
+        return receive(route.outer,route.author,route.room,route.timestamp,archive,route);
+    }
+    private Received receive(Message outer,String sender,String destination,long timestamp,String archive,RoomCryptoContext room) throws Exception {
         requireReady();
         String digest = PqOmemoJournal.digest(outer,sender,destination);
         try (PqOmemoRecords tx = device.records.begin()) {
@@ -135,7 +143,7 @@ public final class XmppPqOmemo implements AutoCloseable {
             byte[] hybrid = tx.get(PqOmemoSignalStore.trust(PqOmemoDevice.remote(sender,sid)));
             if (hybrid == null || hybrid.length != 2625) throw PqOmemoBundle.invalid();
             String fingerprint = PqOmemoBundle.fingerprint(Arrays.copyOf(hybrid,33),Arrays.copyOfRange(hybrid,33,hybrid.length));
-            saved[0] = new PqOmemoJournal.Entry(digest,fingerprint,outer,content,timestamp,archive);
+            saved[0] = new PqOmemoJournal.Entry(digest,fingerprint,outer,content,timestamp,archive,room);
             PqOmemoJournal.save(tx,saved[0]);
         });
         return new Received(saved[0]);

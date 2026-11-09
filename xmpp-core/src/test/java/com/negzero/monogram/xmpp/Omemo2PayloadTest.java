@@ -79,7 +79,13 @@ class Omemo2PayloadTest {
         for (String invalid : new String[]{xml.replace("jid='bob@example.org'","jid='mallory@example.org'"),xml.replace("<rpad>","<rpad/><rpad>"),xml.replace("</content>","<encrypted xmlns='urn:xmpp:omemo:2'/></content>")}) {
             assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.content(outer,invalid.getBytes(StandardCharsets.UTF_8)));
         }
-        outer.setType(Message.Type.groupchat); assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.envelope(outer,new SecureRandom()));
+        outer.setType(Message.Type.groupchat);
+        assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.direct(outer));
+        byte[] group=Omemo2Payload.envelope(outer,new SecureRandom());
+        assertEquals("Text",Omemo2Payload.content(outer,group).getBody());
+        String missingTo=new String(group,StandardCharsets.UTF_8).replaceAll("<to\\b[^>]*>(?:</to>)?","");
+        assertNotEquals(new String(group,StandardCharsets.UTF_8),missingTo);
+        assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.content(outer,missingTo.getBytes(StandardCharsets.UTF_8)));
     }
     @Test void formattedAndLiteralBodiesRoundTripOnlyInsideAuthenticatedContentAndOldPlainBodyStillWorks() throws Exception {
         MessageMarkup.initialize();

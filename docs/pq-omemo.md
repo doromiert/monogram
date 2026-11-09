@@ -1,7 +1,8 @@
-# Experimental PQ OMEMO
+# Experimental PQ OMEMO2
 
 Implemented on `feature/pq-omemo` as an explicit experimental option for direct
-chats. Standard OMEMO 2 and legacy OMEMO remain separate, and automatic mode does
+chats and members-only, non-anonymous MUC rooms. Classical XEP-0384 OMEMO 2
+and legacy OMEMO retain their existing keys; automatic mode does
 not select this experimental protocol.
 
 This targets Monocles' experimental `urn:monocles:omemo-pq:1` profile, not
@@ -11,15 +12,22 @@ protocol or plaintext. Existing OMEMO databases must not be migrated in place.
 
 ## Use
 
-Open a direct chat → Conversation security → OMEMO version →
-**PQ OMEMO · experimental Monocles protocol**. Enabling it publishes a new public
+Open a direct chat or MUC → Conversation security → OMEMO version →
+**PQ OMEMO2 · Monocles (experimental)**. Enabling it publishes a new public
 identity in its own PEP namespace. Review the hybrid fingerprints on the PQ
 devices page, including any other devices on your own account. Both identity
 keys are bound into that fingerprint. Classical blind-trust approvals do not
 approve PQ devices. Blocked devices are excluded; unreviewed active devices
 prevent sending rather than silently reducing the recipient set.
 
-This first integration does not add PQ support to rooms. Devices on an older
+MUCs use the same per-account device sessions and hybrid trust as DMs. The room
+membership is checked before encryption and again before sending; current
+device echoes are ignored. Live occupant identities are captured before crypto
+work waits, while MAM recovery requires the historical server-supplied real JID.
+A typed room context is journalled atomically with the ratchet so recovery cannot
+resolve an old nickname through a different current occupant. Text, edits,
+replies, reactions and encrypted attachment descriptions stay inside SCE.
+MIX channels are not enabled for this mode. Devices on an older
 Monocles protocol revision (including Round-3 Kyber or pre-v4 bundle/handshake
 authentication) are incompatible. The native PQ database lives in Android's
 no-backup directory and survives reconnects. Android automatic backups and the
@@ -66,7 +74,17 @@ out-of-order messages, and atomic inbox/ratchet rollback. Android SQLite checks
 exercise account isolation, thread ownership and crash-safe transactions.
 These checks do not constitute testing a complete Monocles Android installation.
 
-Verified on 2026-11-03: seven upstream native bundle/authentication tests,
+Verified on 2026-11-09: 18 PQ tests and three tests against the unchanged Monocles
+codec passed, including MUC messages in both directions, shared DM/MUC sessions,
+wrong-room rejection with ratchet rollback, optional unknown content, encrypted
+caption metadata, durable room-context replay, and MAM recovery after key approval.
+The Android media-counter regression and fresh signed APK build are checked in
+the release delivery. The latest fetched Monocles revision
+`f4dee2517cfc3002cc6e3f8078baf0d489b307a8` has unchanged crypto sources relative
+to the pinned reference below. This is codec/server interoperability evidence;
+a complete Monocles Android installation was not exercised.
+
+Earlier verification on 2026-11-03: seven upstream native bundle/authentication tests,
 16 Monogram PQ tests (including localhost TLS/PEP), two cross-codec tests, and
 25 selected Android storage/protocol/reaction/retraction checks passed. Maven
 compilation and the signed ARM64 `0.2.190-pq.1` APK build passed. APK inspection
@@ -79,7 +97,7 @@ The broader Android selection exposed an existing failure in
 old-schema fixture repeats an already-created newer table. The failure also
 reproduced with the original `HEAD` store source. That unrelated fixture is
 unchanged. No phone screenshots or real-account messages were used, and the new
-APK has not been tested on an Android device.
+initial APK had not yet been tested on an Android device.
 
 Pinned upstream sources:
 

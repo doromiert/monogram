@@ -332,8 +332,7 @@ public class ActionBarMenuItem extends FrameLayout {
                 for (int a = 0; a < popupLayout.getItemsCount(); a++) {
                     View child = popupLayout.getItemAt(a);
                     child.getHitRect(rect);
-                    Object tag = child.getTag();
-                    if (tag instanceof Integer && (Integer) tag < 100) {
+                    if (child.getVisibility()==View.VISIBLE && child.isEnabled() && child.hasOnClickListeners()) {
                         if (!rect.contains((int) x, (int) y)) {
                             child.setPressed(false);
                             child.setSelected(false);
@@ -354,13 +353,9 @@ public class ActionBarMenuItem extends FrameLayout {
             }
         } else if (popupWindow != null && popupWindow.isShowing() && event.getActionMasked() == MotionEvent.ACTION_UP) {
             if (selectedMenuView != null) {
+                selectedMenuView.setPressed(false);
                 selectedMenuView.setSelected(false);
-                if (parentMenu != null) {
-                    parentMenu.onItemClick((Integer) selectedMenuView.getTag());
-                } else if (delegate != null) {
-                    delegate.onItemClick((Integer) selectedMenuView.getTag());
-                }
-                popupWindow.dismiss(allowCloseAnimation);
+                selectedMenuView.performClick();
             } else if (showSubmenuByMove) {
                 popupWindow.dismiss();
             }

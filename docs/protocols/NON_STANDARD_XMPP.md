@@ -163,8 +163,11 @@ Sources: [MoneroClaim.java](../../xmpp-core/src/main/java/com/negzero/monogram/x
 `urn:monocles:omemo-pq:1` is an upstream Monocles experimental profile with its
 own device/bundle PEP nodes, hybrid identities, trust approvals and ratchets.
 It is not standard XEP-0384 OMEMO 2, and is not a Monogram-designed cryptosystem.
-Monogram implements the pinned profile explicitly for direct chats; it is not
-selected automatically, does not silently fall back, and does not support rooms.
+Monogram exposes the pinned profile as PQ OMEMO2 for direct chats and members-only,
+non-anonymous MUCs. It is not selected automatically and never silently falls back.
+MUC delivery uses the same device sessions and hybrid trust as direct chats;
+room destinations and captured real sender identities are authenticated. MIX is
+not enabled for this mode.
 Older protocol revisions are not automatically compatible. Other clients need
 the matching experimental protocol, not just ordinary OMEMO 2 support.
 See [pins, interoperability evidence and limitations](../pq-omemo.md).

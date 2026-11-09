@@ -31,12 +31,12 @@ public final class XmppRoomMessage {
     public final XmppMessage.Encryption encryption;
     public final long timestamp;
     private XmppRoomMessage(EntityBareJid room,String sender,String body,Map<String,String> ids,
-                            boolean outgoing,boolean encrypted,boolean readable,long timestamp,boolean modern,boolean archived,String realSender,MessageReactions reactions,String occupantId,FileLink attachment,FileShare sharing,String caption,ReplyReference reply,MessageCorrection correction,boolean realSenderVerified,Map<String,String> skipped,MessageRetraction retraction,String senderFingerprint,MessageMarkup markup,MessageMarkup captionMarkup,InlineEmoji inlineEmoji,boolean displayStickerHint) {
+                            boolean outgoing,boolean encrypted,boolean readable,long timestamp,XmppMessage.Encryption protocol,boolean archived,String realSender,MessageReactions reactions,String occupantId,FileLink attachment,FileShare sharing,String caption,ReplyReference reply,MessageCorrection correction,boolean realSenderVerified,Map<String,String> skipped,MessageRetraction retraction,String senderFingerprint,MessageMarkup markup,MessageMarkup captionMarkup,InlineEmoji inlineEmoji,boolean displayStickerHint) {
         this.inlineEmoji=inlineEmoji;this.markup=markup;this.captionMarkup=captionMarkup;this.retraction=retraction; this.senderFingerprint=senderFingerprint; this.skippedRecipients=Collections.unmodifiableMap(new TreeMap<>(skipped));
-        this.displayStickerHint = displayStickerHint && readable && attachment != null && attachment.encrypted() && encrypted && !modern;
+        this.displayStickerHint = displayStickerHint && readable && attachment != null && attachment.encrypted() && encrypted && protocol==XmppMessage.Encryption.LEGACY_OMEMO;
         this.reply=reply; this.correction=correction; this.realSenderVerified=realSenderVerified; this.realSender=realSender; this.reactions=reactions; this.occupantId=occupantId; this.attachment=attachment; this.sharing=sharing; this.caption=caption;
         this.room=room; this.sender=sender; this.body=body; this.ids=Collections.unmodifiableMap(ids);
-        this.encryption=modern ? XmppMessage.Encryption.OMEMO2 : encrypted ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
+        this.encryption=protocol;
         this.archived=archived; this.outgoing=outgoing; this.encrypted=encrypted; this.readable=readable; this.timestamp=timestamp;
     }
     XmppRoomMessage withAliases(Map<String,String> aliases) {
@@ -46,7 +46,7 @@ public final class XmppRoomMessage {
     }
     XmppRoomMessage canonical(Map<String,String> ids,long timestamp,boolean archived,boolean outgoing,String realSender,boolean verified,String occupantId) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,
+                encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,
                 reply,correction,verified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
     }
     public static XmppRoomMessage from(Message wire,EntityBareJid room,EntityBareJid own,String nickname,
@@ -55,23 +55,30 @@ public final class XmppRoomMessage {
     }
     static XmppRoomMessage archived(Message wire,EntityBareJid room,EntityBareJid own,String nickname,
                                        String body,boolean encrypted,boolean readable,String archiveId,Date archiveTime) {
+        XmppMessage.Encryption protocol=wire.hasExtension("encrypted",XmppPqOmemo.NS) ? XmppMessage.Encryption.PQ_OMEMO
+            : wire.hasExtension("encrypted",XmppOmemo2.NS) ? XmppMessage.Encryption.OMEMO2
+            : encrypted ? XmppMessage.Encryption.LEGACY_OMEMO : XmppMessage.Encryption.PLAIN;
+        return parse(wire,room,own,nickname,body,encrypted,readable,archiveId,archiveTime,protocol,false);
+    }
+    private static XmppRoomMessage parse(Message wire,EntityBareJid room,EntityBareJid own,String nickname,
+            String body,boolean encrypted,boolean readable,String archiveId,Date archiveTime,XmppMessage.Encryption protocol,boolean authenticated) {
         if (wire.getType()!=Message.Type.groupchat || wire.getFrom()==null || !room.equals(wire.getFrom().asBareJid())
                 || !wire.getFrom().hasResource() || wire.getTo()!=null && !own.equals(wire.getTo().asEntityBareJidIfPossible()) && !(archiveTime!=null && room.equals(wire.getTo().asEntityBareJidIfPossible()))) return null;
-        if (encrypted && MessageReactions.publicLegacy(wire)) { encrypted=false; readable=true; body=null; }
+        if (encrypted && !authenticated && MessageReactions.publicLegacy(wire)) { encrypted=false; readable=true; body=null; }
         MessageRetraction retraction;
-        try { retraction=MessageRetraction.from(wire); } catch(IllegalArgumentException invalid) { return null; }
+        try { retraction=encrypted && protocol!=XmppMessage.Encryption.LEGACY_OMEMO && !authenticated ? null : MessageRetraction.from(wire); } catch(IllegalArgumentException invalid) { return null; }
         if(retraction!=null) body=null;
-        MessageReactions reactions=!encrypted && readable ? MessageReactions.from(wire) : null;
-        ReplyReference reply=ReplyReference.from(wire,readable ? body : null);
+        MessageReactions reactions=(!encrypted || authenticated) && readable ? MessageReactions.from(wire) : null;
+        ReplyReference reply=encrypted && protocol!=XmppMessage.Encryption.LEGACY_OMEMO && !authenticated ? null : ReplyReference.from(wire,readable ? body : null);
         MessageCorrection correction=readable ? MessageCorrection.from(wire) : null;
         if(wire.hasExtension("reactions",MessageReactions.NAMESPACE)) {
             if(reactions==null || !MessageReactions.fallback(wire,body) || !MessageReactions.replyMatches(wire,body,reactions.id)
                     || correction!=null || retraction!=null || wire.hasExtension("file-sharing",FileShare.NAMESPACE)) return null;
             body=null; reply=null;
         }
-        if(!encrypted && readable && reactions==null && retraction==null) body=ForwardedContent.incoming(wire,body);
-        FileShare sharing=!encrypted && readable ? FileShare.from(wire) : null;
-        if(sharing!=null && sharing.link.encrypted()) sharing=null;
+        if((!encrypted || authenticated) && readable && reactions==null && retraction==null) body=ForwardedContent.incoming(wire,body);
+        FileShare sharing=(!encrypted || authenticated) && readable ? FileShare.from(wire) : null;
+        if(sharing!=null && sharing.link.encrypted()!=encrypted) sharing=null;
         if(readable && body==null && reactions==null && sharing==null && retraction==null) return null;
         if(sharing!=null && body==null) body="";
         FileLink attachment=sharing==null ? null : sharing.link;
@@ -88,9 +95,9 @@ public final class XmppRoomMessage {
                 catch(java.io.IOException invalid) { /* Malformed attachment references stay visible as text. */ }
         }
         String caption=sharing==null ? "" : sharing.caption(wire,body,reply);
-        MessageMarkup markup=readable ? encrypted ? MessageMarkup.legacy(wire,body) : MessageMarkup.from(wire,body) : null;
+        MessageMarkup markup=readable ? encrypted && !authenticated ? MessageMarkup.legacy(wire,body) : MessageMarkup.from(wire,body) : null;
         MessageMarkup captionMarkup=sharing==null || markup==null ? null : sharing.captionMarkup(wire,body,reply,markup);
-        InlineEmoji inlineEmoji=!encrypted && readable && reactions==null && retraction==null ? InlineEmoji.from(wire,body) : null;
+        InlineEmoji inlineEmoji=(!encrypted || authenticated) && readable && reactions==null && retraction==null ? InlineEmoji.from(wire,body) : null;
         Date delay=archiveTime!=null ? archiveTime : DelayInformationManager.getDelayTimestamp(wire);
         MUCUser user=MUCUser.from(wire);
         // Live message extensions can be sender-supplied; only MAM rewrites this item authoritatively.
@@ -107,12 +114,22 @@ public final class XmppRoomMessage {
         }
         if(archiveId!=null) ids.put("mam",archiveId);
         if (ids.isEmpty()) ids.put("local",encrypted || reactions!=null ? XmppMessage.opaqueId(wire) : UUID.randomUUID().toString());
-        boolean displayStickerHint = StickerHint.from(wire, encrypted && !wire.hasExtension("encrypted", XmppOmemo2.NS), readable, attachment);
+        boolean displayStickerHint = StickerHint.from(wire, protocol==XmppMessage.Encryption.LEGACY_OMEMO, readable, attachment);
         return new XmppRoomMessage(room,wire.getFrom().toString(),body,ids,outgoing,encrypted,readable,
-                delay==null ? System.currentTimeMillis() : delay.getTime(),wire.hasExtension("encrypted",XmppOmemo2.NS),archiveTime!=null,real==null ? null : real.asBareJid().toString(),reactions,null,attachment,sharing,caption,reply,correction,real!=null,Collections.emptyMap(),retraction,null,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                delay==null ? System.currentTimeMillis() : delay.getTime(),protocol,archiveTime!=null,real==null ? null : real.asBareJid().toString(),reactions,null,attachment,sharing,caption,reply,correction,real!=null,Collections.emptyMap(),retraction,null,markup,captionMarkup,inlineEmoji,displayStickerHint);
+    }
+    static XmppRoomMessage protectedContent(Message outer,Message content,EntityBareJid own,String nickname,
+            XmppMessage.Encryption protocol,String archiveId,Date time) throws Exception {
+        if(protocol!=XmppMessage.Encryption.OMEMO2 && protocol!=XmppMessage.Encryption.PQ_OMEMO)throw new IllegalArgumentException("Protected room protocol required");
+        Message clear=org.jivesoftware.smack.util.PacketParserUtils.parseStanza(content.toXML().toString());
+        clear.setFrom(outer.getFrom());clear.setTo(outer.getTo());clear.setType(outer.getType());clear.setStanzaId(outer.getStanzaId());
+        for(org.jivesoftware.smack.packet.ExtensionElement extension:outer.getExtensions())
+            if(org.jivesoftware.smackx.sid.element.StanzaIdElement.NAMESPACE.equals(extension.getNamespace())
+                    || "urn:xmpp:occupant-id:0".equals(extension.getNamespace()))clear.addExtension(extension);
+        return parse(clear,outer.getFrom().asEntityBareJidIfPossible(),own,nickname,content.getBody(),true,true,archiveId,time,protocol,true);
     }
     public XmppRoomMessage withDisplayStickerHint(boolean value) {
-        return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,value);
+        return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,value);
     }
     public XmppRoomMessage withInlineEmoji(InlineEmoji value) {
         if(value==null) return this;
@@ -123,7 +140,7 @@ public final class XmppRoomMessage {
         }
         MessageMarkup localMarkup=outgoing && encryption==XmppMessage.Encryption.LEGACY_OMEMO && markup!=null ? markup.preservingBody() : markup;
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,
+                encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,
                 reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,localMarkup,captionMarkup,full,displayStickerHint);
     }
     public XmppRoomMessage withMarkup(MessageMarkup value) {
@@ -147,23 +164,23 @@ public final class XmppRoomMessage {
             captionValue=full.slice(start,start+caption.codePointCount(0,caption.length()));
         }
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,full,captionValue,inlineEmoji,displayStickerHint);
+                encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,full,captionValue,inlineEmoji,displayStickerHint);
     }
     public XmppRoomMessage withSenderFingerprint(String fingerprint) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,fingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,fingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
     }
     XmppRoomMessage identified(String real,EntityBareJid own) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),own.toString().equals(real),encrypted,readable,
-                timestamp,encryption==XmppMessage.Encryption.OMEMO2,archived,real,reactions,occupantId,attachment,sharing,caption,reply,correction,true,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                timestamp,encryption,archived,real,reactions,occupantId,attachment,sharing,caption,reply,correction,true,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
     }
     XmppRoomMessage withOccupantId(String id) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,id,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                encryption,archived,realSender,reactions,id,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
     }
     XmppRoomMessage withSkippedRecipients(Map<String,String> skipped) {
         return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,
-                encryption==XmppMessage.Encryption.OMEMO2,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skipped,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skipped,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint);
     }
     static XmppRoomMessage sentReactions(EntityBareJid room,EntityBareJid own,String nickname,String id,MessageReactions reactions) throws Exception {
         Message message=new Message(own,Message.Type.groupchat);

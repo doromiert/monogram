@@ -31549,7 +31549,7 @@ public class ChatActivity extends BaseFragment implements
                     compactPanel.setTag(R.id.fit_width_tag, 1);
                     compactPanel.addView(compactActionRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56));
                     scrimPopupContainerLayout.addView(compactPanel, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, -8, isReactionsAvailable ? 36 : 0, 0));
-                    scrimPopupContainerLayout.applyViewBottom(compactPanel);
+                    scrimPopupContainerLayout.applyCompactActionView(compactPanel);
                 }
                 if (showNoForwards) {
                     popupLayout.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));

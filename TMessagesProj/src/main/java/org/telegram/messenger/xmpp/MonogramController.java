@@ -2424,7 +2424,7 @@ public final class MonogramController {
             throw new IllegalStateException("Cannot save fingerprint version");
     }
     public boolean modernEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==2; }
-    public boolean pqEncryption(long peer) { return peer>0 && preferences.getInt("omemo-version-"+peer,1)==3; }
+    public boolean pqEncryption(long peer) { return peer!=0 && preferences.getInt("omemo-version-"+peer,1)==3; }
     public void enablePq(java.util.function.Consumer<Exception> completed) {
         worker.execute(() -> {
             Exception failure = null;
@@ -2479,7 +2479,6 @@ public final class MonogramController {
         },200);
     }
     public void setEncryption(long peer,XmppMessage.Encryption mode) {
-        if (mode == XmppMessage.Encryption.PQ_OMEMO && peer < 0) throw new UnsupportedOperationException("Experimental PQ mode currently supports direct chats");
         if (peer<0 && mode==XmppMessage.Encryption.OMEMO2) throw new UnsupportedOperationException("OMEMO 2 rooms are not implemented");
         setAutomaticEncryption(peer,false);
         if (!preferences.edit().putBoolean("omemo-"+peer,mode!=XmppMessage.Encryption.PLAIN)
@@ -2705,9 +2704,9 @@ public final class MonogramController {
                     if(reference==null) throw new IllegalArgumentException("This client or room needs an unavailable original message reference");
                     com.negzero.monogram.xmpp.MessageRetraction request=new com.negzero.monogram.xmpp.MessageRetraction(reference,old);
                     if(peer<0) {
-                        // Room retractions are author-bound control metadata, as sent by Monocles.
-                        // They contain no original content and must not depend on OMEMO device availability.
-                        expected.rooms.sendRetraction(jid,request,target.sender,target.stable,false,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
+                        // PQ retractions stay inside authenticated SCE; legacy rooms retain public author-bound control metadata.
+                        if(target.encryption==XmppMessage.Encryption.PQ_OMEMO)expected.rooms.sendPqRetraction(jid,request,excludedRoomRecipients(peer));
+                        else expected.rooms.sendRetraction(jid,request,target.sender,target.stable,false,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
                     } else {
                         String own=MonogramRetractions.fingerprint(expected.senderFingerprint(target.encryption));
                         if(target.encryption!=XmppMessage.Encryption.PLAIN && (own==null || target.fingerprint!=null && !target.fingerprint.equals(own)))
@@ -3151,7 +3150,7 @@ public final class MonogramController {
                         int id; long timestamp; String caption;
                         com.negzero.monogram.xmpp.ForwardedContent forwardedFile=MonogramForwarding.attribution(request.message.params,link.wireUrl);
                         if(request.message.dialog_id<0) {
-                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,encrypted,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint);
+                            com.negzero.monogram.xmpp.XmppRoomMessage message=expected.rooms.sendFile(peer,link,sharing,captionMarkup.body,mode,reply,excludedRoomRecipients(request.message.dialog_id),automaticRoomRecipients(request.message.dialog_id),sharing == null ? MessageMarkup.body(link.wireUrl).withSpoiler(captionMarkup.spoiler) : captionMarkup,displayStickerHint);
                             id=store.saveRoom(message,self); timestamp=message.timestamp; caption=message.caption;
                             if(message.encrypted) reportSkippedRecipients(request.message.dialog_id,message);
                         } else {
@@ -3904,7 +3903,7 @@ public final class MonogramController {
                 || request instanceof TLRPC.TL_messages_sendReaction && ((TLRPC.TL_messages_sendReaction)request).peer!=null && ((TLRPC.TL_messages_sendReaction)request).peer.user_id==self
                 || request instanceof TLRPC.TL_messages_getDefaultTagReactions || request instanceof TLRPC.TL_messages_getSavedReactionTags || request instanceof TLRPC.TL_messages_updateSavedReactionTag
                 || request instanceof TLRPC.TL_messages_getDialogs || request instanceof TLRPC.TL_messages_getPinnedDialogs || request instanceof TLRPC.TL_messages_getHistory
-                || request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal
+                || request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal || request instanceof TLRPC.TL_messages_getSearchCounters
                 || request instanceof TLRPC.TL_messages_getEmojiKeywords || request instanceof TLRPC.TL_messages_getEmojiKeywordsDifference
                 || request instanceof TLRPC.TL_messages_getMessages || request instanceof TLRPC.TL_users_getFullUser
                 || request instanceof TLRPC.TL_users_getUsers || request instanceof TLRPC.TL_photos_getUserPhotos
@@ -4439,6 +4438,13 @@ public final class MonogramController {
             }
             for (long peer : peers) { if(peer<0) { result.chats.add(store.roomChat(peer,self)); result.users.addAll(store.roomUsers(peer,self)); } else result.users.add(store.user(peer, self)); } result.users.add(ownUser()); return result;
         }
+        if(request instanceof TLRPC.TL_messages_getSearchCounters) {
+            TLRPC.TL_messages_getSearchCounters query=(TLRPC.TL_messages_getSearchCounters)request;
+            long peer=searchPeer(query.peer);
+            if(query.saved_peer_id!=null)peer=searchPeer(query.saved_peer_id);
+            if(peer==0)throw new IllegalArgumentException("Conversation required");
+            return store.mediaCounters(self,peer,query.filters);
+        }
         if(request instanceof TLRPC.TL_messages_search || request instanceof TLRPC.TL_messages_searchGlobal) {
             TLRPC.TL_messages_messagesSlice result;
             if(request instanceof TLRPC.TL_messages_search) {
@@ -4536,9 +4542,9 @@ public final class MonogramController {
             }
             XmppSession expected=session();
             if(peer<0) {
-                if(mode!=XmppMessage.Encryption.PLAIN) throw new IllegalArgumentException("Encrypted room reactions are not supported by this OMEMO version");
+                if(mode!=XmppMessage.Encryption.PLAIN && mode!=XmppMessage.Encryption.PQ_OMEMO) throw new IllegalArgumentException("Encrypted room reactions require PQ OMEMO2");
                 if(!store.room(peer).autojoin) throw new IllegalArgumentException("Join the room first");
-                store.reactions.save(expected.rooms.sendReactions(store.jid(peer),reactions),self);
+                store.reactions.save(expected.rooms.sendReactions(store.jid(peer),reactions,mode,excludedRoomRecipients(peer)),self);
             } else {
                 String wire=expected.sendReactions(store.jid(peer),reactions,mode);
                 store.reactions.save(XmppMessage.sentReactions(expected.connection().getUser(),store.jid(peer),wire,reactions,mode),self);
@@ -4590,8 +4596,8 @@ public final class MonogramController {
             int saved;
             if(peer<0) {
                 com.negzero.monogram.xmpp.XmppRoomMessage message=target.sharing==null
-                        ? session().rooms.send(store.jid(peer),markup.body,mode!=XmppMessage.Encryption.PLAIN,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup,inline)
-                        : session().rooms.correctFile(store.jid(peer),target.sharing,markup.body,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup);
+                        ? session().rooms.send(store.jid(peer),markup.body,mode,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup,inline)
+                        : session().rooms.correctFile(store.jid(peer),target.sharing,markup.body,mode,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup);
                 saved=store.saveRoom(message,self); if(message.encrypted) reportSkippedRecipients(peer,message);
             }
             else {
@@ -4631,7 +4637,7 @@ public final class MonogramController {
                 XmppMessage.Encryption mode=requiredEncryption==null ? encryption(dialog) : XmppMessage.Encryption.valueOf(requiredEncryption);
                 checkXmrSending(send,mode);
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,mode!=XmppMessage.Encryption.PLAIN,outgoingReply(send.reply_to,dialog,mode!=XmppMessage.Encryption.PLAIN),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
+                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,mode,outgoingReply(send.reply_to,dialog,mode!=XmppMessage.Encryption.PLAIN),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;

@@ -16,12 +16,17 @@ final class PqOmemoJournal {
         final String digest, fingerprint, archive;
         final Message outer, content;
         final long timestamp;
+        final RoomCryptoContext room;
         Entry(String digest,String fingerprint,Message outer,Message content,long timestamp,String archive) {
-            this.digest = digest; this.fingerprint = fingerprint; this.outer = outer; this.content = content; this.timestamp = timestamp; this.archive = archive;
+            this(digest,fingerprint,outer,content,timestamp,archive,null);
+        }
+        Entry(String digest,String fingerprint,Message outer,Message content,long timestamp,String archive,RoomCryptoContext room) {
+            this.room=room;this.digest = digest; this.fingerprint = fingerprint; this.outer = outer; this.content = content; this.timestamp = timestamp; this.archive = archive;
         }
     }
     static String digest(Message outer,String sender,String destination) throws Exception {
         MessageDigest hash = MessageDigest.getInstance("SHA-256");
+        if(outer.getType()==Message.Type.groupchat) hash.update("groupchat\0".getBytes(StandardCharsets.UTF_8));
         for (String field : new String[]{PqOmemoBundle.NS,sender,destination,outer.getExtension("encrypted",PqOmemoBundle.NS).toXML().toString()}) {
             byte[] bytes = field.getBytes(StandardCharsets.UTF_8);
             hash.update(PqOmemoDevice.integer(bytes.length)); hash.update(bytes);
@@ -38,8 +43,8 @@ final class PqOmemoJournal {
         if (keys.size() >= MAX_ENTRIES) throw new Full();
         for (String key : keys) total += tx.get(key).length;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream(); DataOutputStream out = new DataOutputStream(bytes);
-        out.writeInt(1); string(out,entry.fingerprint); string(out,entry.outer.toXML().toString());
-        string(out,entry.content == null ? null : entry.content.toXML().toString()); out.writeLong(entry.timestamp); string(out,entry.archive); out.flush();
+        out.writeInt(entry.room==null ? 1 : 2); string(out,entry.fingerprint); string(out,entry.outer.toXML().toString());
+        string(out,entry.content == null ? null : entry.content.toXML().toString()); out.writeLong(entry.timestamp); string(out,entry.archive); if(entry.room!=null)entry.room.write(out); out.flush();
         byte[] encoded = bytes.toByteArray();
         try {
             if (encoded.length > MAX_ENTRY || total + encoded.length > MAX_BYTES) throw new Full();
@@ -58,12 +63,16 @@ final class PqOmemoJournal {
     private static Entry decode(String digest,byte[] encoded) throws Exception {
         if (!digest.matches("[a-f0-9]{64}") || encoded.length > MAX_ENTRY) throw new IOException("Invalid PQ journal record");
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(encoded));
-        if (in.readInt() != 1) throw new IOException("Unknown PQ journal format");
+        int version=in.readInt();
+        if(version!=1 && version!=2) throw new IOException("Unknown PQ journal format");
         String fingerprint = string(in), outer = string(in), content = string(in);
         long timestamp = in.readLong(); String archive = string(in);
-        if (fingerprint == null || !fingerprint.matches("[a-f0-9]{128}") || outer == null || outer.contains("<!") || content != null && content.contains("<!") || in.read() != -1)
+        if(outer==null || outer.contains("<!") || content!=null && content.contains("<!"))throw new IOException("Invalid PQ journal XML");
+        Message wire=PacketParserUtils.parseStanza(outer);
+        RoomCryptoContext room=version==2 ? RoomCryptoContext.read(in,wire,null) : null;
+        if (fingerprint == null || !fingerprint.matches("[a-f0-9]{128}") || in.read() != -1)
             throw new IOException("Invalid PQ journal content");
-        return new Entry(digest,fingerprint,PacketParserUtils.parseStanza(outer),content == null ? null : PacketParserUtils.parseStanza(content),timestamp,archive);
+        return new Entry(digest,fingerprint,wire,content == null ? null : PacketParserUtils.parseStanza(content),timestamp,archive,room);
     }
     private static void string(DataOutputStream out,String value) throws IOException {
         if (value == null) { out.writeInt(-1); return; }

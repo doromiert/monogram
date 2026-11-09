@@ -31,7 +31,7 @@ public final class MessageReactions {
     }
     static boolean publicLegacy(Message message) {
         return message.hasExtension("encrypted", "eu.siacs.conversations.axolotl")
-                && !message.hasExtension("encrypted", XmppOmemo2.NS) && message.hasExtension("reactions", NAMESPACE);
+                && !message.hasExtension("encrypted", XmppOmemo2.NS) && !message.hasExtension("encrypted",XmppPqOmemo.NS) && message.hasExtension("reactions", NAMESPACE);
     }
     /** Only discard text explicitly marked as the reaction's complete fallback. */
     static boolean fallback(Message message,String body) {

@@ -16,6 +16,7 @@ public class ChatScrimPopupContainerLayout extends LinearLayout {
     private ReactionsContainerLayout reactionsLayout;
     private ActionBarPopupWindow.ActionBarPopupWindowLayout popupWindowLayout;
     private View bottomView;
+    private View compactActionView;
     private int maxHeight;
     private float popupLayoutLeftOffset;
     private float progressToSwipeBack;
@@ -122,6 +123,16 @@ public class ChatScrimPopupContainerLayout extends LinearLayout {
         } else {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         }
+        if (compactActionView != null && popupWindowLayout != null) {
+            // Hidden swipe-back pages and the reaction picker can widen the window.
+            // The action strip belongs to the visible root menu, not that window.
+            View rootMenu = popupWindowLayout.getSwipeBack() != null
+                    ? popupWindowLayout.getSwipeBack().getChildAt(0)
+                    : popupWindowLayout.getChildAt(0);
+            compactActionView.getLayoutParams().width = rootMenu.getMeasuredWidth()
+                    + popupWindowLayout.getPaddingLeft() + popupWindowLayout.getPaddingRight();
+            measureChildWithMargins(compactActionView, widthMeasureSpec, 0, heightMeasureSpec, 0);
+        }
         maxHeight = getMeasuredHeight();
     }
 
@@ -144,6 +155,11 @@ public class ChatScrimPopupContainerLayout extends LinearLayout {
 
     public void applyViewBottom(FrameLayout bottomView) {
         this.bottomView = bottomView;
+    }
+
+    public void applyCompactActionView(FrameLayout view) {
+        compactActionView = view;
+        applyViewBottom(view);
     }
 
     public void setReactionsLayout(ReactionsContainerLayout reactionsLayout) {

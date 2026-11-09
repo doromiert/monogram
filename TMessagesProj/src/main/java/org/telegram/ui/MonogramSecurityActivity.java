@@ -228,15 +228,15 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         items.add(UItem.asCheck(25,"Choose encryption automatically").setChecked(controller.automaticEncryption(peer)));
         items.add(UItem.asShadow("A closed lock beside a message’s time marks recorded end-to-end encryption. Unencrypted messages have no lock. Queued messages receive an indicator only after sending is confirmed."));
 
-        items.add(UItem.asCheck(1, peer<0 ? "Use legacy OMEMO encryption" : "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
-        items.add(UItem.asButton(5,"OMEMO version",controller.pqEncryption(peer) ? "PQ OMEMO · experimental" : modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
-        if(peer<0) items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
+        items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
+        items.add(UItem.asButton(5,"OMEMO version",controller.pqEncryption(peer) ? "PQ OMEMO2 · experimental" : modern ? "Classic OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        if(peer<0 && !controller.pqEncryption(peer)) items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
         if(peer>0 && !controller.pqEncryption(peer) && !controller.accountJid().equals(controller.jid(peer))) {
             items.add(UItem.asCheck(31,"Blindly trust this contact").setChecked(controller.blindlyTrustContact(peer)).setEnabled(!saving));
             items.add(UItem.asShadow("Automatically trust this contact’s new devices and changed keys in both OMEMO versions. Blocked devices stay blocked. Turning this off stops future automatic approvals; accepted fingerprints remain trusted."));
         }
-        if(peer<0) {
+        if(peer<0 && !controller.pqEncryption(peer)) {
             items.add(UItem.asCheck(32,"Automatically trust room fingerprints").setChecked(controller.blindlyTrustRoom(peer)).setEnabled(!saving));
             items.add(UItem.asShadow("Trusts new devices and changed keys for known members of this room. Blocked devices stay blocked. Decisions are shared with direct chats and remain trusted when this is turned off."));
         }
@@ -357,14 +357,9 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); refresh(); })
                     .setNegativeButton("Cancel", null).create());
             else { controller.setEncrypted(peer, true); refresh(); }
-        } else if(item.id==5 && peer<0 && !saving) {
-            showDialog(new AlertDialog.Builder(getContext()).setTitle("Room encryption")
-                .setMessage("This Monogram version supports legacy OMEMO in rooms. Select it explicitly to disable automatic selection. This controls your outgoing messages; it cannot change another member’s OMEMO version.")
-                .setPositiveButton("Use legacy OMEMO",(dialog,which)->{controller.setEncryption(peer,XmppMessage.Encryption.LEGACY_OMEMO);loadIdentities(true);})
-                .setNegativeButton("Cancel",null).create());
         } else if (item.id==5 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
-                .setItems(new CharSequence[]{"OMEMO 2 · encrypted captions","Legacy OMEMO · older clients","PQ OMEMO · experimental Monocles protocol"},(dialog,which) -> {
-                    if (which == 2) {
+                .setItems(new CharSequence[]{"PQ OMEMO2 · Monocles (experimental)","Legacy OMEMO · older clients"},(dialog,which) -> {
+                    if (which == 0) {
                         saving = true; refresh();
                         controller.enablePq(error -> {
                             saving = false;
@@ -374,7 +369,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                         });
                         return;
                     }
-                    controller.setEncryption(peer,which==0 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
+                    controller.setEncryption(peer,XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
                 }).create());
         else if (item.id==6 && !saving) loadIdentities(true);
         else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));

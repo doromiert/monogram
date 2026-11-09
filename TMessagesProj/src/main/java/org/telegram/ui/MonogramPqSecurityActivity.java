@@ -28,7 +28,7 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         Entry(String owner,PqOmemoDevice.Fingerprint key) { this.owner = owner; this.key = key; }
     }
     public MonogramPqSecurityActivity(int account,long peer) { currentAccount = account; this.peer = peer; }
-    @Override protected String getTitle() { return "PQ OMEMO"; }
+    @Override protected String getTitle() { return "PQ OMEMO2"; }
     @Override public boolean onFragmentCreate() { super.onFragmentCreate(); load(); return true; }
     @Override public void onFragmentDestroy() { generation++; worker.shutdownNow(); super.onFragmentDestroy(); }
     private void refresh() { if (listView != null) listView.adapter.update(true); }
@@ -47,10 +47,17 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
                 if (available) {
                     XmppPqOmemo pq = session.pq(); own = pq.ownFingerprint();
                     String contact = controller.jid(peer), account = controller.accountJid();
-                    for (PqOmemoDevice.Fingerprint key : pq.discover(contact)) found.add(new Entry(contact,key));
-                    if (!account.equals(contact)) for (PqOmemoDevice.Fingerprint key : pq.discover(account)) found.add(new Entry(account,key));
+                    java.util.Set<String> contacts=new java.util.TreeSet<>();
+                    if(peer<0)for(org.jxmpp.jid.BareJid member:session.rooms.members(contact))contacts.add(member.toString());
+                    else contacts.add(contact);
+                    contacts.add(account);
+                    java.util.List<String> failures=new java.util.ArrayList<>();
+                    for(String owner:contacts)try {
+                        for(PqOmemoDevice.Fingerprint key:pq.discover(owner))found.add(new Entry(owner,key));
+                    }catch(Exception failure){failures.add(owner+": "+com.negzero.monogram.xmpp.XmppRequestException.describe(failure));}
+                    if(!failures.isEmpty())throw new java.io.IOException(String.join("\n",failures));
                     message = found.isEmpty() ? "No other experimental PQ devices found." : "Compare hybrid fingerprints before trusting devices.";
-                } else message = "Enable experimental PQ OMEMO to publish a separate identity and discover compatible devices.";
+                } else message = "Enable experimental PQ OMEMO2 to publish a separate identity and discover compatible devices.";
             } catch (Exception error) { message = com.negzero.monogram.xmpp.XmppRequestException.describe(error); }
             final String fingerprint = own, result = message; final boolean ready = available;
             AndroidUtilities.runOnUIThread(() -> {
@@ -61,8 +68,8 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
     }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         items.add(UItem.asHeader("Experimental post-quantum encryption"));
-        items.add(UItem.asShadow("Monocles-compatible PQ OMEMO is a separate experimental protocol. Both people need a compatible client. It uses separate keys and trust decisions; standard OMEMO fingerprints and blind-trust settings do not approve these keys. Selecting PQ never falls back to another encryption mode."));
-        items.add(UItem.asButton(1,enabled ? "Refresh PQ fingerprints" : "Enable experimental PQ OMEMO").setEnabled(!busy));
+        items.add(UItem.asShadow("Monocles-compatible PQ OMEMO2 is a separate experimental protocol. Both people need a compatible client. It uses separate keys and trust decisions; standard OMEMO fingerprints and blind-trust settings do not approve these keys. Selecting PQ never falls back to another encryption mode."));
+        items.add(UItem.asButton(1,enabled ? "Refresh PQ fingerprints" : "Enable experimental PQ OMEMO2").setEnabled(!busy));
         if (status != null) items.add(UItem.asShadow(status));
         if (ownFingerprint != null) {
             items.add(UItem.asHeader("Your hybrid fingerprint")); items.add(UItem.asShadow(grouped(ownFingerprint)));
@@ -80,7 +87,7 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         if (busy) return;
         if (item.id == 1) {
             if (enabled) { load(); return; }
-            busy = true; status = "Enabling experimental PQ OMEMO…"; refresh(); final int request = ++generation;
+            busy = true; status = "Enabling experimental PQ OMEMO2…"; refresh(); final int request = ++generation;
             MonogramController.get(currentAccount).enablePq(error -> {
                 if (request != generation) return; busy = false;
                 if (error != null) { status = com.negzero.monogram.xmpp.XmppRequestException.describe(error); refresh(); }

@@ -227,6 +227,14 @@ public final class XmppRooms implements AutoCloseable {
                 if (closed || connection.getUser()==null || mix.known(created.getRoom())) return;
                 RoomDisplayedMarker marker=displayed(created,message,false);
                 if(marker!=null) { listener.roomDisplayed(marker);return; }
+                if(message.hasExtension("encrypted",XmppPqOmemo.NS)) {
+                    try {
+                        LegacyIncomingJournal.Context route=legacyContext(message,true,null,null);
+                        if(route==null)deliver(created,message,null,true,false);
+                        else legacySession.receivePqRoom(route);
+                    } catch(Exception unavailable) {deliver(created,message,null,true,false);}
+                    return;
+                }
                 boolean encrypted=message.hasExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE) || message.hasExtension("encrypted",XmppOmemo2.NS);
                 if (MessageReactions.publicLegacy(message)) {
                     deliver(created,message,null,false,true);
@@ -513,7 +521,22 @@ public final class XmppRooms implements AutoCloseable {
             Message wire=forwarded.getForwardedStanza(); Date time=forwarded.getDelayInformation().getStamp();
             RoomDisplayedMarker marker=displayed(chat,wire,true);
             if(marker!=null) { accepted.add(() -> listener.roomDisplayed(marker));continue; }
-            boolean modern=wire.hasExtension("encrypted",XmppOmemo2.NS);
+            boolean pq=wire.hasExtension("encrypted",XmppPqOmemo.NS);
+            if(pq) {
+                try {
+                    LegacyIncomingJournal.Context route=legacyContext(wire,false,result.getId(),time);
+                    if(route!=null) {
+                        XmppPqOmemo.Received decoded=legacySession.receivePqRoomArchive(route,result.getId());
+                        XmppRoomMessage protectedMessage=decoded.room.model(decoded.content,XmppMessage.Encryption.PQ_OMEMO,
+                            decoded.fingerprint,result.getId(),time);
+                        if(protectedMessage!=null)messages.add(protectedMessage);
+                        accepted.add(() -> legacySession.acceptPqRoomArchive(decoded));continue;
+                    }
+                } catch(org.signal.libsignal.protocol.DuplicateMessageException alreadyAccepted) {continue;}
+                catch(PqOmemoJournal.Full full) {throw full;}
+                catch(Exception unavailable) {legacySession.pqRoomFailure(unavailable); /* Keep a placeholder without consuming an untrusted key. */ }
+            }
+            boolean modern=pq || wire.hasExtension("encrypted",XmppOmemo2.NS);
             org.jivesoftware.smackx.omemo.element.OmemoElement element=wire.getExtension("encrypted",OmemoElement_VAxolotl.NAMESPACE);
             boolean publicReaction=MessageReactions.publicLegacy(wire);
             boolean encrypted=(modern || element!=null) && !publicReaction,readable=!encrypted;
@@ -752,6 +775,57 @@ public final class XmppRooms implements AutoCloseable {
         else {chatStates.decorate(message);chat.sendMessage(message);chatStates.sent(message);}
         return sent.withSkippedRecipients(skipped);
         } finally { if(automatic && encrypted) recoverUnavailable(failures); }
+    }
+    public XmppRoomMessage send(String jid,String body,XmppMessage.Encryption mode,ReplyReference reply,
+            MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        if(mode!=XmppMessage.Encryption.PQ_OMEMO) {
+            if(mode==XmppMessage.Encryption.OMEMO2)throw new UnsupportedOperationException("Classic OMEMO 2 rooms are not supported");
+            return send(jid,body,mode!=XmppMessage.Encryption.PLAIN,reply,correction,excluded,automatic,markup,inline);
+        }
+        return sendPq(jid,body,null,reply,correction,excluded,markup,inline,null,null);
+    }
+    public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,XmppMessage.Encryption mode,
+            ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup,boolean stickerHint) throws Exception {
+        if(mode==XmppMessage.Encryption.OMEMO2)throw new UnsupportedOperationException("Classic OMEMO 2 rooms are not supported");
+        if(mode!=XmppMessage.Encryption.PQ_OMEMO)return sendFile(jid,link,sharing,caption,mode!=XmppMessage.Encryption.PLAIN,reply,excluded,automatic,markup,stickerHint);
+        if(sharing==null || !link.encrypted() || !sharing.link.wireUrl.equals(link.wireUrl))throw new IllegalArgumentException("Protected file description required");
+        String body=sharing.body(caption);
+        return sendPq(jid,body,sharing,reply,null,excluded,markup==null ? null : markup.inBody(body,0),null,null,null);
+    }
+    public XmppRoomMessage correctFile(String jid,FileShare sharing,String caption,XmppMessage.Encryption mode,
+            ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup) throws Exception {
+        if(mode==XmppMessage.Encryption.OMEMO2)throw new UnsupportedOperationException("Classic OMEMO 2 rooms are not supported");
+        if(mode!=XmppMessage.Encryption.PQ_OMEMO)return correctFile(jid,sharing,caption,reply,correction,excluded,automatic,markup);
+        if(sharing==null || !sharing.link.encrypted() || correction==null)throw new IllegalArgumentException("Protected attachment correction required");
+        String body=sharing.body(caption);
+        return sendPq(jid,body,sharing,reply,correction,excluded,markup==null ? null : markup.inBody(body,0),null,null,null);
+    }
+    private XmppRoomMessage sendPq(String jid,String body,FileShare sharing,ReplyReference reply,MessageCorrection correction,
+            Set<String> excluded,MessageMarkup markup,InlineEmoji inline,MessageReactions reactions,MessageRetraction retraction) throws Exception {
+        if(isMix(jid))throw new UnsupportedOperationException("PQ OMEMO2 currently requires a MUC room");
+        MultiUserChat chat=chat(jid);State state=state(jid);
+        if(!state.joined)throw new IllegalStateException("Room is not joined");
+        if(body==null || body.isEmpty() && reactions==null && retraction==null)throw new IllegalArgumentException("Empty message");
+        if(markup!=null && !body.equals(markup.body) || inline!=null && !body.equals(inline.body))throw new IllegalArgumentException("Content belongs to another message");
+        EntityBareJid own=connection.getUser().asEntityBareJid();
+        String id=UUID.randomUUID().toString(),wireBody=reply==null ? body : reply.wireBody(body);
+        Message clear=new Message(chat.getRoom(),Message.Type.groupchat);clear.setFrom(own);clear.setStanzaId(id);clear.setBody(wireBody);
+        if(reply!=null)reply.addTo(clear);if(correction!=null)correction.addTo(clear);
+        if(markup!=null)markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(clear);
+        if(inline!=null)inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(clear);
+        if(sharing!=null)sharing.addTo(clear,wireBody);
+        if(reactions!=null)reactions.addTo(clear);if(retraction!=null)retraction.addMetadataTo(clear);
+        Set<BareJid> before=members(jid);List<String> targets=new ArrayList<>();
+        for(BareJid recipient:recipients(before,own,excluded))targets.add(recipient.toString());
+        Message wire=legacySession.pq().encrypt(clear,targets);
+        if(!members(jid).equals(before) || !chat.isJoined())throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
+        wire.addExtension(new OriginIdElement(id));
+        Message echo=wire.clone();echo.setFrom(JidCreate.entityFullFrom(jid+"/"+state.nickname));echo.setTo(own);
+        XmppRoomMessage sent=XmppRoomMessage.protectedContent(echo,clear,own,state.nickname,XmppMessage.Encryption.PQ_OMEMO,null,null);
+        if(sent==null)throw new IllegalStateException("Invalid protected room content");
+        sent=sent.identified(own.toString(),own).withSenderFingerprint(legacySession.pq().ownFingerprint());
+        if(stableOccupants.contains(chat.getRoom()))sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
+        chatStates.decorate(wire);chat.sendMessage(wire);chatStates.sent(wire);return sent;
     }
     /** Encrypt and discard a local check; never send or await a room echo. */
     public void probeEncryption(String jid,Set<String> excluded,boolean automatic) throws Exception {
@@ -1167,6 +1241,14 @@ public final class XmppRooms implements AutoCloseable {
         }
         finally { collector.cancel(); }
         } finally { if(automatic && encrypted) recoverUnavailable(failures); }
+    }
+    public XmppRoomMessage sendReactions(String jid,MessageReactions reactions,XmppMessage.Encryption mode,Set<String> excluded) throws Exception {
+        if(mode==XmppMessage.Encryption.PLAIN)return sendReactions(jid,reactions);
+        if(mode!=XmppMessage.Encryption.PQ_OMEMO)throw new IllegalArgumentException("Encrypted reactions require PQ OMEMO2");
+        return sendPq(jid,"",null,null,null,excluded,null,null,reactions,null);
+    }
+    public void sendPqRetraction(String jid,MessageRetraction retraction,Set<String> excluded) throws Exception {
+        sendPq(jid,MessageRetraction.FALLBACK_BODY,null,null,null,excluded,null,null,null,retraction);
     }
     public XmppRoomMessage sendReactions(String jid,MessageReactions reactions) throws Exception {
         if(isMix(jid)) {

@@ -18,7 +18,9 @@ import org.signal.libsignal.protocol.ecc.ECKeyPair;
 class PqOmemoNativeTest {
     static class Database implements PqOmemoRecords.Factory {
         Map<String,byte[]> committed = new TreeMap<>();
-        @Override public synchronized PqOmemoRecords begin() {
+        private final java.util.concurrent.locks.ReentrantLock transaction=new java.util.concurrent.locks.ReentrantLock();
+        @Override public PqOmemoRecords begin() {
+            transaction.lock();
             Map<String,byte[]> staged = new TreeMap<>(); committed.forEach((key,value) -> staged.put(key,value.clone()));
             return new PqOmemoRecords() {
                 boolean closed;
@@ -26,8 +28,8 @@ class PqOmemoNativeTest {
                 public byte[] get(String key) { active(); byte[] bytes = staged.get(key); return bytes == null ? null : bytes.clone(); }
                 public void put(String key,byte[] value) { active(); if (value == null) staged.remove(key); else staged.put(key,value.clone()); }
                 public Set<String> keys(String prefix) { active(); Set<String> keys = new TreeSet<>(); for (String key : staged.keySet()) if (key.startsWith(prefix)) keys.add(key); return keys; }
-                public void commit() { active(); committed = staged; closed = true; }
-                public void close() { closed = true; }
+                public void commit() { active(); committed = staged; closed = true; transaction.unlock(); }
+                public void close() { if(!closed){closed = true;transaction.unlock();} }
             };
         }
     }

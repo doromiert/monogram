@@ -142,7 +142,7 @@ final class PqOmemoMessage {
             }
             plaintext = PqOmemoPayload.open(variable(one(encrypted,"payload").getText(),PqOmemoPayload.MAX + 16),key,
                     PqOmemoPayload.binding(sender,destination,sid),data(one(encrypted,"commit"),64));
-            Message context = new Message(); context.setType(Message.Type.chat);
+            Message context = new Message(); context.setType(outer.getType()==Message.Type.groupchat ? Message.Type.groupchat : Message.Type.chat);
             context.setFrom(JidCreate.entityBareFrom(sender)); context.setTo(JidCreate.entityBareFrom(destination));
             context.setStanzaId(outer.getStanzaId());
             // Unlike the classic compatibility parser, this profile requires all SCE affixes.
@@ -151,7 +151,7 @@ final class PqOmemoMessage {
             if (xml.contains("<!")) throw invalid();
             StandardExtensionElement sce = StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(xml));
             for (String name : new String[]{"from","to","time"}) Omemo2Bundle.single(sce,name,Omemo2Payload.SCE);
-            Message content = Omemo2Payload.content(context,plaintext,timestamp);
+            Message content = Omemo2Payload.content(context,plaintext,timestamp,true);
             content.setFrom(outer.getFrom()); content.setTo(outer.getTo()); content.setType(outer.getType());
             save.save(tx,content);
             tx.commit(); return content;
@@ -159,8 +159,7 @@ final class PqOmemoMessage {
     }
 
     private static byte[] envelope(Message message,SecureRandom random) throws Exception {
-        Message direct = message.clone(); direct.setType(Message.Type.chat);
-        byte[] classic = Omemo2Payload.envelope(direct,random);
+        byte[] classic = Omemo2Payload.envelope(message,random);
         try {
             StandardExtensionElement parsed = StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(new String(classic,StandardCharsets.UTF_8)));
             StandardExtensionElement.Builder result = StandardExtensionElement.builder("envelope",Omemo2Payload.SCE);

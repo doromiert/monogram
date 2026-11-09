@@ -1769,6 +1769,16 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         return ids;
     }
+    synchronized org.telegram.tgnet.Vector<TLRPC.TL_messages_searchCounter> mediaCounters(long self,long peer,java.util.List<TLRPC.MessagesFilter> filters) {
+        org.telegram.tgnet.Vector<TLRPC.TL_messages_searchCounter> result=new org.telegram.tgnet.Vector<>(null);
+        if(filters.size()>20)throw new IllegalArgumentException("Too many media filters");
+        for(TLRPC.MessagesFilter filter:filters) {
+            TLRPC.TL_messages_searchCounter counter=new TLRPC.TL_messages_searchCounter();counter.filter=filter;
+            counter.count=search(self,peer,"",0,0,1,0,0,0,filter,false,false).count;
+            result.objects.add(counter);
+        }
+        return result;
+    }
     synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {
         return search(self,peer,query,offset,skip,limit,sender,minDate,maxDate,filter,groups,users,java.util.Collections.emptyList());

@@ -35,8 +35,10 @@ log = { { levels = { min = "warn" }; to = "console" } }
 modules_enabled = { "roster"; "saslauth"; "tls"; "disco"; "carbons"; "pep"; "smacks" }
 VirtualHost "localhost"
 authentication = "internal_hashed"
+Component "conference.localhost" "muc"
+modules_enabled = { "muc_mam" }
 EOF
-for user in pqalice pqbob pqaclalice pqaclbob; do prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-pq-test > "$state/register-$user.log" 2>&1; done
+for user in pqalice pqbob pqaclalice pqaclbob pqroomalice pqroombob; do prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-pq-test > "$state/register-$user.log" 2>&1; done
 prosody --config "$state/prosody.cfg.lua" -F > "$state/server.log" 2>&1 &
 server_pid=$!
 python3 - "$port" "$server_pid" <<'PY'
@@ -48,6 +50,7 @@ for attempt in range(100):
     except OSError: time.sleep(.1)
 else: raise SystemExit('Disposable Prosody did not start')
 PY
+export MONOGRAM_PQ_IT_STATE="$state"
 export MONOGRAM_PQ_IT=1 MONOGRAM_PQ_IT_PORT="$port" MONOGRAM_PQ_IT_TRUST="$state/trust.p12"
 args=()
 if [[ -n ${MONOGRAM_PQ_TEST_INIT:-} ]]; then args+=(-I "$MONOGRAM_PQ_TEST_INIT"); fi
