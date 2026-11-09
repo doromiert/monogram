@@ -852,23 +852,30 @@ final class MonogramStore extends SQLiteOpenHelper {
         ContentValues value = new ContentValues(); value.put("roster_name", name == null ? "" : name);
         db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
     }
-    synchronized void profile(long peer, com.negzero.monogram.xmpp.XmppProfile profile) throws Exception {
-        byte[] png;
-        try { png = MonogramProfiles.png(profile.avatar); }
-        catch (IllegalArgumentException invalid) { if(avatar(peer)!=null) throw invalid;png = new byte[0]; }
-        java.io.File avatar = png.length == 0 ? null : MonogramProfiles.cache(storeContext, database, png);
-        ContentValues empty = new ContentValues(); empty.put("peer", peer);
-        SQLiteDatabase db = getWritableDatabase();
-        db.beginTransaction();
-        try {
-            db.insertWithOnConflict("profiles", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
-            ContentValues value = new ContentValues(); value.put("card", profile.xml()); value.put("nickname", profile.nickname);
-            if (avatar == null) value.putNull("avatar"); else value.put("avatar", avatar.getAbsolutePath());
-            db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
-            // Room peer IDs are negative; a successful insert's row ID can be negative too.
-            db.execSQL("INSERT OR REPLACE INTO profile_avatar_sources(peer,bytes) VALUES(?,?)",new Object[]{peer,profile.avatar});
-            db.setTransactionSuccessful();profileCache.remove(peer);
-        } finally { db.endTransaction(); }
+    private final Object profileWriteLock=new Object();
+    void profile(long peer, com.negzero.monogram.xmpp.XmppProfile profile) throws Exception {
+        // Serialize writers without making UI readers wait for image encoding or XML preparation.
+        synchronized(profileWriteLock) {
+            byte[] png;
+            try { png = MonogramProfiles.png(profile.avatar); }
+            catch (IllegalArgumentException invalid) { if(avatar(peer)!=null) throw invalid;png = new byte[0]; }
+            java.io.File avatar = png.length == 0 ? null : MonogramProfiles.cache(storeContext, database, png);
+            String xml=profile.xml();
+            synchronized(this) {
+                ContentValues empty = new ContentValues(); empty.put("peer", peer);
+                SQLiteDatabase db = getWritableDatabase();
+                db.beginTransaction();
+                try {
+                    db.insertWithOnConflict("profiles", null, empty, SQLiteDatabase.CONFLICT_IGNORE);
+                    ContentValues value = new ContentValues(); value.put("card", xml); value.put("nickname", profile.nickname);
+                    if (avatar == null) value.putNull("avatar"); else value.put("avatar", avatar.getAbsolutePath());
+                    db.update("profiles", value, "peer=?", new String[]{Long.toString(peer)});
+                    // Room peer IDs are negative; a successful insert's row ID can be negative too.
+                    db.execSQL("INSERT OR REPLACE INTO profile_avatar_sources(peer,bytes) VALUES(?,?)",new Object[]{peer,profile.avatar});
+                    db.setTransactionSuccessful();profileCache.remove(peer);
+                } finally { db.endTransaction(); }
+            }
+        }
     }
     synchronized java.io.File avatar(long peer) {
         String owner=contactOwner();
@@ -1769,15 +1776,77 @@ final class MonogramStore extends SQLiteOpenHelper {
         }
         return ids;
     }
-    synchronized org.telegram.tgnet.Vector<TLRPC.TL_messages_searchCounter> mediaCounters(long self,long peer,java.util.List<TLRPC.MessagesFilter> filters) {
+    org.telegram.tgnet.Vector<TLRPC.TL_messages_searchCounter> mediaCounters(long self,long peer,java.util.List<TLRPC.MessagesFilter> filters) {
         org.telegram.tgnet.Vector<TLRPC.TL_messages_searchCounter> result=new org.telegram.tgnet.Vector<>(null);
         if(filters.size()>20)throw new IllegalArgumentException("Too many media filters");
         for(TLRPC.MessagesFilter filter:filters) {
-            TLRPC.TL_messages_searchCounter counter=new TLRPC.TL_messages_searchCounter();counter.filter=filter;
-            counter.count=search(self,peer,"",0,0,1,0,0,0,filter,false,false).count;
-            result.objects.add(counter);
+            TLRPC.TL_messages_searchCounter counter=new TLRPC.TL_messages_searchCounter();counter.filter=filter;result.objects.add(counter);
+        }
+        if(filters.isEmpty())return result;
+        int through=historyWatermark(),after=0;
+        String owner=jid(self);
+        while(after<through) {
+            ArrayList<MediaCounterRow> batch=mediaCounterBatch(peer,owner,after,through);
+            if(batch.isEmpty())break;
+            for(MediaCounterRow row:batch) {
+                after=row.id;
+                TLRPC.Message message=counterMessage(row,self,peer);
+                for(TLRPC.TL_messages_searchCounter counter:result.objects)
+                    if(matchesSearchFilter(message,counter.filter))counter.count++;
+            }
         }
         return result;
+    }
+    private static final class MediaCounterRow {
+        final int id,date;final String body,markup,url,sharing,caption,captionMarkup,callReason;final byte[] media;
+        MediaCounterRow(Cursor row) {
+            id=row.getInt(0);date=row.getInt(1);body=row.getString(2);markup=row.getString(3);url=row.getString(4);
+            media=row.getBlob(5);sharing=row.getString(6);caption=row.getString(7);captionMarkup=row.getString(8);callReason=row.getString(9);
+        }
+    }
+    /** Copy a bounded metadata batch; XML decoding and classification must not hold the UI's store monitor. */
+    private synchronized ArrayList<MediaCounterRow> mediaCounterBatch(long peer,String owner,int after,int through) {
+        String sql="SELECT m.id,m.time,p.body,f.markup,a.url,a.media,a.sharing,COALESCE(cm.body,ca.caption,a.caption,''),COALESCE(cf.markup,f.caption_markup),ce.reason "
+                +"FROM messages m LEFT JOIN applied_corrections ac ON ac.original=m.id JOIN messages p ON p.id=COALESCE(ac.message,m.id) "
+                +"LEFT JOIN message_formatting f ON f.message=p.id AND f.body=p.body LEFT JOIN attachments a ON a.message=m.id LEFT JOIN attachments ca ON ca.message=p.id "
+                +"LEFT JOIN local_media_captions lc ON lc.message=m.id AND lc.placeholder=0 "
+                +"LEFT JOIN messages cm ON cm.id=lc.companion AND cm.deleted=0 AND cm.readable=1 LEFT JOIN message_formatting cf ON cf.message=cm.id AND cf.body=cm.body "
+                +"LEFT JOIN call_events ce ON ce.message=m.id AND ce.owner=? "
+                +"WHERE m.peer=? AND m.id>? AND m.id<=? AND m.deleted=0 AND p.deleted=0 AND p.readable=1 "
+                +"AND NOT EXISTS(SELECT 1 FROM corrections c WHERE c.message=m.id AND c.resolved!=0) "
+                +"AND NOT EXISTS(SELECT 1 FROM reaction_sources r WHERE r.message=m.id) "
+                +"AND NOT EXISTS(SELECT 1 FROM retraction_sources r WHERE r.message=m.id AND r.hidden=1)"+pendingClause("m")
+                +" ORDER BY m.id LIMIT 100";
+        ArrayList<MediaCounterRow> rows=new ArrayList<>(100);
+        try(Cursor cursor=getReadableDatabase().rawQuery(sql,new String[]{owner,Long.toString(peer),Integer.toString(after),Integer.toString(through)})) {
+            while(cursor.moveToNext())rows.add(new MediaCounterRow(cursor));
+        }
+        return rows;
+    }
+    private TLRPC.Message counterMessage(MediaCounterRow row,long self,long peer) {
+        TLRPC.TL_message message=new TLRPC.TL_message();message.id=row.id;message.date=row.date;message.dialog_id=peer;
+        message.message=MonogramFormatting.displayText(row.body,row.markup);message.media=new TLRPC.TL_messageMediaEmpty();
+        if(row.callReason!=null) {
+            TLRPC.TL_messageActionPhoneCall call=new TLRPC.TL_messageActionPhoneCall();call.reason=callReason(row.callReason);message.action=call;
+        }
+        if(row.url!=null)try {
+            // Counts need declared/cached media type, never file sniffing, thumbnails, replies or reactions.
+            com.negzero.monogram.xmpp.FileLink link=com.negzero.monogram.xmpp.FileLink.parse(row.url);
+            com.negzero.monogram.xmpp.FileShare sharing=sharing(row.url,row.sharing);
+            if(row.media!=null) {
+                org.telegram.tgnet.SerializedData data=new org.telegram.tgnet.SerializedData(row.media);
+                try{message.media=TLRPC.MessageMedia.TLdeserialize(data,data.readInt32(true),true);}finally{data.cleanup();}
+            }
+            if(message.media==null || message.media instanceof TLRPC.TL_messageMediaEmpty) {
+                String name=sharing==null ? link.fileName() : sharing.name;
+                message.media=MonogramAttachments.remoteMedia(row.id,name,sharing==null ? null : sharing.mime,sharing==null ? 0 : sharing.size);
+            }
+            MonogramStickers.apply(message,sharing);
+            message.message=MonogramFormatting.displayText(row.caption,row.captionMarkup);
+        }catch(Exception invalid){message.media=new TLRPC.TL_messageMediaEmpty();message.message="";}
+        MonogramForwarding.decorate(message,row.body);
+        MonogramPolls.decorate(message,self);
+        return message;
     }
     synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {

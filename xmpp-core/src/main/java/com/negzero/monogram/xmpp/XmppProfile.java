@@ -26,7 +26,7 @@ public final class XmppProfile {
         this.nickname = nickname == null ? field("NICKNAME") : nickname;
         this.avatar = avatar == null ? cardAvatar() : checkedAvatar(avatar);
     }
-    public String xml() { return card.toXML().toString(); }
+    public String xml() { return XmppXml.string(card); }
     public String field(String... path) {
         StandardExtensionElement element = card;
         for (String name : path) {
