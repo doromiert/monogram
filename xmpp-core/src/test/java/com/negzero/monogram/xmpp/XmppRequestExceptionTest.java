@@ -31,6 +31,8 @@ class XmppRequestExceptionTest {
     @Test void preservesKnownOmemoFailuresWithoutExposingArbitraryCryptoDetails() {
         assertEquals("Invalid OMEMO2 content",XmppRequestException.describe(new java.security.GeneralSecurityException("Invalid OMEMO2 content")));
         assertEquals("OMEMO2 bundle unavailable",XmppRequestException.describe(new java.security.GeneralSecurityException("OMEMO2 bundle unavailable")));
+        String unavailable="Recipient PQ encryption keys are unavailable; they need to reconnect and republish their keys";
+        assertEquals(unavailable,XmppRequestException.describe(new java.security.GeneralSecurityException(unavailable)));
         assertEquals("GeneralSecurityException",XmppRequestException.describe(new java.security.GeneralSecurityException("secret key material")));
     }
     @Test void keepsRejectedOperationAndConditionWithoutEchoingServerContent() {

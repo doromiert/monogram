@@ -67,15 +67,18 @@ public final class XmppPqOmemo implements AutoCloseable {
         String key = peer + "\n" + id; Long time = refreshed.get(key);
         PqOmemoBundle cached = bundles.get(key);
         if (!force && cached != null && time != null && System.nanoTime() - time < java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) return cached;
+        bundles.remove(key);refreshed.remove(key);
         StandardExtensionElement xml = pep.item(peer,PqOmemoPep.BUNDLES,Integer.toString(id));
-        if (xml == null) throw new java.security.GeneralSecurityException("No experimental PQ bundle for device " + id);
+        if (xml == null)return null;
         PqOmemoBundle found = PqOmemoBundle.parse(xml); device.observe(peer,id,found);
         bundles.put(key,found); refreshed.put(key,System.nanoTime()); return found;
     }
     public synchronized List<PqOmemoDevice.Fingerprint> discover(String peer) throws Exception {
         requireReady(); peer = PqOmemoDevice.bare(peer);
-        Set<Integer> active = devices(peer,true);
-        for (int id : new TreeSet<>(active)) if (!peer.equals(device.jid) || id != device.id) bundle(peer,id,true);
+        Set<Integer> active = new LinkedHashSet<>(devices(peer,true));
+        for (int id : new TreeSet<>(active)) if (!peer.equals(device.jid) || id != device.id) {
+            if(bundle(peer,id,true)==null && !hasTrustedSession(peer,id))active.remove(id);
+        }
         List<PqOmemoDevice.Fingerprint> result = new ArrayList<>();
         for (PqOmemoDevice.Fingerprint key : device.fingerprints(peer)) result.add(key.withActive(active.contains(key.device)));
         return result;
@@ -87,18 +90,31 @@ public final class XmppPqOmemo implements AutoCloseable {
         if (found.size() > 128) throw new java.security.GeneralSecurityException("Experimental PQ device list exceeds its supported limit");
         deviceLists.put(peer,found); listsRefreshed.put(peer,System.nanoTime()); return found;
     }
+    private boolean hasTrustedSession(String peer,int id) throws Exception {
+        SignalProtocolAddress address=PqOmemoDevice.remote(peer,id);
+        try(PqOmemoRecords tx=device.records.begin()) {
+            byte[] trusted=tx.get(PqOmemoSignalStore.trust(address)),observed=tx.get(PqOmemoSignalStore.observed(address));
+            return trusted!=null && trusted.length==2625 && java.util.Arrays.equals(trusted,observed)
+                    && tx.get("blocked/"+PqOmemoSignalStore.peer(address))==null && device.store(tx).containsSession(address);
+        }
+    }
     private List<PqOmemoMessage.Target> targets(Collection<String> peers) throws Exception {
         List<PqOmemoMessage.Target> result = new ArrayList<>();
         for (String peer : new LinkedHashSet<>(peers)) {
-            peer = PqOmemoDevice.bare(peer); int count = 0;
+            peer = PqOmemoDevice.bare(peer); int count = 0,missing = 0;
             for (int id : new TreeSet<>(devices(peer,false))) if (!peer.equals(device.jid) || id != device.id) {
                 SignalProtocolAddress address = PqOmemoDevice.remote(peer,id);
                 try (PqOmemoRecords tx = device.records.begin()) {
                     if (tx.get("blocked/" + PqOmemoSignalStore.peer(address)) != null) continue;
                 }
-                result.add(new PqOmemoMessage.Target(peer,id,bundle(peer,id,false))); count++;
+                PqOmemoBundle keys=bundle(peer,id,false);
+                // A confirmed absent bundle cannot start a session; an existing pinned ratchet needs no prekeys.
+                if(keys==null && !hasTrustedSession(peer,id)) { missing++;continue; }
+                result.add(new PqOmemoMessage.Target(peer,id,keys)); count++;
             }
-            if (count == 0 && !peer.equals(device.jid)) throw new java.security.GeneralSecurityException("Contact has no unblocked experimental PQ devices");
+            if (count == 0 && !peer.equals(device.jid)) throw new java.security.GeneralSecurityException(missing>0
+                    ? "Recipient PQ encryption keys are unavailable; they need to reconnect and republish their keys"
+                    : "Contact has no unblocked experimental PQ devices");
         }
         return result;
     }

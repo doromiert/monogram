@@ -20,6 +20,16 @@ keys are bound into that fingerprint. Classical blind-trust approvals do not
 approve PQ devices. Blocked devices are excluded; unreviewed active devices
 prevent sending rather than silently reducing the recipient set.
 
+A device list can retain an orphan device ID after its bundle has disappeared.
+A confirmed missing bundle no longer aborts discovery or every send. An existing
+session remains usable only with its exact approved, unchanged hybrid identity;
+otherwise that device cannot receive a copy until it republishes keys. Other
+usable PQ devices still receive the encrypted message. Every recipient must have
+at least one usable device; a recipient with only unavailable keys blocks sending
+with a specific reconnect/republish error. Invalid bundles, access denials and
+lookup failures remain errors, and valid unreviewed devices still need approval.
+Missing bundles do not reset identities, change trust or edit anyone's PEP list.
+
 MUCs use the same per-account device sessions and hybrid trust as DMs. The room
 membership is checked before encryption and again before sending; current
 device echoes are ignored. Live occupant identities are captured before crypto
@@ -73,6 +83,17 @@ hybrid key changes, signature/commitment tampering, replay records, restarts,
 out-of-order messages, and atomic inbox/ratchet rollback. Android SQLite checks
 exercise account isolation, thread ownership and crash-safe transactions.
 These checks do not constitute testing a complete Monocles Android installation.
+
+Verified on 2026-11-10: 20 PQ tests and three unchanged Monocles codec tests
+passed after the missing-bundle correction. Disposable TLS/PEP tests cover
+orphan IDs in direct chats and actual MUC delivery, an existing trusted ratchet
+after bundle removal, changed observed identity, valid unapproved keys,
+malformed replacement bundles and access denials. Five fixed-description tests
+also preserve the specific unavailable-recipient error without exposing arbitrary
+crypto/provider messages. A phone exception stack located the original failure
+at `XmppPqOmemo.bundle` during send; the attached external debugger was detached
+after its exception traps caused visible background-decryption pauses. It is not
+part of the APK. Final phone send acceptance remains separate from these tests.
 
 Verified on 2026-11-09: 18 PQ tests and three tests against the unchanged Monocles
 codec passed, including MUC messages in both directions, shared DM/MUC sessions,

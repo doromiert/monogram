@@ -44,6 +44,8 @@ class PqOmemoMucTest {
             long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(20);
             while((!alice.pqAvailable() || !bob.pqAvailable()) && System.nanoTime()<deadline)Thread.sleep(50);
             assertTrue(alice.pqAvailable());assertTrue(bob.pqAvailable());
+            int orphan=bob.pq().device.id==654321 ? 654322 : 654321;
+            PqOmemoServerTest.publishDevices(bob.connection(),bob.ownJid(),orphan,bob.pq().device.id);
             trust(alice,bob.ownJid());trust(bob,alice.ownJid());
             String room=alice.rooms.createPrivate("Alice","PQ room").room.toString();
             org.jivesoftware.smackx.muc.MultiUserChat roomAdmin=org.jivesoftware.smackx.muc.MultiUserChatManager.getInstanceFor(alice.connection()).getMultiUserChat(org.jxmpp.jid.impl.JidCreate.entityBareFrom(room));

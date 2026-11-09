@@ -73,6 +73,7 @@ public final class XmppRequestException extends Exception {
                 case "Incomplete PQ identity; existing state preserved":
                 case "PQ fingerprint changed; refresh before approving":
                 case "Invalid experimental PQ OMEMO bundle":
+                case "Recipient PQ encryption keys are unavailable; they need to reconnect and republish their keys":
                 case "Contact has no unblocked experimental PQ devices":
                 case "OMEMO2 message is not addressed to this device":
                 case "OMEMO2 message is not addressed to an active or recovery device": return detail;

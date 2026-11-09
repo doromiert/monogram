@@ -47,7 +47,7 @@ final class PqOmemoMessage {
                 if (target.bundle != null) store.requireTrusted(remote,target.bundle.identity,target.bundle.pqIdentity);
                 else {
                     byte[] pin = tx.get(PqOmemoSignalStore.trust(remote));
-                    if (pin == null || pin.length != 2625 || !store.containsSession(remote)) throw new UntrustedIdentityException(target.jid);
+                    if (pin == null || pin.length != 2625 || !Arrays.equals(pin,tx.get(PqOmemoSignalStore.observed(remote))) || !store.containsSession(remote)) throw new UntrustedIdentityException(target.jid);
                     store.requireTrusted(remote,new IdentityKey(Arrays.copyOf(pin,33)),Arrays.copyOfRange(pin,33,pin.length));
                 }
                 if (!store.containsSession(remote)) new SessionBuilder(store,remote,device.address()).process(target.bundle.sessionBundle(target.device,random));

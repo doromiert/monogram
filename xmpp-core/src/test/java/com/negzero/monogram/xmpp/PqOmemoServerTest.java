@@ -50,6 +50,64 @@ class PqOmemoServerTest {
             bob.service.accepted(received); assertTrue(bob.service.pending().isEmpty());
         }
     }
+    private static void publishDevices(Client client,int... ids) throws Exception {
+        publishDevices(client.connection,client.device.jid,ids);
+    }
+    static void publishDevices(org.jivesoftware.smack.XMPPConnection connection,String owner,int... ids) throws Exception {
+        StandardExtensionElement.Builder list=StandardExtensionElement.builder("devices",XmppPqOmemo.NS);
+        for(int id:ids)list.addElement(StandardExtensionElement.builder("device",XmppPqOmemo.NS).addAttribute("id",Integer.toString(id)).build());
+        PubSubManager.getInstanceFor(connection,JidCreate.entityBareFrom(owner))
+                .getLeafNode(PqOmemoPep.DEVICES).publish(new PayloadItem<ExtensionElement>("current",list.build()));
+    }
+    private static void removeBundle(Client client) throws Exception {
+        PubSubManager.getInstanceFor(client.connection,JidCreate.entityBareFrom(client.device.jid))
+                .getLeafNode(PqOmemoPep.BUNDLES).deleteItem(Integer.toString(client.device.id));
+    }
+    @Test void missingBundleDoesNotAbortOtherDevicesOrRequirePrekeysForEstablishedRatchet() throws Exception {
+        try(Client alice=new Client("pqmissingalice");Client bob=new Client("pqmissingbob")) {
+            int orphan=alice.device.id==1234567 || bob.device.id==1234567 ? 1234568 : 1234567;
+            publishDevices(alice,orphan,alice.device.id);publishDevices(bob,orphan,bob.device.id);
+            alice.trust(bob.device.jid);bob.trust(alice.device.jid);
+            assertEquals(1,alice.service.discover(bob.device.jid).size());
+            Message clear=new Message(bob.connection.getUser(),Message.Type.chat);clear.setFrom(alice.connection.getUser());
+            clear.setBody("orphan device must not block a usable recipient");clear.setStanzaId(UUID.randomUUID().toString());
+            Message wire=alice.service.encrypt(clear);
+            assertFalse(wire.toXML().toString().contains(clear.getBody()));
+            assertEquals(clear.getBody(),bob.service.receive(wire,alice.device.jid,bob.device.jid,System.currentTimeMillis(),null).content.getBody());
+            // Lost server prekeys do not destroy a pinned established session.
+            removeBundle(bob);assertTrue(alice.service.discover(bob.device.jid).get(0).active);
+            clear.setStanzaId(UUID.randomUUID().toString());clear.setBody("continue the trusted ratchet");
+            assertEquals(clear.getBody(),bob.service.receive(alice.service.encrypt(clear),alice.device.jid,bob.device.jid,System.currentTimeMillis(),null).content.getBody());
+            // An observed key change cannot use the old pin as a missing-bundle fallback.
+            try(PqOmemoRecords tx=alice.records.begin()) {
+                tx.put(PqOmemoSignalStore.observed(PqOmemoDevice.remote(bob.device.jid,bob.device.id)),new byte[2625]);tx.commit();
+            }
+            assertFalse(alice.service.discover(bob.device.jid).get(0).active);
+            Exception absent=assertThrows(java.security.GeneralSecurityException.class,() -> alice.service.encrypt(clear));
+            assertTrue(XmppRequestException.describe(absent).contains("republish their keys"));
+        }
+    }
+    @Test void orphanDevicesDoNotApproveValidUnknownKeysOrHideMalformedBundles() throws Exception {
+        try(Client alice=new Client("pqtrustalice");Client bob=new Client("pqtrustbob")) {
+            int orphan=bob.device.id==7654321 ? 7654322 : 7654321;
+            publishDevices(bob,orphan,bob.device.id);
+            alice.service.discover(bob.device.jid);
+            Message clear=new Message(bob.connection.getUser(),Message.Type.chat);clear.setFrom(alice.connection.getUser());clear.setBody("no automatic trust");clear.setStanzaId(UUID.randomUUID().toString());
+            assertThrows(org.signal.libsignal.protocol.UntrustedIdentityException.class,() -> alice.service.encrypt(clear));
+            alice.trust(bob.device.jid);
+            // Confirmed absence is special; invalid authenticated bundle data still fails closed.
+            PubSubManager.getInstanceFor(bob.connection,JidCreate.entityBareFrom(bob.device.jid)).getLeafNode(PqOmemoPep.BUNDLES)
+                    .publish(new PayloadItem<ExtensionElement>(Integer.toString(bob.device.id),StandardExtensionElement.builder("bundle",XmppPqOmemo.NS).build()));
+            assertThrows(java.security.GeneralSecurityException.class,() -> alice.service.discover(bob.device.jid));
+            assertThrows(java.security.GeneralSecurityException.class,() -> alice.service.encrypt(clear));
+            bob.service.replenish();alice.service.discover(bob.device.jid);
+            Node node=PubSubManager.getInstanceFor(bob.connection,JidCreate.entityBareFrom(bob.device.jid)).getNode(PqOmemoPep.BUNDLES);
+            org.jivesoftware.smackx.pubsub.form.FillableConfigureForm config=node.getNodeConfiguration().getFillableForm();
+            config.setAccessModel(AccessModel.whitelist);node.sendConfigurationForm(config);
+            assertThrows(XmppRequestException.class,() -> alice.service.discover(bob.device.jid));
+            assertThrows(XmppRequestException.class,() -> alice.service.encrypt(clear));
+        }
+    }
     @Test void repairsPublicKeyAccessAndPreservesOtherDevicesAndClassicalNodes() throws Exception {
         try(Client alice = new Client("pqaclalice"); Client bob = new Client("pqaclbob")) {
             alice.service.close();

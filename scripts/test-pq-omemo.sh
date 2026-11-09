@@ -38,7 +38,7 @@ authentication = "internal_hashed"
 Component "conference.localhost" "muc"
 modules_enabled = { "muc_mam" }
 EOF
-for user in pqalice pqbob pqaclalice pqaclbob pqroomalice pqroombob; do prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-pq-test > "$state/register-$user.log" 2>&1; done
+for user in pqalice pqbob pqaclalice pqaclbob pqroomalice pqroombob pqmissingalice pqmissingbob pqtrustalice pqtrustbob; do prosodyctl --config "$state/prosody.cfg.lua" register "$user" localhost monogram-pq-test > "$state/register-$user.log" 2>&1; done
 prosody --config "$state/prosody.cfg.lua" -F > "$state/server.log" 2>&1 &
 server_pid=$!
 python3 - "$port" "$server_pid" <<'PY'
