@@ -1564,6 +1564,28 @@ final class MonogramStore extends SQLiteOpenHelper {
         if (sharing != null) return attachmentFile(sharing);
         return path == null ? attachmentFile(url) : new java.io.File(path);
     }
+    boolean restoreMediaAttachment(TLRPC.Message message,long peer) {
+        String url,path,xml;
+        synchronized(this) {
+            try(Cursor row=getReadableDatabase().rawQuery("SELECT a.url,a.path,a.sharing FROM messages m JOIN attachments a ON a.message=m.id WHERE m.id=? AND m.peer=? AND m.deleted=0",
+                    new String[]{Integer.toString(message.id),Long.toString(peer)})) {
+                if(!row.moveToFirst())return false;
+                url=row.getString(0);path=row.getString(1);xml=row.getString(2);
+            }
+        }
+        try {
+            java.io.File local=attachmentPath(url,path,sharing(url,xml));
+            if(message.params==null)message.params=new java.util.HashMap<>();
+            message.params.put(MonogramAttachments.PARAM,url);message.attachPath=local.getAbsolutePath();
+            if(message.media!=null && message.media.document!=null)message.media.document.localPath=message.attachPath;
+            return true;
+        }catch(Exception invalid){
+            message.attachPath="";
+            if(message.params!=null)message.params.remove(MonogramAttachments.PARAM);
+            if(message.media!=null && message.media.document!=null)message.media.document.localPath=null;
+            return false;
+        }
+    }
     synchronized java.io.File attachmentPath(int id) {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT url,path,sharing FROM attachments WHERE message=?", new String[]{Integer.toString(id)})) {
             if (!c.moveToFirst()) return null;
@@ -1798,15 +1820,15 @@ final class MonogramStore extends SQLiteOpenHelper {
         return result;
     }
     private static final class MediaCounterRow {
-        final int id,date;final String body,markup,url,sharing,caption,captionMarkup,callReason;final byte[] media;
+        final long time,order;final int id,date;final String body,markup,url,sharing,caption,captionMarkup,callReason;final byte[] media;
         MediaCounterRow(Cursor row) {
-            id=row.getInt(0);date=row.getInt(1);body=row.getString(2);markup=row.getString(3);url=row.getString(4);
+            time=row.getLong(10);order=row.getLong(11);id=row.getInt(0);date=row.getInt(1);body=row.getString(2);markup=row.getString(3);url=row.getString(4);
             media=row.getBlob(5);sharing=row.getString(6);caption=row.getString(7);captionMarkup=row.getString(8);callReason=row.getString(9);
         }
     }
     /** Copy a bounded metadata batch; XML decoding and classification must not hold the UI's store monitor. */
     private synchronized ArrayList<MediaCounterRow> mediaCounterBatch(long peer,String owner,int after,int through) {
-        String sql="SELECT m.id,m.time,p.body,f.markup,a.url,a.media,a.sharing,COALESCE(cm.body,ca.caption,a.caption,''),COALESCE(cf.markup,f.caption_markup),ce.reason "
+        String sql="SELECT m.id,m.time,p.body,f.markup,a.url,a.media,a.sharing,COALESCE(cm.body,ca.caption,a.caption,''),COALESCE(cf.markup,f.caption_markup),ce.reason,m.time_ms,m.archive_order "
                 +"FROM messages m LEFT JOIN applied_corrections ac ON ac.original=m.id JOIN messages p ON p.id=COALESCE(ac.message,m.id) "
                 +"LEFT JOIN message_formatting f ON f.message=p.id AND f.body=p.body LEFT JOIN attachments a ON a.message=m.id LEFT JOIN attachments ca ON ca.message=p.id "
                 +"LEFT JOIN local_media_captions lc ON lc.message=m.id AND lc.placeholder=0 "
@@ -1848,13 +1870,91 @@ final class MonogramStore extends SQLiteOpenHelper {
         MonogramPolls.decorate(message,self);
         return message;
     }
-    synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
+    static final int MEDIA_WINDOW_SIZE=11;
+    static final class MediaWindow {
+        final ArrayList<TLRPC.Message> messages=new ArrayList<>();
+        int index,total,start;
+    }
+    private static final java.util.Comparator<MediaCounterRow> MEDIA_ORDER=java.util.Comparator
+            .comparingLong((MediaCounterRow row) -> row.time).thenComparingLong(row -> row.order).thenComparingInt(row -> row.id);
+    private synchronized long[] mediaAnchor(int id,long peer) {
+        try(Cursor row=getReadableDatabase().rawQuery("SELECT time_ms,archive_order,id FROM messages WHERE id=? AND peer=? AND deleted=0",
+                new String[]{Integer.toString(id),Long.toString(peer)})) {
+            return row.moveToFirst() ? new long[]{row.getLong(0),row.getLong(1),row.getInt(2)} : null;
+        }
+    }
+    private static int compareAnchor(MediaCounterRow row,long[] anchor) {
+        int compare=Long.compare(row.time,anchor[0]);
+        if(compare==0)compare=Long.compare(row.order,anchor[1]);
+        return compare==0 ? Long.compare(row.id,anchor[2]) : compare;
+    }
+    private static void retainNearest(ArrayList<MediaCounterRow> rows,MediaCounterRow row,int maximum,boolean older) {
+        int index=java.util.Collections.binarySearch(rows,row,MEDIA_ORDER);
+        rows.add(index<0 ? -index-1 : index,row);
+        if(rows.size()>maximum)rows.remove(older ? 0 : rows.size()-1);
+    }
+    /** Only the selected window is projected into messages; metadata batches release the UI store lock. */
+    MediaWindow mediaWindow(long self,long peer,int selected,TLRPC.MessagesFilter filter) {
+        return mediaWindow(self,peer,selected,filter,() -> true);
+    }
+    MediaWindow mediaWindow(long self,long peer,int selected,TLRPC.MessagesFilter filter,java.util.function.BooleanSupplier active) {
+        MediaWindow result=new MediaWindow();long[] anchor=mediaAnchor(selected,peer);
+        if(anchor==null)return result;
+        ArrayList<MediaCounterRow> older=new ArrayList<>(),newer=new ArrayList<>();
+        MediaCounterRow current=null;int olderCount=0,after=0,through=historyWatermark();String owner=jid(self);
+        while(after<through && active.getAsBoolean()) {
+            ArrayList<MediaCounterRow> batch=mediaCounterBatch(peer,owner,after,through);
+            if(batch.isEmpty())break;
+            for(MediaCounterRow row:batch) {
+                after=row.id;
+                if(!matchesSearchFilter(counterMessage(row,self,peer),filter))continue;
+                result.total++;
+                int side=compareAnchor(row,anchor);
+                if(side<0) { olderCount++;retainNearest(older,row,MEDIA_WINDOW_SIZE-1,true); }
+                else if(side>0)retainNearest(newer,row,MEDIA_WINDOW_SIZE-1,false);
+                else current=row;
+            }
+        }
+        if(current==null || !active.getAsBoolean())return result;
+        int before=Math.min(5,older.size()),following=Math.min(5,newer.size());
+        before=Math.min(older.size(),before+10-before-following);
+        following=Math.min(newer.size(),10-before);
+        ArrayList<MediaCounterRow> selectedRows=new ArrayList<>(MEDIA_WINDOW_SIZE);
+        selectedRows.addAll(older.subList(older.size()-before,older.size()));selectedRows.add(current);
+        selectedRows.addAll(newer.subList(0,following));result.index=before;result.start=olderCount-before;
+        for(MediaCounterRow row:selectedRows) { TLRPC.Message message=getMessage(row.id,self);if(message!=null)result.messages.add(message); }
+        return result;
+    }
+    private TLRPC.TL_messages_messagesSlice mediaSearch(long self,long peer,int offset,int limit,TLRPC.MessagesFilter filter) {
+        TLRPC.TL_messages_messagesSlice result=new TLRPC.TL_messages_messagesSlice();
+        long[] anchor=offset>0 ? mediaAnchor(offset,peer) : null;
+        if(offset>0 && anchor==null)return result;
+        ArrayList<MediaCounterRow> selected=new ArrayList<>();int after=0,through=historyWatermark();String owner=jid(self);
+        while(after<through) {
+            ArrayList<MediaCounterRow> batch=mediaCounterBatch(peer,owner,after,through);if(batch.isEmpty())break;
+            for(MediaCounterRow row:batch) {
+                after=row.id;if(!matchesSearchFilter(counterMessage(row,self,peer),filter))continue;
+                result.count++;
+                if(anchor==null || compareAnchor(row,anchor)<0)retainNearest(selected,row,Math.min(100,Math.max(1,limit)),true);
+            }
+        }
+        for(int i=selected.size()-1;i>=0;i--) { TLRPC.Message message=getMessage(selected.get(i).id,self);if(message!=null)result.messages.add(message); }
+        return result;
+    }
+    TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users) {
         return search(self,peer,query,offset,skip,limit,sender,minDate,maxDate,filter,groups,users,java.util.Collections.emptyList());
     }
-    synchronized TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
+    TLRPC.TL_messages_messagesSlice search(long self, long peer, String query, int offset, int skip,
             int limit, long sender, int minDate, int maxDate, TLRPC.MessagesFilter filter, boolean groups, boolean users,
             java.util.List<TLRPC.Reaction> tags) {
+        if(peer!=0 && (!groups || peer<0) && (!users || peer>0) && (query==null || query.trim().isEmpty()) && skip==0 && sender==0 && minDate==0 && maxDate==0
+                && tags.isEmpty() && filter!=null && !(filter instanceof TLRPC.TL_inputMessagesFilterEmpty)
+                && !(filter instanceof TLRPC.TL_inputMessagesFilterPhoneCalls))return mediaSearch(self,peer,offset,limit,filter);
+        synchronized(this) { return searchLocked(self,peer,query,offset,skip,limit,sender,minDate,maxDate,filter,groups,users,tags); }
+    }
+    private TLRPC.TL_messages_messagesSlice searchLocked(long self,long peer,String query,int offset,int skip,int limit,
+            long sender,int minDate,int maxDate,TLRPC.MessagesFilter filter,boolean groups,boolean users,java.util.List<TLRPC.Reaction> tags) {
         TLRPC.TL_messages_messagesSlice result=new TLRPC.TL_messages_messagesSlice();
         String needle=query==null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
         boolean phoneCalls=filter instanceof TLRPC.TL_inputMessagesFilterPhoneCalls;

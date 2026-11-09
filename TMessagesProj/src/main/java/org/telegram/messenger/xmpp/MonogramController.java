@@ -2933,6 +2933,33 @@ public final class MonogramController {
         MonogramMediaDrafts.accepted(account,request.message);
     }
     public File attachmentPath(int id) { return store.attachmentPath(id); }
+    /** Native media-cache serialization omits incoming local paths and Monogram parameters. Background media-load queue only. */
+    public void restoreMediaAttachments(java.util.List<TLRPC.Message> messages,long peer) {
+        for(TLRPC.Message message:messages)store.restoreMediaAttachment(message,peer);
+    }
+
+    public static final class MediaWindow {
+        public final ArrayList<MessageObject> messages=new ArrayList<>();
+        public int index,total,start;
+    }
+    private final java.util.concurrent.atomic.AtomicLong mediaWindowRequests=new java.util.concurrent.atomic.AtomicLong();
+    public void mediaWindow(long peer,int selected,int type,Consumer<MediaWindow> callback) {
+        final long owner=accountEpoch,request=mediaWindowRequests.incrementAndGet();
+        cacheWorker.execute(() -> {
+            if(owner!=accountEpoch)return;
+            if(request!=mediaWindowRequests.get())return;
+            TLRPC.MessagesFilter filter=type==MediaDataController.MEDIA_GIF ? new TLRPC.TL_inputMessagesFilterGif()
+                    : type==MediaDataController.MEDIA_FILE ? new TLRPC.TL_inputMessagesFilterDocument() : new TLRPC.TL_inputMessagesFilterPhotoVideo();
+            MediaWindow result=new MediaWindow();
+            try {
+                MonogramStore.MediaWindow window=store.mediaWindow(self,peer,selected,filter,() -> owner==accountEpoch && request==mediaWindowRequests.get());
+                result.index=window.index;result.total=window.total;result.start=window.start;
+                for(TLRPC.Message message:window.messages)result.messages.add(new MessageObject(account,message,false,true));
+            }catch(Exception failed){FileLog.e(failed);}
+            AndroidUtilities.runOnUIThread(() -> { if(owner==accountEpoch && request==mediaWindowRequests.get())callback.accept(result); });
+        });
+    }
+
     public boolean isFileLoading(String name) { return name != null && fileNames.containsKey(name); }
     public void cancelFile(int message) {
         for(PendingSend pending:pendingSends.values()) if(pending.request instanceof MonogramFileRequest && ((MonogramFileRequest)pending.request).localId==message) cancelRequest(pending.token);

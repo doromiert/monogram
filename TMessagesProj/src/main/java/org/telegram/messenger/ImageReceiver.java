@@ -582,9 +582,10 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
         mediaLocation = localProfileImage(mediaLocation);
         thumbLocation = localProfileImage(thumbLocation);
         int attachmentId = 0;
-        if (imageLocation != null && imageLocation.photoSize != null && imageLocation.photoSize.location != null
-                && imageLocation.photoSize.location.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
-            attachmentId = imageLocation.photoSize.location.local_id;
+        TLRPC.FileLocation attachmentLocation = imageLocation == null ? null : imageLocation.location != null
+                ? imageLocation.location : imageLocation.photoSize != null ? imageLocation.photoSize.location : null;
+        if (attachmentLocation != null && attachmentLocation.volume_id == org.telegram.messenger.xmpp.MonogramAttachments.PHOTO_VOLUME) {
+            attachmentId = attachmentLocation.local_id;
         } else if (parentObject instanceof MessageObject && imageLocation != null) {
             MessageObject message = (MessageObject) parentObject;
             if (org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner) && message.messageOwner.media != null

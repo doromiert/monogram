@@ -2137,6 +2137,41 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private final ArrayList<MessageObject> imagesArrTemp = new ArrayList<>();
     private final SparseArray<MessageObject>[] imagesByIdsTemp = new SparseArray[] {new SparseArray<>(), new SparseArray<>()};
     private final ArrayList<MessageObject> imagesArr = new ArrayList<>();
+    private boolean monogramMediaWindow;
+    private int monogramWindowStart,monogramWindowRequest;
+
+    private boolean useMonogramWindow(MessageObject message) {
+        return org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount) && message!=null
+                && org.telegram.messenger.xmpp.MonogramAttachments.has(message.messageOwner) && !message.scheduled && !message.isQuickReply()
+                && !currentFiltered && topicId==0 && mergeDialogId==0;
+    }
+
+    private void loadMonogramWindow() {
+        if(!monogramMediaWindow || currentMessageObject==null)return;
+        final int selected=currentMessageObject.getId(),guid=classGuid,request=++monogramWindowRequest;
+        final long peer=currentDialogId;
+        org.telegram.messenger.xmpp.MonogramController.get(currentAccount).mediaWindow(peer,selected,sharedMediaType,window -> {
+            if(!isVisible || !monogramMediaWindow || guid!=classGuid || request!=monogramWindowRequest
+                    || currentDialogId!=peer || currentMessageObject==null || currentMessageObject.getId()!=selected || window.messages.isEmpty())return;
+            // Keep the active receiver/player; only replace its neighbours and rebase the local index.
+            MessageObject active=currentMessageObject;
+            imagesArr.clear();imagesByIds[0].clear();imagesByIds[1].clear();
+            for(MessageObject message:window.messages) {
+                if(message.getId()==selected)message=active;
+                imagesArr.add(message);imagesByIds[0].put(message.getId(),message);
+            }
+            currentIndex=window.index;switchingToIndex=currentIndex;
+            monogramWindowStart=window.start;totalImagesCount=window.total;totalImagesCountMerge=0;
+            needSearchImageInArr=false;loadingMoreImages=false;isFirstLoading=false;
+            currentFileNames[0]=getFileName(currentIndex);
+            currentFileNames[1]=getFileName(currentIndex+1);currentFileNames[2]=getFileName(currentIndex-1);
+            setIndexToImage(leftImage,currentIndex-1,null);setIndexToImage(rightImage,currentIndex+1,null);
+            setIndexToPaintingOverlay(currentIndex-1,leftPaintingOverlay);setIndexToPaintingOverlay(currentIndex+1,rightPaintingOverlay);
+            checkProgress(1,false,false);checkProgress(2,false,false);
+            if(countView!=null) { countView.updateShow(true,false);countView.set(monogramWindowStart+currentIndex+1,totalImagesCount); }
+        });
+    }
+
     private final SparseArray<MessageObject>[] imagesByIds = new SparseArray[] {new SparseArray<>(), new SparseArray<>()};
     private final ArrayList<ImageLocation> imagesArrLocations = new ArrayList<>();
     private final ArrayList<ImageLocation> imagesArrLocationsVideo = new ArrayList<>();
@@ -4171,6 +4206,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     boolean animated = a == 0 || a == 1 && sideImage == rightImage || a == 2 && sideImage == leftImage;
                     photoProgressViews[a].setProgress(1.0f, animated);
                     checkProgress(a, false, animated);
+                    if (a == 0 && currentMessageObject != null && currentMessageObject.getPhoto() != null
+                            && org.telegram.messenger.xmpp.MonogramAttachments.has(currentMessageObject.messageOwner)) {
+                        centerImage.cancelLoadImage();
+                        setIndexToImage(centerImage, currentIndex, null);
+                    }
                     if (videoPlayer == null && a == 0 && (currentMessageObject != null && currentMessageObject.isVideo() || currentBotInlineResult != null && (currentBotInlineResult.type.equals("video") || MessageObject.isVideoDocument(currentBotInlineResult.document)) || pageBlocksAdapter != null && (pageBlocksAdapter.isVideo(currentIndex) || pageBlocksAdapter.isHardwarePlayer(currentIndex)))) {
                         onActionClick(false);
                     }
@@ -4334,6 +4374,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 }
             }
         } else if (id == NotificationCenter.mediaCountDidLoad) {
+            if(monogramMediaWindow)return;
             long uid = (Long) args[0];
             long topicId = (Long) args[1];
             if (this.topicId == topicId && (uid == currentDialogId || uid == mergeDialogId)) {
@@ -4353,6 +4394,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 }
             }
         } else if (id == NotificationCenter.mediaDidLoad) {
+            if(monogramMediaWindow)return;
             long uid = (Long) args[0];
             int guid = (Integer) args[3];
             if ((uid == currentDialogId || uid == mergeDialogId) && guid == classGuid) {
@@ -13949,6 +13991,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private void onPhotoShow(final MessageObject messageObject, final TLRPC.FileLocation fileLocation, ImageLocation imageLocation, ImageLocation videoLocation, final ArrayList<MessageObject> messages, final ArrayList<SecureDocument> documents, final List<Object> photos, int index, final PlaceProviderObject object) {
         classGuid = ConnectionsManager.generateClassGuid();
+        monogramMediaWindow=false;monogramWindowStart=0;monogramWindowRequest++;
         customTitle = null;
         disableSelection = false;
         currentMessageObject = null;
@@ -14233,6 +14276,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 } else if (isEmbedVideo && messageObject.eventId == 0) {
                     setItemVisible(sendItem, true, false);
                 }
+                monogramMediaWindow=useMonogramWindow(messageObject);
+                if(monogramMediaWindow)needSearchImageInArr=false;
                 setImageIndex(0);
             }
         } else if (documents != null) {
@@ -14329,6 +14374,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 }
             } else {
                 totalImagesCount = imagesArr.size();
+            }
+            monogramMediaWindow=useMonogramWindow(openingObject);
+            if(monogramMediaWindow) {
+                imagesArr.clear();imagesByIds[0].clear();imagesByIds[1].clear();imagesArr.add(openingObject);
+                imagesByIds[0].put(openingObject.getId(),openingObject);index=0;needSearchImageInArr=false;
             }
             setImageIndex(index);
         } else if (photos != null) {
@@ -14448,7 +14498,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
         dialogPhotos = null;
         if (currentAnimation == null && !isEvent) {
-            if (currentDialogId != 0 && totalImagesCount == 0 && currentMessageObject != null && !currentMessageObject.scheduled) {
+            if (!monogramMediaWindow && currentDialogId != 0 && totalImagesCount == 0 && currentMessageObject != null && !currentMessageObject.scheduled) {
                 /*if (currentFilterTag != null && TextUtils.isEmpty(currentFilterQuery)) {
                     if (needSearchImageInArr && isFirstLoading) {
                         isFirstLoading = false;
@@ -14750,6 +14800,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     countView.updateShow(true, animated);
                     countView.set(1 + switchingToIndex, imagesArr.size());
                 }
+            } else if(monogramMediaWindow) {
+                if(countView!=null) { countView.updateShow(true,animated);countView.set(monogramWindowStart+switchingToIndex+1,totalImagesCount); }
             } else if (totalImagesCount + totalImagesCountMerge != 0 && !needSearchImageInArr) {
                 if (opennedFromMedia) {
                     if (startOffset + imagesArr.size() < totalImagesCount + totalImagesCountMerge && !loadingMoreImages && switchingToIndex > imagesArr.size() - 5) {
@@ -16138,6 +16190,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 videoFrameBitmap = null;
             }
         }
+        loadMonogramWindow();
         detectFaces();
         if (captionEdit != null) {
             long dialogId = 0;
@@ -17039,6 +17092,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     BitmapDrawable thumbPlaceHolder = placeHolder != null ? new BitmapDrawable(placeHolder.bitmap) : null;
                     int cacheType = cacheOnly ? 1 : 0;
                     ImageLocation fullImage = needFullImage ? imageLocation : null;
+                    if (index == currentIndex && parentObject instanceof MessageObject) {
+                        MessageObject selected = (MessageObject) parentObject;
+                        if (org.telegram.messenger.xmpp.MonogramAttachments.has(selected.messageOwner)
+                                && selected.getPhoto() != null && !TextUtils.isEmpty(selected.messageOwner.attachPath)
+                                && !new File(selected.messageOwner.attachPath).isFile()) {
+                            org.telegram.messenger.xmpp.MonogramController.get(currentAccount).download(selected);
+                        }
+                    }
                     imageReceiver.setImage(fullImage, filter, imageThumbLocation, "b", thumbPlaceHolder, size[0], null, parentObject, cacheType);
                     imageReceiver.setMark(needFullImage ? null : MARK_DEFERRED_IMAGE_LOADING);
                 }

@@ -202,6 +202,28 @@ public class MonogramEditingTest {
         } finally { instances[0] = null; source.delete(); }
     }
 
+    @Test public void viewerPhotoFactoryResolvesDownloadedNeighbourWithoutParentMessage() throws Exception {
+        java.io.File source=java.io.File.createTempFile("viewer-neighbour-", ".png",ApplicationLoader.applicationContext.getCacheDir());
+        java.nio.file.Files.write(source.toPath(),new byte[]{1,2,3});
+        com.negzero.monogram.xmpp.FileShare sharing=com.negzero.monogram.xmpp.FileShare.describe(
+                com.negzero.monogram.xmpp.FileLink.parse("https://files.example.org/neighbour.png"),source,"neighbour.png","image/png");
+        int id=store.save(com.negzero.monogram.xmpp.XmppMessage.sentFile(org.jxmpp.jid.impl.JidCreate.entityFullFrom("alice@example.org/phone"),
+                "bob@example.org","neighbour",sharing,"",null));
+        java.io.File cached=store.attachmentFile(sharing);cached.getParentFile().mkdirs();java.nio.file.Files.copy(source.toPath(),cached.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        TLRPC.Photo photo=MonogramAttachments.remoteMedia(id,sharing.name,sharing.mime,sharing.size).photo;
+        org.telegram.messenger.ImageLocation location=org.telegram.messenger.ImageLocation.getForPhoto(photo.sizes.get(0),photo);
+        assertNotNull(location.location);assertNull(location.photoSize);
+        MonogramController[] instances=ReflectionHelpers.getStaticField(MonogramController.class,"instances");instances[0]=controller;
+        try {
+            org.telegram.messenger.ImageReceiver receiver=new org.telegram.messenger.ImageReceiver();
+            ReflectionHelpers.setField(receiver,"currentAccount",0);receiver.setAllowLoadingOnAttachedOnly(true);
+            receiver.setImage(null,null,location,null,null,null,null,sharing.size,"png",null,0);
+            Object backup=ReflectionHelpers.getField(receiver,"setImageBackup");
+            org.telegram.messenger.ImageLocation resolved=ReflectionHelpers.getField(backup,"imageLocation");
+            assertEquals(cached.getAbsolutePath(),resolved.path);
+        }finally{instances[0]=null;source.delete();cached.delete();}
+    }
+
     @Test public void refusesForeignMissingUnreadableAndMediaTargets() throws Exception {
         int own = message("own", "Before", true, false, null);
         rejected(query(own, store.peer("other@example.org")));

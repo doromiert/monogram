@@ -4367,6 +4367,9 @@ public class MediaDataController extends BaseController {
                     TLRPC.User u = res.users.get(a);
                     usersDict.put(u.id, u);
                 }
+                if (org.telegram.messenger.xmpp.MonogramDialogState.local(currentAccount)) {
+                    org.telegram.messenger.xmpp.MonogramController.get(currentAccount).restoreMediaAttachments(res.messages, dialogId);
+                }
                 ArrayList<MessageObject> objects = new ArrayList<>();
                 for (int a = 0; a < res.messages.size(); a++) {
                     TLRPC.Message message = res.messages.get(a);

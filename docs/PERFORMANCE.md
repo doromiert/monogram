@@ -52,3 +52,32 @@ a fresh signed ARM64 APK, and the existing native/class/license/alignment audit.
 The tests guard the lock dependency and preserved profile fields; no permanent
 telemetry or user-data collection was added. Further reported pauses require
 new samples rather than speculative caches or disabled features.
+
+## 0.2.194: bounded media search and viewer window (2026-11-10)
+
+The count fix did not change actual filtered media search. That still called
+`getMessage` for every matching history row while holding the store monitor,
+including after the requested page was full. The viewer also searched from the
+newest page towards an older selected item and retained every intervening page.
+
+Empty-query media search now classifies the existing bounded metadata batches
+outside the monitor and projects only the requested page. The chat media viewer
+uses an anchored window of at most eleven items in `(time_ms, archive_order, id)`
+order: five on either side, borrowing unused places at either edge. It projects
+only those eleven messages and preserves the active image receiver/player when
+rebasing the window. Superseded window requests stop between metadata batches;
+late callbacks cannot replace another selected item or reopened viewer.
+
+Regression: 31 media inserted in reverse chronological order plus 250 text
+messages and another chat. First/middle/last positions must retain eleven items,
+preserve global indices, and never call full-message projection more than eleven
+times per request. Older-page search has the same projection budget. A one-item
+chat stays a one-item window. The existing paused-classification concurrency
+check continues to let the chat lookup finish in 0 ms. Final 281-row fixture window timings were 10–66 ms on the host, not a
+phone frame-rate claim.
+
+Metadata classification still scans the chat on the background worker; it does
+not decode or download all media. The viewer retains three native image
+receivers, while at most eleven message descriptors make up its swipe window.
+Phone swipe/freeze acceptance remains a user check; no screenshots or account
+test messages were used.
