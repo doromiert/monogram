@@ -1413,6 +1413,26 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    public void clearMonogramHistory(int through,java.util.function.Consumer<Exception> completed) {
+        storageQueue.postRunnable(() -> {
+            Exception error=null;boolean transaction=false;
+            try {
+                database.beginTransaction();transaction=true;
+                SQLiteCursor queued=database.queryFinalized("SELECT (SELECT count(*) FROM messages_v2 WHERE mid<0 AND send_state!=0)+(SELECT count(*) FROM scheduled_messages_v2)");
+                boolean hasQueued=queued.next() && queued.intValue(0)>0;queued.dispose();
+                if(hasQueued)throw new IllegalStateException("Send or remove pending and scheduled messages before clearing local history.");
+                database.executeFast("DELETE FROM messages_v2 WHERE mid>0 AND mid<="+through).stepThis().dispose();
+                database.executeFast("DELETE FROM media_v4 WHERE mid>0 AND mid<="+through).stepThis().dispose();
+                database.executeFast("UPDATE dialogs SET last_mid=CASE WHEN last_mid>0 AND last_mid<="+through+" THEN 0 ELSE last_mid END,last_mid_i=CASE WHEN last_mid_i>0 AND last_mid_i<="+through+" THEN 0 ELSE last_mid_i END,unread_count=CASE WHEN last_mid<="+through+" THEN 0 ELSE unread_count END").stepThis().dispose();
+                database.executeFast("DELETE FROM media_counts_v2").stepThis().dispose();
+                database.executeFast("DELETE FROM messages_holes").stepThis().dispose();
+                database.executeFast("DELETE FROM media_holes_v2").stepThis().dispose();
+                database.commitTransaction();transaction=false;
+            } catch(Exception failed) {error=failed;}
+            finally {if(transaction)try {database.executeFast("ROLLBACK").stepThis().dispose();}catch(Exception ignored) {}}
+            completed.accept(error);
+        });
+    }
     public void clearLocalDatabase() {
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;

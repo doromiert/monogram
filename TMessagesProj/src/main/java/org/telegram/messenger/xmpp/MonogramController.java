@@ -571,6 +571,7 @@ public final class MonogramController {
         roomTypingPeers.clear();
     }
     private void state(int value) {
+        MonogramCrashReports.connectionState(account,value);
         state = value;
         if (value != ConnectionsManager.ConnectionStateConnected) {
             presences.clear(); clearRoomTyping(); rosterLoads.clear();rosterAttempts.clear();roomMetadataDirty.clear();
@@ -613,6 +614,9 @@ public final class MonogramController {
         retrySeconds = Math.min(60, retrySeconds * 2);
     }
     private void connect(Account details, String password) throws Exception {
+        connect(details,password,null);
+    }
+    private void connect(Account details, String password,MonogramLoginAttempt attempt) throws Exception {
         verifiedRoomTrustMembers.clear();
         if (session != null) { MonogramCallService.unbind(account,session);session.close(); session = null; }
         joinedRooms.clear();pendingRecoveryRooms.clear();bookmarkSync=null;pendingProfileUsers.clear();visibleHistory.clear();calendarHistory.clear();calendarWindows.clear();
@@ -633,7 +637,7 @@ public final class MonogramController {
         if (UserConfig.getInstance(account).isClientActivated() && UserConfig.getInstance(account).getClientUserId() == self
                 && details.jid.toString().equals(accountJid())) publishProfile(self, epoch);
         final int modernDevice = modernStore.device(details.jid.toString());
-        Account proxiedDetails=MonogramCertificates.configure(new Account(details.jid.toString(),details.host,details.port,details.resource.toString(),MonogramProxy.current()));
+        Account proxiedDetails=MonogramCertificates.configure(new Account(details.jid.toString(),details.host,details.port,connectionResource(preferences),MonogramProxy.current()));
         XmppSession connecting = new XmppSession(proxiedDetails, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
                 new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
@@ -818,6 +822,7 @@ public final class MonogramController {
                         });
                     }
                     @Override public void disconnected(Exception error) {
+                        MonogramCrashReports.connectionFailure(account,error);
                         worker.execute(() -> {
                             if (sessionEpoch != epoch || session == null) return;
                             preferences.edit().putString("last-disconnect-"+details.jid,new java.util.Date()+" · "+(error==null ? "Connection closed" : com.negzero.monogram.xmpp.XmppRequestException.describe(error))).apply();
@@ -882,7 +887,16 @@ public final class MonogramController {
         connecting.chatStates.setEnabled(typingEnabled());
         connecting.recoverIncoming();
         connecting.readSync.setEnabled(preferences.getBoolean("private-read-enabled-"+details.jid,true));
-        connecting.connect();
+        try {
+            if(attempt!=null) {
+                attempt.abort(() -> connecting.connection().instantShutdown());
+                attempt.check();
+            }
+            connecting.connect();
+            if(attempt!=null)attempt.check();
+        } catch(Exception failed) {
+            MonogramCallService.unbind(account,connecting);connecting.close();throw failed;
+        }
         synchronized(displayedSettingsLock) {
             session = connecting;
             connecting.setDisplayedMarkersEnabled(displayedReady && readReceiptsEnabled());
@@ -1808,19 +1822,61 @@ public final class MonogramController {
             }));
         });
     }
-    public void login(String jid, String password, String host, int port, Consumer<Exception> result) {
-        long owner=accountEpoch;
+    public void clearLocalHistory(Consumer<Exception> completed) {
+        final long owner=accountEpoch;
         worker.execute(() -> {
+            if(owner!=accountEpoch) {AndroidUtilities.runOnUIThread(() -> completed.accept(new IllegalStateException("Account changed.")));return;}
+            final int through=store.historyWatermark();
+            MessagesStorage.getInstance(account).clearMonogramHistory(through,error -> worker.execute(() -> {
+                Exception failure=error;
+                try {
+                    if(owner!=accountEpoch)throw new IllegalStateException("Account changed.");
+                    if(failure==null) {
+                        cancelSearchLoads(archiveSync);
+                        ArchiveSync previous=archiveSync;
+                        archiveSync=previous==null ? null : new ArchiveSync(previous.session,previous.epoch,previous.jid);
+                        if(archiveSync!=null) {archiveSync.supported=previous.supported;archiveSync.directChecked=previous.directChecked;}
+                        store.clearHistory(through);visibleHistory.clear();calendarHistory.clear();calendarWindows.clear();
+                        java.util.ArrayList<Long> dialogs=new java.util.ArrayList<>(store.peers());dialogs.addAll(store.rooms());
+                        AndroidUtilities.runOnUIThread(() -> {
+                            if(owner!=accountEpoch)return;
+                            for(long peer:dialogs)NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.removeAllMessagesFromDialog,peer,false,null);
+                            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.dialogsNeedReload);
+                        });
+                    }
+                } catch(Exception failed) {failure=failed;}
+                final Exception result=failure;AndroidUtilities.runOnUIThread(() -> completed.accept(result));
+            }));
+        });
+    }
+    static synchronized String connectionResource(SharedPreferences preferences) {
+        String resource=preferences.getString("xmpp-resource",null);
+        if(resource==null || resource.isEmpty()) {
+            resource="Monogram-"+java.util.UUID.randomUUID();
+            if(!preferences.edit().putString("xmpp-resource",resource).commit())throw new IllegalStateException("Cannot save XMPP resource");
+        }
+        return resource;
+    }
+    public MonogramLoginAttempt login(String jid, String password, String host, int port, Consumer<Exception> result) {
+        MonogramLoginAttempt attempt=new MonogramLoginAttempt(result);
+        long owner=accountEpoch;
+        attempt.task(worker.submit(() -> {
             Exception error = null;boolean signingIn=false;
             try {
+                attempt.check();
                 Account details = new Account(jid, host, port, "Monogram");
                 if(owner!=accountEpoch || UserConfig.getInstance(account).isClientActivated()
                         || preferences.contains("jid") && !details.jid.toString().equals(accountJid()))
                     throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("This account slot is already configured or changed. Open sign-in again.");
-                signingIn=true;connect(details, password);
+                signingIn=true;connect(details, password,attempt);
                 if(owner!=accountEpoch) throw new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Please sign in again.");
-                if (!preferences.edit().putString("jid", details.jid.toString()).putString("host", host)
-                        .putInt("port", port).putString("credential", vault.encrypt(password)).commit()) throw new java.io.IOException("Cannot save account");
+                String sealed=vault.encrypt(password);
+                synchronized(attempt) {
+                    attempt.check();
+                    if (!preferences.edit().putString("jid", details.jid.toString()).putString("host", host)
+                            .putInt("port", port).putString("credential",sealed).commit()) throw new java.io.IOException("Cannot save account");
+                    attempt.complete(null);
+                }
                 syncOwnReads(true);
             } catch (Exception e) {
                 error = e;
@@ -1831,9 +1887,9 @@ public final class MonogramController {
                 }
             }
             AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-            final Exception completed = error;
-            AndroidUtilities.runOnUIThread(() -> result.accept(owner==accountEpoch ? completed : new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Please sign in again.")));
-        });
+            attempt.complete(owner==accountEpoch ? error : new com.negzero.monogram.xmpp.XmppInvitations.InvitationException("Account changed. Please sign in again."));
+        }));
+        return attempt;
     }
     public String sealRegistrationInvite(String uri) throws Exception {
         com.negzero.monogram.xmpp.RegistrationInvitation.parse(uri);return vault.encrypt(uri);

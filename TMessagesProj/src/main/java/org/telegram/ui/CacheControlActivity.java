@@ -136,6 +136,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
     private static final int VIEW_TYPE_SECTION_LOADING = 12;
     private static final int VIEW_TYPE_CLEAR_CACHE_BUTTON = 13;
     public static final int VIEW_TYPE_MAX_CACHE_SIZE = 14;
+    private static final int VIEW_TYPE_CLEAR_HISTORY = 15;
 
     public static final int KEEP_MEDIA_TYPE_USER = 0;
     public static final int KEEP_MEDIA_TYPE_GROUP = 1;
@@ -753,6 +754,10 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             sectionsEndRow = -1;
         }
 
+        if(org.telegram.messenger.UserConfig.getInstance(currentAccount).isClientActivated()) {
+            itemInners.add(new ItemInner(VIEW_TYPE_CLEAR_HISTORY,"Clear local conversation history",null));
+            itemInners.add(ItemInner.asInfo("Clears this account’s downloaded message history on this device. Accounts, encryption keys and server archives are kept. Some encrypted or expired messages and local annotations may not be recoverable."));
+        }
         itemInners.add(new ItemInner(VIEW_TYPE_HEADER, LocaleController.getString(R.string.AutoDeleteCachedMedia), null));
         itemInners.add(new ItemInner(VIEW_TYPE_KEEP_MEDIA_CELL, KEEP_MEDIA_TYPE_USER));
         itemInners.add(new ItemInner(VIEW_TYPE_KEEP_MEDIA_CELL, KEEP_MEDIA_TYPE_GROUP));
@@ -1319,6 +1324,16 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                 return;
             }
             ItemInner item = itemInners.get(position);
+            if(item.viewType==VIEW_TYPE_CLEAR_HISTORY) {
+                showDialog(new AlertDialog.Builder(getParentActivity()).setTitle("Clear local conversation history?")
+                    .setMessage("This clears downloaded messages and message-linked local annotations for the current account on this device. It does not delete your account, encryption keys, wallets or server archives. Current keys cannot guarantee recovery of old encrypted messages, and servers may not retain all history. Pending or scheduled messages must be sent or removed first.")
+                    .setPositiveButton("Clear local history",(dialog,which) -> org.telegram.messenger.xmpp.MonogramController.get(currentAccount).clearLocalHistory(error -> {
+                        if(getParentActivity()!=null)showDialog(new AlertDialog.Builder(getParentActivity()).setTitle(error==null ? "Local history cleared" : "Could not clear local history")
+                            .setMessage(error==null ? "Available server history can be downloaded when you open conversations again." : error instanceof IllegalStateException ? error.getMessage() : "Try again. Your account and keys were kept.")
+                            .setPositiveButton("OK",null).create());
+                    })).setNegativeButton("Cancel",null).create());
+                return;
+            }
 //            if (position == databaseRow) {
 //                clearDatabase();
 //            } else
@@ -2283,7 +2298,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == migrateOldFolderRow || (holder.getItemViewType() == VIEW_TYPE_STORAGE && (totalSize > 0) && !calculating) || holder.getItemViewType() == VIEW_TYPE_CHAT || holder.getItemViewType() == VIEW_TYPE_KEEP_MEDIA_CELL || holder.getItemViewType() == VIEW_TYPE_SECTION;
+            return holder.getItemViewType()==VIEW_TYPE_CLEAR_HISTORY || position == migrateOldFolderRow || (holder.getItemViewType() == VIEW_TYPE_STORAGE && (totalSize > 0) && !calculating) || holder.getItemViewType() == VIEW_TYPE_CHAT || holder.getItemViewType() == VIEW_TYPE_KEEP_MEDIA_CELL || holder.getItemViewType() == VIEW_TYPE_SECTION;
         }
 
         @Override
@@ -2296,6 +2311,7 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             View view;
             switch (viewType) {
                 case VIEW_TYPE_TEXT_SETTINGS:
+                case VIEW_TYPE_CLEAR_HISTORY:
                     view = new TextSettingsCell(mContext);
                     break;
                 case VIEW_TYPE_STORAGE:
@@ -2575,6 +2591,9 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                         textCell2.setTextAndValueAndColorfulIcon(LocaleController.getString(R.string.CacheStories), value, false, R.drawable.msg_filled_stories, 0xFFF45255, 0xFFDF3955, false);
                     }
                     textCell2.setSubtitle(subtitle);
+                    break;
+                case VIEW_TYPE_CLEAR_HISTORY:
+                    ((TextSettingsCell)holder.itemView).setTextAndValue("Clear local conversation history",null,false);
                     break;
                 case VIEW_TYPE_TEXT_SETTINGS:
                     TextSettingsCell textCell = (TextSettingsCell) holder.itemView;

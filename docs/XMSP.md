@@ -1,6 +1,6 @@
 # XMSP: portable XMPP Monogram Sticker Pack
 
-Status: version 1 backend implemented; UI/transport integration is being coordinated. This
+Status: version 1 codec and native pack import/export are implemented in `MonogramPacks`. This
 file describes an interchange format, not an existing XMPP standard. It supports
 sticker packs and custom emoji packs without a Telegram account or bot token.
 

@@ -308,6 +308,23 @@ public class MonogramRoomStoreTest {
             assertTrue(fallback.wireBody("Answer").startsWith("> No room ID\n"));
         } finally { context.deleteDatabase(file); }
     }
+    @Test public void roomRepliesAcceptOnlyUnambiguousAuthorMatchedMamAliases() throws Exception {
+        Context context=RuntimeEnvironment.getApplication();String file="room-mam-replies.db";context.deleteDatabase(file);
+        try(MonogramStore store=new MonogramStore(context,file)) {
+            long self=store.peer(own),dialog=store.room(room,"Alice");
+            int original=store.saveRoom(MessageFixture.roomText(room,"Bob","original-wire","room-stanza","Original","bob@example.org","bob",100000,false,null,null),self);
+            store.getWritableDatabase().execSQL("INSERT INTO message_ids(peer,outgoing,kind,value,message) VALUES(?,0,'mam',?,?)",new Object[]{dialog,"archive-uid",original});
+            ReplyReference ref=new ReplyReference(room+"/Bob","archive-uid").quoted("Original");
+            int reply=store.saveRoom(MessageFixture.roomText(room,"Charlie","reply-wire","reply-stanza",ref.wireBody("Answer"),"charlie@example.org","charlie",200000,false,ref,null),self);
+            assertEquals(original,store.getMessage(reply,self).reply_to.reply_to_msg_id);assertEquals("Answer",store.getMessage(reply,self).message);
+            ReplyReference wrong=new ReplyReference(room+"/Charlie","archive-uid");
+            int rejected=store.saveRoom(MessageFixture.roomText(room,"Charlie","wrong-wire","wrong-stanza","Keep fallback","charlie@example.org","charlie",200000,false,wrong,null),self);
+            assertNull(store.getMessage(rejected,self).reply_to);
+            int conflicting=store.saveRoom(MessageFixture.roomText(room,"Bob","conflict-wire","other-stanza","Other original","bob@example.org","bob",100000,false,null,null),self);
+            store.getWritableDatabase().execSQL("UPDATE message_ids SET value=? WHERE message=? AND kind='archive'",new Object[]{"archive-uid",conflicting});
+            assertNotEquals(original,conflicting);assertNull(store.getMessage(reply,self).reply_to);
+        } finally {context.deleteDatabase(file);}
+    }
     @Test public void correctionsBindStableAuthorsAndProtectEncryptedEditsAndReplyPreviews() throws Exception {
         Context context=RuntimeEnvironment.getApplication(); String file="room-corrections.db"; context.deleteDatabase(file);
         try(MonogramStore store=new MonogramStore(context,file)) {

@@ -222,7 +222,7 @@ public final class XmppSession implements AutoCloseable {
         XMPPTCPConnectionConfiguration.Builder config = XMPPTCPConnectionConfiguration.builder()
                 .setXmppDomain(account.jid.getDomain().toString()).setUsernameAndPassword(account.jid.getLocalpart(), password)
                 .setResource(account.resource).setSecurityMode(SecurityMode.required)
-                .setSendPresence(false).setCompressionEnabled(false).setPort(account.port);
+                .setSendPresence(false).setCompressionEnabled(false).setConnectTimeout(10000).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
         if(account.proxy!=null)config.setProxyInfo(account.proxy);
         if(account.certificateTrust!=null)config.setCustomX509TrustManager(account.certificateTrust);
@@ -984,7 +984,11 @@ public final class XmppSession implements AutoCloseable {
 
     public void connect() throws Exception {
         try {
-            connection.connect().login();
+            if(closed || Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("Connection cancelled");
+            connection.connect();
+            if(closed || Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("Connection cancelled");
+            connection.login();
+            if(closed || Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("Connection cancelled");
             long generation=lifecycle.get();
             enableFeatures();finishModernSetup(generation);started = true;
         } catch (Exception e) { close(); throw e; }

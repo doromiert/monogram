@@ -35,6 +35,8 @@ import org.telegram.ui.Components.*;
 
 public class MonogramLoginActivity extends BaseFragment {
     private boolean connecting, destroyed;
+    private org.telegram.messenger.xmpp.MonogramLoginAttempt loginAttempt;
+    private int loginGeneration;
     private XmppView xmppView;
     private FragmentFloatingButton floatingButton;
     private ImageView backButtonView;
@@ -135,9 +137,21 @@ public class MonogramLoginActivity extends BaseFragment {
         super.onTransitionAnimationEnd(isOpen, backward);
         if (isOpen && !connecting && xmppView != null) xmppView.fields[0].requestFocus();
     }
-    @Override public boolean onBackPressed(boolean invoked) { return !connecting && super.onBackPressed(invoked); }
+    @Override public boolean onBackPressed(boolean invoked) {
+        if(connecting && loginAttempt!=null) {
+            if(invoked)cancelLogin();
+            return false;
+        }
+        return !connecting && super.onBackPressed(invoked);
+    }
+    private void cancelLogin() {
+        loginGeneration++;
+        if(loginAttempt!=null) {loginAttempt.cancel();loginAttempt=null;}
+        setConnecting(false);
+    }
     @Override public void onFragmentDestroy() {
         destroyed = true;
+        cancelLogin();
         if (xmppView != null) xmppView.fields[1].setText("");
         super.onFragmentDestroy();
     }
@@ -310,7 +324,13 @@ public class MonogramLoginActivity extends BaseFragment {
             if(created) { invitation=null;accountCreated=true;if(!destroyed) applyMode(); }
             authenticated(error);
         });
-        else MonogramController.get(currentAccount).login(jid,password,host,port,this::authenticated);
+        else {
+            final int generation=++loginGeneration;
+            loginAttempt=MonogramController.get(currentAccount).login(jid,password,host,port,error -> {
+                if(destroyed || generation!=loginGeneration)return;
+                loginAttempt=null;authenticated(error);
+            });
+        }
     }
     private void authenticated(Exception error) {
         connecting = false;

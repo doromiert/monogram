@@ -199,6 +199,7 @@ public class ApplicationLoader extends Application {
             return;
         }
         applicationInited = true;
+        MonogramCrashReports.install(ApplicationLoader.applicationContext);
         NativeLoader.initNativeLibs(ApplicationLoader.applicationContext);
 
         try {

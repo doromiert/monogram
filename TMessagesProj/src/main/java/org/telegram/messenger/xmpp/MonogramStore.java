@@ -355,6 +355,21 @@ final class MonogramStore extends SQLiteOpenHelper {
             return c.getString(0);
         }
     }
+    synchronized int historyWatermark() {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT coalesce(max(id),0) FROM messages",null)) {c.moveToFirst();return c.getInt(0);}
+    }
+    synchronized void clearHistory(int through) {
+        SQLiteDatabase db=getWritableDatabase();String[] bound={Integer.toString(through)};
+        db.beginTransaction();
+        try {
+            for(String table:new String[]{"attachments","message_ids","message_senders","replies","corrections","applied_corrections","message_formatting","local_media_captions","local_forwarded_messages","call_events","saved_message_tags","room_senders","room_message_actors","message_receipts","room_readers","retraction_sources","reaction_sources"})
+                db.delete(table,"message<=?",bound);
+            db.execSQL("UPDATE message_retractions SET resolved=0 WHERE resolved<=?",new Object[]{through});
+            db.execSQL("UPDATE reaction_events SET message=0 WHERE message<=?",new Object[]{through});
+            db.delete("messages","id<=?",bound);db.delete("archive_state",null,null);
+            db.setTransactionSuccessful();
+        } finally {db.endTransaction();}
+    }
     synchronized void clear() {
         SQLiteDatabase db = getWritableDatabase();
         profileCache.clear();mentionNamesCache.clear();
@@ -1397,7 +1412,8 @@ final class MonogramStore extends SQLiteOpenHelper {
     private int resolveReply(long peer, long self, ReplyReference reply) {
         if(peer<0) {
             int found=0;
-            try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT i.message,a.occupant FROM message_ids i JOIN room_message_actors a ON a.message=i.message WHERE i.peer=? AND i.kind='archive' AND i.value=?",new String[]{Long.toString(peer),reply.id})) {
+            // Older clients can reference the room's MAM UID instead of its stanza-id.
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT i.message,a.occupant FROM message_ids i JOIN room_message_actors a ON a.message=i.message WHERE i.peer=? AND i.kind IN ('archive','mam') AND i.value=?",new String[]{Long.toString(peer),reply.id})) {
                 while(c.moveToNext()) {
                     if(reply.to!=null && !reply.to.equals(c.getString(1))) continue;
                     if(found!=0 && found!=c.getInt(0)) return 0; found=c.getInt(0);

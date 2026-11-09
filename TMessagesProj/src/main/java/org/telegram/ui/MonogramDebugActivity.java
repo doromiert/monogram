@@ -27,6 +27,7 @@ public final class MonogramDebugActivity extends MonogramSettingsActivity {
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
         items.add(UItem.asButton(10,R.drawable.msg_search,"Service discovery"));
         items.add(UItem.asButton(11,R.drawable.msg_settings,"Ad-hoc commands"));
+        items.add(UItem.asButton(12,R.drawable.msg_copy,"Last crash report").setEnabled(org.telegram.messenger.MonogramCrashReports.last(getContext())!=null));
         items.add(UItem.asShadow("Browse XMPP services, identities, features and nodes, or run commands offered to your account."));
         items.add(UItem.asHeader("Message diagnostics"));
         XmppDebugLog log=MonogramController.get(currentAccount).debugLog;
@@ -46,6 +47,11 @@ public final class MonogramDebugActivity extends MonogramSettingsActivity {
     }
     @Override protected void onClick(UItem item,View view,int position,float x,float y) {
         XmppDebugLog log=MonogramController.get(currentAccount).debugLog;
+        if(item.id==12) {
+            String report=org.telegram.messenger.MonogramCrashReports.last(getContext());
+            if(report!=null)showText(this,"Last crash report",report);
+            return;
+        }
         if(item.id==10 || item.id==11) {
             presentFragment(new MonogramServiceDiscoveryActivity(currentAccount,null,null,item.id==11));return;
         }
