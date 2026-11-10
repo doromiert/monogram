@@ -66,6 +66,8 @@ usual meaning. A hand-typed matching prefix is indistinguishable from a forwarde
 claim; the display must never imply verified authorship.
 
 The original date and label survive history/reload, retries and re-forwarding.
+An unknown original date (zero) remains unknown when re-forwarded, rather than
+being replaced by the latest forwarder's message date.
 Choosing Telegram's Hide Sender / send-as-copy action intentionally omits them.
 New forwards use the original full XMPP entity address whenever it is known,
 resolved from the stored sender identity rather than a roster name or local alias.
@@ -146,3 +148,17 @@ The convention is not a cryptographic signature, an XSF extension namespace or a
 way to forge the authenticated stanza sender. Its use of visible text deliberately
 keeps unsupported clients useful without duplicating an inner original alongside a
 plain-text fallback in a standalone XEP-0297 stanza.
+
+## Desktop interoperability verification
+
+Desktop now consumes the same compatibility profile for direct text/poll forwards,
+including Hide Sender, full-address details, unknown dates and historical prefixed
+polls. Its file/media forwarding remains unavailable pending fresh transfers.
+`GenerateForwardVectors` exports 42 expectations from the actual received-wire
+mobile model, including eight authenticated SCE vectors. XML is parsed before
+expectations are generated, so XML line-ending normalization is represented.
+The OMEMO 2 protected-content allowlist explicitly includes standalone XEP-0297;
+quoted inner actions/IDs still cannot become live outer actions/IDs.
+Native Android forwarding/poll checks and the mobile-core suite cover the date
+preservation and protected-quote fixes. Physical cross-client UI exchange remains
+unverified; codec comparison does not establish complete client parity.

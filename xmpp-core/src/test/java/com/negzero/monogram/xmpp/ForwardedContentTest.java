@@ -8,6 +8,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ForwardedContentTest {
+    @Test void standaloneForwardIsProtectedContentWithoutImportingItsActions()throws Exception {
+        Message message=PacketParserUtils.parseStanza("<message xmlns='jabber:client' from='bob@example.org/device' to='alice@example.org' type='chat' id='outer'><body>Annotation</body><forwarded xmlns='urn:xmpp:forward:0'><message xmlns='jabber:client' from='original@example.org/laptop' id='forged'><body>Quoted content</body><retract xmlns='urn:xmpp:message-retract:1' id='victim'/></message></forwarded></message>");
+        Message decoded=Omemo2Payload.content(message,Omemo2Payload.envelope(message,new java.security.SecureRandom()));
+        XmppMessage model=XmppMessage.modern(message,decoded,JidCreate.entityBareFrom("alice@example.org"),null,null);
+        ForwardedContent attribution=ForwardedContent.parse(model.body);assertNotNull(attribution);assertEquals("original@example.org/laptop",attribution.name);assertEquals("Annotation\n\nQuoted content",attribution.body);assertEquals(0,attribution.date);
+        assertNull(model.retraction);assertEquals("outer",model.ids.get("stanza"));assertEquals("bob@example.org/device",model.sender);
+    }
     @Test void canonicalUnicodeFormPreservesContentAndRejectsAmbiguousHeaders() {
         ForwardedContent original=ForwardedContent.of("Alice 🧑‍💻",1700000000,"hello\n\nworld");
         ForwardedContent parsed=ForwardedContent.parse(original.wireBody());

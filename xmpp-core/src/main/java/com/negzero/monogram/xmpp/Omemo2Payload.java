@@ -173,6 +173,7 @@ final class Omemo2Payload {
                 || name.equals("replace") && MessageCorrection.NAMESPACE.equals(namespace)
                 || name.equals("reactions") && MessageReactions.NAMESPACE.equals(namespace)
                 || name.equals("poll") && PollDefinition.NAMESPACE.equals(namespace)
+                || name.equals("forwarded") && "urn:xmpp:forward:0".equals(namespace)
                 || name.equals("reference") && MessageMentions.NAMESPACE.equals(namespace)
                 || name.equals("content") && MessageMarkup.CONTENT.equals(namespace)
                 || name.equals("markup") && MessageMarkup.NAMESPACE.equals(namespace)

@@ -13,6 +13,10 @@ import static org.junit.Assert.*;
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,
         shadows={MonogramMessageRegressionTest.Device.class,MonogramForwardingTest.Strings.class})
 public class MonogramForwardingTest {
+    @Test public void reforwardingUnknownOriginalDateKeepsItUnknownRatherThanUsingTheForwardersDate(){
+        TLRPC.Message source=new TLRPC.TL_message();source.message="body";source.date=1700000010;source.fwd_from=new TLRPC.TL_messageFwdHeader();source.fwd_from.from_name="Original label";source.fwd_from.date=0;
+        SendMessageParams copy=MonogramForwarding.copy(source,99,false,0,false);assertEquals("Original label",copy.params.get(MonogramForwarding.NAME));assertEquals("0",copy.params.get(MonogramForwarding.DATE));
+    }
     @org.robolectric.annotation.Implements(value=org.telegram.messenger.LocaleController.class,isInAndroidSdk=false)
     public static class Strings {
         @org.robolectric.annotation.Implementation public static String getString(int id) { return "Forwarded attachment"; }

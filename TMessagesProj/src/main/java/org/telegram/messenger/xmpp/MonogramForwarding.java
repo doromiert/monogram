@@ -22,7 +22,7 @@ public final class MonogramForwarding {
         if(address!=null) name=address;
         if(name==null || name.isEmpty()) name="Unknown sender";
         name=com.negzero.monogram.xmpp.ForwardedContent.label(name);
-        int date=source.fwd_from!=null && source.fwd_from.date>0 ? source.fwd_from.date : source.date;
+        int date=source.fwd_from!=null ? source.fwd_from.date : source.date;
         send.params.put(NAME,name);send.params.put(DATE,Integer.toString(Math.max(0,date)));
         return send;
     }
