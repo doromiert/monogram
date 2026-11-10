@@ -40,8 +40,12 @@ and PQ OMEMO MUCs. Legacy body-only encryption and classic OMEMO 2 room sending
 fail explicitly, with no plaintext or outer-metadata downgrade. Historical legacy
 body polls remain readable/votable and close using their historical format.
 
+Desktop now recognizes the historical canonical body cards, votes and closure,
+and forwards them as fresh structured polls. The old UTF-16 limits apply only to
+that compatibility reader; explicit XML blocks legacy guessing.
+
 A native mobile fallback toggle, physical cross-client UI acceptance, desktop
-historical body compatibility and desktop room transport remain open. See the
+historical forward attribution and desktop room transport remain open. See the
 [desktop implementation status](../../desktop/docs/STRUCTURED_POLLS.md).
 
 ## Verification

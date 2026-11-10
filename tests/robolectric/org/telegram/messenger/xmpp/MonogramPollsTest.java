@@ -14,6 +14,26 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramReactionsTest.Controller.class,MonogramPollsTest.App.class})
 public class MonogramPollsTest {
+    private static String repeatText(String text,int count){StringBuilder value=new StringBuilder();for(int i=0;i<count;i++)value.append(text);return value.toString();}
+    private static String b64(String text){return java.util.Base64.getEncoder().encodeToString(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+    @Test public void exportLegacyCodecVectorsForDesktop()throws Exception {
+        List<String> cases=new ArrayList<>();List<String> two=Arrays.asList("First\n\nwith detail","Second");
+        for(boolean multiple:new boolean[]{false,true})for(boolean closed:new boolean[]{false,true})cases.add(new MonogramPolls.Poll("Which *literal*?\n\n😀", "Description\n\n📝 literal",two,multiple,closed).body());
+        List<String> all=new ArrayList<>();for(int i=0;i<32;i++)all.add("Choice "+i);cases.add(new MonogramPolls.Poll("32 options",all,true,false).body());
+        cases.add(new MonogramPolls.Poll("\u00a0",Arrays.asList("\u00a0","Spaces"),false,false).body());
+        cases.add(new MonogramPolls.Poll(repeatText("😀",2048),Arrays.asList(repeatText("🦊",512),"B"),false,false).body());
+        String base=new MonogramPolls.Poll("Question",two,false,false).body();
+        for(String invalid:Arrays.asList(base+"\nextra",base.replace("2️⃣ ","1️⃣ "),base.replace("2️⃣ ","2⃣ "),base.replace("  with detail"," with detail"),base.replace("Choose one.","Choose any."),base.replace("Question",repeatText("😀",2049)),base.replace("Second",repeatText("🦊",513)),base.replace("Second","\t"),base.replace("Question","\rQuestion"),base.replace("Question","\u0085Question"),base.replace("Question"," ")))cases.add(invalid);
+        List<String> large=new ArrayList<>();for(int i=0;i<32;i++)large.add(repeatText("x",1024));String question=repeatText("q",4096);
+        String withoutDescription=new MonogramPolls.Poll(question,large,false,false).body();int descriptionLength=40000-withoutDescription.length()-5;
+        assertTrue(descriptionLength>0&&descriptionLength<=4096);String maximum=new MonogramPolls.Poll(question,repeatText("d",descriptionLength),large,false,false).body();assertEquals(40000,maximum.length());cases.add(maximum);cases.add(maximum+"\nVoting closed.");
+        org.json.JSONArray vectors=new org.json.JSONArray();int valid=0,invalid=0;
+        for(String body:cases){MonogramPolls.Poll parsed=MonogramPolls.parse(body);org.json.JSONObject value=new org.json.JSONObject().put("body",b64(body)).put("valid",parsed!=null);
+            if(parsed!=null){valid++;value.put("question",b64(parsed.question)).put("description",b64(parsed.description)).put("multiple",parsed.multiple).put("closed",parsed.closed);org.json.JSONArray options=new org.json.JSONArray();for(int i=0;i<parsed.answers.size();i++)options.put(new org.json.JSONArray().put(b64(parsed.emojis.get(i))).put(b64(parsed.answers.get(i))));value.put("options",options);String closed=new MonogramPolls.Poll(parsed.question,parsed.description,parsed.answers,parsed.multiple,true).body();boolean canClose=MonogramPolls.parse(closed)!=null;value.put("can_close",canClose);if(canClose)value.put("closed_body",b64(closed));}else invalid++;
+            vectors.put(value);
+        }
+        assertTrue(valid>=8);assertTrue(invalid>=10);String output=System.getProperty("monogram.legacy.poll.vectors");if(output!=null)java.nio.file.Files.write(java.nio.file.Paths.get(output),(vectors.toString(2)+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
     @org.robolectric.annotation.Implements(value=ApplicationLoader.class,isInAndroidSdk=false)
     public static class App { @org.robolectric.annotation.Implementation public static boolean isAndroidTestEnvironment(){return false;} }
     @Test public void structuredOutboxRoundTripPreservesDelimitersAndCustomMapping()throws Exception {
