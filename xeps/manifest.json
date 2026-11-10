@@ -1,0 +1,98 @@
+{
+  "audited_commit": "4736f7eddb423192e5d68435879f0b0a88371168",
+  "implementation_version": "0.2.195",
+  "draft_date": "2026-11-10",
+  "drafts": [
+    {
+      "slug": "reaction-polls",
+      "title": "Readable Reaction Polls",
+      "path": "xep-reaction-polls.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "partial-spoilers",
+      "title": "Partial Text Spoilers in Message Markup",
+      "path": "xep-partial-spoilers.xml",
+      "type": "Standards Track",
+      "deferred": false
+    },
+    {
+      "slug": "forward-attribution",
+      "title": "Readable Forward Attribution Compatibility Profile",
+      "path": "xep-forward-attribution.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "markdown-articles",
+      "title": "Bounded Markdown Articles in Chat Messages",
+      "path": "xep-markdown-articles.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "self-contained-inline-emoji",
+      "title": "Self-contained Inline Emoji using XHTML-IM and Bits of Binary",
+      "path": "xep-self-contained-inline-emoji.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "portable-media-packs",
+      "title": "Portable Sticker and Emoji Pack Snapshots",
+      "path": "xep-portable-media-packs.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "avatar-suggestions",
+      "title": "Profile Photo Suggestions as Ordinary Media Messages",
+      "path": "xep-avatar-suggestions.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "persistent-profile-media",
+      "title": "Persistent Profile Media on Personal Eventing PubSub",
+      "path": "xep-persistent-profile-media.xml",
+      "type": "Standards Track",
+      "deferred": false
+    },
+    {
+      "slug": "monero-payment-messages",
+      "title": "Monero Payment Requests and Broadcast Notices in Chat",
+      "path": "xep-monero-payment-messages.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "monero-bearer-wallet-links",
+      "title": "Independent Monero Wallet Bearer Links",
+      "path": "xep-monero-bearer-wallet-links.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "legacy-presentation-compatibility",
+      "title": "Presentation Hints around Body-only Encrypted Messages",
+      "path": "xep-legacy-presentation-compatibility.xml",
+      "type": "Informational",
+      "deferred": false
+    },
+    {
+      "slug": "monocles-pq-profile",
+      "title": "Monocles Experimental PQ Messaging Compatibility Profile",
+      "path": "deferred/xep-monocles-pq-profile.xml",
+      "type": "Informational",
+      "deferred": true
+    },
+    {
+      "slug": "checklist-codec",
+      "title": "Experimental Checklist Envelope and Codec Record",
+      "path": "deferred/xep-checklist-codec.xml",
+      "type": "Informational",
+      "deferred": true
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Independent Monero Wallet Bearer Links</title><abstract>An informational compatibility profile for passing recovery material for a separately funded claim wallet inside protected chat content.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0384</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Scope" anchor="s-scope"><p>A claim link grants knowledge of an independent wallet mnemonic. It is not a non-transferable invoice, server escrow, revocable payment or proof of funding. The main wallet seed is never included. This high-risk compatibility format is documented separately from public payment requests; publication is not an independent security audit or endorsement of embedding recovery material in chat.</p>
+</section1>
+
+<section1 topic="Canonical URI Grammar" anchor="s-canonical-uri-grammar"><example caption="Non-executable shape; deliberately omit any real or valid mnemonic"><![CDATA[monogram-xmr:claim?v=1&network=MAINNET&height=RESTORE-HEIGHT&address=INDEPENDENT-ADDRESS&amount=XMR#BASE64URL-OF-INDEPENDENT-MNEMONIC]]></example>
+<p>The URI is at most 2048 UTF-16 units, begins exactly monogram-xmr:claim?, and contains exactly one fragment separator. Query fields are exactly v,network,height,address,amount, each once, with v=1. Network is MAINNET,STAGENET or TESTNET. Height is canonical decimal0 or a nonzero number without leading zeroes, bounded to 100000000. The implementation height parser additionally caps nonzero text at9 digits. Address/amount use the payment profile and selected network; amount is required, description/name are forbidden.</p>
+<p>The fragment is canonical unpadded Base64url of an ASCII English legacy25-word mnemonic:100–400 characters, lowercase a–z words separated by exactly 24 single spaces, with no leading/trailing space. The SDK must verify the real mnemonic checksum and restored wallet address/network; syntax validation alone is insufficient. Compare decoded address with the link destination before accepting it. The structural constructor permits equivalent query ordering on input; new senders emit the field order shown above.</p>
+</section1>
+
+<section1 topic="Message Body and External Wallet Fallback" anchor="s-message-body-and-external-wallet-fallback"><p>Start with XMR claim link — anyone with this link can claim the funds, LF, and the canonical URI. An optional note follows two LFs and is at most 960 UTF-8 bytes. A compatibility section begins exactly two LFs then Claim with another wallet: and LF; reject a note containing that delimiter. The section, when present, must match canonical claim data exactly before a native card hides it.</p>
+<p>On MAINNET the section includes monero-wallet:?seed= with the 25 words joined by plus signs, then &amp;height= and the height. It then explains restoration of a separate Legacy25-word wallet, includes the same recovery phrase, Network: and Restore height: lines, and instructs the holder to sync and transfer available funds. Other networks omit the mainnet restore URI and use explicit manual restore instructions. Both the URI and readable phrase are equally sensitive. The exact deployed compatibility text is frozen in the source annex; older claim bodies without that section remain accepted.</p>
+</section1>
+
+<section1 topic="Creation, Deposit and Errors" anchor="s-creation--deposit-and-errors"><p>Create and fund a separate wallet after fee review. Keep accepted versus uncertain broadcasts distinct; do not repeat funding on uncertain delivery. Import a received claim only into a separate wallet session after explicit approval, never over the user existing wallet. Scan and verify balances, outputs, fees and confirmation unlocks independently. Sender and receiver holding the secret can both sweep remaining funds; the first accepted spend wins. Deleting a main local wallet does not revoke the independent bearer secret. A sender deposit-back action is a sweep, not a cancellation or revocation. A local empty balance is not proof another person claimed the link.</p>
+</section1>
+
+<section1 topic="Transport and Discovery" anchor="s-transport-and-discovery"><p>No claim-specific XMPP discovery feature or hosted claim server is used. All bearer representations MUST travel inside approved end-to-end encrypted content; never downgrade to a plaintext fallback, public link preview, notification, log, crash dump or external HTTPS URL. Non-supporting clients receive protected readable restore instructions and may use a compatible external wallet. No automatic navigation, import, signing or spending follows message receipt. Unknown versions, altered fallback data, unsupported networks or failed wallet validation must not create a claim action.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Possession of the fragment or fallback phrase permits spending and copying. This includes senders, recipients, compromised endpoints and anyone receiving a forward/export. No expiry or ACL can revoke an already disclosed seed. Validate network/address/seed with the wallet SDK, require explicit fee and destination approval, preserve uncertain-broadcast state and never claim the chat sender owns or exclusively reserves the funds.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Chat archives, backups, screenshots, clipboard history, OS link handlers and external wallet imports can expose the bearer secret. Do not log, preview, automatically forward, index publicly or send it to a server for validation. URI fragments avoid HTTP transmission only in ordinary web handling; these links are not HTTPS and the fragment is still part of the XMPP message. No live mnemonic or funded wallet is included in this draft.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+<p>Deployed identifier: monogram-xmr:claim (private URI convention). This is a private compatibility identifier, not an XSF registration.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/MONERO.md">docs/protocols/MONERO.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/MoneroClaim.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/MoneroClaim.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramXmrMessage.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramXmrMessage.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0384.html">XEP-0384</link></p>
+</section1>
+</xep>

@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Bounded Markdown Articles in Chat Messages</title><abstract>An informational Markdown rendering and fallback profile carried by message bodies and XEP-0481 content hints.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0393</spec><spec>XEP-0394</spec><spec>XEP-0481</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Protocol and Existing Work" anchor="s-protocol-and-existing-work"><p>Send readable Markdown as the ordinary body with the empty content element in urn:xmpp:content and type=text/markdown, as defined by XEP-0481. No serialized native article object, remote native file ID or private article namespace is transmitted. The content hint does not define a complete Markdown dialect; this document records the deployed bounded profile.</p>
+<example caption="Table"><![CDATA[<message xmlns='jabber:client' type='chat'>
+  <body>| Item | Count |
+| --- | --- |
+| Apples | 3 |</body>
+  <content xmlns='urn:xmpp:content' type='text/markdown'/>
+</message>]]></example>
+</section1>
+
+<section1 topic="Rendering Profile" anchor="s-rendering-profile"><ul>
+<li>ATX headings1–6, paragraphs, fenced/inline code, explicit links, block quotes, ordered/unordered lists, task-like textual checkboxes, thematic separators, pipe tables and inline/display math are supported. Checkboxes are static text; no collaborative state is implied.</li>
+
+<li>Bold, italic and strikethrough use Markdown. Underline/highlight/subscript/superscript/spoilers use the literal inline forms &lt;u&gt;, &lt;mark&gt;, &lt;sub&gt;, &lt;sup&gt; and &lt;tg-spoiler&gt;; table-cell line breaks use &lt;br&gt;. Only a parser allowlist may interpret them. Arbitrary HTML, scripts, remote widgets and CSS MUST NOT execute.</li>
+
+<li>Tables need a header/separator; a converter can insert an empty header when all native rows are ordinary data. Merged cells, decorative alignment and native layout are not preserved. Expanded details become a bold title and text. Embedded media/widgets must be sent separately or rejected, never silently lost.</li>
+</ul><p>The profile is not a general claim of CommonMark or GFM conformance. In chat inference, each quoted line must itself start with &gt; followed by ASCII space. &gt;greentext and unmarked continuation lines stay unquoted. Standalone Markdown documents keep their own CommonMark parsing policy. Formatting delimiters inside recognized URLs must not replace link semantics.</p>
+</section1>
+
+<section1 topic="Bounds, Precedence and Corrections" anchor="s-bounds--precedence-and-corrections"><p>Incoming chat articles are bounded to 32768 UTF-16 units; outbound content is also limited to 32768 UTF-8 bytes. Preflight the AST before recursive rendering: maximum depth24 and maximum 2048 nodes. Retain original text on unsupported, invalid or excessive input. Explicit XMPP formatting and body styling take precedence over inferred Markdown; spoiler ranges prevent rich projection that could reveal hidden text. Native inference without the hint is optional heuristic presentation, not a new content-negotiation signal. Normal author-bound corrections must re-run the same parsing and preserve the original source text for edits.</p>
+</section1>
+
+<section1 topic="Discovery and Protected Content" anchor="s-discovery-and-protected-content"><p>Use XEP-0481 support and text fallback; there is no deployed feature advertising this exact dialect. Include both body and hint in authenticated encrypted content where possible. On body-only legacy OMEMO, the empty public hint may only select presentation of the decrypted body; it may not supply an alternative body. Removal or modification can affect rendering. Captions and whole-message spoilers are not automatically opted into inferred article rendering.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Treat Markdown and links as untrusted content. Never execute HTML/scripts, auto-activate payment links, fetch arbitrary embedded resources or deserialize native article objects. Bound both parsing and rendering complexity. Preserve safe links and spoiler behavior when adapting offsets or simplifying unsupported markup.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>The conversation transport determines confidentiality. Plaintext, servers, archives and forwarded copies may expose the content. Application display controls do not encrypt data. Protect all sensitive content inside an authenticated end-to-end encrypted payload and do not derive private authority from unauthenticated outer extensions.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/ARTICLE_FORMATTING.md">docs/ARTICLE_FORMATTING.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramArticles.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramArticles.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/ui/Components/MarkdownParser.java">TMessagesProj/src/main/java/org/telegram/ui/Components/MarkdownParser.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0393.html">XEP-0393</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0394.html">XEP-0394</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0481.html">XEP-0481</link></p>
+</section1>
+</xep>

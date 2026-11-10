@@ -1,0 +1,92 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Monocles Experimental PQ Messaging Compatibility Profile</title><abstract>A source-pinned informational record of the upstream Monocles experimental PQ profile and its Monogram direct/group integration.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0060</spec><spec>XEP-0163</spec><spec>XEP-0384</spec><spec>XEP-0420</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Deferred research draft. Do not submit this as a complete interoperable standard until its listed blockers and upstream coordination requirements are resolved.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Upstream Ownership and Publication Blockers" anchor="s-upstream-ownership-and-publication-blockers"><p>This is not a Monogram-designed cryptosystem, standard XEP-0384 OMEMO2, or a new assigned namespace. The upstream profile uses urn:monocles:omemo-pq:1. Coordinate a cryptographic proposal with the Monocles authors and obtain independent review before submission. This draft records the adapter and public wire shape; the pinned upstream primitive implementations are normative dependencies for exact transcript, PQXDH and ratchet behavior, not algorithms that can be safely reconstructed from this overview. Upstream already maintains docs/proto-xep-omemo-pqxdh.md v0.0.13 at the pinned revision. Extend or review that work with its authors instead of submitting this implementation record as a competing cryptographic invention. A self-contained reviewed cryptographic specification and complete independent vectors remain publication blockers.</p>
+<p>Pinned Monocles Chat codec revision 49c0e78045532a78033ffd448ca4316859267bf2 and native fork10861bff671740174f4e99f7e30dc492fcf6ec8b, libsignal0.94.1, define this compatibility target. Latest fetched upstream crypto was compared at f4dee2517cfc3002cc6e3f8078baf0d489b307a8. Upstream code and adaptations retain their AGPL attribution; documenting a profile does not transfer its authorship or license.</p>
+</section1>
+
+<section1 topic="PEP Devices and Bundles" anchor="s-pep-devices-and-bundles"><p>Publish devices at NS:devices, item current, as devices/device children with positive signed-32-bit decimal id attributes. Publish each bundle at NS:bundles, item equal to that device ID. Nodes use open access, persistent items and sufficient retention; update only this installation own public bundle and merge the own ID without deleting other devices. Public discovery does not make a device trusted. Maintain separate identities, stores, ratchets and trust decisions from classical/legacy OMEMO.</p>
+<example caption="Public structural shapes; cryptographic values intentionally placeholders"><![CDATA[<devices xmlns='urn:monocles:omemo-pq:1'><device id='123'/></devices>
+
+<bundle xmlns='urn:monocles:omemo-pq:1' rev='4'>
+ <ik>CLASSIC-PUBLIC-KEY</ik><spk id='1'>SIGNED-PUBLIC-KEY</spk><spks>CLASSIC-SIGNATURE</spks>
+ <pq-ik type='ML-DSA-87'>PQ-PUBLIC-KEY</pq-ik><pq-sig>PQ-SIGNATURE</pq-sig><ik-sig>CLASSIC-BINDING-SIGNATURE</ik-sig>
+ <prekeys><pk id='2'>ONE-TIME-EC-KEY</pk></prekeys>
+ <kem-spk id='3'>LAST-RESORT-KEM-KEY</kem-spk><kem-spks>CLASSIC-SIGNATURE</kem-spks>
+ <kem-prekeys><kem-pk id='4' sig='CLASSIC-SIGNATURE'>ONE-TIME-KEM-KEY</kem-pk></kem-prekeys>
+</bundle>]]></example>
+<p>The v4 bundle authenticates both identities and the signed/KEM manifest. The rev attribute is only a diagnostic hint. Classic raw public keys are32 bytes, classic signatures64 bytes, ML-DSA-87 public identity 2592 bytes and signature 4627 bytes. Serialized ML-KEM-1024 public keys are1569 bytes with the required type prefix. Require an EC one-time key, validate every signature and KEM manifest binding, reject duplicate/invalid IDs and key encodings. Bound each prekey list to 100 and a bundle to 512 KiB serialized characters. Hybrid fingerprint uses SHA3-512 over the upstream domain label and length-prefixed serialized identities; the exact upstream byte encodings and transcript definitions must be followed.</p>
+</section1>
+
+<section1 topic="Protected Message Shape" anchor="s-protected-message-shape"><example caption="Structural outline; no valid ciphertext or key material"><![CDATA[<encrypted xmlns='urn:monocles:omemo-pq:1'>
+ <header sid='123'>
+  <pq-auth><pq-ik type='ML-DSA-87'>PUBLIC-KEY</pq-ik><pq-sig>SIGNATURE</pq-sig><ik-sig>SIGNATURE</ik-sig></pq-auth>
+  <keys jid='juliet@example.org'><key rid='456' kex='true'>WRAPPED-CONTENT-KEY</key></keys>
+ </header>
+
+ <payload>AUTHENTICATED-CIPHERTEXT</payload><commit>KEY-COMMITMENT</commit>
+</encrypted>]]></example>
+<p>Wrap one random32-byte content key separately for each target device using the pinned hybrid session protocol. Group key elements by bare account JID. Initial prekey messages carry hybrid authentication of the complete key-exchange recipient transcript; do not treat classical identity approval as PQ approval. Duplicate recipient addresses and this sending device as its own target are invalid. Bound complete wrapped targets to 500, each account group to 128, wrapped key bytes to 65536 and serialized encrypted XML to 4 MiB. Control/key-transport messages may omit payload and must then omit commit.</p>
+</section1>
+
+<section1 topic="Payload and Routing Binding" anchor="s-payload-and-routing-binding"><p>Payload v3 uses the upstream KMAC256 derivation to produce44 bytes (AES-256 key plus12-byte GCM nonce) and a 64-byte commitment from distinct domain labels monocles:omemo2:payload:v3 and monocles:omemo2:key-commitment:v3. The binding is ASCII OMEMO2, NUL, UTF-8 bare sender, NUL, UTF-8 destination, NUL, then big-endian sender-device int32. Use that binding as AES-GCM additional authenticated data with a 128-bit tag. The exact pinned implementation defines envelope padding; do not substitute generic Signal/OMEMO2 message formats. Clear SCE content is bounded to 256 KiB and padded with upstream Padme buckets. Authenticate from/to/time and allowlisted content before delivery.</p>
+</section1>
+
+<section1 topic="Trust, MUCs and Durable State" anchor="s-trust--mucs-and-durable-state"><p>The same per-account device sessions and exact hybrid pins serve DMs and members-only, non-anonymous MUCs. Capture the server-authorized real sender and room destination before asynchronous work; MAM uses the historical real-JID binding, never a current nickname lookup. Validate membership before encryption and again before broadcast. Journal decoded content, room context and ratchet mutation atomically; do not decrypt replayed ciphertext twice after durable acceptance. Explicit block removes future encryption permission; an orphan bundle can use only an existing exact unchanged trusted session, and every recipient still needs a usable PQ device. Valid unreviewed keys, malformed bundles, denials and unavailable required recipients cannot cause downgrade. MIX integration is not supported.</p>
+</section1>
+
+<section1 topic="Evidence and Remaining Work" anchor="s-evidence-and-remaining-work"><p>The implementation tests compare both directions with the unmodified pinned upstream codec and exercise native signatures/commitments, room binding, replay, rollback, archive approval and missing-bundle behavior on disposable TLS/PEP/MUC accounts. This does not test an entire Monocles Android installation or independently audit the cryptography. Before proposing standards-track cryptography, publish full byte-level transcript/primitive references, normative schemas, reproducible public vectors and a reviewed version-negotiation/migration design with upstream authors.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Post-quantum security is not established by a UI label, public-key length or passing roundtrip test. Require the pinned hybrid authentication and ratchet primitives, exact hybrid trust, authenticated routing and atomic state. Never migrate, silently regenerate or overwrite classical/private identities on parse/connect failure. Do not deploy a new cryptosystem from this informational outline alone.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Device and bundle PEP nodes are intentionally public discovery material; private keys and ratchet records are local. Envelope sender/recipient/device metadata and traffic remain visible. Encrypt private extension content inside SCE. The profile neither hides group membership nor provides automatic trust for another installation of the same account.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+<p>Deployed identifier: urn:monocles:omemo-pq:1. This is a private compatibility identifier, not an XSF registration.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/pq-omemo.md">docs/pq-omemo.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoBundle.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoBundle.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoPayload.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoPayload.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoMessage.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoMessage.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoJournal.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/PqOmemoJournal.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0060.html">XEP-0060</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0163.html">XEP-0163</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0384.html">XEP-0384</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0420.html">XEP-0420</link></p>
+</section1>
+</xep>

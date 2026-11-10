@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Self-contained Inline Emoji using XHTML-IM and Bits of Binary</title><abstract>A restricted, text-equivalent XHTML-IM image profile with same-message hash-verified assets.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0071</spec><spec>XEP-0231</spec><spec>XEP-0514</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Relationship to Existing Protocols" anchor="s-relationship-to-existing-protocols"><p>This is a compatibility profile of XEP-0071 and XEP-0231, not a new emoji namespace. XEP-0514 already proposes emoji markup using XEP-0394 and file/media sharing; this representation is different and MUST NOT be advertised as XEP-0514 support. A standards submission should compare migration to that proposal before creating a competing format.</p>
+</section1>
+
+<section1 topic="Message Representation" anchor="s-message-representation"><p>The ordinary body contains the complete readable fallback. One XHTML-IM html contains one XHTML body; ordered allowlisted p/span text and every img alt reconstruct the ordinary body exactly. An image src is a cid reference whose same-message BoB data uses standard Base64 and a MIME type. The CID is sha-256+ followed by 64 lowercase hex SHA-256 digits of the decoded bytes and @bob.xmpp.org. XML attribute entity escaping does not change the reconstructed text.</p>
+<example caption="Structural illustration; HASH and BASE64 are not a valid asset"><![CDATA[<message xmlns='jabber:client' type='chat'>
+  <body>Hello :wave:</body>
+  <html xmlns='http://jabber.org/protocol/xhtml-im'><body xmlns='http://www.w3.org/1999/xhtml'><p><span><span>Hello </span><img src='cid:sha-256+HASH@bob.xmpp.org' alt=':wave:' width='32' height='32'/></span></p>
+</body></html>
+  <data xmlns='urn:xmpp:bob' cid='sha-256+HASH@bob.xmpp.org' type='image/webp' max-age='31536000'>BASE64</data>
+</message>]]></example>
+</section1>
+
+<section1 topic="Validation and Limits" anchor="s-validation-and-limits"><ul>
+<li>Require exact equality of fallback text and original body before replacing any range. Interpret protocol ranges as Unicode code points, converting to native UTF-16 only at the display boundary.</li>
+
+<li>At most64 non-overlapping replacements, each covering1–64 code points without ISO controls; at most 16 unique assets and131072 total decoded asset bytes. The body is bounded to 131072 UTF-16 units and65536 code points.</li>
+
+<li>XML traversal depth is at most 8 and traversed content nodes at most 256. Reject unknown element/attribute shapes, duplicate/conflicting assets, MIME conflicts, missing same-message data, hash mismatches and text mismatches.</li>
+
+<li>Allowlisted assets are image/gif, image/png, image/webp, application/x-tgsticker and video/webm. Declared width/height are hints, not codec validation. Bound native decoding independently; do not trust a filename, MIME or valid hash to make media safe.</li>
+</ul></section1>
+
+<section1 topic="Discovery, Errors and Compatibility" anchor="s-discovery--errors-and-compatibility"><p>XHTML-IM and BoB disco support alone do not promise this stricter profile. No private emoji discovery feature is deployed. A receiver can show the fallback whenever a shape, algorithm or asset is unsupported. Do not issue a BoB IQ lookup, HTTP image fetch, arbitrary HTML/CSS interpretation or script execution to repair an unsupported message. Body-only legacy OMEMO outer XHTML/BoB is ignored; authenticated modern/PQ content may carry both text and assets. Native custom-emoji document IDs remain account-local.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Always expose meaningful alt/fallback text. Provide animation reduction and static fallback. Do not replace a word with an inaccessible local asset identifier.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Hash verification binds bytes, not safe decoder behavior or author identity. The fallback must reconstruct exactly, preventing an alternate visible message hidden behind emoji. No network fetch may be triggered by this profile. Ignore all such unprotected outer data on legacy encrypted messages.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>The conversation transport determines confidentiality. Plaintext, servers, archives and forwarded copies may expose the content. Application display controls do not encrypt data. Protect all sensitive content inside an authenticated end-to-end encrypted payload and do not derive private authority from unauthenticated outer extensions.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/INLINE_EMOJI.md">docs/protocols/INLINE_EMOJI.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/InlineEmoji.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/InlineEmoji.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramEmojis.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramEmojis.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0071.html">XEP-0071</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0231.html">XEP-0231</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0514.html">XEP-0514</link></p>
+</section1>
+</xep>

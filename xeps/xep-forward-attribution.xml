@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Readable Forward Attribution Compatibility Profile</title><abstract>A canonical body prefix for unverified user-forward attribution and its interaction with standard stanza forwarding.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0297</spec><spec>XEP-0394</spec><spec>XEP-0454</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Scope" anchor="s-scope"><p>XEP-0297 defines structured forwarding. This informational compatibility profile records the readable body form used for outgoing user forwards when structured support is not selected. It is not message provenance, a signature, or a forwarding envelope for carbon/archive processing.</p>
+</section1>
+
+<section1 topic="Canonical Grammar" anchor="s-canonical-grammar"><example caption="Forwarded body"><![CDATA[↪ Forwarded from alice@example.org · 2026-10-23T09:00:00Z
+
+Hello]]></example>
+<p>The exact prefix is U+21AA, ASCII space, Forwarded from , a sender label, ASCII space U+00B7 ASCII space, a strict UTC yyyy-MM-ddTHH:mm:ssZ timestamp, and two LFs. The rest is the payload and may be empty. Labels are either a valid full entity JID retained without truncation (at most 3071 UTF-16 units), or a trimmed display label of at most 128 code points. Reject control and bidi override/isolate characters. The prefix terminator must occur within4096 UTF-16 units. Require a nonnegative signed-32-bit Unix-seconds timestamp and exact parse/serialize equality, including timestamp padding and label normalization. The marker can be hand typed and is therefore always a sender claim.</p>
+</section1>
+
+<section1 topic="Receiver and Transport Rules" anchor="s-receiver-and-transport-rules"><p>Show the claimed source separately from the authenticated outer sender. Body and formatting remain bound to the outer conversation. Removing the prefix for display requires shifting formatting offsets in their own coordinate system: XMPP ranges use code points; native Android entities use UTF-16. Re-forwarding preserves a retained original claim rather than upgrading it to verified authorship. An explicit send-as-copy action omits the prefix.</p>
+</section1>
+
+<section1 topic="Media Compatibility" anchor="s-media-compatibility"><p>Re-upload forwarded media to the new destination with fresh encryption material; do not reuse an original secret-bearing URL. For ordinary/modern file sharing the prefix belongs in the caption. A legacy encrypted media body must remain the URI-only XEP-0454 form, so its attribution and caption are a separate ordinary encrypted message. No association stronger than the actual protected message references is inferred.</p>
+</section1>
+
+<section1 topic="Structured Forwarding and Discovery" anchor="s-structured-forwarding-and-discovery"><p>Standard XEP-0297 can be advertised and received independently. This compatibility prefix has no additional discovery feature, and the deployed sender does not yet select structured outgoing forwards by capability discovery. For received standalone XEP-0297, accept a single inner message only as quoted content: never process its IDs, receipts, reactions, chat states or retractions as fresh authoritative stanzas. Preserve an outer annotation, reject nested/non-message forwarding and leave unknown timestamps unknown rather than inventing current time.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>The forwarder can forge the label, date and payload. Clients MUST distinguish this from verified original authorship and MUST NOT run an inner stanza through the normal event/identity pipeline. Do not infer a private real MUC JID from a nickname or disclose it through attribution.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Forwarding is a new disclosure to a new audience. Full-address labels can expose an identity even when the original conversation used an alias. Explicit user intent is required to disclose attribution and media; encrypt any new copy according to the destination policy.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/FORWARDING.md">docs/protocols/FORWARDING.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/ForwardedContent.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/ForwardedContent.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0297.html">XEP-0297</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0394.html">XEP-0394</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0454.html">XEP-0454</link></p>
+</section1>
+</xep>

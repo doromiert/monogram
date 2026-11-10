@@ -1,0 +1,72 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Persistent Profile Media on Personal Eventing PubSub</title><abstract>A persistent profile-media node using Atom social-feed entries without story expiry.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Standards Track</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0060</spec><spec>XEP-0163</spec><spec>XEP-0472</spec><spec>XEP-0501</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Relationship to Existing Protocols" anchor="s-relationship-to-existing-protocols"><p>XEP-0472 supplies Atom social-feed entries and XEP-0501 supplies expiring stories. This proposal records a separate persistent profile node, urn:monogram:profile-posts:0. Standard stories remain on their existing stories node and keep their normal expiration; this node does not repurpose or reconfigure another client gallery or microblog node.</p>
+</section1>
+
+<section1 topic="Publishing and Representation" anchor="s-publishing-and-representation"><p>Publish to the authenticated account own PEP node. Use the original story item ID and publication time when saving a story. The item contains an Atom entry with id=urn:uuid:ITEM-ID, title, published and updated UTC timestamps, an author uri=xmpp:OWNER-BARE-JID, and exactly one HTTPS enclosure link with type and title. New authored IDs should be UUIDs; the deployed reader accepts nonempty item IDs up to 1024 UTF-16 units and uses the authenticated PEP item context as the retrieval key.</p>
+<example caption="Persistent entry payload"><![CDATA[<item xmlns='http://jabber.org/protocol/pubsub' id='123e4567-e89b-42d3-a456-426614174000'>
+ <entry xmlns='http://www.w3.org/2005/Atom'>
+  <id>urn:uuid:123e4567-e89b-42d3-a456-426614174000</id><title>At the lake</title>
+  <published>2026-11-10T12:00:00Z</published><updated>2026-11-10T12:00:00Z</updated>
+  <author><uri>xmpp:juliet@example.org</uri></author>
+  <link rel='enclosure' href='https://files.example.org/lake.jpg' type='image/jpeg' title='At the lake'/>
+ </entry>
+</item>]]></example>
+</section1>
+
+<section1 topic="Node Configuration and Lifecycle" anchor="s-node-configuration-and-lifecycle"><p>Use pubsub#access_model=presence, persist_items=true, max_items=max, type=urn:xmpp:pubsub-social-feed:1, notify_retract=true and deliver_payloads=false. Do not fall back to a public/open node on configuration failure. Save remotely before setting the local saved-profile flag. Edits republish the same item; removal retracts that item. Deleting a saved source story also retracts the saved-profile item, while ordinary story expiry does not expire the profile copy. Successful retraction does not revoke media already downloaded or a URL still retained by an upload host.</p>
+</section1>
+
+<section1 topic="Validation, Discovery and Errors" anchor="s-validation--discovery-and-errors"><p>Advertise the private node and its +notify feature along with the standard social-feed capability. Fetching an empty node is a successful empty profile. Limit retrieval to 1000 entries per request; reaching the cap must not be mistaken for deletion of older cached items. Bound serialized entries to 65536 characters, title to 32768 UTF-16 units, URL to 8192 units, publication to positive time no more than 5 minutes in the future. Require HTTPS with a host and no userinfo/fragment. Allow image/jpeg,png,webp,gif or video/mp4,webm. If an author URI is present it must match the PEP owner; reject mismatch, multiple enclosures or invalid timestamps. The deployed reader tolerates a missing author, using the authenticated PEP owner. Unsupported entries are ignored without rewriting the remote feed.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>PEP owner context authorizes a publication; an Atom author string alone does not. HTTPS enclosures are untrusted media and require bounded download/decoding. Never alter unrelated PEP nodes, OMEMO keys or avatar state as a side effect of publishing or clearing profile posts.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Presence subscription is server-enforced access control, not end-to-end encryption. The server and upload host can read the feed/media; a retrievable HTTPS URL may outlive a retraction or audience change. Do not promise24-hour expiry for these deliberately persistent items.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+<p>Deployed identifier: urn:monogram:profile-posts:0. This is a private compatibility identifier, not an XSF registration.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/PROFILE_POSTS.md">docs/PROFILE_POSTS.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/XmppStories.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/XmppStories.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0060.html">XEP-0060</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0163.html">XEP-0163</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0472.html">XEP-0472</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0501.html">XEP-0501</link></p>
+</section1>
+</xep>

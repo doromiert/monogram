@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Profile Photo Suggestions as Ordinary Media Messages</title><abstract>An informational convention for explicitly offering an image for another user to adopt as their avatar.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0084</spec><spec>XEP-0447</spec><spec>XEP-0454</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Use Case and Existing Work" anchor="s-use-case-and-existing-work"><p>An account can suggest an image without being authorized to modify the recipient profile. Existing file-sharing and avatar publication protocols do the transport and eventual publication. The only deployed suggestion signal is an ordinary image caption; there is no private avatar-suggestion stanza or automatic profile write.</p>
+</section1>
+
+<section1 topic="Protocol and User Interaction" anchor="s-protocol-and-user-interaction"><p>The sender transmits an ordinary image through the selected file-sharing/encryption transport with the exact caption Suggested profile photo. The recipient may offer a separate explicit action to choose/crop/adopt that image. Adopting publishes the recipient own avatar through the normal authorized avatar flow. Otherwise the message remains an ordinary image/caption. The phrase is wire compatibility text; local action labels can be translated.</p>
+<example caption="Caption convention; FILE SHARING represents the normal existing attachment payload"><![CDATA[<message xmlns='jabber:client' to='juliet@example.org' type='chat'>
+  <body>Suggested profile photo
+https://files.example.org/suggestion.png</body>
+  <!-- Normal XEP-0447 attachment metadata accompanies this body. -->
+</message>]]></example>
+<p>There is no suggestion-specific acknowledgment, ownership transfer, remote approval result, overwrite command or automatic acceptance. The caption is not authenticated more strongly than the containing message. Native rendering is optional; unsupported clients still show the image and caption.</p>
+</section1>
+
+<section1 topic="Discovery and Failure" anchor="s-discovery-and-failure"><p>No suggestion-specific feature is advertised. A sender cannot assume the recipient offers an adoption action. Invalid/unsupported media retains normal attachment error behavior. Before adoption validate the downloaded image, offer the normal review/crop controls and retain the current avatar on cancellation or failure. The receiver must not silently download/publish it because a caption matches.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Any correspondent can type this caption. It MUST NOT grant profile-write authority or bypass image validation and explicit user consent. Only the recipient authenticated account may publish the adopted avatar.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>The sender-chosen image may contain private metadata or identify a third party. Publishing an avatar changes its audience independently of the private suggestion message; the adoption UI must make that publication intentional.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/LOCAL_CONTACTS.md">docs/LOCAL_CONTACTS.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramController.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramController.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0084.html">XEP-0084</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0447.html">XEP-0447</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0454.html">XEP-0454</link></p>
+</section1>
+</xep>

@@ -1,0 +1,70 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Portable Sticker and Emoji Pack Snapshots</title><abstract>An informational ZIP/JSON interchange format for bounded sticker and custom-emoji snapshots shared as ordinary XMPP files.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0449</spec><spec>XEP-0363</spec><spec>XEP-0454</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Scope and Existing Standards" anchor="s-scope-and-existing-standards"><p>XEP-0449 already defines PubSub sticker packs. This document records the deployed .xmsp file snapshot, not a replacement pack-discovery, subscription or publication protocol. Share it through existing file transports; an import does not publish PEP items or enable updates.</p>
+</section1>
+
+<section1 topic="Container and Manifest" anchor="s-container-and-manifest"><p>Use a single-disk unencrypted ZIP, with STORED entries only and no required ZIP64. The first entry is manifest.json, strict UTF-8 JSON without BOM. Remaining entries must be exactly the referenced assets; no paths are extracted directly. The manifest requires format=xmsp, version=1, name, kind (stickers or emoji), and an ordered nonempty items array.</p>
+<example caption="Illustrative manifest; hash/size stand for actual asset values"><![CDATA[{
+  "format": "xmsp", "version": 1, "name": "Friends", "kind": "stickers",
+  "items": [{"id": "5cbba4da-8fa8-4b41-9133-1fb5069fbb2a", "name": "Happy wave",
+    "emoji": "👋", "mime": "image/png", "width": 512, "height": 512,
+    "size": 12345, "sha256": "HASH", "path": "assets/HASH.png"}]
+}]]></example>
+<p>Item IDs are unique canonical lowercase UUIDs within a snapshot, not native IDs or update ownership keys. Hashes are64 lowercase hexadecimal digits of complete bytes. The exact path is assets/HASH followed by the MIME-specific extension: .gif, .png, .webp, .tgs or .webm for image/gif, image/png, image/webp, application/x-tgsticker and video/webm respectively. Names after trimming use 1–100 UTF-16 units and emoji tags1–64; ISO controls are forbidden. Repeated asset references are permitted. Unknown JSON fields may be ignored; unknown format/version values are rejected.</p>
+</section1>
+
+<section1 topic="Bounds and Atomic Import" anchor="s-bounds-and-atomic-import"><p>Require at least one item and asset. Bound manifest to 4 MiB, each asset to 1 byte–20 MiB, combined asset bytes to 100 MiB and the entire container to 105 MiB. Display dimensions are1–512 per axis. Validate CRC, central-directory sizes, actual streamed sizes, MIME/content, hashes and exact referenced names. Reject duplicate entries/item IDs, missing/unreferenced assets, directories, symlinks, path traversal and unsupported compression. Do not trust declared sizes. Stage every validated asset under generated opaque filenames and commit the installed manifest atomically only after all validation; cancellation/account change/error must leave installed packs intact. Allocate fresh collision-checked local IDs.</p>
+<p>GIF bytes and animation may retain original source dimensions while declared display dimensions are bounded; validate source dimensions before decoding. TGS gzip expands only to bounded JSON (2 MiB), a 512×512 canvas, positive rate at most 60 fps and duration at most 3 seconds with layers. It is not an archive to extract. Other decoders need their own independent limits.</p>
+</section1>
+
+<section1 topic="Discovery and Encryption" anchor="s-discovery-and-encryption"><p>No new XMPP namespace or discovery feature is used. The filename extension and unregistered suggested MIME type identify a file, not a trusted sender or safe codec. For private sharing encrypt the entire snapshot with the existing encrypted-file transport and protect its key-bearing reference end-to-end. Use an opaque upload name and application/octet-stream for ciphertext. Do not upload plaintext artwork previews or manifest metadata alongside it. Explicit export writes a plaintext snapshot; importing stays detached/private and does not reconnect to an archive-supplied upstream source.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Validate bytes before committing or decoding; never restore sender-supplied local IDs, paths or network subscriptions. ZIP STORED-only and size limits prevent a generic decompression bomb but do not make GIF/WebM/TGS parsing safe. A pack name, item UUID or hash does not establish artwork ownership.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>A decrypted snapshot is plaintext and freely copyable by its holder. Access removal cannot revoke existing files or keys. A private boolean is not encryption; version 1 deliberately has none. No automatic sync, deletion, revocation or PEP publication is implied.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>The deployed suggested media type application/vnd.monogram.xmsp+zip is not registered. This informational draft records its use and makes no registration claim. Any registration requires a separate reviewed IANA media-type application.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/XMSP.md">docs/XMSP.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramPacks.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramPacks.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0449.html">XEP-0449</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0363.html">XEP-0363</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0454.html">XEP-0454</link></p>
+</section1>
+</xep>

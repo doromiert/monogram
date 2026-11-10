@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Experimental Checklist Envelope and Codec Record</title><abstract>A deferred informational record of an unshipped checklist codec, including its unresolved convergence and application rules.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0394</spec><spec>XEP-0359</spec><spec>XEP-0384</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Deferred research draft. Do not submit this as a complete interoperable standard until its listed blockers and upstream coordination requirements are resolved.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Non-deployment and Blockers" anchor="s-non-deployment-and-blockers"><p>Only bounded document/update codecs and an unexposed store scaffold exist. No collaborative checklist send/application pipeline is shipped. Ordinary Markdown task items are static article formatting. The current base-revision mutation rule diverges under concurrent edits, so this is deliberately not a normative interoperable collaboration protocol. Do not advertise support or submit this as complete until convergence and integration are resolved.</p>
+</section1>
+
+<section1 topic="XML Envelope" anchor="s-xml-envelope"><p>The private namespace is urn:monogram:checklist:1. Permit exactly one checklist or checklist-update extension in a stanza, no children and no text. checklist has exactly a data attribute; checklist-update has exactly data and target. Data is bounded to 65536 ASCII Base64url characters; terminal padding is accepted. Target is 1–1024 printable ASCII characters excluding quotes and XML delimiters, referencing a stable XMPP message in the same conversation, never a local/native message ID.</p>
+<example caption="Envelope shapes; DATA values are not executable vectors"><![CDATA[<checklist xmlns='urn:monogram:checklist:1' data='BASE64URL-DOCUMENT'/>
+<checklist-update xmlns='urn:monogram:checklist:1' target='stable-message-id' data='BASE64URL-MUTATION'/>]]></example>
+</section1>
+
+<section1 topic="Binary Record" anchor="s-binary-record"><p>Decoded payload is at most 32768 bytes. Multibyte integers are big-endian. Text is an unsigned16-bit byte length followed by strict UTF-8, at most 4096 bytes per field, not Java modified UTF-8. Reject invalid versions, truncated/invalid text and trailing bytes.</p>
+<ul>
+<li>Document: ASCII MCL1; version byte 1; owner bare-JID text; revision signed int64 &gt;=1; append-permission boolean; completion-permission boolean; title text; unsigned16-bit item count &lt;=512. Each item has a unique positive signed int32 ID, title text and completion boolean. Completed items additionally contain actor bare-JID text and nonnegative signed int32 Unix seconds.</li>
+
+<li>Mutation: ASCII MCU1; version byte 1; operation byte 0 for TOGGLE or1 for APPEND; reference text; base revision int64; nonce int64; item ID int32; completion boolean; APPEND additionally has title text. Unknown operations must be rejected before interpreting the remaining fields.</li>
+
+<li>A decoded owner/completion actor is a claim until bound to an authenticated sender. The public codec envelope does not establish authorization.</li>
+</ul></section1>
+
+<section1 topic="Unresolved Application Semantics" anchor="s-unresolved-application-semantics"><p>The existing store accepts only operations whose base revision equals the local current revision. Two actors can each mutate revision 1, each accept their own event first and reach different revision 2 states while rejecting the other event as stale. Receiver-assigned completion times further differ across clients. Nonce deduplication and durable replay do not repair convergence. A future protocol must define deterministic concurrent operation ordering/conflicts or an explicit owner-authoritative sequencing/acknowledgment model, including permission changes, item collisions, missing events, edits and room membership. The current namespace/version must not silently acquire incompatible semantics.</p>
+</section1>
+
+<section1 topic="Required Integration and Future Discovery" anchor="s-required-integration-and-future-discovery"><p>Before deployment integrate schema/migration and cleanup, authenticated receive boundaries, owner/room permissions, stable unambiguous aliases including tombstones, native send/edit/toggle/append, pending/outbox lifecycle, archive replay, hidden control-message handling, account fencing, bounded storage and independent-client convergence vectors. No currently shipped discovery promise exists. Legacy OMEMO public outer metadata must never carry authoritative checklist actions. Preserve a readable Markdown fallback and treat unknown/invalid documents as unsupported data without mutation.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Do not infer an actor from a payload owner or public legacy extension. Only an authenticated sender with explicit current document permissions can mutate a resolved same-conversation target. Ambiguous aliases and deleted/unreadable targets must not select a different document. These are design requirements, not claims that a complete live integration exists.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Checklist titles, membership, completion actors and times can reveal work and relationships. Do not publish them as public reaction metadata or unprotected legacy XML. Synchronization and hidden-control storage need an explicit retention/export policy before deployment.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+<p>Deployed identifier: urn:monogram:checklist:1. This is a private compatibility identifier, not an XSF registration.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/CHECKLISTS.md">docs/protocols/CHECKLISTS.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/ChecklistContent.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/ChecklistContent.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramChecklists.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramChecklists.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramChecklistStore.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramChecklistStore.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0394.html">XEP-0394</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0359.html">XEP-0359</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0384.html">XEP-0384</link></p>
+</section1>
+</xep>

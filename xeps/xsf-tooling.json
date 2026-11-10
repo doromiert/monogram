@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/xsf/xeps",
+  "revision": "4132c531487fe9450ae90b905b8df950d0d478b2",
+  "sha256": {
+    "xep.dtd": "1f61d950bdcc11155c72d2e2f8460298759d5f22705c7562ca42bf5b1685217a",
+    "xep.ent": "9ea07e0331b8e40576a93f55092c6aa85ae16711bd2aabdc3bca1653d373d208"
+  }
+}

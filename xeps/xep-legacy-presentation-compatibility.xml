@@ -1,0 +1,81 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Presentation Hints around Body-only Encrypted Messages</title><abstract>A narrow informational compatibility profile for unauthenticated presentation hints around legacy OMEMO bodies.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0384</spec><spec>XEP-0382</spec><spec>XEP-0449</spec><spec>XEP-0481</spec><spec>XEP-0461</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Problem and Scope" anchor="s-problem-and-scope"><p>Legacy OMEMO protects the body but not arbitrary outer XML extensions. This document records deployed presentation exceptions; it does not extend the legacy cryptographic integrity boundary. Full extension-bearing authenticated OMEMO2/PQ content remains preferable. A cleartext stanza extension MUST NOT acquire authority merely because it surrounds valid ciphertext.</p>
+</section1>
+
+<section1 topic="Allowed Hints" anchor="s-allowed-hints"><ul>
+<li>Whole-message spoiler: an empty urn:xmpp:spoiler:0 marker may hide the decrypted body/attachment. Partial spoilers may only obscure validated code-point ranges using the separately documented partial-spoiler convention. They cannot add alternate text, links or other styles.</li>
+
+<li>Article hint: the empty urn:xmpp:content content element with type=text/markdown may select rendering of the decrypted body. It must not provide a replacement body, remote resource or interactive operation.</li>
+
+<li>Sticker hint: exactly one empty sticker in urn:xmpp:stickers:0 may select sticker display only after successful body decryption and recognition of a valid protected encrypted attachment. Permit no children, non-whitespace text or application attributes; namespace declarations are syntactic context.</li>
+
+<li>XHTML/BoB inline emoji, full attachment metadata, attribution, checklist operations, reactions, corrections and private identities do not gain authority through these exceptions. Use text fallback or an authenticated transport; public voting requires separate explicit consent.</li>
+</ul></section1>
+
+<section1 topic="Illustrative Placement" anchor="s-illustrative-placement"><example caption="Public sticker hint outside legacy protected content; ciphertext intentionally omitted"><![CDATA[<message xmlns='jabber:client' type='chat'>
+  <!-- Existing legacy OMEMO encrypted body contains the XEP-0454 encrypted-file reference. -->
+  <sticker xmlns='urn:xmpp:stickers:0'/>
+</message>]]></example>
+<p>The example illustrates only placement, not a valid encrypted stanza. The protected file URL/key must never be copied into the public marker or another fallback. Hint removal or insertion may affect presentation; it cannot authorize a download from attacker-supplied public metadata or change the decrypted bytes.</p>
+</section1>
+
+<section1 topic="Captions, Attribution and Existing Standards" anchor="s-captions--attribution-and-existing-standards"><p>Where the legacy file body must remain URI-only, send a readable caption or forward attribution as another ordinary encrypted message using existing authenticated reference mechanisms where available. This is not a private caption namespace or permission to attach an arbitrary nearby message to a file. MUC reply compatibility may resolve retained MAM aliases only in the same room with a verified claimed author and one unambiguous target. New outgoing replies use the normal stable room ID under XEP-0461/XEP-0359; no new alias-resolution wire protocol is defined here.</p>
+</section1>
+
+<section1 topic="Discovery and Failure" anchor="s-discovery-and-failure"><p>Ordinary support for the corresponding XEP does not negotiate this weaker legacy integrity model. No private compatibility feature is deployed. A client MAY ignore every public hint and show decrypted text normally. Unsupported/malformed hints must not cause ciphertext loss, an automatic retry in plaintext or acceptance of any public action metadata.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>These hints are forgeable and removable by an intermediary. They MUST NOT affect identity, key selection, payment authorization, data bytes or authenticated action processing. Even hiding an existing URL must not trigger its preview fetch. Applications must describe the metadata as untrusted presentation, not protected content.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Public hints disclose sticker/article/spoiler use and possibly spoiler positions. Metadata confidentiality cannot be restored by merely encrypting the body. Avoid sending such hints when the sender expects those properties to be private.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/NON_STANDARD_XMPP.md">docs/protocols/NON_STANDARD_XMPP.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/SPOILERS.md">docs/SPOILERS.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/ARTICLE_FORMATTING.md">docs/ARTICLE_FORMATTING.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/StickerHint.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/StickerHint.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/FORWARDING.md">docs/protocols/FORWARDING.md</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0384.html">XEP-0384</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0382.html">XEP-0382</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0449.html">XEP-0449</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0481.html">XEP-0481</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0461.html">XEP-0461</link></p>
+</section1>
+</xep>

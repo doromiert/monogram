@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Monero Payment Requests and Broadcast Notices in Chat</title><abstract>A readable convention for Monero payment URIs and sender-reported transaction notices.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0384</spec><spec>XEP-0518</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Scope and Existing Work" anchor="s-scope-and-existing-work"><p>This profile carries public destinations and exact XMR amounts in ordinary bodies. XEP-0518 already defines service payment challenges and invoices; this profile is not that invoice protocol. The monero URI syntax belongs to the Monero ecosystem, not XMPP. Native payment cards are a local projection of the unchanged original body. No request or notice authorizes spending.</p>
+</section1>
+
+<section1 topic="Requests and Exact Amounts" anchor="s-requests-and-exact-amounts"><example caption="Request shape; ADDRESS is deliberately not a spendable destination"><![CDATA[XMR payment request
+monero:ADDRESS?tx_amount=0.125&tx_description=Lunch]]></example>
+<p>The prefix is exact English text followed by LF. A bare monero URI is also accepted by the compatibility reader. The URI is at most 8192 UTF-16 units, has no fragment or raw controls and accepts only tx_amount, recipient_name and tx_description once each. Strictly decode UTF-8 percent escapes; reject duplicate, unknown or empty amount fields. Validate Monero Base58 length, network/type prefix, checksum and address public keys. Network selection must agree with the wallet being used.</p>
+<p>Use exact integer atomic units: one XMR is 10^12 atomic units. A present amount is positive decimal ASCII digits with at most 12 fractional digits, at most 32 characters, and no exponent, sign or grouping. Range is 1 through 18446744073709551615 atomic units; a narrower native wallet model must reject rather than wrap or saturate. Canonical decimal output removes trailing fractional zeros. The request may omit an amount; a transfer notice may not. Labels/notes are bounded to 1024 UTF-16 units; reject hidden bidi controls, and reject other ISO controls except LF in notes. The composer further limits notes to 960 UTF-8 bytes. Notes are chat metadata, not a blockchain memo.</p>
+</section1>
+
+<section1 topic="Broadcast Notice" anchor="s-broadcast-notice"><example caption="Notice shape; placeholders are not valid wire values"><![CDATA[XMR payment broadcast
+monogram-xmr:transfer?v=1&payment=PERCENT-ENCODED-CANONICAL-MONERO-URI&txid=TRANSACTION-HASH]]></example>
+<p>Require exactly v=1, payment and txid, with no duplicates. Encode payment with UTF-8 application/x-www-form-urlencoded convention, preserving the deployed Java URLEncoder representation. txid is 1–16 comma-separated64-digit hexadecimal hashes, output lowercase. Parse and reserialize the complete transfer URI identically. The complete rendered payment body is at most 20480 UTF-16 units. A notice is queued only after accepted SDK broadcast; retrying failed chat delivery MUST resend this metadata only, never the blockchain transfer.</p>
+</section1>
+
+<section1 topic="Discovery, Review and Verification" anchor="s-discovery--review-and-verification"><p>No payment-specific XMPP feature is advertised. Invalid/unsupported bodies remain ordinary text with no native payment action. A receiver must present address, network, exact amount, note and fees for explicit review, and independently scan its wallet/blockchain to verify funds. The sender report is not proof of settlement, confirmation or unlocked balance. The ordinary conversation encryption policy applies to requests/notices. Fiat conversion is local presentation; signed amount remains XMR atomic units, not an embedded exchange-rate promise.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Requests and transaction hashes are sender-controlled claims. Validate every amount/address field and require explicit wallet authorization. Never treat a transfer notice as blockchain proof, retry a transaction because a chat acknowledgment was lost, or leak a wallet recovery seed into these public-destination messages.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Addresses, amounts, notes and transaction IDs can correlate identities and payments. Encrypt according to explicit conversation policy. Do not send addresses, seeds or notes to fiat-price services. Blockchain settlement remains observable under the underlying payment system own privacy properties.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>No registration is asserted for monogram-xmr. It is a private deployed URI scheme. The monero scheme is external to this proposal. Before pursuing a generic URI scheme or payment namespace, coordinate with the relevant scheme maintainers and existing payment XEP authors.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+<p>Deployed identifier: monogram-xmr:transfer (private URI convention). This is a private compatibility identifier, not an XSF registration.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/protocols/MONERO.md">docs/protocols/MONERO.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/xmpp-core/src/main/java/com/negzero/monogram/xmpp/MoneroPayment.java">xmpp-core/src/main/java/com/negzero/monogram/xmpp/MoneroPayment.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramXmrMessage.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramXmrMessage.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0384.html">XEP-0384</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0518.html">XEP-0518</link></p>
+</section1>
+</xep>

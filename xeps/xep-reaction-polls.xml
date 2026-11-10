@@ -1,0 +1,90 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+  %ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<!-- Unsubmitted author draft. Review author contact details and XSF IPR terms before submission. -->
+<xep><header><title>Readable Reaction Polls</title><abstract>A bounded readable poll convention using ordinary messages, reaction replacement sets and author corrections.</abstract>&LEGALNOTICE;
+<number>xxxx</number><status>ProtoXEP</status><type>Informational</type><sig>Standards</sig><approver>Council</approver>
+<dependencies><spec>XMPP Core</spec><spec>XEP-0030</spec><spec>XEP-0444</spec><spec>XEP-0359</spec><spec>XEP-0308</spec><spec>XEP-0384</spec></dependencies><supersedes/><supersededby/><shortname>NOT_YET_ASSIGNED</shortname>
+<tags><tag>messaging</tag><tag>compatibility</tag></tags>
+<author><firstname>doromiert</firstname><surname/><org>Monogram</org><uri>https://github.com/doromiert</uri></author>
+<revision><version>0.0.1</version><date>2026-11-10</date><initials>d</initials><remark><p>Initial unsubmitted source-audited draft.</p>
+</remark></revision>
+</header>
+
+<section1 topic="Status and Scope" anchor="s-status-and-scope"><p>Unsubmitted ProtoXEP draft, version 0.0.1. This document has not been accepted, assigned a number or approved by the XMPP Standards Foundation. It records the compatibility behavior in Monogram 0.2.195 at commit 4736f7eddb423192e5d68435879f0b0a88371168.</p>
+<p>Normative words MUST, MUST NOT, SHOULD and MAY describe conformance to this document, not XSF approval. Existing deployed identifiers are retained; no urn:xmpp namespace is invented or reserved by this draft.</p>
+</section1>
+
+<section1 topic="Motivation and Existing Standards" anchor="s-motivation-and-existing-standards"><p>XEP-0444 already supplies reaction sets and mentions voting as a use case. This profile adds a recognizable poll definition, option mapping and tally semantics without requiring a poll server. It does not create anonymous votes, quizzes or server-enforced elections. A text-only client can read the complete poll and use its reaction picker.</p>
+</section1>
+
+<section1 topic="Poll Definition" anchor="s-poll-definition"><p>A definition uses LF line endings. It begins with U+1F4CA followed by one ASCII space and the question, then two LF characters. An optional description begins with U+1F4DD and one space and is followed by two LFs. The options follow, one per line, as the next exact emoji from the map, one ASCII space, then the option text. Two LFs precede the exact mode line. An optional final LF and Voting closed. mark closure. There is no trailing LF. Every continuation line within a field is prefixed by exactly two additional ASCII spaces, including blank continuation lines. Parse and serialize MUST reproduce the body exactly.</p>
+<example caption="Canonical single-choice definition"><![CDATA[📊 Where shall we eat?
+
+📝 Pick a place for tonight.
+
+1️⃣ Pizza
+2️⃣ Noodles
+
+Public votes. React with an option's emoji to vote. Choose one.]]></example>
+<example caption="Exact mode lines"><![CDATA[Public votes. React with an option's emoji to vote. Choose one.
+Public votes. React with option emojis to vote. Choose any.]]></example>
+<p>The ordered option map is: 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🔴 🟠 🟡 🟢 🔵 🟣 🟤 ⚫ ⚪ ⭐ 🌙 ☀️ 🌈 ⚡ 🔥 💧 🌸 🍀 🍎 🍋 🍇 🥝</p>
+<ul>
+<li>Require 2–32 nonempty options. Question and optional description: at most 4096 UTF-16 units each. Option: at most 1024 units. Complete body: at most 40000 units.</li>
+
+<li>Fields must contain non-whitespace text. ISO controls other than LF are invalid. Structured formatting/spoiler metadata prevents automatic reinterpretation as a poll. A malformed or noncanonical body remains ordinary text.</li>
+
+<li>No native poll ID, serialized Telegram object, hidden voting database or binary option ID is transmitted.</li>
+</ul></section1>
+
+<section1 topic="Voting and Tallying" anchor="s-voting-and-tallying"><p>A ballot is an XEP-0444 replacement set targeted to the original message ID in a direct conversation, or a stable room-assigned stanza ID in a MUC. Use the authenticated actor and conversation under the reaction transport rules. One actor has one current complete replacement set; retain non-option reactions. Ignore U+FE0F when comparing option emoji. A single-choice set with two or more distinct option emoji is invalid and contributes no ballot. An empty option subset withdraws the ballot. Multiple choice counts one voter in the total and one vote for each selected option.</p>
+<example caption="Single-choice vote"><![CDATA[<message xmlns='jabber:client' from='juliet@example.org/phone' to='room@example.org' type='groupchat'>
+  <reactions xmlns='urn:xmpp:reactions:0' id='room-assigned-poll-id'>
+    <reaction>2️⃣</reaction>
+  </reactions>
+</message>]]></example>
+<p>Persist reaction events so that a vote received before its poll or via archive replay can be reconciled. Duplicate events must not add votes. Actor identity must survive nickname changes; an anonymous room without a stable authorized actor binding cannot provide attributable public ballots. This compatibility profile inherits the deployed reaction journal order; it does not claim an independently specified global order for equal-time conflicting replacements. That ordering is a standards-track design issue.</p>
+</section1>
+
+<section1 topic="Author Closure and Replays" anchor="s-author-closure-and-replays"><p>Only an author-authenticated XEP-0308 correction with unchanged question, options and mode and the added Voting closed. line closes the poll. The compatibility implementation freezes results at the accepted correction timestamp, at second precision, including events at that timestamp and excluding later events. This is a local projection, not a server-enforced deadline. Server delay timestamps and clock differences are not cryptographic proof of when a vote was cast. A future strict-deadline protocol requires an authoritative ordering design; no such guarantee is made here. Forwarding creates a new open poll with no copied votes.</p>
+</section1>
+
+<section1 topic="Discovery, Encryption and Failure" anchor="s-discovery--encryption-and-failure"><p>No dedicated poll discovery feature is currently advertised. Receivers need XEP-0444 to send interoperable votes, but can always show the body. There is no poll-specific IQ error or automatic refresh/polling loop. OMEMO2/PQ transports carry definitions and reaction metadata inside protected content. Body-only legacy OMEMO cannot protect the outer reaction extension; sending such public votes requires explicit consent. Unsupported anonymous, hidden-results, media-option, quiz, audience or timed-close requests must be rejected rather than claiming those properties.</p>
+</section1>
+
+<section1 topic="Accessibility Considerations" anchor="s-accessibility-considerations"><p>Clients MUST retain a readable textual representation, expose actions and state to assistive technology, and avoid making color, animation or an icon the sole indicator of meaning. Unsupported metadata MUST NOT hide the readable fallback.</p>
+</section1>
+
+<section1 topic="Internationalization Considerations" anchor="s-internationalization-considerations"><p>Message text is Unicode. Fixed protocol tokens are case-sensitive and MUST NOT be translated; human-facing labels MAY be localized. Implementations MUST distinguish UTF-8 bytes, Unicode scalar/code-point offsets and UTF-16 code-unit limits wherever this document specifies them. They MUST reject invalid encoding rather than replacing bytes in an identifier or payment destination.</p>
+</section1>
+
+<section1 topic="Security Considerations" anchor="s-security-considerations"><p>Receivers MUST validate the complete bounded representation before treating it as structured data. A sender-controlled label or body prefix does not authenticate a different author. Private native IDs and serialized application objects MUST NOT be accepted from the network. No received content authorizes a local action without the normal user authorization.</p>
+</section1>
+
+<section1 topic="Privacy Considerations" anchor="s-privacy-considerations"><p>Votes and voter identities are public to the conversation. Encryption protects them from outsiders only to the extent supplied by the selected transport. Hiding option reaction chips in a native card does not hide ballots from other participants or erase the event journal.</p>
+</section1>
+
+<section1 topic="IANA Considerations" anchor="s-iana-considerations"><p>This document requests no IANA action. No media type or URI scheme is registered by publication of this draft.</p>
+</section1>
+
+<section1 topic="XMPP Registrar Considerations" anchor="s-xmpp-registrar-considerations"><p>This draft requests no new registration. Existing protocol namespaces retain their existing ownership and meaning.</p>
+</section1>
+
+<section1 topic="Implementation and Interoperability Evidence" anchor="s-implementation-and-interoperability-evidence"><p>The following source files and implementation notes are pinned to the audited commit. Existing regression tests are implementation evidence, not an independent interoperability or security audit. Editorial review can change a future proposal, but changes to deployed wire syntax require an explicit version/migration path.</p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/docs/POLLS.md">docs/POLLS.md</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramPolls.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramPolls.java</link></p>
+<p><link url="https://github.com/doromiert/monogram/blob/4736f7eddb423192e5d68435879f0b0a88371168/TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramStore.java">TMessagesProj/src/main/java/org/telegram/messenger/xmpp/MonogramStore.java</link></p>
+</section1>
+
+<section1 topic="Existing XEP References" anchor="existing-xep-references">
+<p><link url="https://xmpp.org/extensions/xep-0030.html">XEP-0030</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0444.html">XEP-0444</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0359.html">XEP-0359</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0308.html">XEP-0308</link></p>
+<p><link url="https://xmpp.org/extensions/xep-0384.html">XEP-0384</link></p>
+</section1>
+</xep>
