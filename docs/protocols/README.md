@@ -12,7 +12,7 @@ draft-only codecs and features that stay device-local.
 
 | Feature | Base standards | Monogram-specific part | Specification / implementation status |
 | --- | --- | --- | --- |
-| Reaction polls | XEP-0444 reactions, XEP-0359 IDs, XEP-0308 correction | Canonical readable poll definition, emoji-to-option map, public vote/closure rules | [Polls](../POLLS.md), implemented |
+| Reaction polls | XEP-0444 reactions, XEP-0359 IDs, XEP-0308 correction | Legacy readable definition implemented; structured question/options with optional fallback proposed in draft 0.0.2 | [Polls](../POLLS.md); runtime structured migration pending |
 | Forward attribution | XEP-0297 stanza forwarding | Full-address readable fallback, native unverified attribution, URI-only legacy media plus separate caption | [Forwarding](FORWARDING.md), incoming standard + outgoing fallback implemented |
 | Partial spoilers | XEP-0394 markup, XEP-0382 whole-message spoilers | `urn:monogram:spoiler:0` span child | [Spoilers](../SPOILERS.md), implemented |
 | Checklists | XEP-0394 markup and XEP-0481 content hints | `urn:monogram:checklist:1` document/update codecs | [Checklist draft](CHECKLISTS.md), codecs exist; collaborative send/application is not integrated |

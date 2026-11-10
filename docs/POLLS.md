@@ -1,5 +1,23 @@
 # Reaction polls
 
+## Revised structured proposal — not yet shipped
+
+The [reaction-poll ProtoXEP](../xeps/xep-reaction-polls.xml), revision 0.0.2,
+now defines explicit `<poll xmlns="urn:xmpp:polls:0" type="single">` content with
+one `<question>` and ordered `<option emoji="…">label</option>` elements.
+The body is an optional, localizable XEP-0428 fallback; it is never the source
+of options. The draft includes both fallback and fallback-less examples.
+OMEMO 2/SCE protects the XML, optional fallback and ballot metadata together;
+legacy body-only OMEMO does not constrain the proposed format.
+
+This is an unsubmitted proposal and provisional namespace, not a runtime
+upgrade. Both clients still need structured parsing/storage, discovery and
+protected-content integration. The mobile OMEMO 2 allowlist must be extended
+with the validated poll payload. The deployed behavior below remains legacy
+compatibility documentation, with its own existing tests.
+
+## Deployed legacy body convention
+
 Monogram reuses the native poll composer, poll cards, multiple-choice controls,
 vote/retract animations, voter lists and author-only Stop Poll action. Polls
 work in rooms and DMs. Votes and their latest replacement sets use

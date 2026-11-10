@@ -61,6 +61,21 @@ def main():
             elif value.startswith('{'):
                 json.loads(value)
                 examples += 1
+        if relative == 'xep-reaction-polls.xml':
+            polls = []
+            for node in document.findall('.//example'):
+                value = ''.join(node.itertext()).strip()
+                if not value.startswith('<message'):
+                    continue
+                message = ET.fromstring(value)
+                poll = message.find('{urn:xmpp:polls:0}poll')
+                if poll is not None:
+                    definition = (poll.get('type'), poll.findtext('{urn:xmpp:polls:0}question'),
+                                  tuple((o.get('emoji'), o.text) for o in poll.findall('{urn:xmpp:polls:0}option')))
+                    polls.append((definition, message.find('{jabber:client}body') is not None,
+                                  message.find('{urn:xmpp:fallback:0}fallback') is not None))
+            if len(polls) != 2 or polls[0][0] != polls[1][0] or polls[0][1:] != (True, True) or polls[1][1:] != (False, False):
+                raise ValueError('Structured poll examples must agree, with and without fallback')
         for link in document.findall('.//link'):
             url = link.get('url', '')
             if url.startswith(prefix):

@@ -10,7 +10,7 @@ conforms perfectly to every base XEP.
 
 | Behavior / source | Coverage | Boundary |
 | --- | --- | --- |
-| `MonogramPolls` canonical fallback and reaction tally | [Poll draft](xep-reaction-polls.xml) | XEP-0444 transport; custom meaning/grammar. Public votes; timestamp closure is not consensus. |
+| `MonogramPolls` legacy fallback and reaction tally | [Poll draft](xep-reaction-polls.xml), revised proposal 0.0.2 | Deployed body codec is historical evidence; structured XML with optional fallback and OMEMO 2/SCE is proposed and not yet implemented. Public ballots; timestamp closure is not consensus. |
 | `MessageMarkup.SPOILER_SPAN` | [Partial spoilers](xep-partial-spoilers.xml) | Existing XEP-0382 handles whole messages; private child adds ranges. |
 | `ForwardedContent` | [Forward attribution](xep-forward-attribution.xml) | Incoming XEP-0297 is standard; outgoing readable prefix is a compatibility convention. |
 | `MonogramArticles`, `MarkdownParser` | [Markdown articles](xep-markdown-articles.xml) | XEP-0481 hint plus deployed dialect and inference; static checkboxes are not collaboration. |

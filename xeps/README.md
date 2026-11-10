@@ -2,8 +2,9 @@
 
 Unsubmitted, unnumbered **ProtoXEP author drafts**, written against Monogram
 **0.2.195**, commit `4736f7eddb423192e5d68435879f0b0a88371168`, on
-2026-11-10. They describe the deployed formats rather than silently inventing
-new wire namespaces. They are not approved standards, registrations or an
+2026-11-10. Most record deployed formats. The reaction-poll draft now proposes a new
+structured payload following review; it explicitly distinguishes that proposal
+from the deployed legacy body codec. Proposed identifiers are not registrations. They are not approved standards, registrations or an
 independent security audit.
 
 The XML follows the [XSF template](https://github.com/xsf/xeps/blob/4132c531487fe9450ae90b905b8df950d0d478b2/xep-template.xml)
@@ -13,7 +14,7 @@ implementation-only behavior and deferred research.
 
 | Draft | Type | Editorial scope |
 | --- | --- | --- |
-| [Readable reaction polls](xep-reaction-polls.xml) | Informational | Exact text grammar, emoji map, replacement ballots, author closure and timestamp/convergence limitations |
+| [Structured reaction polls](xep-reaction-polls.xml) | Standards Track | Explicit question/options and emoji mappings, optional XEP-0428 fallback, fallback-less example and OMEMO 2/SCE; runtime migration and closure-order review remain open |
 | [Partial spoilers](xep-partial-spoilers.xml) | Standards Track | Code-point span child, discovery, schema and protected-content rules |
 | [Forward attribution](xep-forward-attribution.xml) | Informational | Readable prefix and unverified provenance; interaction with XEP-0297 and encrypted files |
 | [Markdown articles](xep-markdown-articles.xml) | Informational | Bounded chat dialect over XEP-0481, formatting precedence, explicit per-line quotes and safe fallback |
@@ -29,8 +30,9 @@ The informational documents specify compatibility conventions over existing
 standards. They are useful for independent implementers but should not all become
 new Standards Track protocols. For example, existing emoji/sticker/forwarding
 work may be a better home for the corresponding profile than a separate XEP.
-Polls stay informational here because their deployed timestamp-based closure and
-reaction tie ordering do not establish a globally convergent election protocol.
+The revised poll proposal defines structured XML independently of legacy
+OMEMO. Its timestamp/closure ordering limitations remain explicit review issues;
+it does not claim a verifiable or globally ordered election protocol.
 
 ## Deferred research — do not upload as complete protocols
 

@@ -5,9 +5,9 @@
   "drafts": [
     {
       "slug": "reaction-polls",
-      "title": "Readable Reaction Polls",
+      "title": "Structured Reaction Polls",
       "path": "xep-reaction-polls.xml",
-      "type": "Informational",
+      "type": "Standards Track",
       "deferred": false
     },
     {
