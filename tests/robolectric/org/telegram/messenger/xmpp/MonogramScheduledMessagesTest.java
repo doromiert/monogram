@@ -15,6 +15,19 @@ import org.telegram.tgnet.TLRPC;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
 public class MonogramScheduledMessagesTest {
+    @Test public void structuredDefinitionSurvivesRetryRepeatAndNativeScheduledProjection()throws Exception {
+        com.negzero.monogram.xmpp.PollDefinition poll=com.negzero.monogram.xmpp.PollDefinition.fromXml(MonogramPollsTest.STRUCTURED);
+        java.util.HashMap<String,String> params=new java.util.HashMap<>();MonogramPolls.putXml(params,poll.xml());
+        TLRPC.TL_messages_sendMessage request=new TLRPC.TL_messages_sendMessage();request.peer=new TLRPC.TL_inputPeerUser();request.peer.user_id=42;request.message="Note || 😀";request.random_id=543;
+        MonogramScheduledMessages.Entry original=MonogramScheduledMessages.fromRequest(MonogramScheduledMessages.allocateId(0,OWNER,1),-17,1000,60,"contact@example.org",request,"OMEMO2",true,MonogramPolls.scheduledPayload(params));
+        assertTrue(MonogramScheduledMessages.put(0,OWNER,1,original));
+        MonogramScheduledMessages.Entry loaded=MonogramScheduledMessages.list(0,OWNER,1,42).get(0);assertTrue(poll.sameDefinition(com.negzero.monogram.xmpp.PollDefinition.fromXml(MonogramPolls.scheduledXml(loaded.payload))));
+        TLRPC.Message shown=MonogramScheduledMessages.project(loaded,1);assertTrue(shown.media instanceof TLRPC.TL_messageMediaPoll);assertEquals("Tonight\n\nNote || 😀",shown.message);
+        MonogramScheduledMessages.Claim first=MonogramScheduledMessages.claimDue(0,OWNER,1,1000,1).get(0);assertTrue(MonogramScheduledMessages.fail(first,2000));
+        MonogramScheduledMessages.Claim retry=MonogramScheduledMessages.claimDue(0,OWNER,1,90000,1).get(0);assertEquals(543,retry.entry.request(request.peer).random_id);assertEquals(original.payload,retry.entry.payload);assertEquals(request.message,retry.entry.request(request.peer).message);
+        MonogramScheduledMessages.Completion completed=MonogramScheduledMessages.complete(retry,90000);assertTrue(completed.committed);assertEquals(original.payload,completed.next.payload);assertNotEquals(543,completed.next.randomId);
+        assertThrows(IllegalArgumentException.class,()->MonogramPolls.scheduledXml("monogram-poll-v1:<invalid/>"));
+    }
     private static final String OWNER="schedule-test@example.org";
     @Before public void setup() {
         ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();

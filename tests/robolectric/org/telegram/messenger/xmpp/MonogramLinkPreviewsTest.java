@@ -158,7 +158,7 @@ public class MonogramLinkPreviewsTest {
     @Test public void schema27MigrationPreservesMessagesAndAddsEmptyPreviewCache() throws Exception {
         int id=store.save(MessageFixture.replyMessage("preserve","preserve",null,"Keep me",true,false,100000,"phone",true,null));
         store.getWritableDatabase().execSQL("DROP TABLE link_previews");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_tag_names");store.getWritableDatabase().setVersion(27);store.close();store=new MonogramStore(context,"previews.db");
-        assertEquals(34,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
+        assertEquals(36,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
     }
     @Test public void keepsDirectMediaRedirectsAndSignedVideoUrlsWithoutAcceptingHtmlPlayers() throws Exception {
         java.net.URI page=new java.net.URI("https://example.org/post");

@@ -20,15 +20,17 @@ public final class GeneratePollVectors {
             "<body>Keep fallback</body>"+poll+"<fallback xmlns='urn:xmpp:fallback:0' for='urn:xmpp:polls:0'><body start='0' end='999'/></fallback>",
             poll.replace("single","quiz"),poll+poll,poll.replace("🍜","🍕"),poll.replace("type='single'","type='single' closed='yes'"),poll.replace("Noodles","<nested/>"),
             poll.replace("Noodles",PollDefinitionTest.repeat("x",1025)),poll.replace("Where 😀?",PollDefinitionTest.repeat("😀",4097)),
-            poll.replace("🍕","❤").replace("🍜","❤️"),poll.replace("🍕","🍕"+PollDefinitionTest.repeat("\ufe0f",128))};
+            poll.replace("🍕","❤").replace("🍜","❤️"),poll.replace("🍕","🍕"+PollDefinitionTest.repeat("\ufe0f",128)),null,null};
         System.out.println("[");
         for(int n=0;n<cases.length;n++) {
-            Message message=PollDefinitionTest.message(cases[n]);PollDefinition parsed=null;try{parsed=PollDefinition.from(message);}catch(IllegalArgumentException invalid){}
-            System.out.print("{\"xml\":\""+b64(message.toXML().toString())+"\",\"valid\":"+(parsed!=null));
+            Message message=PollDefinitionTest.message(cases[n]==null?"":cases[n]);
+            if(cases[n]==null){PollDefinition authored=PollDefinition.from(PollDefinitionTest.message(poll));boolean fallback=n==cases.length-1;authored.addTo(message,fallback?"Authored note 😀":"",fallback,fallback?new ReplyReference("bob@example.org","original").quoted("Quoted 🦄"):null);}
+            PollDefinition parsed=null;try{parsed=PollDefinition.from(message);}catch(IllegalArgumentException invalid){}
+            System.out.print("{\"xml\":\""+b64(message.toXML().toString())+"\",\"valid\":"+(parsed!=null)+",\"authored\":"+(cases[n]==null));
             if(parsed!=null) {
                 System.out.print(",\"question\":\""+b64(parsed.question)+"\",\"description\":\""+b64(parsed.description)+"\",\"body\":\""+b64(parsed.accompanyingBody(message))+"\",\"multiple\":"+parsed.multiple+",\"closed\":"+parsed.closed+",\"options\":[");
                 for(int i=0;i<parsed.options.size();i++){PollDefinition.Option option=parsed.options.get(i);if(i>0)System.out.print(",");System.out.print("[\""+b64(option.emoji)+"\",\""+b64(option.label)+"\"]");}System.out.print("]");
-                if(n<5) {
+                if(n<5 || cases[n]==null) {
                     SecureRandom deterministic=new SecureRandom(){@Override public void nextBytes(byte[] target){for(int i=0;i<target.length;i++)target[i]=(byte)i;}@Override public int nextInt(int bound){return 0;}};
                     byte[] plain=Omemo2Payload.envelope(message,deterministic);
                     try(Omemo2Payload.Sealed sealed=Omemo2Payload.seal(plain,deterministic)){System.out.print(",\"sce\":\""+b64(plain)+"\",\"material\":\""+b64(sealed.material)+"\",\"ciphertext\":\""+b64(sealed.ciphertext)+"\"");}

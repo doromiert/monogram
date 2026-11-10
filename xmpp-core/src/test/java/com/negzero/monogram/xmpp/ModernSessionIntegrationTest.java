@@ -15,6 +15,30 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 @EnabledIfEnvironmentVariable(named="MONOGRAM_IT",matches="1")
 @EnabledIfEnvironmentVariable(named="MONOGRAM_OMEMO2",matches="1")
 class ModernSessionIntegrationTest {
+    @Test void structuredPollsSendBodylessAndFallbackContentAndProtectedClosure()throws Exception {
+        Inbox a=new Inbox(),b=new Inbox();
+        try(XmppSession alice=session("sessionalice",511,true,a);XmppSession bob=session("sessionbob",522,true,b)) {
+            alice.connect();bob.connect();trust(alice,"sessionbob@localhost");trust(bob,"sessionalice@localhost");trust(alice,"sessionalice@localhost");trust(bob,"sessionbob@localhost");
+            PollDefinition poll=PollDefinition.from(PollDefinitionTest.message(PollDefinitionTest.POLL));
+            BlockingQueue<Message> wires=new LinkedBlockingQueue<>();
+            alice.connection().addStanzaInterceptor(stanza->wires.add((Message)stanza),stanza->stanza instanceof Message && (stanza.hasExtension("poll",PollDefinition.NAMESPACE) || stanza.hasExtension("encrypted",XmppOmemo2.NS) && ((StandardExtensionElement)stanza.getExtension("encrypted",XmppOmemo2.NS)).getFirstElement("payload",XmppOmemo2.NS)!=null));
+            for(XmppMessage.Encryption mode:java.util.Arrays.asList(XmppMessage.Encryption.PLAIN,XmppMessage.Encryption.OMEMO2))for(boolean fallback:new boolean[]{false,true}) {
+                String id=alice.sendPoll("sessionbob@localhost",poll,"",fallback,mode,null,null);
+                XmppMessage received=b.next();assertTrue(received.readable);assertEquals(id,received.ids.get("stanza"));assertEquals("",received.body);assertEquals(mode,received.encryption);
+                assertTrue(poll.sameDefinition(PollDefinition.fromXml(received.pollXml)));if(received.encrypted)b.store();
+                Message wire=wires.poll(5,TimeUnit.SECONDS);assertNotNull(wire);
+                if(mode==XmppMessage.Encryption.PLAIN){assertNotNull(PollDefinition.from(wire));if(!fallback)assertNull(wire.getBody());}
+                else {assertFalse(wire.hasExtension("poll",PollDefinition.NAMESPACE));assertFalse(wire.hasExtension("fallback",ReplyReference.FALLBACK));}
+                bob.sendReactions("sessionalice@localhost",new MessageReactions(id,java.util.Collections.singletonList("🍜")),mode);
+                XmppMessage ballot=a.next();assertEquals(id,ballot.reactions.id);assertTrue(ballot.reactions.emojis.contains("🍜"));if(ballot.encrypted)a.store();
+                alice.sendPoll("sessionbob@localhost",poll.withClosed(true),"",false,mode,null,new MessageCorrection(id));
+                XmppMessage closed=b.next();assertEquals(id,closed.correction.id);assertTrue(PollDefinition.fromXml(closed.pollXml).closed);assertEquals("",closed.body);if(closed.encrypted)b.store();
+                assertNotNull(wires.poll(5,TimeUnit.SECONDS));
+            }
+            assertThrows(IllegalArgumentException.class,()->alice.sendPoll("sessionbob@localhost",poll,"",true,XmppMessage.Encryption.LEGACY_OMEMO,null,null));
+            assertNull(b.messages.poll(200,TimeUnit.MILLISECONDS));
+        }
+    }
     static final class Inbox implements XmppSession.Listener {
         final BlockingQueue<XmppMessage> messages=new LinkedBlockingQueue<>();
         final BlockingQueue<XmppMessage> pending=new LinkedBlockingQueue<>();

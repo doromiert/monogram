@@ -250,6 +250,7 @@ public final class XmppSession implements AutoCloseable {
                 org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE);
         modern = modernDevice == null ? null : recovery==null ? new XmppOmemo2(connection,modernDevice,jid -> {}) : XmppOmemo2.restored(connection,modernDevice,jid -> {},recovery.modern(modernDevice));
         ReplyReference.initialize();
+        PollDefinition.initialize();
         MessageCorrection.initialize();
         MessageReactions.initialize();
         MessageRetraction.initialize();
@@ -269,6 +270,7 @@ public final class XmppSession implements AutoCloseable {
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageCorrection.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageReactions.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(PollDefinition.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(FileShare.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageReceipt.MARKERS);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(ReplyReference.FALLBACK);
@@ -1069,6 +1071,15 @@ public final class XmppSession implements AutoCloseable {
         return encryption == XmppMessage.Encryption.OMEMO2 ? sendModern(jid,body,reply,null,null)
                 : send(jid,body,encryption != XmppMessage.Encryption.PLAIN,reply);
     }
+    public String sendPoll(String jid,PollDefinition poll,String accompanying,boolean fallback,XmppMessage.Encryption mode,ReplyReference reply,MessageCorrection correction) throws Exception {
+        if(poll==null || mode==null || mode==XmppMessage.Encryption.LEGACY_OMEMO)throw new IllegalArgumentException("Structured polls require plaintext, OMEMO 2 or PQ OMEMO");
+        if(mode!=XmppMessage.Encryption.PLAIN)return sendProtected(mode,jid,accompanying==null?"":accompanying,reply,correction,null,null,null,null,poll,fallback);
+        Message wire=new Message(directRecipient(jid),Message.Type.chat);wire.setFrom(connection.getUser());String id=UUID.randomUUID().toString();wire.setStanzaId(id);
+        poll.addTo(wire,accompanying,fallback,reply);if(correction!=null)correction.addTo(wire);
+        wire.addExtension(new OriginIdElement(id));wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
+        wire.addExtension(StandardExtensionElement.builder("markable",MessageReceipt.MARKERS).build());
+        DeliveryReceiptManager.addDeliveryReceiptRequest(wire);chatStates.decorate(wire);connection.sendStanza(wire);chatStates.sent(wire);return id;
+    }
     public String correct(String jid, String body, XmppMessage.Encryption encryption, ReplyReference reply, MessageCorrection correction) throws Exception {
         if (correction == null) throw new IllegalArgumentException("Missing correction reference");
         if(encryption==XmppMessage.Encryption.PQ_OMEMO) return sendProtected(encryption,jid,body,reply,correction,null,null,null,null);
@@ -1178,21 +1189,25 @@ public final class XmppSession implements AutoCloseable {
         return sendProtected(XmppMessage.Encryption.OMEMO2,jid,body,reply,correction,sharing,retraction,markup,inline);
     }
     private String sendProtected(XmppMessage.Encryption protocol,String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline) throws Exception {
+        return sendProtected(protocol,jid,body,reply,correction,sharing,retraction,markup,inline,null,false);
+    }
+    private String sendProtected(XmppMessage.Encryption protocol,String jid,String body,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline,PollDefinition poll,boolean pollFallback) throws Exception {
         if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
         int prefix=reply==null ? 0 : reply.wireBody("").codePointCount(0,reply.wireBody("").length());
         if (protocol==XmppMessage.Encryption.PQ_OMEMO && !pqAvailable()) throw new java.security.GeneralSecurityException("Experimental PQ OMEMO is not ready");
         if (protocol!=XmppMessage.Encryption.PQ_OMEMO && !modernAvailable()) throw new OmemoSendException(OmemoSendException.Reason.MODERN_UNAVAILABLE);
-        if (body == null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
+        if (body == null || body.isEmpty() && poll==null) throw new IllegalArgumentException("Empty message");
         Message clear = new Message(directRecipient(jid),Message.Type.chat);
         clear.setFrom(connection.getUser()); String id = UUID.randomUUID().toString(); clear.setStanzaId(id);
-        if (reply != null) { body = reply.wireBody(body); reply.addTo(clear); }
-        clear.setBody(body); if (correction != null) correction.addTo(clear); if (sharing != null) sharing.addTo(clear,body);
+        if(poll!=null)poll.addTo(clear,body,pollFallback,reply);
+        else {if (reply != null) { body = reply.wireBody(body); reply.addTo(clear); }clear.setBody(body);}
+        if (correction != null) correction.addTo(clear); if (sharing != null) sharing.addTo(clear,body);
         if(markup!=null) markup.inBody(body,prefix).addTo(clear);
         if(inline!=null) inline.inBody(body,prefix).addTo(clear);
         if(retraction!=null) retraction.addMetadataTo(clear);
         Message wire = protocol==XmppMessage.Encryption.PQ_OMEMO ? pq().encrypt(clear) : modern.encrypt(clear);
-        if(retraction!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
+        if(retraction!=null || poll!=null) wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         wire.addExtension(new OriginIdElement(id)); DeliveryReceiptManager.addDeliveryReceiptRequest(wire); chatStates.decorate(wire);
         if (retraction == null) wire.addExtension(StandardExtensionElement.builder("markable", MessageReceipt.MARKERS).build());
         connection.sendStanza(wire); chatStates.sent(wire); return id;

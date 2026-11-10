@@ -1874,7 +1874,7 @@ final class MonogramStore extends SQLiteOpenHelper {
             message.message=MonogramFormatting.displayText(row.caption,row.captionMarkup);
         }catch(Exception invalid){message.media=new TLRPC.TL_messageMediaEmpty();message.message="";}
         MonogramForwarding.decorate(message,row.body);
-        if(row.pollXml!=null){message.params=new java.util.HashMap<>();message.params.put(MonogramPolls.XML,row.pollXml);}
+        if(row.pollXml!=null){if(message.params==null)message.params=new java.util.HashMap<>();MonogramPolls.putXml(message.params,row.pollXml);}
         MonogramPolls.decorate(message,self);
         return message;
     }

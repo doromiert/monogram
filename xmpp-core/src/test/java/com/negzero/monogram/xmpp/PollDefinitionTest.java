@@ -9,6 +9,21 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PollDefinitionTest {
+    @Test void outgoingPollBodiesRepliesAndStoredModelsUseTheDefinition()throws Exception {
+        PollDefinition poll=PollDefinition.from(message(POLL));ReplyReference reply=new ReplyReference("bob@example.org","earlier").quoted("Quoted 😀");
+        for(boolean fallback:new boolean[]{false,true})for(String accompanying:Arrays.asList("","Literal *note* 😀")) {
+            Message clear=message("");poll.addTo(clear,accompanying,fallback,reply);
+            assertEquals(reply.wireBody(accompanying),poll.accompanyingBody(clear));assertTrue(poll.sameDefinition(PollDefinition.from(clear)));
+            Message decoded=Omemo2Payload.content(clear,Omemo2Payload.envelope(clear,new SecureRandom()));
+            assertEquals(reply.wireBody(accompanying),poll.accompanyingBody(decoded));
+            for(XmppMessage.Encryption mode:Arrays.asList(XmppMessage.Encryption.PLAIN,XmppMessage.Encryption.OMEMO2,XmppMessage.Encryption.PQ_OMEMO)) {
+                XmppMessage saved=XmppMessage.sentPoll(clear.getFrom(),"bob@example.org","outgoing",poll,accompanying,fallback,mode,reply,null);
+                assertTrue(poll.sameDefinition(PollDefinition.fromXml(saved.pollXml)));assertEquals(reply.wireBody(accompanying),saved.body);assertEquals(mode,saved.encryption);
+            }
+        }
+        Message bodyless=message("");poll.addTo(bodyless,"",false,null);assertNull(bodyless.getBody());
+        assertThrows(IllegalArgumentException.class,()->XmppMessage.sentPoll(bodyless.getFrom(),"bob@example.org","bad",poll,"",true,XmppMessage.Encryption.LEGACY_OMEMO,null,null));
+    }
     static final String POLL="<poll xmlns='urn:xmpp:polls:0' type='single'><question>Where 😀?</question><option emoji='🍕'>Pizza</option><option emoji='🍜'>Noodles</option></poll>";
     static Message message(String content)throws Exception {
         PollDefinition.initialize();ReplyReference.initialize();

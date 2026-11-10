@@ -59,6 +59,9 @@ bash scripts/build-pq-omemo.sh arm64-v8a
 ./gradlew -PmonogramAbi=arm64-v8a :TMessagesProj_App:assembleAfatDebug
 ```
 
+The default Nix development shell includes `protoc` and the standard Rust bindgen
+hook (libclang and its header paths), required by the pinned PQ host backend.
+
 Run the native script for every ABI included in an APK. Packaging fails when a
 requested ABI's PQ library is missing. The source scripts refuse a mismatched
 upstream revision or tracked source modifications. The Java fork is built from

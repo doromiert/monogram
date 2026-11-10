@@ -745,9 +745,12 @@ public final class XmppRooms implements AutoCloseable {
         return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,markup,inline,false);
     }
     private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline,boolean displayStickerHint) throws Exception {
+        return send(jid,body,encrypted,sharing,reply,correction,excluded,automatic,markup,inline,displayStickerHint,null,false);
+    }
+    private XmppRoomMessage send(String jid,String body,boolean encrypted,FileShare sharing,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic,MessageMarkup markup,InlineEmoji inline,boolean displayStickerHint,PollDefinition poll,boolean pollFallback) throws Exception {
         if(inline!=null && !body.equals(inline.body)) throw new IllegalArgumentException("Emoji belong to another body");
         if(markup!=null && !markup.body.equals(body)) throw new IllegalArgumentException("Markup belongs to another body");
-        if (body==null || body.isEmpty()) throw new IllegalArgumentException("Empty message");
+        if (body==null || body.isEmpty() && poll==null) throw new IllegalArgumentException("Empty message");
         boolean mixed=isMix(jid);MultiUserChat chat=mixed?null:chat(jid);
         State state=state(jid);
         if (!state.joined) throw new IllegalStateException("Room is not joined");
@@ -756,7 +759,8 @@ public final class XmppRooms implements AutoCloseable {
         String wireBody=reply==null ? body : reply.wireBody(body);
         Map<String,String> skipped=new TreeMap<>();
         Message message=roomMessage(chat,jid,wireBody,encrypted,excluded,automatic,skipped,failures);
-        if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
+        if(poll!=null){poll.addTo(message,body,pollFallback,reply);message.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());}
+        else if(reply!=null) reply.addTo(message); if(correction!=null) correction.addTo(message);
         if(!encrypted && markup!=null) { MessageMarkup publicMarkup=nonAnonymousRooms.contains(state.room) || mixed && state.occupants.stream().allMatch(p->p.realJid!=null) ? markup : markup.withMentions(Collections.emptyList());
             publicMarkup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message); }
         if(sharing!=null) sharing.addTo(message,wireBody);
@@ -765,6 +769,7 @@ public final class XmppRooms implements AutoCloseable {
         if(!encrypted && inline!=null) inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(message);
         String id=UUID.randomUUID().toString(); message.setStanzaId(id); message.addExtension(new OriginIdElement(id));
         XmppRoomMessage sent=XmppRoomMessage.sentFile(state.room,connection.getUser().asEntityBareJid(),mixed?state.participantId:state.nickname,id,body,encrypted,sharing,reply,correction);
+        if(poll!=null)sent=sent.withPoll(poll);
         if(mixed) {sent=sent.withOccupantId(state.participantId);Map<String,String> aliases=new LinkedHashMap<>(sent.ids);aliases.put("mix-origin",connection.getUser().asBareJid()+"\n"+id);sent=sent.withAliases(aliases);}
         else if(stableOccupants.contains(chat.getRoom())) sent=sent.withOccupantId(occupantId(chat.getOccupantPresence(JidCreate.entityFullFrom(chat.getRoom(),chat.getNickname()))));
         if(displayStickerHint) sent=sent.withDisplayStickerHint(true);
@@ -784,6 +789,12 @@ public final class XmppRooms implements AutoCloseable {
         }
         return sendPq(jid,body,null,reply,correction,excluded,markup,inline,null,null);
     }
+    public XmppRoomMessage sendPoll(String jid,PollDefinition poll,String accompanying,boolean fallback,XmppMessage.Encryption mode,ReplyReference reply,MessageCorrection correction,Set<String> excluded,boolean automatic) throws Exception {
+        if(poll==null || mode==null || mode==XmppMessage.Encryption.LEGACY_OMEMO || mode==XmppMessage.Encryption.OMEMO2)throw new IllegalArgumentException("Structured room polls require plaintext or PQ OMEMO");
+        String body=accompanying==null?"":accompanying;
+        if(mode==XmppMessage.Encryption.PQ_OMEMO)return sendPq(jid,body,null,reply,correction,excluded,null,null,null,null,poll,fallback);
+        return send(jid,body,false,null,reply,correction,excluded,automatic,null,null,false,poll,fallback);
+    }
     public XmppRoomMessage sendFile(String jid,FileLink link,FileShare sharing,String caption,XmppMessage.Encryption mode,
             ReplyReference reply,Set<String> excluded,boolean automatic,MessageMarkup markup,boolean stickerHint) throws Exception {
         if(mode==XmppMessage.Encryption.OMEMO2)throw new UnsupportedOperationException("Classic OMEMO 2 rooms are not supported");
@@ -802,15 +813,19 @@ public final class XmppRooms implements AutoCloseable {
     }
     private XmppRoomMessage sendPq(String jid,String body,FileShare sharing,ReplyReference reply,MessageCorrection correction,
             Set<String> excluded,MessageMarkup markup,InlineEmoji inline,MessageReactions reactions,MessageRetraction retraction) throws Exception {
+        return sendPq(jid,body,sharing,reply,correction,excluded,markup,inline,reactions,retraction,null,false);
+    }
+    private XmppRoomMessage sendPq(String jid,String body,FileShare sharing,ReplyReference reply,MessageCorrection correction,
+            Set<String> excluded,MessageMarkup markup,InlineEmoji inline,MessageReactions reactions,MessageRetraction retraction,PollDefinition poll,boolean pollFallback) throws Exception {
         if(isMix(jid))throw new UnsupportedOperationException("PQ OMEMO2 currently requires a MUC room");
         MultiUserChat chat=chat(jid);State state=state(jid);
         if(!state.joined)throw new IllegalStateException("Room is not joined");
-        if(body==null || body.isEmpty() && reactions==null && retraction==null)throw new IllegalArgumentException("Empty message");
+        if(body==null || body.isEmpty() && reactions==null && retraction==null && poll==null)throw new IllegalArgumentException("Empty message");
         if(markup!=null && !body.equals(markup.body) || inline!=null && !body.equals(inline.body))throw new IllegalArgumentException("Content belongs to another message");
         EntityBareJid own=connection.getUser().asEntityBareJid();
         String id=UUID.randomUUID().toString(),wireBody=reply==null ? body : reply.wireBody(body);
         Message clear=new Message(chat.getRoom(),Message.Type.groupchat);clear.setFrom(own);clear.setStanzaId(id);clear.setBody(wireBody);
-        if(reply!=null)reply.addTo(clear);if(correction!=null)correction.addTo(clear);
+        if(poll!=null)poll.addTo(clear,body,pollFallback,reply);else if(reply!=null)reply.addTo(clear);if(correction!=null)correction.addTo(clear);
         if(markup!=null)markup.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(clear);
         if(inline!=null)inline.inBody(wireBody,wireBody.codePointCount(0,wireBody.length()-body.length())).addTo(clear);
         if(sharing!=null)sharing.addTo(clear,wireBody);
@@ -820,6 +835,7 @@ public final class XmppRooms implements AutoCloseable {
         Message wire=legacySession.pq().encrypt(clear,targets);
         if(!members(jid).equals(before) || !chat.isJoined())throw new OmemoSendException(OmemoSendException.Reason.ROOM_CHANGED);
         wire.addExtension(new OriginIdElement(id));
+        if(poll!=null)wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build());
         Message echo=wire.clone();echo.setFrom(JidCreate.entityFullFrom(jid+"/"+state.nickname));echo.setTo(own);
         XmppRoomMessage sent=XmppRoomMessage.protectedContent(echo,clear,own,state.nickname,XmppMessage.Encryption.PQ_OMEMO,null,null);
         if(sent==null)throw new IllegalStateException("Invalid protected room content");

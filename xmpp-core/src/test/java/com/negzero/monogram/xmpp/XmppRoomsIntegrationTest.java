@@ -14,6 +14,22 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="MONOGRAM_IT",matches="1")
 class XmppRoomsIntegrationTest {
+    @Test void structuredRoomPollsKeepOptionsWithoutBodiesAndSendMatchingClosure()throws Exception {
+        XmppSession.initializeOmemo(new File(root,"keys"),LegacyOmemoTestDatabase.shared());
+        BlockingQueue<XmppRoomMessage> a=new LinkedBlockingQueue<>(),b=new LinkedBlockingQueue<>();
+        try(XmppSession alice=session("alice",3301,a);XmppSession bob=session("bob",3302,b)) {
+            alice.connect();bob.connect();String room=alice.rooms.createPrivate("Alice","Poll room").room.toString();alice.rooms.invite(room,"roombob@localhost","Poll test");bob.rooms.join(room,"Bob",null);
+            PollDefinition poll=PollDefinition.from(PollDefinitionTest.message(PollDefinitionTest.POLL));
+            for(boolean fallback:new boolean[]{false,true}) {
+                XmppRoomMessage sent=alice.rooms.sendPoll(room,poll,"",fallback,XmppMessage.Encryption.PLAIN,null,null,Collections.emptySet(),false);
+                XmppRoomMessage received=readable(b,"");assertNotNull(received.pollXml);assertTrue(poll.sameDefinition(PollDefinition.fromXml(received.pollXml)));assertEquals(sent.pollXml,received.pollXml);
+                alice.rooms.sendPoll(room,poll.withClosed(true),"",false,XmppMessage.Encryption.PLAIN,null,new MessageCorrection(sent.ids.get("stanza")),Collections.emptySet(),false);
+                XmppRoomMessage closed=readable(b,"");assertTrue(PollDefinition.fromXml(closed.pollXml).closed);assertEquals(sent.ids.get("stanza"),closed.correction.id);
+            }
+            assertThrows(IllegalArgumentException.class,()->alice.rooms.sendPoll(room,poll,"",true,XmppMessage.Encryption.LEGACY_OMEMO,null,null,Collections.emptySet(),false));
+            assertThrows(IllegalArgumentException.class,()->alice.rooms.sendPoll(room,poll,"",true,XmppMessage.Encryption.OMEMO2,null,null,Collections.emptySet(),false));
+        }
+    }
     final File root=new File(System.getenv("MONOGRAM_IT_STATE"));
     final BlockingQueue<String> rejectedInvitations=new LinkedBlockingQueue<>();
     final BlockingQueue<String> metadataChanges=new LinkedBlockingQueue<>();

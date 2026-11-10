@@ -47,7 +47,7 @@
         '';
       };
       default = pkgs.mkShell {
-        packages = [ pkgs.jdk21 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.git pkgs.go pkgs.ninja pkgs.yasm pkgs.nasm pkgs.perl pkgs.pkg-config pkgs.cmake pkgs.meson pkgs.gperf pkgs.zlib pkgs.autoconf pkgs.automake pkgs.libtool pkgs.check pkgs.protobufc rust sdk ];
+        packages = [ pkgs.jdk21 pkgs.maven pkgs.prosody pkgs.openssl pkgs.python3 pkgs.git pkgs.go pkgs.ninja pkgs.yasm pkgs.nasm pkgs.perl pkgs.pkg-config pkgs.cmake pkgs.meson pkgs.gperf pkgs.zlib pkgs.autoconf pkgs.automake pkgs.libtool pkgs.check pkgs.protobufc pkgs.protobuf pkgs.rustPlatform.bindgenHook rust sdk ];
         LIBOMEMO_C_SOURCE = libomemo-c.outPath;
         PROTOBUF_C_SOURCE = pkgs.protobufc.src;
         JAVA_HOME = "${pkgs.jdk21}/lib/openjdk";

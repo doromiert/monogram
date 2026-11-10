@@ -12,8 +12,31 @@ import org.telegram.tgnet.*;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows=MonogramReactionsTest.Controller.class)
+@Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class,shadows={MonogramReactionsTest.Controller.class,MonogramPollsTest.App.class})
 public class MonogramPollsTest {
+    @org.robolectric.annotation.Implements(value=ApplicationLoader.class,isInAndroidSdk=false)
+    public static class App { @org.robolectric.annotation.Implementation public static boolean isAndroidTestEnvironment(){return false;} }
+    @Test public void structuredOutboxRoundTripPreservesDelimitersAndCustomMapping()throws Exception {
+        PollDefinition custom=PollDefinition.fromXml(STRUCTURED.replace("Pick food 😀","Literal || |=| 😀"));
+        TLRPC.Message pending=new TLRPC.TL_message();pending.id=-17;pending.out=true;pending.date=100;pending.message="Description only";
+        pending.peer_id=new TLRPC.TL_peerUser();pending.peer_id.user_id=peer;pending.from_id=new TLRPC.TL_peerUser();pending.from_id.user_id=self;pending.flags|=256;
+        pending.media=new TLRPC.TL_messageMediaPoll();((TLRPC.TL_messageMediaPoll)pending.media).poll=new TLRPC.TL_poll();((TLRPC.TL_messageMediaPoll)pending.media).poll.question.text="Native field must not replace XML";((TLRPC.TL_messageMediaPoll)pending.media).results=new TLRPC.TL_pollResults();pending.flags|=512;
+        pending.params=new HashMap<>();MonogramPolls.putXml(pending.params,custom.xml());MonogramPolls.putAccompanying(pending.params,"Note || |=| 😀");MonogramPolls.prepare(pending);
+        SerializedData encoded=new SerializedData();pending.serializeToStream(encoded);SerializedData input=new SerializedData(encoded.toByteArray());
+        TLRPC.Message restored=TLRPC.Message.TLdeserialize(input,input.readInt32(true),true);restored.readAttachPath(input,self);
+        assertTrue(custom.sameDefinition(PollDefinition.fromXml(MonogramPolls.xml(restored.params))));assertEquals("Note || |=| 😀",MonogramPolls.accompanying(restored.params));assertEquals("Tonight",MonogramPolls.retryDescription(restored));encoded.cleanup();input.cleanup();
+        restored.params.put(MonogramPolls.XML,null);assertEquals("",MonogramPolls.xml(restored.params));assertNull(MonogramPolls.data(restored));
+    }
+    @Test public void structuredForwardStartsFreshAndClosureKeepsTheOriginalDefinition()throws Exception {
+        int id=store.save(MessageFixture.structuredPoll("structured-forward",STRUCTURED,true,false,100000,null));
+        TLRPC.Message original=store.getMessage(id,self);org.telegram.messenger.SendMessagesHelper.SendMessageParams send=MonogramForwarding.copy(original,peer,false);
+        PollDefinition fresh=PollDefinition.fromXml(MonogramPolls.xml(send.params));assertFalse(fresh.closed);assertEquals("🍕",fresh.options.get(0).emoji);assertEquals("",send.message);assertNull(send.replyToMsg);
+        TLRPC.TL_messages_editMessage request=new TLRPC.TL_messages_editMessage();request.id=id;request.peer=input(peer);TLRPC.TL_inputMediaPoll closing=new TLRPC.TL_inputMediaPoll();closing.poll=new TLRPC.TL_poll();closing.poll.closed=true;request.media=closing;
+        PollDefinition closed=MonogramPolls.close(request,original,self);assertTrue(closed.closed);assertTrue(closed.sameDefinition(fresh));assertEquals("",request.message);assertNull(request.media);
+        int event=store.save(XmppMessage.sentPoll(org.jxmpp.jid.impl.JidCreate.entityFullFrom("alice@example.org/mobile"),"bob@example.org","closed-typed",closed,"",false,XmppMessage.Encryption.PLAIN,null,new MessageCorrection("structured-forward")));
+        store.reconcileCorrections(peer);assertTrue(media(id).poll.closed);
+        org.telegram.messenger.SendMessagesHelper.SendMessageParams again=MonogramForwarding.copy(store.getMessage(id,self),peer,false);assertFalse(PollDefinition.fromXml(MonogramPolls.xml(again.params)).closed);assertFalse(PollDefinition.fromXml(MonogramPolls.xml(original.params)).closed);
+    }
     Context context;MonogramStore store;long self,peer;
     @Before public void setup() {
         context=RuntimeEnvironment.getApplication();ApplicationLoader.applicationContext=context;ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();
@@ -78,7 +101,7 @@ public class MonogramPollsTest {
         TLRPC.TL_messages_sendMedia source=new TLRPC.TL_messages_sendMedia();source.peer=input(peer);source.random_id=99;source.schedule_date=123;source.silent=true;
         TLRPC.TL_inputMediaPoll media=new TLRPC.TL_inputMediaPoll();source.media=media;media.poll=new TLRPC.TL_poll();media.poll.public_voters=true;media.poll.question.text="Question";
         for(String text:Arrays.asList("Yes","No")) { TLRPC.TL_pollAnswer answer=new TLRPC.TL_pollAnswer();answer.text.text=text;media.poll.answers.add(answer); }
-        TLRPC.TL_messages_sendMessage text=MonogramPolls.text(source);assertSame(source.peer,text.peer);assertEquals(99,text.random_id);assertEquals(123,text.schedule_date);assertTrue(text.silent);assertTrue(text.no_webpage);assertNotNull(MonogramPolls.parse(text.message));
+        TLRPC.TL_messages_sendMessage text=MonogramPolls.text(source);assertSame(source.peer,text.peer);assertEquals(99,text.random_id);assertEquals(123,text.schedule_date);assertTrue(text.silent);assertTrue(text.no_webpage);assertEquals("",text.message);assertEquals("Question",MonogramPolls.definition(source).question);
         media.poll.public_voters=false;assertThrows(MonogramPolls.Invalid.class,() -> MonogramPolls.text(source));
         media.poll.public_voters=true;media.poll.quiz=true;assertThrows(MonogramPolls.Invalid.class,() -> MonogramPolls.text(source));
     }
@@ -148,9 +171,9 @@ public class MonogramPollsTest {
     }
     @Test public void composerDescriptionAndStoredPollRetryBecomeTheSameSendablePoll() {
         TLRPC.TL_messages_sendMedia request=composerRequest("love?");
-        TLRPC.TL_messages_sendMessage sent=MonogramPolls.text(request);MonogramPolls.Poll parsed=MonogramPolls.parse(sent.message);
+        TLRPC.TL_messages_sendMessage sent=MonogramPolls.text(request);PollDefinition parsed=MonogramPolls.definition(request);
         assertNotNull(parsed);assertEquals("love?",parsed.question);assertEquals("love?",parsed.description);assertTrue(parsed.multiple);
-        assertEquals(Arrays.asList("love","love"),parsed.answers);
+        assertEquals(Arrays.asList("love","love"),Arrays.asList(parsed.options.get(0).label,parsed.options.get(1).label));assertEquals("",sent.message);
         TLRPC.Message failed=new TLRPC.TL_message();failed.message=request.message;
         failed.media=new TLRPC.TL_messageMediaPoll();((TLRPC.TL_messageMediaPoll)failed.media).poll=((TLRPC.TL_inputMediaPoll)request.media).poll;
         assertEquals("love?",MonogramPolls.retryDescription(failed));
@@ -165,14 +188,13 @@ public class MonogramPollsTest {
         TLRPC.TL_inputMediaPoll retryPoll=new TLRPC.TL_inputMediaPoll();retryPoll.poll=((TLRPC.TL_messageMediaPoll)restored.media).poll;retry.media=retryPoll;
         retry.message=MonogramPolls.retryDescription(restored);
         assertEquals(sent.message,MonogramPolls.text(retry).message);bytes.cleanup();encoded.cleanup();
-        assertEquals("",MonogramPolls.parse(MonogramPolls.text(composerRequest(null)).message).description);
-        assertEquals("",MonogramPolls.parse(MonogramPolls.text(composerRequest("")).message).description);
+        assertEquals("",MonogramPolls.definition(composerRequest(null)).description);
+        assertEquals("",MonogramPolls.definition(composerRequest("")).description);
     }
     @Test public void descriptionsSurviveReloadCloseForwardingAndNativeSendAcknowledgement() throws Exception {
         String description="A description\n\n📝 with emoji and *literal* text";
-        String wire=MonogramPolls.text(composerRequest(description)).message;
-        int id=store.save(MessageFixture.replyMessage("description","description",null,wire,true,true,100000,"phone",false,null)
-                .withMarkup(MessageMarkup.body(wire).preservingBody()));
+        PollDefinition definition=MonogramPolls.definition(composerRequest(description));String wire="";
+        int id=store.save(XmppMessage.sentPoll(org.jxmpp.jid.impl.JidCreate.entityFullFrom("alice@example.org/mobile"),"bob@example.org","description",definition,"",true,XmppMessage.Encryption.PLAIN,null,null));
         reopen();TLRPC.Message shown=store.getMessage(id,self);
         assertEquals(description,shown.message);assertEquals("love?",((TLRPC.TL_messageMediaPoll)shown.media).poll.question.text);
         assertEquals(wire,MonogramPolls.body(shown));assertEquals(description,MonogramPolls.retryDescription(shown));
@@ -180,7 +202,7 @@ public class MonogramPollsTest {
         assertEquals(description,MonogramPolls.parse(MonogramPolls.freshBody(shown)).description);
         TLRPC.TL_messages_editMessage close=new TLRPC.TL_messages_editMessage();close.id=id;close.peer=input(peer);
         TLRPC.TL_inputMediaPoll closing=new TLRPC.TL_inputMediaPoll();closing.poll=new TLRPC.TL_poll();closing.poll.closed=true;close.media=closing;
-        MonogramPolls.close(close,shown,self);MonogramPolls.Poll closed=MonogramPolls.parse(close.message);
+        PollDefinition closed=MonogramPolls.close(close,shown,self);
         assertTrue(closed.closed);assertEquals(description,closed.description);
     }
 

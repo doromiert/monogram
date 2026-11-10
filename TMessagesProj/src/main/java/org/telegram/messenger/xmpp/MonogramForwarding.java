@@ -138,8 +138,12 @@ public final class MonogramForwarding {
                 send.params.put(SOURCE, Integer.toString(source.id));
                 send.params.put(ADDRESS, source.params.get(MonogramAttachments.PARAM));
             }
-        } else if(media instanceof TLRPC.TL_messageMediaPoll && MonogramPolls.parse(MonogramPolls.body(source))!=null) {
-            send.message=MonogramPolls.freshBody(source);send.entities.clear(); // A forwarded poll starts a fresh vote in its destination.
+        } else if(media instanceof TLRPC.TL_messageMediaPoll && MonogramPolls.data(source)!=null) {
+            MonogramPolls.Poll poll=MonogramPolls.data(source);ArrayList<com.negzero.monogram.xmpp.PollDefinition.Option> options=new ArrayList<>();
+            for(int i=0;i<poll.answers.size();i++)options.add(new com.negzero.monogram.xmpp.PollDefinition.Option(poll.emojis.get(i),poll.answers.get(i)));
+            com.negzero.monogram.xmpp.PollDefinition fresh=new com.negzero.monogram.xmpp.PollDefinition(poll.question,poll.description,options,poll.multiple,false);
+            MonogramPolls.putXml(send.params,fresh.xml());send.message=source.params!=null&&source.params.containsKey(MonogramPolls.XML)?MonogramPolls.body(source):"";
+            MonogramPolls.putAccompanying(send.params,send.message);send.entities.clear();
         } else if(media instanceof TLRPC.TL_messageMediaGeo || media instanceof TLRPC.TL_messageMediaVenue) {
             send.location=TLObject.deepCopy(media,TLRPC.MessageMedia::TLdeserialize);send.entities.clear();
         } else if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {

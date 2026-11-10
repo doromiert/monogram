@@ -27,11 +27,14 @@ public class MonogramScheduledEncryptionTest {
     private static final String OWN="alice@example.org",CONTACT="bob@example.org";
     @Implements(value=MonogramController.class,isInAndroidSdk=false)
     public static class Controller {
-        static int dispatches;static String requiredMode;
+        static int dispatches;static String requiredMode,pollXml;
         @Implementation public void __constructor__(int account) {}
         @Implementation protected TLObject handle(TLObject request,String requiredEncryption) {
             dispatches++;requiredMode=requiredEncryption;
             return new TLRPC.TL_boolTrue();
+        }
+        @Implementation protected TLObject handle(TLObject request,String requiredEncryption,String poll) {
+            pollXml=poll;return handle(request,requiredEncryption);
         }
     }
     @Implements(value=MonogramStore.class,isInAndroidSdk=false)
@@ -85,7 +88,7 @@ public class MonogramScheduledEncryptionTest {
         Session.connection=new XMPPTCPConnection(XMPPTCPConnectionConfiguration.builder().setXmppDomain("example.org").build());
         ReflectionHelpers.setField(Session.connection,"authenticated",true);
         ReflectionHelpers.setField(controller,"session",Shadow.newInstanceOf(XmppSession.class));
-        Controller.dispatches=0;Controller.requiredMode=null;failure=new AtomicReference<>();completed=new AtomicBoolean();
+        Controller.dispatches=0;Controller.requiredMode=null;Controller.pollXml=null;failure=new AtomicReference<>();completed=new AtomicBoolean();
     }
     private void mode(Encryption mode) {
         Session.available=mode;
@@ -97,9 +100,13 @@ public class MonogramScheduledEncryptionTest {
         policy.automatic(OWN,CONTACT,true);
     }
     private void queue(boolean pinned) {
+        queue(pinned,null);
+    }
+    private void queue(boolean pinned,String poll) {
         TLRPC.TL_messages_sendMessage request=new TLRPC.TL_messages_sendMessage();
         request.peer=new TLRPC.TL_inputPeerUser();request.peer.user_id=42;request.message="scheduled";
         ConcurrentHashMap<TLObject,String> modes=ReflectionHelpers.getField(controller,"queuedEncryption");modes.put(request,"OMEMO2");
+        if(poll!=null){ConcurrentHashMap<TLObject,java.util.HashMap<String,String>> metadata=ReflectionHelpers.getField(controller,"queuedSecurityParams");java.util.HashMap<String,String> params=new java.util.HashMap<>();MonogramPolls.putXml(params,poll);metadata.put(request,params);}
         if(pinned) { Set<TLObject> pins=ReflectionHelpers.getField(controller,"queuedPinnedEncryption");pins.add(request); }
         RequestDelegate callback=(response,error)-> { failure.set(error);completed.set(true); };
         ReflectionHelpers.callInstanceMethod(controller,"queueSend",ReflectionHelpers.ClassParameter.from(int.class,0),
@@ -129,5 +136,9 @@ public class MonogramScheduledEncryptionTest {
     @Test public void automaticScheduleMayUseTheCurrentAutomaticPolicy() {
         mode(Encryption.PLAIN);queue(false);sender.drain();
         assertTrue(completed.get());assertNull(failure.get());assertEquals(1,Controller.dispatches);assertNull(Controller.requiredMode);
+    }
+    @Test public void pollMetadataReachesActualDispatchAndRespectsThePinnedEncryptionGate() {
+        mode(Encryption.OMEMO2);queue(true,MonogramPollsTest.STRUCTURED);sender.drain();
+        assertTrue(completed.get());assertNull(failure.get());assertEquals(MonogramPollsTest.STRUCTURED,Controller.pollXml);assertEquals("OMEMO2",Controller.requiredMode);
     }
 }

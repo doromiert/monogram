@@ -201,7 +201,7 @@ public class MonogramForwardingTest {
                 store.getWritableDatabase().execSQL("DROP TABLE local_media_captions");store.getWritableDatabase().setVersion(32);
             }
             try(MonogramStore store=new MonogramStore(context,database)) {
-                assertEquals(33,store.getReadableDatabase().getVersion());assertTrue(store.hiddenMessage(caption));
+                assertEquals(36,store.getReadableDatabase().getVersion());assertTrue(store.hiddenMessage(caption));
                 java.util.ArrayList<TLRPC.Message> history=store.history(peer,self,0,20);
                 assertEquals(1,history.size());assertEquals(file,history.get(0).id);assertEquals("",history.get(0).message);
                 store.clear();assertEquals(0,store.legacyCaptionParent(caption));
@@ -219,7 +219,7 @@ public class MonogramForwardingTest {
                 store.getWritableDatabase().execSQL("DROP TABLE local_forwarded_messages");store.getWritableDatabase().setVersion(31);
             }
             try(MonogramStore store=new MonogramStore(context,db)) {
-                assertEquals(33,store.getReadableDatabase().getVersion());
+                assertEquals(36,store.getReadableDatabase().getVersion());
                 store.forwarded(id,com.negzero.monogram.xmpp.ForwardedContent.of("original@example.org",1700000000,""));
             }
             try(MonogramStore store=new MonogramStore(context,db)) {

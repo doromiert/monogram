@@ -27,6 +27,9 @@ public final class XmppRoomMessage {
     public final InlineEmoji inlineEmoji;
     /** Validated XML; null absent, empty malformed. The body never defines structured options. */
     public final String pollXml;
+    XmppRoomMessage withPoll(PollDefinition poll) {
+        return new XmppRoomMessage(room,sender,body,new LinkedHashMap<>(ids),outgoing,encrypted,readable,timestamp,encryption,archived,realSender,reactions,occupantId,attachment,sharing,caption,reply,correction,realSenderVerified,skippedRecipients,retraction,senderFingerprint,markup,captionMarkup,inlineEmoji,displayStickerHint,poll.xml());
+    }
     public final Map<String,String> ids;
     public final Map<String,String> skippedRecipients;
     public final boolean outgoing, encrypted, readable, archived;

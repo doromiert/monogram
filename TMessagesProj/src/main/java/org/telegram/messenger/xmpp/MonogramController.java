@@ -1954,7 +1954,7 @@ public final class MonogramController {
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);
         }
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
-        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); verifiedRoomTrustMembers.clear(); queuedEncryption.clear(); queuedPinnedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); outbox.clear();
+        synchronized(profileLoads) { accountEpoch++;profileLoads.clear(); } pendingSends.clear(); verifiedRoomTrustMembers.clear(); queuedEncryption.clear(); queuedPinnedEncryption.clear(); queuedLocalIds.clear(); queuedCaptions.clear(); queuedXmrPolicies.clear(); queuedSecurityParams.clear(); outbox.clear();
         for(TranslationRequest translation:translationRequests.values()) translation.cancel();
         translationRequests.clear();
         try { MonogramTranslation.clearConfiguration(account); }
@@ -3452,6 +3452,10 @@ public final class MonogramController {
         if(MonogramPolls.supports(request)) {
             try {
                 TLRPC.TL_messages_sendMessage converted=MonogramPolls.text((TLRPC.TL_messages_sendMedia)request);
+                java.util.HashMap<String,String> params=queuedSecurityParams.remove(request);if(params==null)params=new java.util.HashMap<>();
+                String pollXml=params.containsKey(MonogramPolls.XML)?MonogramPolls.xml(params):MonogramPolls.definition((TLRPC.TL_messages_sendMedia)request).xml();
+                com.negzero.monogram.xmpp.PollDefinition.fromXml(pollXml);
+                MonogramPolls.putXml(params,pollXml);converted.message=MonogramPolls.accompanying(params);queuedSecurityParams.put(converted,params);
                 Integer local=queuedLocalIds.remove(request);String mode=queuedEncryption.remove(request);
                 if(local!=null) queuedLocalIds.put(converted,local);if(mode!=null) queuedEncryption.put(converted,mode);
                 RequestDelegate pollCompleted=(response,error) -> {
@@ -3462,8 +3466,8 @@ public final class MonogramController {
                     completed.run(response,error);
                 };
                 if(converted.schedule_date!=0) scheduleOutgoing(converted,pollCompleted);else queueSend(token,converted,pollCompleted);
-            } catch(MonogramPolls.Invalid invalid) {
-                queuedLocalIds.remove(request);queuedEncryption.remove(request);
+            } catch(IllegalArgumentException invalid) {
+                queuedLocalIds.remove(request);queuedEncryption.remove(request);queuedSecurityParams.remove(request);
                 TLRPC.TL_error error=new TLRPC.TL_error();error.code=400;error.text="MONOGRAM_XMPP_FAILED|"+invalid.getMessage();
                 Utilities.stageQueue.postRunnable(() -> completed.run(null,error));
             }
@@ -3495,6 +3499,7 @@ public final class MonogramController {
     }
     public void prepareOutgoingMessage(TLRPC.Message message) {
         if(message.params==null) message.params=new java.util.HashMap<>();
+        MonogramPolls.prepare(message);
         if(message.media instanceof TLRPC.TL_messageMediaGeo || message.media instanceof TLRPC.TL_messageMediaVenue) message.params.put("monogram-location","1");
         if (message.dialog_id>0 && message.dialog_id!=self) MonogramReceipts.pending(message);
         message.params.putIfAbsent(QUEUED_ENCRYPTION,encryption(message.dialog_id).name());
@@ -3504,6 +3509,8 @@ public final class MonogramController {
         if(!(request instanceof TLRPC.TL_messages_sendMessage) && !(request instanceof MonogramFileRequest) && !MonogramLocation.supports(request) && !MonogramPolls.supports(request)) return;
         MonogramSelfChat.resolve(request,self);
         prepareOutgoingMessage(message); queuedEncryption.put(request,message.params.get(QUEUED_ENCRYPTION)); queuedLocalIds.put(request,message.id);
+        if(request instanceof TLRPC.TL_messages_sendMessage && message.params.containsKey(MonogramPolls.XML))
+            MonogramPolls.putAccompanying(message.params,((TLRPC.TL_messages_sendMessage)request).message);
         message.params.remove("monogram-actual-encryption");
         queuedSecurityParams.put(request,message.params);
         if(request instanceof TLRPC.TL_messages_sendMessage && message.params.containsKey(MonogramForwarding.CAPTION_PARENT)) try {
@@ -3521,6 +3528,7 @@ public final class MonogramController {
     }
     private void scheduleOutgoing(TLRPC.TL_messages_sendMessage request,RequestDelegate completed) {
         Integer local=queuedLocalIds.remove(request); String selected=queuedEncryption.remove(request);
+        java.util.HashMap<String,String> params=queuedSecurityParams.remove(request);
         try {
             long peer=sendingPeer(request);
             if(local==null || local>=0 || peer==0) throw new IllegalArgumentException("Scheduled message was not added to the local outbox");
@@ -3532,7 +3540,7 @@ public final class MonogramController {
             int scheduledId=MonogramScheduledMessages.allocateId(account,owner,accountEpoch);
             if(scheduledId<=0) throw new IllegalStateException("Could not allocate a scheduled-message id");
             MonogramScheduledMessages.Entry entry=MonogramScheduledMessages.fromRequest(scheduledId,local,request.schedule_date*1000L,
-                    request.schedule_repeat_period,destination,request,selected,!automaticEncryption(peer),"");
+                    request.schedule_repeat_period,destination,request,selected,!automaticEncryption(peer),MonogramPolls.scheduledPayload(params));
             if(!MonogramScheduledMessages.put(account,owner,accountEpoch,entry)) throw new IllegalStateException("Could not save scheduled message");
             armScheduledWake();
             Updates updates=new Updates(); updates.date=now();
@@ -3576,6 +3584,8 @@ public final class MonogramController {
             if(epoch!=accountEpoch || !owner.equals(accountJid())) { MonogramScheduledMessages.releaseGeneration(account,owner,epoch);return; }
             if(!entry.destination.equals(store.jid(entry.peer))) throw new IllegalStateException("The recipient changed");
             TLRPC.TL_messages_sendMessage request=entry.request(MessagesController.getInstance(account).getInputPeer(entry.peer));
+            String pollXml=MonogramPolls.scheduledXml(entry.payload);
+            if(pollXml!=null){java.util.HashMap<String,String> params=new java.util.HashMap<>();MonogramPolls.putXml(params,pollXml);queuedSecurityParams.put(request,params);}
             // The scheduled projection has a native positive id.  A fired XMPP request is a new
             // ordinary outbox item, never that scheduled id, or native storage can conflate both.
             queuedEncryption.put(request,entry.manualEncryption ? entry.encryption : encryption(entry.peer).name());
@@ -3620,6 +3630,7 @@ public final class MonogramController {
     }
     private static final class PendingSend {
         LegacyCaptionTarget caption;
+        String pollXml;
         Boolean xmrPrivate;
         final long created=System.nanoTime();
         final String encryption;
@@ -3702,6 +3713,7 @@ public final class MonogramController {
             completed.run(response,error);
         };
         PendingSend pending=new PendingSend(token,accountEpoch,request,finished,mode,local==null ? request instanceof MonogramFileRequest ? ((MonogramFileRequest)request).localId : 0 : local,queuedPinnedEncryption.remove(request));
+        pending.pollXml=MonogramPolls.xml(securityParams);
         pending.caption=queuedCaptions.remove(request);
         pending.xmrPrivate=queuedXmrPolicies.get(request);
         pendingSends.put(token,pending); scheduleSend(pending);
@@ -3795,7 +3807,7 @@ public final class MonogramController {
                         });
                     } else pending.completed.run(response,error);
                 }
-            },pending.owner,pending.pinnedEncryption ? pending.encryption : null);
+            },pending.owner,pending.pinnedEncryption ? pending.encryption : null,pending.pollXml);
         });
     }
     private void flushPendingSends() {
@@ -3922,6 +3934,9 @@ public final class MonogramController {
         dispatchRequest(request,callback,epoch,null);
     }
     private void dispatchRequest(TLObject request, RequestDelegate callback,long epoch,String requiredEncryption) {
+        dispatchRequest(request,callback,epoch,requiredEncryption,null);
+    }
+    private void dispatchRequest(TLObject request, RequestDelegate callback,long epoch,String requiredEncryption,String pollXml) {
         if (request instanceof MonogramFileRequest) {
             sendWorker.execute(() -> { if(epoch==accountEpoch) upload((MonogramFileRequest)request,callback); }); return;
         }
@@ -3946,7 +3961,7 @@ public final class MonogramController {
                 return;
             }
             TLObject response = null; TLRPC.TL_error error = null;
-            try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = handle(request,requiredEncryption); }
+            try { if(epoch!=accountEpoch) throw new IllegalStateException("Account changed"); response = pollXml==null?handle(request,requiredEncryption):handle(request,requiredEncryption,pollXml); }
             catch (Exception e) {
                 if(debugLog.enabled() && (sendingPeer(request)!=0 || e instanceof java.security.GeneralSecurityException
                         || request instanceof TLRPC.TL_messages_sendReaction)) {
@@ -4201,7 +4216,8 @@ public final class MonogramController {
         return storyBridge;
     }
     private TLObject handle(TLObject request) throws Exception { return handle(request,null); }
-    private TLObject handle(TLObject request,String requiredEncryption) throws Exception {
+    private TLObject handle(TLObject request,String requiredEncryption) throws Exception { return handle(request,requiredEncryption,null); }
+    private TLObject handle(TLObject request,String requiredEncryption,String pollXml) throws Exception {
         TLObject localFilters=MonogramLocalFilters.handle(request);if(localFilters!=null) return localFilters;
         TLObject storyResult=stories().handle(request);if(storyResult!=null) return storyResult;
         if(request instanceof TLRPC.TL_messages_getQuickReplyMessages) {
@@ -4608,11 +4624,13 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_editMessage) {
             TLRPC.TL_messages_editMessage edit = (TLRPC.TL_messages_editMessage) request;
-            if(edit.media instanceof TLRPC.TL_inputMediaPoll) MonogramPolls.close(edit,store.getMessage(edit.id,self),self);
+            com.negzero.monogram.xmpp.PollDefinition closedPoll=edit.media instanceof TLRPC.TL_inputMediaPoll ? MonogramPolls.close(edit,store.getMessage(edit.id,self),self) : null;
             if (edit.peer == null || edit.peer.user_id == 0 && edit.peer.chat_id == 0 || edit.media != null || edit.schedule_date != 0 || edit.quick_reply_shortcut_id != 0
                     || (edit.flags & 2048) == 0 && edit.rich_message==null) throw new UnsupportedOperationException();
             long peer = edit.peer.chat_id>0 ? -edit.peer.chat_id : edit.peer.user_id;
             MonogramStore.EditTarget target = editTarget(edit.id, peer);
+            TLRPC.Message original=store.getMessage(edit.id,self);
+            if(closedPoll==null && original.params!=null && original.params.containsKey(MonogramPolls.XML))throw new MonogramPolls.Invalid("Only closing an existing poll is supported.");
             com.negzero.monogram.xmpp.InlineEmoji inline=target.sharing==null ? MonogramEmojis.fromEntities(account,edit.message,edit.entities) : null;
             MessageMarkup markup = edit.rich_message!=null ? new MessageMarkup(MonogramArticles.markdown(edit.rich_message),java.util.Collections.emptyList()).asMarkdown()
                     : MonogramMentions.fromEntities(store,peer,edit.message,edit.entities);
@@ -4622,18 +4640,18 @@ public final class MonogramController {
                     : target.encryption==XmppMessage.Encryption.PLAIN ? encryption(peer) : target.encryption;
             int saved;
             if(peer<0) {
-                com.negzero.monogram.xmpp.XmppRoomMessage message=target.sharing==null
+                com.negzero.monogram.xmpp.XmppRoomMessage message=closedPoll!=null ? session().rooms.sendPoll(store.jid(peer),closedPoll,edit.message,true,mode,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer)) : target.sharing==null
                         ? session().rooms.send(store.jid(peer),markup.body,mode,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup,inline)
                         : session().rooms.correctFile(store.jid(peer),target.sharing,markup.body,mode,target.reply,target.correction,excludedRoomRecipients(peer),automaticRoomRecipients(peer),markup);
                 saved=store.saveRoom(message,self); if(message.encrypted) reportSkippedRecipients(peer,message);
             }
             else {
                 XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-                String stanza=target.sharing==null ? expected.correct(store.jid(peer),markup.body,mode,target.reply,target.correction,markup,inline)
+                String stanza=closedPoll!=null ? expected.sendPoll(store.jid(peer),closedPoll,edit.message,true,mode,target.reply,target.correction) : target.sharing==null ? expected.correct(store.jid(peer),markup.body,mode,target.reply,target.correction,markup,inline)
                         : expected.correctFile(store.jid(peer),target.sharing,markup.body,mode,target.reply,target.correction,markup);
-                XmppMessage message=target.sharing==null ? XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,markup.body,mode,target.reply,target.correction)
+                XmppMessage message=closedPoll!=null ? XmppMessage.sentPoll(expected.connection().getUser(),store.jid(peer),stanza,closedPoll,edit.message,true,mode,target.reply,target.correction) : target.sharing==null ? XmppMessage.sent(expected.connection().getUser(),store.jid(peer),stanza,markup.body,mode,target.reply,target.correction)
                         : XmppMessage.sentFile(expected.connection().getUser(),store.jid(peer),stanza,target.sharing,markup.body,target.reply,target.correction);
-                saved=store.save(message.withMarkup(markup).withInlineEmoji(inline).withSenderFingerprint(fingerprint));
+                saved=store.save((closedPoll==null?message.withMarkup(markup).withInlineEmoji(inline):message).withSenderFingerprint(fingerprint));
             }
             MonogramStore.CorrectionChanges corrections = store.reconcileCorrections(peer, java.util.Collections.singleton(saved));
             refreshReplies(peer, corrections.edited);
@@ -4647,6 +4665,7 @@ public final class MonogramController {
         }
         if (request instanceof TLRPC.TL_messages_sendMessage) {
             TLRPC.TL_messages_sendMessage send = (TLRPC.TL_messages_sendMessage) request;
+            com.negzero.monogram.xmpp.PollDefinition poll=pollXml==null?null:com.negzero.monogram.xmpp.PollDefinition.fromXml(pollXml);
             if(send.reply_to instanceof TLRPC.TL_inputReplyToStory) {
                 String prefix=stories().replyQuote(send.reply_to.story_id,send.peer.user_id);
                 send.message=prefix+(send.message==null?"":send.message);
@@ -4664,7 +4683,8 @@ public final class MonogramController {
                 XmppMessage.Encryption mode=requiredEncryption==null ? encryption(dialog) : XmppMessage.Encryption.valueOf(requiredEncryption);
                 checkXmrSending(send,mode);
                 if(!store.room(dialog).autojoin) throw new IllegalStateException("Room has been left");
-                com.negzero.monogram.xmpp.XmppRoomMessage message=session().rooms.send(store.jid(dialog),markup.body,mode,outgoingReply(send.reply_to,dialog,mode!=XmppMessage.Encryption.PLAIN),null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
+                ReplyReference reply=outgoingReply(send.reply_to,dialog,mode!=XmppMessage.Encryption.PLAIN);
+                com.negzero.monogram.xmpp.XmppRoomMessage message=poll!=null ? session().rooms.sendPoll(store.jid(dialog),poll,send.message,true,mode,reply,null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog)) : session().rooms.send(store.jid(dialog),markup.body,mode,reply,null,excludedRoomRecipients(dialog),automaticRoomRecipients(dialog),markup,inline);
                 int id=store.saveRoom(message,self); refreshReplies(dialog); if(message.encrypted) reportSkippedRecipients(dialog,message);
                 TLRPC.TL_updateShortSentMessage result=new TLRPC.TL_updateShortSentMessage(); result.id=id; result.date=(int)(message.timestamp/1000); result.out=true;
                 TLRPC.Message projected=store.getMessage(id,self); result.message=projected.message; result.entities=projected.entities;
@@ -4676,8 +4696,8 @@ public final class MonogramController {
             checkXmrSending(send,mode);
             ReplyReference reply = outgoingReply(send.reply_to, peer, mode!=XmppMessage.Encryption.PLAIN);
             XmppSession expected=session(); String fingerprint=expected.senderFingerprint(mode);
-            String stanza = expected.send(store.jid(peer), markup.body, mode, reply, markup,inline);
-            XmppMessage message = XmppMessage.sent(expected.connection().getUser(), store.jid(peer), stanza, markup.body, mode, reply,null).withMarkup(markup).withInlineEmoji(inline).withSenderFingerprint(fingerprint);
+            String stanza = poll!=null ? expected.sendPoll(store.jid(peer),poll,send.message,true,mode,reply,null) : expected.send(store.jid(peer), markup.body, mode, reply, markup,inline);
+            XmppMessage message = (poll!=null ? XmppMessage.sentPoll(expected.connection().getUser(),store.jid(peer),stanza,poll,send.message,true,mode,reply,null) : XmppMessage.sent(expected.connection().getUser(), store.jid(peer), stanza, markup.body, mode, reply,null).withMarkup(markup).withInlineEmoji(inline)).withSenderFingerprint(fingerprint);
             int date = (int) (message.timestamp / 1000); int id = store.save(message);
             refreshReplies(peer);
             TLRPC.TL_updateShortSentMessage result = new TLRPC.TL_updateShortSentMessage();

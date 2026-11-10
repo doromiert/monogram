@@ -50,6 +50,25 @@ public final class PollDefinition {
         return poll.build();
     }
     public void addTo(Message message){message.addExtension(element());}
+    public String readableBody() {
+        StringBuilder text=new StringBuilder("📊 ").append(question);
+        if(!description.isEmpty())text.append("\n\n").append(description);
+        text.append("\n\n");for(Option option:options)text.append(option.emoji).append(' ').append(option.label).append('\n');
+        return text.append(closed?"Voting closed.":multiple?"Public votes. Choose any.":"Public votes. Choose one.").toString();
+    }
+    /** Build the optional body and independent poll/reply fallback ranges from structured fields. */
+    public void addTo(Message message,String accompanying,boolean fallback,ReplyReference reply) {
+        String body=accompanying==null?"":accompanying;
+        String redundant=fallback?(body.isEmpty()?"":"\n\n")+readableBody():"";
+        body+=redundant;if(reply!=null){body=reply.wireBody(body);reply.addTo(message);}
+        message.setBody(body.isEmpty()?null:body);
+        addTo(message);
+        if(fallback) {
+            int end=body.codePointCount(0,body.length()),start=end-redundant.codePointCount(0,redundant.length());
+            message.addExtension(StandardExtensionElement.builder("fallback",ReplyReference.FALLBACK).addAttribute("for",NAMESPACE)
+                .addElement(StandardExtensionElement.builder("body",ReplyReference.FALLBACK).addAttribute("start",Integer.toString(start)).addAttribute("end",Integer.toString(end)).build()).build());
+        }
+    }
     public static PollDefinition from(Message message) {
         List<ExtensionElement> found=message.getExtensions("poll",NAMESPACE);
         if(found.isEmpty())return null;

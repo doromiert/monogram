@@ -45,7 +45,7 @@ public class MonogramRosterContactsTest {
     @Test public void previousSchemaMigratesAndHydratesRosterWithoutDroppingHistory() throws Exception {
         int id=store.save(MessageFixture.message("kept","kept",null,"Before migration",true,false,100000));
         store.getWritableDatabase().execSQL("DROP TABLE roster_contacts");store.getWritableDatabase().setVersion(33);store.close();
-        store=new MonogramStore(context,"roster-contacts.db");assertEquals(34,store.getReadableDatabase().getVersion());
+        store=new MonogramStore(context,"roster-contacts.db");assertEquals(36,store.getReadableDatabase().getVersion());
         assertEquals("Before migration",store.getMessage(id,self).message);assertFalse(store.user(peer,self).contact);
         store.rosterContacts(Collections.singleton("bob@example.org"));assertTrue(store.user(peer,self).contact);
     }

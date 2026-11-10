@@ -392,6 +392,8 @@ public final class MonogramScheduledMessages {
         message.params.put("monogram-scheduled", "1");
         message.params.put("monogram-scheduled-encryption", entry.encryption);
         if (entry.manualEncryption) message.params.put("monogram-scheduled-manual-encryption", "1");
+        String pollXml=MonogramPolls.scheduledXml(entry.payload);
+        if(pollXml!=null){MonogramPolls.putXml(message.params,pollXml);MonogramPolls.putAccompanying(message.params,entry.body);MonogramPolls.decorate(message,self);}
         return message;
     }
 

@@ -76,6 +76,16 @@ class PqOmemoMucTest {
             XmppMessage dm=direct.poll(15,TimeUnit.SECONDS);assertNotNull(dm);assertEquals("direct after group",dm.body);
             assertEquals(XmppMessage.Encryption.PQ_OMEMO,dm.encryption);
             assertTrue(direct.isEmpty(),"Room traffic must not create direct messages");
+            PollDefinition poll=PollDefinition.from(PollDefinitionTest.message(PollDefinitionTest.POLL));
+            java.util.concurrent.BlockingQueue<org.jivesoftware.smack.packet.Message> pollWires=new LinkedBlockingQueue<>();
+            alice.connection().addStanzaInterceptor(stanza->pollWires.add((org.jivesoftware.smack.packet.Message)stanza),stanza->stanza instanceof org.jivesoftware.smack.packet.Message && stanza.hasExtension("encrypted",XmppPqOmemo.NS));
+            String pollId=alice.sendPoll(bob.ownJid(),poll,"",false,XmppMessage.Encryption.PQ_OMEMO,null,null);
+            XmppMessage dmPoll=direct.poll(15,TimeUnit.SECONDS);assertNotNull(dmPoll);assertEquals("",dmPoll.body);assertEquals(pollId,dmPoll.ids.get("stanza"));assertTrue(poll.sameDefinition(PollDefinition.fromXml(dmPoll.pollXml)));
+            XmppRoomMessage roomPoll=alice.rooms.sendPoll(room,poll,"",false,XmppMessage.Encryption.PQ_OMEMO,null,null,Collections.emptySet(),false);
+            assertTrue(poll.sameDefinition(PollDefinition.fromXml(await("").pollXml)));
+            alice.rooms.sendPoll(room,poll.withClosed(true),"",false,XmppMessage.Encryption.PQ_OMEMO,null,new MessageCorrection(roomPoll.ids.get("origin")),Collections.emptySet(),false);
+            XmppRoomMessage closed=await("");assertTrue(PollDefinition.fromXml(closed.pollXml).closed);assertEquals(roomPoll.ids.get("origin"),closed.correction.id);
+            for(int i=0;i<3;i++){org.jivesoftware.smack.packet.Message wire=pollWires.poll(5,TimeUnit.SECONDS);assertNotNull(wire);assertFalse(wire.hasExtension("poll",PollDefinition.NAMESPACE));assertFalse(wire.hasExtension("fallback",ReplyReference.FALLBACK));}
             for(PqOmemoDevice.Fingerprint key:bob.pq().discover(alice.ownJid()))bob.pq().device.trust(alice.ownJid(),key.device,key.fingerprint,false);
             // Blocking deliberately discards the old session. Start a fresh authenticated
             // handshake so this models an unapproved first contact, not erased history keys.

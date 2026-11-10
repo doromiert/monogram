@@ -20,24 +20,43 @@ also fixed for interoperable protected content. Both readers collapse identical
 historical text duplicates while rejecting conflicting bodies, subjects, threads
 or attributes. Encrypted Java-generated historical vectors verify the Rust reader.
 
-**Native mobile creation, update sending, forwarding and scheduled/outbox metadata
-migration remain open.** The composer still emits the legacy body convention
-below and structured update requests currently fail explicitly. Mobile does not
-advertise this namespace until those paths are complete. Rust direct-poll creation,
-voting/results, closure and reload have native disposable-server checks; physical
-cross-client UI exchange and complete room parity are not established. See the
+Native mobile creation now derives XML directly from the native question, description,
+options and mode. It never recovers authoritative fields from a fallback body.
+The composer uses a readable fallback; the shared send API also supports bodyless
+polls. Author closure sends the unchanged complete definition. Forwarding creates
+an open poll with a fresh send identity and no copied ballots, preserving custom
+emoji mappings and attribution. The proposed namespace is advertised.
+
+Native outbox params retain encoded XML before serialization. Base64 avoids the
+native attach-path parameter delimiters (`||` and `|=|`); arbitrary poll text must
+not become new local parameters. Pending sends snapshot that metadata. The local
+scheduled journal retains the definition across claims, retries and repeated
+occurrences, and projects a native poll card. Existing account/encryption fences
+remain in force. These changes preserve metadata; they do not establish exactly
+once delivery after an uncertain network send.
+
+Direct sends support plaintext, OMEMO 2 and PQ OMEMO; room sends support plaintext
+and PQ OMEMO MUCs. Legacy body-only encryption and classic OMEMO 2 room sending
+fail explicitly, with no plaintext or outer-metadata downgrade. Historical legacy
+body polls remain readable/votable and close using their historical format.
+
+A native mobile fallback toggle, physical cross-client UI acceptance, desktop
+historical body compatibility and desktop room transport remain open. See the
 [desktop implementation status](../../desktop/docs/STRUCTURED_POLLS.md).
 
 ## Verification
 
 Shared-core tests exercise bodyless/translated fallbacks, explicit choices,
 Unicode/serialized bounds, malformed definitions, independent reply offsets,
-model copies and actual OMEMO 2 payload roundtrips. The test-only
-`GeneratePollVectors` exports Java wire/semantic/crypto vectors for Rust. Native
-Robolectric checks cover structured cards, custom mapping, late votes, withdrawal,
-closure/reopen, deletion and schema upgrades from 34/35; historical poll behavior
-remains covered. Local APKs use unchanged native libraries from the 0.2.195 baseline
-for this Java-only change and a separate local debug signing identity. No real
+model copies, outgoing fallback/reply ranges and actual OMEMO 2 payload roundtrips.
+The test-only `GeneratePollVectors` exports Java wire/semantic/crypto vectors for
+Rust. Live disposable-server checks exercise plaintext/OMEMO 2 direct and plaintext room
+bodyless/fallback delivery, public votes and complete closure. Separate pinned
+PQ backend tests verify bodyless direct/MUC sends and closure with no exposed
+poll/fallback XML. Native Robolectric checks cover structured cards, custom mapping, late votes, withdrawal,
+closure/reopen, deletion, native outbox delimiter roundtrips, scheduled retries/repeats,
+forwarding and schema upgrades; historical poll behavior remains covered. Local APKs use unchanged native libraries from the 0.2.195 baseline
+for these application-code changes and a separate local debug signing identity. No real
 account, phone install or user key store is used for these checks.
 
 ## Deployed legacy body convention
