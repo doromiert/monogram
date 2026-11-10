@@ -52,7 +52,8 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     private void openFingerprints(String contact) {
         MonogramSecurityActivity page=new MonogramSecurityActivity(currentAccount,peer,true,contact);
-        page.identities.putAll(identities);page.states.putAll(states);page.modern=modern;
+        page.identities.putAll(identities);page.states.putAll(states);
+        page.modern=modern || !fingerprintsPage && MonogramController.get(currentAccount).pqEncryption(peer);
         page.ownFingerprint=ownFingerprint;page.loadedSession=loadedSession;
         presentFragment(page);
     }
@@ -76,7 +77,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     private void loadIdentities() { loadIdentities(false); }
     private void loadIdentities(boolean force) {
         MonogramController controller=MonogramController.get(currentAccount);
-        if (!accountPage && controller.pqEncryption(peer)) {
+        if (!fingerprintsPage && controller.pqEncryption(peer)) {
             generation++; identities.clear(); states.clear(); ownFingerprint = null;
             status = "Experimental PQ identities use separate fingerprint approval."; refresh(); return;
         }
@@ -85,7 +86,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(fingerprintSetupTask!=null) fingerprintSetupTask.cancel(true);
         if(fingerprintRequest!=null) fingerprintRequest.close();
         if(force) try { controller.session().rooms.retryUnavailable(); } catch(Exception disconnected) {}
-        final boolean selectedModern=accountPage ? modern : controller.modernEncryption(peer);
+        final boolean selectedModern=fingerprintsPage ? modern : controller.modernEncryption(peer);
         if(modern!=selectedModern) { identities.clear(); states.clear(); ownFingerprint=null; }
         modern=selectedModern; status=!fingerprintsPage ? "Checking conversation…" : identities.isEmpty() ? "Loading fingerprints…" : "Showing cached fingerprints; refreshing…"; refresh();
         fingerprintSetupTask=fingerprintSetup.submit(() -> {
@@ -180,16 +181,19 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         Map<OmemoDevice,OmemoFingerprint> displayed=displayedIdentities();
         if(accountPage) {
             items.add(UItem.asShadow(controller.accountJid()));
-            items.add(UItem.asButton(30,"Fingerprint version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
-            items.add(UItem.asShadow("Select which version’s account fingerprints to view. Sending encryption is set in each chat’s Conversation security."));
+        } else if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
+        items.add(UItem.asButton(30,"Fingerprint version",modern ? "OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        items.add(UItem.asShadow("Choose which fingerprints to view. Sending encryption is set separately in Conversation security."));
+        if(accountPage) {
             items.add(UItem.asHeader("This device"));
             if(ownDeviceId>0)items.add(UItem.asSettingsCell(0,"Device ID",Integer.toString(ownDeviceId)).setEnabled(false));
             items.add(UItem.asShadow(groupedFingerprint(ownFingerprint)));
             if(ownFingerprint!=null)items.add(UItem.asButton(3,R.drawable.msg_copy,"Copy this device’s fingerprint"));
             items.add(UItem.asHeader("Other encryption devices on your account"));
-        } else if(fingerprintContact!=null) items.add(UItem.asShadow(fingerprintContact));
+        }
         items.add(UItem.asButton(6,R.drawable.msg_retry,"Refresh fingerprints").setEnabled(!saving));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
+            addContactBlindTrust(items, controller);
             items.add(UItem.asButton(8,R.drawable.msg_addcontact,"Control access"));
             if(status!=null && !status.startsWith("Loading"))items.add(UItem.asShadow(status));
         }
@@ -221,6 +225,10 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         if(ownFingerprint!=null && !accountPage) items.add(UItem.asButton(3,"Your fingerprint"));
         items.add(UItem.asButton(11,"Diagnostics"));
     }
+    private void addContactBlindTrust(ArrayList<UItem> items, MonogramController controller) {
+        items.add(UItem.asCheck(31,"Blindly trust this contact").setChecked(controller.blindlyTrustContact(peer)).setEnabled(!saving));
+        items.add(UItem.asShadow("Applies to Legacy OMEMO and OMEMO 2. New devices and changed keys are approved automatically. Blocked devices stay blocked. Turning this off stops new approvals and keeps previously approved fingerprints."));
+    }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
         if(fingerprintsPage) { fillFingerprints(items);return; }
@@ -229,18 +237,18 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         items.add(UItem.asShadow("A closed lock beside a message’s time marks recorded end-to-end encryption. Unencrypted messages have no lock. Queued messages receive an indicator only after sending is confirmed."));
 
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
-        items.add(UItem.asButton(5,"OMEMO version",controller.pqEncryption(peer) ? "PQ OMEMO2 · experimental" : modern ? "Classic OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        items.add(UItem.asButton(5,"Sending OMEMO version",controller.pqEncryption(peer) ? "PQ OMEMO2 · experimental" : modern ? "Classic OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         if(peer<0 && !controller.pqEncryption(peer)) items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
-        if(peer>0 && !controller.pqEncryption(peer) && !controller.accountJid().equals(controller.jid(peer))) {
-            items.add(UItem.asCheck(31,"Blindly trust this contact").setChecked(controller.blindlyTrustContact(peer)).setEnabled(!saving));
-            items.add(UItem.asShadow("Automatically trust this contact’s new devices and changed keys in both OMEMO versions. Blocked devices stay blocked. Turning this off stops future automatic approvals; accepted fingerprints remain trusted."));
+        if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
+            addContactBlindTrust(items, controller);
         }
         if(peer<0 && !controller.pqEncryption(peer)) {
             items.add(UItem.asCheck(32,"Automatically trust room fingerprints").setChecked(controller.blindlyTrustRoom(peer)).setEnabled(!saving));
             items.add(UItem.asShadow("Trusts new devices and changed keys for known members of this room. Blocked devices stay blocked. Decisions are shared with direct chats and remain trusted when this is turned off."));
         }
         items.add(UItem.asButton(13,"Devices and fingerprints"));
+        if(controller.pqEncryption(peer))items.add(UItem.asButton(51,"Experimental PQ OMEMO fingerprints"));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer)))items.add(UItem.asButton(26,"Revoke presence access").setEnabled(!saving));
         items.add(UItem.asHeader("More"));
         if(peer<0 && !roomMembers.isEmpty()) {
@@ -266,6 +274,12 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         StringBuilder details=new StringBuilder();
         String error=controller.lastSendError(peer);
         if(error!=null) details.append("Last send failure: ").append(org.telegram.ui.Components.AlertsCreator.monogramSendErrorText(error)).append("\n\n");
+        try {
+            com.negzero.monogram.xmpp.XmppSession session=controller.session();
+            Exception modernError=session.modernFailure(), legacyError=session.legacyFailure();
+            if(modernError!=null) details.append("Last account OMEMO 2 error: ").append(com.negzero.monogram.xmpp.XmppRequestException.describe(modernError)).append("\n\n");
+            if(legacyError!=null) details.append("Last account Legacy OMEMO error: ").append(com.negzero.monogram.xmpp.XmppRequestException.describe(legacyError)).append("\n\n");
+        } catch(IllegalStateException disconnected) { }
         if(status!=null) details.append(status).append("\n\n");
         String skipped=peer<0 ? controller.skippedRoomRecipients(peer) : null;
         if(skipped!=null) details.append(skipped);
@@ -289,17 +303,17 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                 .setPositiveButton("Enable blind trust",(dialog,which)->{
                     try{controller.setBlindlyTrustContact(peer,true);loadIdentities(true);}catch(Exception error){showBlindTrustError(error);}
                 }).setNegativeButton("Cancel",null).create());
-        } else if(item.id==30 && accountPage && !saving) {
+        } else if(item.id==30 && fingerprintsPage && !saving) {
             showDialog(new AlertDialog.Builder(getContext()).setTitle("Fingerprint version")
                 .setItems(new CharSequence[]{"OMEMO 2","Legacy OMEMO"},(dialog,which)->{
                     try {
-                        controller.setAccountFingerprintModern(which==0);
-                        modern=controller.accountFingerprintModern();identities.clear();states.clear();ownFingerprint=null;ownDeviceId=0;loadIdentities(true);
+                        if(accountPage) controller.setAccountFingerprintModern(which==0);
+                        modern=which==0;identities.clear();states.clear();ownFingerprint=null;ownDeviceId=0;loadIdentities(true);
                     } catch(Exception failed) {
                         showDialog(new AlertDialog.Builder(getContext()).setTitle("Could not save fingerprint version").setMessage("Try again.").setPositiveButton("OK",null).create());
                     }
                 }).create());
-        } else if(item.id==51 || item.id==13 && controller.pqEncryption(peer)) {
+        } else if(item.id==51) {
             presentFragment(new MonogramPqSecurityActivity(currentAccount,peer));
         } else if(item.id==13) {
             openFingerprints(null);
@@ -357,8 +371,9 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     .setPositiveButton("Use plain messages", (dialog, which) -> { controller.setEncrypted(peer, false); refresh(); })
                     .setNegativeButton("Cancel", null).create());
             else { controller.setEncrypted(peer, true); refresh(); }
-        } else if (item.id==5 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("OMEMO version")
-                .setItems(new CharSequence[]{"PQ OMEMO2 · Monocles (experimental)","Legacy OMEMO · older clients"},(dialog,which) -> {
+        } else if (item.id==5 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("Sending OMEMO version")
+                .setItems(peer>0 ? new CharSequence[]{"PQ OMEMO2 · Monocles (experimental)","Classic OMEMO 2","Legacy OMEMO · older clients"}
+                        : new CharSequence[]{"PQ OMEMO2 · Monocles (experimental)","Legacy OMEMO · older clients"},(dialog,which) -> {
                     if (which == 0) {
                         saving = true; refresh();
                         controller.enablePq(error -> {
@@ -369,7 +384,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                         });
                         return;
                     }
-                    controller.setEncryption(peer,XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
+                    controller.setEncryption(peer,peer>0 && which==1 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
                 }).create());
         else if (item.id==6 && !saving) loadIdentities(true);
         else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));

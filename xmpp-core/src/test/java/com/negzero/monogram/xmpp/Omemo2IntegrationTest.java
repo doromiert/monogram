@@ -57,7 +57,7 @@ class Omemo2IntegrationTest {
     @Test void publicBundlesPrivateCaptionsCarbonsArchiveAndSessionAcknowledgements() throws Exception {
         try (Client alice = new Client("modernalice",101); Client bob = new Client("modernbob",202); Client other = new Client("modernalice",303)) {
             assertEquals(1,alice.service.discover(alice.device.jid).size(),"Bundle node must retain the other own device");
-            alice.trust(bob.device.jid); alice.trust(alice.device.jid); bob.trust(alice.device.jid); other.trust(alice.device.jid);
+            alice.trust(bob.device.jid); alice.trust(alice.device.jid); bob.trust(alice.device.jid);
             Message privateMessage = alice.text(bob,"A photo of us 😀");
             File source = new File(System.getenv("MONOGRAM_IT_STATE"),"private-caption-source.png");
             byte[] picture = new byte[8193]; new java.security.SecureRandom().nextBytes(picture); java.nio.file.Files.write(source.toPath(),picture);
@@ -81,6 +81,8 @@ class Omemo2IntegrationTest {
             bob.acknowledge(decoded);
             XmppOmemo2.Received acknowledgement = alice.service.receive(alice.packet()); assertNull(acknowledgement.content); assertNull(acknowledgement.acknowledgement);
             Message carbon = other.carbons.poll(15,TimeUnit.SECONDS); assertNotNull(carbon);
+            assertThrows(Omemo2Native.Failure.class,() -> other.service.receive(carbon),"This device needs to trust the sender even for an outgoing copy from the same account");
+            other.trust(alice.device.jid);
             XmppOmemo2.Received ownCopy = other.service.receive(carbon); assertEquals(decoded.content.getBody(),ownCopy.content.getBody()); other.acknowledge(ownCopy);
             XmppOmemo2.Received ownAck = alice.service.receive(alice.packet()); assertNull(ownAck.content);
             Message replyWire = bob.service.encrypt(bob.text(alice,"Got the photo 🦄")); bob.connection.sendStanza(replyWire);
