@@ -32,3 +32,23 @@ manual rather than cancelling its existing bytes. If an automatic size policy
 already declined it, the promoted request retries without that automatic limit;
 the hard byte bound and authenticated decryption remain mandatory. Transfer
 errors remain available in Message diagnostics without private URL text.
+
+
+## Desktop receive/download progress
+
+Desktop now uses the same SFS/OOB metadata and AES-GCM URL profile for direct
+plaintext/OMEMO 2 reception and explicit HTTPS downloads. Its native file cards
+provide Download/Cancel/Retry/Save As, preserve jobs when leaving a chat, and cancel
+on account changes/removal. Authentication, size and advertised supported hashes
+are checked before cache commit; file keys never enter the HTTP request fragment
+or error output. Cache/export verification and account-separated paths preserve
+the same integrity boundary.
+
+The test-only `GenerateFileVectors` exports 32 actual received-wire/model cases and
+four actual `FileTransfer` cipher cases (12/16-byte nonce, empty/binary data and
+SHA-256/SHA3-256/BLAKE2b-256). They are consumed by desktop's Rust and private
+HTTPS/GTK/XMPP checks. This is generic receive/download support: desktop uploads,
+thumbnail/type upgrades, native media viewer/playback, auto-download settings,
+caption edits/forwarding and complete cache management remain open. See
+[desktop transfer details](../../desktop/docs/FILE_TRANSFERS.md). No physical
+mobile/desktop UI exchange is established by these fixture comparisons.
