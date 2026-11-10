@@ -7,6 +7,13 @@ import org.jivesoftware.smackx.sid.element.OriginIdElement;
 import org.jxmpp.jid.impl.JidCreate;
 
 public final class MessageFixture {
+    public static XmppMessage structuredPoll(String id,String content,boolean own,boolean protectedContent,long time,String correction)throws Exception {
+        PollDefinition.initialize();ReplyReference.initialize();
+        Message wire=org.jivesoftware.smack.util.PacketParserUtils.parseStanza("<message xmlns='jabber:client' from='"+(own?"alice":"bob")+"@example.org/phone' to='"+(own?"bob":"alice")+"@example.org' type='chat' id='"+id+"'>"+content+"</message>");
+        if(correction!=null)new MessageCorrection(correction).addTo(wire);
+        return protectedContent?XmppMessage.modern(wire,wire,JidCreate.entityBareFrom("alice@example.org"),null,new Date(time)):XmppMessage.from(wire,JidCreate.entityBareFrom("alice@example.org"),wire.getBody(),false,true,null,new Date(time));
+    }
+
     public static XmppRooms.State mixState(String address,String participantId,boolean joined) throws Exception {
         java.util.List<XmppMix.Participant> participants=java.util.Arrays.asList(new XmppMix.Participant(participantId,"Alice","alice@example.org"),new XmppMix.Participant("bob-id","Bob","bob@example.org"));
         return new XmppRooms.State(new XmppMix.Channel(JidCreate.entityBareFrom(address),participantId,"Alice","General","MIX channel",joined,participants));

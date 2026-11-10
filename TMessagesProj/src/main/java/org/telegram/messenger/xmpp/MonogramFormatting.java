@@ -81,11 +81,12 @@ public final class MonogramFormatting {
     }
     public static void apply(TLRPC.Message message,MessageMarkup markup) {
         if(markup==null) return;
-        if(MonogramPolls.parse(markup.body)!=null) markup=markup.preservingBody();
+        boolean poll=MonogramPolls.parse(markup.body)!=null || message.params!=null&&message.params.containsKey(MonogramPolls.XML);
+        if(poll) markup=markup.preservingBody();
         if(message.media!=null) message.media.spoiler=markup.spoiler;
         MessageMarkup display=markup.display();
         boolean hiddenRange=markup.ranges.stream().anyMatch(range -> range.styles.contains(MessageMarkup.Style.SPOILER));
-        if(!markup.spoiler && !hiddenRange && (markup.markdown || markup.ranges.isEmpty() && display.body.equals(markup.body) && MonogramArticles.applyMarkdown(message,markup.body))) {
+        if(!poll && !markup.spoiler && !hiddenRange && (markup.markdown || markup.ranges.isEmpty() && display.body.equals(markup.body) && MonogramArticles.applyMarkdown(message,markup.body))) {
             message.message=markup.body;message.entities.clear();message.flags&=~TLRPC.MESSAGE_FLAG_HAS_ENTITIES;
             if(markup.markdown) MonogramArticles.apply(message,markup.body);
             return;

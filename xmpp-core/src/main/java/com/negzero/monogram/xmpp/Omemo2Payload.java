@@ -8,6 +8,9 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
@@ -65,6 +68,7 @@ final class Omemo2Payload {
     static byte[] envelope(Message message, SecureRandom random) throws Exception {
         routing(message);
         MessageMarkup.validateProtected(message);
+        try {PollDefinition.validateProtected(message);}catch(IllegalArgumentException invalid){throw new GeneralSecurityException("Invalid structured poll",invalid);}
         StandardExtensionElement.Builder content = StandardExtensionElement.builder("content",SCE);
         for (Message.Body body : message.getBodies()) {
             StandardExtensionElement.Builder text = StandardExtensionElement.builder("body",CLIENT).setText(body.getMessage());
@@ -76,6 +80,8 @@ final class Omemo2Payload {
         }
         if (message.getThread() != null) content.addElement(StandardExtensionElement.builder("thread",CLIENT).setText(message.getThread()).build());
         for (ExtensionElement extension : message.getExtensions()) {
+            // Smack exposes body/subject through both the typed APIs and extension list.
+            if(CLIENT.equals(extension.getNamespace()) && Arrays.asList("body","subject","thread").contains(extension.getElementName()))continue;
             if (!allowed(extension.getElementName(),extension.getNamespace())) throw new GeneralSecurityException("Unsupported protected content");
             content.addElement(StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(extension.toXML().toString())));
         }
@@ -126,10 +132,21 @@ final class Omemo2Payload {
             } else if (!name.equals("content") && !name.equals("rpad")) throw Omemo2Bundle.invalid();
         }
         StringBuilder stanza = new StringBuilder("<message xmlns='jabber:client'>");
+        Map<String,StandardExtensionElement> texts = new HashMap<>();
         for (StandardExtensionElement child : content.getElements()) {
             if (!allowed(child.getElementName(),child.getNamespace())) {
                 if(ignoreUnknownContent)continue;
                 throw Omemo2Bundle.invalid();
+            }
+            if(CLIENT.equals(child.getNamespace()) && Arrays.asList("body","subject","thread").contains(child.getElementName())) {
+                if(!child.getElements().isEmpty())throw Omemo2Bundle.invalid();
+                String language=child.getAttributeValue("xml:lang");
+                StandardExtensionElement previous=texts.put(child.getElementName()+"|"+(language==null?"":language),child);
+                if(previous!=null) {
+                    // Historical encoders copied typed text again from Smack's extension list.
+                    if(Objects.equals(previous.getText(),child.getText()) && previous.getAttributes().equals(child.getAttributes()))continue;
+                    throw Omemo2Bundle.invalid();
+                }
             }
             stanza.append(child.toXML(CLIENT));
         }
@@ -155,6 +172,7 @@ final class Omemo2Payload {
                 || name.equals("fallback") && ReplyReference.FALLBACK.equals(namespace)
                 || name.equals("replace") && MessageCorrection.NAMESPACE.equals(namespace)
                 || name.equals("reactions") && MessageReactions.NAMESPACE.equals(namespace)
+                || name.equals("poll") && PollDefinition.NAMESPACE.equals(namespace)
                 || name.equals("reference") && MessageMentions.NAMESPACE.equals(namespace)
                 || name.equals("content") && MessageMarkup.CONTENT.equals(namespace)
                 || name.equals("markup") && MessageMarkup.NAMESPACE.equals(namespace)

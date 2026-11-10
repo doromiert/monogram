@@ -25,6 +25,8 @@ public final class XmppMessage {
     public final String caption;
     public final MessageMarkup markup,captionMarkup;
     public final InlineEmoji inlineEmoji;
+    /** Validated XML; null absent, empty malformed. The body never defines structured options. */
+    public final String pollXml;
     public final ReplyReference reply;
     public final MessageCorrection correction;
     public final MessageReactions reactions;
@@ -36,7 +38,8 @@ public final class XmppMessage {
     public final long timestamp;
 
     private XmppMessage(EntityBareJid peer, String sender, Map<String, String> ids, String body, Encryption encryption,
-                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, String markableId, MessageMarkup markup, MessageMarkup captionMarkup, InlineEmoji inlineEmoji,boolean displayStickerHint) {
+                        boolean readable, boolean outgoing, boolean archived, long timestamp, FileLink attachment, ReplyReference reply, MessageCorrection correction, FileShare sharing, String caption, MessageReactions reactions, MessageRetraction retraction, String senderFingerprint, String markableId, MessageMarkup markup, MessageMarkup captionMarkup, InlineEmoji inlineEmoji,boolean displayStickerHint,String pollXml) {
+        this.pollXml=pollXml;
         this.peer = peer; this.sender = sender; this.ids = Collections.unmodifiableMap(ids); this.body = body;
         this.encryption = encryption; this.encrypted = encryption != Encryption.PLAIN;
         this.readable = readable; this.outgoing = outgoing;
@@ -76,18 +79,18 @@ public final class XmppMessage {
         if (message == null) return null;
         Map<String,String> ids = new LinkedHashMap<>(message.ids); if (digest != null) ids.put("pq-cipher",digest);
         return new XmppMessage(message.peer,message.sender,ids,message.body,Encryption.PQ_OMEMO,message.readable,message.outgoing,message.archived,message.timestamp,
-                message.attachment,message.reply,message.correction,message.sharing,message.caption,message.reactions,message.retraction,fingerprint,message.markableId,message.markup,message.captionMarkup,message.inlineEmoji,false);
+                message.attachment,message.reply,message.correction,message.sharing,message.caption,message.reactions,message.retraction,fingerprint,message.markableId,message.markup,message.captionMarkup,message.inlineEmoji,false,message.pollXml);
     }
     XmppMessage withAliases(Map<String,String> aliases) { return canonical(aliases,timestamp,archived,markableId); }
     /** Outgoing models are labelled only after the chosen protocol's send operation succeeds. */
     public XmppMessage sentWithProtocol(Encryption protocol) {
         if (!outgoing || protocol == null || (protocol != Encryption.PLAIN) != encrypted) throw new IllegalArgumentException("Outgoing encryption mismatch");
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,protocol,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint,pollXml);
     }
     XmppMessage canonical(Map<String,String> ids,long timestamp,boolean archived,String markableId) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint,pollXml);
     }
     XmppMessage archived(String archiveId,Date time) {
         if(archiveId==null && time==null) return this;
@@ -112,8 +115,12 @@ public final class XmppMessage {
         try { retraction=content==null ? null : MessageRetraction.from(content); }
         catch(IllegalArgumentException invalid) { return null; }
         if(retraction!=null) {
+            if(content.hasExtension("poll",PollDefinition.NAMESPACE))return null;
             body=null;
         }
+        String pollXml=PollDefinition.incomingXml(content,readable,encryption!=Encryption.LEGACY_OMEMO);
+        if(pollXml!=null && body==null)body=pollXml.isEmpty()?"Unsupported poll":"";
+        if(pollXml!=null&&!pollXml.isEmpty())body=PollDefinition.fromXml(pollXml).accompanyingBody(content);
         FileShare sharing = encryption != Encryption.LEGACY_OMEMO && readable ? FileShare.from(content) : null;
         if (sharing != null && sharing.link.encrypted() != encrypted) sharing = null;
         MessageReactions reactions = readable && encryption != Encryption.LEGACY_OMEMO && content != null ? MessageReactions.from(content) : null;
@@ -121,7 +128,7 @@ public final class XmppMessage {
         if (reactions != null) {
             if (!MessageReactions.fallback(content,body) || !MessageReactions.replyMatches(content,body,reactions.id)
                     || sharing != null || content.hasExtension("file-sharing",FileShare.NAMESPACE)
-                    || MessageCorrection.from(content) != null || retraction != null) return null;
+                    || MessageCorrection.from(content) != null || retraction != null || content.hasExtension("poll",PollDefinition.NAMESPACE)) return null;
             body=null;
         }
         if(readable && encryption!=Encryption.LEGACY_OMEMO && reactions==null && retraction==null) body=ForwardedContent.incoming(content,body);
@@ -140,7 +147,9 @@ public final class XmppMessage {
         put(ids,XmppReadSync.LOCAL_ID,XmppReadSync.assignedId(message,own));
         if (archiveId != null) { put(ids, "archive", archiveId);put(ids,"mam",archiveId); }
         if (ids.isEmpty() && (encrypted || reactions!=null)) ids.put("local", opaqueId(message));
-        ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? body : null);
+        boolean structured=pollXml!=null&&!pollXml.isEmpty();
+        ReplyReference reply = content == null || reactions != null ? null : ReplyReference.from(content, readable ? structured?content.getBody():body : null);
+        if(structured)reply=PollDefinition.replyAfterFallback(content,reply);
         FileLink attachment = null;
         String mediaText = ForwardedContent.payload(reply == null ? body : reply.withoutFallback(body));
         if (readable && body != null) {
@@ -161,28 +170,30 @@ public final class XmppMessage {
         }
         String caption = "";
         if (sharing != null) { attachment = sharing.link; caption = sharing.caption(content, body, reply); }
-        MessageMarkup markup=readable ? encryption==Encryption.LEGACY_OMEMO ? MessageMarkup.legacy(content,body) : MessageMarkup.from(content,body) : null;
+        MessageMarkup markup=readable ? encryption==Encryption.LEGACY_OMEMO ? MessageMarkup.legacy(content,body) : MessageMarkup.from(content,structured?content.getBody():body) : null;
+        if(structured&&markup!=null){markup=markup.without(PollDefinition.removedBodyRanges(content));if(!java.util.Objects.equals(markup.body,body))markup=null;}
         MessageMarkup captionMarkup=sharing==null || markup==null ? null : sharing.captionMarkup(content,body,reply,markup);
-        InlineEmoji inlineEmoji=readable && encryption!=Encryption.LEGACY_OMEMO && reactions==null && retraction==null ? InlineEmoji.from(content,body) : null;
+        InlineEmoji inlineEmoji=readable && encryption!=Encryption.LEGACY_OMEMO && reactions==null && retraction==null ? InlineEmoji.from(content,structured?content.getBody():body) : null;
+        if(structured&&inlineEmoji!=null){inlineEmoji=inlineEmoji.without(PollDefinition.removedBodyRanges(content));if(!java.util.Objects.equals(inlineEmoji.body,body))inlineEmoji=null;}
         boolean displayStickerHint = StickerHint.from(message, encryption == Encryption.LEGACY_OMEMO, readable, attachment);
         Date delay = archiveTime != null ? archiveTime : DelayInformationManager.getDelayTimestamp(message);
         return new XmppMessage(peer, message.getFrom().toString(), ids, body, encryption, readable, outgoing, archiveId != null,
                 delay == null ? System.currentTimeMillis() : delay.getTime(), attachment, reply, content == null ? null : MessageCorrection.from(content), sharing, caption, reactions, retraction, null,
-                !outgoing && reactions==null && retraction==null ? MessageReceipt.markableId(message) : null,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                !outgoing && reactions==null && retraction==null ? MessageReceipt.markableId(message) : null,markup,captionMarkup,inlineEmoji,displayStickerHint,pollXml);
     }
 
     public XmppMessage withSenderFingerprint(String fingerprint) {
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint);
+                attachment,reply,correction,sharing,caption,reactions,retraction,fingerprint,markableId,markup,captionMarkup,inlineEmoji,displayStickerHint,pollXml);
     }
     public XmppMessage withForwarding(ForwardedContent forward) {
         if(forward==null) return this;
         String attributed=ForwardedContent.of(forward.name,forward.date,body).wireBody();
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),attributed,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,null,captionMarkup,inlineEmoji,displayStickerHint);
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,null,captionMarkup,inlineEmoji,displayStickerHint,pollXml);
     }
     public XmppMessage withDisplayStickerHint(boolean value) {
-        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,value);
+        return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,markup,captionMarkup,inlineEmoji,value,pollXml);
     }
     public XmppMessage withInlineEmoji(InlineEmoji value) {
         if(value==null) return this;
@@ -193,7 +204,7 @@ public final class XmppMessage {
         }
         MessageMarkup localMarkup=outgoing && encryption==Encryption.LEGACY_OMEMO && markup!=null ? markup.preservingBody() : markup;
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
-                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,localMarkup,captionMarkup,full,displayStickerHint);
+                attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,localMarkup,captionMarkup,full,displayStickerHint,pollXml);
     }
     public XmppMessage withMarkup(MessageMarkup value) {
         if(value==null) return this;
@@ -217,7 +228,7 @@ public final class XmppMessage {
         }
         return new XmppMessage(peer,sender,new LinkedHashMap<>(ids),body,encryption,readable,outgoing,archived,timestamp,
                 attachment,reply,correction,sharing,caption,reactions,retraction,senderFingerprint,markableId,full,
-                captionValue,inlineEmoji,displayStickerHint);
+                captionValue,inlineEmoji,displayStickerHint,pollXml);
     }
     static String opaqueId(Message message) {
         try {

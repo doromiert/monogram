@@ -34,6 +34,38 @@ public class MonogramPollsTest {
     }
     TLRPC.TL_messages_sendVote vote(int id,long dialog,byte[]... options) { TLRPC.TL_messages_sendVote request=new TLRPC.TL_messages_sendVote();request.peer=input(dialog);request.msg_id=id;request.options.addAll(Arrays.asList(options));return request; }
 
+    static final String STRUCTURED="<poll xmlns='urn:xmpp:polls:0' type='single'><question>Pick food 😀</question><description>Tonight</description><option emoji='🍕'>Pizza</option><option emoji='🍜'>Noodles</option></poll>";
+    @Test public void upgradeFrom35KeepsHistoryAndAddsStructuredMetadataTable()throws Exception {
+        int old=poll("legacy-before-upgrade",false,true,false);
+        store.getWritableDatabase().execSQL("DROP TABLE message_polls");store.getWritableDatabase().setVersion(35);reopen();
+        assertEquals(36,store.getReadableDatabase().getVersion());assertEquals("Which *one*? 😀",media(old).poll.question.text);
+        int id=store.save(MessageFixture.structuredPoll("after-upgrade",STRUCTURED,false,false,200000,null));assertEquals("Pick food 😀",media(id).poll.question.text);
+    }
+    @Test public void structuredOptionsAndBodylessDefinitionSurviveStorageAndVotes()throws Exception {
+        store.reactions.save(MessageFixture.reaction("early","structured",Arrays.asList("🍜"),false,true,100000),self);store.reactions.reconcile(peer);
+        int id=store.save(MessageFixture.structuredPoll("structured",STRUCTURED,true,true,200000,null));store.reactions.reconcile(peer);
+        assertEquals("Pick food 😀",media(id).poll.question.text);assertEquals("Pizza",media(id).poll.answers.get(0).text.text);assertEquals(1,media(id).results.results.get(1).voters);
+        react("downgrade","structured",250000,false,"🍕");assertEquals(1,media(id).results.results.get(1).voters);assertEquals(0,media(id).results.results.get(0).voters);
+        TLRPC.Message message=store.getMessage(id,self);assertEquals("Tonight",message.message);assertTrue(MonogramPolls.visibleReactions(message).isEmpty());
+        TLRPC.TL_messages_sendVote vote=new TLRPC.TL_messages_sendVote();vote.peer=input(peer);vote.msg_id=id;vote.options.add(new byte[]{'0'});
+        assertEquals("🍕",((TLRPC.TL_reactionEmoji)MonogramPolls.vote(vote,message,self).reaction.get(0)).emoticon);
+        reopen();assertEquals("Noodles",media(id).poll.answers.get(1).text.text);assertEquals(1,media(id).results.total_voters);
+        store.deleteMessages(Collections.singleton(id));assertEquals(0,android.database.DatabaseUtils.longForQuery(store.getReadableDatabase(),"SELECT count(*) FROM message_polls WHERE message=?",new String[]{Integer.toString(id)}));
+    }
+    @Test public void structuredPollNeverReadsOptionsFromFallbackAndMalformedMetadataDoesNotGuessLegacy()throws Exception {
+        String misleading="<body>Completely different text choices.</body>"+STRUCTURED+"<fallback xmlns='urn:xmpp:fallback:0' for='urn:xmpp:polls:0'><body/></fallback>";
+        int id=store.save(MessageFixture.structuredPoll("translated",misleading,false,false,200000,null));assertEquals("Pick food 😀",media(id).poll.question.text);assertEquals("Tonight",store.getMessage(id,self).message);
+        int invalid=store.save(MessageFixture.structuredPoll("invalid","<body>"+body(false)+"</body>"+STRUCTURED.replace("single","quiz"),false,false,300000,null));assertFalse(store.getMessage(invalid,self).media instanceof TLRPC.TL_messageMediaPoll);
+    }
+    @Test public void structuredClosureRequiresUnchangedDefinitionAndFreezesFirstAcceptedTime()throws Exception {
+        int id=store.save(MessageFixture.structuredPoll("base",STRUCTURED,true,false,100000,null));
+        react("before","base",200000,false,"🍕");
+        store.save(MessageFixture.structuredPoll("bad-close",STRUCTURED.replace("type='single'","type='single' closed='true'").replace("Pizza","Changed"),true,false,300000,"base"));store.reconcileCorrections(peer);assertFalse(media(id).poll.closed);
+        String closed=STRUCTURED.replace("type='single'","type='single' closed='true'");
+        store.save(MessageFixture.structuredPoll("close",closed,true,false,400000,"base"));store.reconcileCorrections(peer);assertTrue(media(id).poll.closed);
+        react("late","base",500000,false,"🍜");assertEquals(1,media(id).results.results.get(0).voters);assertEquals(0,media(id).results.results.get(1).voters);
+        store.save(MessageFixture.structuredPoll("close-again",closed,true,false,600000,"base"));store.reconcileCorrections(peer);assertEquals(1,media(id).results.results.get(0).voters);reopen();assertTrue(media(id).poll.closed);
+    }
     @Test public void readableFallbackRoundTripsMultilineTextAndAllOptionEmojisAreUsable() {
         String question="Why?\n\n😀 *literal* >text";
         MonogramPolls.Poll data=new MonogramPolls.Poll(question,Arrays.asList("first\n\n1️⃣ literal","second"),false,false);

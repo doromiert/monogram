@@ -1,20 +1,44 @@
 # Reaction polls
 
-## Revised structured proposal — not yet shipped
+## Structured proposal — implementation in progress
 
 The [reaction-poll ProtoXEP](../xeps/xep-reaction-polls.xml), revision 0.0.2,
-now defines explicit `<poll xmlns="urn:xmpp:polls:0" type="single">` content with
-one `<question>` and ordered `<option emoji="…">label</option>` elements.
-The body is an optional, localizable XEP-0428 fallback; it is never the source
-of options. The draft includes both fallback and fallback-less examples.
-OMEMO 2/SCE protects the XML, optional fallback and ballot metadata together;
-legacy body-only OMEMO does not constrain the proposed format.
+defines explicit `<poll xmlns="urn:xmpp:polls:0" type="single">` content with one
+question and ordered `<option emoji="…">label</option>` elements. Its body is an
+optional localizable XEP-0428 fallback and never supplies authoritative options.
+The namespace remains an unsubmitted proposal, not an assigned XSF feature.
 
-This is an unsubmitted proposal and provisional namespace, not a runtime
-upgrade. Both clients still need structured parsing/storage, discovery and
-protected-content integration. The mobile OMEMO 2 allowlist must be extended
-with the validated poll payload. The deployed behavior below remains legacy
-compatibility documentation, with its own existing tests.
+The shared mobile codec and Rust codec now enforce the same bounded structured
+fields, emoji mappings and fallback-less payloads. OMEMO 2/SCE protects that XML
+and any optional fallback. Mobile's native receive/vote path persists definitions
+in schema 36 independently of bodies, handles direct and room cards and custom
+mapping, filters plaintext ballots on protected polls, and accepts only matching
+author closures with a frozen first accepted timestamp. Poll and reply fallback
+ranges/formatting are rebased independently; malformed poll metadata stays readable
+without legacy guessing. The Java encoder's duplicate body/subject emission was
+also fixed for interoperable protected content. Both readers collapse identical
+historical text duplicates while rejecting conflicting bodies, subjects, threads
+or attributes. Encrypted Java-generated historical vectors verify the Rust reader.
+
+**Native mobile creation, update sending, forwarding and scheduled/outbox metadata
+migration remain open.** The composer still emits the legacy body convention
+below and structured update requests currently fail explicitly. Mobile does not
+advertise this namespace until those paths are complete. Rust direct-poll creation,
+voting/results, closure and reload have native disposable-server checks; physical
+cross-client UI exchange and complete room parity are not established. See the
+[desktop implementation status](../../desktop/docs/STRUCTURED_POLLS.md).
+
+## Verification
+
+Shared-core tests exercise bodyless/translated fallbacks, explicit choices,
+Unicode/serialized bounds, malformed definitions, independent reply offsets,
+model copies and actual OMEMO 2 payload roundtrips. The test-only
+`GeneratePollVectors` exports Java wire/semantic/crypto vectors for Rust. Native
+Robolectric checks cover structured cards, custom mapping, late votes, withdrawal,
+closure/reopen, deletion and schema upgrades from 34/35; historical poll behavior
+remains covered. Local APKs use unchanged native libraries from the 0.2.195 baseline
+for this Java-only change and a separate local debug signing identity. No real
+account, phone install or user key store is used for these checks.
 
 ## Deployed legacy body convention
 

@@ -25,7 +25,7 @@ public class MonogramMixStoreTest {
             store.getWritableDatabase().execSQL("DROP TABLE mix_channels");store.getWritableDatabase().setVersion(34);
         }
         try(MonogramStore store=new MonogramStore(context,file)){
-            assertEquals(35,store.getReadableDatabase().getVersion());assertFalse(store.isMix(room));assertEquals("A MIX message",store.getMessage(message,self).message);assertTrue(store.room(room).autojoin);
+            assertEquals(36,store.getReadableDatabase().getVersion());assertFalse(store.isMix(room));assertEquals("A MIX message",store.getMessage(message,self).message);assertTrue(store.room(room).autojoin);
         }
     }
     @Test public void mixMembershipAndParticipantIdSurviveRestartAndExplicitLeave()throws Exception{

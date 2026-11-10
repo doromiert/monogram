@@ -13,6 +13,32 @@ class Omemo2PayloadTest {
         Message m = new Message(JidCreate.entityBareFrom("bob@example.org"),Message.Type.chat);
         m.setFrom(JidCreate.entityFullFrom("alice@example.org/phone")); m.setBody(body); return m;
     }
+    @Test void typedTextOccursOnlyOncePerLanguageInProtectedContent() throws Exception {
+        Message clear=message("Default body");clear.addBody("fr","Bonjour");clear.setSubject("Subject");clear.setThread("thread-id");
+        String encoded=new String(Omemo2Payload.envelope(clear,new SecureRandom()),StandardCharsets.UTF_8);
+        org.jivesoftware.smack.packet.StandardExtensionElement root=org.jivesoftware.smack.parsing.StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(encoded));
+        org.jivesoftware.smack.packet.StandardExtensionElement content=root.getFirstElement("content",Omemo2Payload.SCE);
+        assertEquals(2,content.getElements("body","jabber:client").size());
+        assertEquals(1,content.getElements("subject","jabber:client").size());
+        assertEquals(1,content.getElements("thread","jabber:client").size());
+    }
+    @Test void identicalHistoricalTextIsCoalescedButConflictsAreRejected() throws Exception {
+        Message outer=message("Outer fallback");
+        String text="<body xmlns='jabber:client'>Text 😀</body><body xmlns='jabber:client' xml:lang='fr'>Bonjour</body><subject xmlns='jabber:client'>Subject</subject><thread xmlns='jabber:client'>thread-id</thread>";
+        String start="<envelope xmlns='urn:xmpp:sce:1'><content>",end="</content><rpad/></envelope>";
+        Message decoded=Omemo2Payload.content(outer,(start+text+text+end).getBytes(StandardCharsets.UTF_8));
+        assertEquals(2,decoded.getBodies().size());assertEquals("Text 😀",decoded.getBody());assertEquals("Bonjour",decoded.getBody("fr"));
+        assertEquals("Subject",decoded.getSubject());assertEquals("thread-id",decoded.getThread());
+        for(String duplicate:new String[]{
+                "<body xmlns='jabber:client'>Conflicting text</body>",
+                "<body xmlns='jabber:client' xml:lang='fr'>Different translation</body>",
+                "<body xmlns='jabber:client' other='attribute'>Text 😀</body>",
+                "<subject xmlns='jabber:client'>Other subject</subject>",
+                "<thread xmlns='jabber:client'>other-thread</thread>",
+                "<body xmlns='jabber:client'><nested/></body>"}) {
+            assertThrows(java.security.GeneralSecurityException.class,() -> Omemo2Payload.content(outer,(start+text+duplicate+end).getBytes(StandardCharsets.UTF_8)));
+        }
+    }
     @Test void payloadAuthenticationPrecedesPaddingAndDerivationMatchesIndependentJceHkdf() throws Exception {
         byte[] key = new byte[32]; new SecureRandom().nextBytes(key);
         javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256"); mac.init(new javax.crypto.spec.SecretKeySpec(new byte[32],"HmacSHA256")); byte[] prk = mac.doFinal(key);
