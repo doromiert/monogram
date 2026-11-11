@@ -91,7 +91,7 @@ final class MonogramRetractions {
     private boolean encryptionMatches(int id,int protocol,String fingerprint) {
         try(Cursor c=store.getReadableDatabase().rawQuery("SELECT CASE WHEN encryption<0 THEN encrypted ELSE encryption END,sender_fingerprint FROM messages WHERE id=?",new String[]{Integer.toString(id)})) {
             if(!c.moveToFirst()) return false;
-            return c.getInt(0)==0 || c.getInt(0)==protocol && !c.isNull(1) && c.getString(1).equals(fingerprint);
+            return c.getInt(0)==0 || c.getInt(0)==protocol && fingerprint(fingerprint)!=null;
         }
     }
     private boolean directAuthor(int id,String author) {

@@ -2709,8 +2709,8 @@ public final class MonogramController {
                         else expected.rooms.sendRetraction(jid,request,target.sender,target.stable,false,excludedRoomRecipients(peer),automaticRoomRecipients(peer));
                     } else {
                         String own=MonogramRetractions.fingerprint(expected.senderFingerprint(target.encryption));
-                        if(target.encryption!=XmppMessage.Encryption.PLAIN && (own==null || target.fingerprint!=null && !target.fingerprint.equals(own)))
-                            throw new IllegalArgumentException("Retract this encrypted message from the device that originally sent it.");
+                        if(target.encryption!=XmppMessage.Encryption.PLAIN && own==null)
+                            throw new IllegalArgumentException("The selected encryption identity is not ready. Review devices and retry.");
                         expected.sendRetraction(jid,request,target.encryption);
                     }
                     sent++;
