@@ -2394,6 +2394,7 @@ public final class MonogramController {
         if(peer<=0 || peer==self)throw new IllegalArgumentException("Choose a contact, not a room or your own account.");
         if(!preferences.edit().putBoolean("blind-trust-"+accountJid()+"\n"+store.jid(peer),enabled).commit())throw new IllegalStateException("Could not save blind-trust preference.");
         trustDecisionsChanged(peer);
+        if(enabled)retryEncryptedHistory(peer,false);
     }
     private final java.util.concurrent.ConcurrentHashMap<Long,java.util.Set<String>> verifiedRoomTrustMembers=new java.util.concurrent.ConcurrentHashMap<>();
     public boolean blindlyTrustRoom(long peer) {

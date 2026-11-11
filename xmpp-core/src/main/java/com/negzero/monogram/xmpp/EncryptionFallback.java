@@ -22,7 +22,8 @@ public final class EncryptionFallback {
         }
         if(error instanceof OmemoSendException) {
             OmemoSendException.Reason reason=((OmemoSendException)error).reason;
-            return reason!=OmemoSendException.Reason.LOOKUP_TIMEOUT && reason!=OmemoSendException.Reason.ROOM_CHANGED;
+            return reason!=OmemoSendException.Reason.LOOKUP_TIMEOUT && reason!=OmemoSendException.Reason.ROOM_CHANGED
+                    && reason!=OmemoSendException.Reason.OWN_DEVICE_TRUST_REQUIRED;
         }
         if(error instanceof java.security.GeneralSecurityException
                 || error.getClass().getName().startsWith("org.jivesoftware.smackx.omemo.exceptions.")) return true;

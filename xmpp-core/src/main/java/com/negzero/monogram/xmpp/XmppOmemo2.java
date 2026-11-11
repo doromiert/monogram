@@ -120,8 +120,12 @@ public final class XmppOmemo2 implements AutoCloseable {
         for (int id : new java.util.TreeSet<>(ids)) if (!peer.equals(device.jid) || id != device.id) {
             try {
                 Omemo2Bundle found=bundle(peer,id,false);
-                if(device.trust(peer,id,found.identity())!=Omemo2Device.Trust.REJECTED)result.put(id,found);
+                Omemo2Device.Trust trust=device.trust(peer,id,found.identity());
+                if(trust==Omemo2Device.Trust.TRUSTED)result.put(id,found);
+                else if(trust==Omemo2Device.Trust.UNDECIDED)throw new OmemoSendException(peer.equals(device.jid)
+                        ? OmemoSendException.Reason.OWN_DEVICE_TRUST_REQUIRED : OmemoSendException.Reason.TRUST_REQUIRED);
             }
+            catch(OmemoSendException review) { throw review; }
             catch(java.security.GeneralSecurityException invalidBundle) {
                 if(!optionalOwnCopy || !peer.equals(device.jid)) throw invalidBundle;
                 lastError=invalidBundle;

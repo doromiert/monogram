@@ -282,6 +282,8 @@ public class AlertsCreator {
         switch (code) {
             case "MONOGRAM_OMEMO_TRUST_REQUIRED":
                 text = "Review the OMEMO fingerprints for this contact and your other devices before sending. Your message is still unsent; retry it after reviewing the devices."; break;
+            case "MONOGRAM_OMEMO_OWN_DEVICE_TRUST_REQUIRED":
+                text = "Review your other devices in Settings → Account OMEMO. Blindly trusting this contact only approves their devices. Your message is still unsent."; break;
             case "MONOGRAM_OMEMO_NO_DEVICES":
                 text = "This contact has not published a compatible OMEMO device. Check their encryption support and try again. Your message was not sent."; break;
             case "MONOGRAM_OMEMO_NO_TRUSTED_DEVICES":

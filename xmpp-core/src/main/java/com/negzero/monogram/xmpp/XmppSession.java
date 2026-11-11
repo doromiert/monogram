@@ -1306,7 +1306,13 @@ public final class XmppSession implements AutoCloseable {
             }
             throw e;
         }
-        OmemoMessage.Sent ciphertext = omemo.encrypt(recipient, body);
+        OmemoMessage.Sent ciphertext;
+        try { ciphertext=omemo.encrypt(recipient,body); }
+        catch(org.jivesoftware.smackx.omemo.exceptions.UndecidedOmemoIdentityException review) {
+            if(review.getUndecidedDevices().stream().anyMatch(device->device.getJid().equals(connection.getUser().asBareJid())))
+                throw new OmemoSendException(OmemoSendException.Reason.OWN_DEVICE_TRUST_REQUIRED);
+            throw review;
+        }
         for (OmemoDevice skipped : ciphertext.getSkippedDevices().keySet()) {
             // Smack intentionally excludes devices silent for 400 sends, including our own old clients.
             if (ciphertext.getSkippedDevices().get(skipped) instanceof ReadOnlyDeviceException) continue;
