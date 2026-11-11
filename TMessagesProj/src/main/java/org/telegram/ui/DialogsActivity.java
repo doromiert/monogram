@@ -13576,7 +13576,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if(monogramContactRequestsItem!=null) {
             org.telegram.messenger.xmpp.MonogramController controller=org.telegram.messenger.xmpp.MonogramController.get(currentAccount);
             int count=controller.pendingContactRequests().size()+controller.pendingRoomInvitations().size();
-            FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,factor);
+            FragmentFloatingButton.setAnimatedVisibility(monogramContactRequestsItem,count>0 ? factor : 0);
             if(monogramRequestsBadge!=null)monogramRequestsBadge.setCount(count,fragmentView!=null);
             monogramContactRequestsItem.setContentDescription("Requests and invitations"+(count>0 ? ", "+count+" pending" : ", none pending"));
         }
