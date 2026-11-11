@@ -55,6 +55,27 @@ class PqOmemoNativeTest {
             return PqOmemoMessage.decrypt(to,message,from.jid,to.jid,System.currentTimeMillis());
         }
     }
+    @Test void contactBlindTrustApprovesPqButPreservesBlocksAndOwnReview() throws Exception {
+        Pair p = new Pair();
+        SignalProtocolAddress bob = new SignalProtocolAddress(p.bob.jid,p.bob.id);
+        try (PqOmemoRecords tx = p.a.begin()) {
+            tx.put(PqOmemoSignalStore.trust(bob),null);
+            tx.commit();
+        }
+        java.util.concurrent.atomic.AtomicBoolean enabled = new java.util.concurrent.atomic.AtomicBoolean();
+        p.alice.setBlindTrustPolicy(peer -> enabled.get());
+        Message encrypted = p.send(p.bob,p.alice,p.aliceBundle,"blind-trusted PQ");
+        assertThrows(UntrustedIdentityException.class,() -> p.receive(p.alice,p.bob,encrypted));
+        enabled.set(true);
+        assertTrue(p.alice.fingerprints(p.bob.jid).get(0).trusted);
+        assertEquals("blind-trusted PQ",p.receive(p.alice,p.bob,encrypted).getBody());
+        p.alice.trust(p.bob.jid,p.bob.id,p.bobBundle.fingerprint(),false);
+        p.alice.observe(p.bob.jid,p.bob.id,p.bobBundle);
+        assertTrue(p.alice.fingerprints(p.bob.jid).get(0).blocked);
+        assertFalse(p.alice.fingerprints(p.bob.jid).get(0).trusted);
+        p.alice.observe(p.alice.jid,p.alice.id,p.aliceBundle);
+        assertFalse(p.alice.fingerprints(p.alice.jid).get(0).trusted);
+    }
     @Test void survivesRestartAndContinuousRatchetWithOutOfOrderMessages() throws Exception {
         Pair p = new Pair(); int bobId = p.bob.id;
         Message first = p.send(p.alice,p.bob,p.bobBundle,"initial");

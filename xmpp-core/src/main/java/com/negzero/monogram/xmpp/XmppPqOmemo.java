@@ -66,7 +66,10 @@ public final class XmppPqOmemo implements AutoCloseable {
     private PqOmemoBundle bundle(String peer,int id,boolean force) throws Exception {
         String key = peer + "\n" + id; Long time = refreshed.get(key);
         PqOmemoBundle cached = bundles.get(key);
-        if (!force && cached != null && time != null && System.nanoTime() - time < java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) return cached;
+        if (!force && cached != null && time != null && System.nanoTime() - time < java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) {
+            device.trustAutomatically(peer,id,cached);
+            return cached;
+        }
         bundles.remove(key);refreshed.remove(key);
         StandardExtensionElement xml = pep.item(peer,PqOmemoPep.BUNDLES,Integer.toString(id));
         if (xml == null)return null;

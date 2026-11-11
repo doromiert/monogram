@@ -17,9 +17,33 @@ public final class PqOmemoDevice {
     public final int id;
     final PqOmemoRecords.Factory records;
     private final SecureRandom random = new SecureRandom();
+    private volatile java.util.function.Predicate<String> blindTrust = peer -> false;
     private static final long ROTATE = 7L * 24 * 60 * 60 * 1000;
     private static final long RETAIN = 90L * 24 * 60 * 60 * 1000;
     static final String IDENTITY = "local/identity", PQ = "local/pq-identity";
+
+    public void setBlindTrustPolicy(java.util.function.Predicate<String> policy) {
+        blindTrust = java.util.Objects.requireNonNull(policy);
+    }
+
+    private boolean applyBlindTrust(PqOmemoRecords tx, SignalProtocolAddress address, byte[] identity) throws Exception {
+        if (jid.equals(address.getName()) || !blindTrust.test(address.getName())
+                || tx.get("blocked/" + PqOmemoSignalStore.peer(address)) != null
+                || !MessageDigest.isEqual(identity,tx.get(PqOmemoSignalStore.observed(address)))) return false;
+        byte[] previous = tx.get(PqOmemoSignalStore.trust(address));
+        if (MessageDigest.isEqual(identity,previous)) return false;
+        tx.put(PqOmemoSignalStore.trust(address),identity);
+        tx.put("session/" + PqOmemoSignalStore.peer(address),null);
+        tx.put("identity/" + PqOmemoSignalStore.peer(address),null);
+        return true;
+    }
+
+    void trustAutomatically(String peer,int device,PqOmemoBundle bundle) throws Exception {
+        SignalProtocolAddress address = remote(peer,device);
+        try (PqOmemoRecords tx = records.begin()) {
+            if (applyBlindTrust(tx,address,PqOmemoSignalStore.hybrid(bundle.identity,bundle.pqIdentity))) tx.commit();
+        }
+    }
 
     public PqOmemoDevice(String jid, PqOmemoRecords.Factory records) throws Exception {
         this.jid = bare(jid); this.records = records;
@@ -122,7 +146,9 @@ public final class PqOmemoDevice {
     void observe(String peer,int device,IdentityKey classic,byte[] pq) throws Exception {
         SignalProtocolAddress address = remote(peer,device);
         try (PqOmemoRecords tx = records.begin()) {
-            tx.put(PqOmemoSignalStore.observed(address),PqOmemoSignalStore.hybrid(classic,pq));
+            byte[] identity = PqOmemoSignalStore.hybrid(classic,pq);
+            tx.put(PqOmemoSignalStore.observed(address),identity);
+            applyBlindTrust(tx,address,identity);
             tx.commit();
         }
     }
@@ -131,12 +157,16 @@ public final class PqOmemoDevice {
         String prefix = "observed/" + Base64.getUrlEncoder().withoutPadding().encodeToString(normalized.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "/";
         List<Fingerprint> result = new ArrayList<>();
         try (PqOmemoRecords tx = records.begin()) {
+            boolean changed = false;
             for (String key : tx.keys(prefix)) {
                 int id = Integer.parseUnsignedInt(key.substring(prefix.length())); SignalProtocolAddress address = remote(normalized,id);
-                byte[] identity = tx.get(key), trusted = tx.get(PqOmemoSignalStore.trust(address));
+                byte[] identity = tx.get(key);
                 if (identity.length != 2625) throw new GeneralSecurityException("Corrupt PQ fingerprint record");
+                changed |= applyBlindTrust(tx,address,identity);
+                byte[] trusted = tx.get(PqOmemoSignalStore.trust(address));
                 result.add(new Fingerprint(id,identity,trusted != null && MessageDigest.isEqual(identity,trusted),tx.get("blocked/" + PqOmemoSignalStore.peer(address)) != null));
             }
+            if (changed) tx.commit();
         }
         result.sort(Comparator.comparingInt(f -> f.device)); return result;
     }

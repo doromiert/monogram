@@ -137,6 +137,7 @@ public final class XmppSession implements AutoCloseable {
     private final IdentityTrust trust;
     private final XmppOmemo2 modern;
     private volatile XmppPqOmemo pq;
+    private volatile java.util.function.Predicate<String> blindTrustPolicy = peer -> false;
     private volatile Exception pqFailure;
     private final String configuredJid;
     private final LegacyIncomingJournal legacyIncoming;
@@ -729,7 +730,11 @@ public final class XmppSession implements AutoCloseable {
     public synchronized void configurePq(PqOmemoRecords.Factory records) throws Exception {
         if (closed) throw new IllegalStateException("Session closed");
         if (pq == null) {
-            try { pq = new XmppPqOmemo(connection,new PqOmemoDevice(accountJid(),records),listener::devicesChanged); }
+            try {
+                PqOmemoDevice device = new PqOmemoDevice(accountJid(),records);
+                device.setBlindTrustPolicy(peer -> blindTrustPolicy.test(peer));
+                pq = new XmppPqOmemo(connection,device,listener::devicesChanged);
+            }
             catch (LinkageError missingBackend) { pqFailure = new IllegalStateException("Experimental PQ native backend is unavailable",missingBackend); throw pqFailure; }
         }
     }
@@ -1403,6 +1408,7 @@ public final class XmppSession implements AutoCloseable {
     private void blockingChanged(java.util.List<String> blocked){listener.blockedChanged(blocked);if(muji!=null)muji.refreshPermissions();}
     private void invalidateDevices(String owner) {fingerprints.invalidate(owner);listener.devicesChanged(owner);}
     public void setBlindTrustPolicy(java.util.function.Predicate<String> policy){
+        blindTrustPolicy=java.util.Objects.requireNonNull(policy);
         trust.setBlindTrustPolicy(policy);
         if(modern!=null)modern.device.setBlindTrustPolicy(policy);
     }
