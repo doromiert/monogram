@@ -237,7 +237,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         items.add(UItem.asShadow("A closed lock beside a message’s time marks recorded end-to-end encryption. Unencrypted messages have no lock. Queued messages receive an indicator only after sending is confirmed."));
 
         items.add(UItem.asCheck(1, "Use OMEMO encryption").setChecked(controller.encrypted(peer)));
-        items.add(UItem.asButton(5,"Sending OMEMO version",controller.pqEncryption(peer) ? "PQ OMEMO2 · experimental" : modern ? "Classic OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
+        items.add(UItem.asButton(5,"Sending OMEMO version",controller.pqEncryption(peer) ? "OMEMO2" : modern ? "Classic OMEMO 2" : "Legacy OMEMO").setEnabled(!saving));
         if(peer<0 && !controller.pqEncryption(peer)) items.add(UItem.asCheck(9,"Skip unavailable devices").setChecked(controller.automaticRoomRecipients(peer)));
         items.add(UItem.asShadow(null));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer))) {
@@ -372,8 +372,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                     .setNegativeButton("Cancel", null).create());
             else { controller.setEncrypted(peer, true); refresh(); }
         } else if (item.id==5 && !saving) showDialog(new AlertDialog.Builder(getContext()).setTitle("Sending OMEMO version")
-                .setItems(peer>0 ? new CharSequence[]{"PQ OMEMO2 · Monocles (experimental)","Classic OMEMO 2","Legacy OMEMO · older clients"}
-                        : new CharSequence[]{"PQ OMEMO2 · Monocles (experimental)","Legacy OMEMO · older clients"},(dialog,which) -> {
+                .setItems(new CharSequence[]{"OMEMO2","Legacy OMEMO · older clients"},(dialog,which) -> {
                     if (which == 0) {
                         saving = true; refresh();
                         controller.enablePq(error -> {
@@ -384,7 +383,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
                         });
                         return;
                     }
-                    controller.setEncryption(peer,peer>0 && which==1 ? XmppMessage.Encryption.OMEMO2 : XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
+                    controller.setEncryption(peer,XmppMessage.Encryption.LEGACY_OMEMO); loadIdentities();
                 }).create());
         else if (item.id==6 && !saving) loadIdentities(true);
         else if (item.id == 4) presentFragment(new MonogramConnectionActivity(currentAccount));
