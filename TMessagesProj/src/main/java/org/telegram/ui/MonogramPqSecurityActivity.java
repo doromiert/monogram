@@ -28,7 +28,7 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         Entry(String owner,PqOmemoDevice.Fingerprint key) { this.owner = owner; this.key = key; }
     }
     public MonogramPqSecurityActivity(int account,long peer) { currentAccount = account; this.peer = peer; }
-    @Override protected String getTitle() { return "PQ OMEMO2"; }
+    @Override protected String getTitle() { return "OMEMO2"; }
     @Override public boolean onFragmentCreate() { super.onFragmentCreate(); load(); return true; }
     @Override public void onFragmentDestroy() { generation++; worker.shutdownNow(); super.onFragmentDestroy(); }
     private void refresh() { if (listView != null) listView.adapter.update(true); }
@@ -38,7 +38,7 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         return text.toString();
     }
     private void load() {
-        final int request = ++generation; busy = true; status = "Refreshing PQ fingerprints…"; refresh();
+        final int request = ++generation; busy = true; status = "Refreshing OMEMO2 fingerprints…"; refresh();
         worker.execute(() -> {
             ArrayList<Entry> found = new ArrayList<>(); String own = null, message = null; boolean available = false;
             try {
@@ -47,17 +47,18 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
                 if (available) {
                     XmppPqOmemo pq = session.pq(); own = pq.ownFingerprint();
                     String contact = controller.jid(peer), account = controller.accountJid();
+                    String conversation = contact.equals(account) ? null : contact;
                     java.util.Set<String> contacts=new java.util.TreeSet<>();
                     if(peer<0)for(org.jxmpp.jid.BareJid member:session.rooms.members(contact))contacts.add(member.toString());
                     else contacts.add(contact);
                     contacts.add(account);
                     java.util.List<String> failures=new java.util.ArrayList<>();
                     for(String owner:contacts)try {
-                        for(PqOmemoDevice.Fingerprint key:pq.discover(owner))found.add(new Entry(owner,key));
+                        for(PqOmemoDevice.Fingerprint key:pq.discover(owner,conversation))found.add(new Entry(owner,key));
                     }catch(Exception failure){failures.add(owner+": "+com.negzero.monogram.xmpp.XmppRequestException.describe(failure));}
                     if(!failures.isEmpty())throw new java.io.IOException(String.join("\n",failures));
-                    message = found.isEmpty() ? "No other experimental PQ devices found." : "Compare hybrid fingerprints before trusting devices.";
-                } else message = "Enable experimental PQ OMEMO2 to publish a separate identity and discover compatible devices.";
+                    message = found.isEmpty() ? "No other OMEMO2 devices found." : "Compare OMEMO2 fingerprints before trusting devices.";
+                } else message = "Enable OMEMO2 to publish a post-quantum hybrid identity and discover compatible devices.";
             } catch (Exception error) { message = com.negzero.monogram.xmpp.XmppRequestException.describe(error); }
             final String fingerprint = own, result = message; final boolean ready = available;
             AndroidUtilities.runOnUIThread(() -> {
@@ -67,12 +68,12 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         });
     }
     @Override protected void fillItems(ArrayList<UItem> items,UniversalAdapter adapter) {
-        items.add(UItem.asHeader("Experimental post-quantum encryption"));
-        items.add(UItem.asShadow("Monocles-compatible PQ OMEMO2 is a separate experimental protocol. Both people need a compatible client. It uses separate keys and trust decisions; standard OMEMO fingerprints and blind-trust settings do not approve these keys. Selecting PQ never falls back to another encryption mode."));
-        items.add(UItem.asButton(1,enabled ? "Refresh PQ fingerprints" : "Enable experimental PQ OMEMO2").setEnabled(!busy));
+        items.add(UItem.asHeader("Post-quantum OMEMO2"));
+        items.add(UItem.asShadow("OMEMO2 uses Monocles-compatible post-quantum hybrid keys. Everyone in the conversation needs a compatible client. When blind trust is enabled, it approves new or changed participant keys and authenticated keys from your own devices for that conversation; explicitly blocked devices stay blocked. Without blind trust, compare fingerprints before trusting. OMEMO2 never falls back to another encryption mode."));
+        items.add(UItem.asButton(1,enabled ? "Refresh OMEMO2 fingerprints" : "Enable OMEMO2").setEnabled(!busy));
         if (status != null) items.add(UItem.asShadow(status));
         if (ownFingerprint != null) {
-            items.add(UItem.asHeader("Your hybrid fingerprint")); items.add(UItem.asShadow(grouped(ownFingerprint)));
+            items.add(UItem.asHeader("Your OMEMO2 fingerprint")); items.add(UItem.asShadow(grouped(ownFingerprint)));
             items.add(UItem.asButton(2,R.drawable.msg_copy,"Copy fingerprint"));
         }
         if (!entries.isEmpty()) items.add(UItem.asHeader("Devices"));
@@ -87,7 +88,7 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         if (busy) return;
         if (item.id == 1) {
             if (enabled) { load(); return; }
-            busy = true; status = "Enabling experimental PQ OMEMO2…"; refresh(); final int request = ++generation;
+            busy = true; status = "Enabling OMEMO2…"; refresh(); final int request = ++generation;
             MonogramController.get(currentAccount).enablePq(error -> {
                 if (request != generation) return; busy = false;
                 if (error != null) { status = com.negzero.monogram.xmpp.XmppRequestException.describe(error); refresh(); }
@@ -97,7 +98,7 @@ public final class MonogramPqSecurityActivity extends MonogramSettingsActivity {
         else if (item.object instanceof Entry) {
             Entry entry = (Entry)item.object;
             showDialog(new AlertDialog.Builder(getContext()).setTitle("Device " + entry.key.device)
-                    .setMessage(entry.owner + "\n\n" + grouped(entry.key.fingerprint) + "\n\nCompare this hybrid fingerprint through another trusted channel. Trusting approves both identity keys for future PQ messages; blocking prevents future encryption to this device.")
+                    .setMessage(entry.owner + "\n\n" + grouped(entry.key.fingerprint) + "\n\nCompare this OMEMO2 fingerprint through another trusted channel. Trusting approves both identity keys for future OMEMO2 messages; blocking prevents future encryption to this device.")
                     .setPositiveButton("Trust",(dialog,which) -> decide(entry,true))
                     .setNeutralButton("Block",(dialog,which) -> decide(entry,false)).setNegativeButton("Cancel",null).create());
         }

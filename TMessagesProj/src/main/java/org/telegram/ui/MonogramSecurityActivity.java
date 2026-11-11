@@ -79,7 +79,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         MonogramController controller=MonogramController.get(currentAccount);
         if (!fingerprintsPage && controller.pqEncryption(peer)) {
             generation++; identities.clear(); states.clear(); ownFingerprint = null;
-            status = "Experimental PQ identities use separate fingerprint approval."; refresh(); return;
+            status = "OMEMO2 fingerprints are reviewed on their own security page."; refresh(); return;
         }
         final int loading=++generation; fingerprintLookup++;
         roomMembersChecked=false;
@@ -218,7 +218,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
         } else items.add(UItem.asShadow(status!=null && status.startsWith("Loading") ? "Loading fingerprints…" : accountPage ? "No other encryption devices found for this OMEMO version." : "No devices available. See Diagnostics for details."));
         items.add(UItem.asShadow(null));
         if(accountPage) {
-            items.add(UItem.asButton(51,"Experimental PQ OMEMO"));
+            items.add(UItem.asButton(51,"OMEMO2 fingerprints"));
             if(status!=null)items.add(UItem.asShadow(status));
             items.add(UItem.asShadow("These are published encryption devices, not a list of active login sessions. Verify fingerprints before trusting another device. Blocking stops new message keys from being sent to that identity; it does not sign that client out or erase previously received messages."));
         }
@@ -227,7 +227,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
     }
     private void addContactBlindTrust(ArrayList<UItem> items, MonogramController controller) {
         items.add(UItem.asCheck(31,"Blindly trust this contact").setChecked(controller.blindlyTrustContact(peer)).setEnabled(!saving));
-        items.add(UItem.asShadow("Applies to Legacy OMEMO and OMEMO 2. New devices and changed keys are approved automatically. Blocked devices stay blocked. Turning this off stops new approvals and keeps previously approved fingerprints."));
+        items.add(UItem.asShadow("Applies to Legacy OMEMO and OMEMO2. New devices and changed keys from this contact are approved automatically. OMEMO2 also approves authenticated keys from your own devices for this conversation. Explicitly blocked devices stay blocked. Turning this off stops new approvals and keeps previous decisions."));
     }
     @Override protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         MonogramController controller = MonogramController.get(currentAccount);
@@ -248,7 +248,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
             items.add(UItem.asShadow("Trusts new devices and changed keys for known members of this room. Blocked devices stay blocked. Decisions are shared with direct chats and remain trusted when this is turned off."));
         }
         items.add(UItem.asButton(13,"Devices and fingerprints"));
-        if(controller.pqEncryption(peer))items.add(UItem.asButton(51,"Experimental PQ OMEMO fingerprints"));
+        if(controller.pqEncryption(peer))items.add(UItem.asButton(51,"OMEMO2 fingerprints"));
         if(peer>0 && !controller.accountJid().equals(controller.jid(peer)))items.add(UItem.asButton(26,"Revoke presence access").setEnabled(!saving));
         items.add(UItem.asHeader("More"));
         if(peer<0 && !roomMembers.isEmpty()) {
@@ -299,7 +299,7 @@ public final class MonogramSecurityActivity extends MonogramSettingsActivity {
             if(controller.blindlyTrustContact(peer)) {
                 try{controller.setBlindlyTrustContact(peer,false);refresh();}catch(Exception error){showBlindTrustError(error);}
             } else showDialog(new AlertDialog.Builder(getContext()).setTitle("Blindly trust this contact?")
-                .setMessage("New devices and changed encryption keys for "+controller.jid(peer)+" will be trusted without fingerprint verification, in both OMEMO versions. An attacker who controls their account or key publication could receive your future messages. Blocked devices stay blocked. This does not change whether messages are encrypted.")
+                .setMessage("New devices and changed encryption keys for "+controller.jid(peer)+" will be trusted without fingerprint verification, in both OMEMO versions. OMEMO2 also trusts authenticated keys from your own devices for this conversation. An attacker who controls their account or key publication could receive your future messages. Explicitly blocked devices stay blocked. This does not change whether messages are encrypted.")
                 .setPositiveButton("Enable blind trust",(dialog,which)->{
                     try{controller.setBlindlyTrustContact(peer,true);loadIdentities(true);}catch(Exception error){showBlindTrustError(error);}
                 }).setNegativeButton("Cancel",null).create());
