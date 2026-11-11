@@ -63,27 +63,31 @@ public final class XmppPqOmemo implements AutoCloseable {
         for (String feature : new String[]{NS,PqOmemoPep.DEVICES + "+notify",PqOmemoPep.BUNDLES + "+notify",NS + ":pqxdh",NS + ":spqr",NS + ":bundle-v4",NS + ":kex-auth"}) disco.addFeature(feature);
         ready = true; connection.sendStanza(new Presence(Presence.Type.available));
     }
-    private PqOmemoBundle bundle(String peer,int id,boolean force) throws Exception {
+    private PqOmemoBundle bundle(String peer,int id,boolean force,String conversation) throws Exception {
         String key = peer + "\n" + id; Long time = refreshed.get(key);
         PqOmemoBundle cached = bundles.get(key);
         if (!force && cached != null && time != null && System.nanoTime() - time < java.util.concurrent.TimeUnit.MINUTES.toNanos(1)) {
-            device.trustAutomatically(peer,id,cached);
+            device.trustAutomatically(peer,id,cached,conversation);
             return cached;
         }
         bundles.remove(key);refreshed.remove(key);
         StandardExtensionElement xml = pep.item(peer,PqOmemoPep.BUNDLES,Integer.toString(id));
         if (xml == null)return null;
-        PqOmemoBundle found = PqOmemoBundle.parse(xml); device.observe(peer,id,found);
+        PqOmemoBundle found = PqOmemoBundle.parse(xml); device.observe(peer,id,found,conversation);
         bundles.put(key,found); refreshed.put(key,System.nanoTime()); return found;
     }
     public synchronized List<PqOmemoDevice.Fingerprint> discover(String peer) throws Exception {
+        return discover(peer,null);
+    }
+    public synchronized List<PqOmemoDevice.Fingerprint> discover(String peer,String conversation) throws Exception {
+        if (conversation != null) conversation = PqOmemoDevice.bare(conversation);
         requireReady(); peer = PqOmemoDevice.bare(peer);
         Set<Integer> active = new LinkedHashSet<>(devices(peer,true));
         for (int id : new TreeSet<>(active)) if (!peer.equals(device.jid) || id != device.id) {
-            if(bundle(peer,id,true)==null && !hasTrustedSession(peer,id))active.remove(id);
+            if(bundle(peer,id,true,conversation)==null && !hasTrustedSession(peer,id))active.remove(id);
         }
         List<PqOmemoDevice.Fingerprint> result = new ArrayList<>();
-        for (PqOmemoDevice.Fingerprint key : device.fingerprints(peer)) result.add(key.withActive(active.contains(key.device)));
+        for (PqOmemoDevice.Fingerprint key : device.fingerprints(peer,conversation)) result.add(key.withActive(active.contains(key.device)));
         return result;
     }
     private Set<Integer> devices(String peer,boolean force) throws Exception {
@@ -101,7 +105,7 @@ public final class XmppPqOmemo implements AutoCloseable {
                     && tx.get("blocked/"+PqOmemoSignalStore.peer(address))==null && device.store(tx).containsSession(address);
         }
     }
-    private List<PqOmemoMessage.Target> targets(Collection<String> peers) throws Exception {
+    private List<PqOmemoMessage.Target> targets(Collection<String> peers,String conversation) throws Exception {
         List<PqOmemoMessage.Target> result = new ArrayList<>();
         for (String peer : new LinkedHashSet<>(peers)) {
             peer = PqOmemoDevice.bare(peer); int count = 0,missing = 0;
@@ -110,7 +114,7 @@ public final class XmppPqOmemo implements AutoCloseable {
                 try (PqOmemoRecords tx = device.records.begin()) {
                     if (tx.get("blocked/" + PqOmemoSignalStore.peer(address)) != null) continue;
                 }
-                PqOmemoBundle keys=bundle(peer,id,false);
+                PqOmemoBundle keys=bundle(peer,id,false,conversation);
                 // A confirmed absent bundle cannot start a session; an existing pinned ratchet needs no prekeys.
                 if(keys==null && !hasTrustedSession(peer,id)) { missing++;continue; }
                 result.add(new PqOmemoMessage.Target(peer,id,keys)); count++;
@@ -128,7 +132,7 @@ public final class XmppPqOmemo implements AutoCloseable {
     synchronized Message encrypt(Message plaintext,Collection<String> recipients) throws Exception {
         requireReady();
         Message wire = new Message(plaintext.getTo(),plaintext.getType()); wire.setFrom(plaintext.getFrom()); wire.setStanzaId(plaintext.getStanzaId());
-        wire.addExtension(PqOmemoMessage.encrypt(device,plaintext,targets(recipients),random));
+        wire.addExtension(PqOmemoMessage.encrypt(device,plaintext,targets(recipients,plaintext.getTo().asBareJid().toString()),random));
         wire.addExtension(StandardExtensionElement.builder("store","urn:xmpp:hints").build()); return wire;
     }
     public static final class Received {

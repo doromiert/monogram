@@ -13,12 +13,15 @@ protocol or plaintext. Existing OMEMO databases must not be migrated in place.
 ## Use
 
 Open a direct chat or MUC → Conversation security → OMEMO version →
-**PQ OMEMO2 · Monocles (experimental)**. Enabling it publishes a new public
+**OMEMO2**. Enabling it publishes a new public
 identity in its own PEP namespace. Review the hybrid fingerprints on the PQ
 devices page, including any other devices on your own account. Both identity
-keys are bound into that fingerprint. Classical blind-trust approvals do not
-approve PQ devices. Blocked devices are excluded; unreviewed active devices
-prevent sending rather than silently reducing the recipient set.
+keys are bound into that fingerprint. Stored Legacy and Classic fingerprint
+decisions remain separate. Conversation blind trust also approves authenticated
+PQ keys from your own devices, using the direct-chat or room destination rather
+than a global account setting. Explicit blocks remain authoritative. Without
+blind trust, unreviewed active devices prevent sending rather than silently
+reducing the recipient set.
 
 A device list can retain an orphan device ID after its bundle has disappeared.
 A confirmed missing bundle no longer aborts discovery or every send. An existing
@@ -27,7 +30,8 @@ otherwise that device cannot receive a copy until it republishes keys. Other
 usable PQ devices still receive the encrypted message. Every recipient must have
 at least one usable device; a recipient with only unavailable keys blocks sending
 with a specific reconnect/republish error. Invalid bundles, access denials and
-lookup failures remain errors, and valid unreviewed devices still need approval.
+lookup failures remain errors, and valid unreviewed devices still need approval
+when conversation blind trust is disabled.
 Missing bundles do not reset identities, change trust or edit anyone's PEP list.
 
 MUCs use the same per-account device sessions and hybrid trust as DMs. The room

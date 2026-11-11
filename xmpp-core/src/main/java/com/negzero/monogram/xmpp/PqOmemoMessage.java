@@ -124,7 +124,7 @@ final class PqOmemoMessage {
             pqPublic = data(pq,2592);
             if (!PqAuth.verify(sender,sid,prekey.getIdentityKey(),pqPublic,data(one(auth,"pq-sig"),4627),data(one(auth,"ik-sig"),64),kexEntries)) throw invalid();
             // Public authenticated observation survives an untrusted-key rejection, not a session mutation.
-            device.observe(sender,sid,prekey.getIdentityKey(),pqPublic);
+            device.observe(sender,sid,prekey.getIdentityKey(),pqPublic,destination);
         }
         byte[] plaintext = null, key = null;
         try (PqOmemoRecords tx = device.records.begin()) {

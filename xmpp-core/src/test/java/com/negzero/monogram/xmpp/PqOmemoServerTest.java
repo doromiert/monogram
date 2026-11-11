@@ -53,6 +53,31 @@ class PqOmemoServerTest {
     private static void publishDevices(Client client,int... ids) throws Exception {
         publishDevices(client.connection,client.device.jid,ids);
     }
+    @Test void conversationBlindTrustApprovesOwnSendCopiesAndCarbonsButPreservesBlocks() throws Exception {
+        try(Client alice=new Client("pqownalice");Client bob=new Client("pqownbob");Client phone=new Client("pqownalice")) {
+            alice.device.setBlindTrustPolicy(peer -> peer.equals(bob.device.jid));
+            alice.service.discover(alice.device.jid);
+            assertFalse(alice.device.fingerprints(alice.device.jid).get(0).trusted);
+            bob.trust(alice.device.jid);
+            Message clear=new Message(bob.connection.getUser(),Message.Type.chat);
+            clear.setFrom(alice.connection.getUser());clear.setStanzaId(UUID.randomUUID().toString());clear.setBody("own copy follows this conversation");
+            Message wire=alice.service.encrypt(clear);
+            assertTrue(alice.device.fingerprints(alice.device.jid).get(0).trusted);
+            phone.device.setBlindTrustPolicy(peer -> peer.equals("unrelated@localhost"));
+            assertThrows(org.signal.libsignal.protocol.UntrustedIdentityException.class,
+                    () -> phone.service.receive(wire,alice.device.jid,bob.device.jid,System.currentTimeMillis(),null));
+            phone.device.setBlindTrustPolicy(peer -> peer.equals(bob.device.jid));
+            XmppPqOmemo.Received copy=phone.service.receive(wire,alice.device.jid,bob.device.jid,System.currentTimeMillis(),null);
+            assertEquals(clear.getBody(),copy.content.getBody());
+            phone.service.accepted(copy);
+            phone.device.trust(alice.device.jid,alice.device.id,alice.device.prepare().fingerprint(),false);
+            clear.setStanzaId(UUID.randomUUID().toString());clear.setBody("blocked own device stays blocked");
+            Message blocked=alice.service.encrypt(clear);
+            assertThrows(org.signal.libsignal.protocol.UntrustedIdentityException.class,
+                    () -> phone.service.receive(blocked,alice.device.jid,bob.device.jid,System.currentTimeMillis(),null));
+            assertTrue(phone.device.fingerprints(alice.device.jid).get(0).blocked);
+        }
+    }
     static void publishDevices(org.jivesoftware.smack.XMPPConnection connection,String owner,int... ids) throws Exception {
         StandardExtensionElement.Builder list=StandardExtensionElement.builder("devices",XmppPqOmemo.NS);
         for(int id:ids)list.addElement(StandardExtensionElement.builder("device",XmppPqOmemo.NS).addAttribute("id",Integer.toString(id)).build());

@@ -2411,6 +2411,7 @@ public final class MonogramController {
         if(accountJid().isEmpty() || accountJid().equals(address))return false;
         if(preferences.getBoolean("blind-trust-"+accountJid()+"\n"+address,false))return true;
         long user=store.knownPeer(address);
+        if(user<0 && blindlyTrustRoom(user))return true;
         for(long room:store.rooms())if(blindlyTrustRoom(room) && store.room(room).autojoin) {
             java.util.Set<String> verified=verifiedRoomTrustMembers.get(room);
             if(verified!=null ? verified.contains(address) : user>0 && store.roomMember(-room,user))return true;
