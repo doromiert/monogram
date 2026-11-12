@@ -264,6 +264,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private ArrayList<TLRPC.User> contactsToSend;
     private Uri contactsToSendUri;
     private MonogramConnectionNotice monogramConnectionNotice;
+    private final MonogramBatteryPrompt monogramBatteryPrompt = new MonogramBatteryPrompt();
+    private final Runnable monogramBatteryCheck = this::checkMonogramBatteryPrompt;
     private int currentConnectionState;
     private final ArrayList<BaseFragment> mainFragmentsStack = new ArrayList<>();
     private final ArrayList<BaseFragment> layerFragmentsStack = new ArrayList<>();
@@ -538,6 +540,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         actionBarLayout.setFragmentStack(mainFragmentsStack);
         actionBarLayout.setFragmentStackChangedListener(() -> {
             checkSystemBarColors(true, false);
+            scheduleMonogramBatteryPrompt();
             if (getLastFragment() != null && getLastFragment().getLastStoryViewer() != null) {
                 getLastFragment().getLastStoryViewer().updatePlayingMode();
             }
@@ -6454,6 +6457,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onPause() {
         super.onPause();
+        AndroidUtilities.cancelRunOnUIThread(monogramBatteryCheck);
+        monogramBatteryPrompt.pause();
         isResumed = false;
         if (monogramConnectionNotice != null) monogramConnectionNotice.hide();
         pipActivityHandler.onPause();
@@ -6787,6 +6792,41 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         //if (refreshRateController != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         //    refreshRateController.start();
         //}
+        scheduleMonogramBatteryPrompt();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) scheduleMonogramBatteryPrompt();
+    }
+
+    private void scheduleMonogramBatteryPrompt() {
+        AndroidUtilities.cancelRunOnUIThread(monogramBatteryCheck);
+        if (isResumed) AndroidUtilities.runOnUIThread(monogramBatteryCheck, 16);
+    }
+
+    private void checkMonogramBatteryPrompt() {
+        if (!isResumed || !hasWindowFocus() || isFinishing() || isDestroyed() || actionBarLayout == null
+                || !UserConfig.getInstance(currentAccount).isClientActivated()
+                || SharedConfig.appLocked || SharedConfig.isWaitingForPasscodeEnter
+                || (passcodeDialog != null && passcodeDialog.isShowing())
+                || (termsOfServiceView != null && termsOfServiceView.getVisibility() == View.VISIBLE)
+                || (blockingUpdateView != null && blockingUpdateView.getVisibility() == View.VISIBLE)
+                || getVisibleDialog() != null || (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible())) return;
+        for (BaseFragment fragment : new BaseFragment[]{actionBarLayout.getLastFragment(),
+                rightActionBarLayout == null ? null : rightActionBarLayout.getLastFragment(),
+                layersActionBarLayout == null ? null : layersActionBarLayout.getLastFragment()}) {
+            if (fragment instanceof MonogramLoginActivity || fragment instanceof IntroActivity || fragment instanceof LoginActivity) return;
+            if (fragment != null && fragment.getVisibleDialog() != null && fragment.getVisibleDialog().isShowing()) return;
+        }
+        if (actionBarLayout.isTransitionAnimationInProgress()
+                || (rightActionBarLayout != null && rightActionBarLayout.isTransitionAnimationInProgress())
+                || (layersActionBarLayout != null && layersActionBarLayout.isTransitionAnimationInProgress())) {
+            AndroidUtilities.runOnUIThread(monogramBatteryCheck, 100);
+            return;
+        }
+        monogramBatteryPrompt.showIfNeeded(this, getSharedPreferences("monogram_battery", MODE_PRIVATE), true);
     }
 
     public static Runnable whenResumed;

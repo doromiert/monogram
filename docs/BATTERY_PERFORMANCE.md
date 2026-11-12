@@ -89,3 +89,40 @@ of how many historical users the room retains. Tests also assert that the full
 roster remains available, departed users are included in the update delta, and
 both old/new IDs are included for an identity replacement. This second fix is
 measured independently from the no-op database-write reduction above.
+
+## Android battery setup reminder (0.2.199)
+
+Android users whose app is still battery-optimized receive a one-time reminder
+after account setup. Existing installations receive it on their next eligible
+foreground visit after upgrading. It waits for login, app unlock, navigation
+transitions and other dialogs to finish. The same reminder is shared by all
+accounts because Android's exemption applies to the app package.
+
+- **Enable** opens Android's package-specific battery optimization exemption
+  request. Unsupported devices fall back to app details, then system settings.
+- **Not now**, Back or tapping outside acknowledges the reminder. It does not
+  repeatedly ask users who have deliberately dismissed it.
+- Leaving the app or another programmatic dismissal keeps the reminder pending.
+  Scheduling a callback or displaying a dialog alone does not acknowledge it.
+- Apps already exempt are skipped. The permission is checked again whenever an
+  eligible foreground visit attempts to display the pending reminder.
+
+The exemption can also be requested later from **Settings → XMPP connection →
+Battery optimization**. That existing settings action and the reminder share
+the permission check and intent fallback. Phone-specific background restrictions
+may require additional changes in system settings; Android's exemption is
+[partial, rather than a guarantee that all power restrictions are removed](https://developer.android.com/training/monitoring-device-state/doze-standby#support_for_other_use_cases).
+This is Android-only platform setup; desktop has no corresponding permission.
+
+Verification on Android API 36: five Robolectric 4.16.1 tests cover explicit
+dismissal/Enable, app-wide acknowledgement across helper recreation, skipping an
+already-exempt app, and preserving an interrupted prompt without duplicates.
+Native acceptance on the owned offline Android 15 / API 35 tablet emulator uses
+the final APK's unchanged application content with a separate emulator test
+signature. It checks the actual dialog, interruption, dismissal, setup-screen
+deferral and immediate
+display after setup through LaunchActivity navigation, then verifies that Enable
+opens Android's native request. The final native dialog draw took 21 ms; observed
+draws were 9–25 ms. Other first-setup notification/media permission requests were
+already granted for this isolated acceptance run. No physical phone or
+manufacturer-specific battery settings were exercised.

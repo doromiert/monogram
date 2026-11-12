@@ -40,8 +40,7 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
         if(failure!=null) details+="\n\nLast disconnect: "+failure;
         items.add(UItem.asShadow(details));
         items.add(UItem.asButton(8,R.drawable.msg_secret,"Server certificate"));
-        android.os.PowerManager power=(android.os.PowerManager)getContext().getSystemService(android.content.Context.POWER_SERVICE);
-        boolean unrestricted=power!=null && power.isIgnoringBatteryOptimizations(getContext().getPackageName());
+        boolean unrestricted=MonogramBatteryPrompt.isUnrestricted(getContext());
         items.add(UItem.asHeader("Background connection"));
         items.add(UItem.asSettingsCell(3,"Battery optimization",unrestricted ? "Unrestricted" : "Restricted").setEnabled(!unrestricted));
         items.add(UItem.asButton(4,"App background settings"));
@@ -68,8 +67,9 @@ public final class MonogramConnectionActivity extends MonogramSettingsActivity i
         else if(item.id==6) presentFragment(new MonogramDebugActivity(currentAccount));
         else if(item.id==7) presentFragment(new MonogramLinkPreviewsActivity(currentAccount));
         else if(item.id==2) presentFragment(new MonogramContactActivity(currentAccount,null));
-        else if(item.id==3 || item.id==4 || item.id==5) {
-            android.content.Intent intent=item.id==5 ? NotificationsService.notificationSettings(getContext()) : new android.content.Intent(item.id==3 ? android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS : android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        else if(item.id==3) MonogramBatteryPrompt.openSettings(getParentActivity());
+        else if(item.id==4 || item.id==5) {
+            android.content.Intent intent=item.id==5 ? NotificationsService.notificationSettings(getContext()) : new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     android.net.Uri.parse("package:"+getContext().getPackageName()));
             try { getParentActivity().startActivity(intent); }
             catch(android.content.ActivityNotFoundException | SecurityException unsupported) {
