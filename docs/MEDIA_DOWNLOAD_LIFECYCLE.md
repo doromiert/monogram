@@ -34,6 +34,31 @@ the hard byte bound and authenticated decryption remain mandatory. Transfer
 errors remain available in Message diagnostics without private URL text.
 
 
+## Stalled response recovery (0.2.202)
+
+A fresh HTTPS request can stall before any response headers even though TLS has
+completed. Android already uses HTTP/1.1; changing protocols does not solve this
+case. A download allows two fresh GET connections after transport failures or a
+three-second header wait, then keeps the ordinary 15-second connect and
+30-second read timeouts on its final attempt. The five-redirect budget is shared
+across attempts. The header timer is cancelled as soon as headers arrive, so it
+never limits a healthy response body. Progress returns to the native active
+zero-byte state while reconnecting, without requiring another tap.
+
+Uploads prepare the exact wire bytes once in an owner-only temporary file, open
+a read-only descriptor and unlink the name before sending. This includes the
+GCM tag for encrypted uploads. One transport/acknowledgement failure may replay
+the same descriptor to the same slot with the same headers. The first attempt's
+three-second acknowledgement timer starts only after all wire bytes are written
+and flushed; the final attempt retains normal timeouts. Changed plaintext can
+never be re-encrypted with the original nonce for replay.
+
+HTTP refusals, TLS errors, cancellation, size violations and authentication or
+hash failures are not recovery triggers. No body is committed before existing
+integrity checks pass. Recovery is bounded; a service that stalls every attempt
+still reports an error. `FileTransferRecoveryTest` covers these boundaries and
+byte-identical encrypted replay after source mutation.
+
 ## Desktop transfer progress
 
 Desktop now uses the same SFS/OOB metadata and AES-GCM URL profile for direct

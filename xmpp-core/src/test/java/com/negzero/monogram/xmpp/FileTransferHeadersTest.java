@@ -36,7 +36,7 @@ class FileTransferHeadersTest {
             if("Content-Length".equalsIgnoreCase(name)) return length;
             return "Content-Type".equalsIgnoreCase(name) ? mime : null;
         }
-        @Override public int getResponseCode() { return status; }
+        @Override public int getResponseCode() throws IOException { return status; }
         @Override public InputStream getInputStream() { bodyOpened=true;return new ByteArrayInputStream(response); }
         @Override public OutputStream getOutputStream() { return uploaded; }
         @Override public void disconnect() { disconnected=true; }

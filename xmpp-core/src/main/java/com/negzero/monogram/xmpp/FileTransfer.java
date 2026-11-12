@@ -5,6 +5,7 @@ import java.io.*;
 import java.net.*;
 import java.security.SecureRandom;
 import java.util.Map;
+import java.util.concurrent.*;
 import org.bouncycastle.crypto.engines.AESEngine;
 import org.bouncycastle.crypto.modes.GCMBlockCipher;
 import org.bouncycastle.crypto.params.AEADParameters;
@@ -32,6 +33,26 @@ public final class FileTransfer {
     public static final class Failure extends IOException {
         public final String reason;
         Failure(String reason) { super(reason); this.reason = reason; }
+    }
+    private static final ScheduledExecutorService HEADER_TIMEOUTS = Executors.newScheduledThreadPool(2, task -> {
+        Thread thread = new Thread(task, "file-response-deadline"); thread.setDaemon(true); return thread;
+    });
+    /** Disconnect only while waiting for headers, leaving healthy body reads on their normal timeout. */
+    private static final class HeaderDeadline implements AutoCloseable {
+        private final ScheduledFuture<?> task;
+        private boolean closed;
+        private volatile boolean expired;
+        HeaderDeadline(HttpURLConnection http) {
+            task = HEADER_TIMEOUTS.schedule(() -> {
+                synchronized (this) { if (!closed) { expired = true; http.disconnect(); } }
+            }, 3, TimeUnit.SECONDS);
+        }
+        public synchronized void close() { closed = true; task.cancel(false); }
+    }
+    private static boolean reconnect(IOException error, HeaderDeadline deadline) {
+        if (error instanceof javax.net.ssl.SSLException || error instanceof Failure) return false;
+        return (deadline != null && deadline.expired) || error instanceof SocketTimeoutException
+                || error instanceof SocketException || error instanceof EOFException;
     }
     private FileTransfer() {}
     /** Private immutable upload input; the caller deletes it after committing or abandoning the transfer. */
@@ -90,27 +111,60 @@ public final class FileTransfer {
         catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
             throw new XmppRequestException("File upload slot",error);
         }
+        return uploadToSlot(slot, file, contentType, encrypted, job, progress);
+    }
+    private static FileLink uploadToSlot(Slot slot, File file, String contentType, boolean encrypted, Job job, Progress progress) throws Exception {
+        job.check();
+        long length = file.length(), size = length + (encrypted ? 16 : 0);
+        if (!file.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
         FileLink.parse(slot.getPutUrl().toExternalForm());
         FileLink link = FileLink.parse(slot.getGetUrl().toExternalForm());
+        for (Map.Entry<String, String> header : slot.getHeaders().entrySet()) {
+            String name = header.getKey(), value = header.getValue();
+            if (!(name.equalsIgnoreCase("Authorization") || name.equalsIgnoreCase("Cookie") || name.equalsIgnoreCase("Expires"))
+                    || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) throw new Failure("UPLOAD_HEADERS");
+        }
         byte[] iv = null, key = null;
         if (encrypted) { SecureRandom random = new SecureRandom(); iv = new byte[12]; key = new byte[32]; random.nextBytes(iv); random.nextBytes(key); }
-        HttpURLConnection http = open(slot.getPutUrl(), job);
+        // Encrypt once: replay must never read changed plaintext under the same GCM nonce.
+        File wire = File.createTempFile("monogram-wire-", ".part", file.getAbsoluteFile().getParentFile());
         try {
-            http.setRequestMethod("PUT"); http.setDoOutput(true); http.setFixedLengthStreamingMode(size);
-            http.setRequestProperty("Content-Type", contentType);
-            for (Map.Entry<String, String> header : slot.getHeaders().entrySet()) {
-                String name = header.getKey(); String value = header.getValue();
-                if (!(name.equalsIgnoreCase("Authorization") || name.equalsIgnoreCase("Cookie") || name.equalsIgnoreCase("Expires"))
-                        || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) throw new Failure("UPLOAD_HEADERS");
-                http.addRequestProperty(name, value);
+            if (!wire.setReadable(false, false) || !wire.setWritable(false, false)
+                    || !wire.setReadable(true, true) || !wire.setWritable(true, true)) throw new IOException("Cannot protect upload snapshot");
+            try (InputStream in = new FileInputStream(file); FileOutputStream out = new FileOutputStream(wire)) {
+                copy(in, out, size, length, encrypted ? cipher(true, iv, key) : null, job, null); out.getFD().sync();
             }
-            try (InputStream in = new FileInputStream(file); OutputStream out = http.getOutputStream()) {
-                copy(in, out, size, length, encrypted ? cipher(true, iv, key) : null, job, progress);
+            try (FileInputStream input = new FileInputStream(wire)) {
+                if (!wire.delete()) throw new IOException("Cannot unlink upload snapshot");
+                for (int attempt = 0; attempt < 2; attempt++) {
+                    input.getChannel().position(0); job.check();
+                    HttpURLConnection http = open(slot.getPutUrl(), job);
+                    HeaderDeadline deadline = null;
+                    try {
+                        http.setRequestMethod("PUT"); http.setDoOutput(true); http.setFixedLengthStreamingMode(size);
+                        http.setRequestProperty("Content-Type", contentType);
+                        for (Map.Entry<String, String> header : slot.getHeaders().entrySet()) http.addRequestProperty(header.getKey(), header.getValue());
+                        try (OutputStream out = http.getOutputStream()) {
+                            copy(input, out, size, size, null, job, progress); out.flush();
+                            // Closing a fixed-length stream may wait for its acknowledgement too.
+                            if (attempt == 0) deadline = new HeaderDeadline(http);
+                        }
+                        job.check(); int status = http.getResponseCode();
+                        if (deadline != null) deadline.close();
+                        if (status != 200 && status != 201 && status != 204) throw new Failure("UPLOAD_HTTP_" + status);
+                        return encrypted ? FileLink.encrypted(link.downloadUrl, iv, key) : link;
+                    } catch (IOException error) {
+                        job.check();
+                        if (attempt == 1 || !reconnect(error, deadline)) throw error;
+                        if (progress != null) progress.update(0, size);
+                    } finally {
+                        if (deadline != null) deadline.close();
+                        http.disconnect(); job.connection = null;
+                    }
+                }
             }
-            job.check(); int status = http.getResponseCode();
-            if (status != 200 && status != 201 && status != 204) throw new Failure("UPLOAD_HTTP_" + status);
-        } finally { http.disconnect(); job.connection = null; }
-        return encrypted ? FileLink.encrypted(link.downloadUrl, iv, key) : link;
+            throw new IOException("Upload attempts exhausted");
+        } finally { if (wire.exists() && !wire.delete()) wire.deleteOnExit(); }
     }
     public static void download(FileLink link, File destination, Job job, Progress progress) throws Exception {
         download(link, destination, job, progress, null);
@@ -134,17 +188,29 @@ public final class FileTransfer {
         if (!parent.isDirectory() && !parent.mkdirs()) throw new IOException("Cannot create attachment directory");
         File partial = File.createTempFile("monogram-", ".part", parent);
         URL url = link.downloadUrl;
+        int recoveries = 2;
         try {
-            for (int redirects = 0; redirects <= 5; redirects++) {
+            for (int redirects = 0; redirects <= 5;) {
                 FileLink.parse(url.toExternalForm());
                 HttpURLConnection http = open(url, job);
+                HeaderDeadline deadline = null;
                 try {
                     http.setRequestMethod("GET"); http.setRequestProperty("Accept-Encoding", "identity");
-                    int status = http.getResponseCode();
+                    int status;
+                    try {
+                        if (recoveries > 0) deadline = new HeaderDeadline(http);
+                        status = http.getResponseCode();
+                    } catch (IOException error) {
+                        job.check();
+                        if (recoveries == 0 || !reconnect(error, deadline)) throw error;
+                        recoveries--;
+                        if (progress != null) progress.update(0, -1);
+                        continue;
+                    } finally { if (deadline != null) deadline.close(); }
                     if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
                         String location = http.getHeaderField("Location");
                         if (location == null) throw new Failure("DOWNLOAD_REDIRECT");
-                        url = new URL(url, location); continue;
+                        url = new URL(url, location); redirects++; continue;
                     }
                     if (status != 200) throw new Failure("DOWNLOAD_HTTP_" + status);
                     long length = contentLength(http);
