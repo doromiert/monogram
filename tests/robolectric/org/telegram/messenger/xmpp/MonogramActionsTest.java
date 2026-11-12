@@ -41,7 +41,7 @@ public class MonogramActionsTest {
     @Test public void onlyExactLeadingCommandMatches() {
         assertTrue(MonogramActions.isAction(message("/me waves")));
         assertTrue(MonogramActions.isAction(message("/me ")));
-        for(String body:new String[]{"/me","/ME waves"," /me waves","/meshrugs","/me's asleep","hello /me waves","/me\twaves"})
+        for(String body:new String[]{"/me","/ME waves"," /me waves","/meshrugs","/me's asleep","hello /me waves","/me\twaves","/you","/nar","/YOU waves"," /nar text","/narrator text","/you\twaves","hello /nar text"})
             assertFalse(body,MonogramActions.isAction(message(body)));
     }
     @Test public void incomingOutgoingAndEncryptedModesKeepOriginalBodyAndUseServiceRenderer() {
@@ -55,6 +55,25 @@ public class MonogramActionsTest {
             assertEquals("/me waves 👋\nthen leaves",message.message);
             StyleSpan[] spans=((Spanned)object.messageText).getSpans(0,object.messageText.length(),StyleSpan.class);
             assertEquals(1,spans.length);assertEquals(Typeface.ITALIC,spans[0].getStyle());
+        }
+    }
+    @Test public void youAndNarratorUseActionCellsAcrossDirectionsAndEncryptionModes() {
+        for (String mode : new String[]{"0", "1", "2", "3"}) for (boolean outgoing : new boolean[]{false, true}) {
+            for (String[] example : new String[][]{{"/you wave 👋", "* you wave 👋"},
+                    {"/nar The room falls silent.\nThen a bell rings.", "The room falls silent.\nThen a bell rings."}}) {
+                TLRPC.Message message = message(example[0]);
+                message.out = outgoing; message.params.put("monogram-actual-encryption", mode);
+                MessageObject object = shell(); object.messageOwner = message;
+                update(object, "Alex"); object.setType();
+                assertEquals(MessageObject.TYPE_DATE, object.type);
+                assertEquals(1, object.contentType);
+                assertEquals(example[1], object.messageText.toString());
+                assertEquals(example[0], message.message);
+                StyleSpan[] spans = ((Spanned)object.messageText).getSpans(0, object.messageText.length(), StyleSpan.class);
+                assertEquals(1, spans.length); assertEquals(Typeface.ITALIC, spans[0].getStyle());
+                message.media = new TLRPC.TL_messageMediaDocument();
+                assertFalse(MonogramActions.isAction(message));
+            }
         }
     }
     @Test public void refreshedSenderNameUpdatesPresentationWithoutChangingWireText() {

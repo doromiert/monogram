@@ -7,7 +7,7 @@ import android.text.Spanned;
 import android.text.style.StyleSpan;
 import org.telegram.tgnet.TLRPC;
 
-/** XEP-0245 presentation only. The original /me body remains the transport/storage value. */
+/** Action presentation only. The original command body remains the transport/storage value. */
 public final class MonogramActions {
     private MonogramActions() {}
 
@@ -15,7 +15,8 @@ public final class MonogramActions {
         return message != null && message.params != null
                 && (message.params.containsKey("monogram-actual-encryption") || message.params.containsKey("monogram-encryption"))
                 && !(message instanceof TLRPC.TL_messageService)
-                && message.message != null && message.message.startsWith("/me ")
+                && message.message != null && (message.message.startsWith("/me ")
+                    || message.message.startsWith("/you ") || message.message.startsWith("/nar "))
                 && (message.media == null || message.media instanceof TLRPC.TL_messageMediaEmpty)
                 && message.fwd_from == null;
     }
@@ -25,7 +26,9 @@ public final class MonogramActions {
         String name = actor == null || actor.isEmpty() ? Long.toString(message.from_id == null ? 0 : message.from_id.user_id)
                 : actor.replace('\n', ' ').replace('\r', ' ');
         // The star differentiates user-authored actions from real presence/system events.
-        String label = "* " + name + " " + message.message.substring(4);
+        String label = message.message.startsWith("/nar ") ? message.message.substring(5)
+                : message.message.startsWith("/you ") ? "* you " + message.message.substring(5)
+                : "* " + name + " " + message.message.substring(4);
         TLRPC.TL_messageActionCustomAction action = new TLRPC.TL_messageActionCustomAction();
         action.message = label;
         message.action = action;

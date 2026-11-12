@@ -11,3 +11,14 @@ Presentation applies to both received history and optimistic outgoing messages. 
 Captions, forwarded content, real system events, `/ME`, `/meshrugs`, and text with leading whitespace are not converted. Messages without Monogram's recorded/queued encryption metadata are not treated as XMPP action messages.
 
 Regression tests: `MonogramActionsTest` covers exact matching, plaintext/legacy OMEMO/OMEMO 2 in both directions, service-cell type, italic styling, original-body preservation, refreshed sender names, queued send state, and excluded media/system/forwarded cases.
+
+Monogram also implements `/you ` and `/nar ` using the same action cell. The
+former displays literal `* you …`; the latter displays only the suffix. These
+are local presentation extensions, not part of XEP-0245. See
+[the proposal and test vectors](PROPOSED_ACTION_COMMANDS.md).
+
+The focused action regression checks pass for `/you` and `/nar`; mobile tests
+verify the production MessageObject path across plaintext/Legacy/OMEMO 2/PQ
+metadata in both directions. Desktop native acceptance verifies five centered
+action pills, including unchanged `/me`, incoming/outgoing `/you` and narration.
+No real contact was messaged for these presentation checks.
