@@ -61,3 +61,28 @@ persistent auto-update metadata, old message/favorite document resolution,
 account isolation and a detach racing with update commit. On the phone, import a
 public pack, run Check for updates, inspect counts, cancel an update, then detach
 and edit its name. Verify that an old received/sent sticker still displays.
+
+## Native pack-export acceptance (0.2.198)
+
+On the owned Android 15 / API 35 tablet fixture, the production application's
+native local-pack menu opened **Export pack…**, Android DocumentsUI saved a
+64×64 PNG sticker pack in Downloads as `Export acceptance.xmsp`, and the original
+temporary export snapshot was removed. The archive's ZIP CRC, manifest version,
+artwork length and SHA-256 matched. The actual desktop `packs::Library`
+subsequently imported that SAF-written archive, validated and persisted its
+metadata/artwork, and re-exported it. This used fictional local pack data and no
+provider credentials or message transport.
+
+The chooser uses `application/octet-stream`: `application/zip` made DocumentsUI
+append `.zip` to the requested `.xmsp` filename. The content remains the existing
+XMSP ZIP container. Source fix: `74e62533f`; the fresh original-signed arm64 APK is
+`.state/monogram-0.2.198-arm64.apk`, version code 74159, SHA-256
+`ad84996e37223f4eb895671b3aa5267fc7a82bc1c2145c8d387f2b4543a40e20`.
+The tablet used a separate fixture-signed copy with identical application payload.
+No real phone was updated by this acceptance run.
+
+Evidence: `.state/export198-menu.png`, `export198-save-picker.png`,
+`export198-final-picker.xml`, `export198-acceptance.xmsp`, and desktop
+`.state/mobile-export-interop-result.log`. Process-death restoration during the
+system picker and large-export progress/lifecycle acceptance remain open; this
+normal save flow does not establish those behaviors.
