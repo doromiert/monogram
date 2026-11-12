@@ -1439,7 +1439,8 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 if(filename.length()>80) filename=filename.substring(0,80);
                 if(!filename.endsWith(".xmsp")) filename+=".xmsp";
                 android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
-                        .setType("application/zip").addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        // DocumentsUI appends .zip for application/zip, changing the .xmsp name.
+                        .setType("application/octet-stream").addCategory(android.content.Intent.CATEGORY_OPENABLE)
                         .putExtra(android.content.Intent.EXTRA_TITLE,filename);
                 pendingLocalPackExport=new LocalPackExport(archive,currentAccount,owner);
                 activity.startActivityForResult(intent,LOCAL_PACK_EXPORT);
