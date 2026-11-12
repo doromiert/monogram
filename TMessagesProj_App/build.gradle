@@ -154,6 +154,22 @@ android {
     defaultConfig.versionCode = Integer.parseInt(APP_VERSION_CODE)
 
     applicationVariants.all { variant ->
+        variant.assembleProvider.configure {
+            doLast {
+                def abis = (findProperty('monogramAbi') ?: 'armeabi-v7a,arm64-v8a,x86,x86_64').split(',')
+                variant.outputs.each { output ->
+                    new java.util.zip.ZipFile(output.outputFile).withCloseable { apk ->
+                        abis.each { abi ->
+                            ['libsignal_jni.so', 'libmonogram_omemo2.so', 'libmonogram_wallet.so',
+                             'libtmessages.49.so', 'libmonfluo.so', 'liblanguage_id_l2c_jni.so', 'libc++_shared.so'].each { library ->
+                                if (apk.getEntry("lib/${abi}/${library}") == null)
+                                    throw new GradleException("APK is missing required native backend lib/${abi}/${library}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
         variant.outputs.all { output ->
             outputFileName = "app.apk"
             output.versionCodeOverride = defaultConfig.versionCode * 10 + variant.productFlavors.get(0).abiVersionCode

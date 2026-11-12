@@ -152,3 +152,38 @@ AGPL-3.0-only. The libsignal fork is also AGPL-3.0-only, copyright Signal
 Messenger, LLC and its contributors. Preserve the upstream notices and license
 when distributing source or native artifacts; distribution must provide the
 corresponding source, including build instructions and Monogram adaptations.
+
+## Android native packaging regression (0.2.201)
+
+The 0.2.198–0.2.200 APKs omitted `libsignal_jni.so`. The local native-cache
+build override replaced all JNI source directories with an older cache that
+contained the other native libraries. Checking that the PQ SDK existed on disk
+was insufficient: the SDK was not included in the APK. The native backend then
+failed to load; `XmppSession.configurePq` wrapped that linkage failure in an
+`IllegalStateException`, preventing ordinary and action-message sends in the
+UI's OMEMO2 mode. The previous published 0.2.197 APK contains the library.
+
+Preserve the configured JNI sources when reusing native binaries (`srcDir`,
+not `setSrcDirs`); the reuse cache should contain only replacement libraries,
+without duplicates of the wallet or PQ source directories. Gradle stages only
+Android ABI folders from the PQ cache so its adjacent `host` test library cannot
+enter Android's native merger. The SDK check rejects removal of that staged
+source, and assembling an APK checks the final archive for all seven required
+native libraries in every requested ABI. A source directory or a passing host
+crypto test alone is not release-package acceptance.
+
+The fix changes packaging, not protocol state. Do not clear databases, rotate
+identities or reset fingerprints to recover from this failure. Existing trust,
+ratchets and account keys remain intact after installing the corrected APK.
+
+Verification: the old source-directory replacement is rejected by
+`verifyPqOmemoSdk`. The corrected arm64 assemble checks all seven final APK
+entries. On the owned Android 15/API 35 emulator (arm64 via native translation),
+an instrumentation probe against the installed 0.2.199 APK reproduces
+`UnsatisfiedLinkError: libsignal_jni.so not found`. The unchanged-content,
+fixture-signed copy of 0.2.201 loads the packaged library and generates and
+serializes both classical and post-quantum identities successfully. Five native
+libraries match 0.2.197 byte for byte; the wallet and Signal libraries have the
+same ELF build IDs and `.text`/`.rodata`/`.data` sections, differing only in debug
+packaging. The delivered APK retains the original signing certificate. No real
+account identity or physical phone was changed for these checks.
