@@ -7,6 +7,13 @@ manifest is sent to the XMPP server.
 
 The native pack sheet's menu provides:
 
+- **Export pack…** saves the complete local sticker/custom-emoji pack as an
+  `.xmsp` archive through Android's system file picker. Connected packs can be
+  exported without detaching them. Archive creation and saving run off the UI
+  thread with immediate feedback; cancellation removes the temporary snapshot,
+  and changing accounts stops a pending export. Artwork and the existing XMSP
+  manifest are included, with no bot token or server publication.
+
 - **Check for Telegram updates**: fetch the remote pack now, including additions
   and removals. Existing artwork identified by Telegram's `file_unique_id` is
   reused without downloading it again. Legacy imports without this identity

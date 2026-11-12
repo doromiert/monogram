@@ -164,6 +164,17 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     private String localPackOwner;
     private static StickersAlert addingLocalStickers;
     private static final int LOCAL_STICKER_FILES = 7212;
+    private static final int LOCAL_PACK_EXPORT = 7213;
+    private MonogramPacks.Request exportingLocalPack;
+    private static LocalPackExport pendingLocalPackExport;
+    private static final class LocalPackExport {
+        final java.io.File file;
+        final int account;
+        final String owner;
+        LocalPackExport(java.io.File file, int account, String owner) {
+            this.file=file; this.account=account; this.owner=owner;
+        }
+    }
 
 
     public TLRPC.TL_messages_stickerSet stickerSet;
@@ -1407,7 +1418,71 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
             } catch(Exception failed) { addingLocalStickers=null;localPackError("Could not open the file picker."); }
         });
     }
+    private void exportLocalPack() {
+        MonogramPacks.Pack pack=localPack();
+        if(pack==null) return;
+        if(exportingLocalPack!=null || pendingLocalPackExport!=null) {
+            localPackError("Finish the current pack export first.");return;
+        }
+        final String owner=MonogramPacks.owner(currentAccount);
+        android.widget.Toast.makeText(getContext(),"Preparing pack export…",android.widget.Toast.LENGTH_SHORT).show();
+        exportingLocalPack=MonogramPacks.exportArchive(currentAccount,pack.id,(archive,error) -> {
+            exportingLocalPack=null;
+            if(error!=null) { localPackError(error);return; }
+            Activity activity=parentActivity!=null ? parentActivity : parentFragment==null ? null : parentFragment.getParentActivity();
+            if(archive==null || !isShowing() || activity==null || activity.isFinishing()
+                    || !owner.equals(MonogramPacks.owner(currentAccount))) {
+                if(archive!=null) archive.delete();return;
+            }
+            try {
+                String filename=pack.name.replace('/', '_').replace('\\','_').replace('\n','_').replace('\r','_');
+                if(filename.length()>80) filename=filename.substring(0,80);
+                if(!filename.endsWith(".xmsp")) filename+=".xmsp";
+                android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
+                        .setType("application/zip").addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        .putExtra(android.content.Intent.EXTRA_TITLE,filename);
+                pendingLocalPackExport=new LocalPackExport(archive,currentAccount,owner);
+                activity.startActivityForResult(intent,LOCAL_PACK_EXPORT);
+            } catch(Exception failed) {
+                pendingLocalPackExport=null;archive.delete();localPackError("Could not open the export file picker.");
+            }
+        });
+    }
+    private static void saveLocalPackExport(int resultCode,android.content.Intent data) {
+        LocalPackExport export=pendingLocalPackExport;pendingLocalPackExport=null;
+        if(export==null) return;
+        if(resultCode!=Activity.RESULT_OK || data==null || data.getData()==null) { export.file.delete();return; }
+        final Uri destination=data.getData();
+        final android.content.Context context=org.telegram.messenger.ApplicationLoader.applicationContext;
+        android.widget.Toast.makeText(context,"Saving pack…",android.widget.Toast.LENGTH_SHORT).show();
+        org.telegram.messenger.Utilities.globalQueue.postRunnable(() -> {
+            boolean success=false;
+            android.content.ContentResolver resolver=context.getContentResolver();
+            try {
+                if(!export.owner.equals(MonogramPacks.owner(export.account))) throw new java.io.IOException();
+                try(java.io.InputStream input=new java.io.FileInputStream(export.file);
+                    java.io.OutputStream output=resolver.openOutputStream(destination,"w")) {
+                    if(output==null) throw new java.io.IOException();
+                    byte[] buffer=new byte[16384];int count;
+                    while((count=input.read(buffer))!=-1) {
+                        if(!export.owner.equals(MonogramPacks.owner(export.account))) throw new java.io.IOException();
+                        output.write(buffer,0,count);
+                    }
+                    output.flush();
+                }
+                success=true;
+            } catch(Exception failed) {
+                try { resolver.delete(destination,null,null); } catch(Exception ignored) { }
+            } finally { export.file.delete(); }
+            final boolean saved=success;
+            AndroidUtilities.runOnUIThread(() -> {
+                if(export.owner.equals(MonogramPacks.owner(export.account)))
+                    android.widget.Toast.makeText(context,saved ? "Pack exported" : "Could not save the pack. Check storage access and free space.",android.widget.Toast.LENGTH_LONG).show();
+            });
+        });
+    }
     public static boolean onLocalStickerFilesResult(int requestCode,int resultCode,android.content.Intent data) {
+        if(requestCode==LOCAL_PACK_EXPORT) { saveLocalPackExport(resultCode,data);return true; }
         if(requestCode!=LOCAL_STICKER_FILES) return false;
         StickersAlert sheet=addingLocalStickers;addingLocalStickers=null;
         if(sheet==null || sheet.localPack()==null || resultCode!=Activity.RESULT_OK || data==null) return true;
@@ -1432,6 +1507,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 optionsButton.addSubItem(109,R.drawable.msg_retry,"Check for Telegram updates");
                 optionsButton.addSubItem(110,R.drawable.msg_settings,"Automatic Telegram updates");
                 optionsButton.addSubItem(111,R.drawable.msg_info,"Telegram update status");
+                optionsButton.addSubItem(112,R.drawable.msg_share,"Export pack…");
                 optionsButton.addSubItem(105,R.drawable.msg_delete,"Remove pack");
                 localOptionsAdded=true;
             }
@@ -1540,7 +1616,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
     }
 
     private void onSubItemClick(int id) {
-        if(localPack()!=null && id>=103 && id<=111) {
+        if(localPack()!=null && id>=103 && id<=112) {
             optionsButton.closeSubMenu();
             if(id==103) { if(isEditModeEnabled) disableEditMode();else enableEditMode(); }
             else if(id==104) editableLocalPack(() -> StickersDialogs.showNameEditorDialog(stickerSet.set,resourcesProvider,getContext(),(text,done) -> {
@@ -1563,6 +1639,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                         .setPositiveButton(pack.autoSync ? "Disable" : "Enable",(dialog,which) -> editLocalPack(() -> MonogramPacks.autoSync(currentAccount,pack.id,!pack.autoSync)))
                         .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
             } else if(id==111) showLocalUpdateStatus();
+            else if(id==112) exportLocalPack();
             return;
         }
         if (stickerSet == null) {
@@ -2182,6 +2259,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
 
     @Override
     public void dismiss() {
+        if(exportingLocalPack!=null) { exportingLocalPack.cancel();exportingLocalPack=null; }
         if(localUpdateDialog!=null) localUpdateDialog.dismiss();
         super.dismiss();
         stickersShaker.stopShake(false);
