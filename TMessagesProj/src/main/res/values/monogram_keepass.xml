@@ -1,0 +1,6 @@
+<resources>
+    <string name="MonogramPasswordManager">Password manager</string>
+    <string name="MonogramPasswordManagerHelp">Choose KeePassDX as your Android autofill service, then return here to fill your XMPP address and password.</string>
+    <string name="MonogramAutofillSettings">Android settings</string>
+    <string name="MonogramAutofillUnavailable">Autofill is unavailable on this device. You can enter your credentials using KeePassDX’s Magikeyboard.</string>
+</resources>

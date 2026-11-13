@@ -34,7 +34,7 @@ import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.*;
 
 public class MonogramLoginActivity extends BaseFragment {
-    private boolean connecting, destroyed;
+    private boolean connecting, destroyed, autofillCommitted;
     private org.telegram.messenger.xmpp.MonogramLoginAttempt loginAttempt;
     private int loginGeneration;
     private XmppView xmppView;
@@ -112,6 +112,7 @@ public class MonogramLoginActivity extends BaseFragment {
         xmppView.proxyButton.setEnabled(!value);xmppView.certificateButton.setEnabled(!value);
         xmppView.invitationButton.setEnabled(!value);
         xmppView.createAccountButton.setEnabled(!value);
+        xmppView.passwordManagerButton.setEnabled(!value);
         xmppView.fields[0].setEnabled(!value && (invitation==null || invitation.username==null));
     }
 
@@ -152,6 +153,7 @@ public class MonogramLoginActivity extends BaseFragment {
     @Override public void onFragmentDestroy() {
         destroyed = true;
         cancelLogin();
+        if (!autofillCommitted) finishAutofill(false);
         if (xmppView != null) xmppView.fields[1].setText("");
         super.onFragmentDestroy();
     }
@@ -208,7 +210,10 @@ public class MonogramLoginActivity extends BaseFragment {
         xmppView.createAccountButton.setText(registering ? "Sign in instead" : "Create an account");
         xmppView.createAccountButton.setVisibility(View.VISIBLE);
         if(floatingButton!=null) floatingButton.setContentDescription(registering ? "Create account" : getString(R.string.Continue));
-        if(android.os.Build.VERSION.SDK_INT>=26) xmppView.fields[1].setAutofillHints(registering ? "newPassword" : View.AUTOFILL_HINT_PASSWORD);
+        if(android.os.Build.VERSION.SDK_INT>=26) {
+            xmppView.fields[0].setAutofillHints(registering ? "newUsername" : View.AUTOFILL_HINT_USERNAME);
+            xmppView.fields[1].setAutofillHints(registering ? "newPassword" : View.AUTOFILL_HINT_PASSWORD);
+        }
         setConnecting(connecting);
     }
     private void createAccount() {
@@ -353,10 +358,35 @@ public class MonogramLoginActivity extends BaseFragment {
         MessagesController.getGlobalMainSettings().edit().putBoolean("monogram_intro_seen", true).apply();
         ApplicationLoader.startPushService();
         if (destroyed || getParentActivity() == null) return;
+        finishAutofill(true);
         xmppView.fields[1].setText("");
         if (UserConfig.selectedAccount != currentAccount && getParentActivity() instanceof LaunchActivity)
             ((LaunchActivity) getParentActivity()).switchToAccount(currentAccount, true);
         else { MainTabsActivity tabs = new MainTabsActivity(); tabs.setCurrentAccount(currentAccount); presentFragment(tabs, true); }
+    }
+
+    private void finishAutofill(boolean success) {
+        if (android.os.Build.VERSION.SDK_INT < 26 || getParentActivity() == null) return;
+        try {
+            android.view.autofill.AutofillManager manager=getParentActivity().getSystemService(android.view.autofill.AutofillManager.class);
+            if(manager!=null) {if(success){manager.commit();autofillCommitted=true;}else manager.cancel();}
+        } catch (RuntimeException ignored) { /* Provider failure must not interrupt authentication. */ }
+    }
+    private void passwordManager() {
+        if(connecting || getParentActivity()==null || xmppView==null) return;
+        if(android.os.Build.VERSION.SDK_INT>=26) {
+            android.view.autofill.AutofillManager manager=getParentActivity().getSystemService(android.view.autofill.AutofillManager.class);
+            if(manager!=null && manager.isAutofillSupported() && manager.hasEnabledAutofillServices()) {
+                EditTextBoldCursor field=xmppView.fields[xmppView.fields[0].length()==0 ? 0 : 1];
+                field.requestFocus();AndroidUtilities.showKeyboard(field);manager.requestAutofill(field);return;
+            }
+            showDialog(new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext())
+                .setTitle(getString(R.string.MonogramPasswordManager)).setMessage(getString(R.string.MonogramPasswordManagerHelp))
+                .setPositiveButton(getString(R.string.MonogramAutofillSettings),(dialog,which)->{
+                    try {getParentActivity().startActivity(new android.content.Intent(android.os.Build.VERSION.SDK_INT >= 34 ? android.provider.Settings.ACTION_CREDENTIAL_PROVIDER : android.provider.Settings.ACTION_SETTINGS));}
+                    catch(android.content.ActivityNotFoundException unavailable){android.widget.Toast.makeText(getContext(),getString(R.string.MonogramAutofillUnavailable),android.widget.Toast.LENGTH_LONG).show();}
+                }).setNegativeButton(getString(R.string.Cancel),null).create());
+        } else android.widget.Toast.makeText(getContext(),getString(R.string.MonogramAutofillUnavailable),android.widget.Toast.LENGTH_LONG).show();
     }
 
     /** Telegram's password-page layout with XMPP fields in place of phone/SMS authentication. */
@@ -364,7 +394,7 @@ public class MonogramLoginActivity extends BaseFragment {
         final EditTextBoldCursor[] fields = new EditTextBoldCursor[4];
         final OutlineTextContainerView[] outlines = new OutlineTextContainerView[4];
         final TextView titleView, confirmTextView, advancedButton, errorView,invitationButton,createAccountButton;
-        final TextView proxyButton,certificateButton;
+        final TextView proxyButton,certificateButton,passwordManagerButton;
         final LinearLayout advancedFields;
         XmppView(Context context) {
             super(context);
@@ -400,6 +430,10 @@ public class MonogramLoginActivity extends BaseFragment {
                 fields[1].setAutofillHints(View.AUTOFILL_HINT_PASSWORD);
             }
             fields[1].setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+            passwordManagerButton=new TextView(context);passwordManagerButton.setText(getString(R.string.MonogramPasswordManager));
+            passwordManagerButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP,15);passwordManagerButton.setGravity(Gravity.CENTER);passwordManagerButton.setMinimumHeight(dp(48));
+            passwordManagerButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));passwordManagerButton.setOnClickListener(v->passwordManager());
+            addView(passwordManagerButton,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,48,16,0,16,0));
             advancedButton = new TextView(context);
             advancedButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             advancedButton.setGravity(Gravity.CENTER);
@@ -450,7 +484,8 @@ public class MonogramLoginActivity extends BaseFragment {
         private void addField(LinearLayout parent, int index, String label, int inputType) {
             OutlineTextContainerView outline = outlines[index] = new OutlineTextContainerView(getContext());
             outline.setText(label);
-            EditTextBoldCursor field = fields[index] = new EditTextBoldCursor(getContext());
+            EditTextBoldCursor field = fields[index] = index<2 ? new MonogramCredentialField(getContext()) : new EditTextBoldCursor(getContext());
+            if(index<2)field.setId(index==0 ? R.id.monogram_login_address : R.id.monogram_login_password);
             field.setContentDescription(label);
             field.setCursorSize(dp(20)); field.setCursorWidth(1.5f); field.setBackground(null);
             field.setImeOptions(EditorInfo.IME_ACTION_NEXT | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
@@ -492,6 +527,7 @@ public class MonogramLoginActivity extends BaseFragment {
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             confirmTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText6));
             advancedButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
+            passwordManagerButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             proxyButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             certificateButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
             createAccountButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4));
