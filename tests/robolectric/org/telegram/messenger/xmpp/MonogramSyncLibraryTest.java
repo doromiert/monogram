@@ -29,6 +29,14 @@ public class MonogramSyncLibraryTest {
   @Implementation public static NotificationCenter getGlobalInstance(){return Shadow.newInstanceOf(NotificationCenter.class);}
   @Implementation public void postNotificationName(int id,Object...args){}
  }
+ @Test public void olderRemotePickerCannotOverwriteAnUnexportedLocalUserEdit()throws Exception {
+  new MonogramPacksTest().setup();MonogramPacksTest.jid="guard@example.org";ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
+  ApplicationLoader.applicationContext.getSharedPreferences("monogram-0",0).edit().putString("jid",MonogramPacksTest.jid).commit();
+  Emoji.applySyncedLibrary(Arrays.asList("🔥"),Collections.emptyList());MonogramPickerVersion.observe(0,1000);Emoji.setFavoriteEmoji("🐢",true);long local=MonogramPickerVersion.revision(0);
+  JSONObject remote=new JSONObject().put("stickers",new JSONArray()).put("emojis",new JSONArray()).put("emoji_favorites",new JSONArray().put("☠"));
+  assertFalse(MonogramSyncLibrary.apply(0,remote,1000));assertEquals(Arrays.asList("🔥","🐢"),Emoji.getFavoriteEmoji());assertEquals(local,MonogramPickerVersion.revision(0));
+  assertTrue(MonogramSyncLibrary.apply(0,remote,local+1));assertTrue(Emoji.isFavoriteEmoji("☠️"));assertEquals(local,MonogramPickerVersion.revision(0));
+ }
  @Test public void freshDefaultsDoNotReplaceRemotePreferences()throws Exception {
   new MonogramPacksTest().setup();MonogramPacksTest.jid="empty-library-sync@example.org";Media.documents.clear();
   MonogramFavoriteEmojiTest.Settings.getGlobalEmojiSettings().edit().clear().commit();ReflectionHelpers.setStaticField(Emoji.class,"recentEmojiLoaded",false);

@@ -102,7 +102,15 @@ are rejected. Exact metadata/bytes are forwarded without rewriting origin.
   `unicode:<canonical Unicode>`. Unicode wire identities omit presentation
   selectors U+FE0E/U+FE0F; native rendering restores emoji presentation. Arrays have
   unique entries. Missing optional
-  fields preserve existing preferences. Native application defers references
+  fields preserve existing preferences. Picker records retain the timestamp of
+  the actual user mutation, never the later export/poll time. Imports and native
+  serialization changes do not advance that revision. An existing record is not
+  republished during migration; a previously empty store may publish baseline
+  revision 1, which cannot defeat a real user edit. Apply tracking for picker
+  records includes timestamp, origin and digest so a newer edit returning to the
+  same bytes still applies. Applying a picker record acknowledges its exact
+  timestamp/origin/digest/size atomically; an older in-flight callback cannot
+  acknowledge a newly received revision with identical bytes. Native application defers references
   until metadata/items exist. Fresh default-only lists do not overwrite a
   peer's library; placeholder state is not republished before import completes.
 * `folders/folders`: `{rules:{name:rule},order:[names including All],all_hidden,

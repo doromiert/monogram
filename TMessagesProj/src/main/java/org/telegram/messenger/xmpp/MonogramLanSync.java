@@ -139,6 +139,13 @@ public final class MonogramLanSync {
         if(old.isEmpty()){JSONArray pending=new JSONArray(NativeMesh.inspect(h,"pending"));for(int i=0;i<pending.length();i++){JSONObject m=pending.getJSONObject(i);if(key.equals(key(m.getString("kind"),m.getString("owner"),m.getString("id"))))return false;}}return true;
     }
     private static void json(long h,String kind,String owner,String id,JSONObject value)throws Exception {String text=value.toString(),sig=digest(text);if(publish(h,kind,owner,id,sig)){NativeMesh.putJson(h,kind,owner,id,text);NativeMesh.signature(h,key(kind,owner,id),sig);}}
+    private static void publishLibrary(long h,int account,String owner,MonogramSyncLibrary.Snapshot library)throws Exception {
+        String tracking="picker-user-revision:"+owner;long acknowledged=0;
+        try{acknowledged=Long.parseLong(NativeMesh.signature(h,tracking,""));}catch(NumberFormatException ignored){}
+        boolean existing=false;JSONArray metas=new JSONArray(NativeMesh.inspect(h,"metas"));for(int i=0;i<metas.length();i++){JSONObject meta=metas.getJSONObject(i);if(meta.getString("kind").equals("pack-order")&&meta.getString("owner").equals(owner)){existing=true;break;}}
+        long revision=MonogramPickerVersion.publication(library.revision,acknowledged,existing);if(revision==0)return;
+        validHandle(h);NativeMesh.putJsonAt(h,"pack-order",owner,"order",library.value.toString(),revision);NativeMesh.signature(h,tracking,Long.toString(revision));
+    }
     private static int account(String owner,boolean create){int empty=-1;for(int i=0;i<UserConfig.MAX_ACCOUNT_COUNT;i++){String jid=MonogramController.get(i).accountJid();if(jid.equals(owner))return i;if(empty<0&&jid.isEmpty()&&!UserConfig.getInstance(i).isClientActivated())empty=i;}return create?empty:-1;}
     private static void cycle(long h)throws Exception {
         for(int a=0;a<UserConfig.MAX_ACCOUNT_COUNT;a++){
@@ -155,7 +162,7 @@ public final class MonogramLanSync {
                 if(p.items.isEmpty()||p.source!=null&&p.source.startsWith("local:replaced:"))continue;
                 MonogramPacks.Pack pack=MonogramPacks.syncTag(a,p.id);outgoingPacks.add(pack);json(h,"pack-meta",owner,pack.syncId,MonogramPacks.syncMetadata(pack));
             }
-            if(!pendingPacks){JSONObject library=MonogramSyncLibrary.export(a);if(library!=null)json(h,"pack-order",owner,"order",library);}
+            if(!pendingPacks){MonogramSyncLibrary.Snapshot library=MonogramSyncLibrary.snapshot(a);if(library!=null)publishLibrary(h,a,owner,library);}
             for(MonogramPacks.Pack pack:outgoingPacks){String sig=MonogramPacks.syncSignature(pack);
                 if(publish(h,"pack",owner,pack.syncId,sig)){feedback("Preparing sticker and emoji packs…");File archive=MonogramPacks.exportSyncArchive(a,pack);try{validHandle(h);NativeMesh.put(h,"pack",owner,pack.syncId,archive.getAbsolutePath());NativeMesh.signature(h,key("pack",owner,pack.syncId),sig);}finally{archive.delete();}}
             }
@@ -181,14 +188,19 @@ public final class MonogramLanSync {
                         case "monero-settings":MonogramXmr.importSyncSettings(a,value);break;
                         case "folders":MonogramSyncFolders.apply(a,value);break;
                         case "pack-meta":MonogramPacks.importSyncMetadata(a,value);break;
-                        case "pack-order":if(!MonogramSyncLibrary.apply(a,value))continue;break;
+                        case "pack-order":
+                            long revision=meta.getLong("stamp");if(MonogramPickerVersion.revision(a)>revision)break;
+                            if(!MonogramSyncLibrary.apply(a,value,revision))continue;
+                            break;
                         case "fingerprint":prefs().edit().putString("fingerprint:"+owner+":"+id,value.toString()).commit();break;
                         case "wallet":importWallet(a,owner,value);break;
                         default:throw new IOException("Unsupported sync setting.");
                     }
                     if(kind.equals("wallet")){value.remove("keys");value.remove("password");}sig=digest(value.toString());
                 }
-                if(EXCLUDED.contains(owner))continue;validHandle(h);NativeMesh.applied(h,key,meta.getString("digest"));NativeMesh.signature(h,key,sig);
+                if(EXCLUDED.contains(owner))continue;validHandle(h);
+                if(kind.equals("pack-order")){if(!NativeMesh.appliedVersion(h,meta.toString()))continue;long revision=meta.getLong("stamp");MonogramPickerVersion.observe(a,revision);NativeMesh.signature(h,"picker-user-revision:"+owner,Long.toString(revision));}
+                else NativeMesh.applied(h,key,meta.getString("digest"));NativeMesh.signature(h,key,sig);
             }finally{path.delete();}
         }
     }

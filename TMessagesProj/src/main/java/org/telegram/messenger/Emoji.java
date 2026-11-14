@@ -984,7 +984,7 @@ public class Emoji {
     private static boolean validFavorite(String code){return code!=null&&(code.matches("animated_[0-9]{1,19}")||isValidEmoji(code)||isValidEmoji(code.replace("\ufe0f","")));}
     public static void reorderFavoriteEmoji(java.util.List<String> order){
         ArrayList<String> current=getFavoriteEmoji(),result=new ArrayList<>();for(String code:order)if(current.contains(code)&&!result.contains(code))result.add(code);for(String code:current)if(!result.contains(code))result.add(code);
-        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji",TextUtils.join("\n",result)).apply();
+        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji",TextUtils.join("\n",result)).apply();if(!result.equals(current))org.telegram.messenger.xmpp.MonogramPickerVersion.changedSelected();
     }
     public static void applySyncedLibrary(java.util.List<String> favorites,java.util.List<String> recent){
         ArrayList<String> favoriteValues=new ArrayList<>();for(String code:favorites)if(validFavorite(code)){code=code.startsWith("animated_")?code:fixEmoji(code.replace("\ufe0f",""));if(!favoriteValues.contains(code))favoriteValues.add(code);}
@@ -995,10 +995,10 @@ public class Emoji {
     public static void setFavoriteEmoji(String code, boolean favorite) {
         if (!validFavorite(code)) return;
         if(!code.startsWith("animated_"))code = fixEmoji(code.replace("\ufe0f", ""));
-        ArrayList<String> favorites = getFavoriteEmoji();
+        ArrayList<String> favorites = getFavoriteEmoji();ArrayList<String> previous=new ArrayList<>(favorites);
         if (favorite && !favorites.contains(code)) favorites.add(code);
         else if (!favorite) favorites.remove(code);
-        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji", TextUtils.join("\n", favorites)).apply();
+        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji", TextUtils.join("\n", favorites)).apply();if(!favorites.equals(previous))org.telegram.messenger.xmpp.MonogramPickerVersion.changedSelected();
     }
 
     public static ArrayList<String> getRecentEmojiWithFavorites(boolean animated) {
@@ -1026,11 +1026,12 @@ public class Emoji {
             recentEmoji.set(recentEmoji.size() - 1, code);
         }
         emojiUseHistory.put(code, ++count);
+        org.telegram.messenger.xmpp.MonogramPickerVersion.changedSelected();
     }
 
     public static void removeRecentEmoji(String code) {
         emojiUseHistory.remove(code);
-        recentEmoji.remove(code);
+        recentEmoji.remove(code);org.telegram.messenger.xmpp.MonogramPickerVersion.changedSelected();
         if (emojiUseHistory.isEmpty() || recentEmoji.isEmpty()) {
             addRecentEmoji(DEFAULT_RECENT[0]);
         }
@@ -1088,7 +1089,7 @@ public class Emoji {
         preferences.edit().putBoolean("filled_default", true).commit();
         emojiUseHistory.clear();
         recentEmoji.clear();
-        saveRecentEmoji();
+        saveRecentEmoji();org.telegram.messenger.xmpp.MonogramPickerVersion.changedSelected();
     }
 
     public static void loadRecentEmoji() {

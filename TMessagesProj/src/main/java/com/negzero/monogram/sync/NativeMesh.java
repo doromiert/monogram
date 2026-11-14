@@ -14,8 +14,10 @@ public final class NativeMesh {
  public static native String join(long handle,String code);
  public static native String put(long handle,String kind,String owner,String id,String path);
  public static native String putJson(long handle,String kind,String owner,String id,String json);
+ public static native String putJsonAt(long handle,String kind,String owner,String id,String json,long stamp);
  public static native String read(long handle,String key);
  public static native boolean applied(long handle,String key,String digest);
+ public static native boolean appliedVersion(long handle,String metadata);
  public static native String signature(long handle,String key,String value);
  public static native boolean forget(long handle,String peer);
  public static native boolean cancelInvite(long handle);

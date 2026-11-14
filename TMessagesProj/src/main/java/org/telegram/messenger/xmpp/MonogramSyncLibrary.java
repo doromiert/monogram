@@ -20,9 +20,12 @@ public final class MonogramSyncLibrary {
  private static void mixedOrder(ArrayList<String> codes,JSONArray order,Map<String,Long> local)throws JSONException {
   if(order==null)return;ArrayList<String> result=new ArrayList<>();for(int i=0;i<order.length();i++){String key=order.getString(i),code=null;if(key.startsWith("unicode:"))code=key.substring(8);else if(key.startsWith("item:")&&local.containsKey(key.substring(5)))code="animated_"+local.get(key.substring(5));if(code!=null)for(String existing:codes)if(unicode(existing).equals(unicode(code))&&!result.contains(existing)){result.add(existing);break;}}for(String code:codes)if(!result.contains(code))result.add(code);codes.clear();codes.addAll(result);
  }
- public static JSONObject export(int account)throws Exception {
+ public static final class Snapshot {public final JSONObject value;public final long revision;Snapshot(JSONObject value,long revision){this.value=value;this.revision=revision;}}
+ public static JSONObject export(int account)throws Exception {Snapshot state=snapshot(account);return state==null?null:state.value;}
+ public static Snapshot snapshot(int account)throws Exception {
+  long before=MonogramPickerVersion.revision(account);
   JSONObject order=MonogramPacks.syncOrder(account);LinkedHashMap<Long,MonogramPacks.Item> items=items(account);
-  return ui(()->{
+  Snapshot snapshot=ui(()->{
    JSONArray favorites=new JSONArray(),recent=new JSONArray(),emojiFavorites=new JSONArray(),emojiRecent=new JSONArray();Set<String> f=new HashSet<>(),r=new HashSet<>();
    MediaDataController media=MediaDataController.getInstance(account);Emoji.loadRecentEmoji();if(!media.localRecentStickersReady())return null;
    for(TLRPC.Document document:media.getRecentStickers(MediaDataController.TYPE_FAVE)){MonogramPacks.Item item=items.get(document.id);if(item!=null)add(favorites,f,item.syncId);}
@@ -32,16 +35,18 @@ public final class MonogramSyncLibrary {
    JSONObject state=new JSONObject().put("emojis",order.getJSONArray("emojis")).put("stickers",order.getJSONArray("stickers"));
    if(!items.isEmpty())state.put("favorites",favorites).put("recent",recent);
    if(MessagesController.getGlobalEmojiSettings().contains("monogram_favorite_emoji"))state.put("emoji_favorites",emojiFavorites).put("emoji_favorite_order",mixed(Emoji.getFavoriteEmoji(),items));
-   if(Emoji.hasUsedRecentEmoji())state.put("emoji_recent",emojiRecent).put("emoji_recent_order",mixed(Emoji.recentEmoji,items));String pinned=MessagesController.getGlobalEmojiSettings().getString("monogram_synced_pinned_emoji",null);if(pinned!=null)state.put("emoji_pinned",new JSONArray(pinned));return (JSONObject)canonical(state);
-  });
+   if(Emoji.hasUsedRecentEmoji())state.put("emoji_recent",emojiRecent).put("emoji_recent_order",mixed(Emoji.recentEmoji,items));String pinned=MessagesController.getGlobalEmojiSettings().getString("monogram_synced_pinned_emoji",null);if(pinned!=null)state.put("emoji_pinned",new JSONArray(pinned));return new Snapshot((JSONObject)canonical(state),before);
+  });return MonogramPickerVersion.revision(account)==before?snapshot:null;
  }
- public static boolean apply(int account,JSONObject state)throws Exception {
+ public static boolean apply(int account,JSONObject state)throws Exception {return apply(account,state,0);}
+ public static boolean apply(int account,JSONObject state,long incomingRevision)throws Exception {
   LinkedHashMap<Long,MonogramPacks.Item> items=items(account);Map<String,Long> local=new HashMap<>();Map<Long,Boolean> emojis=new HashMap<>();
   for(MonogramPacks.Pack pack:MonogramPacks.packs(account))for(MonogramPacks.Item item:pack.items){local.put(item.syncId,item.id);emojis.put(item.id,pack.emojis);}
   for(String field:new String[]{"favorites","recent"}){JSONArray ids=state.optJSONArray(field);if(ids!=null)for(int i=0;i<ids.length();i++)if(!local.containsKey(ids.getString(i)))return false;}
   for(String field:new String[]{"emoji_favorite_order","emoji_recent_order"}){JSONArray keys=state.optJSONArray(field);if(keys!=null)for(int i=0;i<keys.length();i++){String key=keys.getString(i);if(key.startsWith("item:")&&!local.containsKey(key.substring(5)))return false;}}
-  if(!MonogramPacks.applySyncOrder(account,state))return false;
-  ui(()->{
+  if(!MonogramPacks.applySyncOrder(account,state,incomingRevision))return false;
+  return ui(()->{
+   if(incomingRevision>0&&MonogramPickerVersion.revision(account)>incomingRevision)return false;
    MediaDataController media=MediaDataController.getInstance(account);ArrayList<String> favoriteCodes=new ArrayList<>(),recentCodes=new ArrayList<>();
    for(String field:new String[]{"favorites","recent"}){
     JSONArray ids=state.optJSONArray(field);if(ids==null)continue;ArrayList<TLRPC.Document> documents=new ArrayList<>();ArrayList<String> codes=field.equals("favorites")?favoriteCodes:recentCodes;
@@ -60,7 +65,7 @@ public final class MonogramSyncLibrary {
    mixedOrder(favoriteCodes,state.optJSONArray("emoji_favorite_order"),local);mixedOrder(recentCodes,state.optJSONArray("emoji_recent_order"),local);
    if(state.has("emoji_favorites")||state.has("emoji_recent")||state.has("favorites")||state.has("recent")||state.has("emoji_favorite_order")||state.has("emoji_recent_order"))Emoji.applySyncedLibrary(favoriteCodes,recentCodes);
    if(state.has("emoji_pinned"))MessagesController.getGlobalEmojiSettings().edit().putString("monogram_synced_pinned_emoji",state.getJSONArray("emoji_pinned").toString()).apply();
-   NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.emojiLoaded,true);return null;
-  });return true;
+   NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.emojiLoaded,true);return true;
+  });
  }
 }

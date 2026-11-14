@@ -84,3 +84,13 @@ retry later. Restart removes abandoned plaintext export stages from private stor
 See the [local protocol proposal](xeps/monogram-lan-sync.md), which is not an
 assigned or accepted XMPP extension. Remaining platform gaps are tracked in
 [the parity ledger](FEATURE_PARITY.md).
+
+## Picker change ordering
+
+Pack order, favorites and recents use one persisted user-edit revision per
+account. The most recent actual user change wins the whole picker snapshot.
+Background exports retain that revision; imports, cache loading and Unicode
+normalization do not create edits. Older remote snapshots cannot replace a newer
+unexported local change. A new edit that returns to previously used content still
+advances the revision and applies on peers. Both clients need this behavior for
+consistent ordering.

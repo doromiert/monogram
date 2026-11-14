@@ -183,6 +183,34 @@ pub extern "system" fn Java_com_negzero_monogram_sync_NativeMesh_putJson(
     })
 }
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_negzero_monogram_sync_NativeMesh_putJsonAt(
+    mut env: JNIEnv,
+    _class: JClass,
+    id: jlong,
+    kind: JString,
+    owner: JString,
+    item: JString,
+    json: JString,
+    stamp: jlong,
+) -> jstring {
+    call(&mut env, |env| {
+        let (kind, owner, item, value) = (
+            string(env, kind)?,
+            string(env, owner)?,
+            string(env, item)?,
+            string(env, json)?,
+        );
+        let stamp=u64::try_from(stamp).map_err(|_|"Invalid picker edit revision.")?;
+        let mesh = handle(id)?;
+        let meta = mesh
+            .store
+            .lock()
+            .map_err(failure)?
+            .put_json_at(&kind, &owner, &item, &value,stamp)?;
+        text(env, serde_json::to_string(&meta).map_err(failure)?)
+    })
+}
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_negzero_monogram_sync_NativeMesh_read(
     mut env: JNIEnv,
     _class: JClass,
@@ -198,6 +226,10 @@ pub extern "system" fn Java_com_negzero_monogram_sync_NativeMesh_read(
             path.to_str().ok_or("Invalid private sync path.")?.into(),
         )
     })
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_negzero_monogram_sync_NativeMesh_appliedVersion(mut env:JNIEnv,_class:JClass,id:jlong,meta:JString)->jboolean{
+    call(&mut env,|env|{let meta:crate::storage::Meta=serde_json::from_str(&string(env,meta)?).map_err(failure)?;let changed=handle(id)?.store.lock().map_err(failure)?.mark_applied_meta(&meta)?;Ok(u8::from(changed))})
 }
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_negzero_monogram_sync_NativeMesh_applied(

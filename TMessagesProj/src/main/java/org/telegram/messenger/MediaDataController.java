@@ -793,7 +793,7 @@ public class MediaDataController extends BaseController {
     public void reorderLocalFavoriteStickers(java.util.List<Long> ids){
         ArrayList<TLRPC.Document> remaining=new ArrayList<>(recentStickers[TYPE_FAVE]),result=new ArrayList<>();
         for(Long id:ids)for(int i=0;i<remaining.size();i++)if(remaining.get(i).id==id){result.add(remaining.remove(i));break;}
-        result.addAll(remaining);recentStickers[TYPE_FAVE]=result;processLoadedRecentDocuments(TYPE_FAVE,result,false,0,true);
+        result.addAll(remaining);recentStickers[TYPE_FAVE]=result;processLoadedRecentDocuments(TYPE_FAVE,result,false,0,true);org.telegram.messenger.xmpp.MonogramPickerVersion.changed(currentAccount);
     }
     public boolean isStickerInFavorites(TLRPC.Document document) {
         if (document == null) {
@@ -809,21 +809,10 @@ public class MediaDataController extends BaseController {
     }
 
     public void clearRecentStickers() {
-        TLRPC.TL_messages_clearRecentStickers req = new TLRPC.TL_messages_clearRecentStickers();
-        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (response instanceof TLRPC.TL_boolTrue) {
-                getMessagesStorage().getStorageQueue().postRunnable(() -> {
-                    try {
-                        getMessagesStorage().getDatabase().executeFast("DELETE FROM web_recent_v3 WHERE type = " + 3).stepThis().dispose();
-                    } catch (Exception e) {
-                        FileLog.e(e);
-                    }
-                });
-
-                recentStickers[TYPE_IMAGE].clear();
-                NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.recentDocumentsDidLoad, false, TYPE_IMAGE);
-            }
-        }));
+        if(recentStickers[TYPE_IMAGE].isEmpty())return;
+        recentStickers[TYPE_IMAGE]=new ArrayList<>();
+        processLoadedRecentDocuments(TYPE_IMAGE,recentStickers[TYPE_IMAGE],false,0,true);
+        org.telegram.messenger.xmpp.MonogramPickerVersion.changed(currentAccount);
     }
 
     public void addRecentSticker(int type, Object parentObject, TLRPC.Document document, int date, boolean remove) {
@@ -903,6 +892,7 @@ public class MediaDataController extends BaseController {
         if (type == TYPE_FAVE || type == TYPE_IMAGE && remove) {
             getNotificationCenter().postNotificationName(NotificationCenter.recentDocumentsDidLoad, false, type);
         }
+        if((type==TYPE_FAVE||type==TYPE_IMAGE)&&org.telegram.messenger.xmpp.MonogramPacks.isLocalId(document.id)&&(!remove||found))org.telegram.messenger.xmpp.MonogramPickerVersion.changed(currentAccount);
     }
 
     public ArrayList<TLRPC.Document> getRecentGifs() {

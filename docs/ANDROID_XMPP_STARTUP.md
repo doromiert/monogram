@@ -20,8 +20,9 @@ context loader and exercises real XML/configuration startup concurrently. The
 [packaged device fixture](../tests/android/smack-smoke/README.md) repeats that
 check from the installed APK without opening Monogram UI or accessing accounts.
 It reproduced the failure on212 and passed the fixed bootstrap on213 on API37
-arm64. Release shrinking is checked separately because debug deliveries do not
-run R8.
+arm64. The actual minified release APK also passes that startup/parse check on
+API37. Release rules preserve Smack startup classes named in its pinned XML,
+provider constructors and original names; debug deliveries do not run R8.
 
 Upstream references: [SmackXmlParser4.4.8](https://github.com/igniterealtime/Smack/blob/4.4.8/smack-xmlparser/src/main/java/org/jivesoftware/smack/xml/SmackXmlParser.java),
 [AndroidSmackInitializer4.4.8](https://github.com/igniterealtime/Smack/blob/4.4.8/smack-android/src/main/java/org/jivesoftware/smack/android/AndroidSmackInitializer.java).

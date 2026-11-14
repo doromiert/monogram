@@ -68,6 +68,9 @@ impl Meta {
     pub fn newer(&self, other: &Self) -> bool {
         (&self.stamp, &self.origin) > (&other.stamp, &other.origin)
     }
+    fn applied_token(&self)->String {
+        if self.kind=="pack-order"{format!("{}:{}:{}",self.stamp,self.origin,self.digest)}else{self.digest.clone()}
+    }
     fn aad(&self) -> Vec<u8> {
         serde_json::to_vec(&(1, self.key(), &self.digest, self.size)).unwrap()
     }
@@ -240,7 +243,8 @@ impl Store {
             .join("objects")
             .join(hash(format!("{}{}", meta.key(), meta.digest).as_bytes()))
     }
-    pub fn put(&mut self, kind: &str, owner: &str, id: &str, path: &Path) -> Result<Meta> {
+    pub fn put(&mut self, kind: &str, owner: &str, id: &str, path: &Path) -> Result<Meta> {self.put_at(kind,owner,id,path,None)}
+    fn put_at(&mut self, kind: &str, owner: &str, id: &str, path: &Path,stamp:Option<u64>) -> Result<Meta> {
         let size = fs::metadata(path).map_err(failure)?.len();
         if size > MAX_RECORD {
             return Err("Sync item exceeds 128 MiB.".into());
@@ -265,7 +269,7 @@ impl Store {
             kind: kind.into(),
             owner: owner.into(),
             id: id.into(),
-            stamp: now().max(self.state.counter + 1),
+            stamp: stamp.unwrap_or_else(||now().max(self.state.counter + 1)),
             origin: self.state.id.clone(),
             digest,
             size,
@@ -274,22 +278,29 @@ impl Store {
             return Err("Invalid or locally removed sync account.".into());
         }
         if let Some(previous) = self.state.objects.get(&meta.key()) {
-            if previous.digest == meta.digest {
+            if (stamp.is_none() && previous.digest == meta.digest)|| !meta.newer(previous) {
                 return Ok(previous.clone());
             }
         }
-        self.state.counter = meta.stamp;
+        self.state.counter = self.state.counter.max(meta.stamp);
         let mut file = File::open(path).map_err(failure)?;
         let transfer = self.transfer(&meta);
         let staged = transfer.receive(&mut file)?;
         self.commit(&meta, &staged)?;
         let _ = fs::remove_file(staged);
-        self.state.applied.insert(meta.key(), meta.digest.clone());
+        self.state.applied.insert(meta.key(), meta.applied_token());
         self.save()?;
         meta.origin = self.state.id.clone();
         Ok(meta)
     }
     pub fn put_json(&mut self, kind: &str, owner: &str, id: &str, value: &str) -> Result<Meta> {
+        self.put_json_at_inner(kind,owner,id,value,None)
+    }
+    pub fn put_json_at(&mut self,kind:&str,owner:&str,id:&str,value:&str,stamp:u64)->Result<Meta>{
+        if kind!="pack-order"{return Err("Explicit revisions are only valid for picker settings.".into());}
+        self.put_json_at_inner(kind,owner,id,value,Some(stamp))
+    }
+    fn put_json_at_inner(&mut self,kind:&str,owner:&str,id:&str,value:&str,stamp:Option<u64>)->Result<Meta>{
         let value: serde_json::Value = serde_json::from_str(value).map_err(failure)?;
         crate::profile::validate(kind, owner, id, &value)?;
         let data = Zeroizing::new(serde_json::to_vec(&value).map_err(failure)?);
@@ -297,7 +308,7 @@ impl Store {
         let mut out = open_new(&path)?;
         out.write_all(&data).map_err(failure)?;
         drop(out);
-        let result = self.put(kind, owner, id, &path);
+        let result = self.put_at(kind, owner, id, &path,stamp);
         let _ = fs::remove_file(path);
         result
     }
@@ -355,7 +366,7 @@ impl Store {
         self.state.counter = self.state.counter.max(meta.stamp);
         self.save()?;
         if let Some(previous) = previous {
-            let _ = fs::remove_file(self.path(&previous));
+            let previous_path=self.path(&previous);if previous_path!=self.path(meta){let _=fs::remove_file(previous_path);}
         }
         Ok(true)
     }
@@ -372,6 +383,10 @@ impl Store {
         }
         result
     }
+    pub fn mark_applied_meta(&mut self, expected:&Meta)->Result<bool>{
+        let key=expected.key();if self.state.objects.get(&key).is_none_or(|current|current.stamp!=expected.stamp||current.origin!=expected.origin||current.digest!=expected.digest||current.size!=expected.size){return Ok(false);}
+        self.state.applied.insert(key,expected.applied_token());self.save()?;Ok(true)
+    }
     pub fn mark_applied(&mut self, key: &str, digest: &str) -> Result<()> {
         if self
             .state
@@ -381,7 +396,8 @@ impl Store {
         {
             return Err("Sync item changed.".into());
         }
-        self.state.applied.insert(key.into(), digest.into());
+        let token=self.state.objects[key].applied_token();
+        self.state.applied.insert(key.into(),token);
         self.save()
     }
     pub fn exclude(&mut self, owner: &str) -> Result<()> {
@@ -409,7 +425,7 @@ impl Store {
         Ok(())
     }
     pub fn pending(&self) -> Vec<Meta> {
-        self.metas().into_iter().filter(|m|self.state.applied.get(&m.key())!=Some(&m.digest)).collect()
+        self.metas().into_iter().filter(|m|self.state.applied.get(&m.key())!=Some(&m.applied_token())).collect()
     }
 }
 
@@ -523,6 +539,45 @@ impl Drop for State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_picker_revisions_reject_late_stale_exports_and_advance_identical_payloads() {
+        let root=std::env::temp_dir().join(format!("monogram-picker-clock-{}",uuid::Uuid::new_v4()));let mut store=Store::open(root.clone(),random(),"Fixture".into()).unwrap();
+        let owner="me@example.invalid";let a=r#"{"stickers":[],"emojis":[]}"#;let b=r#"{"stickers":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],"emojis":[]}"#;
+        let first=store.put_json_at("pack-order",owner,"order",a,1000).unwrap();let newer=store.put_json_at("pack-order",owner,"order",b,2000).unwrap();
+        let stale=store.put_json_at("pack-order",owner,"order",a,1500).unwrap();assert_eq!(stale.stamp,newer.stamp);assert_eq!(stale.digest,newer.digest);
+        let restored=store.put_json_at("pack-order",owner,"order",a,3000).unwrap();assert_eq!(restored.digest,first.digest);assert_eq!(restored.stamp,3000);
+        let same=store.put_json_at("pack-order",owner,"order",a,4000).unwrap();assert_eq!(same.digest,restored.digest);assert_eq!(same.stamp,4000);
+        assert!(store.put_json_at("token",owner,"giphy",r#"{"value":"fixture"}"#,5000).is_err());drop(store);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn actual_user_edit_order_converges_independently_of_export_and_receive_order() {
+        let root=std::env::temp_dir().join(format!("monogram-picker-converge-{}",uuid::Uuid::new_v4()));let owner="me@example.invalid";
+        let mut old=Store::open(root.join("old"),random(),"Old".into()).unwrap();let mut new=Store::open(root.join("new"),random(),"New".into()).unwrap();
+        let newer=new.put_json_at("pack-order",owner,"order",r#"{"stickers":["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],"emojis":[]}"#,2000).unwrap();
+        // The older edit is exported later. Export time must not mint a newer version.
+        let older=old.put_json_at("pack-order",owner,"order",r#"{"stickers":[],"emojis":[]}"#,1000).unwrap();
+        for (index,records) in [[(&old,&older),(&new,&newer)],[(&new,&newer),(&old,&older)]].into_iter().enumerate(){
+            let mut target=Store::open(root.join(format!("target-{index}")),random(),"Target".into()).unwrap();
+            for(source,meta)in records {let plain=source.stage_export(&meta.key()).unwrap();let mut input=File::open(&plain).unwrap();let staged=target.transfer(meta).receive(&mut input).unwrap();target.commit(meta,&staged).unwrap();let _=fs::remove_file(staged);fs::remove_file(plain).unwrap();}
+            assert_eq!(target.metas()[0].stamp,2000);assert_eq!(target.metas()[0].digest,newer.digest);
+        }
+        drop(old);drop(new);fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn newer_identical_picker_payload_is_pending_and_preserves_blob_across_restart() {
+        let root=std::env::temp_dir().join(format!("monogram-picker-applied-{}",uuid::Uuid::new_v4()));let master=random();
+        let mut target=Store::open(root.join("target"),master,"Target".into()).unwrap();let mut sender=Store::open(root.join("sender"),random(),"Sender".into()).unwrap();
+        let value=r#"{"stickers":[],"emojis":[]}"#;let owner="me@example.invalid";let first=target.put_json_at("pack-order",owner,"order",value,100).unwrap();assert!(target.pending().is_empty());
+        // Native UI has unexported B. Incoming newer A must still apply despite identical mesh bytes.
+        let newer=sender.put_json_at("pack-order",owner,"order",value,201).unwrap();assert_eq!(first.digest,newer.digest);
+        let plain=sender.stage_export(&newer.key()).unwrap();let staged=target.transfer(&newer).receive(&mut File::open(&plain).unwrap()).unwrap();target.commit(&newer,&staged).unwrap();fs::remove_file(plain).unwrap();
+        assert_eq!(target.pending()[0].stamp,201);let exported=target.stage_export(&newer.key()).unwrap();assert_eq!(fs::read_to_string(&exported).unwrap(),serde_json::to_string(&serde_json::from_str::<serde_json::Value>(value).unwrap()).unwrap());fs::remove_file(exported).unwrap();
+        assert!(!target.mark_applied_meta(&first).unwrap());assert_eq!(target.pending()[0].stamp,201);
+        assert!(target.mark_applied_meta(&newer).unwrap());assert!(target.pending().is_empty());
+        target.state.applied.insert(newer.key(),newer.digest.clone());target.save().unwrap();drop(target);
+        let mut target=Store::open(root.join("target"),master,"Target".into()).unwrap();assert_eq!(target.pending()[0].stamp,201);target.mark_applied(&newer.key(),&newer.digest).unwrap();drop(target);
+        let target=Store::open(root.join("target"),master,"Target".into()).unwrap();assert!(target.pending().is_empty());let exported=target.stage_export(&newer.key()).unwrap();assert!(exported.is_file());fs::remove_file(exported).unwrap();drop(target);drop(sender);fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn metadata_and_settings_precede_pack_media_in_transfer_and_import_order() {
         let root=std::env::temp_dir().join(format!("monogram-priority-{}",uuid::Uuid::new_v4()));let mut store=Store::open(root.clone(),random(),"Fixture".into()).unwrap();

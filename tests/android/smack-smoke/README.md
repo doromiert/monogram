@@ -11,3 +11,11 @@ Run `scripts/check-smack-apk-startup.sh` with `ANDROID_HOME`, `ANDROID_SERIAL` a
 keystore. Use `-e baseline true` to check an older APK without the new bootstrap.
 The baseline must report `raw_discovery_reproduced=true`; fixed APKs must also
 report `PASS packaged APK sterile-loader concurrent Smack startup and XML parse`.
+
+For a minified candidate without installing it as the user's app, copy its APK
+into this fixture's private files directory, make it read-only, and pass
+`-e apk /data/user/0/com.negzero.monogram.smacksmoke/files/candidate.apk`.
+The same parser/configuration check then exercises the candidate's DEX/resources.
+The optional `configClass` argument supports diagnosing obfuscated configuration
+classes before keep rules are repaired; that mode checks configuration startup
+without the reflection-only explicit parser assertion.

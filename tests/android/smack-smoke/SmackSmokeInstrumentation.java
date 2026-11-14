@@ -9,18 +9,21 @@ public final class SmackSmokeInstrumentation extends Instrumentation {
    Context context=getTargetContext();String apk=options!=null&&options.containsKey("apk")?options.getString("apk"):context.getPackageManager().getApplicationInfo("com.negzero.monogram.beta",0).sourceDir;
    ClassLoader loader=new DexClassLoader(apk,context.getCodeCacheDir().getAbsolutePath(),null,context.getClassLoader().getParent());
    ClassLoader sterile=new ClassLoader(null){};pool=Executors.newFixedThreadPool(2,r->{Thread t=new Thread(r);t.setContextClassLoader(sterile);return t;});
-   boolean reproduced=pool.submit(()->{try{Class.forName("org.jivesoftware.smack.xml.SmackXmlParser",true,loader).getMethod("getXmlPullParserFactory").invoke(null);return false;}catch(InvocationTargetException e){if(!(e.getCause() instanceof IllegalStateException))throw e;return true;}}).get(15,TimeUnit.SECONDS);
-   if(!reproduced)throw new AssertionError("Baseline did not reproduce missing context-loader provider");
-   result.putBoolean("raw_discovery_reproduced",true);
+   boolean minified=options!=null&&options.containsKey("configClass");
+   boolean reproduced=!minified&&pool.submit(()->{try{Class.forName("org.jivesoftware.smack.xml.SmackXmlParser",true,loader).getMethod("getXmlPullParserFactory").invoke(null);return false;}catch(InvocationTargetException e){if(!(e.getCause() instanceof IllegalStateException))throw e;return true;}}).get(15,TimeUnit.SECONDS);
+   if(!reproduced&&!minified)throw new AssertionError("Baseline did not reproduce missing context-loader provider");
+   result.putBoolean("raw_discovery_reproduced",reproduced);
    if(options!=null&&"true".equals(options.getString("baseline"))){finish(-1,result);return;}
-   List<Future<Boolean>> jobs=new ArrayList<>();for(int i=0;i<2;i++)jobs.add(pool.submit(()->{
+   List<Future<Boolean>> jobs=new ArrayList<>();for(int i=0;i<(minified?1:2);i++)jobs.add(pool.submit(()->{
     Class.forName("org.telegram.messenger.xmpp.MonogramSmack",true,loader).getMethod("initialize",Context.class).invoke(null,context);
-    Class.forName("org.jivesoftware.smack.ConnectionConfiguration",true,loader);
+    Class.forName(minified?options.getString("configClass"):"org.jivesoftware.smack.ConnectionConfiguration",true,loader);
+    if(minified)return true; // SmackInitialization itself parses the packaged XML startup configuration.
+
     Object parser=Class.forName("org.jivesoftware.smack.util.PacketParserUtils",true,loader).getMethod("getParserFor",String.class).invoke(null,"<message xmlns='jabber:client'><body>fixture</body></message>");
     return "message".equals(Class.forName("org.jivesoftware.smack.xml.XmlPullParser",true,loader).getMethod("getName").invoke(parser));
    }));for(Future<Boolean> job:jobs)if(!job.get(20,TimeUnit.SECONDS))throw new AssertionError("Parser content mismatch");
-   result.putString("result","PASS packaged APK sterile-loader concurrent Smack startup and XML parse");finish(-1,result);
-  }catch(Throwable error){StringBuilder chain=new StringBuilder();for(Throwable e=error;e!=null;e=e.getCause())chain.append(e.getClass().getName()).append(" > ");result.putString("failure",chain.toString());finish(0,result);}
+   result.putString("result",minified?"PASS minified packaged APK Smack configuration startup":"PASS packaged APK sterile-loader concurrent Smack startup and XML parse");finish(-1,result);
+  }catch(Throwable error){StringBuilder chain=new StringBuilder();for(Throwable e=error;e!=null;e=e.getCause())chain.append(e.toString()).append(" > ");result.putString("failure",chain.toString());finish(0,result);}
   finally{if(pool!=null)pool.shutdownNow();}
  }
 }

@@ -31,9 +31,14 @@ public final class MeshJniFixture {
    String metadataKey="[\"pack-meta\",\""+owner+"\",\""+packId+"\"]";NativeMesh.putJson(a,"pack-meta",owner,packId,metadata);deadline=System.nanoTime()+12_000_000_000L;
    while(!NativeMesh.inspect(b,"metas").contains("pack-meta")){if(System.nanoTime()>deadline)throw new AssertionError("Pack metadata transfer timed out");Thread.sleep(30);}
    exported=Paths.get(NativeMesh.read(b,metadataKey));text=new String(Files.readAllBytes(exported),java.nio.charset.StandardCharsets.UTF_8);Files.delete(exported);if(!metadata.equals(text))throw new AssertionError("Pack metadata changed during encrypted transfer");
+   String clockOwner="revisions@example.invalid";long edited=System.currentTimeMillis();
+   String latest=NativeMesh.putJsonAt(a,"pack-order",clockOwner,"order",order,edited);
+   String delayed=NativeMesh.putJsonAt(a,"pack-order",clockOwner,"order","{\"stickers\":[],\"emojis\":[]}",edited-1000);
+   if(!latest.equals(delayed))throw new AssertionError("Late stale JNI export replaced actual newer user edit");
+   String repeated=NativeMesh.putJsonAt(a,"pack-order",clockOwner,"order",order,edited+1);if(!repeated.contains("\"stamp\":"+(edited+1)))throw new AssertionError("Actual edit with unchanged snapshot did not advance revision");if(NativeMesh.appliedVersion(a,latest))throw new AssertionError("Stale same-digest acknowledgement accepted");if(!NativeMesh.appliedVersion(a,repeated))throw new AssertionError("Current revision acknowledgement failed");
    NativeMesh.account(b,owner,false);if(NativeMesh.inspect(b,"metas").contains("giphy"))throw new AssertionError("Removed account retained secrets");NativeMesh.account(b,owner,true);
    boolean rejected=false;try{NativeMesh.validate("token",owner,"unknown","{\"value\":\"fixture\"}");}catch(IllegalStateException expected){rejected=true;}if(!rejected)throw new AssertionError("JNI schema bypass");
-   System.out.println("PASS production JNI immediate restart, pairing, TLS settings/pack-order/metadata transfer, staged plaintext cleanup, import tracking, account removal and validation");
+   System.out.println("PASS production JNI immediate restart, pairing, TLS settings/pack-order/metadata transfer and actual user-edit revisions, staged plaintext cleanup, import tracking, account removal and validation");
   }finally{if(a!=0)NativeMesh.stop(a);if(b!=0)NativeMesh.stop(b);try(java.util.stream.Stream<Path> files=Files.walk(root)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ignored){}});}}
  }
 }

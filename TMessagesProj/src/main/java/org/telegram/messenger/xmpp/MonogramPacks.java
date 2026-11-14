@@ -214,7 +214,9 @@ public final class MonogramPacks {
         }
         return new JSONObject().put("emojis",emojis).put("stickers",stickers);
     }
-    public static synchronized boolean applySyncOrder(int account,JSONObject order)throws Exception {
+    public static synchronized boolean applySyncOrder(int account,JSONObject order)throws Exception {return applySyncOrder(account,order,0);}
+    public static synchronized boolean applySyncOrder(int account,JSONObject order,long incomingRevision)throws Exception {
+        if(incomingRevision>0&&MonogramPickerVersion.revision(account)>incomingRevision)return false;
         String scope=scope(account);ArrayList<Pack> packs=copy(read(scope));
         for(String kind:new String[]{"stickers","emojis"}){
             JSONArray ids=order.getJSONArray(kind);
@@ -223,7 +225,7 @@ public final class MonogramPacks {
         for(String kind:new String[]{"stickers","emojis"}){
             JSONArray ids=order.getJSONArray(kind);ArrayList<Long> local=new ArrayList<>();
             for(int i=0;i<ids.length();i++)for(Pack pack:packs)if(pack.syncId.equals(ids.getString(i)))local.add(pack.id);
-            reorder(account,kind.equals("emojis"),local);
+            reorder(account,kind.equals("emojis"),local,false);
         }
         return true;
     }
@@ -431,7 +433,8 @@ public final class MonogramPacks {
         for (Pack pack : read(scope)) if (pack.installed && pack.emojis == emojis) result.add(set(scope, pack));
         return result;
     }
-    public static synchronized void reorder(int account, boolean emojis, List<Long> order) throws Exception {
+    public static synchronized void reorder(int account, boolean emojis, List<Long> order) throws Exception {reorder(account,emojis,order,true);}
+    private static void reorder(int account, boolean emojis, List<Long> order,boolean user) throws Exception {
         String scope = scope(account);
         ArrayList<Pack> packs = copy(read(scope));
         Map<Long, Integer> positions = new HashMap<>();
@@ -444,7 +447,7 @@ public final class MonogramPacks {
             Pack pack = packs.get(i);
             if (pack.installed && pack.emojis == emojis) packs.set(i, ordered.get(index++));
         }
-        write(scope, packs);
+        write(scope, packs);if(user)MonogramPickerVersion.changed(account);
     }
     public static synchronized TLRPC.TL_messages_stickerSet find(int account, TLRPC.InputStickerSet input) {
         if (input == null) return null;
@@ -489,7 +492,7 @@ public final class MonogramPacks {
                 pack.connected=false; pack.autoSync=false; pack.syncError=""; pack.source="local:"+UUID.randomUUID(); found=true; break;
             }
             if(!found) throw new IllegalArgumentException("Pack not found.");
-            write(scope,packs);
+            write(scope,packs);MonogramPickerVersion.changed(account);
         }
         refresh(account);
     }
@@ -504,7 +507,7 @@ public final class MonogramPacks {
                 }
             }
             if(!found) throw new IllegalArgumentException("Sticker not found.");
-            write(scope,packs);
+            write(scope,packs);MonogramPickerVersion.changed(account);
         }
         refresh(account);
     }
@@ -520,7 +523,7 @@ public final class MonogramPacks {
                 }
             }
             if(!found) throw new IllegalArgumentException("Sticker not found.");
-            write(scope,packs);
+            write(scope,packs);MonogramPickerVersion.changed(account);
         }
         refresh(account);
     }
@@ -534,19 +537,19 @@ public final class MonogramPacks {
                 break;
             }
             if(!found) throw new IllegalArgumentException("Pack or sticker not found.");
-            write(scope,packs);
+            write(scope,packs);MonogramPickerVersion.changed(account);
         }
         refresh(account);
     }
     public static void installed(int account, long id, boolean installed) throws Exception {
         synchronized (MonogramPacks.class) { String scope = scope(account); ArrayList<Pack> packs = copy(read(scope));
-            for (Pack pack : packs) if (pack.id == id) pack.installed = installed; write(scope, packs); }
+            for (Pack pack : packs) if (pack.id == id) pack.installed = installed; write(scope, packs);MonogramPickerVersion.changed(account); }
         refresh(account);
     }
     public static void remove(int account, long id) throws Exception {
         synchronized (MonogramPacks.class) { String scope = scope(account); ArrayList<Pack> packs = copy(read(scope));
             // Retain files for already sent messages and their inline emoji references.
-            for (Pack pack : packs) if (pack.id == id) pack.installed = false; write(scope, packs); }
+            for (Pack pack : packs) if (pack.id == id) pack.installed = false; write(scope, packs);MonogramPickerVersion.changed(account); }
         refresh(account);
     }
     static final class Link { final String name; final boolean emojis; Link(String n, boolean e) { name = n; emojis = e; } }
@@ -662,7 +665,7 @@ public final class MonogramPacks {
                                 moved.add(target);
                             }
                         }
-                        operation.check(); packs.add(0, pack); write(expectedScope, packs); operation.committed = true; moved.clear();
+                        operation.check(); packs.add(0, pack); write(expectedScope, packs); MonogramPickerVersion.changed(account);operation.committed = true; moved.clear();
                     }
                 }
             } catch (Exception failure) {
@@ -764,7 +767,7 @@ public final class MonogramPacks {
                                 for (Pack old : packs) if (old.source.equalsIgnoreCase(currentLink) && old.installed) throw new ImportFailure("This pack is already installed.");
                                 pack.lastSync = System.currentTimeMillis(); packs.add(0, pack);
                             } else mergeUpdate(expectedScope, packs, pack);
-                            write(expectedScope, packs); operation.committed = true; temporary.clear();
+                            write(expectedScope, packs);if(targetId==0)MonogramPickerVersion.changed(account); operation.committed = true; temporary.clear();
                         }
                     }
                 } catch (Exception failure) { error = importError(failure, job.progress); }
@@ -1000,7 +1003,7 @@ public final class MonogramPacks {
                                 archive.items.add(target.items.set(replacedIndex,pack.items.get(0)));
                             }
                         }
-                        write(expectedScope, packs); temporary.clear();
+                        write(expectedScope, packs); MonogramPickerVersion.changed(account);temporary.clear();
                     }
                 }
             } catch (ImportFailure failure) { error = failure.getMessage(); }
