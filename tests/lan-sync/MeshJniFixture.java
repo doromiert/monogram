@@ -9,6 +9,10 @@ public final class MeshJniFixture {
   Path root=Files.createTempDirectory("monogram-jni-mesh-");long a=0,b=0;
   try{
    a=NativeMesh.start(root.resolve("a").toString(),new byte[32],"Desktop fixture","[\""+ip+"\"]");byte[] key=new byte[32];Arrays.fill(key,(byte)1);b=NativeMesh.start(root.resolve("b").toString(),key,"Android fixture","[\""+ip+"\"]");
+   String identity=field(NativeMesh.inspect(b,"state"),"id");
+   NativeMesh.stop(b);b=0;
+   b=NativeMesh.start(root.resolve("b").toString(),key,"Android fixture","[\""+ip+"\"]");
+   if(!identity.equals(field(NativeMesh.inspect(b,"state"),"id")))throw new AssertionError("Restart replaced the device identity");
    String invite=NativeMesh.invite(a);
    long stale=Long.parseLong(NativeMesh.pairing(b,"token",0,""));long boundary=Long.parseLong(NativeMesh.pairing(b,"invalidate",0,""));NativeMesh.pairing(b,"cancel",boundary,"");
    boolean cancelled=false;try{NativeMesh.pairing(b,"join",stale,invite);}catch(IllegalStateException expected){cancelled=true;}if(!cancelled)throw new AssertionError("Cancelled JNI work resumed");
@@ -20,7 +24,7 @@ public final class MeshJniFixture {
    String pending=NativeMesh.inspect(b,"pending"),digest=field(pending,"digest");NativeMesh.applied(b,itemKey,digest);NativeMesh.signature(b,itemKey,"fixture-native-signature");if(!NativeMesh.signature(b,itemKey,"").equals("fixture-native-signature"))throw new AssertionError("JNI import tracking failed");
    NativeMesh.account(b,owner,false);if(NativeMesh.inspect(b,"metas").contains("giphy"))throw new AssertionError("Removed account retained secrets");NativeMesh.account(b,owner,true);
    boolean rejected=false;try{NativeMesh.validate("token",owner,"unknown","{\"value\":\"fixture\"}");}catch(IllegalStateException expected){rejected=true;}if(!rejected)throw new AssertionError("JNI schema bypass");
-   System.out.println("PASS production JNI pairing, TLS transfer, staged plaintext cleanup, import tracking, account removal and validation");
+   System.out.println("PASS production JNI immediate restart, pairing, TLS transfer, staged plaintext cleanup, import tracking, account removal and validation");
   }finally{if(a!=0)NativeMesh.stop(a);if(b!=0)NativeMesh.stop(b);try(java.util.stream.Stream<Path> files=Files.walk(root)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ignored){}});}}
  }
 }

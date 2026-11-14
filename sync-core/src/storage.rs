@@ -142,8 +142,17 @@ impl Store {
             .write(true)
             .open(root.join("lock"))
             .map_err(failure)?;
-        lock.try_lock()
-            .map_err(|_| "Device sync is already open in another process.".to_string())?;
+        // Stopped network workers can still own the old store while their sockets unwind.
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(5);
+        loop {
+            match lock.try_lock() {
+                Ok(())=>break,
+                Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now()<deadline=>
+                    std::thread::sleep(std::time::Duration::from_millis(25)),
+                Err(std::fs::TryLockError::WouldBlock)=>return Err("The previous sync session is still closing. Try again to reconnect.".into()),
+                Err(_)=>return Err("Cannot open encrypted sync storage. Check that your device has free storage, then try again.".into()),
+            }
+        }
         for entry in fs::read_dir(&root).map_err(failure)?.flatten() {
             if entry.file_name().to_string_lossy().starts_with(".export-")
                 || entry.file_name().to_string_lossy().starts_with(".json-")
@@ -499,6 +508,16 @@ impl Drop for State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reopening_waits_for_the_previous_worker_to_release_its_store() {
+        let root=std::env::temp_dir().join(format!("monogram-restart-{}",uuid::Uuid::new_v4()));
+        let key=random();let old=Store::open(root.clone(),key,"Fixture".into()).unwrap();let identity=old.state.id.clone();
+        let worker=std::thread::spawn(move||{std::thread::sleep(std::time::Duration::from_millis(150));drop(old);});
+        let started=std::time::Instant::now();let reopened=Store::open(root.clone(),key,"Fixture".into());worker.join().unwrap();
+        let reopened=reopened.expect("Restart must wait for its previous worker instead of requiring process management");
+        assert_eq!(reopened.state.id,identity);assert!(started.elapsed()<std::time::Duration::from_secs(2));
+        drop(reopened);let _=fs::remove_dir_all(root);
+    }
     #[test]
     fn private_records_authenticate_content_and_master_key() {
         let root =

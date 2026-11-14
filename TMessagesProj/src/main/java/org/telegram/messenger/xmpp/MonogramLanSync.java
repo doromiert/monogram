@@ -44,13 +44,19 @@ public final class MonogramLanSync {
     public static JSONObject snapshot(){return snapshot;}
     public static boolean needsUnlock(){return status.contains("Unlock")||status.contains("screen lock");}
     private static void feedback(String message){status=message;}
+    private static String failed(String operation,Exception failure){
+        String text=message(failure);
+        // Never log action values: they can contain one-time pairing credentials.
+        FileLog.e("Monogram device sync "+operation+" failed ("+failure.getClass().getSimpleName()+"): "+text);
+        return text;
+    }
     public static void install(){
         if(registered)return;registered=true;
         EXCLUDED.addAll(prefs().getStringSet("excluded",Collections.emptySet()));
         BroadcastReceiver lock=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){if(Intent.ACTION_SCREEN_OFF.equals(i.getAction())){screenLocked=true;stopNow();feedback("Unlock your phone to resume sync");}else{screenLocked=false;if(enabled())resume();}}};
         IntentFilter filter=new IntentFilter(Intent.ACTION_SCREEN_OFF);filter.addAction(Intent.ACTION_USER_PRESENT);
         if(Build.VERSION.SDK_INT>=33)context().registerReceiver(lock,filter,Context.RECEIVER_NOT_EXPORTED);else context().registerReceiver(lock,filter);
-        WORK.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;String failure=null;try{cycle(h);}catch(Exception e){failure=message(e);}try{if(h==handle){snapshot=new JSONObject(NativeMesh.inspect(h,"state"));feedback(failure!=null?failure:snapshot.optString("status","Ready"));}}catch(Exception e){if(h==handle)feedback(message(e));}},1,5,TimeUnit.SECONDS);
+        WORK.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;String failure=null;try{cycle(h);}catch(Exception e){failure=failed("transfer",e);}try{if(h==handle){snapshot=new JSONObject(NativeMesh.inspect(h,"state"));feedback(failure!=null?failure:snapshot.optString("status","Ready"));}}catch(Exception e){if(h==handle)feedback(failed("state",e));}},1,5,TimeUnit.SECONDS);
         PAIR.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;try{nearby=new JSONArray(NativeMesh.inspect(h,"nearby"));try{numeric=new JSONObject(NativeMesh.inspect(h,"numeric"));}catch(RuntimeException ended){numeric=new JSONObject();}}catch(Exception ignored){}},0,1,TimeUnit.SECONDS);
         if(enabled())resume();
     }
@@ -65,7 +71,7 @@ public final class MonogramLanSync {
         screenLocked=lockedNow();if(screenLocked){feedback("Unlock your phone to resume sync");return;}
         feedback("Starting device sync…");
         try{Intent service=new Intent(context(),MonogramLanSyncService.class);if(Build.VERSION.SDK_INT>=26)context().startForegroundService(service);else context().startService(service);}catch(RuntimeException e){feedback("Open Device Sync to resume");}
-        WORK.execute(()->{try{start();}catch(Exception e){feedback(message(e));}});
+        WORK.execute(()->{try{start();}catch(Exception e){feedback(failed("startup",e));}});
     }
     public static synchronized void stopNow(){long old=handle;handle=0;if(old!=0)NativeMesh.stop(old);if(multicast!=null){if(multicast.isHeld())multicast.release();multicast=null;}}
     private static long start()throws Exception {synchronized(START_LOCK){
@@ -110,7 +116,7 @@ public final class MonogramLanSync {
             if(pairing){long token=Long.parseLong(NativeMesh.pairing(h,"token",0,""));if(request!=PAIR_VERSION.get())throw new IllegalStateException("Pairing cancelled.");result=NativeMesh.pairing(h,action,token,value);if(action.equals("numeric"))numeric=new JSONObject(result);}
             else{NativeMesh.forget(h,value);result="Device unpaired";}
             if(h!=handle)throw new IllegalStateException("Sync stopped.");
-        }catch(Exception e){error=message(e);}catch(LinkageError e){error="Device sync could not load. Reinstall the latest Monogram update for this phone.";}
+        }catch(Exception e){error=failed("pairing",e);}catch(LinkageError e){error="Device sync could not load. Reinstall the latest Monogram update for this phone.";}
         final String r=result,f=error;
         if(!pairing||request==PAIR_VERSION.get())feedback(f!=null?f:(action.equals("join")||action.equals("joinNumeric")?"Paired. Settings are syncing…":pairing?"Waiting for the other device…":"Device unpaired"));
         AndroidUtilities.runOnUIThread(()->done.accept(r,f));});

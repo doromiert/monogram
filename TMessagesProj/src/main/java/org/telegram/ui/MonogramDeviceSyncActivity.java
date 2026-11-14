@@ -6,7 +6,7 @@ import org.telegram.messenger.*;import org.telegram.messenger.xmpp.MonogramLanSy
 import org.telegram.ui.ActionBar.AlertDialog;import org.telegram.ui.Cells.EditTextCell;import org.telegram.ui.Components.*;
 /** Uses the existing settings renderer, system authentication and QR camera/gallery scanner. */
 public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
- private boolean destroyed,busy,waiting;private String progress;private AlertDialog pairingDialog;private final HashSet<String> pairingPeers=new HashSet<>();private String pendingAction,pendingValue;private int generation;private String error;private final ArrayList<String> peers=new ArrayList<>();
+ private boolean destroyed,busy,waiting;private String progress;private AlertDialog pairingDialog;private final HashSet<String> pairingPeers=new HashSet<>();private String pendingAction,pendingValue,retryAction,retryValue;private int generation;private String error;private final ArrayList<String> peers=new ArrayList<>();
  private final Runnable refresh=new Runnable(){public void run(){if(destroyed)return;checkPairing();if(listView!=null)listView.adapter.update(false);AndroidUtilities.runOnUIThread(this,1000);}};
  public MonogramDeviceSyncActivity(int account){currentAccount=account;}
  @Override protected CharSequence getTitle(){return "Device sync";}
@@ -17,6 +17,7 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
   items.add(UItem.asCheck(1,"Encrypted LAN sync").setChecked(MonogramLanSync.enabled()));
   items.add(UItem.asShadow(error!=null?error:progress!=null?progress:MonogramLanSync.status()));
   if(busy||waiting)items.add(UItem.asButton(8,"Cancel pairing").accent());
+  else if(error!=null&&retryAction!=null)items.add(UItem.asButton(9,"Try again").accent());
   if(MonogramLanSync.enabled()){
    if(MonogramLanSync.needsUnlock())items.add(UItem.asButton(5,"Unlock to resume").accent());
    items.add(UItem.asHeader("Pair another device"));
@@ -35,6 +36,7 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
  @Override protected void onClick(UItem item,View view,int position,float x,float y){
   if(item.id==1){if(busy||waiting)cancelPairing();error=null;progress=null;MonogramLanSync.enable(!MonogramLanSync.enabled());update();}
   else if(item.id==8)cancelPairing();
+  else if(item.id==9&&retryAction!=null)request(retryAction,retryValue);
   else if(item.id==2)request("invite","");
   else if(item.id==3){CameraScanActivity.showAsSheet(this,true,CameraScanActivity.TYPE_QR,new MonogramPairingScan(code->{if(!destroyed)request("join",code);},failure->{if(!destroyed){error=failure;update();BulletinFactory.of(this).createErrorBulletin(failure).show();}}));}
   else if(item.id==4){EditTextCell input=new EditTextCell(getContext(),"monogram-sync:…",false);input.editText.setSingleLine(false);input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8192)});if(android.os.Build.VERSION.SDK_INT>=26)input.editText.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);showDialog(new AlertDialog.Builder(getContext()).setTitle("Pair device").setView(input).setPositiveButton("Pair",(d,w)->request("join",input.getText().toString().trim())).setNegativeButton("Cancel",null).create());}
@@ -48,16 +50,16 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
  private void rememberPeers(){pairingPeers.clear();JSONArray list=MonogramLanSync.snapshot().optJSONArray("peers");if(list!=null)for(int i=0;i<list.length();i++){JSONObject peer=list.optJSONObject(i);if(peer!=null)pairingPeers.add(peer.optString("id"));}}
  private void checkPairing(){if(!waiting)return;JSONArray list=MonogramLanSync.snapshot().optJSONArray("peers");if(list!=null)for(int i=0;i<list.length();i++){JSONObject peer=list.optJSONObject(i);if(peer!=null&&!pairingPeers.contains(peer.optString("id"))){waiting=false;progress="Paired. Your settings are syncing.";if(pairingDialog!=null)pairingDialog.dismiss();pairingDialog=null;break;}}}
  private void cancelPairing(){
-  boolean active=busy||waiting||pendingAction!=null;generation++;busy=waiting=false;pendingAction=pendingValue=null;
+  boolean active=busy||waiting||pendingAction!=null;generation++;busy=waiting=false;pendingAction=pendingValue=retryAction=retryValue=null;
   if(active)MonogramLanSync.cancelPairing();progress="Pairing cancelled.";error=null;
   AlertDialog dialog=pairingDialog;pairingDialog=null;if(dialog!=null&&dialog.isShowing())dialog.dismiss();update();
  }
  private void request(String action,String value){
   if(busy||waiting||destroyed)return;if(!MonogramLanSync.enabled())MonogramLanSync.enable(true);
-  rememberPeers();busy=true;error=null;progress=MonogramLanSync.pairingProgress(action);update();int request=++generation;
+  retryAction=action;retryValue=value;rememberPeers();busy=true;error=null;progress=MonogramLanSync.pairingProgress(action);update();int request=++generation;
   MonogramLanSync.action(action,value,(result,failure)->{
    if(destroyed||generation!=request)return;
-   busy=false;error=failure;progress=failure!=null?null:(action.equals("join")||action.equals("joinNumeric")?"Paired. Your settings are syncing.":null);update();
+   busy=false;error=failure;if(failure==null)retryAction=retryValue=null;progress=failure!=null?null:(action.equals("join")||action.equals("joinNumeric")?"Paired. Your settings are syncing.":null);update();
    if(failure!=null){if(MonogramLanSync.needsUnlock()){pendingAction=action;pendingValue=value;progress="Unlock your device to pair…";unlock();}else BulletinFactory.of(this).createErrorBulletin(failure).show();}
    if(failure==null&&(action.equals("invite")||action.equals("numeric"))){waiting=true;progress="Waiting for the other device…";update();if(action.equals("invite"))qr(result,request);else numeric();}
   });
