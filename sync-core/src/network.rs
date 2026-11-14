@@ -153,11 +153,14 @@ fn endpoints(port: u16) -> Vec<SocketAddr> {
 fn endpoints(_port: u16) -> Vec<SocketAddr> {
     vec![]
 }
+fn unreachable(port: u16) -> String {
+    format!("Could not reach the device. Keep both devices on the same local network and its pairing screen open. A firewall may be blocking sync: allow TCP {port} and UDP 45950 on both devices.")
+}
 fn socket(address: SocketAddr) -> Result<TcpStream> {
     if !local(address.ip()) {
         return Err("Device sync only connects to local-network addresses.".into());
     }
-    let socket = TcpStream::connect_timeout(&address, Duration::from_secs(3)).map_err(failure)?;
+    let socket = TcpStream::connect_timeout(&address, Duration::from_secs(3)).map_err(|_| unreachable(address.port()))?;
     socket
         .set_read_timeout(Some(Duration::from_secs(15)))
         .map_err(failure)?;
@@ -434,7 +437,7 @@ impl Mesh {
             *self.status.lock().unwrap() = "Paired · syncing".into();
             return Ok(name);
         }
-        Err("Could not reach the device. Check Wi-Fi and its pairing screen.".into())
+        Err(unreachable(invite.endpoints.first().map_or(45950,SocketAddr::port)))
     }
     fn accept(&self, stream: TcpStream, address: SocketAddr) -> Result<()> {
         let socket_guard = self.watch(&stream, "")?;
@@ -682,6 +685,11 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("monogram-sync-test-{}", uuid::Uuid::new_v4()));
         Mesh::start(Store::open(root, random(), name.into()).unwrap()).unwrap()
+    }
+    #[test]
+    fn unreachable_device_reports_its_tcp_port_and_discovery_port() {
+        let listener=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();let address=listener.local_addr().unwrap();drop(listener);
+        let error=socket(address).unwrap_err();assert!(error.contains("firewall"));assert!(error.contains(&format!("TCP {}",address.port())));assert!(error.contains("UDP 45950"));
     }
     #[test]
     fn cancellation_invalidates_pending_work_without_unpairing_devices() {

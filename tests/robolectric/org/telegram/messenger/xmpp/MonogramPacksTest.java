@@ -242,6 +242,25 @@ public class MonogramPacksTest {
             }
         }
     }
+    @Test public void syncedPackOrderUsesStableIdsAndWaitsForMissingPacks() throws Exception {
+        jid="sync-order@example.org";
+        String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        ArrayList<MonogramPacks.Pack> packs=new ArrayList<>();
+        for(int i=0;i<5;i++){
+            MonogramPacks.Pack pack=new MonogramPacks.Pack();pack.id=0x4d50005000000001L+i;pack.syncId=java.util.UUID.randomUUID().toString();
+            pack.name="Pack "+i;pack.source="local:fixture";pack.emojis=i==1||i==4;pack.installed=i!=3;
+            MonogramPacks.Item item=new MonogramPacks.Item();item.id=0x4d50006000000001L+i;item.name="Emoji";item.emoji="🙂";item.mime="image/png";item.file="art.png";item.width=item.height=1;pack.items.add(item);packs.add(pack);
+        }
+        ReflectionHelpers.callStaticMethod(MonogramPacks.class,"write",ReflectionHelpers.ClassParameter.from(String.class,scope),ReflectionHelpers.ClassParameter.from(ArrayList.class,packs));
+        org.json.JSONObject order=new org.json.JSONObject().put("stickers",new org.json.JSONArray().put(packs.get(2).syncId).put(packs.get(0).syncId)).put("emojis",new org.json.JSONArray().put(packs.get(4).syncId).put(packs.get(1).syncId));
+        assertTrue(MonogramPacks.applySyncOrder(0,order));
+        ((java.util.Map<?,?>)ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE")).clear();
+        ArrayList<MonogramPacks.Pack> restored=MonogramPacks.packs(0);int[] expected={2,4,0,3,1};
+        for(int i=0;i<expected.length;i++)assertEquals(packs.get(expected[i]).id,restored.get(i).id);
+        assertEquals(packs.get(4).syncId,MonogramPacks.syncOrder(0).getJSONArray("emojis").getString(0));
+        order.getJSONArray("stickers").put(java.util.UUID.randomUUID().toString());assertFalse(MonogramPacks.applySyncOrder(0,order));
+        assertEquals(packs.get(2).id,MonogramPacks.packs(0).get(0).id);
+    }
     @Test public void packOrderSurvivesRestartWithoutMovingEmojiOrHiddenPacks() throws Exception {
         jid="order@example.org";
         String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));

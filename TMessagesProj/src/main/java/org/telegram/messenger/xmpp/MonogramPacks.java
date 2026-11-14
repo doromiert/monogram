@@ -207,6 +207,26 @@ public final class MonogramPacks {
             if(changed)write(scope,list);return pack;
         }throw new IOException("Pack was removed.");
     }
+    public static synchronized JSONObject syncOrder(int account)throws Exception {
+        JSONArray stickers=new JSONArray(),emojis=new JSONArray();
+        for(Pack pack:packs(account))if(pack.installed&&!pack.items.isEmpty()&&!(pack.source!=null&&pack.source.startsWith("local:replaced:"))){
+            pack=syncTag(account,pack.id);(pack.emojis?emojis:stickers).put(pack.syncId);
+        }
+        return new JSONObject().put("emojis",emojis).put("stickers",stickers);
+    }
+    public static synchronized boolean applySyncOrder(int account,JSONObject order)throws Exception {
+        String scope=scope(account);ArrayList<Pack> packs=copy(read(scope));
+        for(String kind:new String[]{"stickers","emojis"}){
+            JSONArray ids=order.getJSONArray(kind);
+            for(int i=0;i<ids.length();i++){boolean found=false;for(Pack pack:packs)if(pack.syncId.equals(ids.getString(i))&&pack.emojis==kind.equals("emojis")){found=true;break;}if(!found)return false;}
+        }
+        for(String kind:new String[]{"stickers","emojis"}){
+            JSONArray ids=order.getJSONArray(kind);ArrayList<Long> local=new ArrayList<>();
+            for(int i=0;i<ids.length();i++)for(Pack pack:packs)if(pack.syncId.equals(ids.getString(i)))local.add(pack.id);
+            reorder(account,kind.equals("emojis"),local);
+        }
+        return true;
+    }
     public static String syncSignature(Pack pack)throws Exception {
         JSONObject value=new JSONObject().put("id",pack.syncId).put("name",pack.name).put("source",pack.source)
             .put("emojis",pack.emojis).put("installed",pack.installed).put("private",pack.privatePack).put("connected",pack.connected).put("auto",pack.autoSync);

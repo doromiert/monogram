@@ -73,7 +73,7 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
   JSONArray nearby=MonogramLanSync.nearby();
   if(nearby.length()==0){
    rememberPeers();waiting=true;error=null;progress="Looking for nearby devices…";update();
-   AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle("Looking for nearby devices…").setMessage("Open Show rotating pairing code on your other device. Keep both devices on the same local network.").setNegativeButton("Cancel pairing",(d,w)->cancelPairing()).create();pairingDialog=dialog;dialog.setOnDismissListener(d->{if(waiting)cancelPairing();});showDialog(dialog);
+   AlertDialog dialog=new AlertDialog.Builder(getContext()).setTitle("Looking for nearby devices…").setMessage("Open Show rotating pairing code on your other device. Keep both devices on the same local network. If no device appears, a firewall may be blocking sync: allow TCP 45950 and UDP 45950 on both devices.").setNegativeButton("Cancel pairing",(d,w)->cancelPairing()).create();pairingDialog=dialog;dialog.setOnDismissListener(d->{if(waiting)cancelPairing();});showDialog(dialog);
    AndroidUtilities.runOnUIThread(new Runnable(){public void run(){if(destroyed||!waiting||!dialog.isShowing())return;if(MonogramLanSync.nearby().length()>0){waiting=false;dialog.dismiss();pairingDialog=null;progress=null;update();enterCode();}else AndroidUtilities.runOnUIThread(this,500);}},500);return;
   }
   CharSequence[] names=new CharSequence[nearby.length()];for(int i=0;i<names.length;i++)names[i]=nearby.optJSONObject(i).optString("name","Device");

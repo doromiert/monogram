@@ -16,6 +16,17 @@ pub fn validate(kind: &str, owner: &str, id: &str, v: &Value) -> Result<()> {
         return Err("Invalid portable settings object.".into());
     }
     match kind {
+        "pack-order" => {
+            if id!="order" {return Err("Invalid pack order identifier.".into());}
+            let mut seen=std::collections::BTreeSet::new();
+            for kind in ["stickers","emojis"] {
+                let ids=v[kind].as_array().filter(|ids|ids.len()<=4096).ok_or("Invalid sticker or emoji pack order.")?;
+                for id in ids {
+                    let id=id.as_str().ok_or("Invalid pack identifier.")?;
+                    if uuid::Uuid::parse_str(id).is_err() || !seen.insert(id) {return Err("Invalid or duplicate pack identifier.".into());}
+                }
+            }
+        }
         "folders" => {
             if id != "folders" { return Err("Folder sync record has an invalid identifier.".into()); }
             if serde_json::to_vec(v).map_err(crate::failure)?.len() > 524288 { return Err("Folder settings exceed the 512 KiB sync limit.".into()); }
@@ -271,6 +282,15 @@ fn https_node(node: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn pack_order_validates_both_kinds_and_rejects_duplicate_ids() {
+        let a=uuid::Uuid::new_v4().to_string();let b=uuid::Uuid::new_v4().to_string();
+        let mut value=json!({"stickers":[a],"emojis":[b]});
+        assert!(validate("pack-order","me@example.invalid","order",&value).is_ok());
+        value["emojis"]=value["stickers"].clone();assert!(validate("pack-order","me@example.invalid","order",&value).is_err());
+        value["emojis"]=json!(["invalid"]);assert!(validate("pack-order","me@example.invalid","order",&value).is_err());
+        value["emojis"]=json!([]);assert!(validate("pack-order","me@example.invalid","other",&value).is_err());
+    }
     #[test]
     fn folders_validate_order_members_and_optional_metadata() {
         let valid = json!({"rules":{"Friends":{"types":["contacts"],"include":["alice@example.invalid"],"exclude":[],"pinned":["alice@example.invalid"],"icon":"cat","exclude_muted":true,"exclude_read":false,"exclude_archived":true}},"order":["Friends","All"],"all_hidden":true,"rooms":[]});

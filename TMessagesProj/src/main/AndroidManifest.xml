@@ -117,7 +117,6 @@
         android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
     >
-        <service android:name="org.telegram.messenger.xmpp.MonogramLanSyncService" android:exported="false" android:foregroundServiceType="dataSync" />
         <!-- Billing API types still compile in stock classes; no payment components are registered. -->
         <meta-data android:name="com.google.android.geo.API_KEY" android:value="@string/monogram_google_maps_api_key"/>
         <activity android:name="com.android.billingclient.api.ProxyBillingActivity" tools:node="remove"/>

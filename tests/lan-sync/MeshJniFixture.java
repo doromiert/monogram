@@ -22,9 +22,13 @@ public final class MeshJniFixture {
    while(!NativeMesh.inspect(b,"metas").contains("giphy")){if(System.nanoTime()>deadline)throw new AssertionError("JNI transfer timed out");Thread.sleep(30);}
    Path exported=Paths.get(NativeMesh.read(b,itemKey));String text=new String(Files.readAllBytes(exported),java.nio.charset.StandardCharsets.UTF_8);Files.delete(exported);if(!text.equals("{\"value\":\"fictional-test-key\"}"))throw new AssertionError("JNI content mismatch");
    String pending=NativeMesh.inspect(b,"pending"),digest=field(pending,"digest");NativeMesh.applied(b,itemKey,digest);NativeMesh.signature(b,itemKey,"fixture-native-signature");if(!NativeMesh.signature(b,itemKey,"").equals("fixture-native-signature"))throw new AssertionError("JNI import tracking failed");
+   String order="{\"emojis\":[\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"],\"stickers\":[\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\"]}";
+   String orderKey="[\"pack-order\",\""+owner+"\",\"order\"]";NativeMesh.putJson(a,"pack-order",owner,"order",order);deadline=System.nanoTime()+12_000_000_000L;
+   while(!NativeMesh.inspect(b,"metas").contains("pack-order")){if(System.nanoTime()>deadline)throw new AssertionError("Pack order transfer timed out");Thread.sleep(30);}
+   exported=Paths.get(NativeMesh.read(b,orderKey));text=new String(Files.readAllBytes(exported),java.nio.charset.StandardCharsets.UTF_8);Files.delete(exported);if(!order.equals(text))throw new AssertionError("Pack order changed during encrypted transfer");
    NativeMesh.account(b,owner,false);if(NativeMesh.inspect(b,"metas").contains("giphy"))throw new AssertionError("Removed account retained secrets");NativeMesh.account(b,owner,true);
    boolean rejected=false;try{NativeMesh.validate("token",owner,"unknown","{\"value\":\"fixture\"}");}catch(IllegalStateException expected){rejected=true;}if(!rejected)throw new AssertionError("JNI schema bypass");
-   System.out.println("PASS production JNI immediate restart, pairing, TLS transfer, staged plaintext cleanup, import tracking, account removal and validation");
+   System.out.println("PASS production JNI immediate restart, pairing, TLS settings/pack-order transfer, staged plaintext cleanup, import tracking, account removal and validation");
   }finally{if(a!=0)NativeMesh.stop(a);if(b!=0)NativeMesh.stop(b);try(java.util.stream.Stream<Path> files=Files.walk(root)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ignored){}});}}
  }
 }

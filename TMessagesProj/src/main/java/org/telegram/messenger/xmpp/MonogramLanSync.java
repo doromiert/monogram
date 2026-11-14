@@ -52,6 +52,8 @@ public final class MonogramLanSync {
     }
     public static void install(){
         if(registered)return;registered=true;
+        android.app.NotificationManager notices=(android.app.NotificationManager)context().getSystemService(Context.NOTIFICATION_SERVICE);
+        if(notices!=null){notices.cancel(2937);if(Build.VERSION.SDK_INT>=26)notices.deleteNotificationChannel("monogram-device-sync");}
         EXCLUDED.addAll(prefs().getStringSet("excluded",Collections.emptySet()));
         BroadcastReceiver lock=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){if(Intent.ACTION_SCREEN_OFF.equals(i.getAction())){screenLocked=true;stopNow();feedback("Unlock your phone to resume sync");}else{screenLocked=false;if(enabled())resume();}}};
         IntentFilter filter=new IntentFilter(Intent.ACTION_SCREEN_OFF);filter.addAction(Intent.ACTION_USER_PRESENT);
@@ -60,7 +62,7 @@ public final class MonogramLanSync {
         PAIR.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;try{nearby=new JSONArray(NativeMesh.inspect(h,"nearby"));try{numeric=new JSONObject(NativeMesh.inspect(h,"numeric"));}catch(RuntimeException ended){numeric=new JSONObject();}}catch(Exception ignored){}},0,1,TimeUnit.SECONDS);
         if(enabled())resume();
     }
-    public static void enable(boolean value){prefs().edit().putBoolean("enabled",value).apply();if(value){feedback("Starting device sync…");resume();}else{stopNow();context().stopService(new Intent(context(),MonogramLanSyncService.class));feedback("Device sync is off");}}
+    public static void enable(boolean value){prefs().edit().putBoolean("enabled",value).apply();if(value){feedback("Starting device sync…");resume();}else{stopNow();feedback("Device sync is off");}}
     private static boolean lockedNow(){
         KeyguardManager guard=(KeyguardManager)context().getSystemService(Context.KEYGUARD_SERVICE);
         android.os.PowerManager power=(android.os.PowerManager)context().getSystemService(Context.POWER_SERVICE);
@@ -70,7 +72,6 @@ public final class MonogramLanSync {
         if(!enabled())return;
         screenLocked=lockedNow();if(screenLocked){feedback("Unlock your phone to resume sync");return;}
         feedback("Starting device sync…");
-        try{Intent service=new Intent(context(),MonogramLanSyncService.class);if(Build.VERSION.SDK_INT>=26)context().startForegroundService(service);else context().startService(service);}catch(RuntimeException e){feedback("Open Device Sync to resume");}
         WORK.execute(()->{try{start();}catch(Exception e){feedback(failed("startup",e));}});
     }
     public static synchronized void stopNow(){long old=handle;handle=0;if(old!=0)NativeMesh.stop(old);if(multicast!=null){if(multicast.isHeld())multicast.release();multicast=null;}}
@@ -153,6 +154,7 @@ public final class MonogramLanSync {
                 MonogramPacks.Pack pack=MonogramPacks.syncTag(a,p.id);String sig=MonogramPacks.syncSignature(pack);
                 if(publish(h,"pack",owner,pack.syncId,sig)){feedback("Preparing sticker and emoji packs…");File archive=MonogramPacks.exportSyncArchive(a,pack);try{validHandle(h);NativeMesh.put(h,"pack",owner,pack.syncId,archive.getAbsolutePath());NativeMesh.signature(h,key("pack",owner,pack.syncId),sig);}finally{archive.delete();}}
             }
+            json(h,"pack-order",owner,"order",MonogramPacks.syncOrder(a));
             JSONObject folders=MonogramSyncFolders.export(a);if(folders!=null)json(h,"folders",owner,"folders",folders);
             controller.syncFingerprints(value->{try{String id=digest(value.getString("mode")+":"+value.getInt("device")+":"+value.getString("fingerprint"));json(h,"fingerprint",owner,id,value);}catch(Exception e){throw new IllegalStateException(e);}});
             for(MoneroPayment.Network network:MoneroPayment.Network.values())for(String id:WalletRegistry.ids(a,owner,network)){
@@ -174,6 +176,7 @@ public final class MonogramLanSync {
                         case "token":saveToken(a,id,value.getString("value"));break;
                         case "monero-settings":MonogramXmr.importSyncSettings(a,value);break;
                         case "folders":MonogramSyncFolders.apply(a,value);break;
+                        case "pack-order":if(!MonogramPacks.applySyncOrder(a,value))continue;break;
                         case "fingerprint":prefs().edit().putString("fingerprint:"+owner+":"+id,value.toString()).commit();break;
                         case "wallet":importWallet(a,owner,value);break;
                         default:throw new IOException("Unsupported sync setting.");

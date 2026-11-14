@@ -47,7 +47,7 @@ impl Meta {
     pub fn valid(&self) -> bool {
         matches!(
             self.kind.as_str(),
-            "account" | "pack" | "wallet" | "fingerprint" | "token" | "monero-settings" | "folders"
+            "account" | "pack" | "pack-order" | "wallet" | "fingerprint" | "token" | "monero-settings" | "folders"
         ) && !self.owner.is_empty()
             && self.owner.len() <= 1024
             && self.owner.contains('@')

@@ -60,6 +60,10 @@ public class MonogramLanSyncTest {
   MonogramLanSync.action("invite","",(value,error)->{result.set(new String[]{value,error});done.countDown();});
   assertTrue("Pairing callback never completed",done.await(3,TimeUnit.SECONDS));return result.get();
  }
+ @Test public void resumeDoesNotStartASeparateNotificationService()throws Exception {
+  MonogramLanSync.resume();String[] result=invite();assertNull(result[1]);
+  assertNull(Shadows.shadowOf((android.app.Application)context).getNextStartedService());
+ }
  @Test public void staleScreenOffFlagCannotDisablePairingOnAnUnlockedPhone()throws Exception {
   ReflectionHelpers.setStaticField(MonogramLanSync.class,"screenLocked",true);
   String[] result=invite();assertNull(result[1]);assertEquals("monogram-sync:fixture",result[0]);assertTrue(MonogramLanSync.enabled());assertEquals(1,Mesh.starts);assertEquals(1,Mesh.pairs);
