@@ -53,6 +53,16 @@ public class MonogramSystemEmojiTest {
         view.setImageDrawable(probe,false);view.measure(android.view.View.MeasureSpec.makeMeasureSpec(48,1073741824),android.view.View.MeasureSpec.makeMeasureSpec(48,1073741824));view.layout(0,0,48,48);view.draw(canvas);
         assertEquals(48,view.getMeasuredWidth());assertEquals(48,view.getMeasuredHeight());assertEquals(.72f,scale[0],.01f);
     }
+    @Test public void retryRetainsCustomEmojiAndFormattingEntities() throws Exception {
+        Class<?> allocator=Class.forName("sun.misc.Unsafe");java.lang.reflect.Field field=allocator.getDeclaredField("theUnsafe");field.setAccessible(true);
+        MessageObject message=(MessageObject)allocator.getMethod("allocateInstance",Class.class).invoke(field.get(null),MessageObject.class);
+        message.messageOwner=new org.telegram.tgnet.TLRPC.TL_message();message.messageOwner.dialog_id=7;
+        org.telegram.tgnet.TLRPC.TL_messageEntityCustomEmoji emoji=new org.telegram.tgnet.TLRPC.TL_messageEntityCustomEmoji();emoji.offset=0;emoji.length=2;emoji.document_id=123;
+        message.messageOwner.entities.add(emoji);message.messageOwner.entities.add(new org.telegram.tgnet.TLRPC.TL_messageEntityBold());
+        SendMessagesHelper.SendMessageParams retry=SendMessagesHelper.SendMessageParams.of(message);
+        assertEquals(2,retry.entities.size());assertSame(emoji,retry.entities.get(0));assertNotSame(message.messageOwner.entities,retry.entities);
+        retry.entities.clear();assertEquals(2,message.messageOwner.entities.size());
+    }
     @Test public void switchingToSystemRemovesCachedTelegramSpansButKeepsFormattingAndCustomEmoji(){
         SpannableString text=new SpannableString("😀 custom");
         Emoji.EmojiSpan ordinary=new Emoji.EmojiSpan(Emoji.getEmojiDrawable("😀"),0,new Paint().getFontMetricsInt());text.setSpan(ordinary,0,2,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);

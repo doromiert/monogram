@@ -12400,6 +12400,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         public static SendMessageParams of(MessageObject retryMessageObject) {
             SendMessageParams params = of(null, null, null, null, null, null, null, null, null, null, retryMessageObject.getDialogId(), retryMessageObject.messageOwner.attachPath, null, null, null, true, retryMessageObject, null, retryMessageObject.messageOwner.reply_markup, retryMessageObject.messageOwner.params, !retryMessageObject.messageOwner.silent, retryMessageObject.scheduled ? retryMessageObject.messageOwner.date : 0, 0, 0, null, null, false);
             if (retryMessageObject.messageOwner != null) {
+                params.entities = retryMessageObject.messageOwner.entities == null ? null : new ArrayList<>(retryMessageObject.messageOwner.entities);
                 if (retryMessageObject.messageOwner.quick_reply_shortcut instanceof TLRPC.TL_inputQuickReplyShortcut) {
                     params.quick_reply_shortcut = ((TLRPC.TL_inputQuickReplyShortcut) retryMessageObject.messageOwner.quick_reply_shortcut).shortcut;
                 }
