@@ -551,6 +551,7 @@ dependencies = [
  "base64",
  "get_if_addrs",
  "jni",
+ "libc",
  "rcgen",
  "ring",
  "rustls",

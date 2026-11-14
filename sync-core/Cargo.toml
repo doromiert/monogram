@@ -24,3 +24,6 @@ jni = { version = "=0.21.1", optional = true }
 
 [target.'cfg(not(target_os="android"))'.dependencies]
 get_if_addrs = "=0.5.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
