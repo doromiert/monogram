@@ -975,15 +975,26 @@ public class Emoji {
         ArrayList<String> result = new ArrayList<>();
         String saved = MessagesController.getGlobalEmojiSettings().getString("monogram_favorite_emoji", "");
         for (String code : saved.split("\n")) {
-            code = fixEmoji(code.replace("\ufe0f", ""));
-            if ((isValidEmoji(code) || isValidEmoji(code.replace("\ufe0f", ""))) && !result.contains(code)) result.add(code);
+            if(!code.startsWith("animated_"))code = fixEmoji(code.replace("\ufe0f", ""));
+            if (validFavorite(code) && !result.contains(code)) result.add(code);
         }
         return result;
     }
 
+    private static boolean validFavorite(String code){return code!=null&&(code.matches("animated_[0-9]{1,19}")||isValidEmoji(code)||isValidEmoji(code.replace("\ufe0f","")));}
+    public static void reorderFavoriteEmoji(java.util.List<String> order){
+        ArrayList<String> current=getFavoriteEmoji(),result=new ArrayList<>();for(String code:order)if(current.contains(code)&&!result.contains(code))result.add(code);for(String code:current)if(!result.contains(code))result.add(code);
+        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji",TextUtils.join("\n",result)).apply();
+    }
+    public static void applySyncedLibrary(java.util.List<String> favorites,java.util.List<String> recent){
+        ArrayList<String> favoriteValues=new ArrayList<>();for(String code:favorites)if(validFavorite(code)){code=code.startsWith("animated_")?code:fixEmoji(code.replace("\ufe0f",""));if(!favoriteValues.contains(code))favoriteValues.add(code);}
+        recentEmojiLoaded=true;emojiUseHistory.clear();recentEmoji.clear();StringBuilder serialized=new StringBuilder();int rank=Math.min(MAX_RECENT_EMOJI_COUNT,recent.size());
+        for(String code:recent){if(!validFavorite(code)||recentEmoji.size()>=MAX_RECENT_EMOJI_COUNT)continue;code=code.startsWith("animated_")?code:fixEmoji(code.replace("\ufe0f",""));if(recentEmoji.contains(code))continue;recentEmoji.add(code);emojiUseHistory.put(code,rank--);if(serialized.length()>0)serialized.append(',');serialized.append(code).append('=').append(emojiUseHistory.get(code));}
+        MessagesController.getGlobalEmojiSettings().edit().putString("monogram_favorite_emoji",TextUtils.join("\n",favoriteValues)).putString("emojis2",serialized.toString()).putBoolean("filled_default",true).apply();
+    }
     public static void setFavoriteEmoji(String code, boolean favorite) {
-        if (code == null || !isValidEmoji(code) && !isValidEmoji(code.replace("\ufe0f", ""))) return;
-        code = fixEmoji(code.replace("\ufe0f", ""));
+        if (!validFavorite(code)) return;
+        if(!code.startsWith("animated_"))code = fixEmoji(code.replace("\ufe0f", ""));
         ArrayList<String> favorites = getFavoriteEmoji();
         if (favorite && !favorites.contains(code)) favorites.add(code);
         else if (!favorite) favorites.remove(code);
@@ -992,6 +1003,7 @@ public class Emoji {
 
     public static ArrayList<String> getRecentEmojiWithFavorites(boolean animated) {
         ArrayList<String> result = getFavoriteEmoji();
+        if(!animated)result.removeIf(code->code.startsWith("animated_"));
         for (String code : recentEmoji) {
             if (!code.startsWith("animated_")) code = fixEmoji(code.replace("\ufe0f", ""));
             if ((animated || !code.startsWith("animated_")) && !result.contains(code)) result.add(code);
@@ -1000,7 +1012,7 @@ public class Emoji {
     }
 
     public static boolean isFavoriteEmoji(String code) {
-        return code != null && getFavoriteEmoji().contains(fixEmoji(code.replace("\ufe0f", "")));
+        return code != null && getFavoriteEmoji().contains(code.startsWith("animated_")?code:fixEmoji(code.replace("\ufe0f", "")));
     }
 
     public static void addRecentEmoji(String code) {
@@ -1048,6 +1060,13 @@ public class Emoji {
         while (recentEmoji.size() > MAX_RECENT_EMOJI_COUNT) {
             recentEmoji.remove(recentEmoji.size() - 1);
         }
+    }
+
+    /** Defaults shown before first use must not replace another device's actual history. */
+    public static boolean hasUsedRecentEmoji() {
+        if (emojiUseHistory.size() != DEFAULT_RECENT.length) return true;
+        for (int i=0;i<DEFAULT_RECENT.length;i++) if (!Integer.valueOf(DEFAULT_RECENT.length-i).equals(emojiUseHistory.get(DEFAULT_RECENT[i]))) return true;
+        return false;
     }
 
     public static void saveRecentEmoji() {

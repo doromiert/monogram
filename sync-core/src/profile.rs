@@ -11,11 +11,41 @@ fn string<'a>(v: &'a Value, k: &str, max: usize) -> Result<&'a str> {
 pub fn normalize_folders(value: &mut Value) {
     if let Some(object)=value.as_object_mut() {object.entry("all_hidden").or_insert(Value::Bool(false));}
 }
+fn validate_order_ids(value:&Value,max:usize)->Result<()> {
+    let ids=value.as_array().filter(|a|a.len()<=max).ok_or("Too many library references.")?;let mut seen=std::collections::BTreeSet::new();
+    for id in ids {let id=id.as_str().ok_or("Invalid library reference.")?;if uuid::Uuid::parse_str(id).is_err()||!seen.insert(id){return Err("Invalid or duplicate library reference.".into());}}
+    Ok(())
+}
 pub fn validate(kind: &str, owner: &str, id: &str, v: &Value) -> Result<()> {
     if !v.is_object() {
         return Err("Invalid portable settings object.".into());
     }
     match kind {
+        "pack-meta" => {
+            if uuid::Uuid::parse_str(id).is_err() || string(v,"id",36)?!=id {return Err("Invalid pack metadata identifier.".into());}
+            let name=string(v,"name",320)?;
+            if name.trim().is_empty() || name.encode_utf16().count()>100 || name.chars().any(char::is_control) {return Err("Invalid pack name.".into());}
+            let source=string(v,"source",2048)?;
+            let valid_source=source.starts_with("local:") || url::Url::parse(source).ok().is_some_and(|u| {
+                u.scheme()=="https" && matches!(u.host_str(),Some("t.me"|"telegram.me")) && u.username().is_empty()
+                    && u.password().is_none() && u.port().is_none() && u.query().is_none() && u.fragment().is_none()
+                    && u.path_segments().is_some_and(|mut p|matches!(p.next(),Some("addstickers"|"addemoji"))
+                        && p.next().is_some_and(|n|!n.is_empty()&&n.len()<=64&&n.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'_')) && p.next().is_none())
+            });
+            if !valid_source || source.chars().any(char::is_control) {return Err("Invalid pack metadata source.".into());}
+            for flag in ["emojis","installed","private","connected","auto"] {if !v[flag].is_boolean(){return Err("Invalid pack metadata policy.".into());}}
+            if v["auto"]==true && v["connected"]!=true || v["connected"]==true && source.starts_with("local:"){return Err("Invalid pack connection policy.".into());}
+            let items=v["items"].as_array().filter(|a|!a.is_empty()&&a.len()<=4096).ok_or("Invalid pack metadata items.")?;
+            let mut seen=std::collections::BTreeSet::new();
+            for item in items {
+                let item_id=string(item,"id",36)?;
+                if uuid::Uuid::parse_str(item_id).is_err()||!seen.insert(item_id){return Err("Invalid or duplicate item identifier.".into());}
+                if string(item,"name",320)?.trim().is_empty()||string(item,"name",320)?.encode_utf16().count()>100||string(item,"name",320)?.chars().any(char::is_control)||string(item,"emoji",128)?.encode_utf16().count()>64||string(item,"emoji",128)?.chars().any(char::is_control){return Err("Invalid pack item name.".into());}
+                if !matches!(string(item,"mime",64)?,"image/png"|"image/webp"|"image/gif"|"video/webm"|"application/x-tgsticker") {return Err("Unsupported pack item type.".into());}
+                for dimension in ["w","h"] {if !item[dimension].as_u64().is_some_and(|n|n>0&&n<=4096){return Err("Invalid pack item dimensions.".into());}}
+            }
+            if serde_json::to_vec(v).map_err(crate::failure)?.len()>2*1024*1024{return Err("Pack metadata exceeds 2 MiB.".into());}
+        }
         "pack-order" => {
             if id!="order" {return Err("Invalid pack order identifier.".into());}
             let mut seen=std::collections::BTreeSet::new();
@@ -26,6 +56,18 @@ pub fn validate(kind: &str, owner: &str, id: &str, v: &Value) -> Result<()> {
                     if uuid::Uuid::parse_str(id).is_err() || !seen.insert(id) {return Err("Invalid or duplicate pack identifier.".into());}
                 }
             }
+            for field in ["favorites","recent"] {if let Some(ids)=v.get(field){validate_order_ids(ids,4096)?;}}
+            for field in ["emoji_favorite_order","emoji_recent_order"] {if let Some(order)=v.get(field){
+                let order=order.as_array().filter(|a|a.len()<=4096).ok_or("Too many mixed emoji references.")?;let mut seen=std::collections::BTreeSet::new();
+                for key in order {let key=key.as_str().ok_or("Invalid mixed emoji reference.")?;
+                    let valid=if let Some(id)=key.strip_prefix("item:"){uuid::Uuid::parse_str(id).is_ok()}else if let Some(emoji)=key.strip_prefix("unicode:"){!emoji.is_empty()&&emoji.len()<=128&&!emoji.chars().any(char::is_control)}else{false};
+                    if !valid||!seen.insert(key){return Err("Invalid or duplicate mixed emoji reference.".into());}
+                }
+            }}
+            for field in ["emoji_favorites","emoji_recent","emoji_pinned"] {if let Some(emojis)=v.get(field){
+                let emojis=emojis.as_array().filter(|a|a.len()<=512).ok_or("Too many synced emojis.")?;let mut seen=std::collections::BTreeSet::new();
+                for emoji in emojis {let emoji=emoji.as_str().filter(|e|!e.is_empty()&&e.len()<=128&&!e.chars().any(char::is_control)).ok_or("Invalid synced emoji.")?;if !seen.insert(emoji){return Err("Duplicate synced emoji.".into());}}
+            }}
         }
         "folders" => {
             if id != "folders" { return Err("Folder sync record has an invalid identifier.".into()); }
@@ -282,6 +324,18 @@ fn https_node(node: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn pack_metadata_and_optional_library_preferences_are_bounded() {
+        let id=uuid::Uuid::new_v4().to_string();let item=uuid::Uuid::new_v4().to_string();
+        let mut value=json!({"id":id,"name":"Fixture","source":"local:fixture","emojis":false,"installed":true,"private":true,"connected":false,"auto":false,"items":[{"id":item,"name":"Wave","emoji":"👋","mime":"image/png","w":64,"h":64}]});
+        assert!(validate("pack-meta","me@example.invalid",&id,&value).is_ok());
+        value["items"][0]["w"]=json!(0);assert!(validate("pack-meta","me@example.invalid",&id,&value).is_err());value["items"][0]["w"]=json!(64);
+        value["source"]=json!("http://localhost/secrets");assert!(validate("pack-meta","me@example.invalid",&id,&value).is_err());
+        let mut state=json!({"stickers":[id],"emojis":[],"favorites":[item],"recent":[],"emoji_favorites":["👋"],"emoji_recent":["🙂"]});assert!(validate("pack-order","me@example.invalid","order",&state).is_ok());
+        state["emoji_favorite_order"]=json!([format!("item:{item}"),"unicode:🔥"]);assert!(validate("pack-order","me@example.invalid","order",&state).is_ok());
+        state["emoji_favorite_order"]=json!(["bad-reference"]);assert!(validate("pack-order","me@example.invalid","order",&state).is_err());state.as_object_mut().unwrap().remove("emoji_favorite_order");
+        state["favorites"]=json!([item,item]);assert!(validate("pack-order","me@example.invalid","order",&state).is_err());
+    }
     #[test]
     fn pack_order_validates_both_kinds_and_rejects_duplicate_ids() {
         let a=uuid::Uuid::new_v4().to_string();let b=uuid::Uuid::new_v4().to_string();

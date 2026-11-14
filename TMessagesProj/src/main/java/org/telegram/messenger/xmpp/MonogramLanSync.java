@@ -149,12 +149,16 @@ public final class MonogramLanSync {
                 String secret=token(a,provider);if(!secret.isEmpty()||!NativeMesh.signature(h,key("token",owner,provider),"").isEmpty())json(h,"token",owner,provider,new JSONObject().put("value",secret));
             }
             json(h,"monero-settings",owner,"settings",MonogramXmr.syncSettings(a));
+            ArrayList<MonogramPacks.Pack> outgoingPacks=new ArrayList<>();boolean pendingPacks=false;
             for(MonogramPacks.Pack p:MonogramPacks.packs(a)){
+                if(p.syncPending){pendingPacks=true;continue;}
                 if(p.items.isEmpty()||p.source!=null&&p.source.startsWith("local:replaced:"))continue;
-                MonogramPacks.Pack pack=MonogramPacks.syncTag(a,p.id);String sig=MonogramPacks.syncSignature(pack);
+                MonogramPacks.Pack pack=MonogramPacks.syncTag(a,p.id);outgoingPacks.add(pack);json(h,"pack-meta",owner,pack.syncId,MonogramPacks.syncMetadata(pack));
+            }
+            if(!pendingPacks){JSONObject library=MonogramSyncLibrary.export(a);if(library!=null)json(h,"pack-order",owner,"order",library);}
+            for(MonogramPacks.Pack pack:outgoingPacks){String sig=MonogramPacks.syncSignature(pack);
                 if(publish(h,"pack",owner,pack.syncId,sig)){feedback("Preparing sticker and emoji packs…");File archive=MonogramPacks.exportSyncArchive(a,pack);try{validHandle(h);NativeMesh.put(h,"pack",owner,pack.syncId,archive.getAbsolutePath());NativeMesh.signature(h,key("pack",owner,pack.syncId),sig);}finally{archive.delete();}}
             }
-            json(h,"pack-order",owner,"order",MonogramPacks.syncOrder(a));
             JSONObject folders=MonogramSyncFolders.export(a);if(folders!=null)json(h,"folders",owner,"folders",folders);
             controller.syncFingerprints(value->{try{String id=digest(value.getString("mode")+":"+value.getInt("device")+":"+value.getString("fingerprint"));json(h,"fingerprint",owner,id,value);}catch(Exception e){throw new IllegalStateException(e);}});
             for(MoneroPayment.Network network:MoneroPayment.Network.values())for(String id:WalletRegistry.ids(a,owner,network)){
@@ -176,7 +180,8 @@ public final class MonogramLanSync {
                         case "token":saveToken(a,id,value.getString("value"));break;
                         case "monero-settings":MonogramXmr.importSyncSettings(a,value);break;
                         case "folders":MonogramSyncFolders.apply(a,value);break;
-                        case "pack-order":if(!MonogramPacks.applySyncOrder(a,value))continue;break;
+                        case "pack-meta":MonogramPacks.importSyncMetadata(a,value);break;
+                        case "pack-order":if(!MonogramSyncLibrary.apply(a,value))continue;break;
                         case "fingerprint":prefs().edit().putString("fingerprint:"+owner+":"+id,value.toString()).commit();break;
                         case "wallet":importWallet(a,owner,value);break;
                         default:throw new IOException("Unsupported sync setting.");

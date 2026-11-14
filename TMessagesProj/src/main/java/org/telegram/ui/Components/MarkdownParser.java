@@ -316,14 +316,17 @@ public class MarkdownParser {
 
     public static class SingleDollarLatexInlineProcessor extends io.noties.markwon.inlineparser.InlineProcessor {
         private static final java.util.regex.Pattern RE =
-            java.util.regex.Pattern.compile("\\$([^\\s\\$][^\\$]*?)(?<!\\s)\\$(?![0-9])");
+            java.util.regex.Pattern.compile("\\$([^\\s\\$][^\\$\\r\\n]*?)(?<!\\s)\\$(?![0-9])");
 
         @Override public char specialCharacter() { return '$'; }
 
         @Override
         protected org.commonmark.node.Node parse() {
+            final int start=index;
             final String m = match(RE);
             if (m == null) return null;
+            final String body=m.substring(1,m.length()-1);
+            if(body.charAt(0)>='0'&&body.charAt(0)<='9'&&body.chars().noneMatch(c->"\\+-*/=^_<>".indexOf(c)>=0)) {index=start;return null;}
             final io.noties.markwon.ext.latex.JLatexMathNode node =
                 new io.noties.markwon.ext.latex.JLatexMathNode();
             node.latex(m.substring(1, m.length() - 1));

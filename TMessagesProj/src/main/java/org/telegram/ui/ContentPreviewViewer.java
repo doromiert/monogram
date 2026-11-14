@@ -732,17 +732,17 @@ public class ContentPreviewViewer {
                 final ArrayList<Integer> actions = new ArrayList<>();
                 ArrayList<Integer> icons = new ArrayList<>();
                 if (delegate != null) {
-                    if (delegate.needSend(currentContentType) && !delegate.isInScheduleMode()) {
+                    if (delegate.needSend(currentContentType) && (currentDocument == null || !currentDocument.monogramSyncPending) && !delegate.isInScheduleMode()) {
                         items.add(LocaleController.getString(R.string.SendStickerPreview));
                         icons.add(R.drawable.msg_send);
                         actions.add(0);
                     }
-                    if (delegate.needSend(currentContentType) && !delegate.isInScheduleMode()) {
+                    if (delegate.needSend(currentContentType) && (currentDocument == null || !currentDocument.monogramSyncPending) && !delegate.isInScheduleMode()) {
                         items.add(LocaleController.getString(R.string.SendWithoutSound));
                         icons.add(R.drawable.input_notify_off);
                         actions.add(6);
                     }
-                    if (delegate.canSchedule()) {
+                    if (delegate.canSchedule() && (currentDocument == null || !currentDocument.monogramSyncPending)) {
                         items.add(LocaleController.getString(R.string.Schedule));
                         icons.add(R.drawable.msg_autodelete);
                         actions.add(3);
@@ -912,7 +912,7 @@ public class ContentPreviewViewer {
                 final ArrayList<Integer> actions = new ArrayList<>();
                 ArrayList<Integer> icons = new ArrayList<>();
 
-                if (delegate.needSend(currentContentType)) {
+                if (delegate.needSend(currentContentType) && (currentDocument == null || !currentDocument.monogramSyncPending)) {
                     items.add(LocaleController.getString(R.string.SendEmojiPreview));
                     icons.add(R.drawable.msg_send);
                     actions.add(0);
@@ -929,7 +929,7 @@ public class ContentPreviewViewer {
                         actions.add(2);
                     }
                 }
-                if (delegate.needCopy(currentDocument)) {
+                if (delegate.needCopy(currentDocument) && (currentDocument == null || !currentDocument.monogramSyncPending)) {
                     items.add(LocaleController.getString(R.string.CopyEmojiPreview));
                     icons.add(R.drawable.msg_copy);
                     actions.add(3);
@@ -944,6 +944,10 @@ public class ContentPreviewViewer {
                     items.add(inFavs ? LocaleController.getString(R.string.DeleteFromFavorites) : LocaleController.getString(R.string.AddToFavorites));
                     icons.add(inFavs ? R.drawable.msg_unfave : R.drawable.msg_fave);
                     actions.add(5);
+                }
+                if(currentDocument!=null&&org.telegram.messenger.xmpp.MonogramPacks.isLocalId(currentDocument.id)){
+                    boolean favorite=org.telegram.messenger.Emoji.isFavoriteEmoji("animated_"+currentDocument.id);
+                    items.add(LocaleController.getString(favorite?R.string.DeleteFromFavorites:R.string.AddToFavorites));icons.add(favorite?R.drawable.msg_unfave:R.drawable.msg_fave);actions.add(6);
                 }
                 if (items.isEmpty()) {
                     return;
@@ -974,6 +978,8 @@ public class ContentPreviewViewer {
                         delegate.removeFromRecent(currentDocument);
                     } else if (action == 5) {
                         MediaDataController.getInstance(currentAccount).addRecentSticker(MediaDataController.TYPE_FAVE, parentObject, currentDocument, (int) (System.currentTimeMillis() / 1000), inFavs);
+                    } else if (action == 6) {
+                        String code="animated_"+currentDocument.id;org.telegram.messenger.Emoji.setFavoriteEmoji(code,!org.telegram.messenger.Emoji.isFavoriteEmoji(code));NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.emojiLoaded,true);
                     }
                     dismissPopupWindow();
                 };
@@ -1043,17 +1049,17 @@ public class ContentPreviewViewer {
                 final ArrayList<Integer> actions = new ArrayList<>();
                 ArrayList<Integer> icons = new ArrayList<>();
 
-                if (delegate.needSend(currentContentType) && !delegate.isInScheduleMode()) {
+                if (delegate.needSend(currentContentType) && (currentDocument == null || !currentDocument.monogramSyncPending) && !delegate.isInScheduleMode()) {
                     items.add(LocaleController.getString(R.string.SendGifPreview));
                     icons.add(R.drawable.msg_send);
                     actions.add(0);
                 }
-                if (delegate.needSend(currentContentType) && !delegate.isInScheduleMode()) {
+                if (delegate.needSend(currentContentType) && (currentDocument == null || !currentDocument.monogramSyncPending) && !delegate.isInScheduleMode()) {
                     items.add(LocaleController.getString(R.string.SendWithoutSound));
                     icons.add(R.drawable.input_notify_off);
                     actions.add(4);
                 }
-                if (delegate.canSchedule()) {
+                if (delegate.canSchedule() && (currentDocument == null || !currentDocument.monogramSyncPending)) {
                     items.add(LocaleController.getString(R.string.Schedule));
                     icons.add(R.drawable.msg_autodelete);
                     actions.add(3);

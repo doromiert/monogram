@@ -578,6 +578,9 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
     }
 
     public void setImage(ImageLocation mediaLocation, String mediaFilter, ImageLocation imageLocation, String imageFilter, ImageLocation thumbLocation, String thumbFilter, Drawable thumb, long size, String ext, Object parentObject, int cacheType) {
+        if (org.telegram.messenger.xmpp.MonogramSyncPlaceholder.pending(mediaLocation,imageLocation,thumbLocation)) {
+            setImageBitmap(new org.telegram.messenger.xmpp.MonogramSyncPlaceholder(this));return;
+        }
         imageLocation = localProfileImage(imageLocation);
         mediaLocation = localProfileImage(mediaLocation);
         thumbLocation = localProfileImage(thumbLocation);

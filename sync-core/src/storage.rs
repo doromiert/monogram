@@ -47,7 +47,7 @@ impl Meta {
     pub fn valid(&self) -> bool {
         matches!(
             self.kind.as_str(),
-            "account" | "pack" | "pack-order" | "wallet" | "fingerprint" | "token" | "monero-settings" | "folders"
+            "account" | "pack" | "pack-meta" | "pack-order" | "wallet" | "fingerprint" | "token" | "monero-settings" | "folders"
         ) && !self.owner.is_empty()
             && self.owner.len() <= 1024
             && self.owner.contains('@')
@@ -232,7 +232,8 @@ impl Store {
         Ok(hash(&B64.decode(&self.state.cert).map_err(failure)?))
     }
     pub fn metas(&self) -> Vec<Meta> {
-        self.state.objects.values().cloned().collect()
+        let mut metas:Vec<_>=self.state.objects.values().cloned().collect();
+        metas.sort_by_key(|m|m.kind=="pack");metas
     }
     pub fn path(&self, meta: &Meta) -> PathBuf {
         self.root
@@ -408,12 +409,7 @@ impl Store {
         Ok(())
     }
     pub fn pending(&self) -> Vec<Meta> {
-        self.state
-            .objects
-            .values()
-            .filter(|m| self.state.applied.get(&m.key()) != Some(&m.digest))
-            .cloned()
-            .collect()
+        self.metas().into_iter().filter(|m|self.state.applied.get(&m.key())!=Some(&m.digest)).collect()
     }
 }
 
@@ -527,6 +523,14 @@ impl Drop for State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn metadata_and_settings_precede_pack_media_in_transfer_and_import_order() {
+        let root=std::env::temp_dir().join(format!("monogram-priority-{}",uuid::Uuid::new_v4()));let mut store=Store::open(root.clone(),random(),"Fixture".into()).unwrap();
+        let owner="me@example.invalid";let id=uuid::Uuid::new_v4().to_string();let path=root.join("fixture");fs::write(&path,b"media").unwrap();
+        store.put("pack",owner,&id,&path).unwrap();store.put("pack-meta",owner,&id,&path).unwrap();store.put("pack-order",owner,"order",&path).unwrap();store.state.applied.clear();
+        for records in [store.metas(),store.pending()] {assert_eq!(records.last().unwrap().kind,"pack");assert_eq!(records.iter().filter(|m|m.kind!="pack").count(),2);}
+        drop(store);fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn store_lock_excludes_a_second_owner_and_releases_on_close() {
         let root=std::env::temp_dir().join(format!("monogram-lock-{}",uuid::Uuid::new_v4()));

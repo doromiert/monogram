@@ -28439,6 +28439,7 @@ public class TLRPC {
     }
 
     public static abstract class Document extends TLObject {
+        public boolean monogramSyncPending; // Local UI state; never serialized into XMPP/TL.
         public int flags;
         public long id;
         public long access_hash;

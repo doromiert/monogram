@@ -242,6 +242,21 @@ public class MonogramPacksTest {
             }
         }
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void metadataPrecedesArtworkAndArchivePreservesPlaceholderIdsAndOrder() throws Exception {
+        jid="metadata@example.org";String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        File directory=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"directory",ReflectionHelpers.ClassParameter.from(String.class,scope));directory.mkdirs();
+        byte[] png=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+        ArrayList<MonogramPacks.Pack> packs=new ArrayList<>();
+        for(int i=0;i<2;i++){MonogramPacks.Pack pack=new MonogramPacks.Pack();pack.id=0x4d50006000000001L+i;pack.name="Pack "+i;pack.source="local:fixture";MonogramPacks.Item item=new MonogramPacks.Item();item.id=0x4d50007000000001L+i;item.name="Wave";item.emoji="👋";item.mime="image/png";item.file="fixture"+i+".png";item.width=item.height=1;pack.items.add(item);packs.add(pack);java.nio.file.Files.write(new File(directory,item.file).toPath(),png);}
+        ReflectionHelpers.callStaticMethod(MonogramPacks.class,"write",ReflectionHelpers.ClassParameter.from(String.class,scope),ReflectionHelpers.ClassParameter.from(ArrayList.class,packs));
+        MonogramPacks.Pack tagged=MonogramPacks.syncTag(0,packs.get(0).id);org.json.JSONObject metadata=MonogramPacks.syncMetadata(tagged);File archive=MonogramPacks.exportSyncArchive(0,tagged);
+        packs.remove(0);ReflectionHelpers.callStaticMethod(MonogramPacks.class,"write",ReflectionHelpers.ClassParameter.from(String.class,scope),ReflectionHelpers.ClassParameter.from(ArrayList.class,packs));new File(directory,tagged.items.get(0).file).delete();
+        MonogramPacks.Pack pending=MonogramPacks.importSyncMetadata(0,metadata);assertTrue(pending.syncPending);assertThrows(java.io.IOException.class,()->MonogramPacks.exportSyncArchive(0,pending));assertTrue(MonogramPacks.document(0,pending.items.get(0).id).monogramSyncPending);assertFalse(new File(MonogramPacks.document(0,pending.items.get(0).id).localPath).exists());
+        MonogramPacks.reorder(0,false,java.util.Arrays.asList(packs.get(0).id,pending.id));
+        MonogramPacks.Pack ready=MonogramPacks.importSyncArchive(0,archive,tagged.syncId);assertFalse(ready.syncPending);assertEquals(pending.id,ready.id);assertEquals(pending.items.get(0).id,ready.items.get(0).id);assertEquals(packs.get(0).id,MonogramPacks.packs(0).get(0).id);assertTrue(new File(MonogramPacks.document(0,ready.items.get(0).id).localPath).isFile());assertFalse(MonogramPacks.document(0,ready.items.get(0).id).monogramSyncPending);
+        archive.delete();
+    }
     @Test public void syncedPackOrderUsesStableIdsAndWaitsForMissingPacks() throws Exception {
         jid="sync-order@example.org";
         String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));

@@ -767,6 +767,7 @@ public class MediaDataController extends BaseController {
         }
         int count = type == TYPE_IMAGE || type == TYPE_FAVE ? arrayList.size() : Math.min(arrayList.size(), 20);
         ArrayList<TLRPC.Document> result = new ArrayList<>(arrayList.subList(0, count));
+        for(int i=0;i<result.size();i++){TLRPC.Document current=org.telegram.messenger.xmpp.MonogramPacks.document(currentAccount,result.get(i).id);if(current!=null)result.set(i,current);}
         if (firstEmpty && !result.isEmpty() && !StickersAlert.DISABLE_STICKER_EDITOR) {
             result.add(0, new TLRPC.TL_documentEmpty());
         }
@@ -777,6 +778,23 @@ public class MediaDataController extends BaseController {
         return recentStickers[type];
     }
 
+    public boolean localRecentStickersReady(){
+        if(!recentStickersLoaded[TYPE_IMAGE])loadRecents(TYPE_IMAGE,false,true,false);
+        if(!recentStickersLoaded[TYPE_FAVE])loadRecents(TYPE_FAVE,false,true,false);
+        return recentStickersLoaded[TYPE_IMAGE]&&recentStickersLoaded[TYPE_FAVE];
+    }
+    /** UI-thread import/reorder of the local XMPP library, persisted without Telegram requests. */
+    public void applySyncedLocalStickers(int type,ArrayList<TLRPC.Document> local){
+        if(type!=TYPE_IMAGE&&type!=TYPE_FAVE)throw new IllegalArgumentException("Unsupported local sticker list");
+        ArrayList<TLRPC.Document> values=new ArrayList<>(local);
+        for(TLRPC.Document document:recentStickers[type])if(!org.telegram.messenger.xmpp.MonogramPacks.isLocalId(document.id))values.add(document);
+        recentStickers[type]=values;recentStickersLoaded[type]=true;processLoadedRecentDocuments(type,values,false,0,true);
+    }
+    public void reorderLocalFavoriteStickers(java.util.List<Long> ids){
+        ArrayList<TLRPC.Document> remaining=new ArrayList<>(recentStickers[TYPE_FAVE]),result=new ArrayList<>();
+        for(Long id:ids)for(int i=0;i<remaining.size();i++)if(remaining.get(i).id==id){result.add(remaining.remove(i));break;}
+        result.addAll(remaining);recentStickers[TYPE_FAVE]=result;processLoadedRecentDocuments(TYPE_FAVE,result,false,0,true);
+    }
     public boolean isStickerInFavorites(TLRPC.Document document) {
         if (document == null) {
             return false;

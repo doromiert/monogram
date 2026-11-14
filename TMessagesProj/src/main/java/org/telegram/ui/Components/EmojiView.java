@@ -1347,6 +1347,7 @@ public class EmojiView extends FrameLayout implements
         if (imageViewEmoji == null) {
             return;
         }
+        if(imageViewEmoji.getSpan()!=null&&org.telegram.messenger.xmpp.MonogramPacks.syncPending(currentAccount,imageViewEmoji.getSpan().getDocumentId()))return;
         if (imageViewEmoji.getSpan() != null) {
 
 //                    openEmojiPackAlert(pack.set);
@@ -1624,7 +1625,8 @@ public class EmojiView extends FrameLayout implements
 
                 if (emojiGridView.getAdapter() == emojiAdapter && emojiAdapter.favoritesHeaderRow >= 0
                         && position > emojiAdapter.favoritesHeaderRow && position <= emojiAdapter.favoritesHeaderRow + emojiAdapter.favorites.size()) {
-                    showFavoriteEmojiMenu((String) viewEmoji.getTag(), false);
+                    if(viewEmoji.getSpan()!=null)return false;
+                    showFavoriteEmojiMenu(emojiAdapter.favorites.get(position-emojiAdapter.favoritesHeaderRow-1), false);
                     emojiGridView.clearTouchesFor(view); return true;
                 }
                 if (viewEmoji.isRecent) {
@@ -1691,6 +1693,12 @@ public class EmojiView extends FrameLayout implements
                 }
             }
             return false;
+        });
+        new MonogramFavoriteDrag(emojiGridView,new MonogramFavoriteDrag.Model(){
+            public boolean favorite(int position){return emojiGridView.getAdapter()==emojiAdapter&&emojiAdapter.favoritesHeaderRow>=0&&position>emojiAdapter.favoritesHeaderRow&&position<=emojiAdapter.favoritesHeaderRow+emojiAdapter.favorites.size();}
+            public void started(){emojiGridView.clearAllTouches();}
+            public void move(int from,int to){int a=from-emojiAdapter.favoritesHeaderRow-1,b=to-emojiAdapter.favoritesHeaderRow-1;String code=emojiAdapter.favorites.remove(a);emojiAdapter.favorites.add(b,code);Integer hash=emojiAdapter.rowHashCodes.remove(from);emojiAdapter.rowHashCodes.add(to,hash);emojiAdapter.notifyItemMoved(from,to);}
+            public void finish(){Emoji.reorderFavoriteEmoji(emojiAdapter.favorites);emojiAdapter.notifyDataSetChanged();}
         });
         emojiGridView.setInstantClick(true);
         emojiGridView.setLayoutManager(emojiLayoutManager = new GridLayoutManager(context, 8) {
@@ -2302,13 +2310,21 @@ public class EmojiView extends FrameLayout implements
 
                 ContentPreviewViewer.getInstance().reset();
 
-                if (cell.isDisabled()) {
+                if (cell.isDisabled() || cell.getSticker()!=null&&cell.getSticker().monogramSyncPending) {
                     return;
                 }
                 cell.disable();
                 delegate.onStickerSelected(cell, cell.getSticker(), query, cell.getParentObject(), cell.getSendAnimationData(), true, 0, 0);
             };
             stickersGridView.setOnItemClickListener(stickersOnItemClickListener);
+            new MonogramFavoriteDrag(stickersGridView,new MonogramFavoriteDrag.Model(){
+                private boolean changed;
+                private TLRPC.Document document(int position){Object item=stickersGridAdapter==null?null:stickersGridAdapter.cache.get(position);return item instanceof TLRPC.Document?(TLRPC.Document)item:null;}
+                public boolean favorite(int position){if(stickersGridView.getAdapter()!=stickersGridAdapter||!"fav".equals(stickersGridAdapter.rowStartPack.get(stickersGridAdapter.positionToRow.get(position,Integer.MIN_VALUE))))return false;TLRPC.Document document=document(position);if(document==null)return false;for(TLRPC.Document favorite:favouriteStickers)if(favorite.id==document.id)return true;return false;}
+                public void move(int from,int to){TLRPC.Document a=document(from),b=document(to);int ai=-1,bi=-1;for(int i=0;i<favouriteStickers.size();i++){if(favouriteStickers.get(i).id==a.id)ai=i;if(favouriteStickers.get(i).id==b.id)bi=i;}if(ai<0||bi<0)return;favouriteStickers.add(bi,favouriteStickers.remove(ai));
+                    int index=0;for(int i=0;i<stickersGridAdapter.cache.size();i++){int position=stickersGridAdapter.cache.keyAt(i);if(favorite(position))stickersGridAdapter.cache.setValueAt(i,favouriteStickers.get(index++));}stickersGridAdapter.notifyItemMoved(from,to);changed=true;}
+                public void finish(){if(changed){ArrayList<Long> ids=new ArrayList<>();for(TLRPC.Document document:favouriteStickers)ids.add(document.id);MediaDataController.getInstance(currentAccount).reorderLocalFavoriteStickers(ids);changed=false;}}
+            });
             stickersGridView.setGlowColor(getThemedColor(Theme.key_chat_emojiPanelBackground));
             stickersContainer.addView(stickersGridView);
             stickersEmptyView = new LinearLayout(context);
@@ -6146,6 +6162,7 @@ public class EmojiView extends FrameLayout implements
             AndroidUtilities.cancelRunOnUIThread(updateStickersLoadedDelayed);
             AndroidUtilities.runOnUIThread(updateStickersLoadedDelayed, 100);
         } else if (id == NotificationCenter.emojiLoaded) {
+            if(args.length>0&&Boolean.TRUE.equals(args[0])&&emojiAdapter!=null)emojiAdapter.notifyDataSetChanged();
             if (stickersGridView != null) {
                 int count = stickersGridView.getChildCount();
                 for (int a = 0; a < count; a++) {
@@ -7342,7 +7359,7 @@ public class EmojiView extends FrameLayout implements
                 trendingRow = -1;
                 recentlyUsedHeaderRow = -1;
             }
-            favorites = Emoji.getFavoriteEmoji();
+            favorites = Emoji.getFavoriteEmoji();if(!allowAnimatedEmoji)favorites.removeIf(code->code.startsWith("animated_"));
             recent = getRecentEmoji();
             favoritesHeaderRow = -1;
             if (!favorites.isEmpty()) {

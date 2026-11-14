@@ -30,6 +30,12 @@ public class MonogramFavoriteEmojiTest {
             return RuntimeEnvironment.getApplication().getSharedPreferences("emoji",Context.MODE_PRIVATE);
         }
     }
+    @Test public void customFavoritesReorderAndSyncedRecentOrderPersist(){
+        ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();Settings.getGlobalEmojiSettings().edit().clear().commit();
+        String custom="animated_5570952739057303553";Emoji.setFavoriteEmoji("🔥",true);Emoji.setFavoriteEmoji(custom,true);Emoji.setFavoriteEmoji("🐢",true);Emoji.reorderFavoriteEmoji(Arrays.asList(custom,"🐢","🔥"));
+        assertEquals(Arrays.asList(custom,"🐢","🔥"),Emoji.getFavoriteEmoji());assertFalse(Emoji.getRecentEmojiWithFavorites(false).contains(custom));
+        Emoji.applySyncedLibrary(Arrays.asList("🐢",custom),Arrays.asList("😂",custom,"🔥"));assertEquals(Arrays.asList("🐢",custom),Emoji.getFavoriteEmoji());assertEquals(Arrays.asList("😂",custom,"🔥"),Emoji.recentEmoji);
+    }
     @Test public void favoritesPersistIndependentlyOfRecentsAndAppearFirstWithoutDuplicates() {
         ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();
         ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();

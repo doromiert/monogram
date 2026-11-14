@@ -86,6 +86,25 @@ are rejected. Exact metadata/bytes are forwarded without rewriting origin.
   `{id,source,installed,private_pack,connected,auto_sync}`. Item `id`s are stable
   UUIDs. Existing XMSP integrity/media/path bounds apply. Manual import/export is
   independent from sync identities and source policies.
+* `pack-meta/<UUID>`: lightweight `{id,name,source,emojis,installed,private,
+  connected,auto,items:[{id,name,emoji,mime,w,h}]}`. Pack and item IDs are UUIDs;
+  no device-local ID, path or artwork is included. At most 4,096 items and 2 MiB
+  JSON; dimensions are 1–4,096 and MIME types are PNG, WebP, GIF, WebM or TGS.
+  Clients publish all metadata before artwork and exchange lightweight records
+  before `pack` archives. Receivers install placeholders immediately, show
+  download indicators and preserve their local IDs and pack position when the
+  authenticated archive arrives. Pending placeholders cannot be sent/exported.
+* `pack-order/order`: required `stickers` and `emojis` arrays of shared pack
+  UUIDs, with optional `favorites`/`recent` item-UUID arrays (up to 4,096),
+  `emoji_favorites`/`emoji_recent`/`emoji_pinned` canonical Unicode arrays (up to
+  512), and `emoji_favorite_order`/`emoji_recent_order` mixed display-order
+  arrays (up to 4,096). Mixed entries are `item:<shared UUID>` or
+  `unicode:<canonical Unicode>`. Unicode wire identities omit presentation
+  selectors U+FE0E/U+FE0F; native rendering restores emoji presentation. Arrays have
+  unique entries. Missing optional
+  fields preserve existing preferences. Native application defers references
+  until metadata/items exist. Fresh default-only lists do not overwrite a
+  peer's library; placeholder state is not republished before import completes.
 * `folders/folders`: `{rules:{name:rule},order:[names including All],all_hidden,
   rooms?:[JIDs]}`. Rule fields: types (`contacts`, `non_contacts`, `groups`,
   `channels`, `bots`), boolean exclusions (`exclude_muted`, `exclude_read`,
