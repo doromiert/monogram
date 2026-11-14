@@ -52,6 +52,11 @@ public final class WalletVault {
         }
         return (SecretKey)store.getKey(alias,null);
     }
+    public JSONObject sealExisting(char[] value)throws Exception {
+        byte[] password=new byte[value.length];for(int i=0;i<value.length;i++){if(value[i]>127)throw new IllegalArgumentException("Invalid wallet password.");password[i]=(byte)value[i];}
+        try{Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());cipher.updateAAD(associatedData);return new JSONObject().put("version",1).put("iv",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).put("ciphertext",Base64.encodeToString(cipher.doFinal(password),Base64.NO_WRAP));}
+        catch(UserNotAuthenticatedException auth){throw new AuthenticationRequired();}finally{Arrays.fill(password,(byte)0);}
+    }
     public Authorization authorizeRestore() throws Exception {
         byte[] random=new byte[32];new SecureRandom().nextBytes(random);
         byte[] password=Base64.encode(random,Base64.NO_WRAP);Arrays.fill(random,(byte)0);

@@ -6420,7 +6420,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         }
                     }
                 }
-                final boolean hideAllChats = customFolderCount > 1 && org.telegram.utils.settings.MonogramAppearance.hideAllChats.get();
+                final boolean hideAllChats = customFolderCount > 0 && org.telegram.utils.settings.MonogramAppearance.hideAllChats.get();
                 if (hideAllChats && firstCustomIndex >= 0 && (stableId == 0 || id >= 0 && id < filters.size() && filters.get(id).isDefault())) {
                     filterTabsView.resetTabId();
                     id = firstCustomIndex;

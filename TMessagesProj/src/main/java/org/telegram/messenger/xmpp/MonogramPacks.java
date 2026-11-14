@@ -42,11 +42,13 @@ public final class MonogramPacks {
     private MonogramPacks() {}
     public static final class Item {
         public long id;
+        public String syncId = "";
         public String name, emoji, mime, file, remoteId = "";
         public int width, height;
     }
     public static final class Pack {
         public long id;
+        public String syncId = "";
         public String name, source;
         public boolean emojis, installed = true;
         public boolean privatePack = true, connected = false, autoSync = false;
@@ -194,6 +196,53 @@ public final class MonogramPacks {
         CACHE.remove(scope(account));
         AnimatedEmojiDrawable.clearMonogramPacks(account);
     }
+
+    static void validateSyncSource(String source){parseLink(source);}
+    public static String syncToken(int account)throws Exception {String sealed=preferences(account).getString("token","");return sealed.isEmpty()?"":new AccountVault(account).decrypt(sealed);}
+    public static synchronized Pack syncTag(int account,long packId)throws Exception {
+        String scope=scope(account);ArrayList<Pack> list=copy(read(scope));
+        for(Pack pack:list)if(pack.id==packId){boolean changed=false;
+            if(pack.syncId.isEmpty()){pack.syncId=UUID.randomUUID().toString();changed=true;}
+            for(Item item:pack.items)if(item.syncId.isEmpty()){item.syncId=UUID.randomUUID().toString();changed=true;}
+            if(changed)write(scope,list);return pack;
+        }throw new IOException("Pack was removed.");
+    }
+    public static String syncSignature(Pack pack)throws Exception {
+        JSONObject value=new JSONObject().put("id",pack.syncId).put("name",pack.name).put("source",pack.source)
+            .put("emojis",pack.emojis).put("installed",pack.installed).put("private",pack.privatePack).put("connected",pack.connected).put("auto",pack.autoSync);
+        JSONArray items=new JSONArray();for(Item item:pack.items)items.put(new JSONObject().put("id",item.syncId).put("name",item.name).put("emoji",item.emoji).put("mime",item.mime).put("file",item.file).put("w",item.width).put("h",item.height));
+        return MonogramLanSync.digest(value.put("items",items).toString());
+    }
+    public static File exportSyncArchive(int account,Pack pack)throws Exception {
+        Request request=new Request(account);File output=File.createTempFile("pack-sync-",".xmsp",ApplicationLoader.applicationContext.getNoBackupFilesDir());
+        try{MonogramPackArchive.write(pack,directory(scope(account)),output,request::check);return output;}catch(Exception error){output.delete();throw error;}
+    }
+    private static void retainSyncHistory(String scope,ArrayList<Pack> list,Pack previous,Pack incoming,Set<Long> pending){
+        ArrayList<Item> removed=new ArrayList<>();for(Item old:previous.items){boolean keep=false;for(Item item:incoming.items)if(item.id==old.id){keep=true;break;}if(!keep)removed.add(old);}if(removed.isEmpty())return;
+        String source="local:replaced:"+previous.id;Pack archive=null;for(Pack pack:list)if(source.equals(pack.source))archive=pack;
+        if(archive==null){archive=new Pack();archive.id=id(scope,pending);archive.name=previous.name;archive.source=source;archive.emojis=previous.emojis;archive.installed=false;list.add(archive);}archive.items.addAll(removed);
+    }
+    public static Pack importSyncArchive(int account,File archive,String syncId)throws Exception {
+        Request request=new Request(account);String scope=scope(account);File staging=File.createTempFile("sync-pack-","",ApplicationLoader.applicationContext.getNoBackupFilesDir());
+        if(!staging.delete()||!staging.mkdir())throw new IOException("Cannot stage pack.");ArrayList<File> moved=new ArrayList<>();
+        try{
+            Pack pack=MonogramPackArchive.read(archive,staging,request::check,(n,c,t)->{});
+            if(!pack.syncId.equals(syncId))throw new IOException("Pack sync identity does not match.");
+            synchronized(MonogramPacks.class){request.check();ArrayList<Pack> list=copy(read(scope));Pack previous=null;
+                for(Pack p:list)if(p.syncId.equals(syncId)){previous=p;break;}
+                Set<Long> pending=new HashSet<>();pack.id=previous==null?id(scope,pending):previous.id;
+                Map<String,Long> ids=new HashMap<>();if(previous!=null)for(Item item:previous.items)ids.put(item.syncId,item.id);
+                File targetDir=directory(scope);if(!targetDir.isDirectory()&&!targetDir.mkdirs())throw new IOException();Set<String> files=new HashSet<>();
+                for(Item item:pack.items){item.id=ids.containsKey(item.syncId)?ids.get(item.syncId):id(scope,pending);
+                    if(files.add(item.file)){File target=new File(targetDir,item.file);if(target.exists()||!new File(staging,item.file).renameTo(target))throw new IOException();moved.add(target);}}
+                request.check();if(previous!=null){retainSyncHistory(scope,list,previous,pack,pending);list.set(list.indexOf(previous),pack);}else list.add(0,pack);
+                write(scope,list);request.committed=true;moved.clear();
+            }
+            AndroidUtilities.runOnUIThread(()->{AnimatedEmojiDrawable.clearMonogramPacks(account);refresh(account);});
+            return pack;
+        }finally{for(File f:moved)f.delete();File[] files=staging.listFiles();if(files!=null)for(File f:files)f.delete();staging.delete();}
+    }
+
     public static boolean configured(int account) { return preferences(account).contains("token"); }
     public static void saveToken(int account, String value) throws Exception {
         String token = value.trim();
@@ -207,9 +256,9 @@ public final class MonogramPacks {
     private static ArrayList<Pack> copy(ArrayList<Pack> source) {
         ArrayList<Pack> result = new ArrayList<>();
         for (Pack old : source) {
-            Pack pack = new Pack(); pack.id = old.id; pack.name = old.name; pack.source = old.source; pack.emojis = old.emojis; pack.installed = old.installed; pack.privatePack = old.privatePack; pack.connected = old.connected; pack.autoSync = old.autoSync; pack.lastSync = old.lastSync; pack.syncError = old.syncError;
+            Pack pack = new Pack(); pack.id = old.id; pack.syncId=old.syncId; pack.name = old.name; pack.source = old.source; pack.emojis = old.emojis; pack.installed = old.installed; pack.privatePack = old.privatePack; pack.connected = old.connected; pack.autoSync = old.autoSync; pack.lastSync = old.lastSync; pack.syncError = old.syncError;
             for (Item oldItem : old.items) {
-                Item item = new Item(); item.id = oldItem.id; item.name = oldItem.name; item.emoji = oldItem.emoji; item.mime = oldItem.mime;
+                Item item = new Item(); item.id = oldItem.id; item.syncId=oldItem.syncId; item.name = oldItem.name; item.emoji = oldItem.emoji; item.mime = oldItem.mime;
                 item.file = oldItem.file; item.remoteId = oldItem.remoteId; item.width = oldItem.width; item.height = oldItem.height; pack.items.add(item);
             }
             result.add(pack);
@@ -225,7 +274,7 @@ public final class MonogramPacks {
             Set<Long> used = new HashSet<>();
             for (int i = 0; i < array.length(); i++) {
                 JSONObject object = array.getJSONObject(i); Pack pack = new Pack();
-                pack.id = object.getLong("id"); if (!localId(pack.id) || !used.add(pack.id)) throw new IOException(); pack.name = name(object.getString("name")); pack.source = object.optString("source");
+                pack.syncId=object.optString("syncId",""); pack.id = object.getLong("id"); if (!localId(pack.id) || !used.add(pack.id)) throw new IOException(); pack.name = name(object.getString("name")); pack.source = object.optString("source");
                 pack.emojis = object.getBoolean("emojis"); pack.installed = object.optBoolean("installed", true);
                 pack.privatePack = object.optBoolean("privatePack", true); pack.connected = object.optBoolean("connected", false);
                 if (pack.connected) parseLink(pack.source);
@@ -236,7 +285,7 @@ public final class MonogramPacks {
                 JSONArray items = object.getJSONArray("items");
                 for (int j = 0; j < items.length(); j++) {
                     JSONObject entry = items.getJSONObject(j); Item item = new Item();
-                    item.id = entry.getLong("id"); item.name = name(entry.getString("name")); item.emoji = tag(entry.optString("emoji", "🙂"));
+                    item.syncId=entry.optString("syncId",""); item.id = entry.getLong("id"); item.name = name(entry.getString("name")); item.emoji = tag(entry.optString("emoji", "🙂"));
                     item.mime = entry.getString("mime"); item.file = entry.getString("file"); item.remoteId = entry.optString("remoteId", "");
                     item.width = dimension(entry.optInt("width", 512)); item.height = dimension(entry.optInt("height", 512));
                     if (!localId(item.id) || !used.add(item.id) || !MonogramStickers.supported(item.mime) || !item.file.matches("[A-Za-z0-9_-]+\\.(webp|png|gif|tgs|webm)")) throw new IOException();
@@ -259,9 +308,9 @@ public final class MonogramPacks {
         }
         JSONArray array = new JSONArray();
         for (Pack pack : packs) {
-            JSONObject object = new JSONObject().put("id", pack.id).put("name", pack.name).put("source", pack.source)
+            JSONObject object = new JSONObject().put("syncId",pack.syncId).put("id", pack.id).put("name", pack.name).put("source", pack.source)
                     .put("emojis", pack.emojis).put("installed", pack.installed).put("privatePack", pack.privatePack).put("connected", pack.connected).put("autoSync", pack.autoSync).put("lastSync", pack.lastSync).put("syncError", pack.syncError); JSONArray items = new JSONArray();
-            for (Item item : pack.items) items.put(new JSONObject().put("id", item.id).put("name", item.name).put("emoji", item.emoji)
+            for (Item item : pack.items) items.put(new JSONObject().put("syncId",item.syncId).put("id", item.id).put("name", item.name).put("emoji", item.emoji)
                     .put("mime", item.mime).put("file", item.file).put("remoteId", item.remoteId).put("width", item.width).put("height", item.height));
             array.put(object.put("items", items));
         }
@@ -489,6 +538,7 @@ public final class MonogramPacks {
                     for (Pack pack : copy(read(expectedScope))) if (pack.id == packId) { selected = pack; break; }
                 }
                 if (selected == null) throw new ImportFailure("Pack is no longer available.");
+                selected.syncId="";for(Item item:selected.items)item.syncId="";
                 File directory = new File(ApplicationLoader.applicationContext.getCacheDir(), "monogram-pack-exports/" + expectedScope);
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException();
                 output = File.createTempFile("pack-", ".xmsp", directory);
@@ -530,6 +580,7 @@ public final class MonogramPacks {
                 }
                 Pack pack = MonogramPackArchive.read(archive, staging, operation::check,
                         (name, completed, total) -> job.update("Checking archive artwork", name, completed, total, 0, -1));
+                pack.syncId="";for(Item item:pack.items)item.syncId="";pack.privatePack=true;pack.connected=false;pack.autoSync=false;pack.installed=true;
                 pack.source = "xmsp:" + UUID.randomUUID();
                 job.update("Saving pack", pack.name, pack.items.size(), pack.items.size(), 0, -1);
                 synchronized (MonogramPacks.class) {

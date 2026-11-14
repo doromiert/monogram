@@ -645,6 +645,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
         items.add(SettingCell.Factory.of(5, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.settings_sounds, getString(R.string.SettingsNotifications), getString(R.string.SettingsNotificationsInfo)));
         items.add(SettingCell.Factory.of(6, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, getString(R.string.SettingsData), getString(R.string.SettingsDataInfo)));
+        items.add(SettingCell.Factory.of(1037, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, "Device sync", "Encrypted sync over your local network"));
         items.add(SettingCell.Factory.of(1003, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
                 R.drawable.msg_gif, "GIF search", "GIPHY API key"));
         items.add(SettingCell.Factory.of(1006, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
@@ -766,6 +767,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 1010:
                 if (getParentActivity() instanceof LaunchActivity) ((LaunchActivity)getParentActivity()).checkAppUpdate(true, null);
+                break;
+            case 1037:
+                presentSettingFragment(new MonogramDeviceSyncActivity(currentAccount));
                 break;
             case 1003:
                 presentSettingFragment(new MonogramGifSettingsActivity(currentAccount));

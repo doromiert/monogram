@@ -104,6 +104,17 @@ public class MonogramPacksTest {
         assertEquals("image/gif",imported.items.get(0).mime);
         assertArrayEquals(gif,java.nio.file.Files.readAllBytes(new File(staging,imported.items.get(0).file).toPath()));
     }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void pairedArchiveUpdatesKeepNativeIdsAndDoNotDuplicatePacks()throws Exception {
+        jid="sync-packs@example.org";File directory=java.nio.file.Files.createTempDirectory("paired-native-pack").toFile();
+        byte[] png=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");java.nio.file.Files.write(new File(directory,"opaque.png").toPath(),png);
+        MonogramPacks.Pack source=new MonogramPacks.Pack();source.name="My stickers";source.source="local:fixture";source.syncId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        MonogramPacks.Item item=new MonogramPacks.Item();item.name="Wave";item.emoji="👋";item.mime="image/png";item.file="opaque.png";item.width=item.height=1;item.syncId="11111111-1111-4111-8111-111111111111";source.items.add(item);
+        File archive=new File(directory,"paired.xmsp");MonogramPackArchive.write(source,directory,archive,()->{});MonogramPacks.Pack first=MonogramPacks.importSyncArchive(0,archive,source.syncId);
+        source.name="Renamed stickers";item.emoji="👍";MonogramPackArchive.write(source,directory,archive,()->{});MonogramPacks.Pack second=MonogramPacks.importSyncArchive(0,archive,source.syncId);
+        assertEquals(first.id,second.id);assertEquals(first.items.get(0).id,second.items.get(0).id);assertEquals("Renamed stickers",second.name);assertEquals("👍",second.items.get(0).emoji);assertEquals(1,MonogramPacks.packs(0).size());
+        java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();assertEquals(source.syncId,MonogramPacks.packs(0).get(0).syncId);
+    }
     @Test public void recentAndFavoriteGifCollectionsPersistIndependentlyPerAccount() throws Exception {
         jid="gif-library@example.org";
         org.json.JSONObject image=new org.json.JSONObject().put("url","https://media0.giphy.com/media/example/giphy.gif").put("width","2").put("height","2");

@@ -36,6 +36,12 @@ public final class MonogramXmr implements AutoCloseable {
         try {return org.telegram.messenger.Utilities.bytesToHex(java.security.MessageDigest.getInstance("SHA-256").digest(owner.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}
         catch(java.security.NoSuchAlgorithmException impossible) {throw new AssertionError(impossible);}
     }
+    public static org.json.JSONObject syncSettings(int account)throws Exception {
+        SharedPreferences p=preferences(account,owner(account));return new org.json.JSONObject().put("enabled",p.getBoolean("enabled",false)).put("network",p.getString("network","MAINNET")).put("daemon",p.getString("sync-daemon","")).put("username",p.getString("sync-username","")).put("require_encryption",p.getBoolean("require-encryption",true));
+    }
+    public static void importSyncSettings(int account,org.json.JSONObject value)throws Exception {
+        SharedPreferences p=preferences(account,owner(account));if(!p.edit().putBoolean("enabled",value.getBoolean("enabled")).putString("network",value.getString("network")).putString("sync-daemon",value.getString("daemon")).putString("sync-username",value.getString("username")).putBoolean("require-encryption",value.getBoolean("require_encryption")).commit())throw new java.io.IOException("Cannot save Monero settings.");
+    }
     public static boolean enabled(int account) {
         String owner=owner(account);return !owner.isEmpty() && preferences(account,owner).getBoolean("enabled",false);
     }

@@ -115,7 +115,7 @@ dependencies {
 
 android {
     sourceSets.test.java.srcDirs += ['../tests/android', '../tests/robolectric']
-    sourceSets.main.jniLibs.srcDirs += [rootProject.file('.state/xmr-engine/jni')]
+    sourceSets.main.jniLibs.srcDirs += [rootProject.file('.state/xmr-engine/jni'), rootProject.file('.state/lan-sync/jni')]
     sourceSets.main.jniLibs.srcDir(pqAndroidJni)
     compileSdkVersion 36
     buildToolsVersion '36.0.0'
@@ -316,3 +316,15 @@ tasks.register('verifyPqOmemoSdk') {
     }
 }
 tasks.matching { it.name.matches('merge.*JniLibFolders') }.configureEach { dependsOn 'verifyPqOmemoSdk', preparePqAndroidJni }
+
+// The portable sync engine is built from the same pinned Rust source as desktop.
+def lanSyncTasks = (findProperty('monogramAbi') ?: 'armeabi-v7a,arm64-v8a,x86,x86_64').split(',').collect { abi ->
+    if (!(abi in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'])) throw new GradleException('Unknown device-sync ABI')
+    tasks.register('prepareLanSync_' + abi.replace('-', '_'), Exec) {
+        inputs.files(rootProject.fileTree('sync-core/src'), rootProject.file('sync-core/Cargo.toml'), rootProject.file('sync-core/Cargo.lock'), rootProject.file('scripts/build-lan-sync.sh'))
+        outputs.file(rootProject.file(".state/lan-sync/jni/${abi}/libmonogram_sync.so"))
+        workingDir rootProject.projectDir
+        commandLine 'bash', rootProject.file('scripts/build-lan-sync.sh'), abi
+    }
+}
+tasks.matching { it.name.matches('merge.*JniLibFolders') }.configureEach { dependsOn lanSyncTasks }

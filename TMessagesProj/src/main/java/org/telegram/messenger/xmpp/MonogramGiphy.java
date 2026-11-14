@@ -23,6 +23,7 @@ public final class MonogramGiphy {
     private static SharedPreferences preferences(int account) {
         return ApplicationLoader.applicationContext.getSharedPreferences("monogram-giphy-" + account, Context.MODE_PRIVATE);
     }
+    public static String syncKey(int account)throws Exception {String sealed=preferences(account).getString("key","");return sealed.isEmpty()?"":new AccountVault(account).decrypt(sealed);}
     public static boolean configured(int account) { return preferences(account).contains("key"); }
     private static String libraryKey(int account) {
         return "library-"+java.util.UUID.nameUUIDFromBytes(MonogramController.get(account).accountJid().getBytes(java.nio.charset.StandardCharsets.UTF_8));

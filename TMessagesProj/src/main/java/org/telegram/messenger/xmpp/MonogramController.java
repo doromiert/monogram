@@ -637,7 +637,7 @@ public final class MonogramController {
         if (UserConfig.getInstance(account).isClientActivated() && UserConfig.getInstance(account).getClientUserId() == self
                 && details.jid.toString().equals(accountJid())) publishProfile(self, epoch);
         final int modernDevice = modernStore.device(details.jid.toString());
-        Account proxiedDetails=MonogramCertificates.configure(new Account(details.jid.toString(),details.host,details.port,connectionResource(preferences),MonogramProxy.current()));
+        Account proxiedDetails=MonogramCertificates.configure(new Account(details.jid.toString(),details.host,details.port,connectionResource(preferences),MonogramProxy.current(),null,preferences.getBoolean("direct-tls",false)));
         XmppSession connecting = new XmppSession(proxiedDetails, password, device,
                 new File(ApplicationLoader.getFilesDirFixed(), "monogram-trust-" + account),
                 new com.negzero.monogram.xmpp.Omemo2Device(details.jid.toString(),modernDevice,
@@ -1875,6 +1875,7 @@ public final class MonogramController {
                     attempt.check();
                     if (!preferences.edit().putString("jid", details.jid.toString()).putString("host", host)
                             .putInt("port", port).putString("credential",sealed).commit()) throw new java.io.IOException("Cannot save account");
+                MonogramLanSync.allow(accountJid());
                     attempt.complete(null);
                 }
                 syncOwnReads(true);
@@ -1914,6 +1915,7 @@ public final class MonogramController {
                 requireRegistrationSlot(owner);signingIn=true;connect(details,password);requireRegistrationSlot(owner);
                 if(!preferences.edit().putString("jid",details.jid.toString()).putString("host",host).putInt("port",port)
                         .putString("credential",sealed).commit()) throw new java.io.IOException("Cannot save account");
+                MonogramLanSync.allow(accountJid());
                 syncOwnReads(true);
             } catch(Exception failed) {
                 error=failed;
@@ -1929,7 +1931,23 @@ public final class MonogramController {
             });
         });
     }
+    long syncFolderPeer(String jid,boolean room){if(!room)return store.peer(jid);long known=store.knownRoom(jid);if(known!=0)return known;android.content.ContentValues row=new android.content.ContentValues();row.put("jid",jid);row.put("nickname","");row.put("title",jid);row.put("autojoin",0);store.getWritableDatabase().insertWithOnConflict("rooms",null,row,android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE);return store.knownRoom(jid);}
+    public void syncFingerprints(java.util.function.Consumer<org.json.JSONObject> save)throws Exception {
+        XmppSession current=session;if(current==null)return;String owner=accountJid();
+        if(current.modernAvailable())save.accept(new org.json.JSONObject().put("address",owner).put("mode","classic").put("device",current.modern().device.id).put("fingerprint",Utilities.bytesToHex(current.modern().device.prepare().identity()).toLowerCase(java.util.Locale.ROOT)).put("trust","verified"));
+        if(current.pqAvailable())save.accept(new org.json.JSONObject().put("address",owner).put("mode","pq").put("device",current.pq().device.id).put("fingerprint",current.pq().ownFingerprint()).put("trust","verified"));
+        try{save.accept(new org.json.JSONObject().put("address",owner).put("mode","legacy").put("device",current.ownDeviceId()).put("fingerprint",current.ownFingerprint().toString().replaceAll("[^0-9a-fA-F]","").toLowerCase(java.util.Locale.ROOT)).put("trust","verified"));}catch(IllegalStateException unavailable){}
+    }
+    public org.json.JSONObject syncAccount()throws Exception {return new org.json.JSONObject().put("jid",accountJid()).put("host",preferences.getString("host","")).put("port",preferences.getInt("port",5222)).put("direct_tls",preferences.getBoolean("direct-tls",false)).put("password",vault.decrypt(preferences.getString("credential","")));}
+    public synchronized void importSyncAccount(org.json.JSONObject value)throws Exception {
+        String jid=value.getString("jid");if(MonogramLanSync.excluded(jid))throw new IllegalStateException("Account was removed from this device.");if(!accountJid().isEmpty()&&!accountJid().equals(jid))throw new IllegalStateException("Account slot changed.");
+        String sealed=vault.encrypt(value.getString("password"));
+        if(!preferences.edit().putString("jid",jid).putString("host",value.getString("host")).putInt("port",value.getInt("port")).putBoolean("direct-tls",value.getBoolean("direct_tls")).putString("credential",sealed).commit())throw new java.io.IOException("Cannot save synchronized account.");
+        self=store.peer(jid);
+        AndroidUtilities.runOnUIThread(()->{if(!jid.equals(accountJid())||MonogramLanSync.excluded(jid))return;TLRPC.User user=ownUser();UserConfig config=UserConfig.getInstance(account);config.setCurrentUser(user);config.syncContacts=false;config.saveConfig(true);ArrayList<TLRPC.User> users=new ArrayList<>();users.add(user);MessagesStorage.getInstance(account).putUsersAndChats(users,null,true,true);MessagesController.getInstance(account).putUser(user,false);NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.mainUserInfoChanged);ApplicationLoader.startPushService();});
+    }
     public void logout() {
+        MonogramLanSync.exclude(accountJid());
         com.negzero.monogram.wallet.MonogramWallet.lockAccount(account);
         org.telegram.ui.Wallet.GramWallet.cleanup(account);
         final String departing=accountJid();
@@ -1948,7 +1966,7 @@ public final class MonogramController {
         linkPreviews.cancel();
         MonogramDialogState.clear(account,departing);
         MonogramPacks.logout(account);
-        if (!preferences.edit().remove("jid").remove("credential").commit()) throw new IllegalStateException("Cannot remove saved credential");
+        synchronized(this){if (!preferences.edit().remove("jid").remove("credential").remove("direct-tls").commit()) throw new IllegalStateException("Cannot remove saved credential");}
         synchronized(displayedSettingsLock) {
             displayedPrivacyEpoch++;displayedReady=false;
             XmppSession current=session;if(current!=null) current.setDisplayedMarkersEnabled(false);

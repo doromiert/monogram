@@ -76,6 +76,13 @@ public class MonogramPackArchiveTest {
         File staging=new File(directory,"restored");assertTrue(staging.mkdir());
         assertEquals(260,MonogramPackArchive.read(archive,staging,CHECK,PROGRESS).items.size());
     }
+    @Test public void syncSnapshotPreservesPortableIdsAndSourcePolicy()throws Exception {
+        File directory=Files.createTempDirectory("xmsp-sync").toFile();MonogramPacks.Pack pack=fixture(directory);
+        pack.syncId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";pack.items.get(0).syncId="11111111-1111-4111-8111-111111111111";pack.connected=true;pack.privatePack=false;pack.installed=false;pack.autoSync=true;
+        File archive=new File(directory,"sync.xmsp");MonogramPackArchive.write(pack,directory,archive,CHECK);File stage=new File(directory,"stage");assertTrue(stage.mkdir());MonogramPacks.Pack restored=MonogramPackArchive.read(archive,stage,CHECK,PROGRESS);
+        assertEquals(pack.syncId,restored.syncId);assertEquals(pack.items.get(0).syncId,restored.items.get(0).syncId);assertEquals(pack.source,restored.source);assertTrue(restored.connected);assertTrue(restored.autoSync);assertFalse(restored.privatePack);assertFalse(restored.installed);
+        String fixture=System.getenv("MONOGRAM_SYNC_PACK_FIXTURE");if(fixture!=null)Files.copy(archive.toPath(),new File(fixture).toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
     private static MonogramPacks.Pack fixture(File directory) throws Exception {
         Files.write(new File(directory,"opaque.png").toPath(),PNG);
         MonogramPacks.Pack pack=new MonogramPacks.Pack();pack.id=0x4d50000100000001L;pack.name="Friends";pack.source="https://t.me/addstickers/NotExported";

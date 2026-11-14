@@ -24,6 +24,7 @@ final class MonogramPackArchive {
         if (pack.items.isEmpty()) throw new IOException("Packs must contain at least one item.");
         JSONObject manifest = new JSONObject().put("format", "xmsp").put("version", 1)
                 .put("name", MonogramPacks.name(pack.name)).put("kind", pack.emojis ? "emoji" : "stickers");
+        if(!pack.syncId.isEmpty())manifest.put("sync",new JSONObject().put("id",pack.syncId).put("source",pack.source).put("installed",pack.installed).put("private_pack",pack.privatePack).put("connected",pack.connected).put("auto_sync",pack.autoSync));
         JSONArray items = new JSONArray(); LinkedHashMap<String, File> files = new LinkedHashMap<>();
         long total = 0;
         for (MonogramPacks.Item item : pack.items) {
@@ -33,7 +34,7 @@ final class MonogramPackArchive {
             validateMedia(data, item.mime, dimension(item.width), dimension(item.height));
             String hash = hash(data), path = "assets/" + hash + extension(item.mime);
             if (!files.containsKey(path)) { total += data.length; if (total > MAX_TOTAL) throw new IOException("Pack exceeds 100 MB."); files.put(path, file); }
-            items.put(new JSONObject().put("id", UUID.randomUUID().toString()).put("name", MonogramPacks.name(item.name))
+            items.put(new JSONObject().put("id", item.syncId.isEmpty()?UUID.randomUUID().toString():item.syncId).put("name", MonogramPacks.name(item.name))
                     .put("emoji", tag(item.emoji)).put("mime", item.mime).put("width", dimension(item.width)).put("height", dimension(item.height))
                     .put("size", data.length).put("sha256", hash).put("path", path));
         }
@@ -82,6 +83,7 @@ final class MonogramPackArchive {
             String kind = string(manifest, "kind");
             if (!kind.equals("stickers") && !kind.equals("emoji")) throw new IOException("Unsupported pack kind.");
             MonogramPacks.Pack pack = new MonogramPacks.Pack(); pack.name = MonogramPacks.name(string(manifest, "name")); pack.emojis = kind.equals("emoji");
+            JSONObject sync=manifest.optJSONObject("sync");if(sync!=null){pack.syncId=UUID.fromString(sync.getString("id")).toString();pack.source=sync.optString("source","");pack.installed=sync.optBoolean("installed",true);pack.privatePack=sync.optBoolean("private_pack",true);pack.connected=sync.optBoolean("connected",false);pack.autoSync=sync.optBoolean("auto_sync",false);if(pack.connected)MonogramPacks.validateSyncSource(pack.source);}
             Object array = manifest.get("items"); if (!(array instanceof JSONArray)) throw new IOException("Missing pack items.");
             JSONArray items = (JSONArray) array;
             if (items.length() < 1) throw new IOException("Packs must contain at least one item.");
@@ -113,7 +115,7 @@ final class MonogramPackArchive {
                     try (FileOutputStream output = new FileOutputStream(new File(staging, filename))) { output.write(data); output.getFD().sync(); }
                     local.put(path, filename);
                 }
-                MonogramPacks.Item imported = new MonogramPacks.Item(); imported.name = MonogramPacks.name(string(item, "name")); imported.emoji = tag(string(item, "emoji"));
+                MonogramPacks.Item imported = new MonogramPacks.Item(); imported.syncId=string(item,"id"); imported.name = MonogramPacks.name(string(item, "name")); imported.emoji = tag(string(item, "emoji"));
                 imported.mime = mime; imported.width = dimension(number(item, "width")); imported.height = dimension(number(item, "height")); imported.file = local.get(path); pack.items.add(imported);
                 progress.update(pack.name, i + 1, items.length());
             }

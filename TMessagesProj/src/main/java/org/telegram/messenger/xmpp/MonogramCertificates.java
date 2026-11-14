@@ -29,7 +29,7 @@ public final class MonogramCertificates {
             }catch(CertificateEncodingException failed){throw new IllegalStateException("Could not read server certificate",failed);}
             catch(CertificateException failed){throw new IllegalStateException(failed);}
         });
-        return new Account(account.jid.toString(),account.host,account.port,account.resource.toString(),account.proxy,trust);
+        return new Account(account.jid.toString(),account.host,account.port,account.resource.toString(),account.proxy,trust,account.directTls);
     }
     public static void approve(Account account,X509Certificate certificate)throws Exception {
         X509Certificate current=pending(account);ServerCertificateTrust.selfSigned(new X509Certificate[]{certificate});

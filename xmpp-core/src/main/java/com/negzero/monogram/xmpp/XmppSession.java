@@ -93,7 +93,9 @@ public final class XmppSession implements AutoCloseable {
     private static File keyRoot;
     private static LegacyOmemoRecords.Factory legacyRecordsFactory;
     private static final class ManagedConnection extends XMPPTCPConnection {
-        ManagedConnection(XMPPTCPConnectionConfiguration config) { super(config); }
+        private final DirectTlsSocketFactory direct;
+        ManagedConnection(XMPPTCPConnectionConfiguration config) { super(config);direct=config.getSocketFactory() instanceof DirectTlsSocketFactory?(DirectTlsSocketFactory)config.getSocketFactory():null; }
+        @Override public boolean isSecureConnection(){return direct==null?super.isSecureConnection():direct.secure();}
         @Override protected void parseAndProcessStanza(org.jivesoftware.smack.xml.XmlPullParser parser)
                 throws org.jivesoftware.smack.xml.XmlPullParserException, java.io.IOException, InterruptedException {
             try { super.parseAndProcessStanza(parser); }
@@ -227,8 +229,9 @@ public final class XmppSession implements AutoCloseable {
                 .setResource(account.resource).setSecurityMode(SecurityMode.required)
                 .setSendPresence(false).setCompressionEnabled(false).setConnectTimeout(10000).setPort(account.port);
         if (account.host != null) config.setHost(account.host);
-        if(account.proxy!=null)config.setProxyInfo(account.proxy);
+        if(account.proxy!=null&&!account.directTls)config.setProxyInfo(account.proxy);
         if(account.certificateTrust!=null)config.setCustomX509TrustManager(account.certificateTrust);
+        if(account.directTls){config.setHost(account.host==null?account.jid.getDomain().toString():account.host).setSecurityMode(SecurityMode.disabled).setSocketFactory(new DirectTlsSocketFactory(account));}
         connection = new ManagedConnection(config.build());
         XmppStories.initialize(connection);
         connection.setReplyTimeout(15000);

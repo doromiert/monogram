@@ -71,6 +71,8 @@ public class MonogramLoginActivity extends BaseFragment {
         spacer.setMinimumHeight(AndroidUtilities.isTablet() ? 0 : AndroidUtilities.statusBarHeight);
         keyboardLinearLayout.addView(spacer);
         xmppView = new XmppView(context);
+        TextView sync=new TextView(context);sync.setText("Sync from another device");sync.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));sync.setGravity(Gravity.CENTER);sync.setPadding(dp(16),dp(16),dp(16),dp(16));sync.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector),2));sync.setOnClickListener(v->presentFragment(new MonogramDeviceSyncActivity(currentAccount)));
+        keyboardLinearLayout.addView(sync,LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT,LayoutHelper.WRAP_CONTENT));
         keyboardLinearLayout.addView(xmppView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT,
                 AndroidUtilities.isTablet() ? 26 : 18, 30, AndroidUtilities.isTablet() ? 26 : 18, 0));
 
@@ -133,6 +135,7 @@ public class MonogramLoginActivity extends BaseFragment {
     @Override public void onResume() {
         super.onResume();
         AndroidUtilities.requestAdjustResize(getParentActivity(), classGuid);
+        if(UserConfig.getInstance(currentAccount).isClientActivated()&&!destroyed&&getParentActivity()!=null){MainTabsActivity tabs=new MainTabsActivity();tabs.setCurrentAccount(currentAccount);presentFragment(tabs,true);}
     }
     @Override public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
         super.onTransitionAnimationEnd(isOpen, backward);

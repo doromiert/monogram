@@ -6793,6 +6793,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         //    refreshRateController.start();
         //}
         scheduleMonogramBatteryPrompt();
+        org.telegram.messenger.xmpp.MonogramLanSync.install();
     }
 
     @Override

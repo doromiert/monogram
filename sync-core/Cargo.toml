@@ -1,0 +1,26 @@
+[package]
+name = "monogram-sync"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+[lib]
+crate-type = ["rlib", "cdylib"]
+[features]
+android-jni = ["dep:jni"]
+[dependencies]
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring", "crypto"] }
+ring = "=0.17.14"
+spake2 = "=0.4.0"
+url = "2.5"
+tiny-keccak = {version="=2.0.2",features=["keccak"]}
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+zeroize = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+socket2 = { version = "0.6", features = ["all"] }
+jni = { version = "=0.21.1", optional = true }
+
+[target.'cfg(not(target_os="android"))'.dependencies]
+get_if_addrs = "=0.5.3"

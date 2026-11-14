@@ -249,6 +249,50 @@ public final class MonogramWallet {
         if(!owner.equals(MonogramController.get(account).accountJid()) || !MonogramXmr.enabled(account))throw new IllegalStateException("Wallet access changed. Reopen Monero settings.");
         try(MonogramXmr settings=new MonogramXmr(account)){if(settings.network()!=network)throw new IllegalStateException("The wallet network changed.");}
     }
+    /** Portable encrypted .keys only; active approvals, caches and platform Keystore blobs never leave this device. */
+    public JSONObject syncMetadata()throws Exception {
+        if(!exists()||claimId!=null)return null;
+        return new JSONObject().put("name",WalletRegistry.name(account,owner,network,walletId)).put("network",network.name()).put("address",primary()).put("node",node()).put("height",0).put("max_index",config.optLong("maxIndex",0));
+    }
+    public JSONObject exportSync()throws Exception {
+        java.util.concurrent.Future<JSONObject> job=actor.submit(()->{
+            if(!owner.equals(MonogramController.get(account).accountJid()))throw new IllegalStateException("Account changed.");
+            JSONObject value=syncMetadata();if(value==null)return null;char[] password=vault.unlock(config.getJSONObject("sealed"));byte[] keys=null;
+            try{String directory=config.getString("directory");if(!directory.matches("[0-9a-f-]{36}"))throw new IOException("Invalid wallet path.");
+                File file=new File(new File(root,directory),"wallet.keys");if(!file.isFile()||file.length()>4*1024*1024)throw new IOException("Invalid wallet recovery file.");
+                keys=java.nio.file.Files.readAllBytes(file.toPath());return value.put("keys",android.util.Base64.encodeToString(keys,android.util.Base64.NO_WRAP)).put("password",new String(password));
+            }finally{java.util.Arrays.fill(password,'\0');if(keys!=null)java.util.Arrays.fill(keys,(byte)0);}
+        });return syncResult(job);
+    }
+    private static <T>T syncResult(java.util.concurrent.Future<T> job)throws Exception {try{return job.get();}catch(java.util.concurrent.ExecutionException failure){Throwable cause=failure.getCause();if(cause instanceof Exception)throw (Exception)cause;throw new IOException("Wallet sync failed.");}}
+    public void importSync(JSONObject value)throws Exception {
+        syncResult(actor.submit(()->{
+            if(!owner.equals(MonogramController.get(account).accountJid()))throw new IllegalStateException("Account changed.");
+            String primary=value.getString("address");long maxIndex=value.optLong("max_index",0);
+            if(exists()){
+                if(!primary().equals(primary))throw new IOException("Wallet identity changed.");
+                // Extend the real receiving-address table before raising its durable high-water mark.
+                if(maxIndex>config.optLong("maxIndex",0)){
+                    long local=handle;boolean temporary=local==0;char[] password=null;
+                    try{if(temporary){password=vault.unlock(config.getJSONObject("sealed"));String directory=config.getString("directory");if(!directory.matches("[0-9a-f-]{36}"))throw new IOException("Invalid wallet path.");WalletNative.load();local=WalletNative.open(new File(new File(root,directory),"wallet").getAbsolutePath(),password,nativeNetwork(network));}WalletNative.newAddress(local,maxIndex-1,"");}
+                    finally{if(temporary&&local!=0)WalletNative.close(local);if(password!=null)java.util.Arrays.fill(password,'\0');}
+                }
+                JSONObject next=new JSONObject(config.toString()).put("node",value.getString("node")).put("maxIndex",Math.max(maxIndex,config.optLong("maxIndex",0))).put("lastSyncAt",0);
+                save(next);WalletRegistry.rename(account,owner,network,walletId,value.getString("name"));sessionSynced=false;recentCacheReady=false;return null;
+            }
+            File directory=new File(root,java.util.UUID.randomUUID().toString());long imported=0;byte[] keys=android.util.Base64.decode(value.getString("keys"),android.util.Base64.NO_WRAP);char[] password=value.getString("password").toCharArray();
+            try{
+                JSONObject sealed=vault.sealExisting(password);if(!directory.mkdirs())throw new IOException("Cannot save synchronized wallet.");
+                File file=new File(directory,"wallet.keys");try(FileOutputStream output=new FileOutputStream(file)){output.write(keys);output.getFD().sync();}
+                WalletNative.load();imported=WalletNative.open(new File(directory,"wallet").getAbsolutePath(),password,nativeNetwork(network));
+                if(!WalletNative.snapshot(imported)[0].equals(primary))throw new IOException("Wallet recovery address does not match.");
+                if(maxIndex>0)WalletNative.newAddress(imported,maxIndex-1,"");WalletNative.close(imported);imported=0;
+                if(!owner.equals(MonogramController.get(account).accountJid()))throw new IOException("Account changed.");
+                save(new JSONObject().put("version",1).put("directory",directory.getName()).put("primary",primary).put("sealed",sealed).put("node",value.getString("node")).put("maxIndex",maxIndex).put("scanned",false).put("scanPolicy",1).put("scanStart",0).put("initialScanComplete",false));
+                WalletRegistry.rename(account,owner,network,walletId,value.getString("name"));sessionSynced=false;recentCacheReady=false;changed();return null;
+            }finally{if(imported!=0)WalletNative.close(imported);java.util.Arrays.fill(password,'\0');java.util.Arrays.fill(keys,(byte)0);if(!exists())delete(directory);}
+        }));
+    }
     public boolean exists(){return config!=null && config.has("directory");}
     public boolean unlocked(){return handle!=0;}
     public boolean readyToSend(){return sessionScanned() && !busy;}

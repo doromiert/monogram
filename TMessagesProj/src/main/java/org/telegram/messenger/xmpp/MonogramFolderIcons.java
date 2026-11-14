@@ -46,6 +46,8 @@ public final class MonogramFolderIcons {
         }
         throw new IllegalArgumentException("Unknown folder icon");
     }
+    public static String syncName(int account,int id){String key=key(account,id);return key==null?"":preferences(account).getString(key,"");}
+    public static void importSyncName(int account,int id,String name){if(name==null||name.isEmpty()){remove(account,id);return;}for(int i=0;i<NAMES.length;i++)if(NAMES[i].equals(name)){set(account,id,DRAWABLES[i]);return;}}
     public static void remove(int account,int folderId) {
         String key=key(account,folderId); if(key!=null) preferences(account).edit().remove(key).apply();
     }
