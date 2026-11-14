@@ -1406,6 +1406,13 @@ public class EmojiView extends FrameLayout implements
     }
 
     private boolean premiumBulletin = true;
+    private static void setPickerEmojiBounds(ImageViewEmoji view, int startOffset) {
+        float size = Math.min(AndroidUtilities.dp(26), view.getWidth() * .62f);
+        float left = view.getLeft() - startOffset + (view.getWidth() - size) / 2f;
+        float top = (view.getHeight() - size) / 2f;
+        AndroidUtilities.rectTmp2.set(Math.round(left), Math.round(top), Math.round(left + size), Math.round(top + size));
+    }
+
     public static class ImageViewEmoji extends ImageView {
         public int position;
 
@@ -1489,6 +1496,8 @@ public class EmojiView extends FrameLayout implements
             }
             float s = 0.8f + 0.2f * (1f - pressedProgress);
             canvas.save();
+            // Keep the grid hit targets; give the glyph the same breathing room as Telegram.
+            s *= 0.72f;
             canvas.scale(s, s, getMeasuredWidth() / 2f, getMeasuredHeight() / 2f);
             super.onDraw(canvas);
             canvas.restore();
@@ -3436,8 +3445,7 @@ public class EmojiView extends FrameLayout implements
                     imageView.backgroundThreadDrawHolder[threadIndex].time = time;
                     imageView.backgroundThreadDrawHolder[threadIndex].overrideAlpha = 1f;
                     drawable.setAlpha(255);
-                    int topOffset = (int) (imageView.getHeight() * .03f);
-                    AndroidUtilities.rectTmp2.set(imageView.getLeft() + imageView.getPaddingLeft() - startOffset, topOffset, imageView.getRight() - imageView.getPaddingRight() - startOffset, topOffset + imageView.getMeasuredHeight() - imageView.getPaddingTop() - imageView.getPaddingBottom());
+                    setPickerEmojiBounds(imageView, startOffset);
                     imageView.backgroundThreadDrawHolder[threadIndex].setBounds(AndroidUtilities.rectTmp2);
                     imageView.drawable = drawable;
                     imageView.imageReceiver = drawable.getImageReceiver();
@@ -3474,8 +3482,7 @@ public class EmojiView extends FrameLayout implements
                             continue;
                         }
 
-                        int topOffset = (int) (imageView.getHeight() * .03f);
-                        AndroidUtilities.rectTmp2.set(imageView.getLeft() + imageView.getPaddingLeft(), topOffset, imageView.getRight() - imageView.getPaddingRight(), topOffset + imageView.getMeasuredHeight() - imageView.getPaddingBottom() - imageView.getPaddingTop());
+                        setPickerEmojiBounds(imageView, 0);
                         float scale = 1;
                         if (imageView.pressedProgress != 0) {
                             scale *= 0.8f + 0.2f * (1f - imageView.pressedProgress);

@@ -94,6 +94,7 @@ public final class InlineEmoji {
     public void addTo(Message message) {
         if(!body.equals(message.getBody()) || message.hasExtension("html",HTML) || message.hasExtension("data",BOB)) throw new IllegalArgumentException("Inline emoji belong to another message");
         if(ranges.isEmpty()) return;
+        EmojiMarkup.append(message,this);
         StandardExtensionElement.Builder paragraph=StandardExtensionElement.builder("p",XHTML);
         Map<String,Asset> assets=new LinkedHashMap<>();int previous=0;
         for(Range range:ranges) {
@@ -119,7 +120,7 @@ public final class InlineEmoji {
         if(message==null || body==null || !body.equals(message.getBody())) return null;
         try {
             List<ExtensionElement> html=message.getExtensions("html",HTML),data=message.getExtensions("data",BOB);
-            if(html.size()!=1 || data.isEmpty() || data.size()>MAX_ASSETS) return null;
+            if(html.size()>1 || data.isEmpty() || data.size()>MAX_ASSETS) return null;
             Map<String,Asset> assets=new LinkedHashMap<>();int total=0;
             for(ExtensionElement extension:data) {
                 StandardExtensionElement entry=element(extension);String encoded=entry.getText();
@@ -128,6 +129,8 @@ public final class InlineEmoji {
                 Asset asset=new Asset(entry.getAttributeValue("cid"),entry.getAttributeValue("type"),bytes);
                 if(assets.put(asset.cid,asset)!=null) return null;
             }
+            if(EmojiMarkup.present(message)) return EmojiMarkup.read(message,body,assets);
+            if(html.size()!=1)return null;
             StandardExtensionElement wrapper=element(html.get(0));
             if(!attributes(wrapper) || !blank(wrapper) || wrapper.getElements().size()!=1) return null;
             StandardExtensionElement content=wrapper.getElements().get(0);
@@ -160,7 +163,7 @@ public final class InlineEmoji {
         Set<String> names=new HashSet<>(Arrays.asList(allowed));for(String name:element.getAttributes().keySet()) if(!names.contains(name)) return false;return true;
     }
     private static boolean blank(StandardExtensionElement element) { return element.getText()==null || element.getText().trim().isEmpty(); }
-    private static StandardExtensionElement element(ExtensionElement extension) throws Exception {
+    static StandardExtensionElement element(ExtensionElement extension) throws Exception {
         if(extension.toXML().length()>240*1024) throw new IOException();
         return extension instanceof StandardExtensionElement ? (StandardExtensionElement)extension : StandardExtensionElementProvider.INSTANCE.parse(PacketParserUtils.getParserFor(extension.toXML().toString()));
     }

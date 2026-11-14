@@ -298,6 +298,8 @@ public class AlertsCreator {
                 text="That account's server requires contact authorization before allowing its OMEMO device list to be read. Open Conversation security → Contact authorization, request access, then refresh fingerprints after they accept. Your message was not sent."; break;
             case "MONOGRAM_OMEMO_ROOM_CHANGED":
                 text = "Room membership changed while encrypting. Review the room members and their fingerprints, then retry. Your message was not sent."; break;
+            case "MONOGRAM_OMEMO_CUSTOM_EMOJI_UNAVAILABLE":
+                text = "Could not confirm encrypted custom emoji support. Update both clients and retry, or use OMEMO 2. Your message was not sent."; break;
             case "MONOGRAM_OMEMO_MODERN_UNAVAILABLE":
                 text = "OMEMO 2 is not ready on this connection. Reconnect and review Conversation security before retrying. Your message was not sent."; break;
             case "MONOGRAM_SENDING_MODE_CHANGED":

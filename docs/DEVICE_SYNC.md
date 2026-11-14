@@ -1,6 +1,6 @@
 # Device sync
 
-Enable **Preferences → Devices → Manage Paired Devices**. Android exposes
+Enable **Preferences → Devices → Enable device sync**. Android exposes
 **Settings → Device sync**, including from the sign-in screen. Connect devices
 to the same LAN, show a pairing QR on one, and scan it on the other. Desktop can
 scan an image containing a QR or paste its pairing URI.
@@ -14,7 +14,13 @@ differ by one time step. This is a pairing code, not an authenticator seed.
 Every device can serve and initiate sync. A phone–computer–computer or
 phone–phone chain forwards the same encrypted records without an account server.
 Discovery requires LAN multicast; QR/pasted-URI pairing also works when discovery
-is filtered, provided direct LAN TCP connections are allowed.
+is filtered, provided direct LAN TCP connections are allowed. Monogram listens on
+TCP 45950 and discovers devices on UDP 45950; allow both ports on your private
+LAN. A second local instance uses a different TCP port. An active pairing shows
+its progress immediately and can be cancelled without removing established links.
+
+Old folder preferences without an All-folder visibility field are exported with
+the existing default (visible), so they no longer stop the entire sync cycle.
 
 ## Portable data
 
@@ -75,4 +81,4 @@ retry later. Restart removes abandoned plaintext export stages from private stor
 
 See the [local protocol proposal](xeps/monogram-lan-sync.md), which is not an
 assigned or accepted XMPP extension. Remaining platform gaps are tracked in
-[the desktop parity ledger](../../desktop/docs/FEATURE_PARITY.md).
+[the parity ledger](FEATURE_PARITY.md).

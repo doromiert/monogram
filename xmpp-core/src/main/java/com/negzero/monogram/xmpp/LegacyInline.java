@@ -10,6 +10,8 @@ public final class LegacyInline {
  public static String encode(String body,InlineEmoji emoji)throws IOException {
   if(emoji==null || emoji.ranges.isEmpty())return body;
   Message clear=new Message();clear.setStanzaId(null);clear.setBody(body);emoji.addTo(clear);
+  // Preserve the advertised v0 envelope grammar for already installed peers.
+  clear.removeExtension("markup",MessageMarkup.NAMESPACE);while(clear.hasExtension("file-sharing",FileShare.NAMESPACE))clear.removeExtension("file-sharing",FileShare.NAMESPACE);
   String encoded=PREFIX+XmppXml.string(clear);if(encoded.getBytes(StandardCharsets.UTF_8).length>MAX)throw new IOException("Inline emoji message is too large");return encoded;
  }
  public static Message decode(String body)throws Exception {
@@ -21,7 +23,7 @@ public final class LegacyInline {
   int bodies=0;for(StandardExtensionElement child:root.getElements()){
    String name=child.getElementName(),ns=child.getNamespace();
    if(name.equals("body")&&ns.equals("jabber:client"))bodies++;
-   else if(!(name.equals("html")&&ns.equals(InlineEmoji.HTML) || name.equals("data")&&ns.equals(InlineEmoji.BOB)))throw new IOException("Invalid inline emoji extension");
+   else if(!(name.equals("html")&&ns.equals(InlineEmoji.HTML) || name.equals("data")&&ns.equals(InlineEmoji.BOB) || name.equals("markup")&&ns.equals(MessageMarkup.NAMESPACE) || name.equals("file-sharing")&&ns.equals(FileShare.NAMESPACE)))throw new IOException("Invalid inline emoji extension");
   }
   if(bodies!=1)throw new IOException("Invalid inline emoji body");
   Message clear=PacketParserUtils.parseStanza(xml);if(InlineEmoji.from(clear,clear.getBody())==null)throw new IOException("Invalid authenticated inline artwork");return clear;

@@ -69,16 +69,19 @@ fn binding(hello: &Hello, id: &str, pin: &str, reply: &str) -> Vec<u8> {
     .unwrap()
 }
 impl Mesh {
-    pub fn numeric_invite(&self) -> Result<serde_json::Value> {
+    pub fn numeric_invite(&self) -> Result<serde_json::Value> { self.numeric_invite_for(self.pairing_token()) }
+    pub fn numeric_invite_for(&self, token:u64) -> Result<serde_json::Value> {
+        self.check_pairing(token)?;
         if !self.numeric.load(Ordering::Acquire)
             || self
                 .invite
                 .lock()
                 .unwrap()
                 .as_ref()
-                .is_none_or(|i| i.expires < now())
+                .is_none_or(|i| i.expires < now() || i.generation!=token)
         {
-            self.invite()?;
+            self.invite_for(token)?;
+            self.check_pairing(token)?;
             self.code_attempts.store(0, Ordering::Release);
             self.numeric.store(true, Ordering::Release);
         }
@@ -88,7 +91,7 @@ impl Mesh {
         let invite = self.invite.lock().unwrap();
         let invite = invite
             .as_ref()
-            .filter(|i| i.expires >= now() && self.numeric.load(Ordering::Acquire))
+            .filter(|i| i.expires >= now() && i.generation==self.pairing_token() && self.numeric.load(Ordering::Acquire))
             .ok_or("Pairing ended. Open a new pairing code to try again.")?;
         let step = now() / 30_000;
         let secret = Zeroizing::new(B64.decode(&invite.code).map_err(failure)?);
@@ -109,7 +112,9 @@ impl Mesh {
         )
         .unwrap()
     }
-    pub fn join_numeric(&self, id: &str, code: &str) -> Result<String> {
+    pub fn join_numeric(&self, id: &str, code: &str) -> Result<String> { self.join_numeric_for(id,code,self.pairing_token()) }
+    pub fn join_numeric_for(&self, id:&str, code:&str, token:u64)->Result<String> {
+        self.check_pairing(token)?;
         if code.len() != 8 || !code.bytes().all(|b| b.is_ascii_digit()) {
             return Err("Enter the eight-digit code from the other device.".into());
         }
@@ -147,6 +152,7 @@ impl Mesh {
         drop(store);
         let mut stream = client(peer.endpoint, &peer.pin)?;
         let _guard = self.watch(&stream.sock, &peer.id)?;
+        self.track_pairing(_guard.id,token)?;
         wire::send(&mut stream, &hello)?;
         let challenge: Challenge = wire::read(&mut stream)?;
         let message = B64.decode(&challenge.message).map_err(failure)?;
@@ -164,10 +170,12 @@ impl Mesh {
         {
             return Err("Pairing identity verification failed.".into());
         }
+        self.check_pairing(token)?;
         let mut store = self.store.lock().unwrap();
         if store.state.peers.len() >= 32 {
             return Err("At most 32 paired devices are supported.".into());
         }
+        self.check_pairing(token)?;
         store.state.peers.insert(
             reply.id.clone(),
             Peer {
@@ -184,13 +192,14 @@ impl Mesh {
         hello: Hello,
         address: SocketAddr,
         stream: &mut StreamOwned<ServerConnection, TcpStream>,
+        generation:u64,
     ) -> Result<()> {
         let invitation = self
             .invite
             .lock()
             .unwrap()
             .clone()
-            .filter(|i| i.expires >= now())
+            .filter(|i| i.expires >= now() && i.generation==generation)
             .ok_or("Open the pairing code screen first.")?;
         if !self.numeric.load(Ordering::Acquire)
             || self.code_attempts.fetch_add(1, Ordering::AcqRel) >= 5
@@ -251,6 +260,7 @@ impl Mesh {
             token: token.clone(),
             endpoint: String::new(),
         };
+        self.check_pairing(generation)?;
         store.state.peers.insert(
             hello.id.clone(),
             Peer {
@@ -304,7 +314,7 @@ pub(super) fn discover(this: &Arc<Mesh>) {
                         .lock()
                         .unwrap()
                         .as_ref()
-                        .filter(|i| i.expires >= now())
+                        .filter(|i| i.expires >= now() && i.generation==mesh.pairing_token())
                         .map(|i| PublicInvite {
                             name: i.name.clone(),
                             pin: i.pin.clone(),

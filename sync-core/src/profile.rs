@@ -7,18 +7,19 @@ fn string<'a>(v: &'a Value, k: &str, max: usize) -> Result<&'a str> {
         .filter(|s| s.len() <= max && !s.chars().any(|c| c == '\0'))
         .ok_or_else(|| "Invalid portable setting.".into())
 }
+/// The first desktop folder schema omitted visibility; its UI default was visible.
+pub fn normalize_folders(value: &mut Value) {
+    if let Some(object)=value.as_object_mut() {object.entry("all_hidden").or_insert(Value::Bool(false));}
+}
 pub fn validate(kind: &str, owner: &str, id: &str, v: &Value) -> Result<()> {
     if !v.is_object() {
         return Err("Invalid portable settings object.".into());
     }
     match kind {
         "folders" => {
-            if id != "folders"
-                || serde_json::to_vec(v).map_err(crate::failure)?.len() > 524288
-                || !v["all_hidden"].is_boolean()
-            {
-                return Err("Invalid folder settings.".into());
-            }
+            if id != "folders" { return Err("Folder sync record has an invalid identifier.".into()); }
+            if serde_json::to_vec(v).map_err(crate::failure)?.len() > 524288 { return Err("Folder settings exceed the 512 KiB sync limit.".into()); }
+            if !v["all_hidden"].is_boolean() { return Err("Could not read whether All Chats is hidden. Re-save your folder settings and retry.".into()); }
             let rules = v["rules"]
                 .as_object()
                 .filter(|r| r.len() <= 64)
@@ -274,6 +275,9 @@ mod tests {
     fn folders_validate_order_members_and_optional_metadata() {
         let valid = json!({"rules":{"Friends":{"types":["contacts"],"include":["alice@example.invalid"],"exclude":[],"pinned":["alice@example.invalid"],"icon":"cat","exclude_muted":true,"exclude_read":false,"exclude_archived":true}},"order":["Friends","All"],"all_hidden":true,"rooms":[]});
         assert!(validate("folders", "me@example.invalid", "folders", &valid).is_ok());
+        let mut legacy=valid.clone();legacy.as_object_mut().unwrap().remove("all_hidden");
+        normalize_folders(&mut legacy);assert_eq!(legacy["all_hidden"],false);assert!(validate("folders","me@example.invalid","folders",&legacy).is_ok());
+        legacy["all_hidden"]=json!(null);normalize_folders(&mut legacy);assert!(validate("folders","me@example.invalid","folders",&legacy).is_err());
         let mut desktop = valid.clone();
         desktop["rules"]["All"] = desktop["rules"]["Friends"].clone();
         desktop["rules"]["All"]["icon"] = json!("");

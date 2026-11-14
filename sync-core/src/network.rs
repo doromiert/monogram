@@ -28,6 +28,8 @@ pub struct Invite {
     pub pin: String,
     pub code: String,
     pub expires: u64,
+    #[serde(skip)]
+    generation: u64,
 }
 #[derive(Serialize, Deserialize)]
 struct Hello {
@@ -108,18 +110,19 @@ impl Drop for SocketGuard<'_> {
             .sockets
             .lock()
             .unwrap()
-            .retain(|(id, _, _)| *id != self.id);
+            .retain(|(id, _, _, _)| *id != self.id);
     }
 }
 pub struct Mesh {
     pub store: Mutex<Store>,
     pub status: Mutex<String>,
     stopped: AtomicBool,
+    pairing_epoch: std::sync::atomic::AtomicU64,
     invite: Mutex<Option<Invite>>,
     port: u16,
     server: Arc<ServerConfig>,
     addresses: Mutex<Vec<SocketAddr>>,
-    sockets: Mutex<Vec<(u64, String, TcpStream)>>,
+    sockets: Mutex<Vec<(u64, String, TcpStream, Option<u64>)>>,
     serial: std::sync::atomic::AtomicU64,
     active: AtomicUsize,
     code_attempts: AtomicUsize,
@@ -190,13 +193,16 @@ impl Mesh {
                 .with_no_client_auth()
                 .with_single_cert(vec![cert], key)
                 .map_err(failure)?;
-        let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(failure)?;
+        // Use one firewall rule in production; additional local instances can still run.
+        let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 45950))
+            .or_else(|_| TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))).map_err(failure)?;
         listener.set_nonblocking(true).map_err(failure)?;
         let port = listener.local_addr().map_err(failure)?.port();
         let mesh = Arc::new(Self {
             store: Mutex::new(store),
             status: Mutex::new("Ready to pair".into()),
             stopped: AtomicBool::new(false),
+            pairing_epoch: std::sync::atomic::AtomicU64::new(0),
             invite: Mutex::new(None),
             port,
             server: Arc::new(server),
@@ -281,9 +287,25 @@ impl Mesh {
     pub fn port(&self) -> u16 {
         self.port
     }
-    pub fn cancel_invite(&self) {
-        self.invite.lock().unwrap().take();
-        self.numeric.store(false, Ordering::Release);
+    pub fn pairing_token(&self) -> u64 { self.pairing_epoch.load(Ordering::Acquire) }
+    /// Atomic invalidation is safe on the UI thread; socket cleanup runs on a worker.
+    pub fn invalidate_pairing(&self) -> u64 { self.pairing_epoch.fetch_add(1,Ordering::AcqRel)+1 }
+    pub fn finish_cancel_pairing(&self, boundary:u64) {
+        let mut invite=self.invite.lock().unwrap();
+        if invite.as_ref().is_some_and(|i|i.generation<boundary) { invite.take(); self.numeric.store(false,Ordering::Release); }
+        drop(invite);
+        for (_,_,socket,token) in self.sockets.lock().unwrap().iter() {
+            if token.is_some_and(|t|t<boundary) {let _=socket.shutdown(std::net::Shutdown::Both);}
+        }
+    }
+    pub fn cancel_invite(&self) { let boundary=self.invalidate_pairing();self.finish_cancel_pairing(boundary); }
+    fn check_pairing(&self, token:u64)->Result<()> {
+        if self.is_stopped(){Err("Device sync stopped.".into())}
+        else if token!=self.pairing_token(){Err("Pairing cancelled.".into())}else{Ok(())}
+    }
+    fn track_pairing(&self,id:u64,token:u64)->Result<()> {
+        let mut sockets=self.sockets.lock().unwrap();self.check_pairing(token)?;
+        if let Some(entry)=sockets.iter_mut().find(|s|s.0==id){entry.3=Some(token);}Ok(())
     }
     pub fn is_stopped(&self) -> bool {
         self.stopped.load(Ordering::Acquire)
@@ -291,7 +313,7 @@ impl Mesh {
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
         self.cancel_invite();
-        for (_, _, socket) in self.sockets.lock().unwrap().iter() {
+        for (_, _, socket, _) in self.sockets.lock().unwrap().iter() {
             let _ = socket.shutdown(std::net::Shutdown::Both);
         }
     }
@@ -303,10 +325,12 @@ impl Mesh {
         self.sockets
             .lock()
             .unwrap()
-            .push((id, peer.into(), stream.try_clone().map_err(failure)?));
+            .push((id, peer.into(), stream.try_clone().map_err(failure)?,None));
         Ok(SocketGuard { mesh: self, id })
     }
-    pub fn invite(&self) -> Result<String> {
+    pub fn invite(&self) -> Result<String> { self.invite_for(self.pairing_token()) }
+    pub fn invite_for(&self, token:u64) -> Result<String> {
+        self.check_pairing(token)?;
         if self.is_stopped() {
             return Err("Device sync stopped.".into());
         }
@@ -320,19 +344,22 @@ impl Mesh {
             pin: store.pin()?,
             code: B64.encode(random::<32>()),
             expires: now() + 120_000,
+            generation: token,
         };
         if invitation.endpoints.is_empty() {
             return Err("Connect both devices to the same local network.".into());
         }
         drop(store);
         let value = serde_json::to_vec(&invitation).map_err(failure)?;
-        *self.invite.lock().unwrap() = Some(invitation);
+        let mut pending=self.invite.lock().unwrap();self.check_pairing(token)?;*pending=Some(invitation);
         Ok(format!(
             "monogram-sync:{}",
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value)
         ))
     }
-    pub fn join(&self, code: &str) -> Result<String> {
+    pub fn join(&self, code: &str) -> Result<String> { self.join_for(code,self.pairing_token()) }
+    pub fn join_for(&self, code: &str, token:u64) -> Result<String> {
+        self.check_pairing(token)?;
         if code.len() > 8192 {
             return Err("Invalid pairing code.".into());
         }
@@ -373,10 +400,12 @@ impl Mesh {
         };
         drop(store);
         for address in &invite.endpoints {
+            self.check_pairing(token)?;
             let Ok(mut stream) = client(*address, &invite.pin) else {
                 continue;
             };
             let _guard = self.watch(&stream.sock, &invite.id)?;
+            self.track_pairing(_guard.id,token)?;
             if wire::send(&mut stream, &hello).is_err() {
                 continue;
             }
@@ -399,6 +428,7 @@ impl Mesh {
             if store.state.peers.len() >= 32 {
                 return Err("At most 32 paired devices are supported.".into());
             }
+            self.check_pairing(token)?;
             store.state.peers.insert(peer.id.clone(), peer);
             store.save()?;
             *self.status.lock().unwrap() = "Paired · syncing".into();
@@ -408,10 +438,11 @@ impl Mesh {
     }
     fn accept(&self, stream: TcpStream, address: SocketAddr) -> Result<()> {
         let socket_guard = self.watch(&stream, "")?;
+        let generation=self.pairing_token();
         let connection = ServerConnection::new(self.server.clone()).map_err(failure)?;
         let mut stream = StreamOwned::new(connection, stream);
         let hello: Hello = wire::read(&mut stream)?;
-        for (id, peer, _) in self.sockets.lock().unwrap().iter_mut() {
+        for (id, peer, _, _) in self.sockets.lock().unwrap().iter_mut() {
             if *id == socket_guard.id {
                 *peer = hello.id.clone();
             }
@@ -429,16 +460,18 @@ impl Mesh {
         {
             return Err("Invalid device handshake.".into());
         }
+        if hello.action=="pair" || hello.action=="totp" { self.track_pairing(socket_guard.id,generation)?; }
         if hello.action == "totp" {
-            return self.accept_numeric(hello, address, &mut stream);
+            return self.accept_numeric(hello, address, &mut stream,generation);
         }
         if hello.action == "pair" {
             let mut invitation = self.invite.lock().unwrap();
             let invite = invitation
                 .as_ref()
-                .filter(|i| i.expires >= now() && constant(&i.code, &hello.token))
+                .filter(|i| i.expires >= now() && i.generation==generation && constant(&i.code, &hello.token))
                 .ok_or("Pairing request is not authorized.")?;
             let _ = invite;
+            *self.status.lock().unwrap()="Verifying pairing request…".into();
             let mut store = self.store.lock().unwrap();
             if store.state.peers.len() >= 32 {
                 return Err("At most 32 paired devices are supported.".into());
@@ -459,6 +492,7 @@ impl Mesh {
                 token: token.clone(),
                 endpoint: String::new(),
             };
+            self.check_pairing(generation)?;
             store.state.peers.insert(
                 hello.id.clone(),
                 Peer {
@@ -618,7 +652,7 @@ impl Mesh {
     }
     pub fn exclude(&self, owner: &str) -> Result<()> {
         self.store.lock().unwrap().exclude(owner)?;
-        for (_, _, socket) in self.sockets.lock().unwrap().iter() {
+        for (_, _, socket, _) in self.sockets.lock().unwrap().iter() {
             let _ = socket.shutdown(std::net::Shutdown::Both);
         }
         Ok(())
@@ -629,7 +663,7 @@ impl Mesh {
             store.state.peers.remove(id);
             store.save()?;
         }
-        for (_, peer, socket) in self.sockets.lock().unwrap().iter() {
+        for (_, peer, socket, _) in self.sockets.lock().unwrap().iter() {
             if peer == id {
                 let _ = socket.shutdown(std::net::Shutdown::Both);
             }
@@ -648,6 +682,36 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("monogram-sync-test-{}", uuid::Uuid::new_v4()));
         Mesh::start(Store::open(root, random(), name.into()).unwrap()).unwrap()
+    }
+    #[test]
+    fn cancellation_invalidates_pending_work_without_unpairing_devices() {
+        let a=node("cancel-a");let b=node("cancel-b");
+        *a.addresses.lock().unwrap()=vec![SocketAddr::from(([127,0,0,1],a.port))];
+        let code=a.invite().unwrap();let old=b.pairing_token();
+        let boundary=b.invalidate_pairing();b.finish_cancel_pairing(boundary);
+        assert!(b.join_for(&code,old).unwrap_err().contains("cancelled"));
+        assert!(a.store.lock().unwrap().state.peers.is_empty());
+        a.cancel_invite();assert!(b.join(&code).is_err());
+        let boundary=a.invalidate_pairing();let next=a.invite().unwrap();a.finish_cancel_pairing(boundary);b.join(&next).unwrap();
+        let boundary=b.invalidate_pairing();b.finish_cancel_pairing(boundary);
+        assert_eq!(b.store.lock().unwrap().state.peers.len(),1);
+        let peer=b.store.lock().unwrap().state.peers.values().next().unwrap().clone();assert!(b.exchange(&peer).is_ok());
+        a.stop();b.stop();
+    }
+    #[test]
+    fn cancellation_interrupts_a_stalled_pairing_socket() {
+        let a=node("cancel-stall-a");let b=node("cancel-stall-b");
+        *a.addresses.lock().unwrap()=vec![SocketAddr::from(([127,0,0,1],a.port))];a.invite().unwrap();
+        let listener=TcpListener::bind((Ipv4Addr::LOCALHOST,0)).unwrap();
+        let mut invite=a.invite.lock().unwrap().clone().unwrap();invite.endpoints=vec![listener.local_addr().unwrap()];
+        let code=format!("monogram-sync:{}",base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(&invite).unwrap()));
+        let (socket_tx,socket_rx)=std::sync::mpsc::channel();let server=thread::spawn(move||socket_tx.send(listener.accept().unwrap().0).unwrap());
+        let token=b.pairing_token();let worker=b.clone();let (done_tx,done_rx)=std::sync::mpsc::channel();let request=thread::spawn(move||done_tx.send(worker.join_for(&code,token)).unwrap());
+        let socket=socket_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let deadline=std::time::Instant::now()+Duration::from_secs(1);while !b.sockets.lock().unwrap().iter().any(|s|s.3==Some(token)){assert!(std::time::Instant::now()<deadline);thread::yield_now();}
+        let start=std::time::Instant::now();let boundary=b.invalidate_pairing();b.finish_cancel_pairing(boundary);
+        assert!(done_rx.recv_timeout(Duration::from_millis(400)).unwrap().is_err());assert!(start.elapsed()<Duration::from_millis(400));
+        assert!(b.store.lock().unwrap().state.peers.is_empty());drop(socket);server.join().unwrap();request.join().unwrap();a.stop();b.stop();
     }
     #[test]
     fn generating_an_invite_does_not_hold_storage_while_waiting_for_pairing() {

@@ -1,4 +1,21 @@
-# Inline custom emoji profile 1
+# Inline custom emoji
+
+New messages additionally use [XEP-0514 Emoji Markup](https://xmpp.org/extensions/xep-0514.html):
+`urn:xmpp:markup:0` spans contain `urn:xmpp:markup:emoji:0` emoji hashes, with
+matching SHA-256 XEP-0447 file descriptions and `cid:` sources. Both clients
+advertise the emoji namespace. Supplied BoB data is verified against both file
+and span hashes before rendering; malformed metadata leaves the readable body.
+Existing XHTML-IM peers remain supported. Current receivers resolve supplied
+in-stanza data, not remote-only sources or insertion-only (empty) ranges.
+
+Legacy OMEMO authenticates a body string rather than SCE. Its negotiated Monogram
+v0 transport retains exactly the original body/XHTML/BoB envelope grammar, so
+previous releases still decode artwork; the modern XEP-0514 elements stay inside
+modern/PQ authenticated SCE. A failed Legacy capability check now reports a
+specific send error instead of silently replacing the artwork with Unicode.
+The local Legacy transport proposal is separate from the official emoji XEP.
+
+# XHTML-IM compatibility profile
 
 Status: implemented; profile over XHTML-IM images and XEP-0231 Bits of Binary,
 not a Monogram XML namespace. Source of truth: `InlineEmoji.java`; native asset
@@ -41,6 +58,6 @@ IDs are local projections of content-addressed assets and must not go on the wir
 
 This metadata may be read from a cleartext message or authenticated OMEMO2/SCE
 content. A public XHTML/BoB element attached to legacy OMEMO ciphertext is not
-private/authenticated content and must be ignored. Legacy encrypted messages keep
-the textual fallback instead. Malformed/unsupported metadata leaves the readable
+private/authenticated content and must be ignored. Legacy encrypted messages use the negotiated authenticated body envelope;
+unauthenticated outer artwork is still ignored. Malformed/unsupported metadata leaves the readable
 body available and does not trigger a network fetch.

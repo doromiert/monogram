@@ -262,6 +262,7 @@ public final class XmppSession implements AutoCloseable {
         MessageMarkup.initialize();
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature("urn:xmpp:forward:0");
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(LegacyInline.NAMESPACE);
+        org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(EmojiMarkup.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.NAMESPACE);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.SPOILER);
         org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).addFeature(MessageMarkup.SPOILER_SPAN);
@@ -1235,11 +1236,12 @@ public final class XmppSession implements AutoCloseable {
     }
     private final java.util.Map<String,Boolean> legacyInlinePeers=new java.util.concurrent.ConcurrentHashMap<>();
     private boolean supportsLegacyInline(EntityBareJid recipient) {
+        if(connection.getUser()!=null && connection.getUser().asEntityBareJid().equals(recipient))return true;
         org.jxmpp.jid.Jid target=recipient;
         org.jivesoftware.smack.packet.Presence presence=org.jivesoftware.smack.roster.Roster.getInstanceFor(connection).getPresence(recipient);
         if(presence.isAvailable()&&presence.getFrom()!=null)target=presence.getFrom();
         String key=target.toString();Boolean cached=legacyInlinePeers.get(key);if(cached!=null)return cached;
-        try {boolean supported=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).supportsFeature(target,LegacyInline.NAMESPACE);legacyInlinePeers.put(key,supported);return supported;}
+        try {boolean supported=org.jivesoftware.smackx.disco.ServiceDiscoveryManager.getInstanceFor(connection).supportsFeature(target,LegacyInline.NAMESPACE);if(supported)legacyInlinePeers.put(key,true);return supported;}
         catch(Exception unavailable){return false;}
     }
     private String send(String jid,String body,boolean encrypted,boolean attachment,ReplyReference reply,MessageCorrection correction,FileShare sharing,MessageRetraction retraction,MessageMarkup markup,InlineEmoji inline,boolean displayStickerHint) throws Exception {
@@ -1252,7 +1254,8 @@ public final class XmppSession implements AutoCloseable {
         if (reply != null) body = reply.wireBody(body);
         Message message;
         if (encrypted) {
-            String authenticated=inline!=null && supportsLegacyInline(recipient) ? LegacyInline.encode(body,inline.inBody(body,prefix)) : body;
+            if(inline!=null && !supportsLegacyInline(recipient))throw new OmemoSendException(OmemoSendException.Reason.CUSTOM_EMOJI_UNAVAILABLE);
+            String authenticated=inline!=null ? LegacyInline.encode(body,inline.inBody(body,prefix)) : body;
             OmemoMessage.Sent ciphertext = encryptLegacy(recipient,authenticated);
             message = ciphertext.buildMessage(connection.getStanzaFactory().buildMessageStanza().ofType(Message.Type.chat), recipient);
         } else {

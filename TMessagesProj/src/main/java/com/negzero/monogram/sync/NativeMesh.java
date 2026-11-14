@@ -6,6 +6,8 @@ public final class NativeMesh {
  private NativeMesh(){}
  public static native long start(String root,byte[] key,String name,String ips);
  public static native String inspect(long handle,String query);
+ /** token/invalidate are atomic controls; all other pairing operations use a worker. */
+ public static native String pairing(long handle,String action,long token,String value);
  public static native String numeric(long handle);
  public static native String joinNumeric(long handle,String peer,String code);
  public static native String invite(long handle);

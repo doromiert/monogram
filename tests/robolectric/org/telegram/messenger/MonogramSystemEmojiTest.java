@@ -30,6 +30,8 @@ public class MonogramSystemEmojiTest {
     @Implements(value=org.telegram.ui.ActionBar.Theme.class,isInAndroidSdk=false)
     public static class Colors {
         @Implementation public static void __staticInitializer__(){}
+        @Implementation public static int getColor(int key){return 0;}
+        @Implementation public static Drawable createRadSelectorDrawable(int color,int top,int bottom){return new android.graphics.drawable.ColorDrawable(0);}
     }
     @Before public void setup(){ApplicationLoader.applicationContext=RuntimeEnvironment.getApplication();SharedConfig.useSystemEmoji=false;AndroidUtilities.density=1;}
     @After public void cleanup(){SharedConfig.useSystemEmoji=false;SharedConfig.allowBigEmoji=true;}
@@ -39,6 +41,17 @@ public class MonogramSystemEmojiTest {
             Emoji.EmojiDrawable small=Emoji.getEmojiDrawable(code);assertTrue(code,small instanceof Emoji.SystemEmojiDrawable);assertTrue(small.isLoaded());
             Drawable big=Emoji.getEmojiBigDrawable(code);assertTrue(big instanceof Emoji.SystemEmojiDrawable);assertTrue(big.getBounds().width()>small.getBounds().width());
         }
+    }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void pickerKeepsLargeHitTargetButPadsTheGlyph() {
+        android.graphics.Canvas canvas=new android.graphics.Canvas(android.graphics.Bitmap.createBitmap(48,48,android.graphics.Bitmap.Config.ARGB_8888));
+        final float[] scale={0};
+        Drawable probe=new android.graphics.drawable.ColorDrawable(android.graphics.Color.RED) {
+            @Override public void draw(android.graphics.Canvas c) { float[] values=new float[9];c.getMatrix().getValues(values);scale[0]=values[0]; }
+        };
+        org.telegram.ui.Components.EmojiView.ImageViewEmoji view=new org.telegram.ui.Components.EmojiView.ImageViewEmoji(RuntimeEnvironment.getApplication());
+        view.setImageDrawable(probe,false);view.measure(android.view.View.MeasureSpec.makeMeasureSpec(48,1073741824),android.view.View.MeasureSpec.makeMeasureSpec(48,1073741824));view.layout(0,0,48,48);view.draw(canvas);
+        assertEquals(48,view.getMeasuredWidth());assertEquals(48,view.getMeasuredHeight());assertEquals(.72f,scale[0],.01f);
     }
     @Test public void switchingToSystemRemovesCachedTelegramSpansButKeepsFormattingAndCustomEmoji(){
         SpannableString text=new SpannableString("😀 custom");

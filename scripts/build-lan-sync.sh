@@ -10,6 +10,7 @@ export "CC_${triple//-/_}=$toolchain/$cc"
 export "CARGO_TARGET_$(printf %s "$triple" | tr '[:lower:]-' '[:upper:]_')_LINKER=$toolchain/$cc"
 export TARGET_AR="$toolchain/llvm-ar"
 export CARGO_TARGET_DIR="$root/.state/lan-sync/target"
-cargo build --locked --release --manifest-path "$root/sync-core/Cargo.toml" --features android-jni --target "$triple"
+cargo rustc --locked --release --lib --manifest-path "$root/sync-core/Cargo.toml" --features android-jni --target "$triple" -- -C link-arg=-Wl,-z,max-page-size=16384
+python3 "$root/scripts/check-native-alignment.py" "$CARGO_TARGET_DIR/$triple/release/libmonogram_sync.so"
 mkdir -p "$root/.state/lan-sync/jni/$abi"
 cp "$CARGO_TARGET_DIR/$triple/release/libmonogram_sync.so" "$root/.state/lan-sync/jni/$abi/"

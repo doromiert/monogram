@@ -21,6 +21,8 @@ import java.util.function.BiConsumer;
 
 /** Platform stores stay authoritative. Native TLS, discovery and encrypted records are shared with desktop. */
 public final class MonogramLanSync {
+    private static final java.util.concurrent.atomic.AtomicLong PAIR_VERSION=new java.util.concurrent.atomic.AtomicLong();
+    private static final ExecutorService CANCEL=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"monogram-pair-cancel");t.setDaemon(true);return t;});
     private static final ScheduledExecutorService WORK=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"monogram-device-sync");t.setDaemon(true);return t;});
     private static final ScheduledExecutorService PAIR=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"monogram-device-pairing");t.setDaemon(true);return t;});
     private static final Object START_LOCK=new Object();
@@ -48,7 +50,7 @@ public final class MonogramLanSync {
         BroadcastReceiver lock=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){if(Intent.ACTION_SCREEN_OFF.equals(i.getAction())){screenLocked=true;stopNow();feedback("Unlock your phone to resume sync");}else{screenLocked=false;if(enabled())resume();}}};
         IntentFilter filter=new IntentFilter(Intent.ACTION_SCREEN_OFF);filter.addAction(Intent.ACTION_USER_PRESENT);
         if(Build.VERSION.SDK_INT>=33)context().registerReceiver(lock,filter,Context.RECEIVER_NOT_EXPORTED);else context().registerReceiver(lock,filter);
-        WORK.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;try{cycle(h);if(h==handle){snapshot=new JSONObject(NativeMesh.inspect(h,"state"));feedback(snapshot.optString("status","Ready"));}}catch(Exception e){if(h==handle)feedback(message(e));}},1,5,TimeUnit.SECONDS);
+        WORK.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;String failure=null;try{cycle(h);}catch(Exception e){failure=message(e);}try{if(h==handle){snapshot=new JSONObject(NativeMesh.inspect(h,"state"));feedback(failure!=null?failure:snapshot.optString("status","Ready"));}}catch(Exception e){if(h==handle)feedback(message(e));}},1,5,TimeUnit.SECONDS);
         PAIR.scheduleWithFixedDelay(()->{long h=handle;if(h==0)return;try{nearby=new JSONArray(NativeMesh.inspect(h,"nearby"));try{numeric=new JSONObject(NativeMesh.inspect(h,"numeric"));}catch(RuntimeException ended){numeric=new JSONObject();}}catch(Exception ignored){}},0,1,TimeUnit.SECONDS);
         if(enabled())resume();
     }
@@ -86,8 +88,26 @@ public final class MonogramLanSync {
         }finally{if(key!=null)Arrays.fill(key,(byte)0);if(encoded!=null)Arrays.fill(encoded,'\0');}
     }
     private static String message(Exception failure){Throwable e=failure;while(e.getCause()!=null)e=e.getCause();if(e instanceof WalletVault.AuthenticationRequired||e instanceof android.security.keystore.UserNotAuthenticatedException)return "Unlock with your device credential to resume sync";return e instanceof IllegalStateException||e instanceof IllegalArgumentException||e instanceof IOException?e.getMessage():"Could not sync. Unlock your phone and try again.";}
-    public static void action(String action,String value,BiConsumer<String,String> done){feedback("Working…");PAIR.execute(()->{String result=null,error=null;try{start();long h=handle;if(h==0)throw new IllegalStateException("Enable device sync first.");switch(action){case "numeric":result=NativeMesh.numeric(h);numeric=new JSONObject(result);break;case "joinNumeric":JSONObject pair=new JSONObject(value);result=NativeMesh.joinNumeric(h,pair.getString("id"),pair.getString("code"));break;case "invite":result=NativeMesh.invite(h);break;case "join":result=NativeMesh.join(h,value);break;case "forget":NativeMesh.forget(h,value);result="Device unpaired";break;default:throw new IllegalArgumentException("Unknown sync action.");}if(h!=handle)throw new IllegalStateException("Sync stopped.");}catch(Exception e){error=message(e);}catch(LinkageError e){error="Device sync could not load. Reinstall the latest Monogram update for this phone.";}final String r=result,f=error;if(f!=null)feedback(f);AndroidUtilities.runOnUIThread(()->done.accept(r,f));});}
-    public static void cancelInvite(){long h=handle;if(h!=0)try{NativeMesh.cancelInvite(h);}catch(RuntimeException ignored){}}
+    public static String pairingProgress(String action){switch(action){case "invite":return "Preparing pairing QR code…";case "numeric":return "Preparing rotating pairing code…";case "join":case "joinNumeric":return "Connecting to the other device…";default:return "Updating paired devices…";}}
+    public static void action(String action,String value,BiConsumer<String,String> done){
+        boolean pairing=!action.equals("forget");long request=pairing?PAIR_VERSION.incrementAndGet():0;
+        feedback(pairingProgress(action));
+        PAIR.execute(()->{String result=null,error=null;try{
+            start();long h=handle;if(h==0)throw new IllegalStateException("Enable device sync first.");
+            if(pairing){long token=Long.parseLong(NativeMesh.pairing(h,"token",0,""));if(request!=PAIR_VERSION.get())throw new IllegalStateException("Pairing cancelled.");result=NativeMesh.pairing(h,action,token,value);if(action.equals("numeric"))numeric=new JSONObject(result);}
+            else{NativeMesh.forget(h,value);result="Device unpaired";}
+            if(h!=handle)throw new IllegalStateException("Sync stopped.");
+        }catch(Exception e){error=message(e);}catch(LinkageError e){error="Device sync could not load. Reinstall the latest Monogram update for this phone.";}
+        final String r=result,f=error;
+        if(!pairing||request==PAIR_VERSION.get())feedback(f!=null?f:(action.equals("join")||action.equals("joinNumeric")?"Paired. Settings are syncing…":pairing?"Waiting for the other device…":"Device unpaired"));
+        AndroidUtilities.runOnUIThread(()->done.accept(r,f));});
+    }
+    public static void cancelPairing(){
+        PAIR_VERSION.incrementAndGet();long h=handle;
+        if(h!=0)try{long boundary=Long.parseLong(NativeMesh.pairing(h,"invalidate",0,""));CANCEL.execute(()->{try{NativeMesh.pairing(h,"cancel",boundary,"");}catch(RuntimeException|LinkageError ignored){}});}catch(RuntimeException|LinkageError ignored){}
+        feedback("Pairing cancelled.");
+    }
+    public static void cancelInvite(){cancelPairing();}
     public static boolean excluded(String owner){return EXCLUDED.contains(owner);}
     public static void allow(String owner){if(EXCLUDED.remove(owner))prefs().edit().putStringSet("excluded",new HashSet<>(EXCLUDED)).apply();}
     public static void exclude(String owner){if(owner==null||owner.isEmpty())return;EXCLUDED.add(owner);prefs().edit().putStringSet("excluded",new HashSet<>(EXCLUDED)).apply();stopNow();if(enabled())resume();}

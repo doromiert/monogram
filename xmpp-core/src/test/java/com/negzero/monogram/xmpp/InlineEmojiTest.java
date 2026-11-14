@@ -14,6 +14,15 @@ class InlineEmojiTest {
         FileShare.initialize();MessageMarkup.initialize();Message message=new Message(JidCreate.entityBareFrom("bob@example.org"),Message.Type.chat);
         message.setFrom(JidCreate.entityFullFrom("alice@example.org/phone"));message.setStanzaId("inline-fixture");message.setBody(body);return message;
     }
+    @Test void xep0514WorksWithoutXhtmlAndRejectsMismatchedFileHash() throws Exception {
+        String body="A 😀 B 😀";Message original=message(body);emoji(body).addTo(original);
+        original.removeExtension("html",InlineEmoji.HTML);
+        Message parsed=PacketParserUtils.parseStanza(original.toXML().toString());
+        InlineEmoji result=InlineEmoji.from(parsed,body);assertNotNull(result);assertEquals(2,result.ranges.size());assertArrayEquals(IMAGE,result.ranges.get(0).asset.data());
+        assertNotNull(InlineEmoji.from(Omemo2Payload.content(original,Omemo2Payload.envelope(original,new java.security.SecureRandom())),body));
+        String changed=original.toXML().toString().replace("algo='sha-256'","algo='sha-512'").replace("algo=\"sha-256\"","algo=\"sha-512\"");
+        assertNull(InlineEmoji.from(PacketParserUtils.parseStanza(changed),body));
+    }
     @Test void standardSelfContainedImagesRoundTripPlainAndProtectedWithoutLegacyMetadataLeaks() throws Exception {
         String body="A 😀 B 😀";InlineEmoji inline=emoji(body);Message original=message(body);inline.addTo(original);
         assertTrue(original.hasExtension("html",InlineEmoji.HTML));assertEquals(1,original.getExtensions("data",InlineEmoji.BOB).size());
@@ -32,7 +41,7 @@ class InlineEmojiTest {
         assertNull(XmppMessage.modern(original,decoded,JidCreate.entityBareFrom("bob@example.org"),null,null).inlineEmoji,"Only authenticated content may supply images");
     }
     @Test void malformedCidUnsafeSourcesAndOverlapsFallBackToReadableUnicode() throws Exception {
-        String body="A 😀 B 😀";Message original=message(body);emoji(body).addTo(original);String xml=original.toXML().toString();
+        String body="A 😀 B 😀";Message original=message(body);emoji(body).addTo(original);original.removeExtension("markup",MessageMarkup.NAMESPACE);while(original.hasExtension("file-sharing",FileShare.NAMESPACE))original.removeExtension("file-sharing",FileShare.NAMESPACE);String xml=original.toXML().toString();
         for(String unsafe:new String[]{xml.replace("src='cid:","src='https://evil.example/"),xml.replace("src=\"cid:","src=\"https://evil.example/"),xml.replace("iVBOR", "jVBOR"),xml.replace("A ","Changed ")}) {
             if(unsafe.equals(xml)) continue;Message parsed=PacketParserUtils.parseStanza(unsafe);assertNull(InlineEmoji.from(parsed,body));
         }

@@ -9,7 +9,10 @@ public final class MeshJniFixture {
   Path root=Files.createTempDirectory("monogram-jni-mesh-");long a=0,b=0;
   try{
    a=NativeMesh.start(root.resolve("a").toString(),new byte[32],"Desktop fixture","[\""+ip+"\"]");byte[] key=new byte[32];Arrays.fill(key,(byte)1);b=NativeMesh.start(root.resolve("b").toString(),key,"Android fixture","[\""+ip+"\"]");
-   String invite=NativeMesh.invite(a);NativeMesh.join(b,invite);
+   String invite=NativeMesh.invite(a);
+   long stale=Long.parseLong(NativeMesh.pairing(b,"token",0,""));long boundary=Long.parseLong(NativeMesh.pairing(b,"invalidate",0,""));NativeMesh.pairing(b,"cancel",boundary,"");
+   boolean cancelled=false;try{NativeMesh.pairing(b,"join",stale,invite);}catch(IllegalStateException expected){cancelled=true;}if(!cancelled)throw new AssertionError("Cancelled JNI work resumed");
+   NativeMesh.join(b,invite);
    String owner="fixture@example.invalid",id="giphy",itemKey="[\"token\",\""+owner+"\",\""+id+"\"]";
    NativeMesh.putJson(a,"token",owner,id,"{\"value\":\"fictional-test-key\"}");long deadline=System.nanoTime()+12_000_000_000L;
    while(!NativeMesh.inspect(b,"metas").contains("giphy")){if(System.nanoTime()>deadline)throw new AssertionError("JNI transfer timed out");Thread.sleep(30);}
