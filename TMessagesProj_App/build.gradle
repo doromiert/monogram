@@ -13,6 +13,8 @@ configurations {
 configurations.all {
     exclude group: 'com.google.firebase', module: 'firebase-core'
     exclude group: 'androidx.recyclerview', module: 'recyclerview'
+    // Android supplies org.xmlpull.v1; bundling xpp3 duplicates framework interfaces and breaks R8.
+    exclude group: 'xpp3', module: 'xpp3'
 }
 
 dependencies {

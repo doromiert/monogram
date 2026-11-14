@@ -10,7 +10,10 @@ SmackInitialization and poisons ConnectionConfiguration initialization.
 before Android Smack setup or configuration use. Both normal account connection
 and registration enter this synchronized helper; its monitor also establishes
 visibility between concurrent account workers. It does not change identities,
-credentials or account storage. The small bootstrap is kept across shrinking.
+credentials or account storage. The small bootstrap is kept across shrinking. Android dependency graphs exclude
+`xpp3:xpp3` because Android supplies `org.xmlpull.v1`; bundling those framework
+interfaces also prevents R8 from building a release APK. The Smack Xpp3 adapter
+itself remains explicitly pinned and uses the platform parser.
 
 The Robolectric regression reproduces raw discovery failure with a sterile
 context loader and exercises real XML/configuration startup concurrently. The
