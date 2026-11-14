@@ -19,3 +19,9 @@ The same parser/configuration check then exercises the candidate's DEX/resources
 The optional `configClass` argument supports diagnosing obfuscated configuration
 classes before keep rules are repaired; that mode checks configuration startup
 without the reflection-only explicit parser assertion.
+
+The signing-identity verifier requires API28 or newer and reports the installed
+version and SHA-256 certificate. Add `-e revision true` to dispatch the actual
+installed `putJsonAt`/`appliedVersion` JNI methods with inactive handles. This
+verifies Android symbol/descriptor binding without creating a store or sockets;
+full revision semantics are covered by the production host JNI fixture.
