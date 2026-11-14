@@ -557,6 +557,8 @@ public class EmojiView extends FrameLayout implements
             }
         }
 
+        @Override public void showUnicodeEmojiMenu(String emoji,boolean recent){showFavoriteEmojiMenu(emoji,recent);}
+
         @Override
         public void sendEmoji(TLRPC.Document emoji) {
             if (fragment instanceof ChatActivity) {
@@ -1445,6 +1447,13 @@ public class EmojiView extends FrameLayout implements
         public AnimatedEmojiSpan getSpan() {
             return this.span;
         }
+
+        public String getUnicodeEmoji(){
+            if(span!=null||!(getTag() instanceof String))return null;
+            String code=(String)getTag();if(!isRecent){String color=Emoji.emojiColor.get(code);if(color!=null)code=addColorToCode(code,color);}
+            return (Emoji.isValidEmoji(code)||Emoji.isValidEmoji(code.replace("\ufe0f","")))?code:null;
+        }
+        public boolean isRecentEmoji(){return isRecent;}
 
         @Override
         public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -6959,6 +6968,7 @@ public class EmojiView extends FrameLayout implements
             switch (viewType) {
                 case VIEW_TYPE_EMOJI:
                     view = new ImageViewEmoji(getContext());
+                    view.setOnContextClickListener(v->{ImageViewEmoji emoji=(ImageViewEmoji)v;String code=emoji.getUnicodeEmoji();if(code==null)return false;showFavoriteEmojiMenu(code,emoji.isRecentEmoji());return true;});
                     break;
                 case VIEW_TYPE_HEADER:
                     view = new StickerSetNameCell(getContext(), true, resourcesProvider, glassDesign);
@@ -7674,6 +7684,7 @@ public class EmojiView extends FrameLayout implements
                     break;
                 case VIEW_TYPE_EMOJI:
                     view = new ImageViewEmoji(getContext());
+                    view.setOnContextClickListener(v->{ImageViewEmoji emoji=(ImageViewEmoji)v;String code=emoji.getUnicodeEmoji();if(code==null)return false;showFavoriteEmojiMenu(code,emoji.isRecentEmoji());return true;});
                     break;
                 case VIEW_TYPE_SEARCHFIELD:
                     view = new View(getContext());

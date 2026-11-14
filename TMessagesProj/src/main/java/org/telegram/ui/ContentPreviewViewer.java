@@ -181,6 +181,9 @@ public class ContentPreviewViewer {
         default void sendEmoji(TLRPC.Document emoji) {
         }
 
+        default void showUnicodeEmojiMenu(String emoji, boolean recent) {
+        }
+
         default boolean canSchedule() {
             return false;
         }
@@ -477,6 +480,10 @@ public class ContentPreviewViewer {
         public void run() {
             if (parentActivity == null || isPhotoEditor) {
                 return;
+            }
+            if(currentUnicodeEmoji!=null){
+                String code=currentUnicodeEmoji;boolean recent=isRecentSticker;ContentPreviewViewerDelegate handler=delegate;
+                reset();close();if(handler!=null)handler.showUnicodeEmojiMenu(code,recent);return;
             }
             closeOnDismiss = true;
 
@@ -1272,6 +1279,8 @@ public class ContentPreviewViewer {
 
     private int currentContentType;
     private TLRPC.Document currentDocument;
+    private String currentUnicodeEmoji;
+    private final NotificationCenter.NotificationCenterDelegate unicodeEmojiLoaded=(id,account,args)->{if(currentUnicodeEmoji!=null)centerImage.invalidate();};
     private SendMessagesHelper.ImportingSticker importingSticker;
     private String currentQuery;
     private TLRPC.BotInlineResult inlineResult;
@@ -1414,7 +1423,7 @@ public class ContentPreviewViewer {
                             } else if (view instanceof EmojiPacksAlert.EmojiImageView) {
                                 contentType = CONTENT_TYPE_EMOJI;
                                 centerImage.setRoundRadius(0);
-                            } else if (view instanceof EmojiView.ImageViewEmoji && ((EmojiView.ImageViewEmoji) view).getSpan() != null) {
+                            } else if (view instanceof EmojiView.ImageViewEmoji && (((EmojiView.ImageViewEmoji) view).getSpan() != null || ((EmojiView.ImageViewEmoji) view).getUnicodeEmoji()!=null)) {
                                 contentType = CONTENT_TYPE_EMOJI;
                                 centerImage.setRoundRadius(0);
                             }
@@ -1458,20 +1467,7 @@ public class ContentPreviewViewer {
                                     open(document, null, MessageObject.findAnimatedEmojiEmoticon(document, null, currentAccount), null, null, contentType, false, null, resourcesProvider);
                                 }
                             } else if (currentPreviewCell instanceof EmojiView.ImageViewEmoji) {
-                                EmojiView.ImageViewEmoji imageView = (EmojiView.ImageViewEmoji) currentPreviewCell;
-                                AnimatedEmojiSpan span = imageView.getSpan();
-                                TLRPC.Document document = null;
-                                if (span != null) {
-                                    document = span.document;
-                                    if (document == null) {
-                                        document = AnimatedEmojiDrawable.findDocument(currentAccount, span.getDocumentId());
-                                    }
-                                }
-                                if (document != null) {
-                                    open(document, null, MessageObject.findAnimatedEmojiEmoticon(document, null, currentAccount), null, null, contentType, false, null, resourcesProvider);
-                                } else {
-                                    return false;
-                                }
+                                if(!openEmojiCell((EmojiView.ImageViewEmoji)currentPreviewCell,resourcesProvider))return false;
                             } else if (currentPreviewCell instanceof SuggestEmojiView.EmojiImageView) {
                                 SuggestEmojiView.EmojiImageView emojiImageView = (SuggestEmojiView.EmojiImageView) currentPreviewCell;
                                 Drawable drawable = emojiImageView.drawable;
@@ -1573,7 +1569,7 @@ public class ContentPreviewViewer {
                 } else if (view instanceof EmojiPacksAlert.EmojiImageView) {
                     contentType = CONTENT_TYPE_EMOJI;
                     centerImage.setRoundRadius(0);
-                } else if (view instanceof EmojiView.ImageViewEmoji && ((EmojiView.ImageViewEmoji) view).getSpan() != null) {
+                } else if (view instanceof EmojiView.ImageViewEmoji && (((EmojiView.ImageViewEmoji) view).getSpan() != null || ((EmojiView.ImageViewEmoji) view).getUnicodeEmoji()!=null)) {
                     contentType = CONTENT_TYPE_EMOJI;
                     centerImage.setRoundRadius(0);
                 } else if (view instanceof SuggestEmojiView.EmojiImageView) {
@@ -1628,19 +1624,7 @@ public class ContentPreviewViewer {
                             opened = true;
                         }
                     } else if (currentPreviewCell instanceof EmojiView.ImageViewEmoji) {
-                        EmojiView.ImageViewEmoji imageView = (EmojiView.ImageViewEmoji) currentPreviewCell;
-                        AnimatedEmojiSpan span = imageView.getSpan();
-                        TLRPC.Document document = null;
-                        if (span != null) {
-                            document = span.document;
-                            if (document == null) {
-                                document = AnimatedEmojiDrawable.findDocument(currentAccount, span.getDocumentId());
-                            }
-                        }
-                        if (document != null) {
-                            open(document, null, MessageObject.findAnimatedEmojiEmoticon(document, null, currentAccount), null, null, contentTypeFinal, false, null, resourcesProvider);
-                            opened = true;
-                        }
+                        opened=openEmojiCell((EmojiView.ImageViewEmoji)currentPreviewCell,resourcesProvider);
                     } else if (currentPreviewCell instanceof SuggestEmojiView.EmojiImageView) {
                         SuggestEmojiView.EmojiImageView emojiImageView = (SuggestEmojiView.EmojiImageView) currentPreviewCell;
                         Drawable drawable = emojiImageView.drawable;
@@ -1726,6 +1710,7 @@ public class ContentPreviewViewer {
             protected void onAttachedToWindow() {
                 super.onAttachedToWindow();
                 centerImage.onAttachedToWindow();
+                NotificationCenter.getGlobalInstance().addObserver(unicodeEmojiLoaded,NotificationCenter.emojiLoaded);
                 effectImage.onAttachedToWindow();
             }
 
@@ -1733,6 +1718,7 @@ public class ContentPreviewViewer {
             protected void onDetachedFromWindow() {
                 super.onDetachedFromWindow();
                 centerImage.onDetachedFromWindow();
+                NotificationCenter.getGlobalInstance().removeObserver(unicodeEmojiLoaded,NotificationCenter.emojiLoaded);
                 effectImage.onDetachedFromWindow();
             }
         };
@@ -1793,6 +1779,13 @@ public class ContentPreviewViewer {
         keyboardHeight = height;
     }
 
+    private boolean openEmojiCell(EmojiView.ImageViewEmoji cell,Theme.ResourcesProvider resources){
+        AnimatedEmojiSpan span=cell.getSpan();
+        if(span==null){String code=cell.getUnicodeEmoji();if(code==null)return false;open(null,null,code,null,null,CONTENT_TYPE_EMOJI,cell.isRecentEmoji(),null,resources);return isVisible;}
+        TLRPC.Document document=span.document;if(document==null)document=AnimatedEmojiDrawable.findDocument(currentAccount,span.getDocumentId());
+        if(document==null)return false;open(document,null,MessageObject.findAnimatedEmojiEmoticon(document,null,currentAccount),null,null,CONTENT_TYPE_EMOJI,false,null,resources);return isVisible;
+    }
+
     public void open(TLRPC.Document document, SendMessagesHelper.ImportingSticker sticker, String emojiPath, String query, TLRPC.BotInlineResult botInlineResult, int contentType, boolean isRecent, Object parent, Theme.ResourcesProvider resourcesProvider) {
         open(document, sticker, emojiPath, query,botInlineResult, contentType, isRecent, parent, resourcesProvider, 0);
     }
@@ -1808,8 +1801,9 @@ public class ContentPreviewViewer {
         backgroundDrawable.setColor(isDark ? 0x71000000 : 0x64E6E6E6);
         drawEffect = false;
         centerImage.setColorFilter(null);
+        String unicodeEmoji=contentType==CONTENT_TYPE_EMOJI&&document==null&&sticker==null&&emojiPath!=null&&(Emoji.isValidEmoji(emojiPath)||Emoji.isValidEmoji(emojiPath.replace("\ufe0f","")))?emojiPath:null;
         if (contentType == CONTENT_TYPE_STICKER || contentType == CONTENT_TYPE_EMOJI || contentType == CONTENT_TYPE_CUSTOM_STIKER) {
-            if (document == null && sticker == null) {
+            if (document == null && sticker == null && unicodeEmoji == null) {
                 return;
             }
             if (textPaint == null) {
@@ -1819,7 +1813,11 @@ public class ContentPreviewViewer {
 
             effectImage.clearImage();
             drawEffect = false;
-            if (document != null) {
+            if(unicodeEmoji!=null){
+                centerImage.setImageBitmap(Emoji.getEmojiBigDrawable(unicodeEmoji));
+                AndroidUtilities.cancelRunOnUIThread(showSheetRunnable);
+                if(delegate!=null&&delegate.needMenu())AndroidUtilities.runOnUIThread(showSheetRunnable,menuOpenDelay>0?menuOpenDelay:1300);
+            } else if (document != null) {
                 TLRPC.InputStickerSet newSet = null;
                 for (int a = 0; a < document.attributes.size(); a++) {
                     TLRPC.DocumentAttribute attribute = document.attributes.get(a);
@@ -1925,6 +1923,7 @@ public class ContentPreviewViewer {
         }
 
         currentContentType = contentType;
+        currentUnicodeEmoji = unicodeEmoji;
         currentDocument = document;
         importingSticker = sticker;
         currentQuery = query;
@@ -1985,6 +1984,7 @@ public class ContentPreviewViewer {
         lastUpdateTime = System.currentTimeMillis();
         containerView.invalidate();
         currentDocument = null;
+        currentUnicodeEmoji = null;
         currentStickerSet = null;
         currentQuery = null;
         delegate = null;
@@ -2000,6 +2000,7 @@ public class ContentPreviewViewer {
     public void clearDelegate(ContentPreviewViewerDelegate contentPreviewViewerDelegate) {
         if (delegate == contentPreviewViewerDelegate) {
             currentDocument = null;
+            currentUnicodeEmoji = null;
             currentStickerSet = null;
             currentQuery = null;
             delegate = null;
@@ -2012,6 +2013,7 @@ public class ContentPreviewViewer {
         isVisible = false;
         delegate = null;
         currentDocument = null;
+        currentUnicodeEmoji = null;
         currentQuery = null;
         currentStickerSet = null;
         if (parentActivity == null || windowView == null) {
