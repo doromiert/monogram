@@ -176,6 +176,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
     public ChatAvatarContainer(Context context, BaseFragment baseFragment, boolean needTime, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        if (baseFragment != null) currentAccount = baseFragment.getCurrentAccount();
         if (baseFragment instanceof ChatActivity) {
             parentFragment = (ChatActivity) baseFragment;
         }
@@ -1121,7 +1122,7 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         }
 
         subtitleIsThinkingBot = false;
-        CharSequence printString = parentFragment.getThreadId()==0
+        CharSequence printString = !parentFragment.isThreadChat()
                 ? org.telegram.messenger.xmpp.MonogramController.get(currentAccount).chatTypingSubtitle(parentFragment.getDialogId())
                 : MessagesController.getInstance(currentAccount).getPrintingString(parentFragment.getDialogId(), parentFragment.getThreadId(), false);
         if (printString == null && UserObject.isBotForum(user)) {

@@ -106,6 +106,7 @@ public final class MonogramController {
     private MonogramController(int account) {
         this.account = account;
         preferences = ApplicationLoader.applicationContext.getSharedPreferences("monogram-" + account, Context.MODE_PRIVATE);
+        MonogramDefaults.apply(preferences);
         store = new MonogramStore(account); modernStore = new MonogramOmemo2Store(account); pqStore = new MonogramPqOmemoStore(account);
         linkPreviews=new MonogramLinkPreviews(account,preferences,store);
         encryptionPolicy=new MonogramEncryptionPolicy(preferences);
@@ -406,10 +407,10 @@ public final class MonogramController {
     }
     public boolean typingEnabled() { return preferences.getBoolean("typing-enabled", true); }
     public boolean readReceiptsEnabled() {
-        String jid=accountJid();return !jid.isEmpty() && preferences.getBoolean("read-receipts-enabled-"+jid,false);
+        String jid=accountJid();return !jid.isEmpty() && preferences.getBoolean("read-receipts-enabled-"+jid,true);
     }
     public boolean groupReadReceiptsEnabled() {
-        String jid=accountJid();return !jid.isEmpty() && preferences.getBoolean("group-read-receipts-enabled-"+jid,false);
+        String jid=accountJid();return !jid.isEmpty() && preferences.getBoolean("group-read-receipts-enabled-"+jid,true);
     }
     public boolean setReadReceiptsEnabled(boolean enabled) {
         return setReadReceiptsPreference(enabled,false);
@@ -1875,6 +1876,7 @@ public final class MonogramController {
                     attempt.check();
                     if (!preferences.edit().putString("jid", details.jid.toString()).putString("host", host)
                             .putInt("port", port).putString("credential",sealed).commit()) throw new java.io.IOException("Cannot save account");
+                MonogramDefaults.apply(preferences);
                 MonogramLanSync.allow(accountJid());
                     attempt.complete(null);
                 }
@@ -1943,6 +1945,7 @@ public final class MonogramController {
         String jid=value.getString("jid");if(MonogramLanSync.excluded(jid))throw new IllegalStateException("Account was removed from this device.");if(!accountJid().isEmpty()&&!accountJid().equals(jid))throw new IllegalStateException("Account slot changed.");
         String sealed=vault.encrypt(value.getString("password"));
         if(!preferences.edit().putString("jid",jid).putString("host",value.getString("host")).putInt("port",value.getInt("port")).putBoolean("direct-tls",value.getBoolean("direct_tls")).putString("credential",sealed).commit())throw new java.io.IOException("Cannot save synchronized account.");
+        MonogramDefaults.apply(preferences);
         self=store.peer(jid);
         AndroidUtilities.runOnUIThread(()->{if(!jid.equals(accountJid())||MonogramLanSync.excluded(jid))return;TLRPC.User user=ownUser();UserConfig config=UserConfig.getInstance(account);config.setCurrentUser(user);config.syncContacts=false;config.saveConfig(true);ArrayList<TLRPC.User> users=new ArrayList<>();users.add(user);MessagesStorage.getInstance(account).putUsersAndChats(users,null,true,true);MessagesController.getInstance(account).putUser(user,false);NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.mainUserInfoChanged);ApplicationLoader.startPushService();});
     }
@@ -2406,7 +2409,7 @@ public final class MonogramController {
     }
     public boolean encrypted(long peer) { return preferences.getBoolean("omemo-" + peer, true); }
     public boolean blindlyTrustContact(long peer) {
-        return peer>0 && peer!=self && preferences.getBoolean("blind-trust-"+accountJid()+"\n"+store.jid(peer),false);
+        return peer>0 && peer!=self && preferences.getBoolean("blind-trust-"+accountJid()+"\n"+store.jid(peer),true);
     }
     public void setBlindlyTrustContact(long peer,boolean enabled) {
         if(peer<=0 || peer==self)throw new IllegalArgumentException("Choose a contact, not a room or your own account.");
@@ -2427,8 +2430,8 @@ public final class MonogramController {
     }
     boolean blindlyTrustAddress(String address) {
         if(accountJid().isEmpty() || accountJid().equals(address))return false;
-        if(preferences.getBoolean("blind-trust-"+accountJid()+"\n"+address,false))return true;
         long user=store.knownPeer(address);
+        if(user>=0 && preferences.getBoolean("blind-trust-"+accountJid()+"\n"+address,true))return true;
         if(user<0 && blindlyTrustRoom(user))return true;
         for(long room:store.rooms())if(blindlyTrustRoom(room) && store.room(room).autojoin) {
             java.util.Set<String> verified=verifiedRoomTrustMembers.get(room);

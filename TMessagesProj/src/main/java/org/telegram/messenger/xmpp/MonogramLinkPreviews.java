@@ -36,11 +36,12 @@ public final class MonogramLinkPreviews {
     private volatile long privacyEpoch;
     private String cachePolicyOwner;
     MonogramLinkPreviews(int account,SharedPreferences preferences,MonogramStore store) {
+        MonogramDefaults.apply(preferences);
         this.account=account;this.preferences=preferences;this.store=store;network.allowCoreThreadTimeOut(true);
     }
     private String key(String field) { return "link-previews-"+field+"-"+preferences.getString("jid",""); }
-    public boolean enabled() { return preferences.getBoolean(key("enabled"),false); }
-    public boolean encryptedEnabled() { return preferences.getBoolean(key("encrypted"),false); }
+    public boolean enabled() { return preferences.getBoolean(key("enabled"),true); }
+    public boolean encryptedEnabled() { return preferences.getBoolean(key("encrypted"),true); }
     public void enabled(boolean value) { privacyEpoch++;preferences.edit().putBoolean(key("enabled"),value).apply();if(!value) { network.getQueue().clear();pending.clear(); } }
     public void encryptedEnabled(boolean value) { privacyEpoch++;preferences.edit().putBoolean(key("encrypted"),value).apply(); }
     void cancel() { privacyEpoch++;network.getQueue().clear();pending.clear(); }

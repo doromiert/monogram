@@ -324,6 +324,7 @@ impl Mesh {
         if invitation.endpoints.is_empty() {
             return Err("Connect both devices to the same local network.".into());
         }
+        drop(store);
         let value = serde_json::to_vec(&invitation).map_err(failure)?;
         *self.invite.lock().unwrap() = Some(invitation);
         Ok(format!(
@@ -647,6 +648,28 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("monogram-sync-test-{}", uuid::Uuid::new_v4()));
         Mesh::start(Store::open(root, random(), name.into()).unwrap()).unwrap()
+    }
+    #[test]
+    fn generating_an_invite_does_not_hold_storage_while_waiting_for_pairing() {
+        let mesh = node("lock-order");
+        let invitation = mesh.invite.lock().unwrap();
+        let mut addresses = mesh.addresses.lock().unwrap();
+        *addresses = vec![SocketAddr::from(([127,0,0,1],mesh.port))];
+        let worker = mesh.clone();
+        let join = thread::spawn(move || worker.invite());
+        let deadline = std::time::Instant::now()+Duration::from_secs(1);
+        while mesh.store.try_lock().is_ok() && std::time::Instant::now()<deadline { thread::yield_now(); }
+        drop(addresses);
+        let deadline=std::time::Instant::now()+Duration::from_millis(250);
+        let mut available=false;
+        while std::time::Instant::now()<deadline {
+            if mesh.store.try_lock().is_ok(){available=true;break;}
+            thread::yield_now();
+        }
+        drop(invitation);
+        assert!(join.join().unwrap().is_ok());
+        mesh.stop();
+        assert!(available,"Invite blocked the settings worker and pairing acceptor");
     }
     fn pair(from: &Arc<Mesh>, to: &Arc<Mesh>) {
         *from.addresses.lock().unwrap() = vec![SocketAddr::from(([127, 0, 0, 1], from.port))];

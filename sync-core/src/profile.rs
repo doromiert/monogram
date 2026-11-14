@@ -45,7 +45,6 @@ pub fn validate(kind: &str, owner: &str, id: &str, v: &Value) -> Result<()> {
                     validate_members(pinned)?;
                 }
                 if name.is_empty()
-                    || name == "All"
                     || name.len() > 320
                     || name.chars().any(char::is_control)
                 {
@@ -275,6 +274,10 @@ mod tests {
     fn folders_validate_order_members_and_optional_metadata() {
         let valid = json!({"rules":{"Friends":{"types":["contacts"],"include":["alice@example.invalid"],"exclude":[],"pinned":["alice@example.invalid"],"icon":"cat","exclude_muted":true,"exclude_read":false,"exclude_archived":true}},"order":["Friends","All"],"all_hidden":true,"rooms":[]});
         assert!(validate("folders", "me@example.invalid", "folders", &valid).is_ok());
+        let mut desktop = valid.clone();
+        desktop["rules"]["All"] = desktop["rules"]["Friends"].clone();
+        desktop["rules"]["All"]["icon"] = json!("");
+        assert!(validate("folders", "me@example.invalid", "folders", &desktop).is_ok());
         let mut invalid = valid.clone();
         invalid["order"] = json!(["Friends", "Friends", "All"]);
         assert!(validate("folders", "me@example.invalid", "folders", &invalid).is_err());

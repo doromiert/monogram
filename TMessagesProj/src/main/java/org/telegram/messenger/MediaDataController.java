@@ -9006,6 +9006,9 @@ public class MediaDataController extends BaseController {
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
             ArrayList<KeywordResult> result = new ArrayList<>();
             HashMap<String, Boolean> resultMap = new HashMap<>();
+            if(allowAnimated)for(java.util.Map.Entry<Long,String> named:org.telegram.messenger.xmpp.MonogramPacks.namedEmojis(currentAccount,keyword,fullMatch).entrySet()){
+                String id="animated_"+named.getKey();result.add(new KeywordResult(id,named.getValue()));resultMap.put(id,true);
+            }
             String alias = null;
             try {
                 SQLiteCursor cursor;
@@ -9023,7 +9026,7 @@ public class MediaDataController extends BaseController {
                 if (!hasAny) {
                     AndroidUtilities.runOnUIThread(() -> {
                         for (int a = 0; a < langCodes.length; a++) {
-                            if (currentFetchingEmoji.get(langCodes[a]) != null) {
+                            if (result.isEmpty() && currentFetchingEmoji.get(langCodes[a]) != null) {
                                 return;
                             }
                         }

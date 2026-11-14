@@ -25,6 +25,8 @@ public class MonogramRoomBlindTrustTest {
     }
     @After public void cleanup(){store.close();context.deleteDatabase("room-trust.db");}
     @Test public void roomOptInFollowsVerifiedMembershipAndNeverApprovesSelfOrOtherAccounts()throws Exception {
+        android.content.SharedPreferences.Editor strict=prefs.edit();
+        for(String owner:new String[]{"alice@example.org","other@example.org"})for(String peer:new String[]{"bob@example.org","stranger@example.org","fresh@example.org","new@example.org"})strict.putBoolean("blind-trust-"+owner+"\n"+peer,false);strict.commit();
         MonogramEncryptionPolicy policy=new MonogramEncryptionPolicy(prefs);policy.selected("alice@example.org",store.jid(room),room,com.negzero.monogram.xmpp.XmppMessage.Encryption.PLAIN,10000);
         assertFalse(controller.blindlyTrustAddress("bob@example.org"));controller.setBlindlyTrustRoom(room,true);
         assertNull(policy.cached("alice@example.org",store.jid(room),10001));

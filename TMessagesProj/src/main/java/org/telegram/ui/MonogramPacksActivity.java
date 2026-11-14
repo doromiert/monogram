@@ -103,6 +103,8 @@ public final class MonogramPacksActivity extends MonogramSettingsActivity {
         if(item.id==20) { MonogramPacks.cancelImport(currentAccount);return; }
         if (busy || importState!=null && importState.active) return;
         if (item.object instanceof MonogramPacks.Pack) {
+            MonogramPacks.Pack pack=(MonogramPacks.Pack)item.object;
+            if(pack.emojis){presentFragment(new MonogramEmojiPackActivity(currentAccount,pack.id));return;}
             TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=((MonogramPacks.Pack)item.object).id;
             showDialog(new StickersAlert(getContext(),this,input,MonogramPacks.find(currentAccount,input),null,false));return;
         }

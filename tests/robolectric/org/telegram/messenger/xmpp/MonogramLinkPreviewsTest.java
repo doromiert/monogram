@@ -128,16 +128,16 @@ public class MonogramLinkPreviewsTest {
         store.deleteMessages(Collections.singleton(id));assertFalse(MonogramLinkPreviews.candidate(store.getMessage(id,self)));
         store.clearLinkPreviews();assertFalse(store.linkPreviewFresh(url,0));
     }
-    @Test public void freshFailuresSuppressRetriesAndPrivacyDefaultsPreventNetworkScheduling() throws Exception {
+    @Test public void freshFailuresSuppressRetriesAndExplicitPrivacyOptOutPreventsNetworkScheduling() throws Exception {
         android.content.SharedPreferences preferences=context.getSharedPreferences("preview-test",Context.MODE_PRIVATE);preferences.edit().clear().putString("jid","alice@example.org").commit();
-        MonogramLinkPreviews previews=new MonogramLinkPreviews(0,preferences,store);assertFalse(previews.enabled());assertFalse(previews.encryptedEnabled());
+        MonogramLinkPreviews previews=new MonogramLinkPreviews(0,preferences,store);assertTrue(previews.enabled());assertTrue(previews.encryptedEnabled());previews.enabled(false);previews.encryptedEnabled(false);
         TLRPC.TL_message message=new TLRPC.TL_message();message.id=1;message.message="https://example.org/";message.media=new TLRPC.TL_messageMediaEmpty();
         AtomicBoolean refreshed=new AtomicBoolean();
         previews.maybeFetch(message,false,()->true,Runnable::run,()->refreshed.set(true));assertFalse(refreshed.get());
         previews.enabled(true);previews.maybeFetch(message,true,()->true,Runnable::run,()->refreshed.set(true));assertFalse(refreshed.get());
         store.saveLinkPreview("https://example.org/",null,System.currentTimeMillis()+60000);assertTrue(store.linkPreviewFresh("https://example.org/",System.currentTimeMillis()));
         assertTrue(store.getMessage(store.save(MessageFixture.replyMessage("failure","failure",null,message.message,true,false,100000,"phone",false,null)),self).media instanceof TLRPC.TL_messageMediaEmpty);
-        previews.encryptedEnabled(true);preferences.edit().putString("jid","other@example.org").commit();assertFalse(previews.enabled());assertFalse(previews.encryptedEnabled());
+        previews.encryptedEnabled(true);preferences.edit().putString("jid","other@example.org").commit();assertTrue(previews.enabled());assertTrue(previews.encryptedEnabled());
         previews.cancel();
     }
     @Test public void thumbnailLocationRemainsLocalAcrossNativeSerializationAndDatabaseReopen() throws Exception {

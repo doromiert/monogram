@@ -133,6 +133,13 @@ public class MonogramPacksTest {
         assertTrue(MonogramGiphy.setFavorite(0,local,true));
         assertEquals(local.localPath,MonogramGiphy.library(0,true).get(0).document.localPath);
     }
+    @Test public void exportedPackKeepsNzspNameInDocumentsUi() {
+        android.content.Intent intent=MonogramPacks.exportIntent("Friends/Pack.xmsp");
+        assertEquals(android.content.Intent.ACTION_CREATE_DOCUMENT,intent.getAction());
+        assertEquals("application/vnd.monogram.sticker-pack",intent.getType());
+        assertEquals("Friends_Pack.nzsp",intent.getStringExtra(android.content.Intent.EXTRA_TITLE));
+        assertTrue(intent.hasCategory(android.content.Intent.CATEGORY_OPENABLE));
+    }
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test public void archiveImportUsesFreshNativeIdsAndFailurePreservesInstalledPack() throws Exception {
         jid="archive@example.org";
@@ -162,6 +169,7 @@ public class MonogramPacksTest {
             assertEquals(2,MonogramPacks.packs(0).size());
             assertEquals(pass==0,MonogramPacks.importProgress(0).complete);
         }
+        assertTrue(archive.get().getName().endsWith(".nzsp"));
         MonogramPacks.Pack restored=MonogramPacks.packs(0).get(0);
         assertNotEquals(original.id,restored.id);assertNotEquals(item.id,restored.items.get(0).id);
         assertEquals(item.name,restored.items.get(0).name);assertTrue(restored.privatePack);assertFalse(restored.connected);
@@ -186,6 +194,18 @@ public class MonogramPacksTest {
             assertEquals("👋",packs.get(0).items.get(pass).emoji);
             if(pass>0) assertEquals(id,packs.get(0).id);
         }
+    }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void customEmojiNameAndFallbackAreIndependentAndPersist() throws Exception {
+        jid="named-emoji@example.org";byte[] png=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+        android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/custom-name");org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,new java.io.ByteArrayInputStream(png));
+        java.util.concurrent.CountDownLatch ready=new java.util.concurrent.CountDownLatch(1);java.util.concurrent.atomic.AtomicReference<String> failure=new java.util.concurrent.atomic.AtomicReference<>();
+        MonogramPacks.create(0,"Custom",true,new java.util.ArrayList<>(java.util.Collections.singletonList(uri)),e->{failure.set(e);ready.countDown();});assertTrue(ready.await(10,java.util.concurrent.TimeUnit.SECONDS));assertNull(failure.get());
+        MonogramPacks.Pack pack=MonogramPacks.packs(0).get(0);MonogramPacks.Item item=pack.items.get(0);String original=item.emoji;
+        MonogramPacks.rename(0,pack.id,item.id,"NVIDIA",false);assertEquals(original,MonogramPacks.pack(0,pack.id).items.get(0).emoji);
+        MonogramPacks.rename(0,pack.id,item.id,"😺",true);java.util.Map<?,?> cache=ReflectionHelpers.getStaticField(MonogramPacks.class,"CACHE");cache.clear();
+        item=MonogramPacks.pack(0,pack.id).items.get(0);assertEquals("NVIDIA",item.name);assertEquals("😺",item.emoji);assertEquals("NVIDIA",MonogramPacks.namedEmojis(0,":nvid",false).get(item.id));
+        TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=pack.id;assertEquals("nvidia",MonogramPacks.find(0,input).keywords.get(0).keyword.get(0));
     }
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test public void replaceKeepsPositionAndOldDocumentsAndFailurePreservesThePack() throws Exception {

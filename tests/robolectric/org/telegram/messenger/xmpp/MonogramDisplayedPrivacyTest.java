@@ -69,7 +69,7 @@ public class MonogramDisplayedPrivacyTest {
         ApplicationLoader.applicationContext=context;ApplicationLoader.applicationLoaderInstance=new ApplicationLoader();
         context.deleteDatabase("displayed-privacy.db");store=new MonogramStore(context,"displayed-privacy.db");
         peer=store.peer("bob@example.org");
-        preferences=context.getSharedPreferences("displayed-privacy",0);preferences.edit().clear().putString("jid","alice@example.org").commit();
+        preferences=context.getSharedPreferences("displayed-privacy",0);preferences.edit().clear().putString("jid","alice@example.org").putBoolean("read-receipts-enabled-alice@example.org",false).putBoolean("group-read-receipts-enabled-alice@example.org",false).commit();
         controller=ReflectionHelpers.callConstructor(MonogramController.class,ReflectionHelpers.ClassParameter.from(int.class,0));
         ReflectionHelpers.setField(controller,"preferences",preferences);ReflectionHelpers.setField(controller,"store",store);
         ReflectionHelpers.setField(controller,"worker",worker);ReflectionHelpers.setField(controller,"sendWorker",sends);
@@ -106,10 +106,10 @@ public class MonogramDisplayedPrivacyTest {
         assertTrue(controller.setGroupReadReceiptsEnabled(false));worker.drain();
         assertTrue(controller.readReceiptsEnabled());assertFalse(controller.groupReadReceiptsEnabled());
         assertEquals(peer,store.reads.pendingDisplayed().get(0).peer);
-        preferences.edit().putString("jid","other@example.org").commit();assertFalse(controller.groupReadReceiptsEnabled());
+        preferences.edit().putString("jid","other@example.org").commit();assertTrue(controller.groupReadReceiptsEnabled());
     }
 
-    @Test public void optInIsOffByDefaultScopedToAccountAndClearsOldQueueBeforeEnablingWithoutBackfill() throws Exception {
+    @Test public void explicitOptOutIsAccountScopedAndEnablingClearsOldQueueWithoutBackfill() throws Exception {
         assertFalse(controller.readReceiptsEnabled());assertFalse(network.enabled);
         queueRead();assertEquals(1,store.reads.pendingDisplayed().size());
         assertTrue(controller.setReadReceiptsEnabled(true));assertTrue(controller.readReceiptsEnabled());
@@ -118,9 +118,9 @@ public class MonogramDisplayedPrivacyTest {
         worker.drain();assertTrue(network.enabled);assertEquals(0,network.pendingWhenEnabled);
         assertTrue(store.reads.pendingDisplayed().isEmpty());flush();sends.drain();assertEquals(0,network.sends);
         assertTrue(preferences.getBoolean("read-receipts-enabled-alice@example.org",false));
-        preferences.edit().putString("jid","other@example.org").commit();assertFalse(controller.readReceiptsEnabled());
+        preferences.edit().putString("jid","other@example.org").commit();assertTrue(controller.readReceiptsEnabled());
         assertTrue(controller.setReadReceiptsEnabled(true));worker.drain();
-        assertTrue(preferences.getBoolean("read-receipts-enabled-other@example.org",false));
+        assertTrue(preferences.getBoolean("read-receipts-enabled-other@example.org",true));
         preferences.edit().putString("jid","alice@example.org").commit();assertTrue(controller.readReceiptsEnabled());
         preferences.edit().remove("jid").commit();assertFalse(controller.readReceiptsEnabled());assertFalse(controller.setReadReceiptsEnabled(true));
     }

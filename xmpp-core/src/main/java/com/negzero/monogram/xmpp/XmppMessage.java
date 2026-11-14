@@ -51,6 +51,10 @@ public final class XmppMessage {
 
     static XmppMessage from(Message message, EntityBareJid own, String body, boolean encrypted,
                             boolean readable, String archiveId, Date archiveTime) {
+        if(encrypted && readable && body!=null && body.startsWith(LegacyInline.PREFIX)) {
+            try {Message content=LegacyInline.decode(body);XmppMessage result=from(message,message,own,content.getBody(),Encryption.LEGACY_OMEMO,true,archiveId,archiveTime);return result==null?null:result.withInlineEmoji(InlineEmoji.from(content,content.getBody()));}
+            catch(Exception invalid){return null;}
+        }
         // Legacy OMEMO only encrypts the fallback body, not its public reaction metadata.
         if (encrypted && MessageReactions.publicLegacy(message))
             return from(message,message,own,null,Encryption.PLAIN,true,archiveId,archiveTime);

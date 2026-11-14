@@ -1316,10 +1316,10 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
         }
     }
     private void localItemInput(MonogramPacks.Item item,boolean emoji) {
-        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),emoji ? "Associated emoji" : "Sticker name",false);
+        org.telegram.ui.Cells.EditTextCell input=new org.telegram.ui.Cells.EditTextCell(getContext(),emoji ? "Associated emoji" : localPack()!=null && localPack().emojis ? "Emoji name" : "Sticker name",false);
         input.editText.setSingleLine(true);input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});
         input.editText.setText(emoji ? item.emoji : item.name);
-        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle(emoji ? "Associated emoji" : "Sticker name").setView(input)
+        new AlertDialog.Builder(getContext(),resourcesProvider).setTitle(emoji ? "Associated emoji" : localPack()!=null && localPack().emojis ? "Emoji name" : "Sticker name").setView(input)
                 .setPositiveButton(LocaleController.getString(R.string.Save),(dialog,which) -> editLocalPack(() -> MonogramPacks.rename(currentAccount,stickerSet.set.id,item.id,input.getText().toString(),emoji)))
                 .setNegativeButton(LocaleController.getString(R.string.Cancel),null).show();
     }
@@ -1435,13 +1435,7 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 if(archive!=null) archive.delete();return;
             }
             try {
-                String filename=pack.name.replace('/', '_').replace('\\','_').replace('\n','_').replace('\r','_');
-                if(filename.length()>80) filename=filename.substring(0,80);
-                if(!filename.endsWith(".xmsp")) filename+=".xmsp";
-                android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
-                        // DocumentsUI appends .zip for application/zip, changing the .xmsp name.
-                        .setType("application/octet-stream").addCategory(android.content.Intent.CATEGORY_OPENABLE)
-                        .putExtra(android.content.Intent.EXTRA_TITLE,filename);
+                android.content.Intent intent=MonogramPacks.exportIntent(pack.name);
                 pendingLocalPackExport=new LocalPackExport(archive,currentAccount,owner);
                 activity.startActivityForResult(intent,LOCAL_PACK_EXPORT);
             } catch(Exception failed) {

@@ -356,6 +356,16 @@ public final class MonogramPacks {
         for (Pack pack : read(scope(account))) for (Item item : pack.items) if (item.id == id) return document(scope(account), pack, item);
         return null;
     }
+    /** Name search shares document IDs with Telegram's native animated-emoji suggestions. */
+    public static synchronized java.util.Map<Long,String> namedEmojis(int account,String text,boolean exact) {
+        String query=text==null?"":text.trim().toLowerCase(java.util.Locale.ROOT).replace(":","");
+        java.util.Map<Long,String> result=new java.util.LinkedHashMap<>();if(query.isEmpty())return result;
+        for(Pack pack:read(scope(account)))if(pack.emojis&&pack.installed)for(Item item:pack.items){
+            String name=item.name.toLowerCase(java.util.Locale.ROOT);
+            if(exact?name.equals(query):name.contains(query))result.put(item.id,item.name);
+            if(result.size()>=32)return result;
+        }return result;
+    }
     public static synchronized String stickerName(int account, long id) {
         for (Pack pack : read(scope(account))) for (Item item : pack.items) if (item.id == id) return item.name;
         return null;
@@ -408,6 +418,7 @@ public final class MonogramPacks {
         LinkedHashMap<String, TLRPC.TL_stickerPack> tags = new LinkedHashMap<>();
         for (Item item : pack.items) {
             set.documents.add(document(scope, pack, item));
+            if(pack.emojis){TLRPC.TL_stickerKeyword keyword=new TLRPC.TL_stickerKeyword();keyword.document_id=item.id;keyword.keyword.add(item.name.toLowerCase(java.util.Locale.ROOT));set.keywords.add(keyword);}
             TLRPC.TL_stickerPack tag = tags.get(item.emoji);
             if (tag == null) { tag = new TLRPC.TL_stickerPack(); tag.emoticon = item.emoji; tags.put(item.emoji, tag); }
             tag.documents.add(item.id);
@@ -527,6 +538,17 @@ public final class MonogramPacks {
         for (Pack pack : packs) if (pack.id == id) { pack.privatePack = value; write(scope, packs); return; }
         throw new IllegalArgumentException("Pack is no longer available.");
     }
+    /** A dedicated type preserves .nzsp in Android DocumentsUI (octet-stream adds .bin). */
+    public static android.content.Intent exportIntent(String name) {
+        String filename=name.replace('/', '_').replace('\\','_').replace('\n','_').replace('\r','_');
+        if(filename.length()>80)filename=filename.substring(0,80);
+        if(filename.endsWith(".xmsp"))filename=filename.substring(0,filename.length()-5);
+        if(!filename.endsWith(".nzsp"))filename+=".nzsp";
+        return new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
+                .setType("application/vnd.monogram.sticker-pack")
+                .addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                .putExtra(android.content.Intent.EXTRA_TITLE,filename);
+    }
     /** Returns an unencrypted app-private snapshot; the caller deletes it after saving/sharing. */
     public static Request exportArchive(int account, long packId, ArchiveCallback callback) {
         final Request request = new Request(account); final String expectedScope = scope(account);
@@ -541,7 +563,7 @@ public final class MonogramPacks {
                 selected.syncId="";for(Item item:selected.items)item.syncId="";
                 File directory = new File(ApplicationLoader.applicationContext.getCacheDir(), "monogram-pack-exports/" + expectedScope);
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException();
-                output = File.createTempFile("pack-", ".xmsp", directory);
+                output = File.createTempFile("pack-", ".nzsp", directory);
                 MonogramPackArchive.write(selected, directory(expectedScope), output, request::check);
                 request.check();
             } catch (ImportFailure failure) { error = failure.getMessage(); }
