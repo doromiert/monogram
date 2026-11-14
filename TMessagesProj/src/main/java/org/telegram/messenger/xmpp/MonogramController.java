@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
-import org.jivesoftware.smack.android.AndroidSmackInitializer;
 import org.jivesoftware.smack.roster.Roster;
 import org.jivesoftware.smack.roster.RosterEntry;
 import org.telegram.messenger.*;
@@ -624,7 +623,7 @@ public final class MonogramController {
         final long epoch = ++sessionEpoch, owner=accountEpoch;
         autoAttempted.clear();
         state(ConnectionsManager.ConnectionStateConnecting);
-        AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
+        MonogramSmack.initialize(ApplicationLoader.applicationContext);
         XmppSession.initializeOmemo(new File(ApplicationLoader.getFilesDirFixed(), "monogram-omemo"),legacyStore);
         int device = preferences.getInt("device", 0);
         // Existing accounts have no manifest and follow the unchanged path. Restored state
@@ -1912,7 +1911,7 @@ public final class MonogramController {
             try {
                 requireRegistrationSlot(owner);Account details=MonogramCertificates.configure(new Account(jid,host,port,"Monogram",MonogramProxy.current()));invitation.validate(details);
                 String sealed=vault.encrypt(password);
-                AndroidSmackInitializer.initialize(ApplicationLoader.applicationContext);
+                MonogramSmack.initialize(ApplicationLoader.applicationContext);
                 com.negzero.monogram.xmpp.XmppRegistration.create(invitation,details,password);created=true;
                 requireRegistrationSlot(owner);signingIn=true;connect(details,password);requireRegistrationSlot(owner);
                 if(!preferences.edit().putString("jid",details.jid.toString()).putString("host",host).putInt("port",port)

@@ -58,6 +58,7 @@ dependencies {
     testImplementation 'org.robolectric:robolectric:4.16.1'
     implementation project(':xmpp-core')
     implementation 'org.igniterealtime.smack:smack-android-extensions:4.4.8'
+    implementation 'org.igniterealtime.smack:smack-xmlparser-xpp3:4.4.8'
     implementation 'androidx.core:core:1.16.0'
     implementation 'com.google.android.material:material:1.14.0'
     implementation 'androidx.palette:palette:1.0.0'

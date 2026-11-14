@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.negzero.monogram.smacksmoke">
+ <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="37"/>
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+ <uses-permission android:name="android.permission.INTERNET"/>
+ <queries><package android:name="com.negzero.monogram.beta"/></queries>
+ <application android:debuggable="true" android:hasCode="true" android:label="Monogram parser regression fixture"/>
+ <instrumentation android:name="com.negzero.monogram.smacksmoke.SmackSmokeInstrumentation" android:targetPackage="com.negzero.monogram.smacksmoke"/>
+</manifest>
