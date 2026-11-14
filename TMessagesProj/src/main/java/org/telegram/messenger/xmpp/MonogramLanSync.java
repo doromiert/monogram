@@ -55,18 +55,31 @@ public final class MonogramLanSync {
         if(enabled())resume();
     }
     public static void enable(boolean value){prefs().edit().putBoolean("enabled",value).apply();if(value){feedback("Starting device sync…");resume();}else{stopNow();context().stopService(new Intent(context(),MonogramLanSyncService.class));feedback("Device sync is off");}}
+    private static boolean lockedNow(){
+        KeyguardManager guard=(KeyguardManager)context().getSystemService(Context.KEYGUARD_SERVICE);
+        android.os.PowerManager power=(android.os.PowerManager)context().getSystemService(Context.POWER_SERVICE);
+        return guard==null || guard.isDeviceLocked() || power!=null&&!power.isInteractive();
+    }
     public static void resume(){
-        if(!enabled()||screenLocked)return;feedback("Starting device sync…");
+        if(!enabled())return;
+        screenLocked=lockedNow();if(screenLocked){feedback("Unlock your phone to resume sync");return;}
+        feedback("Starting device sync…");
         try{Intent service=new Intent(context(),MonogramLanSyncService.class);if(Build.VERSION.SDK_INT>=26)context().startForegroundService(service);else context().startService(service);}catch(RuntimeException e){feedback("Open Device Sync to resume");}
         WORK.execute(()->{try{start();}catch(Exception e){feedback(message(e));}});
     }
     public static synchronized void stopNow(){long old=handle;handle=0;if(old!=0)NativeMesh.stop(old);if(multicast!=null){if(multicast.isHeld())multicast.release();multicast=null;}}
-    private static void start()throws Exception {synchronized(START_LOCK){startInternal();}}
+    private static long start()throws Exception {synchronized(START_LOCK){
+        startInternal();long h=handle;
+        if(h==0)throw new IllegalStateException(lockedNow()?"Unlock your phone to resume sync":"Device sync stopped. Try pairing again.");
+        return h;
+    }}
     private static void startInternal()throws Exception {
-        if(handle!=0||!enabled()||screenLocked)return;
+        if(!enabled())throw new IllegalStateException("Enable device sync first.");
         KeyguardManager guard=(KeyguardManager)context().getSystemService(Context.KEYGUARD_SERVICE);
         if(guard==null||!guard.isDeviceSecure())throw new IllegalStateException("Set a device screen lock before enabling sync.");
-        if(guard.isDeviceLocked())throw new IllegalStateException("Unlock your phone to resume sync");
+        // Screen broadcasts are hints; resume may happen without ACTION_USER_PRESENT.
+        screenLocked=lockedNow();if(screenLocked)throw new IllegalStateException("Unlock your phone to resume sync");
+        if(handle!=0)return;
         File root=new File(context().getNoBackupFilesDir(),"device-sync");if(!root.isDirectory()&&!root.mkdirs())throw new IOException("Cannot create private sync storage.");
         WalletVault vault=new WalletVault(context(),"device-sync","mesh");AtomicFile master=new AtomicFile(new File(root,"master.json"));byte[] key=null;char[] encoded=null;
         try{
@@ -81,7 +94,7 @@ public final class MonogramLanSync {
             key=Base64.decode(new String(encoded),Base64.NO_WRAP);JSONArray ips=new JSONArray();Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
             while(interfaces!=null&&interfaces.hasMoreElements()){NetworkInterface i=interfaces.nextElement();if(!i.isUp()||i.isLoopback())continue;Enumeration<InetAddress> addresses=i.getInetAddresses();while(addresses.hasMoreElements()){InetAddress ip=addresses.nextElement();if(ip instanceof Inet4Address&&(ip.isSiteLocalAddress()||ip.isLinkLocalAddress()))ips.put(ip.getHostAddress());}}
             long h=NativeMesh.start(new File(root,"vault").getAbsolutePath(),key,Build.MODEL,new JSONObject().put("ips",ips).put("excluded",new JSONArray(new ArrayList<>(EXCLUDED))).toString());
-            synchronized(MonogramLanSync.class){if(!enabled()||screenLocked){NativeMesh.stop(h);return;}handle=h;}
+            synchronized(MonogramLanSync.class){if(!enabled()||screenLocked||lockedNow()){NativeMesh.stop(h);return;}handle=h;}
             for(String owner:EXCLUDED)NativeMesh.account(h,owner,false);
             WifiManager wifi=(WifiManager)context().getSystemService(Context.WIFI_SERVICE);if(wifi!=null){synchronized(MonogramLanSync.class){if(handle==h){multicast=wifi.createMulticastLock("Monogram device sync");multicast.setReferenceCounted(false);multicast.acquire();}}}
             feedback("Ready to pair");
@@ -93,7 +106,7 @@ public final class MonogramLanSync {
         boolean pairing=!action.equals("forget");long request=pairing?PAIR_VERSION.incrementAndGet():0;
         feedback(pairingProgress(action));
         PAIR.execute(()->{String result=null,error=null;try{
-            start();long h=handle;if(h==0)throw new IllegalStateException("Enable device sync first.");
+            long h=start();
             if(pairing){long token=Long.parseLong(NativeMesh.pairing(h,"token",0,""));if(request!=PAIR_VERSION.get())throw new IllegalStateException("Pairing cancelled.");result=NativeMesh.pairing(h,action,token,value);if(action.equals("numeric"))numeric=new JSONObject(result);}
             else{NativeMesh.forget(h,value);result="Device unpaired";}
             if(h!=handle)throw new IllegalStateException("Sync stopped.");

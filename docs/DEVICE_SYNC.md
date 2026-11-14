@@ -70,7 +70,9 @@ The private record index, certificate key, peer tokens and object chunks use
 AES-256-GCM at rest, with random nonces and object/chunk metadata as associated
 data. A platform-protected random master key unlocks that store. Android requires
 a device screen lock, pauses networking on screen-off, and requires valid system
-authentication to resume access to its sync/wallet keys. Its foreground notification
+authentication to resume access to its sync/wallet keys. Pairing and resume recheck
+Android’s current lock/screen state, so a missed unlock broadcast cannot leave an
+enabled device stuck reporting that sync is disabled. Its foreground notification
 keeps LAN work visible. Desktop uses the system keyring.
 
 All network, archive and wallet work runs on background workers. Buttons show

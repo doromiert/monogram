@@ -33,10 +33,10 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
  }
  private void update(){if(!destroyed&&listView!=null)listView.adapter.update(true);}
  @Override protected void onClick(UItem item,View view,int position,float x,float y){
-  if(item.id==1){if(busy||waiting)cancelPairing();progress=null;MonogramLanSync.enable(!MonogramLanSync.enabled());update();}
+  if(item.id==1){if(busy||waiting)cancelPairing();error=null;progress=null;MonogramLanSync.enable(!MonogramLanSync.enabled());update();}
   else if(item.id==8)cancelPairing();
   else if(item.id==2)request("invite","");
-  else if(item.id==3){CameraScanActivity.showAsSheet(this,true,CameraScanActivity.TYPE_QR,new MonogramPairingScan(code->{if(!destroyed)request("join",code);},failure->{if(!destroyed){error=failure;update();BulletinFactory.of(this).showForError(failure);}}));}
+  else if(item.id==3){CameraScanActivity.showAsSheet(this,true,CameraScanActivity.TYPE_QR,new MonogramPairingScan(code->{if(!destroyed)request("join",code);},failure->{if(!destroyed){error=failure;update();BulletinFactory.of(this).createErrorBulletin(failure).show();}}));}
   else if(item.id==4){EditTextCell input=new EditTextCell(getContext(),"monogram-sync:…",false);input.editText.setSingleLine(false);input.editText.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(8192)});if(android.os.Build.VERSION.SDK_INT>=26)input.editText.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);showDialog(new AlertDialog.Builder(getContext()).setTitle("Pair device").setView(input).setPositiveButton("Pair",(d,w)->request("join",input.getText().toString().trim())).setNegativeButton("Cancel",null).create());}
   else if(item.id==6)request("numeric","");
   else if(item.id==7)enterCode();
@@ -44,7 +44,7 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
   else if(item.id>=100&&item.id-100<peers.size()){String id=peers.get(item.id-100);showDialog(new AlertDialog.Builder(getContext()).setTitle("Unpair this device?").setMessage("Transfers between these two devices stop. Other paired connections stay active. Data already received stays on each device.").setPositiveButton("Unpair",(d,w)->request("forget",id)).setNegativeButton("Cancel",null).create());}
  }
  private void unlock(){KeyguardManager guard=(KeyguardManager)getContext().getSystemService(Context.KEYGUARD_SERVICE);Intent i=guard==null?null:guard.createConfirmDeviceCredentialIntent("Unlock Monogram sync","Authorize encrypted account and wallet sync");if(i==null){error="Set a device screen lock in Android settings first.";update();return;}startActivityForResult(i,2937);}
- @Override public void onActivityResultFragment(int request,int result,Intent data){super.onActivityResultFragment(request,result,data);if(request==2937){if(result==Activity.RESULT_OK){MonogramLanSync.resume();String action=pendingAction,value=pendingValue;pendingAction=pendingValue=null;if(action!=null)request(action,value);else update();}else cancelPairing();}}
+ @Override public void onActivityResultFragment(int request,int result,Intent data){super.onActivityResultFragment(request,result,data);if(request==2937){if(result==Activity.RESULT_OK){error=null;progress=null;MonogramLanSync.resume();String action=pendingAction,value=pendingValue;pendingAction=pendingValue=null;if(action!=null)request(action,value);else update();}else cancelPairing();}}
  private void rememberPeers(){pairingPeers.clear();JSONArray list=MonogramLanSync.snapshot().optJSONArray("peers");if(list!=null)for(int i=0;i<list.length();i++){JSONObject peer=list.optJSONObject(i);if(peer!=null)pairingPeers.add(peer.optString("id"));}}
  private void checkPairing(){if(!waiting)return;JSONArray list=MonogramLanSync.snapshot().optJSONArray("peers");if(list!=null)for(int i=0;i<list.length();i++){JSONObject peer=list.optJSONObject(i);if(peer!=null&&!pairingPeers.contains(peer.optString("id"))){waiting=false;progress="Paired. Your settings are syncing.";if(pairingDialog!=null)pairingDialog.dismiss();pairingDialog=null;break;}}}
  private void cancelPairing(){
@@ -58,7 +58,7 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
   MonogramLanSync.action(action,value,(result,failure)->{
    if(destroyed||generation!=request)return;
    busy=false;error=failure;progress=failure!=null?null:(action.equals("join")||action.equals("joinNumeric")?"Paired. Your settings are syncing.":null);update();
-   if(failure!=null){if(MonogramLanSync.needsUnlock()){pendingAction=action;pendingValue=value;progress="Unlock your device to pair…";unlock();}else BulletinFactory.of(this).showForError(failure);}
+   if(failure!=null){if(MonogramLanSync.needsUnlock()){pendingAction=action;pendingValue=value;progress="Unlock your device to pair…";unlock();}else BulletinFactory.of(this).createErrorBulletin(failure).show();}
    if(failure==null&&(action.equals("invite")||action.equals("numeric"))){waiting=true;progress="Waiting for the other device…";update();if(action.equals("invite"))qr(result,request);else numeric();}
   });
  }
