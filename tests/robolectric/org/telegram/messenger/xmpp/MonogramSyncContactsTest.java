@@ -28,4 +28,14 @@ public class MonogramSyncContactsTest {
         JSONObject invalid=new JSONObject().put("peer",owner).put("nickname","").put("note","").put("avatar",JSONObject.NULL);
         try{MonogramSyncContacts.apply(0,owner,store,invalid,1);fail("own account must not be overwritten");}catch(IllegalArgumentException expected){}
     }
+    @Test public void avatarBytesTravelWithoutDevicePathsAndDecodeOnTheOtherDevice()throws Exception {
+        android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(8,8,android.graphics.Bitmap.Config.ARGB_8888);java.io.ByteArrayOutputStream encoded=new java.io.ByteArrayOutputStream();assertTrue(image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,encoded));image.recycle();
+        java.io.File source=java.io.File.createTempFile("contact-avatar-",".png",context.getCacheDir());try(java.io.FileOutputStream out=new java.io.FileOutputStream(source)){out.write(encoded.toByteArray());}
+        MonogramContactDetails.avatar(0,owner,peer,source);JSONObject exported=MonogramSyncContacts.snapshot(0,owner,store).getJSONObject(0);JSONObject value=exported.getJSONObject("value");assertFalse(value.isNull("avatar"));assertFalse(value.toString().contains(source.getAbsolutePath()));
+        context.deleteDatabase("sync-contact-other.db");MonogramContactDetails.prefs(1).edit().clear().commit();
+        try(MonogramStore target=new MonogramStore(context,"sync-contact-other.db")) {
+            assertTrue(MonogramSyncContacts.apply(1,owner,target,value,exported.getLong("revision")));java.io.File received=MonogramContactDetails.avatar(1,owner,peer);assertNotNull(received);assertTrue(received.isFile());assertNotEquals(source.getAbsolutePath(),received.getAbsolutePath());
+            android.graphics.Bitmap decoded=android.graphics.BitmapFactory.decodeFile(received.getAbsolutePath());assertNotNull(decoded);assertEquals(8,decoded.getWidth());assertEquals(8,decoded.getHeight());decoded.recycle();assertEquals(exported.getLong("revision"),MonogramSyncContacts.snapshot(1,owner,target).getJSONObject(0).getLong("revision"));
+        }finally{context.deleteDatabase("sync-contact-other.db");MonogramContactDetails.prefs(1).edit().clear().commit();source.delete();}
+    }
 }

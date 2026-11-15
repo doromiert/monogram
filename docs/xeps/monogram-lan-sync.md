@@ -167,3 +167,21 @@ Sources: [RFC 8446](https://www.rfc-editor.org/rfc/rfc8446),
 [RustCrypto SPAKE2](https://docs.rs/spake2/0.4.0/spake2/),
 [XEP-0174](https://xmpp.org/extensions/xep-0174.html),
 [Monero recovery files](https://www.getmonero.org/resources/user-guides/restore_from_keys.html).
+
+
+### Private contact overrides
+
+The optional `contact` record is scoped by the account owner and identified by
+lowercase SHA-256 of the contact's canonical bare JID. Its JSON object contains
+`peer`, `nickname`, `note` and `avatar`. Nicknames are one line, at most 128 Unicode
+characters/256 UTF-16 units; notes are at most 8192 UTF-16 units. `avatar` is null
+for an explicit reset or base64 PNG bytes up to 1 MiB and 4096×4096 pixels, with a
+16-megapixel pixel budget. No device-local path is portable. These are local
+presentation overrides; importing them never writes a remote roster or vCard.
+
+The record metadata stamp is the durable actual user-edit revision. Background
+export and import preserve that stamp. Older edits lose even if exported later;
+newer identical payloads still advance the version. Native import rejects a
+newer local edit and acknowledges only the exact metadata version applied.
+Cleared fields retain a versioned record, so resets propagate. Older clients
+without this record kind require updating before contact override sync is used.
