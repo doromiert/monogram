@@ -5752,7 +5752,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         }).start();
     }
 
-    private static void writeMotionPhoto(File photoFile, File videoFile, OutputStream out, boolean[] cancelled) throws IOException {
+    public static void writeMotionPhoto(File photoFile, File videoFile, OutputStream out, boolean[] cancelled) throws IOException {
         final long videoLength = videoFile.length();
         final String xmp = buildMotionPhotoXmp(videoLength);
         final byte[] xmpHeader = "http://ns.adobe.com/xap/1.0/ ".getBytes("UTF-8");
@@ -5762,6 +5762,8 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             throw new IOException("XMP segment too large: " + segLen);
         }
 
+        final org.telegram.messenger.xmpp.MonogramMotionPhotos.Clip previousMotion = org.telegram.messenger.xmpp.MonogramMotionPhotos.inspect(photoFile);
+        final long stillLength = previousMotion == null ? photoFile.length() : previousMotion.offset;
         try (FileInputStream pis = new FileInputStream(photoFile)) {
             final int b0 = pis.read();
             final int b1 = pis.read();
@@ -5777,10 +5779,12 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             out.write(xmpHeader);
             out.write(xmpBytes);
             final byte[] buf = new byte[64 * 1024];
-            int n;
-            while ((n = pis.read(buf)) > 0) {
+            long remaining = stillLength - 2;
+            while (remaining > 0) {
+                int n = pis.read(buf, 0, (int) Math.min(buf.length, remaining));
+                if (n < 0) throw new java.io.EOFException("Motion photo still changed while exporting");
                 if (cancelled != null && cancelled[0]) return;
-                out.write(buf, 0, n);
+                out.write(buf, 0, n);remaining -= n;
             }
         }
         try (FileInputStream vis = new FileInputStream(videoFile)) {

@@ -20,7 +20,10 @@ public final class MonogramAttachments {
         try {
             File root=new File(context.getFilesDir(),"monogram-attachments").getCanonicalFile();
             File resolved=file.getCanonicalFile(),parent=resolved.getParentFile();
-            return resolved.getName().matches("[a-f0-9]{64}") && parent!=null && root.equals(parent.getParentFile());
+            boolean original=resolved.getName().matches("[a-f0-9]{64}");
+            boolean motion=resolved.getName().matches("[a-f0-9]{64}\\.motion\\.mp4")
+                    && new File(parent,resolved.getName().substring(0,64)).isFile();
+            return (original || motion) && parent!=null && root.equals(parent.getParentFile());
         } catch(java.io.IOException unavailable) { return false; }
     }
     /** Cache filenames are URL hashes; gallery MIME/extension must come from the media bytes. */
@@ -67,8 +70,15 @@ public final class MonogramAttachments {
         message.attachPath = file.getAbsolutePath();
         message.media = saved != null && !(saved.photo != null && isGif(file)) ? saved : media(message.id, message.date, file, name);
         if (message.media.document != null && file.isFile()) {
-            message.media.document.localPath = file.getAbsolutePath();
-            message.media.document.size = file.length();
+            if (message.media.live_photo) {
+                message.media.document.localPath = MonogramMotionPhotos.videoFile(file).getAbsolutePath();
+                message.attachPath = message.media.document.localPath;
+                message.params.put(MonogramMotionPhotos.SOURCE, file.getAbsolutePath());
+                message.params.remove(MonogramMotionPhotos.REBUILD);
+            } else {
+                message.media.document.localPath = file.getAbsolutePath();
+                message.media.document.size = file.length();
+            }
             markRoundVideo(message.media.document,name);
             markAnimatedMp4(message.media.document,name);
         }
@@ -103,6 +113,9 @@ public final class MonogramAttachments {
     }
     static boolean needsMediaRefresh(TLRPC.Message message) {
         if (needsMediaInfo(message)) return true;
+        if (message.media != null && message.media.live_photo && message.media.document != null)
+            return message.media.document.localPath == null || !new File(message.media.document.localPath).isFile();
+        if (message.media != null && message.media.photo != null && !message.media.live_photo) return true;
         TLRPC.Document document = message.media == null ? null : message.media.document;
         return document != null && (MessageObject.isVideoDocument(document) || MessageObject.isRoundVideoDocument(document) || isAnimatedMp4(document))
                 && !hasThumbnail(document);
@@ -142,7 +155,22 @@ public final class MonogramAttachments {
     /** Only call on a file-I/O executor after the file's transport/integrity checks have completed. */
     static TLRPC.MessageMedia decodedMedia(int id,int date,File file,String name,String contentType) {
         TLRPC.MessageMedia media=media(id,date,file,name);
-        if(media.document==null || "image/gif".equals(media.document.mime_type) || !file.isFile()) return media;
+        if (media.photo != null && file.isFile()) {
+            MonogramMotionPhotos.Clip clip = MonogramMotionPhotos.inspect(file);
+            if (clip != null) try {
+                File video = MonogramMotionPhotos.extract(file, clip);
+                TLRPC.TL_document document = new TLRPC.TL_document(); document.id=id;document.date=date;
+                document.dc_id=Integer.MIN_VALUE;document.file_reference=new byte[0];document.mime_type="video/mp4";
+                document.size=clip.length;document.localPath=video.getAbsolutePath();
+                TLRPC.TL_documentAttributeVideo attribute=new TLRPC.TL_documentAttributeVideo();
+                org.telegram.messenger.SendMessagesHelper.fillVideoAttribute(video.getAbsolutePath(),attribute,null);
+                if(attribute.w<=0 || attribute.h<=0) { attribute.w=media.photo.sizes.get(0).w;attribute.h=media.photo.sizes.get(0).h; }
+                document.attributes.add(attribute);
+                TLRPC.TL_documentAttributeFilename filename=new TLRPC.TL_documentAttributeFilename();filename.file_name="motion.mp4";document.attributes.add(filename);
+                media.live_photo=true;media.document=document;media.flags|=16;
+            } catch(java.io.IOException unavailable) { /* The original still remains usable; retry extraction on the next open. */ }
+        }
+        if(media.document==null || media.live_photo || "image/gif".equals(media.document.mime_type) || !file.isFile()) return media;
         TLRPC.Document document=media.document;
         document.mime_type=mimeType(name,contentType);
         markAnimatedMp4(document,name);

@@ -1542,8 +1542,8 @@ public final class MonogramController {
             if(message.dialog_id==mediaHistoryPeer) {
                 maybeLinkPreview(message);
                 if(MonogramAttachments.has(message)) {
-                    File path=new File(message.attachPath);
-                    if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
+                    File path=store.attachmentPath(message.id);
+                    if(path!=null && path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
                 }
             }
             byPeer.computeIfAbsent(message.dialog_id,ignored -> new ArrayList<>()).add(new MessageObject(account,message,true,true));
@@ -2834,8 +2834,8 @@ public final class MonogramController {
             for(TLRPC.Message message:messages) {
                 maybeLinkPreview(message);
                 if(!MonogramAttachments.has(message)) continue;
-                File path=new File(message.attachPath);
-                if(path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
+                File path=store.attachmentPath(message.id);
+                if(path!=null && path.isFile()) refreshCachedMedia(message,path); else maybeAutoDownload(message);
             }
         });
     }
@@ -2850,10 +2850,12 @@ public final class MonogramController {
             try {
                 if(owner!=accountEpoch || !path.isFile()) return;
                 com.negzero.monogram.xmpp.FileShare sharing=store.sharing(message.id);
+                if (sharing != null && message.media != null && message.media.photo != null) sharing.verify(path, new FileTransfer.Job());
                 String filename=sharing==null ? com.negzero.monogram.xmpp.FileLink.parse(address).fileName() : sharing.name;
-                TLRPC.MessageMedia media=MonogramStickers.inspectDisplayHint(MonogramStickers.preserve(message.media,MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document.mime_type : sharing.mime)),path,store.displayStickerHint(message.id,address));
+                TLRPC.MessageMedia media=MonogramStickers.inspectDisplayHint(MonogramStickers.preserve(message.media,MonogramAttachments.decodedMedia(message.id,message.date,path,filename,sharing==null ? message.media.document==null ? "image/jpeg" : message.media.document.mime_type : sharing.mime)),path,store.displayStickerHint(message.id,address));
                 MonogramAttachments.preserveMediaAttributes(message.media,media);
-                if(media.document==null || MonogramAttachments.needsMediaInfo(media.document)) return;
+                if(media.document==null) { publicationQueued=media.photo!=null && MonogramMotionPhotos.inspect(path)==null;return; }
+                if(MonogramAttachments.needsMediaInfo(media.document)) return;
                 worker.execute(() -> {
                     try {
                         if(owner!=accountEpoch) return;
@@ -3187,7 +3189,7 @@ public final class MonogramController {
                     FileTransfer.checkUploadSize(expected.connection(),snapshot.length(),encrypted,job);
                 } else {
                     FileTransfer.checkUploadSize(expected.connection(),request.file.length(),encrypted,job);
-                    snapshot = FileTransfer.snapshot(request.file, ApplicationLoader.applicationContext.getCacheDir(), job);
+                    snapshot = MonogramMotionPhotos.snapshot(request, ApplicationLoader.applicationContext.getCacheDir());
                 }
                 uploadProgress.update(0,snapshot.length());
                 FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
@@ -3198,6 +3200,8 @@ public final class MonogramController {
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
                 job.check();
                 if (!snapshot.renameTo(cached)) throw new java.io.IOException("Cannot commit attachment cache");
+                final TLRPC.MessageMedia uploadedMedia = "image/jpeg".equals(request.mime)
+                        ? MonogramAttachments.decodedMedia(request.localId, request.message.date, cached, uploadName, request.mime) : null;
                 sendWorker.execute(() -> {
                     try {
                         job.check();
@@ -3217,8 +3221,12 @@ public final class MonogramController {
                             id=store.save(message); timestamp=message.timestamp; caption=message.caption;
                         }
                         if(encrypted && !modern) store.forwarded(id,forwardedFile);
-                        TLRPC.MessageMedia media = request.message.media.photo == null ? request.message.media
+                        TLRPC.MessageMedia media = uploadedMedia != null && uploadedMedia.live_photo ? uploadedMedia : request.message.media.photo == null ? request.message.media
                                 : MonogramAttachments.media(id, (int) (timestamp / 1000), cached, sharing == null ? link.fileName() : sharing.name);
+                        if (media.live_photo) {
+                            media.document.id=id;media.document.date=(int)(timestamp/1000);media.photo.id=id;media.photo.date=(int)(timestamp/1000);
+                            for (TLRPC.PhotoSize size : media.photo.sizes) if (size.location != null) size.location.local_id=id;
+                        }
                         media.spoiler=captionMarkup.spoiler;
                         store.attach(id, link.wireUrl, cached, media);
                         refreshReplies(request.message.dialog_id);

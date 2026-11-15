@@ -473,10 +473,11 @@ public final class MonogramMediaDrafts {
     }
     private static final String[] PATHS={"path","thumbPath","imagePath","filterPath","paintPath","croppedPaintPath","fullPaintPath","coverPath"};
     private static JSONObject encode(MediaController.PhotoEntry photo,Owner owner) throws Exception {
+        boolean livePhoto=photo.isLivePhoto();
         JSONObject out=new JSONObject().put("bucket",photo.bucketId).put("id",photo.imageId).put("date",photo.dateTaken).put("duration",photo.duration)
                 .put("width",photo.width).put("height",photo.height).put("size",photo.size).put("orientation",photo.orientation).put("invert",photo.invert).put("video",photo.isVideo)
                 .put("muted",photo.isMuted).put("delete",photo.canDeleteAfter).put("spoiler",photo.hasSpoiler).put("videoOrientation",photo.videoOrientation)
-                .put("liveOffset",photo.livePhotoVideoOffset).put("liveTime",photo.livePhotoTimestampUs).put("averageDuration",photo.averageDuration)
+                .put("livePhoto",livePhoto).put("liveOffset",photo.livePhotoVideoOffset).put("liveTime",photo.livePhotoTimestampUs).put("averageDuration",photo.averageDuration)
                 .put("filtered",photo.isFiltered).put("painted",photo.isPainted).put("cropped",photo.isCropped).put("ttl",photo.ttl).put("effect",photo.effectId).put("coverPosition",photo.coverSavedPosition)
                 .put("quality",photo.highQuality==null ? JSONObject.NULL : photo.highQuality).put("discardLive",photo.discardLivePhoto==null ? JSONObject.NULL : photo.discardLivePhoto);
         String[] paths={photo.path,photo.thumbPath,photo.imagePath,photo.filterPath,photo.paintPath,photo.croppedPaintPath,photo.fullPaintPath,photo.coverPath};
@@ -499,6 +500,7 @@ public final class MonogramMediaDrafts {
         if(in.has("sourceSize") && source.length()!=in.getLong("sourceSize") || in.has("sourceModified") && source.lastModified()!=in.getLong("sourceModified")) throw new IOException("Draft source changed");
         MediaController.PhotoEntry photo=new MediaController.PhotoEntry(in.getInt("bucket"),in.getInt("id"),in.getLong("date"),path,in.getInt("orientation"),in.getInt("duration"),in.getBoolean("video"),in.getInt("width"),in.getInt("height"),in.getLong("size"));
         photo.invert=in.optInt("invert");photo.isMuted=in.optBoolean("muted");photo.canDeleteAfter=in.optBoolean("delete");photo.hasSpoiler=in.optBoolean("spoiler");photo.videoOrientation=in.optInt("videoOrientation",-1);
+        photo.isLivePhoto=in.optBoolean("livePhoto",in.optLong("liveOffset")>0);
         photo.livePhotoVideoOffset=in.optLong("liveOffset");photo.livePhotoTimestampUs=in.optLong("liveTime");photo.averageDuration=in.optLong("averageDuration");
         photo.isFiltered=in.optBoolean("filtered");photo.isPainted=in.optBoolean("painted");photo.isCropped=in.optBoolean("cropped");photo.ttl=in.optInt("ttl");photo.effectId=in.optLong("effect");photo.coverSavedPosition=in.optLong("coverPosition");
         photo.highQuality=in.isNull("quality") ? null : in.getBoolean("quality");photo.discardLivePhoto=in.isNull("discardLive") ? null : in.getBoolean("discardLive");

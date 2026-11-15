@@ -5318,6 +5318,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramForwarding.SOURCE)) {
                     monogramSource = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).forwardSource(params);
                 }
+                boolean motion = params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE);
+                if (motion && !"1".equals(params.get(org.telegram.messenger.xmpp.MonogramMotionPhotos.REBUILD))) {
+                    monogramSource = new File(params.get(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE));
+                    videoEditedInfo = null;
+                }
                 if (!audioSource && monogramSource != null) newMsg.attachPath = monogramSource.getAbsolutePath();
                 groupId = 0; newMsg.grouped_id = 0; newMsg.flags &= ~131072;
                 if (newMsg.params == null) newMsg.params = new HashMap<>();
@@ -5425,7 +5430,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.dialogsNeedReload);
                 }
                 if (monogramFile) {
-                    String mime = photo != null ? "image/jpeg" : document.mime_type;
+                    String mime = photo != null || params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE) ? "image/jpeg" : document.mime_type;
                     boolean supported = scheduleDate == 0 && ttl == 0 && stars == 0 && pollSendParams == null
                             && quick_reply_shortcut == null && quick_reply_shortcut_id == 0;
                     final MessageObject outgoing = newMsgObj;
@@ -10913,6 +10918,13 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
             for (int a = 0; a < count; a++) {
                 final SendingMediaInfo info = media.get(a);
+                if (info.path != null && info.isLivePhoto && !info.discardLivePhoto && !DialogObject.isEncryptedDialog(dialogId)) {
+                    if (info.params == null) info.params = new HashMap<>();
+                    info.params.put(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE, info.path);
+                    if (org.telegram.messenger.xmpp.MonogramMotionPhotos.edited(info.videoEditedInfo)
+                            || !org.telegram.messenger.xmpp.MonogramMotionPhotos.isJpeg(new File(info.path)))
+                        info.params.put(org.telegram.messenger.xmpp.MonogramMotionPhotos.REBUILD, "1");
+                }
                 if (info.path != null && info.isLivePhoto && info.discardLivePhoto) {
                     final File wholeFile = new File(info.path);
                     final File imageFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), Integer.MIN_VALUE + "_" + SharedConfig.getLastLocalId() + ".jpeg");
@@ -11475,6 +11487,12 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             final String finalPath = path;
                             final HashMap<String, String> params = new HashMap<>();
                             org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
+                            if (info.params != null && info.params.containsKey(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE)) {
+                                params.put(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE, info.params.get(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE));
+                                if (info.params.containsKey(org.telegram.messenger.xmpp.MonogramMotionPhotos.REBUILD))
+                                    params.put(org.telegram.messenger.xmpp.MonogramMotionPhotos.REBUILD, "1");
+                                if (info.coverPath != null) params.put(org.telegram.messenger.xmpp.MonogramMotionPhotos.STILL, info.coverPath);
+                            }
                             final Bitmap thumbFinal = thumb;
                             final String thumbKeyFinal = thumbKey;
                             final TLRPC.PhotoSize coverFinal = cover;

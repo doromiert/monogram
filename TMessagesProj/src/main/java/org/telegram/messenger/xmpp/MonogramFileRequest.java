@@ -23,6 +23,8 @@ public final class MonogramFileRequest extends TLObject {
         return size;
     }
     public String uploadName() {
+        if(message.params!=null && message.params.containsKey(MonogramMotionPhotos.SOURCE))
+            return "motion_"+java.util.UUID.randomUUID()+"MP.jpg";
         boolean generated=message.media!=null && message.media.photo!=null;
         String name=file.getName();
         String nativeName=null;

@@ -92,6 +92,17 @@ public class MonogramMediaDraftsTest {
         CountDownLatch done=new CountDownLatch(1);AtomicReference<MonogramMediaDrafts.Restored> value=new AtomicReference<>();
         session.restore(result->{value.set(result);done.countDown();});assertTrue(done.await(10,TimeUnit.SECONDS));return value.get();
     }
+    @Test public void motionPhotoFlagAndOriginalSourceSurviveDraftReopen() throws Exception {
+        MediaController.PhotoEntry entry=photo(77,false);entry.isVideo=true;entry.isLivePhoto=true;
+        entry.livePhotoVideoOffset=123;entry.livePhotoTimestampUs=456;entry.discardLivePhoto=false;
+        MonogramMediaDrafts.Session session=save(7,Collections.singletonList(entry),false);awaitWrites();
+        ((Map<?,?>)ReflectionHelpers.getStaticField(MonogramMediaDrafts.class,"latest")).clear();
+        session=MonogramMediaDrafts.bind(0,7,errors::add);
+        MonogramMediaDrafts.Restored restored=restore(session);
+        MediaController.PhotoEntry loaded=restored.photos.get(0);
+        assertTrue(loaded.isLivePhoto());assertEquals(123,loaded.livePhotoVideoOffset);assertEquals(456,loaded.livePhotoTimestampUs);
+        assertEquals(entry.path,loaded.path);assertEquals(Boolean.FALSE,loaded.discardLivePhoto);
+    }
     @Test public void nativeSelectionOrderCaptionEntitiesAndVideoTrimSurviveDiskReopen() throws Exception {
         MediaController.PhotoEntry first=photo(1,false),second=photo(2,false);second.isVideo=true;second.duration=9;second.editedInfo=new VideoEditedInfo();
         second.editedInfo.originalPath=second.path;second.editedInfo.startTime=1000;second.editedInfo.endTime=7000;second.editedInfo.muted=true;second.editedInfo.volume=.5f;

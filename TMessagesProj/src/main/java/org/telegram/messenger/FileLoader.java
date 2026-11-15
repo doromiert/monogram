@@ -1377,7 +1377,7 @@ public class FileLoader extends BaseController {
         }
         if (attach instanceof TLRPC.Document) {
             TLRPC.Document document = (TLRPC.Document) attach;
-            if (!TextUtils.isEmpty(document.localPath) && org.telegram.messenger.xmpp.MonogramStickers.isSticker(document)) return new File(document.localPath);
+            if (!TextUtils.isEmpty(document.localPath) && (document.dc_id == Integer.MIN_VALUE || org.telegram.messenger.xmpp.MonogramStickers.isSticker(document))) return new File(document.localPath);
         }
         File dir = null;
         long documentId = 0;
