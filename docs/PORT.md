@@ -280,5 +280,7 @@ existing bounded short response-header recovery.
 Core regressions pass with the reported8,522,645-byte MP4 as encrypted input,
 including a scripted409 followed by a fresh-slot201, matching ciphertext and
 authenticated decryption, and a successful acknowledgement delayed beyond3s.
-These checks do not identify the original service's exact409 cause; an actual
-phone retry remains necessary. No contact or room test message was sent.
+The user confirmed a successful actual-phone retry on0.2.215, with a temporary
+stall around6.8MiB/9MiB and eventual completion. The original service's exact409
+cause and the remaining mid-upload stall are not established. No agent-generated
+contact or room test message was sent.
