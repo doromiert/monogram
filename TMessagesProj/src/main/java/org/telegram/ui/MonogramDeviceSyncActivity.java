@@ -60,7 +60,7 @@ public final class MonogramDeviceSyncActivity extends MonogramSettingsActivity {
   MonogramLanSync.action(action,value,(result,failure)->{
    if(destroyed||generation!=request)return;
    busy=false;error=failure;if(failure==null)retryAction=retryValue=null;progress=failure!=null?null:(action.equals("join")||action.equals("joinNumeric")?"Paired. Your settings are syncing.":null);update();
-   if(failure!=null){if(MonogramLanSync.needsUnlock()){pendingAction=action;pendingValue=value;progress="Unlock your device to pair…";unlock();}else BulletinFactory.of(this).createErrorBulletin(failure).show();}
+   if(failure!=null){if(MonogramLanSync.needsUnlock()){pendingAction=action;pendingValue=value;progress="Unlock your device to pair…";unlock();}else showDialog(new AlertDialog.Builder(getContext()).setTitle("Device sync failed").setMessage(failure).setPositiveButton("OK",null).create());}
    if(failure==null&&(action.equals("invite")||action.equals("numeric"))){waiting=true;progress="Waiting for the other device…";update();if(action.equals("invite"))qr(result,request);else numeric();}
   });
  }
