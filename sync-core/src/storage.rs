@@ -47,7 +47,7 @@ impl Meta {
     pub fn valid(&self) -> bool {
         matches!(
             self.kind.as_str(),
-            "account" | "pack" | "pack-meta" | "pack-order" | "wallet" | "fingerprint" | "token" | "monero-settings" | "folders"
+            "account" | "pack" | "pack-meta" | "pack-order" | "contact" | "wallet" | "fingerprint" | "token" | "monero-settings" | "folders"
         ) && !self.owner.is_empty()
             && self.owner.len() <= 1024
             && self.owner.contains('@')
@@ -69,7 +69,7 @@ impl Meta {
         (&self.stamp, &self.origin) > (&other.stamp, &other.origin)
     }
     fn applied_token(&self)->String {
-        if self.kind=="pack-order"{format!("{}:{}:{}",self.stamp,self.origin,self.digest)}else{self.digest.clone()}
+        if matches!(self.kind.as_str(),"pack-order"|"contact"){format!("{}:{}:{}",self.stamp,self.origin,self.digest)}else{self.digest.clone()}
     }
     fn aad(&self) -> Vec<u8> {
         serde_json::to_vec(&(1, self.key(), &self.digest, self.size)).unwrap()
@@ -297,7 +297,7 @@ impl Store {
         self.put_json_at_inner(kind,owner,id,value,None)
     }
     pub fn put_json_at(&mut self,kind:&str,owner:&str,id:&str,value:&str,stamp:u64)->Result<Meta>{
-        if kind!="pack-order"{return Err("Explicit revisions are only valid for picker settings.".into());}
+        if !matches!(kind,"pack-order"|"contact"){return Err("Explicit revisions are only valid for picker and contact settings.".into());}
         self.put_json_at_inner(kind,owner,id,value,Some(stamp))
     }
     fn put_json_at_inner(&mut self,kind:&str,owner:&str,id:&str,value:&str,stamp:Option<u64>)->Result<Meta>{
@@ -539,6 +539,15 @@ impl Drop for State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn contact_actual_edit_revisions_and_exact_acks_survive_identical_payloads() {
+        let root=std::env::temp_dir().join(format!("monogram-contact-clock-{}",uuid::Uuid::new_v4()));let owner="alice@example.invalid";let peer="bob@example.invalid";let id=hash(peer.as_bytes());let payload=serde_json::json!({"peer":peer,"nickname":"Friend","note":"","avatar":null}).to_string();
+        let mut target=Store::open(root.join("target"),random(),"Target".into()).unwrap();let mut sender=Store::open(root.join("sender"),random(),"Sender".into()).unwrap();
+        let before=target.put_json_at("contact",owner,&id,&payload,100).unwrap();let after=sender.put_json_at("contact",owner,&id,&payload,200).unwrap();
+        let plain=sender.stage_export(&after.key()).unwrap();let staged=target.transfer(&after).receive(&mut File::open(&plain).unwrap()).unwrap();target.commit(&after,&staged).unwrap();
+        assert_eq!(target.pending()[0].stamp,200);assert!(!target.mark_applied_meta(&before).unwrap());assert!(target.mark_applied_meta(&after).unwrap());
+        let stale=target.put_json_at("contact",owner,&id,&payload,150).unwrap();assert_eq!(stale.stamp,200);drop(target);drop(sender);fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn explicit_picker_revisions_reject_late_stale_exports_and_advance_identical_payloads() {
         let root=std::env::temp_dir().join(format!("monogram-picker-clock-{}",uuid::Uuid::new_v4()));let mut store=Store::open(root.clone(),random(),"Fixture".into()).unwrap();

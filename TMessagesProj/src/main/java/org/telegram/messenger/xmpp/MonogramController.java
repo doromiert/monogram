@@ -2024,6 +2024,12 @@ public final class MonogramController {
             AndroidUtilities.runOnUIThread(() -> {if(owner==accountEpoch) completed.accept(result);});
         });
     }
+    org.json.JSONArray syncContactDetails()throws Exception {return MonogramSyncContacts.snapshot(account,accountJid(),store);}
+    synchronized boolean importSyncContact(String owner,org.json.JSONObject value,long revision)throws Exception {
+        if(!accountJid().equals(owner))throw new IllegalStateException("Account changed while syncing contacts");
+        final long epoch=accountEpoch;boolean applied=MonogramSyncContacts.apply(account,owner,store,value,revision);
+        if(applied){final long peer=store.knownPeer(value.getString("peer"));AndroidUtilities.runOnUIThread(()->{if(sameAccount(epoch,owner)){publishLocalContact(peer);publishProfile(peer,sessionEpoch);}});}return applied;
+    }
     public String localName(long peer) { return store.localName(peer); }
     public void localName(long peer,String name,java.util.function.Consumer<String> completed) {
         final long owner=accountEpoch;final String jid=accountJid();
@@ -2031,7 +2037,7 @@ public final class MonogramController {
             String error=null;
             try {
                 if(!sameAccount(owner,jid) || peer<=0 || peer==self) throw new IllegalArgumentException("Choose another contact to rename.");
-                store.localName(peer,name);
+                synchronized(MonogramContactDetails.class) {store.localName(peer,name);MonogramContactDetails.changed(account,jid,store.jid(peer));}
             } catch(IllegalArgumentException invalid) { error=invalid.getMessage(); }
             catch(Exception failure) { error="Could not save the local name. Please try again."; }
             final String result=error;
@@ -2059,7 +2065,7 @@ public final class MonogramController {
                     if(!sameAccount(epoch,owner))throw new IllegalStateException("Account changed");
                     store.rosterContact(peer,true);contactAuthorizationsChanged();
                 }
-                store.localName(peer,name);MonogramContactDetails.note(account,owner,store.jid(peer),note);
+                synchronized(MonogramContactDetails.class) {store.localName(peer,name);MonogramContactDetails.note(account,owner,store.jid(peer),note);}
             } catch(Exception failed) { error=failed instanceof IllegalArgumentException ? failed.getMessage() : "Could not save contact details"; }
             final String result=error;AndroidUtilities.runOnUIThread(()->{
                 if(!sameAccount(epoch,owner)) return;

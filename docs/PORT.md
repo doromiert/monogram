@@ -313,3 +313,15 @@ Subsequent room opt-outs and explicit fingerprint blocks remain authoritative;
 complete authenticated room membership is still required. Five targeted
 Robolectric default/migration/room-context tests pass, including account
 isolation and later opt-outs.
+
+
+## Portable contact overrides (0.2.218)
+
+Device Sync now carries account-scoped local nicknames, private notes and PNG
+avatar overrides, including explicit clears. Actual user edits supply the
+revision; import/export does not mint a new version. Shared validation bounds
+text and avatar data, and imports preserve newer local edits. Two Robolectric
+contact-sync checks, the desktop private-store test, 19 shared-core tests and
+production JNI encrypted contact transfer/version checks pass. No contact or
+room message was sent during validation. Photo suggestions continue to use an
+ordinary image message with the conversation's normal encryption policy.

@@ -21,6 +21,19 @@ pub fn validate(kind: &str, owner: &str, id: &str, v: &Value) -> Result<()> {
         return Err("Invalid portable settings object.".into());
     }
     match kind {
+        "contact" => {
+            let peer=string(v,"peer",1024)?;
+            let (node,domain)=peer.split_once('@').ok_or("Invalid contact address.")?;
+            if peer==owner || node.is_empty() || domain.is_empty() || peer.contains('/') || peer.chars().any(|c|c.is_whitespace()||c.is_control()) || crate::hash(peer.as_bytes())!=id {return Err("Invalid contact identifier.".into());}
+            let nickname=string(v,"nickname",512)?;let note=string(v,"note",32768)?;
+            if nickname.chars().count()>128 || nickname.encode_utf16().count()>256 || nickname.chars().any(|c|c.is_control()||matches!(c,'\u{2028}'|'\u{2029}')) || note.encode_utf16().count()>8192 {return Err("Contact names or notes exceed their size limits.".into());}
+            if !v["avatar"].is_null() {
+                let encoded=string(v,"avatar",1_398_104)?;let bytes=B64.decode(encoded).map_err(|_|"Invalid contact avatar encoding.")?;
+                if bytes.len()<33||bytes.len()>1024*1024||!bytes.starts_with(b"\x89PNG\r\n\x1a\n")||&bytes[12..16]!=b"IHDR" {return Err("Contact avatars must be PNG images up to 1 MiB.".into());}
+                let w=u32::from_be_bytes(bytes[16..20].try_into().unwrap());let h=u32::from_be_bytes(bytes[20..24].try_into().unwrap());
+                if w==0||h==0||w>4096||h>4096||u64::from(w)*u64::from(h)>16*1024*1024{return Err("Invalid contact avatar dimensions.".into());}
+            }
+        }
         "pack-meta" => {
             if uuid::Uuid::parse_str(id).is_err() || string(v,"id",36)?!=id {return Err("Invalid pack metadata identifier.".into());}
             let name=string(v,"name",320)?;
@@ -324,6 +337,15 @@ fn https_node(node: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn contact_overrides_are_portable_bounded_and_identified_by_peer_hash() {
+        let owner="alice@example.invalid";let peer="bob@example.invalid";let id=crate::hash(peer.as_bytes());
+        let mut value=json!({"peer":peer,"nickname":"Local friend","note":"Private notes","avatar":null});
+        assert!(validate("contact",owner,&id,&value).is_ok());assert!(validate("contact",owner,"wrong-id",&value).is_err());assert!(validate("contact",peer,&id,&value).is_err());
+        value["nickname"]=json!("bad\nname");assert!(validate("contact",owner,&id,&value).is_err());value["nickname"]=json!("Friend");
+        value["note"]=json!("a".repeat(8193));assert!(validate("contact",owner,&id,&value).is_err());value["note"]=json!("");
+        value["avatar"]=json!("/home/person/private.png");assert!(validate("contact",owner,&id,&value).is_err());
+    }
     #[test]
     fn pack_metadata_and_optional_library_preferences_are_bounded() {
         let id=uuid::Uuid::new_v4().to_string();let item=uuid::Uuid::new_v4().to_string();

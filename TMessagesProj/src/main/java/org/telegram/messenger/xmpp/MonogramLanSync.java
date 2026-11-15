@@ -156,6 +156,14 @@ public final class MonogramLanSync {
                 String secret=token(a,provider);if(!secret.isEmpty()||!NativeMesh.signature(h,key("token",owner,provider),"").isEmpty())json(h,"token",owner,provider,new JSONObject().put("value",secret));
             }
             json(h,"monero-settings",owner,"settings",MonogramXmr.syncSettings(a));
+            JSONArray contacts=controller.syncContactDetails();
+            for(int contactIndex=0;contactIndex<contacts.length();contactIndex++) {
+                JSONObject contact=contacts.getJSONObject(contactIndex);String id=contact.getString("id"),tracking="contact-user-revision:"+owner+":"+id;long revision=contact.getLong("revision");String previous=NativeMesh.signature(h,tracking,"");
+                if(!previous.isEmpty()&&revision<=Long.parseLong(previous))continue;
+                boolean existing=false;JSONArray metas=new JSONArray(NativeMesh.inspect(h,"metas"));for(int i=0;i<metas.length();i++){JSONObject meta=metas.getJSONObject(i);if(meta.getString("kind").equals("contact")&&meta.getString("owner").equals(owner)&&meta.getString("id").equals(id)){existing=true;break;}}
+                if(revision>0||!existing){validHandle(h);NativeMesh.putJsonAt(h,"contact",owner,id,contact.getJSONObject("value").toString(),Math.max(1,revision));}
+                NativeMesh.signature(h,tracking,Long.toString(revision));
+            }
             ArrayList<MonogramPacks.Pack> outgoingPacks=new ArrayList<>();boolean pendingPacks=false;
             for(MonogramPacks.Pack p:MonogramPacks.packs(a)){
                 if(p.syncPending){pendingPacks=true;continue;}
@@ -183,6 +191,7 @@ public final class MonogramLanSync {
                     if(path.length()>8*1024*1024)throw new IOException("Invalid synchronized setting size.");JSONObject value;try(InputStream input=new FileInputStream(path)){value=new JSONObject(new String(MonogramPackArchive.read(input,8*1024*1024,()->{}),StandardCharsets.UTF_8));}
                     NativeMesh.validate(kind,owner,id,value.toString());validHandle(h);
                     switch(kind){
+                        case "contact":if(!MonogramController.get(a).importSyncContact(owner,value,meta.getLong("stamp")))continue;break;
                         case "account":MonogramController.get(a).importSyncAccount(value);break;
                         case "token":saveToken(a,id,value.getString("value"));break;
                         case "monero-settings":MonogramXmr.importSyncSettings(a,value);break;
@@ -199,7 +208,7 @@ public final class MonogramLanSync {
                     if(kind.equals("wallet")){value.remove("keys");value.remove("password");}sig=digest(value.toString());
                 }
                 if(EXCLUDED.contains(owner))continue;validHandle(h);
-                if(kind.equals("pack-order")){if(!NativeMesh.appliedVersion(h,meta.toString()))continue;long revision=meta.getLong("stamp");MonogramPickerVersion.observe(a,revision);NativeMesh.signature(h,"picker-user-revision:"+owner,Long.toString(revision));}
+                if(kind.equals("pack-order")||kind.equals("contact")){if(!NativeMesh.appliedVersion(h,meta.toString()))continue;long revision=meta.getLong("stamp");if(kind.equals("pack-order")){MonogramPickerVersion.observe(a,revision);NativeMesh.signature(h,"picker-user-revision:"+owner,Long.toString(revision));}else NativeMesh.signature(h,"contact-user-revision:"+owner+":"+id,Long.toString(revision));}
                 else NativeMesh.applied(h,key,meta.getString("digest"));NativeMesh.signature(h,key,sig);
             }finally{path.delete();}
         }
