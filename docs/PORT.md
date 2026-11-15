@@ -284,3 +284,21 @@ The user confirmed a successful actual-phone retry on0.2.215, with a temporary
 stall around6.8MiB/9MiB and eventual completion. The original service's exact409
 cause and the remaining mid-upload stall are not established. No agent-generated
 contact or room test message was sent.
+
+## Original-quality video preparation (0.2.216)
+
+Original-quality video sizing now returns the source dimensions before encoder
+alignment. The reported854×480 H.26499.2-second MP4 previously became852×480,
+which made the conversion pipeline select full video compression. Actual resize
+requests still align both output dimensions; the previous typo subtracted the
+height remainder from the width. Existing edits, quality choices, codec
+conversion and mute behavior are unchanged. Desktop already uploads the source
+without this video sizing/conversion step.
+
+The actual installed0.2.215 APK returned852×480 for original-quality854×480.
+The installed0.2.216 APK returns854×480 for the same call.
+Five targeted Robolectric sizing/preparation checks pass after the fix, including
+portrait/source preservation and resizing alignment. On AndroidAPI37, three
+local-only runs of the real8,522,645-byte file measured copy plus encrypted-wire
+preparation at160/117/147ms (no HTTP or chat send). These isolate local copy and
+encryption, not full edited-video conversion or real service latency.
