@@ -46,6 +46,7 @@ class FileTransferHeadersTest {
     static class Connection extends XMPPTCPConnection {
         final Http http;
         SlotRequest slot;
+        int slotRequests;
         Connection(Http http) throws Exception {
             super(XMPPTCPConnectionConfiguration.builder().setXmppDomain("example.org").build());
             this.http=http;connected=true;authenticated=true;
@@ -59,7 +60,7 @@ class FileTransferHeadersTest {
                 info.addFeature("urn:xmpp:http:upload:0");answer=info;
             } else if(request instanceof SlotRequest) {
                 slot=(SlotRequest)request;
-                try { answer=new Slot(http.transport(),new URL("https://uploads.example.org/file")); }
+                try { int index=++slotRequests;answer=new Slot(new URL(http.transport(),"?slot="+index),new URL("https://uploads.example.org/file?slot="+index)); }
                 catch(Exception invalid) { throw new AssertionError(invalid); }
             } else throw new AssertionError(request.toXML());
             answer.setType(IQ.Type.result);answer.setStanzaId(request.getStanzaId());

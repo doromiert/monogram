@@ -101,6 +101,18 @@ class FileTransferRecoveryTest extends FileTransferHeadersTest {
         assertEquals(first.getRequestProperties(),second.getRequestProperties());
         assertEquals(0,Arrays.stream(directory.listFiles()).filter(f->f.getName().startsWith("monogram-wire-")).count());
     }
+    @Test void occupiedSingleUseSlotGetsFreshSlotWithoutReencrypting() throws Exception {
+        File source=new File(directory,"issue.mp4");String fixture=System.getenv("MONOGRAM_UPLOAD_FIXTURE");byte[] original=fixture==null?new byte[8522645]:Files.readAllBytes(java.nio.file.Paths.get(fixture));if(fixture==null)new Random(19).nextBytes(original);Files.write(source.toPath(),original);
+        Http occupied=new Http();occupied.status=409;Http fresh=new Http();fresh.status=201;Connection connection=new Connection(new Sequence(occupied,fresh));
+        FileLink link=FileTransfer.upload(connection,source,"issue.mp4","video/mp4",true,new FileTransfer.Job(),null);
+        assertEquals(2,connection.slotRequests);assertTrue(link.downloadUrl.getQuery().contains("slot=2"));
+        assertArrayEquals(occupied.uploaded.toByteArray(),fresh.uploaded.toByteArray());assertArrayEquals(original,crypt(fresh.uploaded.toByteArray(),link,Cipher.DECRYPT_MODE));
+    }
+    @Test void slowAcceptedPutIsNotAbortedAtThreeSeconds() throws Exception {
+        File source=new File(directory,"accepted.mp4");Files.write(source.toPath(),new byte[]{1,2,3});Http accepted=new Http(){
+            @Override public int getResponseCode() throws IOException {try{Thread.sleep(3300);}catch(InterruptedException e){throw new InterruptedIOException();}assertFalse(disconnected,"Accepted upload was cut off before acknowledgement");return 201;}
+        };Connection connection=new Connection(new Sequence(accepted));FileTransfer.upload(connection,source,"video/mp4",true,new FileTransfer.Job(),null);assertEquals(1,connection.slotRequests);
+    }
     @Test void putRefusalCancellationAndRepeatedBlackholesStayBounded() throws Exception {
         File source=new File(directory,"put");Files.write(source.toPath(),new byte[]{1,2,3});
         Http denied=new Http();denied.status=403;Sequence refusal=new Sequence(denied);

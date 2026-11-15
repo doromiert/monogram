@@ -265,3 +265,20 @@ Verified downloaded audio/video files now gain native codec metadata: audio dura
 The Nix arm64 APK built, matched the original signing identity and installed through wireless ADB. All 3,003 prior cached message identities, saved account/credential and legacy OMEMO identity/trust survived; schema 14 and seven rooms remain. The published APK size/digest and tag match `d89a7f17d006720bfde2871304820437d370b3f8`. Test suites, actual device playback, codec formats and independent-client voice-message rendering remain deferred.
 
 Protocol publication notes and Monogram-specific format status are indexed in [docs/protocols](protocols/README.md).
+
+## HTTP upload conflict recovery (0.2.215)
+
+A completed single-use upload slot can return HTTP409 when an ambiguous PUT is
+repeated. Uploads now retain the normal30-second socket timeout for the
+acknowledgement, request one fresh validated XEP-0363 slot after409 or a
+recoverable transport failure, and reuse the exact encrypted wire snapshot.
+Only the successful slot's GET URL is published. Repeated PUT URLs, other HTTP
+rejections, cancellation and TLS validation errors cannot become retry loops.
+The matching desktop path follows the same policy. Downloads retain their
+existing bounded short response-header recovery.
+
+Core regressions pass with the reported8,522,645-byte MP4 as encrypted input,
+including a scripted409 followed by a fresh-slot201, matching ciphertext and
+authenticated decryption, and a successful acknowledgement delayed beyond3s.
+These checks do not identify the original service's exact409 cause; an actual
+phone retry remains necessary. No contact or room test message was sent.

@@ -106,24 +106,33 @@ public final class FileTransfer {
         // The caller selects opaque MIME for modern encrypted sharing. Legacy clients
         // need the original type on the slot and PUT, as in Conversations/Monocles.
         String contentType = mime == null || mime.trim().isEmpty() ? "application/octet-stream" : mime;
-        Slot slot;
-        try { slot=manager.requestSlot(filename, size, contentType); }
+        Slot slot=requestSlot(manager,filename,size,contentType);
+        return uploadToSlot(slot,file,contentType,encrypted,job,progress,
+                () -> requestSlot(manager,uploadName(filename,contentType,true),size,contentType));
+    }
+    private interface SlotRefresh { Slot request() throws Exception; }
+    private static Slot requestSlot(HttpFileUploadManager manager,String filename,long size,String contentType) throws Exception {
+        try { return manager.requestSlot(filename,size,contentType); }
         catch(org.jivesoftware.smack.XMPPException.XMPPErrorException | org.jivesoftware.smack.SmackException.NoResponseException error) {
             throw new XmppRequestException("File upload slot",error);
         }
-        return uploadToSlot(slot, file, contentType, encrypted, job, progress);
+    }
+    private static FileLink validateSlot(Slot slot) throws Exception {
+        FileLink.parse(slot.getPutUrl().toExternalForm());
+        FileLink link=FileLink.parse(slot.getGetUrl().toExternalForm());
+        for(Map.Entry<String,String> header:slot.getHeaders().entrySet()) {
+            String name=header.getKey(),value=header.getValue();
+            if(!(name.equalsIgnoreCase("Authorization")||name.equalsIgnoreCase("Cookie")||name.equalsIgnoreCase("Expires"))||value.indexOf('\r')>=0||value.indexOf('\n')>=0)throw new Failure("UPLOAD_HEADERS");
+        }
+        return link;
     }
     private static FileLink uploadToSlot(Slot slot, File file, String contentType, boolean encrypted, Job job, Progress progress) throws Exception {
-        job.check();
-        long length = file.length(), size = length + (encrypted ? 16 : 0);
-        if (!file.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
-        FileLink.parse(slot.getPutUrl().toExternalForm());
-        FileLink link = FileLink.parse(slot.getGetUrl().toExternalForm());
-        for (Map.Entry<String, String> header : slot.getHeaders().entrySet()) {
-            String name = header.getKey(), value = header.getValue();
-            if (!(name.equalsIgnoreCase("Authorization") || name.equalsIgnoreCase("Cookie") || name.equalsIgnoreCase("Expires"))
-                    || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) throw new Failure("UPLOAD_HEADERS");
-        }
+        return uploadToSlot(slot,file,contentType,encrypted,job,progress,null);
+    }
+    private static FileLink uploadToSlot(Slot slot, File file, String contentType, boolean encrypted, Job job, Progress progress,SlotRefresh refresh) throws Exception {
+        job.check();long length=file.length(),size=length+(encrypted?16:0);
+        if(!file.isFile()||length<=0||length>MAX_BYTES)throw new Failure("FILE_SIZE");
+        validateSlot(slot);
         byte[] iv = null, key = null;
         if (encrypted) { SecureRandom random = new SecureRandom(); iv = new byte[12]; key = new byte[32]; random.nextBytes(iv); random.nextBytes(key); }
         // Encrypt once: replay must never read changed plaintext under the same GCM nonce.
@@ -137,28 +146,32 @@ public final class FileTransfer {
             try (FileInputStream input = new FileInputStream(wire)) {
                 if (!wire.delete()) throw new IOException("Cannot unlink upload snapshot");
                 for (int attempt = 0; attempt < 2; attempt++) {
+                    FileLink link=validateSlot(slot);
                     input.getChannel().position(0); job.check();
                     HttpURLConnection http = open(slot.getPutUrl(), job);
-                    HeaderDeadline deadline = null;
                     try {
                         http.setRequestMethod("PUT"); http.setDoOutput(true); http.setFixedLengthStreamingMode(size);
                         http.setRequestProperty("Content-Type", contentType);
                         for (Map.Entry<String, String> header : slot.getHeaders().entrySet()) http.addRequestProperty(header.getKey(), header.getValue());
                         try (OutputStream out = http.getOutputStream()) {
                             copy(input, out, size, size, null, job, progress); out.flush();
-                            // Closing a fixed-length stream may wait for its acknowledgement too.
-                            if (attempt == 0) deadline = new HeaderDeadline(http);
+                            // A PUT may already be committed while its response is in flight.
+                            // Keep the normal socket timeout; the UI remains responsive on its worker.
                         }
                         job.check(); int status = http.getResponseCode();
-                        if (deadline != null) deadline.close();
                         if (status != 200 && status != 201 && status != 204) throw new Failure("UPLOAD_HTTP_" + status);
                         return encrypted ? FileLink.encrypted(link.downloadUrl, iv, key) : link;
                     } catch (IOException error) {
                         job.check();
-                        if (attempt == 1 || !reconnect(error, deadline)) throw error;
+                        boolean conflict=error instanceof Failure&&"UPLOAD_HTTP_409".equals(((Failure)error).reason);
+                        if(attempt==1||refresh==null||(!conflict&&!reconnect(error,null)))throw error;
+                        // Upload slots are single-use. Never replay a possibly accepted PUT to one.
+                        String used=slot.getPutUrl().toExternalForm();
+                        http.disconnect();job.connection=null;job.check();
+                        slot=refresh.request();validateSlot(slot);job.check();
+                        if(used.equals(slot.getPutUrl().toExternalForm()))throw error;
                         if (progress != null) progress.update(0, size);
                     } finally {
-                        if (deadline != null) deadline.close();
                         http.disconnect(); job.connection = null;
                     }
                 }
