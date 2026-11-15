@@ -4,7 +4,14 @@ import android.content.SharedPreferences;
 /** Apply once per account: upgrades enable features, later user opt-outs persist. */
 final class MonogramDefaults {
     static synchronized void apply(SharedPreferences preferences){
-        String jid=preferences.getString("jid","");if(jid.isEmpty()||preferences.getBoolean("chat-defaults-v1-"+jid,false))return;
+        String jid=preferences.getString("jid","");if(jid.isEmpty())return;
+        String roomMarker="room-trust-defaults-v1-"+jid;
+        if(!preferences.getBoolean(roomMarker,false)) {
+            SharedPreferences.Editor rooms=preferences.edit();String prefix="blind-trust-room-"+jid+"\n";
+            for(String key:preferences.getAll().keySet())if(key.startsWith(prefix))rooms.putBoolean(key,true);
+            rooms.putBoolean(roomMarker,true).apply();
+        }
+        if(preferences.getBoolean("chat-defaults-v1-"+jid,false))return;
         SharedPreferences.Editor edit=preferences.edit().putBoolean("read-receipts-enabled-"+jid,true)
             .putBoolean("group-read-receipts-enabled-"+jid,true).putBoolean("typing-enabled",true)
             .putBoolean("link-previews-enabled-"+jid,true).putBoolean("link-previews-encrypted-"+jid,true);

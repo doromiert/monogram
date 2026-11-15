@@ -302,3 +302,14 @@ portrait/source preservation and resizing alignment. On AndroidAPI37, three
 local-only runs of the real8,522,645-byte file measured copy plus encrypted-wire
 preparation at160/117/147ms (no HTTP or chat send). These isolate local copy and
 encryption, not full edited-video conversion or real service latency.
+
+
+## Room automatic trust defaults (0.2.217)
+
+Rooms now default to automatic fingerprint trust, matching direct contacts and
+the requested desktop behavior. An independent per-account migration enables
+existing room preferences once even if earlier chat defaults already migrated.
+Subsequent room opt-outs and explicit fingerprint blocks remain authoritative;
+complete authenticated room membership is still required. Five targeted
+Robolectric default/migration/room-context tests pass, including account
+isolation and later opt-outs.

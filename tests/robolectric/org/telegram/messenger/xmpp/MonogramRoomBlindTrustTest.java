@@ -24,9 +24,16 @@ public class MonogramRoomBlindTrustTest {
         room=store.room("friends@conference.example.org","Alice");store.roomRoster(room,Collections.singletonMap("bob@example.org","member"));
     }
     @After public void cleanup(){store.close();context.deleteDatabase("room-trust.db");}
+    @Test public void roomsDefaultToAutomaticTrustButExplicitOptOutPersists() {
+        assertTrue(controller.blindlyTrustRoom(room));
+        controller.setBlindlyTrustRoom(room,false);assertFalse(controller.blindlyTrustRoom(room));
+        assertFalse(controller.blindlyTrustRoom(1));
+    }
     @Test public void roomOptInFollowsVerifiedMembershipAndNeverApprovesSelfOrOtherAccounts()throws Exception {
         android.content.SharedPreferences.Editor strict=prefs.edit();
         for(String owner:new String[]{"alice@example.org","other@example.org"})for(String peer:new String[]{"bob@example.org","stranger@example.org","fresh@example.org","new@example.org"})strict.putBoolean("blind-trust-"+owner+"\n"+peer,false);strict.commit();
+        controller.setBlindlyTrustRoom(room,false);
+        prefs.edit().putBoolean("blind-trust-room-other@example.org\n"+store.jid(room),false).commit();
         MonogramEncryptionPolicy policy=new MonogramEncryptionPolicy(prefs);policy.selected("alice@example.org",store.jid(room),room,com.negzero.monogram.xmpp.XmppMessage.Encryption.PLAIN,10000);
         assertFalse(controller.blindlyTrustAddress("bob@example.org"));controller.setBlindlyTrustRoom(room,true);
         assertNull(policy.cached("alice@example.org",store.jid(room),10001));

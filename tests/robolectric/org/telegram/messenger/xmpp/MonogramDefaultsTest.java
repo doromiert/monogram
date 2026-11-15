@@ -2,6 +2,12 @@ package org.telegram.messenger.xmpp;
 import static org.junit.Assert.*;import android.content.SharedPreferences;import org.junit.Test;import org.junit.runner.RunWith;import org.robolectric.*;import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class) @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
 public class MonogramDefaultsTest {
+ @Test public void roomTrustUpgradeRunsAfterEarlierDefaultsAndPreservesLaterOptOut(){
+  SharedPreferences p=RuntimeEnvironment.getApplication().getSharedPreferences("room-defaults-test",0);String jid="alice@example.invalid",room="blind-trust-room-"+jid+"\nfriends@conference.example.invalid",contact="blind-trust-"+jid+"\nbob@example.invalid",other="blind-trust-room-other@example.invalid\nfriends@conference.example.invalid";
+  p.edit().clear().putString("jid",jid).putBoolean("chat-defaults-v1-"+jid,true).putBoolean(room,false).putBoolean(contact,false).putBoolean(other,false).commit();MonogramDefaults.apply(p);
+  assertTrue(p.getBoolean(room,false));assertFalse(p.getBoolean(contact,true));assertFalse(p.getBoolean(other,true));
+  p.edit().putBoolean(room,false).commit();MonogramDefaults.apply(p);assertFalse(p.getBoolean(room,true));
+ }
  @Test public void oldSettingsUpgradeOnceAndFutureOptOutPersists(){
   SharedPreferences p=RuntimeEnvironment.getApplication().getSharedPreferences("defaults-test",0);String jid="alice@example.invalid",blind="blind-trust-"+jid+"\nbob@example.invalid";
   p.edit().clear().putString("jid",jid).putBoolean("read-receipts-enabled-"+jid,false).putBoolean("typing-enabled",false).putBoolean(blind,false).commit();MonogramDefaults.apply(p);

@@ -2418,7 +2418,7 @@ public final class MonogramController {
     }
     private final java.util.concurrent.ConcurrentHashMap<Long,java.util.Set<String>> verifiedRoomTrustMembers=new java.util.concurrent.ConcurrentHashMap<>();
     public boolean blindlyTrustRoom(long peer) {
-        return peer<0 && preferences.getBoolean("blind-trust-room-"+accountJid()+"\n"+store.jid(peer),false);
+        return peer<0 && preferences.getBoolean("blind-trust-room-"+accountJid()+"\n"+store.jid(peer),true);
     }
     public void setBlindlyTrustRoom(long peer,boolean enabled) {
         if(peer>=0)throw new IllegalArgumentException("Choose a room");

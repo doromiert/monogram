@@ -15,7 +15,7 @@ shown, Deny trust and Later. Current-device keys are excluded. Decisions use the
 existing legacy/modern APIs, survive leaving the screen, and reject a changed
 account/session. Previously decrypted messages are not deleted by denial.
 
-A separate, default-off room setting permits automatic trust for known members.
+A separate, default-on room setting permits automatic trust for known members. The account-scoped upgrade enables it once for existing rooms; later opt-outs persist.
 A freshly validated complete room member list takes precedence over local cached
 membership and includes newly added/offline members. Device decisions are account
 wide, so approvals also apply in DMs. Disabling the policy does not revoke earlier
