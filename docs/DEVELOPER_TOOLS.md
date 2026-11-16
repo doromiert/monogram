@@ -66,5 +66,15 @@ is involved. Use this to tell the tester when an upload observer is ready.
 Upload failures now retain the transport phase, attempt number, elapsed phase time,
 compiled stack frames and the preceding recovery reason in FileLog. Exception
 messages, upload URLs, account addresses and media contents are omitted. Recovered
-uploads also record the recovery after completion. This improves diagnosis; it
-does not claim that the unresolved real-network stall is fixed.
+uploads also record the recovery after completion. This records the transport failure without exposing upload URLs.
+
+After a fully flushed upload body, the client allows one second for the first
+HTTP acknowledgement, then obtains a fresh single-use slot and replays the same
+immutable wire bytes once. No HEAD request delays that retry. The second
+acknowledgement has a five-second deadline. If it also fails, stored-object
+checks can confirm either attempt; these use at most two one-second header
+attempts per URL. The acknowledgement deadline includes output-stream close,
+but never starts during an active body write. HTTP refusal, certificate failure
+and cancellation retain their existing guards. Only one chat message is sent.
+A server that accepts a body but loses its acknowledgement may retain an extra
+unreferenced object from the one fresh-slot retry.

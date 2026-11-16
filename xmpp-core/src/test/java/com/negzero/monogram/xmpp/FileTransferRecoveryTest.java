@@ -89,13 +89,69 @@ class FileTransferRecoveryTest extends FileTransferHeadersTest {
         assertThrows(SocketTimeoutException.class,()->FileTransfer.download(transport(FileLink.parse("https://uploads.example.org/file"),partial),
                 new File(directory,"body"),new FileTransfer.Job(),null,null));assertEquals(3,partial.opened);
     }
-    @Test void lostPutResponseConfirmsTheAcceptedObjectWithoutUploadingTwice() throws Exception {
-        Http head=ready();head.length="19";Http first=new Http(){
-            @Override URL downloadTransport()throws Exception{return head.transport();}
-            @Override public int getResponseCode()throws IOException{throw new SocketTimeoutException();}
-        };File source=new File(directory,"accepted-sticker.webp");Files.write(source.toPath(),new byte[]{1,2,3});Connection connection=new Connection(first);
+    @Test void lostResponsesConfirmTheOriginalObjectAfterOneFreshRetry() throws Exception {
+        Http head=ready();head.length="19";Http missing=new Http();missing.status=404;Http headTimeout=timeout();
+        Http first=timeout(),second=timeout();int[] headCalls={0};
+        Sequence sequence=new Sequence(first,second){
+            @Override URL downloadTransport()throws Exception{return new URL(null,url.toExternalForm(),new URLStreamHandler(){
+                @Override protected URLConnection openConnection(URL url)throws IOException {
+                    if(url.getQuery().contains("slot=1"))return head;
+                    if(headCalls[0]++==0)return headTimeout;
+                    return missing;
+                }
+            });}
+        };
+        File source=new File(directory,"accepted-sticker.webp");Files.write(source.toPath(),new byte[]{1,2,3});Connection connection=new Connection(sequence);
         FileLink link=FileTransfer.upload(connection,source,"image/webp",true,new FileTransfer.Job(),null);
-        assertEquals(1,connection.slotRequests);assertEquals("HEAD",head.getRequestMethod());assertArrayEquals(new byte[]{1,2,3},crypt(first.uploaded.toByteArray(),link,Cipher.DECRYPT_MODE));
+        assertEquals(2,connection.slotRequests);assertEquals(2,headCalls[0]);assertTrue(link.downloadUrl.getQuery().contains("slot=1"));
+        assertEquals("HEAD",head.getRequestMethod());assertFalse(head.bodyOpened);
+        assertArrayEquals(first.uploaded.toByteArray(),second.uploaded.toByteArray());
+        assertArrayEquals(new byte[]{1,2,3},crypt(first.uploaded.toByteArray(),link,Cipher.DECRYPT_MODE));
+    }
+    @Test void completedBodyGetsAFreshRetryAfterOneSecondWithoutWaitingForHead() throws Exception {
+        CountDownLatch responseReleased=new CountDownLatch(1);
+        Http stalled=new Http(){
+            @Override public int getResponseCode()throws IOException {
+                assertEquals(19,uploaded.size(),"deadline starts after every encrypted body byte is written");
+                try{assertTrue(responseReleased.await(4,TimeUnit.SECONDS));}catch(InterruptedException e){throw new InterruptedIOException();}
+                throw new SocketException();
+            }
+            @Override public void disconnect(){super.disconnect();responseReleased.countDown();}
+        };
+        Http fresh=new Http();fresh.status=201;
+        Sequence sequence=new Sequence(stalled,fresh){
+            @Override URL downloadTransport()throws Exception{return new URL(null,url.toExternalForm(),new URLStreamHandler(){
+                @Override protected URLConnection openConnection(URL url){throw new AssertionError("HEAD must not delay the fresh retry");}
+            });}
+        };
+        File source=new File(directory,"voice.ogg");Files.write(source.toPath(),new byte[]{1,2,3});Connection connection=new Connection(sequence);long start=System.nanoTime();
+        FileLink link=FileTransfer.upload(connection,source,"audio/ogg",true,new FileTransfer.Job(),null);
+        long millis=TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start);
+        assertTrue(millis>=800&&millis<2500,"fresh retry took "+millis+"ms");assertEquals(2,connection.slotRequests);
+        assertTrue(link.downloadUrl.getQuery().contains("slot=2"));assertArrayEquals(stalled.uploaded.toByteArray(),fresh.uploaded.toByteArray());
+    }
+    @Test void closingAFullyFlushedBodyCannotHideTheAcknowledgementWait() throws Exception {
+        CountDownLatch responseReleased=new CountDownLatch(1);
+        Http stalled=new Http(){
+            @Override public OutputStream getOutputStream(){return new FilterOutputStream(uploaded){
+                @Override public void close()throws IOException{try{assertTrue(responseReleased.await(4,TimeUnit.SECONDS));}catch(InterruptedException e){throw new InterruptedIOException();}throw new SocketException();}
+            };}
+            @Override public void disconnect(){super.disconnect();responseReleased.countDown();}
+        };Http fresh=new Http();fresh.status=201;Connection connection=new Connection(new Sequence(stalled,fresh));
+        File source=new File(directory,"close.ogg");Files.write(source.toPath(),new byte[]{1,2,3});long start=System.nanoTime();
+        FileTransfer.upload(connection,source,"audio/ogg",true,new FileTransfer.Job(),null);
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start)<2500);assertEquals(2,connection.slotRequests);
+        assertArrayEquals(stalled.uploaded.toByteArray(),fresh.uploaded.toByteArray());
+    }
+    @Test void finalAcknowledgementWaitDoesNotFallBackToThirtySeconds() throws Exception {
+        CountDownLatch responseReleased=new CountDownLatch(1);
+        Http last=new Http(){
+            @Override public int getResponseCode()throws IOException{try{assertTrue(responseReleased.await(7,TimeUnit.SECONDS));}catch(InterruptedException e){throw new InterruptedIOException();}throw new SocketException();}
+            @Override public void disconnect(){super.disconnect();responseReleased.countDown();}
+        };
+        File source=new File(directory,"no-ack.ogg");Files.write(source.toPath(),new byte[]{1,2,3});Connection connection=new Connection(new Sequence(timeout(),last));long start=System.nanoTime();
+        assertThrows(SocketException.class,()->FileTransfer.upload(connection,source,"audio/ogg",true,new FileTransfer.Job(),null));
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start)<6500);assertEquals(2,connection.slotRequests);
     }
     @Test void idleDownloadBodyDisconnectsAndRetriesWithoutUserAction() throws Exception {
         CountDownLatch released=new CountDownLatch(1);
@@ -159,15 +215,18 @@ class FileTransferRecoveryTest extends FileTransferHeadersTest {
         assertEquals(2,connection.slotRequests);assertTrue(link.downloadUrl.getQuery().contains("slot=2"));
         assertArrayEquals(occupied.uploaded.toByteArray(),fresh.uploaded.toByteArray());assertArrayEquals(original,crypt(fresh.uploaded.toByteArray(),link,Cipher.DECRYPT_MODE));
     }
-    @Test void slowAcceptedPutIsNotAbortedAtThreeSeconds() throws Exception {
+    @Test void freshRetryAllowsASlowAcknowledgementWithoutAnotherReplay() throws Exception {
         File source=new File(directory,"accepted.mp4");Files.write(source.toPath(),new byte[]{1,2,3});Http accepted=new Http(){
             @Override public int getResponseCode() throws IOException {try{Thread.sleep(3300);}catch(InterruptedException e){throw new InterruptedIOException();}assertFalse(disconnected,"Accepted upload was cut off before acknowledgement");return 201;}
-        };Connection connection=new Connection(new Sequence(accepted));FileTransfer.upload(connection,source,"video/mp4",true,new FileTransfer.Job(),null);assertEquals(1,connection.slotRequests);
+        };Connection connection=new Connection(new Sequence(timeout(),accepted));FileTransfer.upload(connection,source,"video/mp4",true,new FileTransfer.Job(),null);assertEquals(2,connection.slotRequests);
     }
     @Test void putRefusalCancellationAndRepeatedBlackholesStayBounded() throws Exception {
         File source=new File(directory,"put");Files.write(source.toPath(),new byte[]{1,2,3});
         Http denied=new Http();denied.status=403;Sequence refusal=new Sequence(denied);
         assertEquals("UPLOAD_HTTP_403",assertThrows(FileTransfer.Failure.class,()->FileTransfer.upload(new Connection(refusal),source,"image/jpeg",true,new FileTransfer.Job(),null)).reason);
+        Http invalidTls=new Http(){@Override public int getResponseCode()throws IOException{throw new javax.net.ssl.SSLHandshakeException("invalid fixture certificate");}};
+        Connection tls=new Connection(new Sequence(invalidTls));
+        assertThrows(javax.net.ssl.SSLHandshakeException.class,()->FileTransfer.upload(tls,source,"image/jpeg",true,new FileTransfer.Job(),null));assertEquals(1,tls.slotRequests);
         Sequence failures=new Sequence(timeout(),timeout());
         assertThrows(SocketTimeoutException.class,()->FileTransfer.upload(new Connection(failures),source,"image/jpeg",true,new FileTransfer.Job(),null));
         FileTransfer.Job job=new FileTransfer.Job();Http cancelled=new Http(){@Override public int getResponseCode() throws SocketException {job.cancel();throw new SocketException();}};

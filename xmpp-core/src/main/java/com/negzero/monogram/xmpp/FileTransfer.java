@@ -173,15 +173,24 @@ public final class FileTransfer {
         return link;
     }
     private static boolean uploadPresent(URL url,long size,Job job)throws Exception {
-        job.stage("upload-confirmation");
-        HttpURLConnection confirmation=open(url,job);
-        try(HeaderDeadline deadline=new HeaderDeadline(confirmation)) {
-            confirmation.setRequestMethod("HEAD");confirmation.setUseCaches(false);
-            confirmation.setRequestProperty("Accept-Encoding","identity");confirmation.setRequestProperty("Connection","close");
-            boolean present=confirmation.getResponseCode()==200 && contentLength(confirmation)==size;
-            System.err.println("Monogram upload response confirmation present="+present);return present;
-        }catch(IOException error){job.check();System.err.println("Monogram upload confirmation cause="+error.getClass().getSimpleName());return false;}
-        finally{confirmation.disconnect();job.connection=null;}
+        String failedStage=job.stage;long failedStageStarted=job.stageStarted;
+        try {
+            for(int attempt=0;attempt<2;attempt++) {
+                job.check();job.stage("upload-confirmation");
+                HttpURLConnection confirmation=open(url,job);
+                try(HeaderDeadline deadline=new HeaderDeadline(confirmation,1)) {
+                    confirmation.setRequestMethod("HEAD");confirmation.setUseCaches(false);
+                    confirmation.setRequestProperty("Accept-Encoding","identity");confirmation.setRequestProperty("Connection","close");
+                    int status=confirmation.getResponseCode();long length=contentLength(confirmation);
+                    boolean present=status==200 && length==size;
+                    System.err.println("Monogram upload response confirmation status="+status+" bytes="+length+" expected="+size+" present="+present);return present;
+                } catch(IOException error) {
+                    job.check();System.err.println("Monogram upload confirmation cause="+error.getClass().getSimpleName());
+                    if(error instanceof javax.net.ssl.SSLException || attempt==1)return false;
+                } finally {confirmation.disconnect();job.connection=null;}
+            }
+            return false;
+        } finally {job.stage=failedStage;job.stageStarted=failedStageStarted;}
     }
     private static FileLink uploadToSlot(Slot slot, File file, String contentType, boolean encrypted, Job job, Progress progress) throws Exception {
         return uploadToSlot(slot,file,contentType,encrypted,job,progress,null);
@@ -203,6 +212,7 @@ public final class FileTransfer {
             }
             try (FileInputStream input = new FileInputStream(wire)) {
                 if (!wire.delete()) throw new IOException("Cannot unlink upload snapshot");
+                java.util.ArrayList<Slot> unacknowledged=new java.util.ArrayList<>(2);
                 for (int attempt = 0; attempt < 2; attempt++) {
                     FileLink link=validateSlot(slot);
                     input.getChannel().position(0); job.check();
@@ -218,10 +228,10 @@ public final class FileTransfer {
                         try (IdleDeadline waiting=idle; OutputStream out = http.getOutputStream()) {
                             job.stage("upload-body");
                             copy(input, out, size, size, null, job, activeProgress(progress,idle)); out.flush();
-                            job.stage("upload-response");
+                            bodySent=true;job.check();job.stage("upload-response");
+                            responseDeadline=new HeaderDeadline(http,attempt==0 && refresh!=null ? 1 : 5);
                         }
-                        bodySent=true;job.check();
-                        if(attempt==0)responseDeadline=new HeaderDeadline(http,5);
+                        job.check();
                         int status = http.getResponseCode();
                         if (status != 200 && status != 201 && status != 204) throw new Failure("UPLOAD_HTTP_" + status);
                         return encrypted ? FileLink.encrypted(link.downloadUrl, iv, key) : link;
@@ -230,11 +240,25 @@ public final class FileTransfer {
                         boolean conflict=error instanceof Failure&&"UPLOAD_HTTP_409".equals(((Failure)error).reason);
                         if(responseDeadline!=null)responseDeadline.close();
                         retryDiagnostic(job,bodySent?"upload-response":"upload-body",error,idle);
+                        boolean canRetry=attempt==0 && refresh!=null
+                                && !(error instanceof javax.net.ssl.SSLException)
+                                && (!(error instanceof Failure)||conflict)
+                                && (conflict||reconnect(error,responseDeadline)||idle!=null&&idle.expired);
                         if(bodySent && !(error instanceof Failure) && !(error instanceof javax.net.ssl.SSLException)) {
-                            http.disconnect();job.connection=null;
-                            if(uploadPresent(slot.getGetUrl(),size,job))return encrypted?FileLink.encrypted(link.downloadUrl,iv,key):link;
+                            unacknowledged.add(slot);
+                            // Keep the first retry immediate; probe stored objects only if it also fails.
+                            if(!canRetry) {
+                                http.disconnect();job.connection=null;
+                                for(int candidate=unacknowledged.size()-1;candidate>=0;candidate--) {
+                                    Slot uploaded=unacknowledged.get(candidate);
+                                    if(uploadPresent(uploaded.getGetUrl(),size,job)) {
+                                        FileLink accepted=validateSlot(uploaded);
+                                        return encrypted?FileLink.encrypted(accepted.downloadUrl,iv,key):accepted;
+                                    }
+                                }
+                            }
                         }
-                        if(attempt==1||refresh==null||(!conflict&&!reconnect(error,responseDeadline)&&!(idle!=null&&idle.expired)))throw error;
+                        if(!canRetry)throw error;
                         // Upload slots are single-use. Never replay a possibly accepted PUT to one.
                         String used=slot.getPutUrl().toExternalForm();
                         http.disconnect();job.connection=null;job.check();
