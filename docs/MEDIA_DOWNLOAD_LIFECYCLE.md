@@ -105,3 +105,12 @@ accepted PUT. No contact messages are sent by the fixtures.
 ### Upload acknowledgement diagnosis (0.2.221)
 
 The next physical-phone report logged `upload inactive=false cause=SocketTimeoutException`: the body deadline did not fire. Upload response handling now has its own five-second first-attempt deadline. After an interrupted acknowledgement, HEAD checks the validated slot download URL (without copying PUT credentials): HTTP 200 plus exact encrypted/plain wire length confirms the object is present. If confirmation fails, a bounded fresh-slot retry remains; it never reuses a potentially consumed slot. Connections request `Connection: close` so completed transfers do not leave idle upload connections for reuse. Tests retain a healthy 3.3-second accepted PUT and cover lost-response confirmation without a second upload. Remote/server or network root cause remains unproven until a real stalled response is confirmed.
+
+Actual Android HTTPS validation: `TransferResponseDeviceTest` runs directly from
+the released 0.2.221 APK classes in a private Android API36 emulator, using
+`tests/https-transfer/server.py` and a temporary local TLS root with SAN10.0.2.2.
+The fixture withholds an accepted PUT response and stalls the first encrypted GET
+body. Results: accepted-object confirmation6020ms, GET recovery6303ms, healthy
+slow PUT3309ms; exact plaintext, one PUT, two bounded GETs, no partial files. This
+validates Android socket/disconnect behavior, not the real remote server's cause.
+The physical phone was not accessed after the user departed.
