@@ -1,5 +1,9 @@
 # Motion photos over XMPP
 
+Rebuilding a clip without a custom cover preserves the original full-resolution
+still. A missing explicitly selected cover remains an error, so retrying never
+silently replaces the user's chosen artwork.
+
 A motion photo is one attachment containing the full-resolution still and its video, rather than an MP4 with a low-resolution video-frame cover. Android sends a JPEG Motion Photo using the existing XEP-0363 upload, XEP-0447 stateless file sharing/XEP-0446 metadata, and XEP-0454 encrypted-file paths. No Monogram-specific XML namespace or second attachment is needed.
 
 The container follows [Android Motion Photo format 1.0](https://developer.android.com/media/platform/motion-photo-format): JPEG first, Camera/Container XMP, and the MP4 clip last. An unedited JPEG source is uploaded byte-for-byte. If the clip is edited, the existing motion-photo writer combines the full still with the edited clip. A non-JPEG source cover is decoded at its original dimensions and written as JPEG on the file worker, with a 32 MiB input / 40 MP / 12000-pixel edge limit. It is never silently downscaled. This conversion does not preserve HDR or all original metadata; the original draft remains available if preparation fails. Direct HEIC/AVIF motion-container reception is not implemented in either client.

@@ -109,6 +109,8 @@ public final class MonogramMotionPhotos {
         if(request.message.params==null || !"1".equals(request.message.params.get(REBUILD)))
             return com.negzero.monogram.xmpp.FileTransfer.snapshot(request.file,directory,request.job);
         String still=request.message.params.get(STILL);
+        // Trimming a clip does not select a new cover; retain the original full-resolution still.
+        if(still==null || still.isEmpty()) still=request.message.params.get(SOURCE);
         if(still==null || !new File(still).isFile()) throw new FileNotFoundException("The motion photo still is missing. Select the photo again.");
         File sourceStill=new File(still),normalized=jpegStill(sourceStill,directory,request.job);
         File target=File.createTempFile("motion-photo-", ".jpg",directory);

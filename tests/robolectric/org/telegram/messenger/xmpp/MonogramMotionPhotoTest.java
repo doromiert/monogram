@@ -116,6 +116,29 @@ public class MonogramMotionPhotoTest {
             VideoEditedInfo edits=new VideoEditedInfo();assertFalse(MonogramMotionPhotos.edited(edits));edits.startTime=1;assertTrue(MonogramMotionPhotos.edited(edits));
         } finally { original.delete(); }
     }
+    @Test public void rebuildWithoutCustomCoverKeepsOriginalStillButNeverDiscardsAnExplicitCover() throws Exception {
+        File original=motion();byte[] before=Files.readAllBytes(original.toPath());
+        TLRPC.TL_message message=new TLRPC.TL_message();message.params=new java.util.HashMap<>();
+        message.params.put(MonogramMotionPhotos.SOURCE,original.getAbsolutePath());
+        message.params.put(MonogramMotionPhotos.REBUILD,"1");
+        try {
+            for(String cover:new String[]{null,""}) {
+                if(cover==null)message.params.remove(MonogramMotionPhotos.STILL);else message.params.put(MonogramMotionPhotos.STILL,cover);
+                File rebuilt=MonogramMotionPhotos.snapshot(new MonogramFileRequest(message,clip(),"image/jpeg",""),original.getParentFile());
+                try {
+                    MonogramMotionPhotos.Clip motion=MonogramMotionPhotos.inspect(rebuilt);assertNotNull(motion);
+                    BitmapFactory.Options bounds=new BitmapFactory.Options();bounds.inJustDecodeBounds=true;BitmapFactory.decodeFile(rebuilt.getAbsolutePath(),bounds);
+                    assertEquals(3200,bounds.outWidth);assertEquals(2400,bounds.outHeight);
+                    byte[] bytes=Files.readAllBytes(rebuilt.toPath());
+                    assertArrayEquals(Files.readAllBytes(clip().toPath()),java.util.Arrays.copyOfRange(bytes,(int)motion.offset,bytes.length));
+                } finally { rebuilt.delete(); }
+            }
+            message.params.put(MonogramMotionPhotos.STILL,new File(original.getParentFile(),"missing-custom-cover.jpg").getAbsolutePath());
+            try {MonogramMotionPhotos.snapshot(new MonogramFileRequest(message,clip(),"image/jpeg",""),original.getParentFile());fail("Missing explicit cover was silently replaced");}
+            catch(FileNotFoundException expected) { }
+            assertArrayEquals(before,Files.readAllBytes(original.toPath()));
+        } finally { original.delete(); }
+    }
     @Test public void nonJpegCoverNormalizesAtFullResolutionAndRetainsOriginalForRetry() throws Exception {
         File png=File.createTempFile("motion-source-", ".png");
         android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(3200,2400,android.graphics.Bitmap.Config.ARGB_8888);
