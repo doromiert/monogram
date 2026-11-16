@@ -4200,6 +4200,9 @@ public class AndroidUtilities {
             f = FileLoader.getInstance(UserConfig.selectedAccount).getPathToMessage(message.messageOwner);
         }
         if (f != null && f.exists()) {
+            if (org.telegram.ui.MonogramPackFiles.isPack(message.getDocumentName(),document.mime_type)) {
+                org.telegram.ui.MonogramPackFiles.open(activity,message.currentAccount,Uri.fromFile(f));return;
+            }
             if (parentFragment != null && f.getName().toLowerCase().endsWith("attheme")) {
                 Theme.ThemeInfo themeInfo = Theme.applyThemeFile(f, message.getDocumentName(), null, true);
                 if (themeInfo != null) {
@@ -4275,6 +4278,9 @@ public class AndroidUtilities {
 
     public static boolean openForView(File f, String fileName, String mimeType, final Activity activity, Theme.ResourcesProvider resourcesProvider, boolean restrict) {
         if (f != null && f.exists()) {
+            if (org.telegram.ui.MonogramPackFiles.isPack(fileName,mimeType)) {
+                org.telegram.ui.MonogramPackFiles.open(activity,UserConfig.selectedAccount,Uri.fromFile(f));return true;
+            }
             String realMimeType = null;
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -4333,6 +4339,9 @@ public class AndroidUtilities {
             f = FileLoader.getInstance(message.currentAccount).getPathToMessage(message.messageOwner);
         }
         String mimeType = message.type == MessageObject.TYPE_FILE || message.type == MessageObject.TYPE_TEXT ? message.getMimeType() : null;
+        if(f!=null && f.exists() && org.telegram.ui.MonogramPackFiles.isPack(message.getFileName(),mimeType)) {
+            org.telegram.ui.MonogramPackFiles.open(activity,message.currentAccount,Uri.fromFile(f));return true;
+        }
         return openForView(f, message.getFileName(), mimeType, activity, resourcesProvider, restrict);
     }
 

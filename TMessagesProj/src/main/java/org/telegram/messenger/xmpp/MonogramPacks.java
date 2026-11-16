@@ -623,12 +623,18 @@ public final class MonogramPacks {
         return request;
     }
     /** Account-owned, token-free import of a plaintext snapshot selected through SAF. */
+    public interface PackCallback { void done(Pack pack, String error); }
     public static void startArchiveImport(int account, Uri source) {
-        if (source == null || !"content".equals(source.getScheme())) throw new IllegalArgumentException("Choose an .xmsp file using the file picker.");
+        openArchive(account,source,true,null);
+    }
+    /** The caller owns URI grants; parsing, copying and validation run on the pack worker. */
+    public static Request openArchive(int account, Uri source, boolean install, PackCallback callback) {
+        if (source == null || !("content".equals(source.getScheme()) || "file".equals(source.getScheme())))
+            throw new IllegalArgumentException("Choose a .pack, .nzsp or .xmsp file.");
         final ImportJob job = beginImport(account); final Request operation = job.request;
         final String expectedScope = scope(account); notifyImport(job);
         WORKER.execute(() -> {
-            File staging = null; ArrayList<File> moved = new ArrayList<>(); String error = null;
+            File staging = null; ArrayList<File> moved = new ArrayList<>(); String error = null; Pack opened = null;
             try {
                 operation.check(); job.update("Reading archive", "", 0, 0, 0, -1);
                 staging = File.createTempFile("monogram-xmsp-", "", ApplicationLoader.applicationContext.getCacheDir());
@@ -647,7 +653,7 @@ public final class MonogramPacks {
                 }
                 Pack pack = MonogramPackArchive.read(archive, staging, operation::check,
                         (name, completed, total) -> job.update("Checking archive artwork", name, completed, total, 0, -1));
-                pack.syncId="";for(Item item:pack.items)item.syncId="";pack.privatePack=true;pack.connected=false;pack.autoSync=false;pack.installed=true;
+                pack.syncId="";for(Item item:pack.items)item.syncId="";pack.privatePack=true;pack.connected=false;pack.autoSync=false;pack.installed=install;
                 pack.source = "xmsp:" + UUID.randomUUID();
                 job.update("Saving pack", pack.name, pack.items.size(), pack.items.size(), 0, -1);
                 synchronized (MonogramPacks.class) {
@@ -665,21 +671,23 @@ public final class MonogramPacks {
                                 moved.add(target);
                             }
                         }
-                        operation.check(); packs.add(0, pack); write(expectedScope, packs); MonogramPickerVersion.changed(account);operation.committed = true; moved.clear();
+                        operation.check(); packs.add(0, pack); write(expectedScope, packs); MonogramPickerVersion.changed(account);operation.committed = true; moved.clear();opened=pack;
                     }
                 }
             } catch (Exception failure) {
-                error = failure instanceof ImportFailure ? failure.getMessage() : "Invalid or unsupported .xmsp archive, or insufficient storage. The existing packs were preserved.";
+                error = failure instanceof ImportFailure ? failure.getMessage() : "Invalid or unsupported pack archive, or insufficient storage. The existing packs were preserved.";
             } finally {
                 for (File file : moved) file.delete();
                 if (staging != null) { File[] files = staging.listFiles(); if (files != null) for (File file : files) file.delete(); staging.delete(); }
             }
-            final String failure = error;
+            final String failure = error; final Pack result=opened;
             AndroidUtilities.runOnUIThread(() -> {
                 if (!job.owner.equals(owner(account)) || IMPORTS.get(job.owner) != job) return;
                 try { if (operation.committed) refresh(account); } finally { job.finished(failure); }
+                if(callback!=null && !operation.cancelled) callback.done(result,failure);
             });
         });
+        return operation;
     }
     /** Account-owned import: leaving a screen only removes its observer, never cancels this job. */
     public static void startImport(int account, String link) {

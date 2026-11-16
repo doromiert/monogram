@@ -1559,6 +1559,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             }
         }
         if(handleXmppInvitation(intent)) return true;
+        MonogramPackFiles.handleIntent(this,currentAccount,intent,restore);
         boolean pushOpened = false;
         long push_user_id = 0;
         long push_chat_id = 0;

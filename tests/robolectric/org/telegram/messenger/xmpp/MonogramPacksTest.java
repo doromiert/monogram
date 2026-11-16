@@ -197,6 +197,74 @@ public class MonogramPacksTest {
         }
     }
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Test public void packFileOpensUninstalledAndPreservesExistingLibraryOnInvalidInput() throws Exception {
+        jid="pack-file-open@example.org";
+        String scope=ReflectionHelpers.callStaticMethod(MonogramPacks.class,"scope",ReflectionHelpers.ClassParameter.from(int.class,0));
+        File directory=new File(ApplicationLoader.applicationContext.getFilesDir(),"monogram-packs/"+scope);assertTrue(directory.mkdirs());
+        MonogramPacks.Pack original=new MonogramPacks.Pack();original.id=0x4d50000100000000L;original.name="Friends";original.source="local:fixture";
+        MonogramPacks.Item artwork=new MonogramPacks.Item();artwork.id=0x4d50000100000001L;artwork.name="Wave";artwork.emoji="👋";artwork.mime="image/png";original.items.add(artwork);
+        MonogramPacks.Item item=original.items.get(0);item.file="opaque.png";item.width=item.height=1;
+        byte[] png=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
+        java.nio.file.Files.write(new File(directory,item.file).toPath(),png);
+        File archive=new File(ApplicationLoader.applicationContext.getCacheDir(),"friends.pack");
+        MonogramPackArchive.write(original,directory,archive,()->{});
+        for(int attempt=0;attempt<2;attempt++) {
+            android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/open/"+attempt);
+            byte[] bytes=attempt==0 ? java.nio.file.Files.readAllBytes(archive.toPath()) : new byte[]{1,2,3};
+            org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,new java.io.ByteArrayInputStream(bytes));
+            java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.atomic.AtomicReference<MonogramPacks.Pack> opened=new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<String> error=new java.util.concurrent.atomic.AtomicReference<>();
+            MonogramPacks.openArchive(0,uri,false,(pack,failure)->{opened.set(pack);error.set(failure);done.countDown();});
+            assertTrue(done.await(10,java.util.concurrent.TimeUnit.SECONDS));
+            if(attempt==0){assertNull(error.get());assertNotNull(opened.get());assertFalse(opened.get().installed);
+                TLRPC.TL_inputStickerSetID input=new TLRPC.TL_inputStickerSetID();input.id=opened.get().id;
+                assertNotNull(MonogramPacks.find(0,input));assertEquals(original.name,MonogramPacks.find(0,input).set.title);
+            }else {assertNotNull(error.get());assertNull(opened.get());}
+            assertEquals(1,MonogramPacks.packs(0).size());
+        }
+        MonogramPacks.Pack preview=MonogramPacks.packs(0).get(0);
+        MonogramPacks.installed(0,preview.id,true);assertTrue(MonogramPacks.pack(0,preview.id).installed);
+    }
+    @Test public void fileManagerIntentsResolveWithMimeOpaqueUrisAndWithoutMime() throws Exception {
+        File manifest=new File("src/main/AndroidManifest.xml");
+        if(!manifest.isFile())manifest=new File("TMessagesProj/src/main/AndroidManifest.xml");
+        org.w3c.dom.Document xml=javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(manifest);
+        java.util.ArrayList<android.content.IntentFilter> filters=new java.util.ArrayList<>();
+        org.w3c.dom.NodeList nodes=xml.getElementsByTagName("intent-filter");
+        for(int n=0;n<nodes.getLength();n++) {
+            android.content.IntentFilter filter=new android.content.IntentFilter();
+            org.w3c.dom.NodeList children=nodes.item(n).getChildNodes();
+            for(int c=0;c<children.getLength();c++)if(children.item(c) instanceof org.w3c.dom.Element) {
+                org.w3c.dom.Element child=(org.w3c.dom.Element)children.item(c);
+                String tag=child.getTagName();String name=child.getAttribute("android:name");
+                if(tag.equals("action"))filter.addAction(name);
+                if(tag.equals("category"))filter.addCategory(name);
+                if(!tag.equals("data"))continue;
+                String type=child.getAttribute("android:mimeType");if(!type.isEmpty())filter.addDataType(type);
+                String scheme=child.getAttribute("android:scheme");if(!scheme.isEmpty())filter.addDataScheme(scheme);
+                String host=child.getAttribute("android:host");if(!host.isEmpty())filter.addDataAuthority(host,null);
+                String pattern=child.getAttribute("android:pathPattern").replace("\\\\","\\");if(!pattern.isEmpty())filter.addDataPath(pattern,android.os.PatternMatcher.PATTERN_SIMPLE_GLOB);
+            }
+            filters.add(filter);
+        }
+        String[][] cases={{"content://docs/document/123","application/vnd.monogram.sticker-pack"},
+                {"content://docs/document/123","application/octet-stream"},
+                {"content://files/friends.pack","application/zip"},{"file:///sdcard/friends.pack",null},
+                {"content://files/emoji.nzsp","application/octet-stream"},{"file:///sdcard/emoji.xmsp",null}};
+        for(String[] item:cases) {
+            android.net.Uri uri=android.net.Uri.parse(item[0]);boolean matched=false;
+            for(android.content.IntentFilter filter:filters)if(filter.match(android.content.Intent.ACTION_VIEW,item[1],uri.getScheme(),uri,
+                    java.util.Collections.singleton(android.content.Intent.CATEGORY_DEFAULT),"pack-test")>=0)matched=true;
+            assertTrue("No file association for "+item[0]+" type="+item[1],matched);
+        }
+    }
+    @Test public void packFileRecognitionAcceptsAliasesButDoesNotClaimOtherDocuments() {
+        for(String name:new String[]{"friends.pack","emoji.NZSP","cats.XmSp"})assertTrue(org.telegram.ui.MonogramPackFiles.isPack(name,"application/octet-stream"));
+        assertTrue(org.telegram.ui.MonogramPackFiles.isPack("opaque.bin","application/vnd.monogram.sticker-pack"));
+        for(String name:new String[]{"x.pack.exe","photo.png","pack",""})assertFalse(org.telegram.ui.MonogramPackFiles.isPack(name,"application/zip"));
+    }
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Test public void customEmojiNameAndFallbackAreIndependentAndPersist() throws Exception {
         jid="named-emoji@example.org";byte[] png=java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=");
         android.net.Uri uri=android.net.Uri.parse("content://pack-fixture/custom-name");org.robolectric.Shadows.shadowOf(ApplicationLoader.applicationContext.getContentResolver()).registerInputStream(uri,new java.io.ByteArrayInputStream(png));
