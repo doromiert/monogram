@@ -128,6 +128,30 @@ class FileTransferRecoveryTest extends FileTransferHeadersTest {
         assertEquals(first.getRequestProperties(),second.getRequestProperties());
         assertEquals(0,Arrays.stream(directory.listFiles()).filter(f->f.getName().startsWith("monogram-wire-")).count());
     }
+    @Test void voiceSocketFailureRetainsPhaseAttemptsAndSafeStack() throws Exception {
+        String secret="https://private.invalid/voice.ogg?token=DO_NOT_LOG";
+        File source=new File(directory,"voice.ogg");Files.write(source.toPath(),new byte[]{'O','g','g','S',1,2,3});
+        Http first=new Http(){@Override public OutputStream getOutputStream() throws IOException {throw new SocketException(secret);}};
+        Http second=new Http(){@Override public OutputStream getOutputStream() throws IOException {throw new SocketException(secret);}};
+        FileTransfer.Job job=new FileTransfer.Job();Connection connection=new Connection(new Sequence(first,second));
+        SocketException error=assertThrows(SocketException.class,()->FileTransfer.upload(connection,source,"audio/ogg",true,job,null));
+        String diagnostic=job.diagnostic(error);
+        assertTrue(diagnostic.contains("phase=upload-connect attempt=2"),diagnostic);
+        assertTrue(diagnostic.contains("java.net.SocketException"),diagnostic);
+        assertTrue(diagnostic.contains("at com.negzero.monogram.xmpp.FileTransfer"),diagnostic);
+        assertTrue(diagnostic.contains("Previous recovery: phase=upload-connect"),diagnostic);
+        assertFalse(diagnostic.contains("DO_NOT_LOG"));assertFalse(diagnostic.contains("private.invalid"));
+        assertEquals(2,connection.slotRequests);
+    }
+    @Test void diagnosticBoundsAndRedactsCauseChains() {
+        IOException first=new IOException("secret account@private.invalid"),second=new IOException("secret signed URL");
+        first.initCause(second);second.initCause(first);
+        StackTraceElement[] frames=new StackTraceElement[1000];Arrays.fill(frames,new StackTraceElement("fixture.Transfer","upload","Transfer.java",7));
+        first.setStackTrace(frames);second.setStackTrace(frames);
+        String diagnostic=new FileTransfer.Job().diagnostic(first);
+        assertTrue(diagnostic.length()<4096);assertFalse(diagnostic.contains("secret"));
+        assertEquals(24,diagnostic.split("at fixture.Transfer",-1).length-1);
+    }
     @Test void occupiedSingleUseSlotGetsFreshSlotWithoutReencrypting() throws Exception {
         File source=new File(directory,"issue.mp4");String fixture=System.getenv("MONOGRAM_UPLOAD_FIXTURE");byte[] original=fixture==null?new byte[8522645]:Files.readAllBytes(java.nio.file.Paths.get(fixture));if(fixture==null)new Random(19).nextBytes(original);Files.write(source.toPath(),original);
         Http occupied=new Http();occupied.status=409;Http fresh=new Http();fresh.status=201;Connection connection=new Connection(new Sequence(occupied,fresh));

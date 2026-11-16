@@ -3195,6 +3195,7 @@ public final class MonogramController {
                 FileLink link = FileTransfer.upload(expected.connection(), snapshot, modern ? java.util.UUID.randomUUID()+".bin" : uploadName,
                         modern ? "application/octet-stream" : request.mime, encrypted, job,
                         uploadProgress);
+                if(BuildVars.LOGS_ENABLED && job.recoveryDiagnostic()!=null) FileLog.e(job.diagnostic(null));
                 com.negzero.monogram.xmpp.FileShare sharing = encrypted && !modern ? null : MonogramStickers.description(request.message, com.negzero.monogram.xmpp.FileShare.describe(link, snapshot, uploadName, request.mime, job));
                 File cached = sharing == null ? store.attachmentFile(link.wireUrl) : store.attachmentFile(sharing);
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
@@ -3262,11 +3263,13 @@ public final class MonogramController {
                             }
                         });
                     } catch (Exception e) {
+                        if(BuildVars.LOGS_ENABLED && !job.cancelled()) FileLog.e("Monogram upload send-stanza failed\n"+job.diagnostic(e));
                         TLRPC.TL_error error = fileError(e);
                         if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
                     } finally { finishUpload(request.localId,progressName,job); }
                 });
             } catch (Exception e) {
+                if(BuildVars.LOGS_ENABLED && !job.cancelled()) FileLog.e("Monogram upload file-worker failed\n"+job.diagnostic(e));
                 TLRPC.TL_error error = fileError(e);
                 if (!job.cancelled()) Utilities.stageQueue.postRunnable(() -> callback.run(null, error));
                 finishUpload(request.localId,progressName,job);

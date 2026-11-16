@@ -24,6 +24,25 @@ public final class FileTransfer {
     public static final class Job {
         private volatile boolean cancelled;
         private volatile HttpURLConnection connection;
+        private volatile String stage = "queued", recovery;
+        private volatile int attempt;
+        private volatile long stageStarted = System.nanoTime();
+        private void stage(String value) { stage=value;stageStarted=System.nanoTime(); }
+        public String recoveryDiagnostic() { return recovery; }
+        /** Compiled frames and fixed phases only: exception messages may contain signed URLs. */
+        public String diagnostic(Throwable error) {
+            StringBuilder text=new StringBuilder("Monogram transfer phase=").append(stage)
+                    .append(" attempt=").append(attempt).append(" phase_ms=")
+                    .append(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-stageStarted));
+            java.util.Set<Throwable> seen=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            for(int depth=0;error!=null&&depth<4&&seen.add(error);depth++,error=error.getCause()) {
+                text.append("\n").append(error.getClass().getName());
+                StackTraceElement[] frames=error.getStackTrace();
+                for(int i=0;i<Math.min(12,frames.length);i++)text.append("\n  at ").append(frames[i]);
+            }
+            if(recovery!=null)text.append("\nPrevious recovery: ").append(recovery);
+            return text.toString();
+        }
         public void cancel() { cancelled = true; HttpURLConnection c = connection; if (c != null) c.disconnect(); }
         public boolean cancelled() { return cancelled; }
         public void check() throws InterruptedIOException {
@@ -69,7 +88,8 @@ public final class FileTransfer {
     private static Progress activeProgress(Progress progress,IdleDeadline deadline) {
         return (bytes,total) -> {if(deadline!=null)deadline.touch();if(progress!=null)progress.update(bytes,total);};
     }
-    private static void retryDiagnostic(String stage,IOException error,IdleDeadline deadline) {
+    private static void retryDiagnostic(Job job,String stage,IOException error,IdleDeadline deadline) {
+        job.recovery="phase="+job.stage+" stage="+stage+" inactive="+(deadline!=null&&deadline.expired)+" cause="+error.getClass().getSimpleName();
         System.err.println("Monogram transfer reconnect stage="+stage+" inactive="+(deadline!=null&&deadline.expired)+" cause="+error.getClass().getSimpleName());
     }
     private static boolean reconnect(IOException error, HeaderDeadline deadline) {
@@ -80,6 +100,7 @@ public final class FileTransfer {
     private FileTransfer() {}
     /** Private immutable upload input; the caller deletes it after committing or abandoning the transfer. */
     public static File snapshot(File source, File directory, Job job) throws Exception {
+        job.stage("snapshot");
         job.check(); long length = source.length();
         if (!source.isFile() || length <= 0 || length > MAX_BYTES) throw new Failure("FILE_SIZE");
         if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Cannot create upload directory");
@@ -104,6 +125,7 @@ public final class FileTransfer {
         uploadService(connection,length,encrypted,job);
     }
     private static HttpFileUploadManager uploadService(XMPPConnection connection,long length,boolean encrypted,Job job) throws Exception {
+        job.stage("upload-service");
         job.check();
         if(length<=0 || length>MAX_BYTES) throw new Failure("FILE_SIZE");
         long size=length+(encrypted ? 16 : 0);
@@ -129,9 +151,10 @@ public final class FileTransfer {
         // The caller selects opaque MIME for modern encrypted sharing. Legacy clients
         // need the original type on the slot and PUT, as in Conversations/Monocles.
         String contentType = mime == null || mime.trim().isEmpty() ? "application/octet-stream" : mime;
+        job.stage("upload-slot");
         Slot slot=requestSlot(manager,filename,size,contentType);
         return uploadToSlot(slot,file,contentType,encrypted,job,progress,
-                () -> requestSlot(manager,uploadName(filename,contentType,true),size,contentType));
+                () -> { job.stage("upload-slot");return requestSlot(manager,uploadName(filename,contentType,true),size,contentType); });
     }
     private interface SlotRefresh { Slot request() throws Exception; }
     private static Slot requestSlot(HttpFileUploadManager manager,String filename,long size,String contentType) throws Exception {
@@ -150,6 +173,7 @@ public final class FileTransfer {
         return link;
     }
     private static boolean uploadPresent(URL url,long size,Job job)throws Exception {
+        job.stage("upload-confirmation");
         HttpURLConnection confirmation=open(url,job);
         try(HeaderDeadline deadline=new HeaderDeadline(confirmation)) {
             confirmation.setRequestMethod("HEAD");confirmation.setUseCaches(false);
@@ -168,6 +192,7 @@ public final class FileTransfer {
         validateSlot(slot);
         byte[] iv = null, key = null;
         if (encrypted) { SecureRandom random = new SecureRandom(); iv = new byte[12]; key = new byte[32]; random.nextBytes(iv); random.nextBytes(key); }
+        job.stage("upload-encryption");
         // Encrypt once: replay must never read changed plaintext under the same GCM nonce.
         File wire = File.createTempFile("monogram-wire-", ".part", file.getAbsoluteFile().getParentFile());
         try {
@@ -181,6 +206,7 @@ public final class FileTransfer {
                 for (int attempt = 0; attempt < 2; attempt++) {
                     FileLink link=validateSlot(slot);
                     input.getChannel().position(0); job.check();
+                    job.attempt=attempt+1;job.stage("upload-connect");
                     HttpURLConnection http = open(slot.getPutUrl(), job);
                     IdleDeadline idle=attempt==0?new IdleDeadline(http):null;
                     boolean bodySent=false;HeaderDeadline responseDeadline=null;
@@ -190,7 +216,9 @@ public final class FileTransfer {
                         http.setRequestProperty("Connection","close");
                         for (Map.Entry<String, String> header : slot.getHeaders().entrySet()) http.addRequestProperty(header.getKey(), header.getValue());
                         try (IdleDeadline waiting=idle; OutputStream out = http.getOutputStream()) {
+                            job.stage("upload-body");
                             copy(input, out, size, size, null, job, activeProgress(progress,idle)); out.flush();
+                            job.stage("upload-response");
                         }
                         bodySent=true;job.check();
                         if(attempt==0)responseDeadline=new HeaderDeadline(http,5);
@@ -201,7 +229,7 @@ public final class FileTransfer {
                         job.check();
                         boolean conflict=error instanceof Failure&&"UPLOAD_HTTP_409".equals(((Failure)error).reason);
                         if(responseDeadline!=null)responseDeadline.close();
-                        retryDiagnostic(bodySent?"upload-response":"upload-body",error,idle);
+                        retryDiagnostic(job,bodySent?"upload-response":"upload-body",error,idle);
                         if(bodySent && !(error instanceof Failure) && !(error instanceof javax.net.ssl.SSLException)) {
                             http.disconnect();job.connection=null;
                             if(uploadPresent(slot.getGetUrl(),size,job))return encrypted?FileLink.encrypted(link.downloadUrl,iv,key):link;
@@ -261,7 +289,7 @@ public final class FileTransfer {
                         job.check();
                         if (recoveries == 0 || !reconnect(error, deadline)) throw error;
                         recoveries--;
-                        retryDiagnostic("download-headers",error,null);
+                        retryDiagnostic(job,"download-headers",error,null);
                         if (progress != null) progress.update(0, -1);
                         continue;
                     } finally { if (deadline != null) deadline.close(); }
@@ -299,7 +327,7 @@ public final class FileTransfer {
                 } catch(IOException error) {
                     job.check();
                     if(recoveries==0 || !reconnect(error,null) && !(idle!=null&&idle.expired && !(error instanceof Failure) && !(error instanceof javax.net.ssl.SSLException)))throw error;
-                    recoveries--;retryDiagnostic("download-body",error,idle);
+                    recoveries--;retryDiagnostic(job,"download-body",error,idle);
                     if(progress!=null)progress.update(0,-1);
                 } finally {if(idle!=null)idle.close(); http.disconnect(); job.connection = null; }
             }

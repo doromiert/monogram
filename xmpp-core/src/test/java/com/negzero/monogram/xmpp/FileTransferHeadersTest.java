@@ -39,7 +39,7 @@ class FileTransferHeadersTest {
         }
         @Override public int getResponseCode() throws IOException { return status; }
         @Override public InputStream getInputStream() { bodyOpened=true;return new ByteArrayInputStream(response); }
-        @Override public OutputStream getOutputStream() { return uploaded; }
+        @Override public OutputStream getOutputStream() throws IOException { return uploaded; }
         @Override public void disconnect() { disconnected=true; }
         @Override public boolean usingProxy() { return false; }
         @Override public void connect() {}
