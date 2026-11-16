@@ -976,6 +976,9 @@ public final class MonogramController {
                                 throw new java.io.IOException("Cannot save imported room password");
                             publishRoom(dialog);
                         }
+                        java.util.ArrayList<String> acceptedRooms=new java.util.ArrayList<>();
+                        for(com.negzero.monogram.xmpp.XmppBookmarks.Bookmark bookmark:snapshot.bookmarks)if(bookmark.autojoin)acceptedRooms.add(bookmark.jid);
+                        resolveAcceptedRoomInvitations(acceptedRooms);
                         store.missingBookmarks(present);
                         rejoinRooms(sync.session,sync.epoch);
                         TLRPC.TL_messages_dialogs cached=dialogs();
@@ -1105,6 +1108,17 @@ public final class MonogramController {
         org.json.JSONObject invite=roomInvitationData().optJSONObject(room);
         String encrypted=invite==null ? "" : invite.optString("password");
         try { return encrypted.isEmpty() ? "" : vault.decrypt(encrypted); } catch(Exception unavailable) { return ""; }
+    }
+    static boolean removeAcceptedInvitations(org.json.JSONObject invites,java.util.Collection<String> rooms) {
+        boolean changed=false;for(String room:rooms)if(invites.has(room)){invites.remove(room);changed=true;}return changed;
+    }
+    private void resolveAcceptedRoomInvitations(java.util.Collection<String> rooms) {
+        org.json.JSONObject invites=roomInvitationData();if(!removeAcceptedInvitations(invites,rooms))return;
+        preferences.edit().putString(roomInvitationsKey(),invites.toString()).putBoolean("has-"+roomInvitationsKey(),invites.length()>0).commit();
+        AndroidUtilities.runOnUIThread(()->{
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.updateInterfaces,MessagesController.UPDATE_MASK_CHAT_MEMBERS);
+            NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.contactsDidLoad);
+        });
     }
     public void dismissRoomInvitation(String room) {
         final long owner=accountEpoch;
