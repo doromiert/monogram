@@ -44,7 +44,7 @@ public final class MonogramDebugToastReceiver extends BroadcastReceiver {
                 layout.subtitleTextView.setSingleLine(false);
                 layout.subtitleTextView.setMaxLines(6);
                 layout.setOnClickListener(view -> bulletin.hide());
-                bulletin.show(true);
+                bulletin.show();
                 setResultData("Shown in Monogram");
             } else if (NotificationManagerCompat.from(context).areNotificationsEnabled()) {
                 NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
