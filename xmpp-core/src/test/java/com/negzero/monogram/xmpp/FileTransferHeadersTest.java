@@ -32,6 +32,7 @@ class FileTransferHeadersTest {
                 @Override protected URLConnection openConnection(URL url) { return Http.this; }
             });
         }
+        URL downloadTransport() throws Exception {Http missing=new Http();missing.status=404;return missing.transport();}
         @Override public String getHeaderField(String name) {
             if("Content-Length".equalsIgnoreCase(name)) return length;
             return "Content-Type".equalsIgnoreCase(name) ? mime : null;
@@ -60,7 +61,7 @@ class FileTransferHeadersTest {
                 info.addFeature("urn:xmpp:http:upload:0");answer=info;
             } else if(request instanceof SlotRequest) {
                 slot=(SlotRequest)request;
-                try { int index=++slotRequests;answer=new Slot(new URL(http.transport(),"?slot="+index),new URL("https://uploads.example.org/file?slot="+index)); }
+                try { int index=++slotRequests;answer=new Slot(new URL(http.transport(),"?slot="+index),new URL(http.downloadTransport(),"?slot="+index)); }
                 catch(Exception invalid) { throw new AssertionError(invalid); }
             } else throw new AssertionError(request.toXML());
             answer.setType(IQ.Type.result);answer.setStanzaId(request.getStanzaId());

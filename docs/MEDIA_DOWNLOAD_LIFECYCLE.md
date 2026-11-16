@@ -101,3 +101,7 @@ retries. Retry logs include only stage, inactivity flag and exception class.
 Verified by 20 production-boundary transport tests, including actual deadline-driven
 blocked read/write fixtures, encrypted snapshot reuse, bounded retries and a slow
 accepted PUT. No contact messages are sent by the fixtures.
+
+### Upload acknowledgement diagnosis (0.2.221)
+
+The next physical-phone report logged `upload inactive=false cause=SocketTimeoutException`: the body deadline did not fire. Upload response handling now has its own five-second first-attempt deadline. After an interrupted acknowledgement, HEAD checks the validated slot download URL (without copying PUT credentials): HTTP 200 plus exact encrypted/plain wire length confirms the object is present. If confirmation fails, a bounded fresh-slot retry remains; it never reuses a potentially consumed slot. Connections request `Connection: close` so completed transfers do not leave idle upload connections for reuse. Tests retain a healthy 3.3-second accepted PUT and cover lost-response confirmation without a second upload. Remote/server or network root cause remains unproven until a real stalled response is confirmed.

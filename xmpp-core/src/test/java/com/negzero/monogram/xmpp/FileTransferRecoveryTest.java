@@ -89,6 +89,14 @@ class FileTransferRecoveryTest extends FileTransferHeadersTest {
         assertThrows(SocketTimeoutException.class,()->FileTransfer.download(transport(FileLink.parse("https://uploads.example.org/file"),partial),
                 new File(directory,"body"),new FileTransfer.Job(),null,null));assertEquals(3,partial.opened);
     }
+    @Test void lostPutResponseConfirmsTheAcceptedObjectWithoutUploadingTwice() throws Exception {
+        Http head=ready();head.length="19";Http first=new Http(){
+            @Override URL downloadTransport()throws Exception{return head.transport();}
+            @Override public int getResponseCode()throws IOException{throw new SocketTimeoutException();}
+        };File source=new File(directory,"accepted-sticker.webp");Files.write(source.toPath(),new byte[]{1,2,3});Connection connection=new Connection(first);
+        FileLink link=FileTransfer.upload(connection,source,"image/webp",true,new FileTransfer.Job(),null);
+        assertEquals(1,connection.slotRequests);assertEquals("HEAD",head.getRequestMethod());assertArrayEquals(new byte[]{1,2,3},crypt(first.uploaded.toByteArray(),link,Cipher.DECRYPT_MODE));
+    }
     @Test void idleDownloadBodyDisconnectsAndRetriesWithoutUserAction() throws Exception {
         CountDownLatch released=new CountDownLatch(1);
         Http stalled=new Http(){
