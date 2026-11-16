@@ -94,3 +94,11 @@ normalization do not create edits. Older remote snapshots cannot replace a newer
 unexported local change. A new edit that returns to previously used content still
 advances the revision and applies on peers. Both clients need this behavior for
 consistent ordering.
+
+### Applying pack order to the visible picker (0.2.220)
+
+A received pack-order record must reload the mobile sticker/emoji sets, not only
+write the library manifest and emit the Unicode emoji notification. Otherwise the
+manifest matches the paired device while the horizontal pack bar retains its old
+loaded order. Imported order now uses the same pack refresh as other pack edits;
+this refresh does not create a local user-edit revision.

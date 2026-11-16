@@ -85,9 +85,28 @@ class FileTransferRecoveryTest extends FileTransferHeadersTest {
         assertEquals(6,sequence.opened);
         Http body=new Http(){@Override public InputStream getInputStream(){return new InputStream(){
             @Override public int read() throws IOException {throw new SocketTimeoutException();}
-        };}};body.length="3";Sequence partial=new Sequence(body);
+        };}};body.length="3";Sequence partial=new Sequence(body,body,body);
         assertThrows(SocketTimeoutException.class,()->FileTransfer.download(transport(FileLink.parse("https://uploads.example.org/file"),partial),
-                new File(directory,"body"),new FileTransfer.Job(),null,null));assertEquals(1,partial.opened);
+                new File(directory,"body"),new FileTransfer.Job(),null,null));assertEquals(3,partial.opened);
+    }
+    @Test void idleDownloadBodyDisconnectsAndRetriesWithoutUserAction() throws Exception {
+        CountDownLatch released=new CountDownLatch(1);
+        Http stalled=new Http(){
+            @Override public InputStream getInputStream(){return new InputStream(){public int read()throws IOException{try{assertTrue(released.await(7,TimeUnit.SECONDS));}catch(InterruptedException e){throw new InterruptedIOException();}throw new SocketException("Disconnected");}};}
+            @Override public void disconnect(){super.disconnect();released.countDown();}
+        };stalled.length="3";
+        Sequence attempts=new Sequence(stalled,ready());long started=System.nanoTime();File target=new File(directory,"body-recovery");
+        assertTrue(FileTransfer.download(transport(FileLink.parse("https://uploads.example.org/file"),attempts),target,new FileTransfer.Job(),null,null));
+        assertEquals(2,attempts.opened);assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started)<6500);assertArrayEquals(new byte[]{1,2,3},Files.readAllBytes(target.toPath()));
+    }
+    @Test void idleUploadWriteUsesAFreshSlotAndIdenticalEncryptedBytes() throws Exception {
+        CountDownLatch released=new CountDownLatch(1);File source=new File(directory,"sticker.webp");Files.write(source.toPath(),new byte[]{9,8,7});
+        Http stalled=new Http(){
+            @Override public OutputStream getOutputStream(){return new OutputStream(){public void write(int value)throws IOException{try{assertTrue(released.await(7,TimeUnit.SECONDS));}catch(InterruptedException e){throw new InterruptedIOException();}throw new SocketException("Disconnected");}};}
+            @Override public void disconnect(){super.disconnect();released.countDown();}
+        };Http fresh=new Http();fresh.status=201;Connection connection=new Connection(new Sequence(stalled,fresh));long started=System.nanoTime();
+        FileLink link=FileTransfer.upload(connection,source,"image/webp",true,new FileTransfer.Job(),null);
+        assertEquals(2,connection.slotRequests);assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started)<6500);assertArrayEquals(new byte[]{9,8,7},crypt(fresh.uploaded.toByteArray(),link,Cipher.DECRYPT_MODE));
     }
     @Test void encryptedPutReplaysIdenticalBytesAfterSourceMutation() throws Exception {
         byte[] original={1,3,5,7,9};File source=new File(directory,"original");Files.write(source.toPath(),original);

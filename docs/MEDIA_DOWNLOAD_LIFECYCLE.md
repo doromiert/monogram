@@ -81,3 +81,23 @@ generic file cards: thumbnail/type upgrades, native media viewer/playback, auto-
 caption edits/forwarding and complete cache management remain open. See
 [desktop transfer details](../../desktop/docs/FILE_TRANSFERS.md). No physical
 mobile/desktop UI exchange is established by these fixture comparisons.
+
+## Inactive first attempts (0.2.220)
+
+An Android 37 upload sample was inside the HTTPS socket body writer during the
+reported stall, then completed through the existing retry. Standalone fresh GETs
+to three recent attachment hosts completed in 282–615 ms; the exact remote/network
+reason for intermittent stalled connections is not established.
+
+The first upload body now has a five-second inactivity deadline, refreshed only
+after a body chunk advances. A timed-out write disconnects and retries once with
+a fresh upload slot and the immutable encrypted snapshot. The deadline ends before
+waiting for an accepted PUT response, preserving the normal response timeout.
+Downloads can similarly recover twice from inactive body reads, with a clean partial
+file and fresh cipher per attempt; the final attempt retains the normal timeout.
+TLS, integrity, size and HTTP refusal failures remain errors; cancellation never
+retries. Retry logs include only stage, inactivity flag and exception class.
+
+Verified by 20 production-boundary transport tests, including actual deadline-driven
+blocked read/write fixtures, encrypted snapshot reuse, bounded retries and a slow
+accepted PUT. No contact messages are sent by the fixtures.

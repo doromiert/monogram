@@ -65,6 +65,7 @@ public final class MonogramSyncLibrary {
    mixedOrder(favoriteCodes,state.optJSONArray("emoji_favorite_order"),local);mixedOrder(recentCodes,state.optJSONArray("emoji_recent_order"),local);
    if(state.has("emoji_favorites")||state.has("emoji_recent")||state.has("favorites")||state.has("recent")||state.has("emoji_favorite_order")||state.has("emoji_recent_order"))Emoji.applySyncedLibrary(favoriteCodes,recentCodes);
    if(state.has("emoji_pinned"))MessagesController.getGlobalEmojiSettings().edit().putString("monogram_synced_pinned_emoji",state.getJSONArray("emoji_pinned").toString()).apply();
+   MonogramPacks.refresh(account);
    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.emojiLoaded,true);return true;
   });
  }

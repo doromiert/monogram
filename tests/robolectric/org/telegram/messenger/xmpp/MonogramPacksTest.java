@@ -42,7 +42,8 @@ public class MonogramPacksTest {
     }
     @Implements(value=MonogramPacks.class,isInAndroidSdk=false)
     public static class PackUi {
-        @Implementation public static void refresh(int account) {}
+        public static int refreshes;
+        @Implementation public static void refresh(int account) {refreshes++;}
         @Implementation protected static org.json.JSONObject request(String token,String method,String key,String value,MonogramPacks.Request operation) throws Exception {
             if(method.equals("getStickerSet")) {
                 if(value.equals("Broken")) throw new java.io.IOException("fixture failure");
