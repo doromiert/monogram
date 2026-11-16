@@ -51,3 +51,20 @@ but are omitted from profile displays and the native field editor. Legacy phone
 privacy, contact sync and number-verification entries are absent from settings
 and search. Automatic phone-number detection and clickable actions in message
 text are retained.
+
+## Debug testing prompts
+
+Debug builds accept ADB prompts through `scripts/debug-toast.py SERIAL "message"`.
+Monogram shows a ten-second, tap-to-dismiss in-app bulletin while foregrounded,
+or a testing notification while another app is open. If notifications are disabled,
+Android's system toast is used instead. Prompts are bounded to 512 code points.
+The explicit receiver requires `android.permission.DUMP` (available to ADB shell);
+ordinary apps cannot inject prompts. Its source and manifest entry are debug-only.
+No overlays permission, network service, account message or forced activity launch
+is involved. Use this to tell the tester when an upload observer is ready.
+
+Upload failures now retain the transport phase, attempt number, elapsed phase time,
+compiled stack frames and the preceding recovery reason in FileLog. Exception
+messages, upload URLs, account addresses and media contents are omitted. Recovered
+uploads also record the recovery after completion. This improves diagnosis; it
+does not claim that the unresolved real-network stall is fixed.
