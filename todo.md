@@ -17,5 +17,5 @@ motion-photo preparation failure happened before any upload body was sent.
 - [x] Reject vCard writes above60KiB of UTF-8 before sending, including group photos; return acknowledged photo saves without an unnecessary refetch.
 - [x] Verify native Android image conversion and profile migration regressions (7 Android tests plus7 protocol tests).
 - [x] Build fresh0.2.226, verify same signer/all8 native libraries/16KiB alignment.
-- [ ] Publish0.2.226.
+- [x] Publish0.2.226 (sourcec1e8ff308, APK SHA256 b296dd0b6855e98de2ea6d3bc5967e315aacdb90a957d6979badc841771c64ff).
 - [ ] Confirm the original remote StreamErrorException condition; the supplied archive retains only profile timeouts/disconnected-request classes.
