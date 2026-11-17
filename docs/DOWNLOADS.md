@@ -15,3 +15,8 @@ Verification: API36 Robolectric checks cover media/document policy, save intent
 filename/MIME, cancellation, exact cached-byte export and refusal to export other
 private files. Physical DocumentsUI/provider acceptance is not exercised by these
 tests; no physical phone is controlled during this change.
+
+Released in [0.2.227](https://github.com/doromiert/monogram/releases/tag/v0.2.227)
+(version74449). The hosted APK matches the local SHA256, uses the established
+signer, retains all eight0.2.226 native libraries byte-for-byte, and passes ELF
+and ZIP16KiB alignment checks.

@@ -21,4 +21,4 @@ motion-photo preparation failure happened before any upload body was sent.
 - [ ] Confirm the original remote StreamErrorException condition; the supplied archive retains only profile timeouts/disconnected-request classes.
 
 - [x] Keep ordinary attachment downloads manual and choose a destination before download; preserve media automatic limits and native pack opening. Three API36 Robolectric checks pass for policy, picker/cancel and exact private-cache export.
-- [ ] Build/publish the fresh0.2.227 APK and verify signing/native compatibility.
+- [x] Build/publish the fresh0.2.227/74449 APK froma6bccbc34: hostedSHA256 verified, established signer matches226, all8native libraries unchanged and ELF/ZIP16KiB checks pass. Three finalAPI36 Robolectric tests pass; no physical phone/provider interaction. https://github.com/doromiert/monogram/releases/tag/v0.2.227
