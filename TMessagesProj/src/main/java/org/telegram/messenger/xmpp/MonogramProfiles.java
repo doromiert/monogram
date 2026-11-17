@@ -14,7 +14,9 @@ import org.telegram.tgnet.TLRPC;
 public final class MonogramProfiles {
     public static final long PHOTO_VOLUME = Long.MIN_VALUE + 101;
     private MonogramProfiles() {}
-    static byte[] png(byte[] encoded) throws Exception {
+    static byte[] png(byte[] encoded) throws Exception { return png(encoded, XmppProfile.MAX_AVATAR_BYTES); }
+    static byte[] publicAvatar(byte[] encoded) throws Exception { return png(encoded, XmppProfile.MAX_PUBLIC_AVATAR_BYTES); }
+    private static byte[] png(byte[] encoded, int limit) throws Exception {
         if (encoded.length == 0) return encoded;
         if (encoded.length > XmppProfile.MAX_AVATAR_BYTES) throw new IllegalArgumentException("Avatar too large");
         BitmapFactory.Options bounds = new BitmapFactory.Options(); bounds.inJustDecodeBounds = true;
@@ -28,11 +30,16 @@ public final class MonogramProfiles {
         Bitmap bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.length, options);
         if (bitmap == null) throw new IllegalArgumentException("Invalid avatar");
         try {
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new java.io.IOException("Avatar encoding failed");
-            byte[] png = out.toByteArray();
-            if (png.length > XmppProfile.MAX_AVATAR_BYTES) throw new IllegalArgumentException("Avatar too large");
-            return png;
+            while (true) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new java.io.IOException("Avatar encoding failed");
+                byte[] png = out.toByteArray();
+                if (png.length <= limit) return png;
+                if (bitmap.getWidth() == 1 && bitmap.getHeight() == 1) throw new IllegalArgumentException("Avatar too large");
+                Bitmap smaller = Bitmap.createScaledBitmap(bitmap, Math.max(1, bitmap.getWidth() * 3 / 4),
+                        Math.max(1, bitmap.getHeight() * 3 / 4), true);
+                bitmap.recycle(); bitmap = smaller;
+            }
         } finally { bitmap.recycle(); }
     }
     static File cache(android.content.Context context, String database, byte[] png) throws Exception {

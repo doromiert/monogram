@@ -174,11 +174,13 @@ public final class XmppProfiles {
     }
     public XmppProfile roomAvatar(String room,byte[] png) throws Exception {
         XmppProfile.checkedAvatar(png);
+        if (png.length > XmppProfile.MAX_PUBLIC_AVATAR_BYTES) throw new IllegalArgumentException("Choose a smaller profile photo before uploading");
         EntityBareJid address=JidCreate.entityBareFrom(room);
         XmppProfile changed=card(address,true).avatar(png,"image/png");
         CardIq request=new CardIq(changed.card); request.setType(IQ.Type.set); request.setTo(address);
+        checkWriteSize(request);
         connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
-        return loadRoom(room);
+        return changed;
     }
     public void useOwnProfile(XmppProfile profile) throws Exception {
         String hash = sha1OrEmpty(profile.cardAvatar());
@@ -186,8 +188,13 @@ public final class XmppProfiles {
         ownAvatarHash = hash;
         connection.sendStanza(new Presence(Presence.Type.available));
     }
+    private static void checkWriteSize(IQ request) {
+        if (request.toXML().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 60 * 1024)
+            throw new IllegalArgumentException("Profile is too large to save. Choose a smaller photo or shorten its fields.");
+    }
     private void saveCard(XmppProfile profile) throws Exception {
         CardIq request = new CardIq(profile.card); request.setType(IQ.Type.set);
+        checkWriteSize(request);
         connection.createStanzaCollectorAndSend(request).nextResultOrThrow();
     }
     public XmppProfile edit(String first, String last, String about) throws Exception { return edit(first,last,about,null); }
@@ -209,8 +216,10 @@ public final class XmppProfiles {
                 new PayloadItem<>(StandardExtensionElement.builder("nick",NICK).setText(value).build()));
         return new XmppProfile(changed.card,"NICKNAME".equals(field) ? value : cached!=null ? cached.nickname : changed.nickname,cached!=null ? cached.avatar : changed.avatar);
     }
-    public XmppProfile avatar(byte[] png) throws Exception {
+    public XmppProfile avatar(byte[] png) throws Exception { return avatar(png, null); }
+    public XmppProfile avatar(byte[] png, XmppProfile cached) throws Exception {
         XmppProfile.checkedAvatar(png);
+        if (png.length > XmppProfile.MAX_PUBLIC_AVATAR_BYTES) throw new IllegalArgumentException("Choose a smaller profile photo before uploading");
         XmppProfile changed = card(connection.getUser().asEntityBareJid(), true).avatar(png, "image/png");
         saveCard(changed);
         if (PepManager.getInstanceFor(connection).isSupported()) {
@@ -224,7 +233,8 @@ public final class XmppProfiles {
         }
         ownAvatarHash = sha1OrEmpty(png);
         connection.sendStanza(new Presence(Presence.Type.available));
-        return load(connection.getUser().asEntityBareJid().toString());
+        // Writes are acknowledged; preserve a cached PEP nickname without another profile fetch.
+        return new XmppProfile(changed.card, cached != null ? cached.nickname : changed.nickname, png);
     }
     private static String sha1OrEmpty(byte[] data) throws Exception { return data.length == 0 ? "" : sha1(data); }
     public static String sha1(byte[] data) throws Exception {

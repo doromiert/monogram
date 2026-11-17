@@ -12,6 +12,8 @@ import org.jivesoftware.smack.util.stringencoder.Base64;
 public final class XmppProfile {
     public static final String VCARD = "vcard-temp";
     public static final int MAX_AVATAR_BYTES = 1024 * 1024;
+    // Leave room for base64 and XML on servers with 64 KiB stanza limits.
+    public static final int MAX_PUBLIC_AVATAR_BYTES = 32 * 1024;
     final StandardExtensionElement card;
     public final String nickname;
     public final byte[] avatar;

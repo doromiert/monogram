@@ -10,3 +10,12 @@
 Do not treat the server acknowledgement issue as a fixed client bug. The phone
 trace showed the upload body completing before the response timeout. The separate
 motion-photo preparation failure happened before any upload body was sent.
+
+# Profile-photo publication
+
+- [x] Keep public PNG avatars within32KiB, preserving transparency and aspect ratio; local-only overrides keep their existing allowance.
+- [x] Reject vCard writes above60KiB of UTF-8 before sending, including group photos; return acknowledged photo saves without an unnecessary refetch.
+- [x] Verify native Android image conversion and profile migration regressions (7 Android tests plus7 protocol tests).
+- [x] Build fresh0.2.226, verify same signer/all8 native libraries/16KiB alignment.
+- [ ] Publish0.2.226.
+- [ ] Confirm the original remote StreamErrorException condition; the supplied archive retains only profile timeouts/disconnected-request classes.

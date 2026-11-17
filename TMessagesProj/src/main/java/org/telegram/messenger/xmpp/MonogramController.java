@@ -2129,8 +2129,8 @@ public final class MonogramController {
             try {
                 if(!sameAccount(epoch,owner) || source==null || !source.isFile() || source.length()<=0 || source.length()>com.negzero.monogram.xmpp.XmppProfile.MAX_AVATAR_BYTES) throw new IllegalArgumentException("Download a supported photo first");
                 byte[] bytes=new byte[(int)source.length()];try(java.io.DataInputStream input=new java.io.DataInputStream(new java.io.FileInputStream(source))) { input.readFully(bytes); }
-                byte[] png=MonogramProfiles.png(bytes);
-                com.negzero.monogram.xmpp.XmppProfile changed=session().profiles.avatar(png);
+                byte[] png=MonogramProfiles.publicAvatar(bytes);
+                com.negzero.monogram.xmpp.XmppProfile changed=session().profiles.avatar(png,store.profile(self));
                 if(!sameAccount(epoch,owner)) throw new IllegalStateException("Account changed");
                 store.profile(self,changed);publishProfile(self,sessionEpoch);
             } catch(Exception failed) { error=failed instanceof IllegalArgumentException ? failed.getMessage() : "Could not update profile photo"; }
@@ -4369,7 +4369,7 @@ public final class MonogramController {
                     throw new IllegalArgumentException("The room avatar file is missing or too large.");
                 byte[] bytes=new byte[(int)source.length()];
                 try(java.io.DataInputStream in=new java.io.DataInputStream(new java.io.FileInputStream(source))) { in.readFully(bytes); }
-                png=MonogramProfiles.png(bytes);
+                png=MonogramProfiles.publicAvatar(bytes);
             } else throw new IllegalArgumentException("Choose a new room avatar or remove the current one.");
             XmppSession expected=session(); long epoch=sessionEpoch;
             if(!expected.rooms.state(room).joined) throw new IllegalStateException("Join the room before changing its avatar.");
@@ -4485,7 +4485,7 @@ public final class MonogramController {
             byte[] bytes = new byte[(int) source.length()];
             try (java.io.DataInputStream in = new java.io.DataInputStream(new java.io.FileInputStream(source))) { in.readFully(bytes); }
             profileVersions.merge(self, 1L, Long::sum);
-            com.negzero.monogram.xmpp.XmppProfile changed = session().profiles.avatar(MonogramProfiles.png(bytes));
+            com.negzero.monogram.xmpp.XmppProfile changed = session().profiles.avatar(MonogramProfiles.publicAvatar(bytes),store.profile(self));
             profileVersions.merge(self, 1L, Long::sum);
             store.profile(self, changed); publishProfile(self, sessionEpoch);
             TLRPC.TL_photos_photo result = new TLRPC.TL_photos_photo(); result.photo = store.fullUser(self, self).profile_photo;
