@@ -423,6 +423,7 @@ public class DownloadController extends BaseController implements NotificationCe
     }
     /** HTTP attachment metadata is evaluated by the same presets as Telegram media. */
     public long getMonogramDownloadLimit(TLRPC.Message message, TLRPC.MessageMedia media, long size) {
+        if (!org.telegram.messenger.xmpp.MonogramAttachments.isMedia(media)) return 0;
         TLRPC.TL_message routing = new TLRPC.TL_message();
         routing.peer_id = message.peer_id; routing.from_id = message.from_id;
         if (message.dialog_id > 0) { routing.peer_id = new TLRPC.TL_peerUser(); routing.peer_id.user_id = message.dialog_id; }

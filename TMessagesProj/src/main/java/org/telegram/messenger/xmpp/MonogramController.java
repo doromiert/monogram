@@ -2945,6 +2945,11 @@ public final class MonogramController {
         try { sharing = store.sharing(message.id); }
         catch (IllegalStateException invalid) { return; }
         if (sharing != null && sharing.manual) return;
+        if (!MonogramAttachments.isMedia(message.media)) {
+            String mime = message.media != null && message.media.document != null ? message.media.document.mime_type : null;
+            // Legacy URI-only files may need headers before their media type is known; policy still rejects document bodies.
+            if (sharing != null || mime != null && !mime.isEmpty() && !"application/octet-stream".equals(mime)) return;
+        }
         if (!autoAttempted.add(message.id)) return;
         download(new MessageObject(account, message, true, true), true);
     }
@@ -3291,7 +3296,12 @@ public final class MonogramController {
         });
     }
     public void download(MessageObject object) {
-        download(object, false);
+        if (org.telegram.ui.MonogramFileSave.shouldChoose(object)) {
+            AndroidUtilities.runOnUIThread(() -> org.telegram.ui.MonogramFileSave.choose(account, object));
+        } else download(object, false);
+    }
+    public void saveDocument(MessageObject object, android.net.Uri destination) {
+        download(object, false, destination);
     }
     private void finishDownload(int id, String name, FileTransfer.Job job) {
         synchronized(fileNames) {
@@ -3313,12 +3323,15 @@ public final class MonogramController {
             if(entry.getValue()==job) names.add(entry.getKey());
         return names;
     }
-    private void download(MessageObject object, boolean automatic) {
+    private void download(MessageObject object, boolean automatic) { download(object, automatic, null); }
+    private void download(MessageObject object, boolean automatic, android.net.Uri destination) {
         if (!MonogramAttachments.has(object.messageOwner)) return;
         int id = object.getId();
         FileTransfer.Job job = new FileTransfer.Job();
         FileTransfer.Job existing=fileJobs.putIfAbsent(id,job);
         if(existing!=null) {
+            if(destination != null) AndroidUtilities.runOnUIThread(() -> android.widget.Toast.makeText(ApplicationLoader.applicationContext,
+                    "This file is already downloading. Cancel it before choosing another location.", android.widget.Toast.LENGTH_LONG).show());
             if(!automatic)automaticJobs.remove(id,existing);
             return;
         }
@@ -3399,6 +3412,21 @@ public final class MonogramController {
                 MonogramStickers.inspectDisplayHint(decoded,path,store.displayStickerHint(id,address));
                 MonogramAttachments.preserveMediaAttributes(object.messageOwner.media,decoded);
                 job.check();
+                if (destination != null) {
+                    TLRPC.Message current = store.getMessage(id, self);
+                    if (owner != accountEpoch || store.hiddenMessage(id) || current.params == null
+                            || !address.equals(current.params.get(MonogramAttachments.PARAM))) throw new java.io.IOException("Download cancelled. Try again.");
+                    try {
+                        MonogramAttachments.copyTo(ApplicationLoader.applicationContext, path, destination, job);
+                        AndroidUtilities.runOnUIThread(() -> {
+                            if (owner == accountEpoch && !job.cancelled()) android.widget.Toast.makeText(ApplicationLoader.applicationContext, "File saved", android.widget.Toast.LENGTH_SHORT).show();
+                        });
+                    } catch (Exception failure) {
+                        if (owner == accountEpoch && !job.cancelled()) AndroidUtilities.runOnUIThread(() ->
+                                android.widget.Toast.makeText(ApplicationLoader.applicationContext,
+                                        "Could not save the file. Use Save to Downloads and choose another location.", android.widget.Toast.LENGTH_LONG).show());
+                    }
+                }
                 worker.execute(() -> {
                     boolean sourceChanged=false;
                     try {

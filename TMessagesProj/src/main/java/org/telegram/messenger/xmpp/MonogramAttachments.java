@@ -45,6 +45,25 @@ public final class MonogramAttachments {
         }
         throw new java.io.IOException("Unrecognized gallery media");
     }
+    public static void copyTo(Context context, File source, android.net.Uri destination, com.negzero.monogram.xmpp.FileTransfer.Job job) throws java.io.IOException {
+        job.check();
+        if (!isCachedFile(context, source)) throw new java.io.IOException("Download the file again before saving.");
+        try (java.io.InputStream input = new java.io.FileInputStream(source);
+             java.io.OutputStream output = context.getContentResolver().openOutputStream(destination, "wt")) {
+            if (output == null) throw new java.io.IOException("Choose another save location.");
+            byte[] buffer = new byte[65536]; int count;
+            while ((count = input.read(buffer)) != -1) { job.check(); output.write(buffer, 0, count); }
+        }
+        job.check();
+    }
+    public static boolean isMedia(TLRPC.MessageMedia media) {
+        if (media == null) return false;
+        if (media.photo != null) return true;
+        if (media.document == null) return false;
+        String mime = media.document.mime_type == null ? "" : media.document.mime_type;
+        return mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/")
+                || "application/x-tgsticker".equals(mime) || MessageObject.isStickerDocument(media.document);
+    }
     public static boolean has(TLRPC.Message message) {
         return message != null && message.params != null && message.params.containsKey(PARAM);
     }

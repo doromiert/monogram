@@ -32927,6 +32927,10 @@ public class ChatActivity extends BaseFragment implements
                             path = f.getPath();
                         }
                     }
+                    if (MonogramFileSave.shouldChoose(selectedObject)) {
+                        MonogramFileSave.choose(currentAccount, selectedObject);
+                        break;
+                    }
                     MediaController.saveFile(path, getParentActivity(), 2, fileName, selectedObject.getDocument() != null ? selectedObject.getDocument().mime_type : "", uri -> {
                         if (getParentActivity() == null) {
                             return;
