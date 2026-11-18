@@ -20,6 +20,12 @@ public final class SmackSmokeInstrumentation extends Instrumentation {
    List<Future<Boolean>> jobs=new ArrayList<>();for(int i=0;i<(minified?1:2);i++)jobs.add(pool.submit(()->{
     Class.forName("org.telegram.messenger.xmpp.MonogramSmack",true,loader).getMethod("initialize",Context.class).invoke(null,context);
     Class.forName(minified?options.getString("configClass"):"org.jivesoftware.smack.ConnectionConfiguration",true,loader);
+    // Account restore reaches these extension initializers after core Smack startup.
+    // R8 once kept class names but stripped the QName fields used through reflection.
+    Class<?> event=Class.forName("org.jivesoftware.smackx.pubsub.EventElement",true,loader);
+    Object qname=Class.forName("org.jivesoftware.smack.util.XmppElementUtil",true,loader).getMethod("getQNameFor",Class.class).invoke(null,event);
+    if(!"{http://jabber.org/protocol/pubsub#event}event".equals(qname.toString()))throw new AssertionError("PubSub event QName missing");
+    for(String name:new String[]{"pubsub.filter.EventItemsExtensionFilter","pep.PepManager","pubsub.PubSubManager","bookmarks.BookmarkManager"})Class.forName("org.jivesoftware.smackx."+name,true,loader);
     if(minified)return true; // SmackInitialization itself parses the packaged XML startup configuration.
 
     Object parser=Class.forName("org.jivesoftware.smack.util.PacketParserUtils",true,loader).getMethod("getParserFor",String.class).invoke(null,"<message xmlns='jabber:client'><body>fixture</body></message>");
@@ -31,7 +37,7 @@ public final class SmackSmokeInstrumentation extends Instrumentation {
     inactive(nativeMesh.getMethod("appliedVersion",long.class,String.class),0L,"{\"kind\":\"pack-order\",\"owner\":\"fixture@example.invalid\",\"id\":\"order\",\"stamp\":1,\"origin\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":2}");
     result.putString("revision_abi","PASS installed native putJsonAt/appliedVersion dispatch without opening a store");
    }
-   result.putString("result",minified?"PASS minified packaged APK Smack configuration startup":"PASS packaged APK sterile-loader concurrent Smack startup and XML parse");finish(-1,result);
+   result.putString("result",minified?"PASS minified packaged APK Smack core/PEP/PubSub/bookmark startup":"PASS packaged APK sterile-loader concurrent Smack extension startup and XML parse");finish(-1,result);
   }catch(Throwable error){StringBuilder chain=new StringBuilder();for(Throwable e=error;e!=null;e=e.getCause())chain.append(e.toString()).append(" > ");result.putString("failure",chain.toString());finish(0,result);}
   finally{if(pool!=null)pool.shutdownNow();}
  }

@@ -13,5 +13,11 @@ import zipfile
 with zipfile.ZipFile('.state/smack-smoke/unsigned.apk','a') as z:z.write('.state/smack-smoke/dex/classes.dex','classes.dex')
 PY2
 "$smack_sdk/build-tools/35.0.0/apksigner" sign --ks "$smack_keystore" --ks-pass pass:android --ks-key-alias androiddebugkey --out "$smack_state/fixture.apk" "$smack_state/unsigned.apk"
-adb install -r "$smack_state/fixture.apk"
-adb shell am instrument -w "$@" com.negzero.monogram.smacksmoke/com.negzero.monogram.smacksmoke.SmackSmokeInstrumentation
+adb install --no-incremental -r "$smack_state/fixture.apk"
+smack_result=$(adb shell am instrument -w "$@" com.negzero.monogram.smacksmoke/com.negzero.monogram.smacksmoke.SmackSmokeInstrumentation)
+printf '%s\n' "$smack_result"
+# Android's shell command can exit zero even when instrumentation reports failure.
+case "$smack_result" in
+    *"INSTRUMENTATION_CODE: -1"*) ;;
+    *) exit 1 ;;
+esac

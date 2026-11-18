@@ -19,8 +19,18 @@ python3 scripts/check-apk-update.py previous.apk candidate.apk \
 This verifies both APK signatures, matching application IDs and certificate
 sets, and an increasing Android version code. Also verify the release name,
 asset digest and native-library alignment before making the release latest.
+Run the exact signed APK in an emulator for at least 60 seconds, monitoring its
+process and crash buffer. A crash blocks publication and restarts the full check
+after a fix. Exercise the packaged Smack extension startup test too: unit tests
+do not expose fields removed by R8.
 
 0.2.227 accidentally used `com.negzero.monogram` while retaining the signing
 key. The updater correctly rejected it. 0.2.228 restores the established beta
 ID. The updater also distinguishes an incompatible ID, signing key or version
 from a network failure, without weakening any verification.
+
+0.2.229 preserves Smack extension static fields used by QName reflection during
+PEP/PubSub initialization. The optimized 0.2.228 APK removed these fields and
+crashed while restoring XMPP accounts. The packaged startup regression now checks
+that exact initialization path, and its shell runner fails on an unsuccessful
+instrumentation result even when Android's shell command exits zero.

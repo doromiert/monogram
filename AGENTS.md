@@ -15,3 +15,9 @@ signing certificate. Before publishing, run `scripts/check-apk-update.py` agains
 the previous published APK using SDK build-tools; it checks both APK identities,
 verified signers and increasing versionCode. Do not infer compatibility from a
 matching certificate alone. Never uninstall the user's app to work around this.
+
+Before publishing or pushing out any Android update, install the exact final APK
+in an Android emulator, launch it, and keep it running for at least 60 seconds.
+Monitor its process and crash logs for the entire interval. Any crash blocks
+publication: fix the crash, rebuild, and restart the full 60-second check. Unit
+tests, compilation and a physical-phone check do not replace this requirement.

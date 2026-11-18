@@ -71,6 +71,8 @@
 # Smack startup/provider XML uses original class names and public constructors.
 -keep class org.jivesoftware.smack.** { *; }
 -keepnames class org.jivesoftware.smackx.**
+# Extension filters discover these public static fields through Class.getField().
+-keepclassmembers class org.jivesoftware.smackx.** { public static <fields>; }
 -keep,allowoptimization class * extends org.jivesoftware.smack.provider.Provider { public <init>(); }
 -keep class org.jivesoftware.smackx.omemo.OmemoInitializer { *; }
 # Managers listed by the pinned4.4.8 extensions/experimental/omemo startup XML.
