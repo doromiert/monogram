@@ -29,6 +29,8 @@
     public byte[] load(int, java.lang.String, int);
     public void save(int, java.lang.String, int, byte[]);
 }
+# libsignal's JNI bridge looks up Java store adapters and handle-owner signatures by name.
+-keep class org.signal.libsignal.** { *; }
 -keep class org.telegram.ui.Stories.recorder.FfmpegAudioWaveformLoader { *; }
 -keep class androidx.mediarouter.app.MediaRouteButton { *; }
 -keepclassmembers class ** {
@@ -73,7 +75,8 @@
 -keepnames class org.jivesoftware.smackx.**
 # Extension filters discover these public static fields through Class.getField().
 -keepclassmembers class org.jivesoftware.smackx.** { public static <fields>; }
--keep,allowoptimization class * extends org.jivesoftware.smack.provider.Provider { public <init>(); }
+# IQProvider and Provider are separate branches beneath AbstractProvider in Smack4.4.8.
+-keep,allowoptimization class * extends org.jivesoftware.smack.provider.AbstractProvider { public <init>(); }
 -keep class org.jivesoftware.smackx.omemo.OmemoInitializer { *; }
 # Managers listed by the pinned4.4.8 extensions/experimental/omemo startup XML.
 -keep class org.jivesoftware.smackx.bytestreams.ibb.InBandBytestreamManager { *; }

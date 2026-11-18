@@ -26,6 +26,21 @@ public final class SmackSmokeInstrumentation extends Instrumentation {
     Object qname=Class.forName("org.jivesoftware.smack.util.XmppElementUtil",true,loader).getMethod("getQNameFor",Class.class).invoke(null,event);
     if(!"{http://jabber.org/protocol/pubsub#event}event".equals(qname.toString()))throw new AssertionError("PubSub event QName missing");
     for(String name:new String[]{"pubsub.filter.EventItemsExtensionFilter","pep.PepManager","pubsub.PubSubManager","bookmarks.BookmarkManager"})Class.forName("org.jivesoftware.smackx."+name,true,loader);
+    // A live login fails if XML-only IQ providers were removed, even when managers initialize.
+    Class<?> parsers=Class.forName("org.jivesoftware.smack.util.PacketParserUtils",true,loader);
+    for(String[] stanza:new String[][]{
+     {"<query xmlns='http://jabber.org/protocol/disco#info'><identity category='server' type='im'/><feature var='urn:xmpp:ping'/></query>","org.jivesoftware.smackx.disco.packet.DiscoverInfo"},
+     {"<query xmlns='http://jabber.org/protocol/disco#items'><item jid='upload.example.invalid'/></query>","org.jivesoftware.smackx.disco.packet.DiscoverItems"},
+     {"<query xmlns='jabber:iq:roster'><item jid='fixture@example.invalid' subscription='both'/></query>","org.jivesoftware.smack.roster.packet.RosterPacket"},
+     {"<pubsub xmlns='http://jabber.org/protocol/pubsub'><items node='fixture'/></pubsub>","org.jivesoftware.smackx.pubsub.packet.PubSub"},
+     {"<fin xmlns='urn:xmpp:mam:2' complete='true'><set xmlns='http://jabber.org/protocol/rsm'><count>0</count></set></fin>","org.jivesoftware.smackx.mam.element.MamFinIQ"}
+    }){
+     Object iq=parsers.getMethod("parseStanza",String.class).invoke(null,"<iq xmlns='jabber:client' type='result' id='fixture'>"+stanza[0]+"</iq>");
+     if(!Class.forName(stanza[1],true,loader).isInstance(iq))throw new AssertionError("Missing typed IQ parser: "+stanza[1]+" received "+iq.getClass().getName());
+    }
+    Class<?> owner=Class.forName("org.signal.libsignal.internal.NativeHandleGuard$Owner",false,loader);
+    Class<?> sessions=Class.forName("org.signal.libsignal.protocol.state.internal.SessionStore",false,loader);
+    if(sessions.getMethod("loadSession",long.class).getReturnType()!=owner)throw new AssertionError("libsignal JNI store callback signature changed");
     if(minified)return true; // SmackInitialization itself parses the packaged XML startup configuration.
 
     Object parser=Class.forName("org.jivesoftware.smack.util.PacketParserUtils",true,loader).getMethod("getParserFor",String.class).invoke(null,"<message xmlns='jabber:client'><body>fixture</body></message>");
@@ -37,7 +52,7 @@ public final class SmackSmokeInstrumentation extends Instrumentation {
     inactive(nativeMesh.getMethod("appliedVersion",long.class,String.class),0L,"{\"kind\":\"pack-order\",\"owner\":\"fixture@example.invalid\",\"id\":\"order\",\"stamp\":1,\"origin\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"digest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":2}");
     result.putString("revision_abi","PASS installed native putJsonAt/appliedVersion dispatch without opening a store");
    }
-   result.putString("result",minified?"PASS minified packaged APK Smack core/PEP/PubSub/bookmark startup":"PASS packaged APK sterile-loader concurrent Smack extension startup and XML parse");finish(-1,result);
+   result.putString("result","PASS packaged APK Smack startup, typed disco/roster/PubSub/MAM parsing and libsignal JNI callback contract");finish(-1,result);
   }catch(Throwable error){StringBuilder chain=new StringBuilder();for(Throwable e=error;e!=null;e=e.getCause())chain.append(e.toString()).append(" > ");result.putString("failure",chain.toString());finish(0,result);}
   finally{if(pool!=null)pool.shutdownNow();}
  }

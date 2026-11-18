@@ -34,3 +34,19 @@ PEP/PubSub initialization. The optimized 0.2.228 APK removed these fields and
 crashed while restoring XMPP accounts. The packaged startup regression now checks
 that exact initialization path, and its shell runner fails on an unsuccessful
 instrumentation result even when Android's shell command exits zero.
+
+0.2.230 corrects a second shrinker rule: Smack4.4.8 IQ providers inherit from
+`IqProvider` and `AbstractProvider`, not the sibling `Provider` base. Keeping only
+`Provider` subclasses removed discovery IQ parsers, so valid server responses
+became `UnparsedIQ` and post-login setup disconnected. Keep XML-registered
+`AbstractProvider` subclasses and their constructors. The packaged regression
+now checks typed discovery, roster, PubSub and MAM IQ parsing as well as startup.
+
+Comparing the actual artifacts identified the delivery regression:0.2.226 was
+an unshrunk `afatDebug` beta APK;0.2.227 silently changed to optimized `release`.
+There was no XMPP backend source change between them. The optimizer removed IQ
+providers and renamed libsignal JNI handle-owner/adapter signatures.0.2.230
+restores `afatDebug` delivery, including the user's debug features, and disables
+shrinking for the beta `release` configuration as a backstop. Keep rules preserve
+the IQ-provider and JNI contracts for future optimization work. The final
+packaged test checks the JNI `loadSession(long)` return signature too.

@@ -22,3 +22,5 @@ motion-photo preparation failure happened before any upload body was sent.
 
 - [x] Keep ordinary attachment downloads manual and choose a destination before download; preserve media automatic limits and native pack opening. Three API36 Robolectric checks pass for policy, picker/cancel and exact private-cache export.
 - [x] Build/publish the fresh0.2.227/74449 APK froma6bccbc34: hostedSHA256 verified, established signer matches226, all8native libraries unchanged and ELF/ZIP16KiB checks pass. Three finalAPI36 Robolectric tests pass; no physical phone/provider interaction. https://github.com/doromiert/monogram/releases/tag/v0.2.227
+
+- [x] Restore0.2.226 afatDebug beta delivery after accidental optimized release switch; retain app ID/signing key and debug features.0.2.230 passes62.6s emulator+phone, typed disco/roster/PubSub/MAM and libsignal JNI contract checks; phone chatting confirmed working. No identities/sessions were reset.

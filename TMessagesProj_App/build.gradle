@@ -103,8 +103,9 @@ android {
             signingConfig signingConfigs.release
             // Published debug and optimized APKs must update the same installed app.
             applicationIdSuffix ".beta"
-            minifyEnabled true
-            shrinkResources true
+            // Keep beta JNI/reflection contracts intact; optimize only after authenticated crypto tests.
+            minifyEnabled false
+            shrinkResources false
             multiDexEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
             ndk.debugSymbolLevel = 'FULL'
