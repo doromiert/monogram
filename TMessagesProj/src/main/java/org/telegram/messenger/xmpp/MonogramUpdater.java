@@ -132,9 +132,19 @@ public final class MonogramUpdater {
     @SuppressWarnings("deprecation") private static void verify(File file,Release release) throws Exception {
         PackageManager manager=ApplicationLoader.applicationContext.getPackageManager();
         PackageInfo apk=manager.getPackageArchiveInfo(file.getAbsolutePath(),PackageManager.GET_SIGNATURES),current=installed(PackageManager.GET_SIGNATURES);
-        if(apk==null || !current.packageName.equals(apk.packageName) || !release.version.equals(apk.versionName)
-                || apk.versionCode<=current.versionCode || apk.signatures==null || current.signatures==null
-                || !new HashSet<>(Arrays.asList(apk.signatures)).equals(new HashSet<>(Arrays.asList(current.signatures)))) throw new SecurityException("APK package, version or signer mismatch");
+        verifyPackage(apk,current,release.version);
+    }
+    private static final class IncompatibleUpdate extends IOException {
+        IncompatibleUpdate(String message) { super(message); }
+    }
+    @SuppressWarnings("deprecation") static void verifyPackage(PackageInfo apk,PackageInfo current,String version) throws IOException {
+        if(apk==null) throw new IncompatibleUpdate("This update is not a valid Android app. Check for a corrected Monogram release.");
+        if(!current.packageName.equals(apk.packageName)) throw new IncompatibleUpdate("This release has a different app ID and cannot update Monogram. Keep your installed app and check for a corrected release.");
+        if(apk.signatures==null || current.signatures==null || apk.signatures.length==0 || current.signatures.length==0
+                || !new HashSet<>(Arrays.asList(apk.signatures)).equals(new HashSet<>(Arrays.asList(current.signatures))))
+            throw new IncompatibleUpdate("This release has a different signing key and cannot update Monogram. Keep your installed app and check for a corrected release.");
+        if(!version.equals(apk.versionName) || apk.versionCode<=current.versionCode)
+            throw new IncompatibleUpdate("This release has an incorrect version. Check for a corrected Monogram release.");
     }
     public synchronized void download() {
         if(downloading || release==null || file()!=null) return;
@@ -160,7 +170,7 @@ public final class MonogramUpdater {
                     if(job!=generation) throw new InterruptedIOException("Update cancelled");
                     if(!part.renameTo(apk)) throw new IOException("Could not finalize update");downloaded=apk;progress=1;accepted=true;
                 }
-            } catch(Exception failed) { if(job==generation) { FileLog.e(failed);notice("Update download failed. Please try again."); } }
+            } catch(Exception failed) { if(job==generation) { FileLog.e(failed);notice(failed instanceof IncompatibleUpdate ? failed.getMessage() : "Update download failed. Please try again."); } }
             finally {
                 if(c!=null) c.disconnect();part.delete();
                 synchronized(this) { if(job==generation) downloading=false; }

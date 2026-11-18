@@ -8,6 +8,21 @@ import org.json.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(manifest=Config.NONE,sdk=36,application=android.app.Application.class)
 public class MonogramUpdaterTest {
+    private android.content.pm.PackageInfo apk(String name,int code,String version,String key) {
+        android.content.pm.PackageInfo info=new android.content.pm.PackageInfo();
+        info.packageName=name;info.versionCode=code;info.versionName=version;
+        info.signatures=new android.content.pm.Signature[]{new android.content.pm.Signature(key)};
+        return info;
+    }
+    @Test public void preservesInstalledIdentityAndExplainsIncompatibleReleases() throws Exception {
+        android.content.pm.PackageInfo current=apk("com.negzero.monogram.beta",74439,"0.2.226","1234");
+        MonogramUpdater.verifyPackage(apk(current.packageName,74459,"0.2.228","1234"),current,"0.2.228");
+        java.io.IOException renamed=assertThrows(java.io.IOException.class,()->MonogramUpdater.verifyPackage(apk("com.negzero.monogram",74449,"0.2.227","1234"),current,"0.2.227"));
+        assertTrue(renamed.getMessage().contains("different app ID"));
+        java.io.IOException signer=assertThrows(java.io.IOException.class,()->MonogramUpdater.verifyPackage(apk(current.packageName,74459,"0.2.228","5678"),current,"0.2.228"));
+        assertTrue(signer.getMessage().contains("different signing key"));
+        assertThrows(java.io.IOException.class,()->MonogramUpdater.verifyPackage(apk(current.packageName,74439,"0.2.228","1234"),current,"0.2.228"));
+    }
     private JSONObject release() throws Exception {
         JSONObject asset=new JSONObject().put("name","monogram-0.2.144-arm64.apk").put("state","uploaded")
                 .put("browser_download_url","https://github.com/doromiert/monogram/releases/download/v0.2.144/monogram-0.2.144-arm64.apk")

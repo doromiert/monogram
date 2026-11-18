@@ -101,6 +101,8 @@ android {
             debuggable false
             jniDebuggable false
             signingConfig signingConfigs.release
+            // Published debug and optimized APKs must update the same installed app.
+            applicationIdSuffix ".beta"
             minifyEnabled true
             shrinkResources true
             multiDexEnabled true
