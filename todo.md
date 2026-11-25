@@ -24,3 +24,13 @@ motion-photo preparation failure happened before any upload body was sent.
 - [x] Build/publish the fresh0.2.227/74449 APK froma6bccbc34: hostedSHA256 verified, established signer matches226, all8native libraries unchanged and ELF/ZIP16KiB checks pass. Three finalAPI36 Robolectric tests pass; no physical phone/provider interaction. https://github.com/doromiert/monogram/releases/tag/v0.2.227
 
 - [x] Restore0.2.226 afatDebug beta delivery after accidental optimized release switch; retain app ID/signing key and debug features.0.2.230 passes62.6s emulator+phone, typed disco/roster/PubSub/MAM and libsignal JNI contract checks; phone chatting confirmed working. No identities/sessions were reset.
+
+
+## HDR media (2026-11-25)
+- [x] Preserve unedited HDR originals and JPEG/PNG/HEIC/AVIF MIME instead of sending SDR photo renditions.
+- [x] Use native gain maps and high-precision PQ/HLG bitmaps; restore window color mode when the final visible HDR receiver leaves.
+- [x] Avoid needless conversion of unchanged HDR video; existing edited exports may still become SDR.
+- [x] API35 native JPEG/PQ checks and4 lifecycle/edit/config tests pass. Fresh0.2.240 APK retains beta identity/key/all8 JNI libraries and survives62.90s in the emulator without crashes.
+- [ ] Physical HDR luminance/codec acceptance on the user's device; final APK is ready locally, no phone control or installation attempted.
+
+See docs/HDR_MEDIA.md. HDR source is isolated on feat/hdr-media; the local APK also retains the previously existing mobile fixes under development.
