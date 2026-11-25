@@ -1132,6 +1132,7 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
     }
 
     public void onDetachedFromWindow() {
+        org.telegram.messenger.xmpp.MonogramHdr.release(this);
         if (!attachedToWindow) {
             return;
         }
@@ -1912,6 +1913,8 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
     }
 
     public boolean draw(Canvas canvas, BackgroundThreadDrawHolder backgroundThreadDrawHolder) {
+        if(backgroundThreadDrawHolder==null)
+            org.telegram.messenger.xmpp.MonogramHdr.update(this,parentView,isVisible && canvas.isHardwareAccelerated() && org.telegram.messenger.xmpp.MonogramHdr.isHdr(getBitmap()));
         boolean result = false;
         if (gradientBitmap != null && currentImageKey != null) {
             canvas.save();
@@ -2406,6 +2409,7 @@ public class ImageReceiver implements NotificationCenter.NotificationCenterDeleg
     }
 
     public void setParentView(View view) {
+        org.telegram.messenger.xmpp.MonogramHdr.release(this);
         View oldParent = parentView;
         parentView = view;
         AnimatedFileDrawable animation = getAnimation();

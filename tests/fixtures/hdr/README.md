@@ -1,0 +1,1 @@
+Generated locally for HDR regression tests. gainmap.jpg is a 64x32 synthetic PQ gray gradient encoded with libultrahdr 1.4 (10-bit RGBA/PQ BT.2100). pq.png is an RGB16 synthetic PNG with CICP 9/16/0/full. No user media. See docs/HDR_MEDIA.md.

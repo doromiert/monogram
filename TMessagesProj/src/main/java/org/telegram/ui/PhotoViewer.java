@@ -9874,6 +9874,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             return null;
         }
         VideoEditedInfo videoEditedInfo = new VideoEditedInfo();
+        if(videoPlayer!=null && videoPlayer.isHDR())videoEditedInfo.hdrInfo=videoPlayer.getHDRStaticInfo(null);
         videoEditedInfo.startTime = startTime;
         videoEditedInfo.endTime = endTime;
         videoEditedInfo.start = videoCutStart;

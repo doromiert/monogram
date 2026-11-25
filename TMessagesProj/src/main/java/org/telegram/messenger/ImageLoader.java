@@ -1445,12 +1445,13 @@ public class ImageLoader {
                             }
                         }
 
-                        if (force8888 || cacheImage.filter == null || blurType != 0 || cacheImage.imageLocation.path != null) {
+                        if (Build.VERSION.SDK_INT >= 34 || force8888 || cacheImage.filter == null || blurType != 0 || cacheImage.imageLocation.path != null) {
                             opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
                         } else {
                             opts.inPreferredConfig = Bitmap.Config.RGB_565;
                         }
 
+                        opts.inPreferredConfig=org.telegram.messenger.xmpp.MonogramHdr.preferredConfig(opts,opts.inPreferredConfig);
                         opts.inDither = false;
                         if (mediaId != null && mediaThumbPath == null) {
                             if (mediaIsVideo) {

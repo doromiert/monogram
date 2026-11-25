@@ -639,6 +639,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     public static class SendingMediaInfo {
         public Uri uri;
         public String imagePath;
+        public org.telegram.messenger.xmpp.MonogramHdr.Source hdrSource;
         public String path;
         public String caption;
         public String thumbPath;
@@ -5318,6 +5319,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramForwarding.SOURCE)) {
                     monogramSource = org.telegram.messenger.xmpp.MonogramController.get(currentAccount).forwardSource(params);
                 }
+                if(org.telegram.messenger.xmpp.MonogramHdr.keepOriginalVideo(videoEditedInfo)
+                        && !TextUtils.isEmpty(videoEditedInfo.originalPath))monogramSource=new File(videoEditedInfo.originalPath);
+                String originalHdr=params==null?null:params.get(org.telegram.messenger.xmpp.MonogramHdr.SOURCE);
+                if(originalHdr!=null && new File(originalHdr).isFile())monogramSource=new File(originalHdr);
                 boolean motion = params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE);
                 if (motion && !"1".equals(params.get(org.telegram.messenger.xmpp.MonogramMotionPhotos.REBUILD))) {
                     monogramSource = new File(params.get(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE));
@@ -5431,13 +5436,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 }
                 if (monogramFile) {
                     String mime = photo != null || params != null && params.containsKey(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE) ? "image/jpeg" : document.mime_type;
+                    if(params!=null && params.containsKey(org.telegram.messenger.xmpp.MonogramHdr.MIME))mime=params.get(org.telegram.messenger.xmpp.MonogramHdr.MIME);
                     boolean supported = scheduleDate == 0 && ttl == 0 && stars == 0 && pollSendParams == null
                             && quick_reply_shortcut == null && quick_reply_shortcut_id == 0;
                     final MessageObject outgoing = newMsgObj;
                     final String contentType = mime == null ? "application/octet-stream" : mime, outgoingCaption = monogramCaption;
                     final HashMap<String, String> outgoingParams = params;
                     final File source = monogramSource;
-                    final boolean convert = supported && videoEditedInfo != null && videoEditedInfo.needConvert();
+                    final boolean convert = supported && videoEditedInfo != null && videoEditedInfo.needConvert() && !org.telegram.messenger.xmpp.MonogramHdr.keepOriginalVideo(videoEditedInfo);
                     Runnable sendFile = () -> {
                         org.telegram.messenger.xmpp.MonogramFileRequest request = new org.telegram.messenger.xmpp.MonogramFileRequest(
                                 outgoing.messageOwner, convert ? new File(outgoing.messageOwner.attachPath) : source, contentType, outgoingCaption, supported);
@@ -10918,6 +10924,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
             for (int a = 0; a < count; a++) {
                 final SendingMediaInfo info = media.get(a);
+                if(!info.isVideo && !forceDocument && !TextUtils.isEmpty(org.telegram.messenger.xmpp.MonogramController.get(accountInstance.getCurrentAccount()).accountJid()))
+                    info.hdrSource=org.telegram.messenger.xmpp.MonogramHdr.captureOriginal(TextUtils.isEmpty(info.imagePath)?info.path:info.imagePath,info.uri);
                 if (info.path != null && info.isLivePhoto && !info.discardLivePhoto && !DialogObject.isEncryptedDialog(dialogId)) {
                     if (info.params == null) info.params = new HashMap<>();
                     info.params.put(org.telegram.messenger.xmpp.MonogramMotionPhotos.SOURCE, info.path);
@@ -11699,6 +11707,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 final TLRPC.TL_photo photoFinal = photo;
                                 final String parentFinal = parentObject;
                                 final HashMap<String, String> params = new HashMap<>();
+                                if(info.hdrSource!=null){
+                                    params.put(org.telegram.messenger.xmpp.MonogramHdr.SOURCE,info.hdrSource.path);
+                                    params.put(org.telegram.messenger.xmpp.MonogramHdr.MIME,info.hdrSource.mime);
+                                }
                             org.telegram.messenger.xmpp.MonogramMediaDrafts.mergeParams(params,info.params);
                                 final Bitmap[] bitmapFinal = new Bitmap[1];
                                 final String[] keyFinal = new String[1];

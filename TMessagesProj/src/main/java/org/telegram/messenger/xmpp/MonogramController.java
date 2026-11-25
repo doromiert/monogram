@@ -3220,7 +3220,7 @@ public final class MonogramController {
                 if (!cached.getParentFile().isDirectory() && !cached.getParentFile().mkdirs()) throw new java.io.IOException("Cannot create attachment cache");
                 job.check();
                 if (!snapshot.renameTo(cached)) throw new java.io.IOException("Cannot commit attachment cache");
-                final TLRPC.MessageMedia uploadedMedia = "image/jpeg".equals(request.mime)
+                final TLRPC.MessageMedia uploadedMedia = request.mime.startsWith("image/") && !"image/gif".equals(request.mime)
                         ? MonogramAttachments.decodedMedia(request.localId, request.message.date, cached, uploadName, request.mime) : null;
                 sendWorker.execute(() -> {
                     try {
