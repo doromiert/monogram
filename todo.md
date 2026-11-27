@@ -24,3 +24,11 @@ motion-photo preparation failure happened before any upload body was sent.
 - [x] Build/publish the fresh0.2.227/74449 APK froma6bccbc34: hostedSHA256 verified, established signer matches226, all8native libraries unchanged and ELF/ZIP16KiB checks pass. Three finalAPI36 Robolectric tests pass; no physical phone/provider interaction. https://github.com/doromiert/monogram/releases/tag/v0.2.227
 
 - [x] Restore0.2.226 afatDebug beta delivery after accidental optimized release switch; retain app ID/signing key and debug features.0.2.230 passes62.6s emulator+phone, typed disco/roster/PubSub/MAM and libsignal JNI contract checks; phone chatting confirmed working. No identities/sessions were reset.
+
+## Mixed-text link previews (2026-11-27)
+- [x] Draw native webpage previews after rich article text and allow card taps.
+- [x] Include rich layout height in transition-aware text measurement so cards sit below the body.
+- [x] Pass26 article/preview tests and8 native emulator rendering/tap/non-overlap cases; previouspublishedAPK fails the missing-preview regression.
+- [x] Build established-key afatDebug APK with betaID, verify update compatibility, and pass62.86seconds startup/crash monitoring (62PID samples, zero crashes).
+
+APK delivery: `.private/State/monogram-mixed-preview/monogram-0.2.240-mixed-links-arm64.apk`, SHA256 `71d48f419e349d0a8ce5f9553becf3d7ee1eb5cacb8c33438a2d5db8a1fc2ace`. Two unchanged CMake JNI outputs reused after prior-tested hash verification; all eight required native libraries packaged. No physical phone was accessed.

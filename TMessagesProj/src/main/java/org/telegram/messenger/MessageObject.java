@@ -9171,6 +9171,7 @@ public class MessageObject {
     }
 
     public int textHeight(ChatMessageCell.TransitionParams tp) {
+        if (richLayout != null) return richLayout.getHeight();
         if (textLayoutBlocks == null) return 0;
         int h = 0;
         for (int i = 0; i < textLayoutBlocks.size(); ++i) {

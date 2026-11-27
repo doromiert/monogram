@@ -112,6 +112,18 @@ public class MonogramArticlesTest {
         TLRPC.Message explicit=new TLRPC.TL_message();String markdown="["+url+"]("+url+")";explicit.message=markdown;
         assertTrue(MonogramArticles.applyMarkdown(explicit,markdown));assertNotNull(explicit.rich_message);
     }
+    @Test public void mixedMarkdownMessagesRetainTheirNativeWebpageMetadata() {
+        String url="https://x.com/larp_stats/status/2126279369052307624";
+        for(String body:Arrays.asList("me too "+url, "**me too** "+url, url+"\nMore text")) {
+            TLRPC.Message message=new TLRPC.TL_message();message.id=55;message.message=body;
+            TLRPC.TL_messageMediaWebPage media=new TLRPC.TL_messageMediaWebPage();
+            TLRPC.TL_webPage page=new TLRPC.TL_webPage();page.url=url;page.display_url="x.com";page.title="Preview title";page.description="Preview description";page.flags=12;media.webpage=page;message.media=media;
+            MonogramArticles.apply(message,body);
+            assertNotNull(message.rich_message);
+            assertSame(media,message.media);assertEquals("Preview title",message.media.webpage.title);
+            assertTrue(MonogramLinkPreviews.candidate(message));assertEquals(url,MonogramLinkPreviews.firstUrl(body));
+        }
+    }
     @Test public void urlParsingPreservesOutsideFormattingCodeAndMarkdownLinks() {
         String url="https://x.com/_lyraaa_/status/123";
         ArrayList<TL_iv.PageBlock> blocks=new ArrayList<>();

@@ -156,9 +156,10 @@ public class MonogramLinkPreviewsTest {
         assertEquals("63.jpg",local.getName());assertNull(MonogramLinkPreviews.localThumbnail(new TLRPC.TL_photoSizeEmpty()));
     }
     @Test public void schema27MigrationPreservesMessagesAndAddsEmptyPreviewCache() throws Exception {
+        int currentVersion=store.getReadableDatabase().getVersion();
         int id=store.save(MessageFixture.replyMessage("preserve","preserve",null,"Keep me",true,false,100000,"phone",true,null));
         store.getWritableDatabase().execSQL("DROP TABLE link_previews");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_message_tags");store.getWritableDatabase().execSQL("DROP TABLE IF EXISTS saved_tag_names");store.getWritableDatabase().setVersion(27);store.close();store=new MonogramStore(context,"previews.db");
-        assertEquals(36,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
+        assertEquals(currentVersion,store.getReadableDatabase().getVersion());assertEquals("Keep me",store.getMessage(id,self).message);assertFalse(store.linkPreviewFresh("https://example.org/",0));
     }
     @Test public void keepsDirectMediaRedirectsAndSignedVideoUrlsWithoutAcceptingHtmlPlayers() throws Exception {
         java.net.URI page=new java.net.URI("https://example.org/post");

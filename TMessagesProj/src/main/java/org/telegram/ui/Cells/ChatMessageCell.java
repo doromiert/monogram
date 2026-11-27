@@ -3069,7 +3069,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private boolean checkLinkPreviewMotionEvent(MotionEvent event) {
-        if (currentMessageObject.type != MessageObject.TYPE_TEXT && currentMessageObject.type != MessageObject.TYPE_STORY_MENTION || !hasLinkPreview) {
+        if (currentMessageObject.type != MessageObject.TYPE_TEXT && currentMessageObject.type != MessageObject.TYPE_ARTICLE && currentMessageObject.type != MessageObject.TYPE_STORY_MENTION || !hasLinkPreview) {
             return false;
         }
         int x = (int) getEventX(event);
@@ -14330,6 +14330,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     invalidate();
                 }
             }
+            if (!(enterTransitionInProgress && !currentMessageObject.isVoice())) {
+                drawLinkPreview(canvas, 1f);
+                getIconForCurrentState();
+            }
+            drawTime = true;
         } else if (currentMessageObject.type == MessageObject.TYPE_TEXT || currentMessageObject.type == MessageObject.TYPE_STORY_MENTION || currentMessageObject.type == MessageObject.TYPE_EMOJIS || currentMessageObject.isGiveawayOrGiveawayResults()) {
             layoutTextXY(false);
             if (!enterTransitionInProgress && currentMessageObject != null && !currentMessageObject.preview) {
